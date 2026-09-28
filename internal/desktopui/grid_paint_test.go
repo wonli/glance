@@ -16,8 +16,8 @@ import (
 )
 
 func TestGridPaintStyleUsesCellStyle(t *testing.T) {
-	s := paintStyle(document.CellStyle{FillColor: "#aabbcc", FontColor: "#102030", Bold: true, Italic: true, WrapText: true, HorizontalAlignment: "center", VerticalAlignment: "center"})
-	if s.Fill != (color.NRGBA{R: 0xaa, G: 0xbb, B: 0xcc, A: 255}) || s.Font != (color.NRGBA{R: 0x10, G: 0x20, B: 0x30, A: 255}) || !s.Bold || !s.Italic || !s.Wrap || s.Align != "center" || s.Vertical != "center" {
+	s := paintStyle(document.CellStyle{FillColor: "#aabbcc", FontColor: "#102030", FontFamily: "宋体", Bold: true, Italic: true, WrapText: true, HorizontalAlignment: "center", VerticalAlignment: "center"})
+	if s.Fill != (color.NRGBA{R: 0xaa, G: 0xbb, B: 0xcc, A: 255}) || s.Font != (color.NRGBA{R: 0x10, G: 0x20, B: 0x30, A: 255}) || s.FontFamily != "宋体" || !s.Bold || !s.Italic || !s.Wrap || s.Align != "center" || s.Vertical != "center" {
 		t.Fatalf("style=%+v", s)
 	}
 }
@@ -80,10 +80,10 @@ func firstCellPaintEntry(v *gridViewport) *cellPaintEntry {
 func TestCellEditorUsesRenderedStyleAndKeepsSingleCellGeometry(t *testing.T) {
 	theme := material.NewTheme()
 	editor := &widget.Editor{Submit: true}
-	cell := document.Cell{Style: document.CellStyle{FontColor: "#123456", Bold: true, Italic: true, WrapText: true, HorizontalAlignment: "right"}}
+	cell := document.Cell{Style: document.CellStyle{FontColor: "#123456", FontFamily: "宋体", Bold: true, Italic: true, WrapText: true, HorizontalAlignment: "right"}}
 	style := paintStyle(cell.Style)
 	got := cellEditorStyle(theme, editor, cell.Style, style)
-	if got.Color != style.Font || got.Font.Weight != font.Bold || got.Font.Style != font.Italic {
+	if got.Color != style.Font || got.Font.Typeface != font.Typeface("宋体") || got.Font.Weight != font.Bold || got.Font.Style != font.Italic {
 		t.Fatalf("editor font style=%+v", got)
 	}
 	if editor.Alignment != text.End || editor.SingleLine || !editor.Submit {

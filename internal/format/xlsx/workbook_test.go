@@ -215,7 +215,7 @@ func TestWorkbookWindowIncludesStylesMergesAndDimensions(t *testing.T) {
 	}
 	style, err := f.NewStyle(&excelize.Style{
 		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFFF00"}},
-		Font:      &excelize.Font{Bold: true, Italic: true, Size: 13, Color: "FF112233"},
+		Font:      &excelize.Font{Bold: true, Italic: true, Size: 13, Color: "FF112233", Family: "宋体"},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
 		Border:    []excelize.Border{{Type: "left", Color: "010203", Style: 1}},
 	})
@@ -254,7 +254,7 @@ func TestWorkbookWindowIncludesStylesMergesAndDimensions(t *testing.T) {
 	if cell.Value != "styled" || cell.StyleID != style {
 		t.Fatalf("styled cell = %#v; want value %q and style %d", cell, "styled", style)
 	}
-	if got := cell.Style; got.FillColor != "#FFFF00" || got.FontColor != "#112233" || !got.Bold || !got.Italic || got.FontSize != 13 || got.HorizontalAlignment != "center" || got.VerticalAlignment != "center" || !got.WrapText {
+	if got := cell.Style; got.FillColor != "#FFFF00" || got.FontColor != "#112233" || got.FontFamily != "宋体" || !got.Bold || !got.Italic || got.FontSize != 13 || got.HorizontalAlignment != "center" || got.VerticalAlignment != "center" || !got.WrapText {
 		t.Fatalf("neutral style = %#v; missing translated style attributes", got)
 	}
 	if got := cell.Style.Borders[3]; got.Color != "#010203" || got.Style != 1 {

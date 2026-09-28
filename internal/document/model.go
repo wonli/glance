@@ -15,6 +15,7 @@ type Cell struct {
 type CellStyle struct {
 	FillColor           string
 	FontColor           string
+	FontFamily          string
 	Bold                bool
 	Italic              bool
 	FontSize            float64

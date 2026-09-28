@@ -274,6 +274,7 @@ func readCellStyle(file *excelize.File, styleID int) (document.CellStyle, error)
 	}
 	if style.Font != nil {
 		result.FontColor = normalizeRGBColor(style.Font.Color)
+		result.FontFamily = style.Font.Family
 		result.Bold = style.Font.Bold
 		result.Italic = style.Font.Italic
 		result.FontSize = style.Font.Size

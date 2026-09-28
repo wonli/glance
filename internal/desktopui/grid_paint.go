@@ -23,7 +23,7 @@ import (
 type gridPaintStyle struct {
 	Fill, Font         color.NRGBA
 	Bold, Italic, Wrap bool
-	Align              string
+	Align, FontFamily  string
 	Vertical           string
 }
 
@@ -44,7 +44,7 @@ type cellPaintEntry struct {
 }
 
 func paintStyle(style document.CellStyle) gridPaintStyle {
-	return gridPaintStyle{Fill: parseGridColor(style.FillColor, color.NRGBA{R: 255, G: 255, B: 255, A: 255}), Font: parseGridColor(style.FontColor, color.NRGBA{R: 35, G: 39, B: 45, A: 255}), Bold: style.Bold, Italic: style.Italic, Wrap: style.WrapText, Align: style.HorizontalAlignment, Vertical: style.VerticalAlignment}
+	return gridPaintStyle{Fill: parseGridColor(style.FillColor, color.NRGBA{R: 255, G: 255, B: 255, A: 255}), Font: parseGridColor(style.FontColor, color.NRGBA{R: 35, G: 39, B: 45, A: 255}), Bold: style.Bold, Italic: style.Italic, Wrap: style.WrapText, Align: style.HorizontalAlignment, FontFamily: style.FontFamily, Vertical: style.VerticalAlignment}
 }
 
 func parseGridColor(s string, fallback color.NRGBA) color.NRGBA {
@@ -200,6 +200,7 @@ func cellEditorStyle(theme *material.Theme, editor *widget.Editor, cellStyle doc
 	result := material.Editor(theme, editor, "")
 	result.TextSize = theme.TextSize * 14.0 / 16.0
 	result.Color = style.Font
+	result.Font.Typeface = font.Typeface(style.FontFamily)
 	if style.Bold {
 		result.Font.Weight = cellFontWeight(true)
 	}
@@ -279,6 +280,7 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	gtx.Constraints = layout.Constraints{Min: size, Max: size}
 	label := material.Body2(theme, cell.Value)
 	label.Color = style.Font
+	label.Font.Typeface = font.Typeface(style.FontFamily)
 	if style.Bold {
 		label.Font.Weight = cellFontWeight(true)
 	}

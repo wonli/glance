@@ -188,36 +188,43 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 					}
 				}
 				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					selected := sheetName == a.sheet
 					return layout.Inset{Top: unit.Dp(1), Left: unit.Dp(3), Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							bg := color.NRGBA{R: 230, G: 234, B: 240, A: 255}
-							fg := color.NRGBA{R: 70, G: 78, B: 88, A: 255}
-							if selected {
-								bg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-								fg = color.NRGBA{R: 35, G: 43, B: 53, A: 255}
-							}
-							gtx.Constraints.Min.Y = gtx.Dp(unit.Dp(32))
-							return layout.Background{}.Layout(gtx,
-								func(gtx layout.Context) layout.Dimensions { return fill(gtx, bg) },
-								func(gtx layout.Context) layout.Dimensions {
-									if selected {
-										paint.FillShape(gtx.Ops, color.NRGBA{R: 35, G: 125, B: 85, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(2)))}.Op())
-									}
-									label := material.Body2(a.theme, sheetName)
-									label.Color = fg
-									return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										return layout.Center.Layout(gtx, label.Layout)
-									})
-								},
-							)
-						})
+						return layoutSheetTab(gtx, a.theme, button, sheetName, sheetName == a.sheet)
 					})
 				}))
 			}
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 		},
 	)
+}
+
+func layoutSheetTab(gtx layout.Context, theme *material.Theme, button *widget.Clickable, name string, selected bool) layout.Dimensions {
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		bg := color.NRGBA{R: 230, G: 234, B: 240, A: 255}
+		fg := color.NRGBA{R: 70, G: 78, B: 88, A: 255}
+		if selected {
+			bg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			fg = color.NRGBA{R: 35, G: 43, B: 53, A: 255}
+		}
+		label := material.Body2(theme, name)
+		label.Color = fg
+		return layout.Stack{}.Layout(gtx,
+			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+				size := gtx.Constraints.Min
+				paint.FillShape(gtx.Ops, bg, clip.Rect{Max: size}.Op())
+				if selected {
+					paint.FillShape(gtx.Ops, color.NRGBA{R: 35, G: 125, B: 85, A: 255}, clip.Rect{Max: image.Pt(size.X, gtx.Dp(unit.Dp(2)))}.Op())
+				}
+				return layout.Dimensions{Size: size}
+			}),
+			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.Y = gtx.Dp(unit.Dp(31))
+				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Center.Layout(gtx, label.Layout)
+				})
+			}),
+		)
+	})
 }
 
 func (a *App) layoutColumnHeader(gtx layout.Context) layout.Dimensions {
