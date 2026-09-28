@@ -15,7 +15,7 @@ Run `go run ./cmd/desktop [path]` from the repository root. Gio renders the wind
 | Drafts and Save As | Implemented, basic | Blank XLSX/DOCX/JSON drafts are recoverable. Save As validates `.xlsx`, `.docx`, or `.json`; cancellation leaves the draft intact. |
 | Restart recovery | Implemented, basic | SQLite stores self-contained adapter snapshots, dirty state, tab order/active tab, and view state. Missing original paths keep the snapshot and show an unavailable-source status. Gio does not expose a cancellable pre-close event, so closing the window cannot prompt before OS shutdown. |
 
-Workspace snapshot serialization and SQLite writes run through a single background writer so Gio frame layout stays responsive. The writer drains queued snapshots on shutdown. Snapshot serialization is performed by the format adapter and still needs continued stress testing with large workbooks and concurrent editing.
+Native file/folder/save dialogs and shallow folder scans run asynchronously. Folder recents are staged in memory and written as one batch through the background workspace writer. Workspace snapshot serialization and SQLite writes also use that writer so Gio frame layout stays responsive; it drains queued work on shutdown. Snapshot serialization is performed by the format adapter and still needs continued stress testing with large workbooks and concurrent editing.
 
 ## JSON
 

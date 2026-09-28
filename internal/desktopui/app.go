@@ -53,11 +53,13 @@ type App struct {
 	tabMeta               map[string]workspace.Tab
 	activeTabID           string
 	workspaceError        string
+	workspaceWriteError   string
 	tabButtons            map[string]*widget.Clickable
 	tabCloseButtons       map[string]*widget.Clickable
 	newButton             widget.Clickable
 	recentTabButton       widget.Clickable
 	workspaceTabsList     widget.List
+	createActionsList     widget.List
 	showNewMenu           bool
 	recentButtons         map[string]*widget.Clickable
 	recentRemoveButtons   map[string]*widget.Clickable
@@ -65,11 +67,13 @@ type App struct {
 	workspaceWriteJobs    chan workspaceWriteJob
 	workspaceWriteResults chan error
 	workspaceWriterDone   chan struct{}
+	fileCommandResults    chan fileCommandResult
 	gridLoadResults       chan gridLoadResult
 	saveResults           chan saveResult
 	openResults           chan openResult
 	saving                bool
 	opening               bool
+	fileCommandRunning    bool
 	documentGeneration    uint64
 	shutdown              chan struct{}
 	shutdownOnce          sync.Once
@@ -84,6 +88,7 @@ func New(window *app.Window, initialPath string) *App {
 		gridLoadResults:      make(chan gridLoadResult, 8),
 		saveResults:          make(chan saveResult, 1),
 		openResults:          make(chan openResult, 1),
+		fileCommandResults:   make(chan fileCommandResult, 1),
 		shutdown:             make(chan struct{}),
 		sessions:             make(map[string]*documentSessionState),
 		tabMeta:              make(map[string]workspace.Tab),
@@ -92,6 +97,7 @@ func New(window *app.Window, initialPath string) *App {
 		recentButtons:        make(map[string]*widget.Clickable),
 		recentRemoveButtons:  make(map[string]*widget.Clickable),
 		workspaceTabsList:    widget.List{List: layout.List{Axis: layout.Horizontal}},
+		createActionsList:    widget.List{List: layout.List{Axis: layout.Horizontal}},
 		recentList:           widget.List{List: layout.List{Axis: layout.Vertical}},
 	}
 	if window != nil {
@@ -201,7 +207,7 @@ func loadDocument(path string) (loadedDocument, error) {
 func (a *App) installDocument(loaded loadedDocument) error {
 	a.documentGeneration++
 	for id, meta := range a.tabMeta {
-		if loaded.path != "" && meta.SourcePath == loaded.path {
+		if sameDocumentPath(meta.SourcePath, loaded.path) {
 			if state := a.sessions[id]; state != nil {
 				closeLoadedDocument(loaded)
 				a.activateSession(id, state)
@@ -261,8 +267,10 @@ func (a *App) installDocument(loaded loadedDocument) error {
 			if err := a.collection.AddTab(meta, format); err != nil {
 				return err
 			}
+			a.reindexTabMetadata()
 			if loaded.path != "" {
-				_ = a.collection.AddRecent(workspace.Recent{Path: loaded.path, Kind: format})
+				a.collection.StageRecents([]workspace.Recent{{Path: loaded.path, Kind: format}})
+				a.persistRecentsAsync()
 			}
 			a.persistActiveSession()
 		}

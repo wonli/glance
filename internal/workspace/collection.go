@@ -57,6 +57,18 @@ func OpenCollection(store *Store) (*Collection, error) {
 		}
 		c.tabs = append(c.tabs, session)
 	}
+	positionsChanged := false
+	for position, session := range c.tabs {
+		if session.Tab.Position != position {
+			session.Tab.Position = position
+			positionsChanged = true
+		}
+	}
+	if positionsChanged {
+		if err := c.persist(); err != nil {
+			return nil, err
+		}
+	}
 	return c, nil
 }
 
@@ -203,6 +215,30 @@ func (c *Collection) AddRecent(recent Recent) error {
 	}
 	c.recents = append(c.recents, recent)
 	return c.persist()
+}
+
+// StageRecents updates the in-memory recent list without touching SQLite.
+// Callers that need background persistence can enqueue the list to Store.SaveRecents.
+func (c *Collection) StageRecents(recents []Recent) {
+	for _, recent := range recents {
+		if recent.Path == "" {
+			continue
+		}
+		if recent.OpenedAt.IsZero() {
+			recent.OpenedAt = time.Now().UTC()
+		}
+		updated := false
+		for i := range c.recents {
+			if c.recents[i].Path == recent.Path {
+				c.recents[i] = recent
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			c.recents = append(c.recents, recent)
+		}
+	}
 }
 
 func (c *Collection) RemoveRecent(path string) error {

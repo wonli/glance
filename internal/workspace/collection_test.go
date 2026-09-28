@@ -141,3 +141,36 @@ func TestRemoveRecentPersists(t *testing.T) {
 		t.Fatalf("recent entries restored: %+v", w.Recents)
 	}
 }
+
+func TestStageRecentsAndPersistThemAsOneBatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collection, err := OpenCollection(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := []Recent{{Path: "/tmp/a.xlsx", Kind: "xlsx"}, {Path: "/tmp/b.docx", Kind: "docx"}}
+	collection.StageRecents(items)
+	if len(collection.Recents()) != 2 {
+		t.Fatalf("staged recents=%+v", collection.Recents())
+	}
+	if err := store.SaveRecents(collection.Recents()); err != nil {
+		t.Fatal(err)
+	}
+	_ = store.Close()
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	w, err := reopened.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.Recents) != 2 {
+		t.Fatalf("persisted recents=%+v", w.Recents)
+	}
+}

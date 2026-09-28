@@ -318,10 +318,13 @@ func (a *App) pollGridLoad(v *gridViewport) {
 	for {
 		select {
 		case result := <-a.gridLoadResults:
+			if result.viewport == nil || result.viewport.RequestedSheet != result.sheet || result.viewport.RequestedRange != result.rangeOf {
+				continue
+			}
+			result.viewport.Loading = false
 			if result.viewport != v {
 				continue
 			}
-			v.Loading = false
 			if result.generation != a.documentGeneration || result.sheet != a.sheet {
 				a.window.Invalidate()
 				continue

@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"path/filepath"
@@ -41,7 +42,7 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return material.Caption(a.theme, a.status).Layout(gtx)
+						return material.Caption(a.theme, a.visibleStatus()).Layout(gtx)
 					})
 				}),
 				layout.Flexed(1, a.layoutDocument),
@@ -53,8 +54,47 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 
 func (a *App) processAsyncResults() {
 	select {
+	case result := <-a.fileCommandResults:
+		a.fileCommandRunning = false
+		if result.err != nil {
+			a.status = result.err.Error()
+		} else {
+			switch result.kind {
+			case commandOpenFile:
+				if result.path != "" {
+					a.startOpen(result.path)
+				} else {
+					a.status = "已取消打开文件"
+				}
+			case commandOpenFolder:
+				if result.path == "" {
+					a.status = "已取消打开文件夹"
+				} else if a.collection == nil {
+					a.status = "工作区数据库不可用，无法记录文件夹内容"
+				} else if len(result.recents) == 0 {
+					a.status = "所选文件夹中没有支持的文档"
+				} else {
+					a.collection.StageRecents(result.recents)
+					a.persistRecentsAsync()
+					a.status = fmt.Sprintf("已添加 %d 个文档到最近打开", len(result.recents))
+				}
+			case commandSaveAs:
+				if result.path != "" {
+					a.startSaveAs(result.path)
+				} else {
+					a.status = "已取消另存为"
+				}
+			}
+		}
+	default:
+	}
+	select {
 	case err := <-a.workspaceWriteResults:
-		a.status = "工作区保存失败：" + err.Error()
+		if err != nil {
+			a.workspaceWriteError = "工作区保存失败：" + err.Error()
+		} else {
+			a.workspaceWriteError = ""
+		}
 	default:
 	}
 	select {
@@ -108,6 +148,13 @@ func (a *App) processAsyncResults() {
 		}
 	default:
 	}
+}
+
+func (a *App) visibleStatus() string {
+	if a.workspaceWriteError != "" {
+		return a.workspaceWriteError
+	}
+	return a.status
 }
 
 func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {

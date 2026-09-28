@@ -1,13 +1,11 @@
 package desktopui
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -24,6 +22,7 @@ import (
 )
 
 func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
+	ids := a.workspaceTabIDs()
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(40)), gtx.Dp(unit.Dp(40))
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
@@ -31,14 +30,14 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 202, G: 208, B: 216, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
-			return material.List(a.theme, &a.workspaceTabsList).Layout(gtx, len(a.tabMeta)+2, func(gtx layout.Context, index int) layout.Dimensions {
+			return material.List(a.theme, &a.workspaceTabsList).Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
 				if index == 0 {
 					return a.layoutRecentTab(gtx)
 				}
-				if index == len(a.tabMeta)+1 {
+				if index == len(ids)+1 {
 					return a.layoutPlusTab(gtx)
 				}
-				return a.layoutDocumentTab(gtx, index-1)
+				return a.layoutDocumentTab(gtx, ids[index-1])
 			})
 		},
 	)
@@ -59,16 +58,22 @@ func (a *App) layoutPlusTab(gtx layout.Context) layout.Dimensions {
 	return a.paintTab(gtx, &a.newButton, "+", false)
 }
 
-func (a *App) layoutDocumentTab(gtx layout.Context, index int) layout.Dimensions {
+func (a *App) workspaceTabIDs() []string {
 	ids := make([]string, 0, len(a.tabMeta))
 	for id := range a.tabMeta {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool { return a.tabMeta[ids[i]].Position < a.tabMeta[ids[j]].Position })
-	if index >= len(ids) {
-		return layout.Dimensions{}
-	}
-	id := ids[index]
+	sort.Slice(ids, func(i, j int) bool {
+		left, right := a.tabMeta[ids[i]].Position, a.tabMeta[ids[j]].Position
+		if left == right {
+			return ids[i] < ids[j]
+		}
+		return left < right
+	})
+	return ids
+}
+
+func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions {
 	meta := a.tabMeta[id]
 	if a.tabButtons[id] == nil {
 		a.tabButtons[id] = new(widget.Clickable)
@@ -190,6 +195,7 @@ func (a *App) closeWorkspaceTab(id string) {
 	delete(a.tabMeta, id)
 	delete(a.tabButtons, id)
 	delete(a.tabCloseButtons, id)
+	a.reindexTabMetadata()
 	if wasActive {
 		next := workspace.RecentTabID
 		if a.collection != nil {
@@ -200,6 +206,20 @@ func (a *App) closeWorkspaceTab(id string) {
 		} else {
 			a.activateRecent()
 		}
+	}
+}
+
+func (a *App) reindexTabMetadata() {
+	if a.collection != nil {
+		for _, session := range a.collection.Tabs() {
+			a.tabMeta[session.Tab.ID] = session.Tab
+		}
+		return
+	}
+	for position, id := range a.workspaceTabIDs() {
+		meta := a.tabMeta[id]
+		meta.Position = position
+		a.tabMeta[id] = meta
 	}
 }
 
@@ -308,21 +328,11 @@ func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
 func (a *App) layoutCreateActions(gtx layout.Context) layout.Dimensions {
 	if a.actionOpenFile.Clicked(gtx) {
 		a.showNewMenu = false
-		path, err := chooseOfficeFile()
-		if err != nil {
-			a.status = err.Error()
-		} else if path != "" {
-			a.startOpen(path)
-		}
+		a.startOpenFilePicker()
 	}
 	if a.actionOpenFolder.Clicked(gtx) {
 		a.showNewMenu = false
-		path, err := chooseOfficeFolder()
-		if err != nil {
-			a.status = err.Error()
-		} else if path != "" {
-			a.openFolder(path)
-		}
+		a.startFolderPicker()
 	}
 	if a.actionSave.Clicked(gtx) && !a.saving && a.isDirty() {
 		a.showNewMenu = false
@@ -355,16 +365,12 @@ func (a *App) layoutCreateActions(gtx layout.Context) layout.Dimensions {
 		_ = a.installDocument(loadedDocument{jsonDoc: jsondoc.NewBlank()})
 	}
 	buttons := a.createActionItems()
-	children := make([]layout.FlexChild, 0, len(buttons))
-	for _, item := range buttons {
-		it := item
-		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return material.Button(a.theme, it.click, it.label).Layout(gtx)
-			})
-		}))
-	}
-	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(40)), gtx.Dp(unit.Dp(40))
+	return material.List(a.theme, &a.createActionsList).Layout(gtx, len(buttons), func(gtx layout.Context, index int) layout.Dimensions {
+		return layout.Inset{Left: unit.Dp(4), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return material.Button(a.theme, buttons[index].click, buttons[index].label).Layout(gtx)
+		})
+	})
 }
 
 type createActionItem struct {
@@ -373,7 +379,7 @@ type createActionItem struct {
 }
 
 func (a *App) createActionItems() []createActionItem {
-	buttons := []createActionItem{{&a.actionOpenFile, "打开文件…"}, {&a.actionOpenFolder, "打开文件夹…"}, {&a.actionNewXLSX, "新建 Excel"}, {&a.actionNewDOCX, "新建 Word"}, {&a.actionNewJSON, "新建 JSON"}}
+	buttons := []createActionItem{{&a.actionOpenFile, "打开文件…"}, {&a.actionOpenFolder, "打开文件夹…"}}
 	if a.hasActiveDocument() {
 		if a.isDirty() {
 			label := "保存"
@@ -384,6 +390,7 @@ func (a *App) createActionItems() []createActionItem {
 		}
 		buttons = append(buttons, createActionItem{&a.actionSaveAs, "另存为…"})
 	}
+	buttons = append(buttons, createActionItem{&a.actionNewXLSX, "新建 Excel"}, createActionItem{&a.actionNewDOCX, "新建 Word"}, createActionItem{&a.actionNewJSON, "新建 JSON"})
 	return buttons
 }
 
@@ -401,10 +408,6 @@ func (a *App) hasActiveDocument() bool {
 }
 
 func (a *App) saveAsFromMenu() {
-	a.saveAsWith(chooseSavePath)
-}
-
-func (a *App) saveAsWith(choose func(string) (string, error)) {
 	ext := "xlsx"
 	if a.word != nil {
 		ext = "docx"
@@ -412,34 +415,5 @@ func (a *App) saveAsWith(choose func(string) (string, error)) {
 	if a.jsonDoc != nil {
 		ext = "json"
 	}
-	path, err := choose(ext)
-	if err != nil {
-		a.status = err.Error()
-	} else if path != "" {
-		a.startSaveAs(path)
-	}
-}
-
-func (a *App) openFolder(path string) {
-	if a.collection == nil {
-		a.status = "工作区数据库不可用，无法记录文件夹内容"
-		return
-	}
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		a.status = err.Error()
-		return
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext != ".xlsx" && ext != ".xls" && ext != ".docx" && ext != ".json" {
-			continue
-		}
-		full := filepath.Join(path, entry.Name())
-		_ = a.collection.AddRecent(workspace.Recent{Path: full, Kind: strings.TrimPrefix(ext, ".")})
-	}
-	a.status = fmt.Sprintf("已添加文件夹 %s 中的文档", path)
+	a.startSaveAsPicker(ext)
 }

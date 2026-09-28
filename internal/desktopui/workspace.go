@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -33,17 +34,41 @@ func workspaceSessionID(path string) string {
 	if path == "" {
 		return "draft-" + fmt.Sprintf("%x", sha256.Sum256([]byte("new")))[:12]
 	}
-	abs, err := filepath.Abs(path)
-	if err == nil {
+	path = canonicalDocumentPath(path)
+	return fmt.Sprintf("doc-%x", sha256.Sum256([]byte(path)))[:20]
+}
+
+func canonicalDocumentPath(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	return fmt.Sprintf("doc-%x", sha256.Sum256([]byte(strings.ToLower(path))))[:20]
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	path = filepath.Clean(path)
+	return path
+}
+
+func sameDocumentPath(left, right string) bool {
+	if left == "" || right == "" {
+		return false
+	}
+	if canonicalDocumentPath(left) == canonicalDocumentPath(right) {
+		return true
+	}
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }
 
 var draftCounter atomic.Uint64
 
 func newDraftSessionID(format string) string {
-	return fmt.Sprintf("draft-%s-%d", format, draftCounter.Add(1))
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err == nil {
+		return fmt.Sprintf("draft-%s-%x", format, id[:])
+	}
+	return fmt.Sprintf("draft-%s-%d-%d", format, time.Now().UnixNano(), draftCounter.Add(1))
 }
 
 func (a *App) initializeWorkspace() {
@@ -69,7 +94,7 @@ func (a *App) initializeWorkspace() {
 	a.collection = collection
 	for _, record := range collection.Tabs() {
 		a.tabMeta[record.Tab.ID] = record.Tab
-		if record.Format == "" || len(record.Payload) == 0 {
+		if !hasRestorableSnapshot(record) {
 			continue
 		}
 		state, err := a.restoreSessionState(record)
@@ -87,6 +112,10 @@ func (a *App) initializeWorkspace() {
 			a.activeTabID = workspace.RecentTabID
 		}
 	}
+}
+
+func hasRestorableSnapshot(record workspace.Session) bool {
+	return record.Format != "" && (len(record.Payload) > 0 || strings.EqualFold(record.Format, "json"))
 }
 
 func (a *App) restoreSessionState(record workspace.Session) (*documentSessionState, error) {
@@ -220,23 +249,145 @@ type workspaceWriteJob struct {
 	documentID, format string
 	state              *documentSessionState
 	viewState          []byte
+	recents            []workspace.Recent
+}
+
+type fileCommandKind uint8
+
+const (
+	commandOpenFile fileCommandKind = iota + 1
+	commandOpenFolder
+	commandSaveAs
+)
+
+type fileCommandResult struct {
+	kind    fileCommandKind
+	path    string
+	recents []workspace.Recent
+	err     error
+}
+
+func (a *App) startOpenFilePicker() {
+	a.startFileCommand(commandOpenFile, "")
+}
+
+func (a *App) startFolderPicker() {
+	a.startFileCommand(commandOpenFolder, "")
+}
+
+func (a *App) startSaveAsPicker(format string) {
+	a.startFileCommand(commandSaveAs, format)
+}
+
+func (a *App) startFileCommand(kind fileCommandKind, format string) {
+	if a.fileCommandRunning {
+		return
+	}
+	a.fileCommandRunning = true
+	switch kind {
+	case commandOpenFile:
+		a.status = "选择要打开的文件…"
+	case commandOpenFolder:
+		a.status = "选择要浏览的文件夹…"
+	case commandSaveAs:
+		a.status = "选择另存为位置…"
+	}
+	go func() {
+		result := fileCommandResult{kind: kind}
+		switch kind {
+		case commandOpenFile:
+			result.path, result.err = chooseOfficeFile()
+		case commandOpenFolder:
+			result.path, result.err = chooseOfficeFolder()
+			if result.err == nil && result.path != "" {
+				result.recents, result.err = scanOfficeFolder(result.path)
+			}
+		case commandSaveAs:
+			result.path, result.err = chooseSavePath(format)
+		}
+		select {
+		case a.fileCommandResults <- result:
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		case <-a.shutdown:
+		}
+	}()
+}
+
+func scanOfficeFolder(path string) ([]workspace.Recent, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	var recents []workspace.Recent
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext != ".xlsx" && ext != ".xls" && ext != ".docx" && ext != ".json" {
+			continue
+		}
+		recents = append(recents, workspace.Recent{Path: filepath.Join(path, entry.Name()), Kind: strings.TrimPrefix(ext, ".")})
+	}
+	return recents, nil
+}
+
+func (a *App) persistRecentsAsync() {
+	if a.collection == nil {
+		return
+	}
+	recents := a.collection.Recents()
+	if a.workspaceWriteJobs != nil {
+		a.workspaceWriteJobs <- workspaceWriteJob{recents: recents}
+		return
+	}
+	if a.workspaceStore != nil {
+		if err := a.workspaceStore.SaveRecents(recents); err != nil {
+			a.status = "工作区保存失败：" + err.Error()
+		}
+	}
 }
 
 func (a *App) startWorkspaceWriter() {
 	a.workspaceWriteJobs = make(chan workspaceWriteJob, 128)
-	a.workspaceWriteResults = make(chan error, 8)
+	a.workspaceWriteResults = make(chan error, 1)
 	a.workspaceWriterDone = make(chan struct{})
 	go func() {
 		defer close(a.workspaceWriterDone)
 		for job := range a.workspaceWriteJobs {
-			if err := a.writeWorkspaceSnapshot(job); err != nil {
-				select {
-				case a.workspaceWriteResults <- err:
-				default:
-				}
+			var err error
+			if job.recents != nil {
+				err = a.workspaceStore.SaveRecents(job.recents)
+			} else {
+				err = a.writeWorkspaceSnapshot(job)
+			}
+			a.publishWorkspaceWriteResult(err)
+			if a.window != nil {
+				a.window.Invalidate()
 			}
 		}
 	}()
+}
+
+func (a *App) publishWorkspaceWriteResult(err error) {
+	if a.workspaceWriteResults == nil {
+		return
+	}
+	select {
+	case a.workspaceWriteResults <- err:
+		return
+	default:
+	}
+	select {
+	case <-a.workspaceWriteResults:
+	default:
+	}
+	select {
+	case a.workspaceWriteResults <- err:
+	default:
+	}
 }
 
 func (a *App) writeWorkspaceSnapshot(job workspaceWriteJob) error {

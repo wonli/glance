@@ -137,7 +137,7 @@ func (s *Store) Load() (Snapshot, error) {
 	if err := s.db.QueryRow(`SELECT active_tab_id FROM workspace_settings WHERE singleton=1`).Scan(&out.ActiveTabID); err != nil {
 		return out, err
 	}
-	rows, err := s.db.Query(`SELECT id, kind, title, document_id, source_path, position FROM tabs ORDER BY position`)
+	rows, err := s.db.Query(`SELECT id, kind, title, document_id, source_path, position FROM tabs ORDER BY position, id`)
 	if err != nil {
 		return out, err
 	}
@@ -235,6 +235,32 @@ func (s *Store) SaveDocument(doc Document) error {
 	}
 	_, err := s.db.Exec(`INSERT INTO documents(id,format,payload,dirty,updated_at,view_state) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET format=excluded.format,payload=excluded.payload,dirty=excluded.dirty,updated_at=excluded.updated_at,view_state=excluded.view_state`, doc.ID, doc.Format, doc.Payload, dirty, doc.UpdatedAt.UTC().UnixNano(), doc.ViewState)
 	return err
+}
+
+// SaveRecents replaces the recent list in one transaction. It is intended for
+// background folder scans that discover many supported files at once.
+func (s *Store) SaveRecents(recents []Recent) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM recents`); err != nil {
+		return err
+	}
+	for _, recent := range recents {
+		if recent.Path == "" {
+			continue
+		}
+		openedAt := recent.OpenedAt
+		if openedAt.IsZero() {
+			openedAt = time.Now().UTC()
+		}
+		if _, err := tx.Exec(`INSERT INTO recents(path,kind,opened_at) VALUES(?,?,?)`, recent.Path, recent.Kind, openedAt.UTC().UnixNano()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) LoadDocument(id string) (Document, bool, error) {
