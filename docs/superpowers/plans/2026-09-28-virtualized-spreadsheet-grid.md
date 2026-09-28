@@ -19,7 +19,8 @@
 - Keep XLS read-only and DOCX behavior unchanged.
 - Resize previews remain transient; persist row/column dimensions only on pointer release.
 - Preserve atomic save and dirty state on failure.
-- This workspace has no Git metadata; commits and worktree operations are unavailable.
+- Work on branch `codex/virtualized-spreadsheet-grid` in the approved isolated worktree.
+- Commit each completed task locally after its final passing test run. Do not push or merge.
 
 ## Review Focus
 
@@ -66,6 +67,12 @@ Run: `GOCACHE=/tmp/glance-go-gocache go test ./internal/desktopui -run '^TestAxi
 
 Expected: PASS for all four tests, including the maximum row index without a linear scan.
 
+- [ ] **Step 5: Commit Task 1**
+
+Run: `git add internal/desktopui/grid_geometry.go internal/desktopui/grid_geometry_test.go docs/superpowers/plans/2026-09-28-virtualized-spreadsheet-grid.md && git commit -m "feat: add sparse grid dimension geometry"`
+
+Expected: commit created on `codex/virtualized-spreadsheet-grid`; no files remain staged.
+
 ### Task 2: Neutral visible-window model and XLSX adapter
 
 **Files:**
@@ -109,6 +116,12 @@ Implement `SetRowHeight` and `SetColumnWidth`, validating one-based XLSX bounds 
 Run: `GOCACHE=/tmp/glance-go-gocache go test ./internal/format/xlsx -run '^Test(Workbook|EmployeeWorkbook)' -count=1`
 
 Expected: PASS, including reopening the resized workbook and preserving the synthetic merge/style.
+
+- [ ] **Step 7: Commit Task 2**
+
+Run: `git add internal/document/model.go internal/format/xlsx/workbook.go internal/format/xlsx/workbook_test.go docs/superpowers/plans/2026-09-28-virtualized-spreadsheet-grid.md && git commit -m "feat: expose styled spreadsheet windows"`
+
+Expected: commit created on `codex/virtualized-spreadsheet-grid`; no files remain staged.
 
 ### Task 3: Virtual grid viewport, scrolling, styles, and merges
 
@@ -160,6 +173,12 @@ Run: `GOCACHE=/tmp/glance-go-gocache go test ./internal/desktopui -run '^(TestCe
 
 Expected: PASS for geometry, selection mapping, merge spans, overscan, and end-of-sheet clamping.
 
+- [ ] **Step 7: Commit Task 3**
+
+Run: `git add internal/desktopui/app.go internal/desktopui/layout.go internal/desktopui/grid_*.go docs/superpowers/plans/2026-09-28-virtualized-spreadsheet-grid.md && git commit -m "feat: render virtual spreadsheet grid"`
+
+Expected: commit created on `codex/virtualized-spreadsheet-grid`; no files remain staged.
+
 ### Task 4: Excel-style controls and in-place cell editing
 
 **Files:**
@@ -201,6 +220,12 @@ Place the controls above the grid, route F2/double-click to edit mode, and ancho
 Run: `GOCACHE=/tmp/glance-go-gocache go test ./internal/desktopui -run '^TestCellEdit|^TestCellSelection' -count=1`
 
 Expected: PASS for synchronization, commit, cancel, no-op, and formula rejection.
+
+- [ ] **Step 6: Commit Task 4**
+
+Run: `git add internal/desktopui/app.go internal/desktopui/layout.go internal/desktopui/grid_*.go && git commit -m "feat: edit selected spreadsheet cells in place"`
+
+Expected: commit created on `codex/virtualized-spreadsheet-grid`; no files remain staged.
 
 ### Task 5: Row-height and column-width drag resizing
 
@@ -245,6 +270,12 @@ On release, convert the preview to Excel units, call the appropriate `GridReader
 Run: `GOCACHE=/tmp/glance-go-gocache go test ./internal/desktopui -run '^TestResize|^TestExcelDimension' -count=1`
 
 Expected: PASS, with setter invocation only on successful release.
+
+- [ ] **Step 7: Commit Task 5**
+
+Run: `git add internal/desktopui/grid_*.go internal/format/xlsx/workbook.go internal/format/xlsx/workbook_test.go && git commit -m "feat: resize spreadsheet rows and columns"`
+
+Expected: commit created on `codex/virtualized-spreadsheet-grid`; no files remain staged.
 
 ### Task 6: Sample regression, compatibility docs, and end-to-end verification
 
@@ -293,3 +324,9 @@ Open the employee-performance workbook and verify the original Excel-like arrang
 - [ ] **Step 6: Review compatibility status**
 
 Confirm that docs match actual test evidence and keep unsupported features explicit. No feature is marked verified solely from a successful build.
+
+- [ ] **Step 7: Commit Task 6**
+
+Run: `git add AGENTS.md docs/architecture.md docs/office-support.md docs/superpowers/specs/2026-09-28-virtualized-spreadsheet-grid-design.md && git commit -m "docs: document virtual spreadsheet grid support"`
+
+Expected: commit created on `codex/virtualized-spreadsheet-grid`; no files remain staged.
