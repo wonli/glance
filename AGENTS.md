@@ -16,10 +16,12 @@
 - Dialog drafts must receive the latest editor text before confirm/close. Track committed document values separately from transient editor drafts.
 - For spreadsheet editing, preserve geometry while entering edit mode, make no-op commit a no-op, support cancel, and avoid committing intermediate IME composition text. Cover empty and styled cells and Chinese input in interaction regressions.
 - See [docs/architecture.md](docs/architecture.md) and the sibling reference `../mysql-ai/docs/gio-form-layout-gotchas.md` for rationale and examples.
+- The approved XLSX virtual-grid design is [docs/superpowers/specs/2026-09-28-virtualized-spreadsheet-grid-design.md](docs/superpowers/specs/2026-09-28-virtualized-spreadsheet-grid-design.md).
 
 ## Document Safety
 
 - A format library's API surface is not a compatibility guarantee. Record selected dependencies and evidence in [docs/office-library-evaluation.md](docs/office-library-evaluation.md).
+- Keep the implemented boundary and known gaps current in [docs/office-support.md](docs/office-support.md), especially when adding legacy formats, style rendering, or resize interactions.
 - Do not enable overwrite for a file class until save/reopen tests show edited values and representative untouched content survive. Use a temporary sibling file and replace the source only after a successful write.
 - Preserve dirty state on save failure; never silently drop unsupported content or claim formula recalculation/Word pagination without evidence.
 - Maintain an evidence-based compatibility matrix as features land, following `../tools/docs/compatibility/office-feature-matrix.md`.

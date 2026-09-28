@@ -76,6 +76,7 @@ XLSX / DOCX libraries and local filesystem
 
 ## Reference projects
 
+- [Virtualized spreadsheet grid design](superpowers/specs/2026-09-28-virtualized-spreadsheet-grid-design.md) — two-axis virtual extent, inline editing, common styles, merged ranges, and dimension resizing.
 - `../tools/docs/compatibility/office-feature-matrix.md` — evidence-based feature matrix and distinction between supported, partial, and unsupported behavior.
 - `../tools/docs/superpowers/specs/2026-09-27-xlsx-cell-editing-design.md` — session, dirty state, atomic save, and XLSX round-trip safety.
 - `../mysql-ai/AGENTS.md` — focused-file and Gio form guardrails.

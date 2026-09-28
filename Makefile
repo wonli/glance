@@ -36,6 +36,14 @@ endef
 
 # Generate binaries
 .PHONY: build darwin linux windows
+.PHONY: desktop run-desktop
+
+desktop:
+	mkdir -p $(BUILD_PATH)
+	go build -o $(BUILD_PATH)/glance-office ./cmd/desktop
+
+run-desktop:
+	go run ./cmd/desktop $(ARGS)
 
 darwin:
 	$(call go/build,darwin,arm64)
