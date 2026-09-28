@@ -52,6 +52,8 @@ type App struct {
 	selectedCell          string
 	selectedBlock         int
 	selectedBlockEditable bool
+	virtualGrid           *gridViewport
+	gridPointerTag        struct{}
 }
 
 func New(window *app.Window, initialPath string) *App {
@@ -125,7 +127,9 @@ func (a *App) open(path string) error {
 		a.path = path
 		a.pathEditor.SetText(path)
 		a.cellButtons = make(map[string]*widget.Clickable)
-		return a.loadSheet()
+		a.virtualGrid = newGridViewport()
+		a.status = fmt.Sprintf("工作表「%s」：虚拟网格就绪，可浏览并编辑完整 XLSX 地址范围", a.sheet)
+		return nil
 	case ".docx":
 		word, err := docx.Open(path)
 		if err != nil {
@@ -195,6 +199,12 @@ func (a *App) applyCellEdit() error {
 	}
 	if err := a.book.SetCellText(a.sheet, a.selectedCell, a.cellEditor.Text()); err != nil {
 		return err
+	}
+	if _, ok := a.book.(document.GridReader); ok {
+		if a.virtualGrid != nil {
+			a.virtualGrid.invalidateWindow()
+		}
+		return nil
 	}
 	return a.loadSheet()
 }

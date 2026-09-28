@@ -1,9 +1,14 @@
 package desktopui
 
 import (
+	"fmt"
+	"image"
 	"image/color"
 	"strconv"
 
+	"gioui.org/io/event"
+	"gioui.org/io/key"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -105,6 +110,12 @@ func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
+	if _, ok := a.book.(document.GridReader); ok {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Flexed(1, a.layoutVirtualGrid),
+			layout.Rigid(a.layoutSheetTabs),
+		)
+	}
 	if len(a.grid) == 0 {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(a.layoutSheetTabs),
@@ -130,6 +141,65 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 	)
 }
 
+func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
+	reader := a.book.(document.GridReader)
+	if a.virtualGrid == nil {
+		a.virtualGrid = newGridViewport()
+	}
+	v := a.virtualGrid
+	width, height := float64(gtx.Constraints.Max.X), float64(gtx.Constraints.Max.Y)
+	contentW, contentH := width-gridRowHeader, height-gridColumnHeader
+	visible := visibleCellWindow(v.Rows, v.Columns, v.X, v.Y, contentW, contentH)
+	previous := v.WindowRange
+	if err := v.ensureWindow(reader, a.sheet, visible); err != nil {
+		a.status = gridWindowError(a.sheet, err)
+	} else if previous != v.WindowRange {
+		start := xlsx.CellName(v.WindowRange.StartColumn, v.WindowRange.StartRow)
+		end := xlsx.CellName(v.WindowRange.EndColumn, v.WindowRange.EndRow)
+		a.status = fmt.Sprintf("工作表「%s」已读取 %s:%s（当前窗口）", a.sheet, start, end)
+	}
+	for {
+		e, ok := gtx.Event(pointer.Filter{Target: &v.PointerTag, Kinds: pointer.Press | pointer.Scroll, ScrollX: pointer.ScrollRange{Min: -1e9, Max: 1e9}, ScrollY: pointer.ScrollRange{Min: -1e9, Max: 1e9}})
+		if !ok {
+			break
+		}
+		pe, ok := e.(pointer.Event)
+		if !ok {
+			continue
+		}
+		switch pe.Kind {
+		case pointer.Scroll:
+			dx, dy := float64(pe.Scroll.X), float64(pe.Scroll.Y)
+			if pe.Modifiers.Contain(key.ModShift) {
+				dx += dy
+				dy = 0
+			}
+			v.scroll(-dx, -dy, contentW, contentH)
+			a.window.Invalidate()
+		case pointer.Press:
+			row, col, hit := cellAtPoint(v.Rows, v.Columns, v.X, v.Y, image.Pt(int(pe.Position.X), int(pe.Position.Y)), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
+			if hit {
+				row, col, _ = mergeAnchorAt(v.Window.Merges, row, col)
+				v.SelectedRow, v.SelectedColumn = row, col
+				a.selectedCell = xlsx.CellName(col, row)
+				cell := windowCell(v.Window, row, col)
+				a.cellEditor.SetText(cell.Value)
+			}
+		}
+	}
+	event.Op(gtx.Ops, &v.PointerTag)
+	pointer.PassOp{}.Push(gtx.Ops)
+	return paintVirtualGrid(gtx, a, v)
+}
+
+func windowCell(w document.SheetWindow, row, col int) document.Cell {
+	r, c := row-w.StartRow, col-w.StartColumn
+	if r < 0 || r >= len(w.Cells) || c < 0 || c >= len(w.Cells[r]) {
+		return document.Cell{}
+	}
+	return w.Cells[r][c]
+}
+
 func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 	return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		children := make([]layout.FlexChild, 0, len(a.sheets))
@@ -138,7 +208,11 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 			button := a.sheetButton(sheetName)
 			if button.Clicked(gtx) {
 				a.sheet = sheetName
-				if err := a.loadSheet(); err != nil {
+				if _, virtual := a.book.(document.GridReader); virtual {
+					if a.virtualGrid != nil {
+						a.virtualGrid.invalidateWindow()
+					}
+				} else if err := a.loadSheet(); err != nil {
 					a.status = err.Error()
 				}
 			}
