@@ -83,7 +83,7 @@ func TestCellEditorUsesRenderedStyleAndKeepsSingleCellGeometry(t *testing.T) {
 	cell := document.Cell{Style: document.CellStyle{FontColor: "#123456", FontFamily: "宋体", Bold: true, Italic: true, WrapText: true, HorizontalAlignment: "right"}}
 	style := paintStyle(cell.Style)
 	got := cellEditorStyle(theme, editor, cell.Style, style)
-	if got.Color != style.Font || got.Font.Typeface != font.Typeface("宋体") || got.Font.Weight != font.Bold || got.Font.Style != font.Italic {
+	if got.Color != style.Font || got.Font.Typeface != cellTypeface(style) || got.Font.Weight != font.Bold || got.Font.Style != font.Italic {
 		t.Fatalf("editor font style=%+v", got)
 	}
 	if editor.Alignment != text.End || editor.SingleLine || !editor.Submit {
@@ -99,6 +99,23 @@ func TestGridFontWeightsDistinguishBoldFromRegular(t *testing.T) {
 	bold := cellFontWeight(true)
 	if regular != font.Normal || bold != font.Bold || bold <= regular {
 		t.Fatalf("font weights regular=%d bold=%d; want %d < %d", regular, bold, font.Normal, font.Bold)
+	}
+}
+
+func TestCellTypefaceKeepsWorkbookFamilyAndAddsCJKFallbacks(t *testing.T) {
+	got := cellTypeface(gridPaintStyle{FontFamily: "微软雅黑"})
+	want := font.Typeface("微软雅黑, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif")
+	if got != want {
+		t.Fatalf("cell typeface=%q; want workbook family followed by CJK fallbacks %q", got, want)
+	}
+	if got := cellTypeface(gridPaintStyle{}); got != preferredSystemTypeface {
+		t.Fatalf("default cell typeface=%q; want platform CJK fallback list %q", got, preferredSystemTypeface)
+	}
+}
+
+func TestAppThemePrefersSystemCJKFonts(t *testing.T) {
+	if got := New(nil, "").theme.Face; got != preferredSystemTypeface {
+		t.Fatalf("theme typeface=%q; want preferred CJK fallback list %q", got, preferredSystemTypeface)
 	}
 }
 

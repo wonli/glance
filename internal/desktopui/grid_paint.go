@@ -200,7 +200,7 @@ func cellEditorStyle(theme *material.Theme, editor *widget.Editor, cellStyle doc
 	result := material.Editor(theme, editor, "")
 	result.TextSize = theme.TextSize * 14.0 / 16.0
 	result.Color = style.Font
-	result.Font.Typeface = font.Typeface(style.FontFamily)
+	result.Font.Typeface = cellTypeface(style)
 	if style.Bold {
 		result.Font.Weight = cellFontWeight(true)
 	}
@@ -280,7 +280,7 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	gtx.Constraints = layout.Constraints{Min: size, Max: size}
 	label := material.Body2(theme, cell.Value)
 	label.Color = style.Font
-	label.Font.Typeface = font.Typeface(style.FontFamily)
+	label.Font.Typeface = cellTypeface(style)
 	if style.Bold {
 		label.Font.Weight = cellFontWeight(true)
 	}
@@ -306,6 +306,13 @@ func cellFontWeight(bold bool) font.Weight {
 		return font.Bold
 	}
 	return font.Normal
+}
+
+func cellTypeface(style gridPaintStyle) font.Typeface {
+	if strings.TrimSpace(style.FontFamily) == "" {
+		return preferredSystemTypeface
+	}
+	return font.Typeface(style.FontFamily + ", " + string(preferredSystemTypeface))
 }
 
 func cellLayoutAlignment(horizontal, vertical string) layout.Direction {

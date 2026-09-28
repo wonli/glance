@@ -7,8 +7,10 @@ import (
 	"sync"
 
 	"gioui.org/app"
+	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -23,6 +25,8 @@ const (
 	maxPreviewRows    = 300
 	maxPreviewColumns = 16
 )
+
+const preferredSystemTypeface = font.Typeface("PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif")
 
 type App struct {
 	window *app.Window
@@ -86,6 +90,8 @@ func New(window *app.Window, initialPath string) *App {
 		openResults:     make(chan openResult, 1),
 		shutdown:        make(chan struct{}),
 	}
+	a.theme.Shaper = text.NewShaper()
+	a.theme.Face = preferredSystemTypeface
 	a.pathEditor.SingleLine = true
 	a.pathEditor.SetText(initialPath)
 	a.cellEditor.SingleLine = true
