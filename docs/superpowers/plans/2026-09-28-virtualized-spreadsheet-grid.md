@@ -83,8 +83,9 @@ Expected: commit created on `codex/virtualized-spreadsheet-grid`; no files remai
 **Interfaces:**
 - Keep `document.Spreadsheet` and its bounded legacy API intact for `.xls`.
 - Add `document.GridReader` with `Window(sheet string, startRow, startColumn, rowCount, columnCount int) (SheetWindow, error)`, `SetRowHeight(sheet string, row int, heightPoints float64) error`, and `SetColumnWidth(sheet string, column int, widthChars float64) error`.
-- Add `document.SheetWindow` with one-based `StartRow`/`StartColumn`, `Cells [][]Cell`, inclusive one-based intersecting `Merges []CellRange`, `RowHeightsPoints []float64`, and `ColumnWidthsChars []float64`.
+- Add `document.SheetWindow` with one-based `StartRow`/`StartColumn`, `Cells [][]Cell`, inclusive one-based intersecting `Merges []MergeRegion`, `RowHeightsPoints []float64`, and `ColumnWidthsChars []float64`.
 - Add `document.CellRange` with one-based inclusive `StartRow`, `StartColumn`, `EndRow`, `EndColumn`.
+- Add `document.MergeRegion` with `Range CellRange` and `Anchor Cell`, so a merge whose top-left cell is outside the visible window still has the value and style needed to paint its clipped visible portion.
 - Add neutral `document.CellStyle` fields for RGB `FillColor`/`FontColor` strings, bold, italic, font size, horizontal/vertical alignment, wrapping, and four neutral `CellBorder` values ordered top, right, bottom, left. Keep `StyleID` for existing code during migration.
 - `Window` rejects out-of-bounds and non-positive requests, returns exactly the requested rectangular window (including blank cells beyond the used range), includes only merge ranges intersecting that window, and returns the corresponding row/column file dimensions.
 - Map Excelize RGB/ARGB style colors to normalized `#RRGGBB`; unresolved theme/indexed/automatic colors return the neutral default instead of a guessed color.
