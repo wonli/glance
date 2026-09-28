@@ -105,6 +105,26 @@ func (c *Collection) Activate(id string) error {
 }
 
 func (c *Collection) Put(session Session) error {
+	return c.put(session, true)
+}
+
+func (c *Collection) Refresh(session Session) error { return c.put(session, false) }
+
+func (c *Collection) AddTab(tab Tab, format string) error {
+	return c.put(Session{Tab: tab, Format: format, Available: true}, true)
+}
+
+func (c *Collection) UpdateTabMeta(tab Tab) error {
+	for _, s := range c.tabs {
+		if s.Tab.ID == tab.ID {
+			s.Tab = tab
+			return c.persist()
+		}
+	}
+	return fmt.Errorf("workspace tab %q does not exist", tab.ID)
+}
+
+func (c *Collection) put(session Session, activate bool) error {
 	if session.Tab.ID == "" {
 		return errors.New("workspace session tab id is required")
 	}
@@ -124,10 +144,17 @@ func (c *Collection) Put(session Session) error {
 		session.Tab.Position = len(c.tabs)
 		c.tabs = append(c.tabs, &session)
 	}
-	if c.active == "" || c.active == RecentTabID {
+	oldActive := c.active
+	if activate {
 		c.active = session.Tab.ID
 	}
+	if session.Payload != nil {
+		if err := c.store.SaveDocument(Document{ID: session.Tab.DocumentID, Format: session.Format, Payload: session.Payload, ViewState: session.ViewState, Dirty: session.Dirty, UpdatedAt: session.UpdatedAt}); err != nil {
+			return err
+		}
+	}
 	if err := c.persist(); err != nil {
+		c.active = oldActive
 		return err
 	}
 	return nil
@@ -138,11 +165,27 @@ func (c *Collection) Update(id string, payload, viewState []byte, dirty bool) er
 	if !ok {
 		return fmt.Errorf("workspace tab %q does not exist", id)
 	}
-	s.Payload = append(s.Payload[:0], payload...)
-	s.ViewState = append(s.ViewState[:0], viewState...)
+	doc := Document{ID: s.Tab.DocumentID, Format: s.Format, Payload: append([]byte(nil), payload...), ViewState: append([]byte(nil), viewState...), Dirty: dirty, UpdatedAt: time.Now().UTC()}
+	if err := c.store.SaveDocument(doc); err != nil {
+		return err
+	}
+	s.Payload = doc.Payload
+	s.ViewState = doc.ViewState
 	s.Dirty = dirty
-	s.UpdatedAt = time.Now().UTC()
-	return c.persist()
+	s.UpdatedAt = doc.UpdatedAt
+	return nil
+}
+
+func (c *Collection) SaveViewState(id string, viewState []byte) error {
+	s, ok := c.Get(id)
+	if !ok {
+		return fmt.Errorf("workspace tab %q does not exist", id)
+	}
+	if err := c.store.SaveViewState(s.Tab.DocumentID, viewState); err != nil {
+		return err
+	}
+	s.ViewState = append(s.ViewState[:0], viewState...)
+	return nil
 }
 
 func (c *Collection) AddRecent(recent Recent) error {
@@ -160,6 +203,16 @@ func (c *Collection) AddRecent(recent Recent) error {
 	}
 	c.recents = append(c.recents, recent)
 	return c.persist()
+}
+
+func (c *Collection) RemoveRecent(path string) error {
+	for i, recent := range c.recents {
+		if recent.Path == path {
+			c.recents = append(c.recents[:i], c.recents[i+1:]...)
+			break
+		}
+	}
+	return c.store.DeleteRecent(path)
 }
 
 func (c *Collection) CloseTab(id string) error {
@@ -199,11 +252,6 @@ func (c *Collection) CloseTab(id string) error {
 }
 
 func (c *Collection) persist() error {
-	for _, s := range c.tabs {
-		if err := c.store.SaveDocument(Document{ID: s.Tab.DocumentID, Format: s.Format, Payload: s.Payload, ViewState: s.ViewState, Dirty: s.Dirty, UpdatedAt: s.UpdatedAt}); err != nil {
-			return err
-		}
-	}
 	w := Snapshot{ActiveTabID: c.active, Recents: c.recents, Tabs: make([]Tab, len(c.tabs))}
 	for i, s := range c.tabs {
 		s.Tab.Position = i

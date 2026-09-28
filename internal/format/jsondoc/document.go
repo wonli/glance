@@ -41,8 +41,10 @@ func OpenSnapshot(payload []byte) (*Document, error) {
 	return &Document{text: string(payload), dirty: true}, nil
 }
 
-func (d *Document) Text() string { d.mu.Lock(); defer d.mu.Unlock(); return d.text }
-func (d *Document) Dirty() bool  { d.mu.Lock(); defer d.mu.Unlock(); return d.dirty }
+func (d *Document) Text() string              { d.mu.Lock(); defer d.mu.Unlock(); return d.text }
+func (d *Document) Dirty() bool               { d.mu.Lock(); defer d.mu.Unlock(); return d.dirty }
+func (d *Document) SetSourcePath(path string) { d.mu.Lock(); defer d.mu.Unlock(); d.path = path }
+func (d *Document) SetDirty(dirty bool)       { d.mu.Lock(); defer d.mu.Unlock(); d.dirty = dirty }
 
 func (d *Document) SetText(value string) error {
 	d.mu.Lock()

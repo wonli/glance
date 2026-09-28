@@ -12,7 +12,29 @@ func chooseOfficeFile() (string, error) {
 	if _, err := exec.LookPath("zenity"); err != nil {
 		return "", fmt.Errorf("请安装 zenity，或在路径框中输入文档路径")
 	}
-	output, err := exec.Command("zenity", "--file-selection", "--file-filter=Office documents | *.xlsx *.docx").Output()
+	output, err := exec.Command("zenity", "--file-selection", "--file-filter=Office/JSON | *.xlsx *.xls *.docx *.json").Output()
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func chooseOfficeFolder() (string, error) {
+	output, err := exec.Command("zenity", "--file-selection", "--directory").Output()
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func chooseSavePath(ext string) (string, error) {
+	output, err := exec.Command("zenity", "--file-selection", "--save", "--confirm-overwrite", "--filename=未命名."+ext, "--file-filter=Document | *."+ext).Output()
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return "", nil

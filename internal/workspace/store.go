@@ -257,3 +257,22 @@ func (s *Store) DeleteDocument(id string) error {
 	_, err := s.db.Exec(`DELETE FROM documents WHERE id=?`, id)
 	return err
 }
+
+func (s *Store) SaveViewState(id string, state []byte) error {
+	if state == nil {
+		state = []byte{}
+	}
+	result, err := s.db.Exec(`UPDATE documents SET view_state=? WHERE id=?`, state, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return fmt.Errorf("workspace document %q does not exist", id)
+	}
+	return nil
+}
+
+func (s *Store) DeleteRecent(path string) error {
+	_, err := s.db.Exec(`DELETE FROM recents WHERE path=?`, path)
+	return err
+}

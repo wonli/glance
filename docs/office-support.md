@@ -1,10 +1,27 @@
 # Office Preview and Editing Status
 
-This status describes the current desktop implementation. A dependency's advertised feature set is not counted as an application feature until the UI and round-trip path are wired and verified.
+This status describes the current desktop implementation. A dependency's advertised feature set is not counted as an application feature until the UI and round-trip path are wired and verified. Multi-document workspace behavior is documented below; a feature's workspace persistence does not imply stronger Office format fidelity.
 
 ## Current desktop command
 
-Run `go run ./cmd/desktop [path]` from the repository root. Gio renders the window directly. The toolbar accepts a path or opens the platform file picker.
+Run `go run ./cmd/desktop [path]` from the repository root. Gio renders the window directly. Use the `+` tab menu to open a file or folder, create a draft, or save/Save As.
+
+## Workspace
+
+| Feature | Status | Current boundary |
+|---|---|---|
+| Permanent Recent tab and document tabs | Implemented | Gio-native horizontal `widget.List` at the top edge of the full-height content area; tab title and close control share one tab surface, and `+` follows the final tab. Tabs retain their `documentSessionState` including editor and scroll widgets while inactive. Dirty tabs cannot be closed until saved. |
+| Recent files and shallow folder listing | Implemented, basic | Local paths and supported direct children are saved to SQLite; missing recent files can be removed. Folder scan is non-recursive. |
+| Drafts and Save As | Implemented, basic | Blank XLSX/DOCX/JSON drafts are recoverable. Save As validates `.xlsx`, `.docx`, or `.json`; cancellation leaves the draft intact. |
+| Restart recovery | Implemented, basic | SQLite stores self-contained adapter snapshots, dirty state, tab order/active tab, and view state. Missing original paths keep the snapshot and show an unavailable-source status. Gio does not expose a cancellable pre-close event, so closing the window cannot prompt before OS shutdown. |
+
+Workspace snapshot serialization and SQLite writes run through a single background writer so Gio frame layout stays responsive. The writer drains queued snapshots on shutdown. Snapshot serialization is performed by the format adapter and still needs continued stress testing with large workbooks and concurrent editing.
+
+## JSON
+
+| Feature | Status | Current boundary |
+|---|---|---|
+| Open and edit JSON text | Implemented, basic | Text editor preserves invalid intermediate text in recovery snapshots; Save/Save As rejects invalid JSON and preserves dirty state. No tree view or formatting controls. |
 
 ## XLSX
 

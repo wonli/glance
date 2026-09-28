@@ -1,0 +1,445 @@
+package desktopui
+
+import (
+	"fmt"
+	"image"
+	"image/color"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
+	"gioui.org/unit"
+	"gioui.org/widget"
+	"gioui.org/widget/material"
+
+	"glance/internal/format/docx"
+	"glance/internal/format/jsondoc"
+	"glance/internal/format/xlsx"
+	"glance/internal/workspace"
+)
+
+func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(40)), gtx.Dp(unit.Dp(40))
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			return fill(gtx, color.NRGBA{R: 239, G: 242, B: 246, A: 255})
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 202, G: 208, B: 216, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
+			return material.List(a.theme, &a.workspaceTabsList).Layout(gtx, len(a.tabMeta)+2, func(gtx layout.Context, index int) layout.Dimensions {
+				if index == 0 {
+					return a.layoutRecentTab(gtx)
+				}
+				if index == len(a.tabMeta)+1 {
+					return a.layoutPlusTab(gtx)
+				}
+				return a.layoutDocumentTab(gtx, index-1)
+			})
+		},
+	)
+}
+
+func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
+	if a.recentTabButton.Clicked(gtx) {
+		a.persistActiveSession()
+		a.activateRecent()
+	}
+	return a.paintTab(gtx, &a.recentTabButton, "⌂  最近", a.activeTabID == workspace.RecentTabID)
+}
+
+func (a *App) layoutPlusTab(gtx layout.Context) layout.Dimensions {
+	if a.newButton.Clicked(gtx) {
+		a.showNewMenu = !a.showNewMenu
+	}
+	return a.paintTab(gtx, &a.newButton, "+", false)
+}
+
+func (a *App) layoutDocumentTab(gtx layout.Context, index int) layout.Dimensions {
+	ids := make([]string, 0, len(a.tabMeta))
+	for id := range a.tabMeta {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return a.tabMeta[ids[i]].Position < a.tabMeta[ids[j]].Position })
+	if index >= len(ids) {
+		return layout.Dimensions{}
+	}
+	id := ids[index]
+	meta := a.tabMeta[id]
+	if a.tabButtons[id] == nil {
+		a.tabButtons[id] = new(widget.Clickable)
+	}
+	if a.tabCloseButtons[id] == nil {
+		a.tabCloseButtons[id] = new(widget.Clickable)
+	}
+	if a.tabButtons[id].Clicked(gtx) {
+		a.persistActiveSession()
+		if state := a.sessions[id]; state != nil {
+			a.activateSession(id, state)
+		}
+	}
+	if a.tabCloseButtons[id].Clicked(gtx) {
+		a.closeWorkspaceTab(id)
+	}
+	label := meta.Title
+	if state := a.sessions[id]; state != nil && state.book != nil && state.book.Dirty() || state != nil && state.word != nil && state.word.Dirty() || state != nil && state.jsonDoc != nil && state.jsonDoc.Dirty() {
+		label += " •"
+	}
+	return layout.Inset{Top: unit.Dp(2), Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return a.paintDocumentTab(gtx, a.tabButtons[id], a.tabCloseButtons[id], label, id == a.activeTabID)
+	})
+}
+
+func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable, label string, active bool) layout.Dimensions {
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(36)), gtx.Dp(unit.Dp(36))
+	runes := []rune(label)
+	if len(runes) > 24 {
+		label = string(runes[:21]) + "…"
+	}
+	child := op.Record(gtx.Ops)
+	dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return tab.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					style := material.Body2(a.theme, label)
+					style.Color = color.NRGBA{R: 52, G: 57, B: 65, A: 255}
+					return layout.Center.Layout(gtx, style.Layout)
+				})
+			})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return close.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(5), Right: unit.Dp(9)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					style := material.Body2(a.theme, "×")
+					style.Color = color.NRGBA{R: 91, G: 101, B: 116, A: 255}
+					return layout.Center.Layout(gtx, style.Layout)
+				})
+			})
+		}),
+	)
+	dims.Size.Y = gtx.Constraints.Max.Y
+	call := child.Stop()
+	bg := color.NRGBA{R: 234, G: 237, B: 241, A: 255}
+	if active {
+		bg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	}
+	paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(7)), NE: gtx.Dp(unit.Dp(7))}.Op(gtx.Ops))
+	call.Add(gtx.Ops)
+	return dims
+}
+
+func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label string, active bool) layout.Dimensions {
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(36)), gtx.Dp(unit.Dp(36))
+		runes := []rune(label)
+		if len(runes) > 24 {
+			label = string(runes[:21]) + "…"
+		}
+		child := op.Record(gtx.Ops)
+		dims := layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			style := material.Body2(a.theme, label)
+			style.Color = color.NRGBA{R: 52, G: 57, B: 65, A: 255}
+			return layout.Center.Layout(gtx, style.Layout)
+		})
+		dims.Size.Y = gtx.Constraints.Max.Y
+		call := child.Stop()
+		bg := color.NRGBA{R: 234, G: 237, B: 241, A: 255}
+		if active {
+			bg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		}
+		paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(7)), NE: gtx.Dp(unit.Dp(7))}.Op(gtx.Ops))
+		call.Add(gtx.Ops)
+		return dims
+	})
+}
+
+func (a *App) activateRecent() {
+	a.persistActiveSession()
+	a.activeTabID = workspace.RecentTabID
+	if a.collection != nil {
+		_ = a.collection.Activate(workspace.RecentTabID)
+	}
+	a.documentSessionState = newDocumentSessionState("")
+	a.status = "最近打开的本地文档"
+}
+
+func (a *App) closeWorkspaceTab(id string) {
+	state := a.sessions[id]
+	if state == nil {
+		return
+	}
+	if (state.book != nil && state.book.Dirty()) || (state.word != nil && state.word.Dirty()) || (state.jsonDoc != nil && state.jsonDoc.Dirty()) {
+		a.status = "该标签有未保存更改；请先保存后再关闭"
+		return
+	}
+	wasActive := a.activeTabID == id
+	if a.collection != nil {
+		if _, persisted := a.collection.Get(id); persisted {
+			if err := a.collection.CloseTab(id); err != nil {
+				a.status = err.Error()
+				return
+			}
+		}
+	}
+	closeSessionState(state)
+	delete(a.sessions, id)
+	delete(a.tabMeta, id)
+	delete(a.tabButtons, id)
+	delete(a.tabCloseButtons, id)
+	if wasActive {
+		next := workspace.RecentTabID
+		if a.collection != nil {
+			next = a.collection.ActiveTabID()
+		}
+		if s := a.sessions[next]; s != nil {
+			a.activateSession(next, s)
+		} else {
+			a.activateRecent()
+		}
+	}
+}
+
+func closeSessionState(s *documentSessionState) {
+	if s.book != nil {
+		_ = s.book.Close()
+	}
+	if s.word != nil {
+		_ = s.word.Close()
+	}
+	if s.jsonDoc != nil {
+		_ = s.jsonDoc.Close()
+	}
+}
+
+func (a *App) closeWorkspace() {
+	a.persistActiveSession()
+	if a.workspaceWriteJobs != nil {
+		close(a.workspaceWriteJobs)
+		<-a.workspaceWriterDone
+	}
+	seen := map[*documentSessionState]bool{}
+	for _, state := range a.sessions {
+		if state != nil && !seen[state] {
+			closeSessionState(state)
+			seen[state] = true
+		}
+	}
+	if a.documentSessionState != nil && !seen[a.documentSessionState] {
+		closeSessionState(a.documentSessionState)
+	}
+	if a.workspaceStore != nil {
+		_ = a.workspaceStore.Close()
+	}
+}
+
+func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
+	children := []layout.FlexChild{layout.Rigid(func(gtx layout.Context) layout.Dimensions { return material.H6(a.theme, "最近打开").Layout(gtx) })}
+	if a.workspaceError != "" {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return material.Body2(a.theme, "工作区恢复失败："+a.workspaceError).Layout(gtx)
+		}))
+	}
+	var recents []workspace.Recent
+	if a.collection != nil {
+		recents = a.collection.Recents()
+	}
+	if len(recents) == 0 {
+		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return material.Body1(a.theme, "选择 + 打开文件，或新建 Excel / Word / JSON 文档").Layout(gtx)
+			})
+		}))
+	} else {
+		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return material.List(a.theme, &a.recentList).Layout(gtx, len(recents), func(gtx layout.Context, i int) layout.Dimensions {
+				item := recents[i]
+				button := a.recentButtons[item.Path]
+				if button == nil {
+					button = new(widget.Clickable)
+					a.recentButtons[item.Path] = button
+				}
+				_, statErr := os.Stat(item.Path)
+				if button.Clicked(gtx) && statErr == nil {
+					a.startOpen(item.Path)
+				}
+				return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					label := filepath.Base(item.Path) + "   " + item.Path
+					if statErr != nil {
+						label += "（不可用）"
+					}
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							style := material.Button(a.theme, button, label)
+							if statErr != nil {
+								style.Background = color.NRGBA{R: 180, G: 184, B: 192, A: 255}
+							}
+							return style.Layout(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							remove := a.recentRemoveButtons[item.Path]
+							if remove == nil {
+								remove = new(widget.Clickable)
+								a.recentRemoveButtons[item.Path] = remove
+							}
+							if remove.Clicked(gtx) && statErr != nil {
+								if err := a.collection.RemoveRecent(item.Path); err != nil {
+									a.status = err.Error()
+								}
+								delete(a.recentButtons, item.Path)
+								delete(a.recentRemoveButtons, item.Path)
+							}
+							if statErr != nil {
+								return material.Button(a.theme, remove, "移除").Layout(gtx)
+							}
+							return layout.Dimensions{}
+						}),
+					)
+				})
+			})
+		}))
+	}
+	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceAround}.Layout(gtx, children...)
+}
+
+func (a *App) layoutCreateActions(gtx layout.Context) layout.Dimensions {
+	if a.actionOpenFile.Clicked(gtx) {
+		a.showNewMenu = false
+		path, err := chooseOfficeFile()
+		if err != nil {
+			a.status = err.Error()
+		} else if path != "" {
+			a.startOpen(path)
+		}
+	}
+	if a.actionOpenFolder.Clicked(gtx) {
+		a.showNewMenu = false
+		path, err := chooseOfficeFolder()
+		if err != nil {
+			a.status = err.Error()
+		} else if path != "" {
+			a.openFolder(path)
+		}
+	}
+	if a.actionSave.Clicked(gtx) && !a.saving && a.isDirty() {
+		a.showNewMenu = false
+		if a.path != "" {
+			a.startSave()
+		} else {
+			a.saveAsFromMenu()
+		}
+	}
+	if a.actionSaveAs.Clicked(gtx) && !a.saving && a.hasActiveDocument() {
+		a.showNewMenu = false
+		a.saveAsFromMenu()
+	}
+	if a.actionNewXLSX.Clicked(gtx) {
+		a.showNewMenu = false
+		book := xlsx.NewBlank()
+		_ = a.installDocument(loadedDocument{book: book, sheets: book.SheetNames()})
+	}
+	if a.actionNewDOCX.Clicked(gtx) {
+		a.showNewMenu = false
+		word, err := docx.NewBlank()
+		if err != nil {
+			a.status = err.Error()
+		} else {
+			_ = a.installDocument(loadedDocument{word: word})
+		}
+	}
+	if a.actionNewJSON.Clicked(gtx) {
+		a.showNewMenu = false
+		_ = a.installDocument(loadedDocument{jsonDoc: jsondoc.NewBlank()})
+	}
+	buttons := a.createActionItems()
+	children := make([]layout.FlexChild, 0, len(buttons))
+	for _, item := range buttons {
+		it := item
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return material.Button(a.theme, it.click, it.label).Layout(gtx)
+			})
+		}))
+	}
+	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+}
+
+type createActionItem struct {
+	click *widget.Clickable
+	label string
+}
+
+func (a *App) createActionItems() []createActionItem {
+	buttons := []createActionItem{{&a.actionOpenFile, "打开文件…"}, {&a.actionOpenFolder, "打开文件夹…"}, {&a.actionNewXLSX, "新建 Excel"}, {&a.actionNewDOCX, "新建 Word"}, {&a.actionNewJSON, "新建 JSON"}}
+	if a.hasActiveDocument() {
+		if a.isDirty() {
+			label := "保存"
+			if a.path == "" {
+				label = "保存…"
+			}
+			buttons = append(buttons, createActionItem{&a.actionSave, label})
+		}
+		buttons = append(buttons, createActionItem{&a.actionSaveAs, "另存为…"})
+	}
+	return buttons
+}
+
+func (a *App) createActionLabels() []string {
+	items := a.createActionItems()
+	labels := make([]string, len(items))
+	for i, item := range items {
+		labels[i] = item.label
+	}
+	return labels
+}
+
+func (a *App) hasActiveDocument() bool {
+	return a.book != nil || a.word != nil || a.jsonDoc != nil
+}
+
+func (a *App) saveAsFromMenu() {
+	a.saveAsWith(chooseSavePath)
+}
+
+func (a *App) saveAsWith(choose func(string) (string, error)) {
+	ext := "xlsx"
+	if a.word != nil {
+		ext = "docx"
+	}
+	if a.jsonDoc != nil {
+		ext = "json"
+	}
+	path, err := choose(ext)
+	if err != nil {
+		a.status = err.Error()
+	} else if path != "" {
+		a.startSaveAs(path)
+	}
+}
+
+func (a *App) openFolder(path string) {
+	if a.collection == nil {
+		a.status = "工作区数据库不可用，无法记录文件夹内容"
+		return
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		a.status = err.Error()
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext != ".xlsx" && ext != ".xls" && ext != ".docx" && ext != ".json" {
+			continue
+		}
+		full := filepath.Join(path, entry.Name())
+		_ = a.collection.AddRecent(workspace.Recent{Path: full, Kind: strings.TrimPrefix(ext, ".")})
+	}
+	a.status = fmt.Sprintf("已添加文件夹 %s 中的文档", path)
+}

@@ -133,6 +133,9 @@ func (d *Document) Snapshot() ([]byte, error) {
 	return d.packageBytes()
 }
 
+func (d *Document) SetSourcePath(path string) { d.mu.Lock(); defer d.mu.Unlock(); d.path = path }
+func (d *Document) SetDirty(dirty bool)       { d.mu.Lock(); defer d.mu.Unlock(); d.dirty = dirty }
+
 func (d *Document) packageBytes() ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -249,6 +252,20 @@ func (d *Document) SaveAs(path string) error {
 		return err
 	}
 	return d.saveAs(path)
+}
+
+// SaveAsDocument writes and adopts a new source path for subsequent Save calls.
+func (d *Document) SaveAsDocument(path string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	if err := d.saveAs(path); err != nil {
+		return err
+	}
+	d.path, d.dirty = path, false
+	return nil
 }
 
 func (d *Document) saveAs(path string) error {

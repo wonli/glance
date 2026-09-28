@@ -107,3 +107,37 @@ func TestCollectionPersistsActiveTabAndViewStateOnRestart(t *testing.T) {
 		t.Fatalf("restored session=%+v found=%v", doc, ok)
 	}
 }
+
+func TestRemoveRecentPersists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := OpenCollection(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.AddRecent(Recent{Path: "/tmp/missing.xlsx", Kind: "xlsx"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RemoveRecent("/tmp/missing.xlsx"); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Recents()) != 0 {
+		t.Fatalf("recent entries remain: %+v", c.Recents())
+	}
+	_ = s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	w, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.Recents) != 0 {
+		t.Fatalf("recent entries restored: %+v", w.Recents)
+	}
+}

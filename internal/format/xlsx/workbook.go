@@ -77,6 +77,9 @@ func (w *Workbook) Snapshot() ([]byte, error) {
 	return append([]byte(nil), buf.Bytes()...), nil
 }
 
+func (w *Workbook) SetSourcePath(path string) { w.mu.Lock(); defer w.mu.Unlock(); w.path = path }
+func (w *Workbook) SetDirty(dirty bool)       { w.mu.Lock(); defer w.mu.Unlock(); w.dirty = dirty }
+
 func (w *Workbook) SheetNames() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -493,6 +496,20 @@ func (w *Workbook) SaveAs(path string) error {
 		return err
 	}
 	return w.saveTo(path)
+}
+
+// SaveAsDocument writes and adopts a new source path for Save operations that follow.
+func (w *Workbook) SaveAsDocument(path string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return err
+	}
+	if err := w.saveTo(path); err != nil {
+		return err
+	}
+	w.path, w.dirty = path, false
+	return nil
 }
 
 func (w *Workbook) saveTo(path string) error {

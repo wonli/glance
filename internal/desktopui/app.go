@@ -17,8 +17,10 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
+	"glance/internal/format/jsondoc"
 	legacyxls "glance/internal/format/xls"
 	"glance/internal/format/xlsx"
+	"glance/internal/workspace"
 )
 
 const (
@@ -29,78 +31,77 @@ const (
 const preferredSystemTypeface = font.Typeface("PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif")
 
 type App struct {
+	*documentSessionState
 	window *app.Window
 	ops    op.Ops
 	theme  *material.Theme
 
-	pathEditor     widget.Editor
-	cellEditor     widget.Editor
-	formulaEditor  widget.Editor
-	nameBox        widget.Editor
-	wordEditor     widget.Editor
-	openButton     widget.Clickable
-	chooseButton   widget.Clickable
-	saveButton     widget.Clickable
-	applyButton    widget.Clickable
-	goToCellButton widget.Clickable
+	actionOpenFile   widget.Clickable
+	actionOpenFolder widget.Clickable
+	actionSave       widget.Clickable
+	actionSaveAs     widget.Clickable
+	actionNewXLSX    widget.Clickable
+	actionNewDOCX    widget.Clickable
+	actionNewJSON    widget.Clickable
+	applyButton      widget.Clickable
+	goToCellButton   widget.Clickable
 
-	path          string
-	status        string
-	book          document.Spreadsheet
-	word          *docx.Document
-	sheets        []string
-	sheet         string
-	grid          [][]document.Cell
-	gridList      widget.List
-	wordListState widget.List
-
-	cellButtons                   map[string]*widget.Clickable
-	sheetButtons                  map[string]*widget.Clickable
-	blockButtons                  map[int]*widget.Clickable
-	selectedCell                  string
-	selectedBlock                 int
-	selectedBlockEditable         bool
-	cellEdit                      cellEditState
-	lastGridWidth, lastGridHeight float64
-	virtualGrid                   *gridViewport
-	gridLoadResults               chan gridLoadResult
-	saveResults                   chan saveResult
-	openResults                   chan openResult
-	saving                        bool
-	opening                       bool
-	documentGeneration            uint64
-	shutdown                      chan struct{}
-	shutdownOnce                  sync.Once
+	status                string
+	collection            *workspace.Collection
+	workspaceStore        *workspace.Store
+	sessions              map[string]*documentSessionState
+	tabMeta               map[string]workspace.Tab
+	activeTabID           string
+	workspaceError        string
+	tabButtons            map[string]*widget.Clickable
+	tabCloseButtons       map[string]*widget.Clickable
+	newButton             widget.Clickable
+	recentTabButton       widget.Clickable
+	workspaceTabsList     widget.List
+	showNewMenu           bool
+	recentButtons         map[string]*widget.Clickable
+	recentRemoveButtons   map[string]*widget.Clickable
+	recentList            widget.List
+	workspaceWriteJobs    chan workspaceWriteJob
+	workspaceWriteResults chan error
+	workspaceWriterDone   chan struct{}
+	gridLoadResults       chan gridLoadResult
+	saveResults           chan saveResult
+	openResults           chan openResult
+	saving                bool
+	opening               bool
+	documentGeneration    uint64
+	shutdown              chan struct{}
+	shutdownOnce          sync.Once
 }
 
 func New(window *app.Window, initialPath string) *App {
 	a := &App{
-		window:          window,
-		theme:           material.NewTheme(),
-		path:            initialPath,
-		status:          "打开一个 .xlsx 或 .docx 文件开始预览",
-		gridList:        widget.List{List: layout.List{Axis: layout.Vertical}},
-		wordListState:   widget.List{List: layout.List{Axis: layout.Vertical}},
-		cellButtons:     make(map[string]*widget.Clickable),
-		sheetButtons:    make(map[string]*widget.Clickable),
-		blockButtons:    make(map[int]*widget.Clickable),
-		selectedBlock:   -1,
-		gridLoadResults: make(chan gridLoadResult, 8),
-		saveResults:     make(chan saveResult, 1),
-		openResults:     make(chan openResult, 1),
-		shutdown:        make(chan struct{}),
+		window:               window,
+		theme:                material.NewTheme(),
+		documentSessionState: newDocumentSessionState(initialPath),
+		status:               "打开一个 .xlsx 或 .docx 文件开始预览",
+		gridLoadResults:      make(chan gridLoadResult, 8),
+		saveResults:          make(chan saveResult, 1),
+		openResults:          make(chan openResult, 1),
+		shutdown:             make(chan struct{}),
+		sessions:             make(map[string]*documentSessionState),
+		tabMeta:              make(map[string]workspace.Tab),
+		tabButtons:           make(map[string]*widget.Clickable),
+		tabCloseButtons:      make(map[string]*widget.Clickable),
+		recentButtons:        make(map[string]*widget.Clickable),
+		recentRemoveButtons:  make(map[string]*widget.Clickable),
+		workspaceTabsList:    widget.List{List: layout.List{Axis: layout.Horizontal}},
+		recentList:           widget.List{List: layout.List{Axis: layout.Vertical}},
+	}
+	if window != nil {
+		a.initializeWorkspace()
+		if a.workspaceStore != nil {
+			a.startWorkspaceWriter()
+		}
 	}
 	a.theme.Shaper = text.NewShaper()
 	a.theme.Face = preferredSystemTypeface
-	a.pathEditor.SingleLine = true
-	a.pathEditor.SetText(initialPath)
-	a.cellEditor.SingleLine = true
-	a.cellEditor.Submit = true
-	a.formulaEditor.SingleLine = true
-	a.formulaEditor.Submit = true
-	a.nameBox.SingleLine = true
-	a.nameBox.Submit = true
-	a.wordEditor.SingleLine = true
 	return a
 }
 
@@ -122,7 +123,7 @@ func Run(initialPath string) {
 		switch e := e.(type) {
 		case app.DestroyEvent:
 			a.shutdownOnce.Do(func() { close(a.shutdown) })
-			_ = a.closeDocument()
+			a.closeWorkspace()
 			return
 		case app.FrameEvent:
 			gtx := app.NewContext(&a.ops, e)
@@ -133,9 +134,6 @@ func Run(initialPath string) {
 }
 
 func (a *App) open(path string) error {
-	if a.isDirty() {
-		return fmt.Errorf("当前文件有未保存的修改，请先保存再打开其他文件")
-	}
 	if a.saving {
 		return fmt.Errorf("正在保存当前文件，请稍后再打开")
 	}
@@ -147,10 +145,11 @@ func (a *App) open(path string) error {
 }
 
 type loadedDocument struct {
-	path   string
-	book   document.Spreadsheet
-	word   *docx.Document
-	sheets []string
+	path    string
+	book    document.Spreadsheet
+	word    *docx.Document
+	jsonDoc *jsondoc.Document
+	sheets  []string
 }
 type openResult struct {
 	loaded loadedDocument
@@ -177,6 +176,12 @@ func loadDocument(path string) (loadedDocument, error) {
 			return loadedDocument{}, err
 		}
 		return loadedDocument{path: path, word: word}, nil
+	case ".json":
+		jsonDocument, err := jsondoc.Open(path)
+		if err != nil {
+			return loadedDocument{}, err
+		}
+		return loadedDocument{path: path, jsonDoc: jsonDocument}, nil
 	case ".xls":
 		book, err := legacyxls.Open(path)
 		if err != nil {
@@ -189,23 +194,79 @@ func loadDocument(path string) (loadedDocument, error) {
 		}
 		return loadedDocument{path: path, book: book, sheets: sheets}, nil
 	default:
-		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx 和 .docx", filepath.Ext(path))
+		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx、.docx 和 .json", filepath.Ext(path))
 	}
 }
 
 func (a *App) installDocument(loaded loadedDocument) error {
-	if err := a.closeDocument(); err != nil {
-		if loaded.book != nil {
-			_ = loaded.book.Close()
+	a.documentGeneration++
+	for id, meta := range a.tabMeta {
+		if loaded.path != "" && meta.SourcePath == loaded.path {
+			if state := a.sessions[id]; state != nil {
+				closeLoadedDocument(loaded)
+				a.activateSession(id, state)
+				return nil
+			}
 		}
-		if loaded.word != nil {
-			_ = loaded.word.Close()
-		}
-		return err
 	}
+	if a.activeTabID != "" && a.documentSessionState != nil {
+		a.sessions[a.activeTabID] = a.documentSessionState
+	}
+	state := newDocumentSessionState(loaded.path)
+	a.documentSessionState = state
 	a.book, a.word, a.sheets = loaded.book, loaded.word, loaded.sheets
+	a.jsonDoc = loaded.jsonDoc
+	a.documentSessionState.jsonDoc = loaded.jsonDoc
 	a.path = loaded.path
-	a.pathEditor.SetText(loaded.path)
+	if loaded.book != nil && len(loaded.sheets) > 0 {
+		a.sheet = loaded.sheets[0]
+	}
+	if loaded.book != nil {
+		a.cellButtons = make(map[string]*widget.Clickable)
+		a.sheetButtons = make(map[string]*widget.Clickable)
+	}
+	if loaded.word != nil {
+		a.blockButtons = make(map[int]*widget.Clickable)
+		a.selectedBlock = -1
+	}
+	id := workspaceSessionID(loaded.path)
+	kind := "document"
+	if loaded.path == "" {
+		kind = "draft"
+	}
+	format := strings.TrimPrefix(strings.ToLower(filepath.Ext(loaded.path)), ".")
+	if format == "" {
+		switch {
+		case loaded.book != nil:
+			format = "xlsx"
+		case loaded.word != nil:
+			format = "docx"
+		case loaded.jsonDoc != nil:
+			format = "json"
+		}
+	}
+	if loaded.path == "" {
+		id = newDraftSessionID(format)
+	}
+	title := filepath.Base(loaded.path)
+	if loaded.path == "" {
+		title = "新建文档"
+	}
+	meta := workspace.Tab{ID: id, Kind: kind, Title: title, DocumentID: id, SourcePath: loaded.path, Position: len(a.tabMeta)}
+	a.activeTabID = id
+	a.tabMeta[id] = meta
+	a.sessions[id] = state
+	if a.collection != nil {
+		if format != "xls" {
+			if err := a.collection.AddTab(meta, format); err != nil {
+				return err
+			}
+			if loaded.path != "" {
+				_ = a.collection.AddRecent(workspace.Recent{Path: loaded.path, Kind: format})
+			}
+			a.persistActiveSession()
+		}
+	}
 	if loaded.book != nil {
 		a.sheet = loaded.sheets[0]
 		a.cellButtons = make(map[string]*widget.Clickable)
@@ -227,16 +288,28 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	}
 	a.blockButtons = make(map[int]*widget.Clickable)
 	a.selectedBlock = -1
-	a.status = fmt.Sprintf("已打开 %s；读取 %d 个内容块", loaded.path, len(a.word.Blocks()))
+	if loaded.word != nil {
+		a.status = fmt.Sprintf("已打开 %s；读取 %d 个内容块", loaded.path, len(a.word.Blocks()))
+	} else if loaded.jsonDoc != nil {
+		a.status = "已打开 JSON 文本"
+	}
 	return nil
+}
+
+func closeLoadedDocument(loaded loadedDocument) {
+	if loaded.book != nil {
+		_ = loaded.book.Close()
+	}
+	if loaded.word != nil {
+		_ = loaded.word.Close()
+	}
+	if loaded.jsonDoc != nil {
+		_ = loaded.jsonDoc.Close()
+	}
 }
 
 func (a *App) startOpen(path string) {
 	if a.opening || a.saving {
-		return
-	}
-	if a.isDirty() {
-		a.status = "当前文件有未保存的修改，请先保存再打开其他文件"
 		return
 	}
 	a.opening = true
@@ -269,15 +342,17 @@ func (a *App) startOpen(path string) {
 }
 
 type saveResult struct {
-	path string
-	err  error
+	path   string
+	tabID  string
+	saveAs bool
+	err    error
 }
 
 func (a *App) startSave() {
 	if a.saving || !a.isDirty() {
 		return
 	}
-	book, word, path := a.book, a.word, a.path
+	book, word, jsonDocument, path, tabID := a.book, a.word, a.jsonDoc, a.path, a.activeTabID
 	a.saving = true
 	go func() {
 		var err error
@@ -285,13 +360,67 @@ func (a *App) startSave() {
 			err = book.Save()
 		} else if word != nil {
 			err = word.Save()
+		} else if jsonDocument != nil {
+			err = jsonDocument.Save()
 		}
 		select {
-		case a.saveResults <- saveResult{path: path, err: err}:
+		case a.saveResults <- saveResult{path: path, tabID: tabID, err: err}:
 			a.window.Invalidate()
 		case <-a.shutdown:
 		}
 	}()
+}
+
+func (a *App) startSaveAs(path string) {
+	if a.saving {
+		return
+	}
+	format := "xlsx"
+	if a.word != nil {
+		format = "docx"
+	}
+	if a.jsonDoc != nil {
+		format = "json"
+	}
+	if err := validateSaveAsExtension(format, path); err != nil {
+		a.status = err.Error()
+		return
+	}
+	book, word, jsonDocument, tabID := a.book, a.word, a.jsonDoc, a.activeTabID
+	a.saving = true
+	go func() {
+		var err error
+		switch {
+		case book != nil:
+			if saver, ok := book.(interface{ SaveAsDocument(string) error }); ok {
+				err = saver.SaveAsDocument(path)
+			} else {
+				err = fmt.Errorf("当前表格格式不支持另存为")
+			}
+		case word != nil:
+			err = word.SaveAsDocument(path)
+		case jsonDocument != nil:
+			err = jsonDocument.SaveAs(path)
+		default:
+			err = fmt.Errorf("没有活动文档")
+		}
+		select {
+		case a.saveResults <- saveResult{path: path, tabID: tabID, saveAs: true, err: err}:
+			a.window.Invalidate()
+		case <-a.shutdown:
+		}
+	}()
+}
+
+func validateSaveAsExtension(format, path string) error {
+	want := map[string]string{"xlsx": ".xlsx", "docx": ".docx", "json": ".json"}[format]
+	if want == "" {
+		return fmt.Errorf("不支持 %s 格式另存为", format)
+	}
+	if !strings.EqualFold(filepath.Ext(path), want) {
+		return fmt.Errorf("另存为扩展名必须是 %s", want)
+	}
+	return nil
 }
 
 func (a *App) loadSheet() error {
@@ -335,7 +464,11 @@ func (a *App) applyCellEdit() error {
 		}
 		return nil
 	}
-	return a.loadSheet()
+	if err := a.loadSheet(); err != nil {
+		return err
+	}
+	a.persistActiveSession()
+	return nil
 }
 
 func (a *App) commitGridCell(value string) error {
@@ -359,6 +492,7 @@ func (a *App) commitGridCell(value string) error {
 	a.formulaEditor.SetText(a.cellEdit.Original)
 	if changed {
 		a.status = fmt.Sprintf("%s 已修改；点击保存写入原文件", a.selectedCell)
+		a.persistActiveSession()
 	}
 	return nil
 }
@@ -370,7 +504,11 @@ func (a *App) applyWordEdit() error {
 	if !a.selectedBlockEditable {
 		return fmt.Errorf("该段落包含多个格式片段，暂不支持编辑")
 	}
-	return a.word.ReplaceParagraph(a.selectedBlock, a.wordEditor.Text())
+	if err := a.word.ReplaceParagraph(a.selectedBlock, a.wordEditor.Text()); err != nil {
+		return err
+	}
+	a.persistActiveSession()
+	return nil
 }
 
 func (a *App) save() error {
@@ -383,6 +521,13 @@ func (a *App) save() error {
 		if err := a.word.Save(); err != nil {
 			return err
 		}
+	case a.jsonDoc != nil:
+		if a.path == "" {
+			return fmt.Errorf("JSON 草稿需要另存为")
+		}
+		if err := a.jsonDoc.Save(); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("没有打开的 Office 文件")
 	}
@@ -390,7 +535,7 @@ func (a *App) save() error {
 }
 
 func (a *App) isDirty() bool {
-	return (a.book != nil && a.book.Dirty()) || (a.word != nil && a.word.Dirty())
+	return (a.book != nil && a.book.Dirty()) || (a.word != nil && a.word.Dirty()) || (a.jsonDoc != nil && a.jsonDoc.Dirty())
 }
 
 func (a *App) closeDocument() error {
@@ -405,6 +550,12 @@ func (a *App) closeDocument() error {
 			err = closeErr
 		}
 		a.word = nil
+	}
+	if a.jsonDoc != nil {
+		if closeErr := a.jsonDoc.Close(); err == nil {
+			err = closeErr
+		}
+		a.jsonDoc = nil
 	}
 	a.sheets, a.sheet, a.grid = nil, "", nil
 	a.virtualGrid = nil

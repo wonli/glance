@@ -11,7 +11,7 @@ This architecture borrows the format-adapter, normalized-document, session, and 
 ```text
 Gio window and widgets
         ↓ user intents / immutable view data
-Desktop controller and document session
+Desktop UI session collection (`internal/desktopui`, `internal/workspace`)
         ↓ format-neutral requests
 Document adapter interface
         ↓ library-specific operations
@@ -25,12 +25,16 @@ XLSX / DOCX libraries and local filesystem
 - Do not hold Excelize, DOCX, OOXML, ZIP, or XML library objects in Gio widgets.
 - Keep rendering/layout helpers separate from event handling and file/session logic. Avoid growing one all-purpose `App` file; use focused view, interaction, and widget-state files as the UI grows.
 
-### Application/session layer (`internal/appstate`, `internal/controller`)
+### Application/session layer (`internal/workspace`, `internal/desktopui`)
 
 - Own the active document identity, path, format, loading/error state, capabilities, selection, dirty state, and save/close lifecycle.
 - Expose snapshots or narrowly scoped state operations to the UI. Keep the session as the source of truth for committed document data; widget editors are only transient drafts.
 - Perform file/library work away from the Gio frame layout path. Report completion through synchronized state and request a redraw using the established Gio event-loop mechanism.
 - Validate edits and capabilities here and in the adapter. A UI control being disabled is not validation.
+- `internal/workspace` owns versioned SQLite metadata, recents, ordered tabs, active-tab ID, byte snapshots, dirty flags, and opaque per-tab view state. Format snapshots remain owned by the adapters; Gio widget instances stay in each in-memory document session.
+- The workspace tab strip sits flush at the top edge of the full-height client area: recent/document tabs and the `+` tab share one horizontal list. File, folder, create, save, and save-as actions live in the `+` menu; the document canvas receives the space previously used by the path toolbar. The OS title bar and its window controls remain native.
+- The Recent tab is permanent. Closing a dirty document tab is blocked until it is saved; window-close confirmation is unavailable because Gio reports destruction after the native window has closed. Persist committed edits and drafts to the recovery store.
+- File dialogs, document package opens/saves, and adapter serialization must not run in Gio layout callbacks. Do not serialize an entire workbook merely because the user selected a cell or scrolled; persist view state separately.
 
 ### Neutral document model (`internal/document` or `internal/docmodel`)
 
@@ -46,6 +50,7 @@ XLSX / DOCX libraries and local filesystem
 - Preserve source path/session context only where required to safely save. Use temporary sibling output and replace the original only after a successful write.
 - Keep formulas as formula text plus cached result when available. Do not claim recalculation unless a calculation engine is separately integrated and verified.
 - DOCX text mutation must preserve unrelated package parts and formatting in the supported corpus. If a library cannot do that reliably, limit the first release to read-only DOCX or narrowly scoped text replacement.
+- XLSX and DOCX snapshots are self-contained Office package bytes; JSON snapshots preserve current editor text, including invalid intermediate JSON. Snapshot payloads are not interchange DTOs and must only be interpreted by their matching adapter.
 
 ### Platform and file access
 

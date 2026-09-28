@@ -77,6 +77,7 @@ func (a *App) goToCell() {
 	v := a.virtualGrid
 	v.SelectedRow, v.SelectedColumn = r, c
 	a.selectedCell = xlsx.CellName(c, r)
+	a.persistViewState()
 	a.cellEdit.selectCell(a.selectedCell, "")
 	a.nameBox.SetText(a.selectedCell)
 	a.formulaEditor.SetText("")
@@ -222,6 +223,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				row, col, _ = mergeAnchorAt(v.Window.Merges, row, col)
 				v.SelectedRow, v.SelectedColumn = row, col
 				a.selectedCell = xlsx.CellName(col, row)
+				a.persistViewState()
 				cell := windowCell(v.Window, row, col)
 				a.cellEdit.selectCell(a.selectedCell, cell.Value)
 				a.nameBox.SetText(a.selectedCell)
@@ -264,6 +266,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					a.status = "尺寸调整失败：" + err.Error()
 				} else {
 					a.status = "行列尺寸已调整；点击保存写入原文件"
+					a.persistActiveSession()
 				}
 				v.ResizeCursor = 0
 				a.window.Invalidate()

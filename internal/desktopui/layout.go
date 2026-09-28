@@ -3,6 +3,7 @@ package desktopui
 import (
 	"image"
 	"image/color"
+	"path/filepath"
 	"strconv"
 
 	"gioui.org/layout"
@@ -25,27 +26,37 @@ var (
 )
 
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
+	a.processAsyncResults()
 	gtx.Constraints.Min = gtx.Constraints.Max
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions { return fill(gtx, pageBackground) },
 		func(gtx layout.Context) layout.Dimensions {
-			return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
-					layout.Rigid(a.layoutToolbar),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return material.Caption(a.theme, a.status).Layout(gtx)
-						})
-					}),
-					layout.Flexed(1, a.layoutDocument),
-					layout.Rigid(a.layoutEditor),
-				)
-			})
+			return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
+				layout.Rigid(a.layoutWorkspaceTabs),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if a.showNewMenu {
+						return a.layoutCreateActions(gtx)
+					}
+					return layout.Dimensions{}
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return material.Caption(a.theme, a.status).Layout(gtx)
+					})
+				}),
+				layout.Flexed(1, a.layoutDocument),
+				layout.Rigid(a.layoutEditor),
+			)
 		},
 	)
 }
 
-func (a *App) layoutToolbar(gtx layout.Context) layout.Dimensions {
+func (a *App) processAsyncResults() {
+	select {
+	case err := <-a.workspaceWriteResults:
+		a.status = "工作区保存失败：" + err.Error()
+	default:
+	}
 	select {
 	case result := <-a.openResults:
 		a.opening = false
@@ -62,56 +73,54 @@ func (a *App) layoutToolbar(gtx layout.Context) layout.Dimensions {
 		if result.err != nil {
 			a.status = "保存失败：" + result.err.Error()
 		} else {
+			if result.saveAs {
+				if state := a.sessions[result.tabID]; state != nil {
+					state.path = result.path
+					if state.book != nil {
+						if saver, ok := state.book.(interface{ SetSourcePath(string) }); ok {
+							saver.SetSourcePath(result.path)
+						}
+					}
+					if state.word != nil {
+						state.word.SetSourcePath(result.path)
+					}
+					if state.jsonDoc != nil {
+						state.jsonDoc.SetSourcePath(result.path)
+					}
+				}
+				if meta, ok := a.tabMeta[result.tabID]; ok {
+					meta.SourcePath = result.path
+					meta.Title = filepath.Base(result.path)
+					a.tabMeta[result.tabID] = meta
+				}
+				if result.tabID == a.activeTabID {
+					a.path = result.path
+					a.documentSessionState.path = result.path
+				}
+			}
 			a.status = "已保存 " + result.path
+			if state := a.sessions[result.tabID]; state != nil {
+				a.updatePersistedTab(a.tabMeta[result.tabID])
+				if result.tabID == a.activeTabID {
+					a.persistViewState()
+				}
+			}
 		}
 	default:
 	}
-	if a.chooseButton.Clicked(gtx) {
-		path, err := chooseOfficeFile()
-		if err != nil {
-			a.status = err.Error()
-		} else if path != "" {
-			a.startOpen(path)
-		}
-	}
-	if a.openButton.Clicked(gtx) {
-		a.startOpen(a.pathEditor.Text())
-	}
-	if a.saveButton.Clicked(gtx) && !a.saving && a.isDirty() {
-		a.startSave()
-	}
-	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return material.Button(a.theme, &a.chooseButton, "打开…").Layout(gtx)
-		}),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return material.Editor(a.theme, &a.pathEditor, "输入 .xlsx 或 .docx 路径").Layout(gtx)
-			})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return material.Button(a.theme, &a.openButton, "打开路径").Layout(gtx)
-			})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			label := "保存"
-			if a.saving {
-				label = "保存中…"
-			} else if a.isDirty() {
-				label = "保存 *"
-			}
-			return material.Button(a.theme, &a.saveButton, label).Layout(gtx)
-		}),
-	)
 }
 
 func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
+	if a.activeTabID == "recent" || (a.book == nil && a.word == nil && a.jsonDoc == nil) {
+		return a.layoutRecent(gtx)
+	}
 	switch {
 	case a.book != nil:
 		return a.layoutWorkbook(gtx)
 	case a.word != nil:
 		return a.layoutWord(gtx)
+	case a.jsonDoc != nil:
+		return a.layoutJSON(gtx)
 	default:
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return material.H6(a.theme, "Glance Office").Layout(gtx)
@@ -186,6 +195,7 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 					} else if err := a.loadSheet(); err != nil {
 						a.status = err.Error()
 					}
+					a.persistViewState()
 				}
 				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(1), Left: unit.Dp(3), Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -260,6 +270,7 @@ func (a *App) layoutGridRow(gtx layout.Context, row int) layout.Dimensions {
 		button := a.cellButton(ref)
 		if button.Clicked(gtx) {
 			a.selectedCell = ref
+			a.persistViewState()
 			a.cellEditor.SetText(cell.Value)
 		}
 		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -317,6 +328,9 @@ func (a *App) layoutWord(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutEditor(gtx layout.Context) layout.Dimensions {
+	if a.jsonDoc != nil {
+		return layout.Dimensions{}
+	}
 	if _, virtual := a.book.(document.GridReader); virtual {
 		return layout.Dimensions{}
 	}
