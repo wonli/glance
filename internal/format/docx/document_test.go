@@ -32,6 +32,58 @@ func writeFixture(t *testing.T, path, documentXML string) {
 	}
 }
 
+func TestSnapshotRestoresEditedDocument(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "source.docx")
+	writeFixture(t, path, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>before</w:t></w:r></w:p></w:body></w:document>`)
+	doc, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.ReplaceParagraph(0, "after"); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = doc.Close()
+	restored, err := OpenSnapshot(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	if got := restored.Blocks()[0].Text; got != "after" {
+		t.Fatalf("restored text = %q", got)
+	}
+}
+
+func TestNewBlankDraftContainsEditableParagraph(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	blocks := doc.Blocks()
+	if len(blocks) != 1 || !blocks[0].Editable {
+		t.Fatalf("blank draft blocks = %#v", blocks)
+	}
+	if err := doc.ReplaceParagraph(0, "Draft text"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := OpenSnapshot(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	if got := restored.Blocks()[0].Text; got != "Draft text" {
+		t.Fatalf("restored draft = %q", got)
+	}
+}
+
 func TestReplaceSingleRunTextAndSaveCopy(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "minimal.docx")
 	writeFixture(t, path, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`)

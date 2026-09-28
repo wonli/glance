@@ -1,6 +1,7 @@
 package xlsx
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -48,6 +49,32 @@ func Open(path string) (*Workbook, error) {
 		return nil, fmt.Errorf("open xlsx %q: %w", path, err)
 	}
 	return &Workbook{path: path, file: f}, nil
+}
+
+// OpenSnapshot restores a self-contained XLSX package persisted for recovery.
+func OpenSnapshot(payload []byte) (*Workbook, error) {
+	f, err := excelize.OpenReader(bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("restore XLSX snapshot: %w", err)
+	}
+	return &Workbook{file: f}, nil
+}
+
+// NewBlank creates an unsaved workbook draft.
+func NewBlank() *Workbook { return &Workbook{file: excelize.NewFile(), dirty: true} }
+
+// Snapshot serializes the current in-memory workbook without changing dirty state.
+func (w *Workbook) Snapshot() ([]byte, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return nil, err
+	}
+	buf, err := w.file.WriteToBuffer()
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(nil), buf.Bytes()...), nil
 }
 
 func (w *Workbook) SheetNames() []string {

@@ -49,12 +49,25 @@ type Document struct {
 }
 
 func Open(path string) (*Document, error) {
-	zr, err := zip.OpenReader(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("open docx %q: %w", path, err)
 	}
-	defer zr.Close()
-	doc := &Document{path: path, documentIdx: -1}
+	doc, err := OpenSnapshot(data)
+	if err != nil {
+		return nil, fmt.Errorf("open docx %q: %w", path, err)
+	}
+	doc.path = path
+	return doc, nil
+}
+
+// OpenSnapshot restores a self-contained DOCX package from durable session state.
+func OpenSnapshot(data []byte) (*Document, error) {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("read DOCX snapshot: %w", err)
+	}
+	doc := &Document{documentIdx: -1}
 	for _, file := range zr.File {
 		r, err := file.Open()
 		if err != nil {
@@ -80,6 +93,65 @@ func Open(path string) (*Document, error) {
 		return nil, fmt.Errorf("parse DOCX body: %w", err)
 	}
 	return doc, nil
+}
+
+// NewBlank creates a minimal editable Word draft.
+func NewBlank() (*Document, error) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	entries := []struct{ name, body string }{
+		{"[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`},
+		{"_rels/.rels", `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`},
+		{"word/document.xml", `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t></w:t></w:r></w:p><w:sectPr/></w:body></w:document>`},
+	}
+	for _, entry := range entries {
+		w, err := zw.Create(entry.name)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := io.WriteString(w, entry.body); err != nil {
+			return nil, err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	doc, err := OpenSnapshot(buf.Bytes())
+	if err == nil {
+		doc.dirty = true
+	}
+	return doc, err
+}
+
+// Snapshot serializes current package parts without changing dirty state.
+func (d *Document) Snapshot() ([]byte, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return nil, err
+	}
+	return d.packageBytes()
+}
+
+func (d *Document) packageBytes() ([]byte, error) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, item := range d.parts {
+		header := item.header
+		writer, err := zw.CreateHeader(&header)
+		if err != nil {
+			_ = zw.Close()
+			return nil, err
+		}
+		if _, err := writer.Write(item.data); err != nil {
+			_ = zw.Close()
+			return nil, err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func (d *Document) Blocks() []Block {
@@ -194,22 +266,12 @@ func (d *Document) saveAs(path string) error {
 	if err != nil {
 		return err
 	}
-	zw := zip.NewWriter(file)
-	for _, item := range d.parts {
-		header := item.header
-		writer, err := zw.CreateHeader(&header)
-		if err != nil {
-			_ = zw.Close()
-			_ = file.Close()
-			return err
-		}
-		if _, err := writer.Write(item.data); err != nil {
-			_ = zw.Close()
-			_ = file.Close()
-			return err
-		}
+	data, err := d.packageBytes()
+	if err != nil {
+		_ = file.Close()
+		return err
 	}
-	if err := zw.Close(); err != nil {
+	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
 		return err
 	}
