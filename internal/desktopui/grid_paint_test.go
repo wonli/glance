@@ -83,7 +83,7 @@ func TestCellEditorUsesRenderedStyleAndKeepsSingleCellGeometry(t *testing.T) {
 	cell := document.Cell{Style: document.CellStyle{FontColor: "#123456", Bold: true, Italic: true, WrapText: true, HorizontalAlignment: "right"}}
 	style := paintStyle(cell.Style)
 	got := cellEditorStyle(theme, editor, cell.Style, style)
-	if got.Color != style.Font || got.Font.Weight != 700 || got.Font.Style != font.Italic {
+	if got.Color != style.Font || got.Font.Weight != font.Bold || got.Font.Style != font.Italic {
 		t.Fatalf("editor font style=%+v", got)
 	}
 	if editor.Alignment != text.End || editor.SingleLine || !editor.Submit {
@@ -91,5 +91,24 @@ func TestCellEditorUsesRenderedStyleAndKeepsSingleCellGeometry(t *testing.T) {
 	}
 	if got.TextSize != theme.TextSize*14.0/16.0 {
 		t.Fatalf("editor text size=%v; want the rendered cell text size", got.TextSize)
+	}
+}
+
+func TestGridFontWeightsDistinguishBoldFromRegular(t *testing.T) {
+	regular := cellFontWeight(false)
+	bold := cellFontWeight(true)
+	if regular != font.Normal || bold != font.Bold || bold <= regular {
+		t.Fatalf("font weights regular=%d bold=%d; want %d < %d", regular, bold, font.Normal, font.Bold)
+	}
+}
+
+func TestCellLayoutAlignmentCombinesAxes(t *testing.T) {
+	for _, tc := range []struct {
+		horizontal, vertical string
+		want                 layout.Direction
+	}{{"", "", layout.W}, {"left", "center", layout.W}, {"center", "center", layout.Center}, {"right", "top", layout.NE}, {"right", "bottom", layout.SE}} {
+		if got := cellLayoutAlignment(tc.horizontal, tc.vertical); got != tc.want {
+			t.Errorf("cellLayoutAlignment(%q,%q)=%v; want %v", tc.horizontal, tc.vertical, got, tc.want)
+		}
 	}
 }

@@ -181,7 +181,16 @@ func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.E
 	paint.FillShape(gtx.Ops, border, clip.Rect{Max: image.Pt(max(1, gtx.Dp(unit.Dp(1))), sz.Y)}.Op())
 	gtx.Constraints = layout.Constraints{Min: sz, Max: sz}
 	editorStyle := cellEditorStyle(theme, editor, cellStyle, style)
-	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return editorStyle.Layout(gtx) })
+	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.Y = 0
+		return layout.Stack{Alignment: cellLayoutAlignment(style.Align, style.Vertical)}.Layout(gtx,
+			layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
+			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				return editorStyle.Layout(gtx)
+			}),
+		)
+	})
 	paintCellBorders(gtx, sz, cellStyle.Borders)
 }
 
@@ -192,7 +201,7 @@ func cellEditorStyle(theme *material.Theme, editor *widget.Editor, cellStyle doc
 	result.TextSize = theme.TextSize * 14.0 / 16.0
 	result.Color = style.Font
 	if style.Bold {
-		result.Font.Weight = font.Weight(700)
+		result.Font.Weight = cellFontWeight(true)
 	}
 	if style.Italic {
 		result.Font.Style = font.Italic
@@ -249,9 +258,15 @@ func paintTextBox(gtx layout.Context, theme *material.Theme, text string, rect i
 	label := material.Body2(theme, text)
 	label.Color = fg
 	if bold {
-		label.Font.Weight = font.Weight(700)
+		label.Font.Weight = cellFontWeight(true)
 	}
-	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return label.Layout(gtx) })
+	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.Y = 0
+		return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+			layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
+			layout.Stacked(label.Layout),
+		)
+	})
 }
 
 func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Cell, rect image.Rectangle, style gridPaintStyle) {
@@ -265,7 +280,7 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	label := material.Body2(theme, cell.Value)
 	label.Color = style.Font
 	if style.Bold {
-		label.Font.Weight = font.Weight(700)
+		label.Font.Weight = cellFontWeight(true)
 	}
 	if style.Italic {
 		label.Font.Style = font.Italic
@@ -274,8 +289,44 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	if style.Wrap {
 		label.WrapPolicy = text.WrapWords
 	}
-	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return label.Layout(gtx) })
+	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.Y = 0
+		return layout.Stack{Alignment: cellLayoutAlignment(style.Align, style.Vertical)}.Layout(gtx,
+			layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
+			layout.Stacked(label.Layout),
+		)
+	})
 	paintCellBorders(gtx, size, cell.Style.Borders)
+}
+
+func cellFontWeight(bold bool) font.Weight {
+	if bold {
+		return font.Bold
+	}
+	return font.Normal
+}
+
+func cellLayoutAlignment(horizontal, vertical string) layout.Direction {
+	var column int
+	switch strings.ToLower(horizontal) {
+	case "center":
+		column = 1
+	case "right":
+		column = 2
+	}
+	var row int
+	switch strings.ToLower(vertical) {
+	case "top":
+		row = -1
+	case "bottom":
+		row = 1
+	}
+	grid := [3][3]layout.Direction{
+		{layout.NW, layout.N, layout.NE},
+		{layout.W, layout.Center, layout.E},
+		{layout.SW, layout.S, layout.SE},
+	}
+	return grid[row+1][column]
 }
 
 func paintCellBorders(gtx layout.Context, size image.Point, borders [4]document.CellBorder) {

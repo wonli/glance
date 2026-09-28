@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"image"
 	"image/color"
 	"strconv"
 
@@ -152,39 +153,71 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
-	return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		children := make([]layout.FlexChild, 0, len(a.sheets))
-		for _, name := range a.sheets {
-			sheetName := name
-			button := a.sheetButton(sheetName)
-			if button.Clicked(gtx) {
-				a.sheet = sheetName
-				if _, virtual := a.book.(document.GridReader); virtual {
-					if a.virtualGrid != nil {
-						a.virtualGrid.invalidateWindow()
-						a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn = 1, 1
-						a.virtualGrid.PendingSelectionLoad = true
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(34)), gtx.Dp(unit.Dp(34))
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			return fill(gtx, color.NRGBA{R: 239, G: 242, B: 246, A: 255})
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 202, G: 208, B: 216, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
+			children := make([]layout.FlexChild, 0, len(a.sheets))
+			for _, name := range a.sheets {
+				sheetName := name
+				button := a.sheetButton(sheetName)
+				if button.Clicked(gtx) {
+					if a.cellEdit.Editing {
+						if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
+							a.status = "修改失败：" + err.Error()
+							a.window.Invalidate()
+							continue
+						}
 					}
-					a.selectedCell = "A1"
-					a.cellEdit.selectCell("A1", "")
-					a.nameBox.SetText("A1")
-					a.formulaEditor.SetText("")
-				} else if err := a.loadSheet(); err != nil {
-					a.status = err.Error()
+					a.sheet = sheetName
+					if _, virtual := a.book.(document.GridReader); virtual {
+						if a.virtualGrid != nil {
+							a.virtualGrid.invalidateWindow()
+							a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn = 1, 1
+							a.virtualGrid.PendingSelectionLoad = true
+						}
+						a.selectedCell = "A1"
+						a.cellEdit.selectCell("A1", "")
+						a.nameBox.SetText("A1")
+						a.formulaEditor.SetText("")
+					} else if err := a.loadSheet(); err != nil {
+						a.status = err.Error()
+					}
 				}
+				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					selected := sheetName == a.sheet
+					return layout.Inset{Top: unit.Dp(1), Left: unit.Dp(3), Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							bg := color.NRGBA{R: 230, G: 234, B: 240, A: 255}
+							fg := color.NRGBA{R: 70, G: 78, B: 88, A: 255}
+							if selected {
+								bg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+								fg = color.NRGBA{R: 35, G: 43, B: 53, A: 255}
+							}
+							gtx.Constraints.Min.Y = gtx.Dp(unit.Dp(32))
+							return layout.Background{}.Layout(gtx,
+								func(gtx layout.Context) layout.Dimensions { return fill(gtx, bg) },
+								func(gtx layout.Context) layout.Dimensions {
+									if selected {
+										paint.FillShape(gtx.Ops, color.NRGBA{R: 35, G: 125, B: 85, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(2)))}.Op())
+									}
+									label := material.Body2(a.theme, sheetName)
+									label.Color = fg
+									return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										return layout.Center.Layout(gtx, label.Layout)
+									})
+								},
+							)
+						})
+					})
+				}))
 			}
-			label := sheetName
-			if sheetName == a.sheet {
-				label = "• " + label
-			}
-			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Button(a.theme, button, label).Layout(gtx)
-				})
-			}))
-		}
-		return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
-	})
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+		},
+	)
 }
 
 func (a *App) layoutColumnHeader(gtx layout.Context) layout.Dimensions {

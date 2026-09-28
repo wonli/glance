@@ -44,3 +44,21 @@ func cellRect(rowAxis, columnAxis *AxisGeometry, r document.CellRange, scrollX, 
 	y1, _ := rowAxis.Boundary(r.EndRow)
 	return image.Rect(int(x0-scrollX), int(y0-scrollY), int(x1-scrollX), int(y1-scrollY))
 }
+
+func editingCellRect(v *gridViewport, address string, rowHeader, columnHeader int) image.Rectangle {
+	if v == nil || v.Rows == nil || v.Columns == nil {
+		return image.Rectangle{}
+	}
+	row, column, ok := parseCellAddress(address)
+	if !ok {
+		return image.Rectangle{}
+	}
+	rng := document.CellRange{StartRow: row, StartColumn: column, EndRow: row, EndColumn: column}
+	for _, merge := range v.Window.Merges {
+		if row >= merge.Range.StartRow && row <= merge.Range.EndRow && column >= merge.Range.StartColumn && column <= merge.Range.EndColumn {
+			rng = merge.Range
+			break
+		}
+	}
+	return cellRect(v.Rows, v.Columns, rng, v.X, v.Y).Add(image.Pt(rowHeader, columnHeader))
+}

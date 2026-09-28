@@ -186,6 +186,21 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				v.ResizeCursor = v.Resize.State.Axis
 			}
 		case pointer.Press:
+			if a.cellEdit.Editing {
+				editRect := editingCellRect(v, a.cellEdit.Address, rowHeaderPx, columnHeaderPx)
+				point := image.Pt(int(pe.Position.X), int(pe.Position.Y))
+				if point.In(editRect) {
+					// The editor's own pointer handler places the caret. Let it consume
+					// the event without changing the selected cell or ending editing.
+					continue
+				}
+				if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
+					a.status = "修改失败：" + err.Error()
+					gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
+					a.window.Invalidate()
+					continue
+				}
+			}
 			axis, index, edge, sizePx, resizeHit := gridResizeHandleAt(v, int(pe.Position.X), int(pe.Position.Y), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
 			if resizeHit {
 				pos := float64(pe.Position.X)
@@ -208,9 +223,6 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				v.SelectedRow, v.SelectedColumn = row, col
 				a.selectedCell = xlsx.CellName(col, row)
 				cell := windowCell(v.Window, row, col)
-				if a.cellEdit.Editing {
-					a.cellEdit.cancel()
-				}
 				a.cellEdit.selectCell(a.selectedCell, cell.Value)
 				a.nameBox.SetText(a.selectedCell)
 				a.formulaEditor.SetText(cell.Value)

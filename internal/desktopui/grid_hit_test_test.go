@@ -15,6 +15,20 @@ import (
 	"glance/internal/document"
 )
 
+func TestEditingCellHitAreaUsesVisibleMergedCellGeometry(t *testing.T) {
+	v := newGridViewport()
+	v.Window.Merges = []document.MergeRegion{{Range: document.CellRange{StartRow: 2, StartColumn: 2, EndRow: 3, EndColumn: 4}}}
+	v.X, v.Y = 10, 5
+	got := editingCellRect(v, "C3", 48, 28)
+	want := cellRect(v.Rows, v.Columns, document.CellRange{StartRow: 2, StartColumn: 2, EndRow: 3, EndColumn: 4}, v.X, v.Y).Add(image.Pt(48, 28))
+	if got != want {
+		t.Fatalf("editing rect=%v; want merged rect %v", got, want)
+	}
+	if !image.Pt(got.Min.X, got.Min.Y).In(got) || image.Pt(got.Max.X, got.Max.Y).In(got) {
+		t.Fatalf("unexpected half-open hit area %v", got)
+	}
+}
+
 func TestPointerCoordinatesAreLocalToGridAfterTopContent(t *testing.T) {
 	var router input.Router
 	var ops op.Ops
