@@ -162,6 +162,17 @@ func (a *AxisGeometry) TotalSize() float64 {
 	return float64(a.count)*a.defaultSize + a.prefixDelta(a.count)
 }
 
+func (a *AxisGeometry) Clone() *AxisGeometry {
+	if a == nil {
+		return nil
+	}
+	clone := &AxisGeometry{count: a.count, defaultSize: a.defaultSize, deltaTree: append([]float64(nil), a.deltaTree...), overrides: make(map[int]float64, len(a.overrides)), maxVisible: a.maxVisible}
+	for i, size := range a.overrides {
+		clone.overrides[i] = size
+	}
+	return clone
+}
+
 func (a *AxisGeometry) sizeAt(index int) float64 {
 	if size, ok := a.overrides[index]; ok {
 		return size

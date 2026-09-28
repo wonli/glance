@@ -332,8 +332,8 @@ func (w *Workbook) SetRowHeight(sheet string, row int, heightPoints float64) err
 	if row < 1 || row > maxXLSXRows {
 		return fmt.Errorf("row %d outside [1,%d]", row, maxXLSXRows)
 	}
-	if !finiteNumber(heightPoints) || heightPoints <= 0 {
-		return fmt.Errorf("row height must be finite and positive: %v", heightPoints)
+	if !finiteNumber(heightPoints) || heightPoints <= 0 || heightPoints > 409.5 {
+		return fmt.Errorf("row height must be finite and within (0,409.5]: %v", heightPoints)
 	}
 	current, err := w.file.GetRowHeight(sheet, row)
 	if err != nil {
@@ -361,8 +361,8 @@ func (w *Workbook) SetColumnWidth(sheet string, column int, widthChars float64) 
 	if column < 1 || column > maxXLSXColumns {
 		return fmt.Errorf("column %d outside [1,%d]", column, maxXLSXColumns)
 	}
-	if !finiteNumber(widthChars) || widthChars <= 0 {
-		return fmt.Errorf("column width must be finite and positive: %v", widthChars)
+	if !finiteNumber(widthChars) || widthChars <= 0 || widthChars > 255 {
+		return fmt.Errorf("column width must be finite and within (0,255]: %v", widthChars)
 	}
 	columnName, err := excelize.ColumnNumberToName(column)
 	if err != nil {

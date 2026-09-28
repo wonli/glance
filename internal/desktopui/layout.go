@@ -1,15 +1,9 @@
 package desktopui
 
 import (
-	"fmt"
-	"image"
 	"image/color"
 	"strconv"
-	"time"
 
-	"gioui.org/io/event"
-	"gioui.org/io/key"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -51,27 +45,39 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutToolbar(gtx layout.Context) layout.Dimensions {
+	select {
+	case result := <-a.openResults:
+		a.opening = false
+		if result.err != nil {
+			a.status = result.err.Error()
+		} else if err := a.installDocument(result.loaded); err != nil {
+			a.status = err.Error()
+		}
+	default:
+	}
+	select {
+	case result := <-a.saveResults:
+		a.saving = false
+		if result.err != nil {
+			a.status = "保存失败：" + result.err.Error()
+		} else {
+			a.status = "已保存 " + result.path
+		}
+	default:
+	}
 	if a.chooseButton.Clicked(gtx) {
 		path, err := chooseOfficeFile()
 		if err != nil {
 			a.status = err.Error()
 		} else if path != "" {
-			if err := a.open(path); err != nil {
-				a.status = err.Error()
-			}
+			a.startOpen(path)
 		}
 	}
 	if a.openButton.Clicked(gtx) {
-		if err := a.open(a.pathEditor.Text()); err != nil {
-			a.status = err.Error()
-		}
+		a.startOpen(a.pathEditor.Text())
 	}
-	if a.saveButton.Clicked(gtx) && a.isDirty() {
-		if err := a.save(); err != nil {
-			a.status = "保存失败：" + err.Error()
-		} else {
-			a.status = "已保存 " + a.path
-		}
+	if a.saveButton.Clicked(gtx) && !a.saving && a.isDirty() {
+		a.startSave()
 	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -89,7 +95,9 @@ func (a *App) layoutToolbar(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			label := "保存"
-			if a.isDirty() {
+			if a.saving {
+				label = "保存中…"
+			} else if a.isDirty() {
 				label = "保存 *"
 			}
 			return material.Button(a.theme, &a.saveButton, label).Layout(gtx)
@@ -143,192 +151,6 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
-	for ev, ok := a.nameBox.Update(gtx); ok; ev, ok = a.nameBox.Update(gtx) {
-		if _, submit := ev.(widget.SubmitEvent); submit {
-			a.goToCell()
-		}
-	}
-	for ev, ok := a.formulaEditor.Update(gtx); ok; ev, ok = a.formulaEditor.Update(gtx) {
-		if _, submit := ev.(widget.SubmitEvent); submit {
-			if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
-				a.status = "修改失败：" + err.Error()
-			}
-		}
-	}
-	if a.goToCellButton.Clicked(gtx) {
-		a.goToCell()
-	}
-	if a.applyButton.Clicked(gtx) {
-		if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
-			a.status = "修改失败：" + err.Error()
-		}
-	}
-	return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Editor(a.theme, &a.nameBox, "A1").Layout(gtx)
-				})
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Button(a.theme, &a.goToCellButton, "前往").Layout(gtx)
-				})
-			}),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return material.Editor(a.theme, &a.formulaEditor, "单元格内容").Layout(gtx)
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Button(a.theme, &a.applyButton, "✓").Layout(gtx)
-				})
-			}),
-		)
-	})
-}
-
-func (a *App) goToCell() {
-	r, c, ok := parseCellAddress(a.nameBox.Text())
-	if !ok || r > xlsxRows || c > xlsxColumns {
-		a.status = "单元格地址无效"
-		return
-	}
-	if a.virtualGrid == nil {
-		return
-	}
-	v := a.virtualGrid
-	v.SelectedRow, v.SelectedColumn = r, c
-	a.selectedCell = xlsx.CellName(c, r)
-	a.cellEdit.selectCell(a.selectedCell, "")
-	a.nameBox.SetText(a.selectedCell)
-	a.formulaEditor.SetText("")
-	x, _ := v.Columns.Boundary(c - 1)
-	y, _ := v.Rows.Boundary(r - 1)
-	v.scroll(x-v.X, y-v.Y, gtxGridContentWidth(a), gtxGridContentHeight(a))
-	v.invalidateWindow()
-	v.PendingSelectionLoad = true
-	a.window.Invalidate()
-}
-
-func gtxGridContentWidth(a *App) float64  { return a.lastGridWidth }
-func gtxGridContentHeight(a *App) float64 { return a.lastGridHeight }
-
-func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
-	reader := a.book.(document.GridReader)
-	if a.virtualGrid == nil {
-		a.virtualGrid = newGridViewport()
-	}
-	v := a.virtualGrid
-	width, height := float64(gtx.Constraints.Max.X), float64(gtx.Constraints.Max.Y)
-	contentW, contentH := width-gridRowHeader, height-gridColumnHeader
-	a.lastGridWidth, a.lastGridHeight = contentW, contentH
-	visible := visibleCellWindow(v.Rows, v.Columns, v.X, v.Y, contentW, contentH)
-	previousSheet := v.WindowSheet
-	if err := v.ensureWindow(reader, a.sheet, visible); err != nil {
-		a.status = gridWindowError(a.sheet, err)
-	} else if previousSheet != a.sheet {
-		start := xlsx.CellName(v.WindowRange.StartColumn, v.WindowRange.StartRow)
-		end := xlsx.CellName(v.WindowRange.EndColumn, v.WindowRange.EndRow)
-		a.status = fmt.Sprintf("工作表「%s」已读取 %s:%s（当前窗口）", a.sheet, start, end)
-	}
-	if v.PendingSelectionLoad && v.SelectedRow >= v.WindowRange.StartRow && v.SelectedRow <= v.WindowRange.EndRow && v.SelectedColumn >= v.WindowRange.StartColumn && v.SelectedColumn <= v.WindowRange.EndColumn {
-		cell := windowCell(v.Window, v.SelectedRow, v.SelectedColumn)
-		a.cellEdit.selectCell(a.selectedCell, cell.Value)
-		a.formulaEditor.SetText(cell.Value)
-		v.PendingSelectionLoad = false
-	}
-	for {
-		if a.cellEdit.Editing {
-			if ev, ok := gtx.Event(key.Filter{Focus: &a.cellEditor, Name: key.NameEscape}); ok {
-				if ke, yes := ev.(key.Event); yes && ke.State == key.Press {
-					a.cellEdit.cancel()
-					a.cellEditor.SetText(a.cellEdit.Original)
-					a.formulaEditor.SetText(a.cellEdit.Original)
-					gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
-				}
-			}
-			for ev, ok := a.cellEditor.Update(gtx); ok; ev, ok = a.cellEditor.Update(gtx) {
-				if _, submit := ev.(widget.SubmitEvent); submit {
-					if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-						a.status = "修改失败：" + err.Error()
-					}
-					gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
-				}
-			}
-		}
-		ev, ok := gtx.Event(key.Filter{Focus: &v.PointerTag})
-		if !ok {
-			break
-		}
-		if ke, yes := ev.(key.Event); yes && ke.State == key.Press && ke.Name == key.NameF2 && a.selectedCell != "" {
-			if a.cellEdit.begin() {
-				a.cellEditor.SetText(a.cellEdit.Original)
-				gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
-			}
-		}
-	}
-	for {
-		e, ok := gtx.Event(pointer.Filter{Target: &v.PointerTag, Kinds: pointer.Press | pointer.Scroll, ScrollX: pointer.ScrollRange{Min: -1e9, Max: 1e9}, ScrollY: pointer.ScrollRange{Min: -1e9, Max: 1e9}})
-		if !ok {
-			break
-		}
-		pe, ok := e.(pointer.Event)
-		if !ok {
-			continue
-		}
-		switch pe.Kind {
-		case pointer.Scroll:
-			dx, dy := float64(pe.Scroll.X), float64(pe.Scroll.Y)
-			if pe.Modifiers.Contain(key.ModShift) {
-				dx += dy
-				dy = 0
-			}
-			v.scroll(-dx, -dy, contentW, contentH)
-			a.window.Invalidate()
-		case pointer.Press:
-			row, col, hit := cellAtPoint(v.Rows, v.Columns, v.X, v.Y, image.Pt(int(pe.Position.X), int(pe.Position.Y)), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
-			if hit {
-				row, col, _ = mergeAnchorAt(v.Window.Merges, row, col)
-				v.SelectedRow, v.SelectedColumn = row, col
-				a.selectedCell = xlsx.CellName(col, row)
-				cell := windowCell(v.Window, row, col)
-				if a.cellEdit.Editing {
-					a.cellEdit.cancel()
-				}
-				a.cellEdit.selectCell(a.selectedCell, cell.Value)
-				a.nameBox.SetText(a.selectedCell)
-				a.formulaEditor.SetText(cell.Value)
-				if pe.Time-v.LastClickTime <= 500*time.Millisecond && v.LastClickAddress == a.selectedCell {
-					a.cellEdit.begin()
-					a.cellEditor.SetText(cell.Value)
-					gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
-				} else {
-					gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
-				}
-				v.LastClickAddress, v.LastClickTime = a.selectedCell, pe.Time
-			}
-		}
-	}
-	event.Op(gtx.Ops, &v.PointerTag)
-	key.InputHintOp{Tag: &v.PointerTag, Hint: key.HintText}.Add(gtx.Ops)
-	pointer.PassOp{}.Push(gtx.Ops)
-	return paintVirtualGrid(gtx, a, v)
-}
-
-func windowCell(w document.SheetWindow, row, col int) document.Cell {
-	for _, m := range w.Merges {
-		if row == m.Range.StartRow && col == m.Range.StartColumn {
-			return m.Anchor
-		}
-	}
-	r, c := row-w.StartRow, col-w.StartColumn
-	if r < 0 || r >= len(w.Cells) || c < 0 || c >= len(w.Cells[r]) {
-		return document.Cell{}
-	}
-	return w.Cells[r][c]
-}
-
 func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 	return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		children := make([]layout.FlexChild, 0, len(a.sheets))
@@ -340,7 +162,13 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 				if _, virtual := a.book.(document.GridReader); virtual {
 					if a.virtualGrid != nil {
 						a.virtualGrid.invalidateWindow()
+						a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn = 1, 1
+						a.virtualGrid.PendingSelectionLoad = true
 					}
+					a.selectedCell = "A1"
+					a.cellEdit.selectCell("A1", "")
+					a.nameBox.SetText("A1")
+					a.formulaEditor.SetText("")
 				} else if err := a.loadSheet(); err != nil {
 					a.status = err.Error()
 				}

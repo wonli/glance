@@ -363,6 +363,12 @@ func TestWorkbookWindowRejectsInvalidBounds(t *testing.T) {
 			t.Errorf("SetCellText(%q) should fail outside XLSX limits", cell)
 		}
 	}
+	if err := wb.SetRowHeight("Sheet1", 1, 410); err == nil {
+		t.Error("row height above Excel maximum should fail")
+	}
+	if err := wb.SetColumnWidth("Sheet1", 1, 256); err == nil {
+		t.Error("column width above Excel maximum should fail")
+	}
 }
 
 func TestWorkbookWindowFallsBackForUnsupportedStyleColors(t *testing.T) {

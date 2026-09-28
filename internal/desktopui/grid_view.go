@@ -11,8 +11,8 @@ import (
 const (
 	xlsxRows          = 1048576
 	xlsxColumns       = 16384
-	gridDefaultRow    = 24.0
-	gridDefaultColumn = 96.0
+	gridDefaultRow    = 20.0
+	gridDefaultColumn = 64.0
 	gridRowHeader     = 48.0
 	gridColumnHeader  = 28.0
 )
@@ -29,6 +29,23 @@ type gridViewport struct {
 	LastClickAddress            string
 	LastClickTime               time.Duration
 	PendingSelectionLoad        bool
+	Resize                      *gridResizeSession
+	ResizeCursor                resizeAxis
+	GeometryChanged             bool
+	Loading                     bool
+	RequestedRange              document.CellRange
+	RequestedSheet              string
+	FailedRange                 document.CellRange
+	FailedSheet                 string
+}
+
+type gridLoadResult struct {
+	generation uint64
+	viewport   *gridViewport
+	sheet      string
+	rangeOf    document.CellRange
+	window     document.SheetWindow
+	err        error
 }
 
 func newGridViewport() *gridViewport {
@@ -37,7 +54,11 @@ func newGridViewport() *gridViewport {
 	return &gridViewport{Rows: r, Columns: c}
 }
 
-func (v *gridViewport) invalidateWindow() { v.WindowRange = document.CellRange{} }
+func (v *gridViewport) invalidateWindow() {
+	v.WindowRange = document.CellRange{}
+	v.FailedRange = document.CellRange{}
+	v.FailedSheet = ""
+}
 
 func (v *gridViewport) ensureWindow(reader document.GridReader, sheet string, visible document.CellRange) error {
 	if visible.StartRow <= 0 || visible.StartColumn <= 0 {
@@ -52,17 +73,56 @@ func (v *gridViewport) ensureWindow(reader document.GridReader, sheet string, vi
 		v.WindowError = err
 		return err
 	}
+	return v.applyWindow(sheet, visible, w)
+}
+
+func (v *gridViewport) applyWindow(sheet string, visible document.CellRange, w document.SheetWindow) error {
+	anchorRow, anchorColumn := v.Rows.IndexAt(v.Y), v.Columns.IndexAt(v.X)
+	rowWithin, columnWithin := 0.0, 0.0
+	if anchorRow >= 0 {
+		edge, _ := v.Rows.Boundary(anchorRow)
+		rowWithin = v.Y - edge
+	}
+	if anchorColumn >= 0 {
+		edge, _ := v.Columns.Boundary(anchorColumn)
+		columnWithin = v.X - edge
+	}
 	v.Window, v.WindowRange, v.WindowSheet, v.WindowError = w, visible, sheet, nil
 	for i, h := range w.RowHeightsPoints {
 		if h > 0 {
-			_ = v.Rows.SetSize(w.StartRow-1+i, h*96.0/72.0)
+			if v.Resize != nil && v.Resize.State.Axis == resizeRows && v.Resize.State.Index == w.StartRow-1+i {
+				continue
+			}
+			old := v.Rows.sizeAt(w.StartRow - 1 + i)
+			_ = v.Rows.SetSize(w.StartRow-1+i, pointsToGridPixels(h))
+			if old != v.Rows.sizeAt(w.StartRow-1+i) {
+				v.GeometryChanged = true
+			}
 		}
 	}
 	for i, width := range w.ColumnWidthsChars {
 		if width > 0 {
-			_ = v.Columns.SetSize(w.StartColumn-1+i, math.Max(24, width*7.0+12))
+			if v.Resize != nil && v.Resize.State.Axis == resizeColumns && v.Resize.State.Index == w.StartColumn-1+i {
+				continue
+			}
+			old := v.Columns.sizeAt(w.StartColumn - 1 + i)
+			_ = v.Columns.SetSize(w.StartColumn-1+i, math.Max(minGridColumnPx, columnCharsToGridPixels(width)))
+			if old != v.Columns.sizeAt(w.StartColumn-1+i) {
+				v.GeometryChanged = true
+			}
 		}
 	}
+	if v.GeometryChanged {
+		if anchorRow >= 0 {
+			edge, _ := v.Rows.Boundary(anchorRow)
+			v.Y = math.Max(0, edge+rowWithin)
+		}
+		if anchorColumn >= 0 {
+			edge, _ := v.Columns.Boundary(anchorColumn)
+			v.X = math.Max(0, edge+columnWithin)
+		}
+	}
+	v.FailedRange, v.FailedSheet = document.CellRange{}, ""
 	return nil
 }
 

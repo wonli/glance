@@ -132,6 +132,20 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 			}
 		}
 	}
+	if v.Resize != nil {
+		rs := v.Resize.State
+		preview := rs.previewEdge()
+		line := color.NRGBA{R: 30, G: 105, B: 205, A: 255}
+		if rs.Axis == resizeColumns {
+			x := int(preview)
+			_ = resizePreviewExtent(float64(size.X), preview, resizePreviewLinePx)
+			paint.FillShape(gtx.Ops, line, clip.Rect{Min: image.Pt(x, 0), Max: image.Pt(x+2, size.Y)}.Op())
+		} else {
+			y := int(preview)
+			_ = resizePreviewExtent(float64(size.Y), preview, resizePreviewLinePx)
+			paint.FillShape(gtx.Ops, line, clip.Rect{Min: image.Pt(0, y), Max: image.Pt(size.X, y+2)}.Op())
+		}
+	}
 	return layout.Dimensions{Size: size}
 }
 

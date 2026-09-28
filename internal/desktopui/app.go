@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"gioui.org/app"
 	"gioui.org/layout"
@@ -58,20 +59,32 @@ type App struct {
 	cellEdit                      cellEditState
 	lastGridWidth, lastGridHeight float64
 	virtualGrid                   *gridViewport
+	gridLoadResults               chan gridLoadResult
+	saveResults                   chan saveResult
+	openResults                   chan openResult
+	saving                        bool
+	opening                       bool
+	documentGeneration            uint64
+	shutdown                      chan struct{}
+	shutdownOnce                  sync.Once
 }
 
 func New(window *app.Window, initialPath string) *App {
 	a := &App{
-		window:        window,
-		theme:         material.NewTheme(),
-		path:          initialPath,
-		status:        "打开一个 .xlsx 或 .docx 文件开始预览",
-		gridList:      widget.List{List: layout.List{Axis: layout.Vertical}},
-		wordListState: widget.List{List: layout.List{Axis: layout.Vertical}},
-		cellButtons:   make(map[string]*widget.Clickable),
-		sheetButtons:  make(map[string]*widget.Clickable),
-		blockButtons:  make(map[int]*widget.Clickable),
-		selectedBlock: -1,
+		window:          window,
+		theme:           material.NewTheme(),
+		path:            initialPath,
+		status:          "打开一个 .xlsx 或 .docx 文件开始预览",
+		gridList:        widget.List{List: layout.List{Axis: layout.Vertical}},
+		wordListState:   widget.List{List: layout.List{Axis: layout.Vertical}},
+		cellButtons:     make(map[string]*widget.Clickable),
+		sheetButtons:    make(map[string]*widget.Clickable),
+		blockButtons:    make(map[int]*widget.Clickable),
+		selectedBlock:   -1,
+		gridLoadResults: make(chan gridLoadResult, 8),
+		saveResults:     make(chan saveResult, 1),
+		openResults:     make(chan openResult, 1),
+		shutdown:        make(chan struct{}),
 	}
 	a.pathEditor.SingleLine = true
 	a.pathEditor.SetText(initialPath)
@@ -102,6 +115,7 @@ func Run(initialPath string) {
 		e := w.Event()
 		switch e := e.(type) {
 		case app.DestroyEvent:
+			a.shutdownOnce.Do(func() { close(a.shutdown) })
 			_ = a.closeDocument()
 			return
 		case app.FrameEvent:
@@ -116,62 +130,162 @@ func (a *App) open(path string) error {
 	if a.isDirty() {
 		return fmt.Errorf("当前文件有未保存的修改，请先保存再打开其他文件")
 	}
-	if err := a.closeDocument(); err != nil {
+	if a.saving {
+		return fmt.Errorf("正在保存当前文件，请稍后再打开")
+	}
+	loaded, err := loadDocument(path)
+	if err != nil {
 		return err
 	}
+	return a.installDocument(loaded)
+}
+
+type loadedDocument struct {
+	path   string
+	book   document.Spreadsheet
+	word   *docx.Document
+	sheets []string
+}
+type openResult struct {
+	loaded loadedDocument
+	err    error
+}
+
+func loadDocument(path string) (loadedDocument, error) {
 	path = strings.TrimSpace(path)
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".xlsx":
 		book, err := xlsx.Open(path)
 		if err != nil {
-			return err
+			return loadedDocument{}, err
 		}
-		a.book = book
-		a.word = nil
-		a.sheets = book.SheetNames()
-		if len(a.sheets) == 0 {
-			return fmt.Errorf("工作簿没有可显示的工作表")
+		sheets := book.SheetNames()
+		if len(sheets) == 0 {
+			_ = book.Close()
+			return loadedDocument{}, fmt.Errorf("工作簿没有可显示的工作表")
 		}
-		a.sheet = a.sheets[0]
-		a.path = path
-		a.pathEditor.SetText(path)
-		a.cellButtons = make(map[string]*widget.Clickable)
-		a.virtualGrid = newGridViewport()
-		a.status = fmt.Sprintf("工作表「%s」：虚拟网格就绪，可浏览并编辑完整 XLSX 地址范围", a.sheet)
-		return nil
+		return loadedDocument{path: path, book: book, sheets: sheets}, nil
 	case ".docx":
 		word, err := docx.Open(path)
 		if err != nil {
-			return err
+			return loadedDocument{}, err
 		}
-		a.word = word
-		a.book = nil
-		a.path = path
-		a.pathEditor.SetText(path)
-		a.blockButtons = make(map[int]*widget.Clickable)
-		a.selectedBlock = -1
-		a.status = fmt.Sprintf("已打开 %s；读取 %d 个内容块", path, len(word.Blocks()))
-		return nil
+		return loadedDocument{path: path, word: word}, nil
 	case ".xls":
 		book, err := legacyxls.Open(path)
 		if err != nil {
-			return err
+			return loadedDocument{}, err
 		}
-		a.book = book
-		a.word = nil
-		a.sheets = book.SheetNames()
-		if len(a.sheets) == 0 {
-			return fmt.Errorf("旧版工作簿没有可显示的工作表")
+		sheets := book.SheetNames()
+		if len(sheets) == 0 {
+			_ = book.Close()
+			return loadedDocument{}, fmt.Errorf("旧版工作簿没有可显示的工作表")
 		}
-		a.sheet = a.sheets[0]
-		a.path = path
-		a.pathEditor.SetText(path)
+		return loadedDocument{path: path, book: book, sheets: sheets}, nil
+	default:
+		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx 和 .docx", filepath.Ext(path))
+	}
+}
+
+func (a *App) installDocument(loaded loadedDocument) error {
+	if err := a.closeDocument(); err != nil {
+		if loaded.book != nil {
+			_ = loaded.book.Close()
+		}
+		if loaded.word != nil {
+			_ = loaded.word.Close()
+		}
+		return err
+	}
+	a.book, a.word, a.sheets = loaded.book, loaded.word, loaded.sheets
+	a.path = loaded.path
+	a.pathEditor.SetText(loaded.path)
+	if loaded.book != nil {
+		a.sheet = loaded.sheets[0]
+		a.cellButtons = make(map[string]*widget.Clickable)
+		if _, ok := loaded.book.(document.GridReader); ok {
+			a.virtualGrid = newGridViewport()
+			a.selectedCell = "A1"
+			a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn = 1, 1
+			a.virtualGrid.PendingSelectionLoad = true
+			a.cellEdit.selectCell("A1", "")
+			a.nameBox.SetText("A1")
+			a.formulaEditor.SetText("")
+			a.status = fmt.Sprintf("工作表「%s」：虚拟网格就绪，可浏览并编辑完整 XLSX 地址范围", a.sheet)
+			return nil
+		}
+		a.sheet = loaded.sheets[0]
 		a.cellButtons = make(map[string]*widget.Clickable)
 		a.status = "旧版 .xls 只读预览（当前显示首张工作表）"
 		return a.loadSheet()
-	default:
-		return fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx 和 .docx", filepath.Ext(path))
 	}
+	a.blockButtons = make(map[int]*widget.Clickable)
+	a.selectedBlock = -1
+	a.status = fmt.Sprintf("已打开 %s；读取 %d 个内容块", loaded.path, len(a.word.Blocks()))
+	return nil
+}
+
+func (a *App) startOpen(path string) {
+	if a.opening || a.saving {
+		return
+	}
+	if a.isDirty() {
+		a.status = "当前文件有未保存的修改，请先保存再打开其他文件"
+		return
+	}
+	a.opening = true
+	a.status = "正在打开 " + strings.TrimSpace(path)
+	go func() {
+		loaded, err := loadDocument(path)
+		select {
+		case <-a.shutdown:
+			if loaded.book != nil {
+				_ = loaded.book.Close()
+			}
+			if loaded.word != nil {
+				_ = loaded.word.Close()
+			}
+			return
+		default:
+		}
+		select {
+		case a.openResults <- openResult{loaded: loaded, err: err}:
+			a.window.Invalidate()
+		case <-a.shutdown:
+			if loaded.book != nil {
+				_ = loaded.book.Close()
+			}
+			if loaded.word != nil {
+				_ = loaded.word.Close()
+			}
+		}
+	}()
+}
+
+type saveResult struct {
+	path string
+	err  error
+}
+
+func (a *App) startSave() {
+	if a.saving || !a.isDirty() {
+		return
+	}
+	book, word, path := a.book, a.word, a.path
+	a.saving = true
+	go func() {
+		var err error
+		if book != nil {
+			err = book.Save()
+		} else if word != nil {
+			err = word.Save()
+		}
+		select {
+		case a.saveResults <- saveResult{path: path, err: err}:
+			a.window.Invalidate()
+		case <-a.shutdown:
+		}
+	}()
 }
 
 func (a *App) loadSheet() error {
@@ -219,6 +333,9 @@ func (a *App) applyCellEdit() error {
 }
 
 func (a *App) commitGridCell(value string) error {
+	if a.saving {
+		return fmt.Errorf("正在保存，请稍后再编辑单元格")
+	}
 	if a.book == nil || a.cellEdit.Address == "" {
 		return fmt.Errorf("请先选择单元格")
 	}
@@ -271,6 +388,7 @@ func (a *App) isDirty() bool {
 }
 
 func (a *App) closeDocument() error {
+	a.documentGeneration++
 	var err error
 	if a.book != nil {
 		err = a.book.Close()
