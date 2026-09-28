@@ -35,6 +35,7 @@ type Document struct {
 	ID        string
 	Format    string
 	Payload   []byte
+	ViewState []byte
 	Dirty     bool
 	UpdatedAt time.Time
 }
@@ -84,30 +85,49 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version > 1 {
-		return fmt.Errorf("workspace database version %d is newer than supported version 1", version)
+	if version > 2 {
+		return fmt.Errorf("workspace database version %d is newer than supported version 2", version)
+	}
+	if version == 0 {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		for _, q := range []string{
+			`CREATE TABLE documents (id TEXT PRIMARY KEY, format TEXT NOT NULL, payload BLOB NOT NULL, dirty INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+			`CREATE TABLE tabs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, document_id TEXT NOT NULL DEFAULT '', source_path TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL UNIQUE)`,
+			`CREATE TABLE recents (path TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL)`,
+			`CREATE TABLE workspace_settings (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), active_tab_id TEXT NOT NULL)`,
+			`INSERT INTO workspace_settings(singleton, active_tab_id) VALUES (1, 'recent')`,
+			`PRAGMA user_version = 1`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		version = 1
 	}
 	if version == 1 {
-		return nil
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, q := range []string{
-		`CREATE TABLE documents (id TEXT PRIMARY KEY, format TEXT NOT NULL, payload BLOB NOT NULL, dirty INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
-		`CREATE TABLE tabs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, document_id TEXT NOT NULL DEFAULT '', source_path TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL UNIQUE)`,
-		`CREATE TABLE recents (path TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL)`,
-		`CREATE TABLE workspace_settings (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), active_tab_id TEXT NOT NULL)`,
-		`INSERT INTO workspace_settings(singleton, active_tab_id) VALUES (1, 'recent')`,
-		`PRAGMA user_version = 1`,
-	} {
-		if _, err := tx.Exec(q); err != nil {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`ALTER TABLE documents ADD COLUMN view_state BLOB NOT NULL DEFAULT X''`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`PRAGMA user_version = 2`); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -207,7 +227,13 @@ func (s *Store) SaveDocument(doc Document) error {
 	if doc.Dirty {
 		dirty = 1
 	}
-	_, err := s.db.Exec(`INSERT INTO documents(id,format,payload,dirty,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET format=excluded.format,payload=excluded.payload,dirty=excluded.dirty,updated_at=excluded.updated_at`, doc.ID, doc.Format, doc.Payload, dirty, doc.UpdatedAt.UTC().UnixNano())
+	if doc.Payload == nil {
+		doc.Payload = []byte{}
+	}
+	if doc.ViewState == nil {
+		doc.ViewState = []byte{}
+	}
+	_, err := s.db.Exec(`INSERT INTO documents(id,format,payload,dirty,updated_at,view_state) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET format=excluded.format,payload=excluded.payload,dirty=excluded.dirty,updated_at=excluded.updated_at,view_state=excluded.view_state`, doc.ID, doc.Format, doc.Payload, dirty, doc.UpdatedAt.UTC().UnixNano(), doc.ViewState)
 	return err
 }
 
@@ -215,7 +241,7 @@ func (s *Store) LoadDocument(id string) (Document, bool, error) {
 	var doc Document
 	var dirty int
 	var updated int64
-	err := s.db.QueryRow(`SELECT id,format,payload,dirty,updated_at FROM documents WHERE id=?`, id).Scan(&doc.ID, &doc.Format, &doc.Payload, &dirty, &updated)
+	err := s.db.QueryRow(`SELECT id,format,payload,dirty,updated_at,view_state FROM documents WHERE id=?`, id).Scan(&doc.ID, &doc.Format, &doc.Payload, &dirty, &updated, &doc.ViewState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return doc, false, nil
 	}
