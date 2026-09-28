@@ -14,6 +14,7 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
+	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
@@ -94,7 +95,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 					continue
 				}
 				style := paintStyle(cell.Style)
-				if rr == v.SelectedRow && cc == v.SelectedColumn {
+				if rr == v.SelectedRow && cc == v.SelectedColumn || merged && mr == v.SelectedRow && mc == v.SelectedColumn {
 					style.Fill = selectedFill
 				}
 				paintStyledCell(gtx, a.theme, cell, rect, style)
@@ -116,7 +117,33 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 		x1 := int(x1f-v.X) + rowHead
 		paintTextBox(gtx, a.theme, columnName(c+1), image.Rect(x0, 0, x1, colHead), mutedText, color.NRGBA{R: 234, G: 238, B: 244, A: 255}, false)
 	}
+	if a.cellEdit.Editing {
+		if row, col, ok := parseCellAddress(a.cellEdit.Address); ok {
+			rng := document.CellRange{StartRow: row, StartColumn: col, EndRow: row, EndColumn: col}
+			for _, m := range v.Window.Merges {
+				if row >= m.Range.StartRow && row <= m.Range.EndRow && col >= m.Range.StartColumn && col <= m.Range.EndColumn {
+					rng = m.Range
+					break
+				}
+			}
+			rect := cellRect(v.Rows, v.Columns, rng, v.X, v.Y).Add(image.Pt(rowHead, colHead)).Intersect(image.Rect(rowHead, colHead, size.X, size.Y))
+			if !rect.Empty() {
+				paintCellEditor(gtx, a.theme, &a.cellEditor, rect)
+			}
+		}
+	}
 	return layout.Dimensions{Size: size}
+}
+
+func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.Editor, rect image.Rectangle) {
+	t := op.Offset(rect.Min).Push(gtx.Ops)
+	defer t.Pop()
+	sz := rect.Size()
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: sz}.Op())
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 35, G: 105, B: 190, A: 255}, clip.Rect{Max: image.Pt(sz.X, 2)}.Op())
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 35, G: 105, B: 190, A: 255}, clip.Rect{Max: image.Pt(2, sz.Y)}.Op())
+	gtx.Constraints = layout.Constraints{Min: sz, Max: sz}
+	layout.Inset{Left: unit.Dp(4), Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return material.Editor(theme, editor, "").Layout(gtx) })
 }
 
 func paintTextBox(gtx layout.Context, theme *material.Theme, text string, rect image.Rectangle, fg, bg color.NRGBA, bold bool) {

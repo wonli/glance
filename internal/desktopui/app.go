@@ -28,13 +28,16 @@ type App struct {
 	ops    op.Ops
 	theme  *material.Theme
 
-	pathEditor   widget.Editor
-	cellEditor   widget.Editor
-	wordEditor   widget.Editor
-	openButton   widget.Clickable
-	chooseButton widget.Clickable
-	saveButton   widget.Clickable
-	applyButton  widget.Clickable
+	pathEditor     widget.Editor
+	cellEditor     widget.Editor
+	formulaEditor  widget.Editor
+	nameBox        widget.Editor
+	wordEditor     widget.Editor
+	openButton     widget.Clickable
+	chooseButton   widget.Clickable
+	saveButton     widget.Clickable
+	applyButton    widget.Clickable
+	goToCellButton widget.Clickable
 
 	path          string
 	status        string
@@ -46,14 +49,15 @@ type App struct {
 	gridList      widget.List
 	wordListState widget.List
 
-	cellButtons           map[string]*widget.Clickable
-	sheetButtons          map[string]*widget.Clickable
-	blockButtons          map[int]*widget.Clickable
-	selectedCell          string
-	selectedBlock         int
-	selectedBlockEditable bool
-	virtualGrid           *gridViewport
-	gridPointerTag        struct{}
+	cellButtons                   map[string]*widget.Clickable
+	sheetButtons                  map[string]*widget.Clickable
+	blockButtons                  map[int]*widget.Clickable
+	selectedCell                  string
+	selectedBlock                 int
+	selectedBlockEditable         bool
+	cellEdit                      cellEditState
+	lastGridWidth, lastGridHeight float64
+	virtualGrid                   *gridViewport
 }
 
 func New(window *app.Window, initialPath string) *App {
@@ -72,6 +76,11 @@ func New(window *app.Window, initialPath string) *App {
 	a.pathEditor.SingleLine = true
 	a.pathEditor.SetText(initialPath)
 	a.cellEditor.SingleLine = true
+	a.cellEditor.Submit = true
+	a.formulaEditor.SingleLine = true
+	a.formulaEditor.Submit = true
+	a.nameBox.SingleLine = true
+	a.nameBox.Submit = true
 	a.wordEditor.SingleLine = true
 	return a
 }
@@ -209,6 +218,28 @@ func (a *App) applyCellEdit() error {
 	return a.loadSheet()
 }
 
+func (a *App) commitGridCell(value string) error {
+	if a.book == nil || a.cellEdit.Address == "" {
+		return fmt.Errorf("请先选择单元格")
+	}
+	a.cellEdit.setDraft(value)
+	changed := a.cellEdit.Draft != a.cellEdit.Original
+	err := a.cellEdit.commit(func(address, value string) error { return a.book.SetCellText(a.sheet, address, value) })
+	if err != nil {
+		return err
+	}
+	a.selectedCell = a.cellEdit.Address
+	if changed && a.virtualGrid != nil {
+		a.virtualGrid.invalidateWindow()
+	}
+	a.cellEditor.SetText(a.cellEdit.Original)
+	a.formulaEditor.SetText(a.cellEdit.Original)
+	if changed {
+		a.status = fmt.Sprintf("%s 已修改；点击保存写入原文件", a.selectedCell)
+	}
+	return nil
+}
+
 func (a *App) applyWordEdit() error {
 	if a.word == nil || a.selectedBlock < 0 {
 		return fmt.Errorf("请先选择一个段落")
@@ -252,6 +283,11 @@ func (a *App) closeDocument() error {
 		a.word = nil
 	}
 	a.sheets, a.sheet, a.grid = nil, "", nil
+	a.virtualGrid = nil
+	a.cellEdit = cellEditState{}
+	a.selectedCell = ""
+	a.nameBox.SetText("")
+	a.formulaEditor.SetText("")
 	a.path = ""
 	return err
 }

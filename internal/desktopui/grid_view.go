@@ -3,6 +3,7 @@ package desktopui
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"glance/internal/document"
 )
@@ -25,6 +26,9 @@ type gridViewport struct {
 	SelectedRow, SelectedColumn int
 	PointerTag                  struct{}
 	WindowError                 error
+	LastClickAddress            string
+	LastClickTime               time.Duration
+	PendingSelectionLoad        bool
 }
 
 func newGridViewport() *gridViewport {
