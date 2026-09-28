@@ -38,6 +38,8 @@ type gridViewport struct {
 	RequestedSheet              string
 	FailedRange                 document.CellRange
 	FailedSheet                 string
+	CellPaintCache              map[cellPaintKey]*cellPaintEntry
+	CellPaintFIFO               []cellPaintKey
 }
 
 type gridLoadResult struct {
@@ -159,6 +161,14 @@ func (v *gridViewport) scroll(dx, dy, viewportWidth, viewportHeight float64) {
 	v.X = clamp(v.X+dx, 0, math.Max(0, v.Columns.TotalSize()-viewportWidth))
 	v.Y = clamp(v.Y+dy, 0, math.Max(0, v.Rows.TotalSize()-viewportHeight))
 }
+
+func gridScrollDelta(scrollX, scrollY float64, shift bool) (dx, dy float64) {
+	if shift {
+		return scrollX + scrollY, 0
+	}
+	return scrollX, scrollY
+}
+
 func clamp(x, min, max float64) float64 {
 	if x < min {
 		return min

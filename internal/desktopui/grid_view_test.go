@@ -6,6 +6,15 @@ import (
 	"testing"
 )
 
+func TestGridScrollDeltaFollowsPointerScrollDirection(t *testing.T) {
+	if dx, dy := gridScrollDelta(0, 120, false); dx != 0 || dy != 120 {
+		t.Fatalf("downward scroll delta=(%v,%v); want (0,120)", dx, dy)
+	}
+	if dx, dy := gridScrollDelta(8, 12, true); dx != 20 || dy != 0 {
+		t.Fatalf("shift scroll delta=(%v,%v); want (20,0)", dx, dy)
+	}
+}
+
 type memoryGridReader struct {
 	calls int
 	fail  bool

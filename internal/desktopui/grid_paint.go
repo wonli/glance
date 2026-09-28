@@ -27,6 +27,22 @@ type gridPaintStyle struct {
 	Vertical           string
 }
 
+const maxCachedCellPaints = 1024
+
+type cellPaintKey struct {
+	Value   string
+	Source  document.CellStyle
+	Style   gridPaintStyle
+	Size    image.Point
+	PxPerDp float32
+	PxPerSp float32
+}
+
+type cellPaintEntry struct {
+	ops  op.Ops
+	call op.CallOp
+}
+
 func paintStyle(style document.CellStyle) gridPaintStyle {
 	return gridPaintStyle{Fill: parseGridColor(style.FillColor, color.NRGBA{R: 255, G: 255, B: 255, A: 255}), Font: parseGridColor(style.FontColor, color.NRGBA{R: 35, G: 39, B: 45, A: 255}), Bold: style.Bold, Italic: style.Italic, Wrap: style.WrapText, Align: style.HorizontalAlignment, Vertical: style.VerticalAlignment}
 }
@@ -88,17 +104,16 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 						continue
 					}
 				}
-				rect := cellRect(v.Rows, v.Columns, cr, v.X, v.Y)
-				rect = rect.Add(image.Pt(rowHead, colHead))
-				rect = rect.Intersect(image.Rect(rowHead, colHead, size.X, size.Y))
-				if rect.Empty() {
+				fullRect := cellRect(v.Rows, v.Columns, cr, v.X, v.Y).Add(image.Pt(rowHead, colHead))
+				visibleRect := fullRect.Intersect(image.Rect(rowHead, colHead, size.X, size.Y))
+				if visibleRect.Empty() {
 					continue
 				}
 				style := paintStyle(cell.Style)
 				if rr == v.SelectedRow && cc == v.SelectedColumn || merged && mr == v.SelectedRow && mc == v.SelectedColumn {
 					style.Fill = selectedFill
 				}
-				paintStyledCell(gtx, a.theme, cell, rect, style)
+				paintCachedCell(gtx, v, a.theme, cell, fullRect, visibleRect, style)
 			}
 		}
 	}
@@ -126,9 +141,13 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 					break
 				}
 			}
-			rect := cellRect(v.Rows, v.Columns, rng, v.X, v.Y).Add(image.Pt(rowHead, colHead)).Intersect(image.Rect(rowHead, colHead, size.X, size.Y))
-			if !rect.Empty() {
-				paintCellEditor(gtx, a.theme, &a.cellEditor, rect)
+			fullRect := cellRect(v.Rows, v.Columns, rng, v.X, v.Y).Add(image.Pt(rowHead, colHead))
+			visibleRect := fullRect.Intersect(image.Rect(rowHead, colHead, size.X, size.Y))
+			if !visibleRect.Empty() {
+				cell := windowCell(v.Window, row, col)
+				style := paintStyle(cell.Style)
+				style.Fill = selectedFill
+				paintCellEditor(gtx, a.theme, &a.cellEditor, fullRect, visibleRect, cell.Style, style)
 			}
 		}
 	}
@@ -150,15 +169,70 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	return layout.Dimensions{Size: size}
 }
 
-func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.Editor, rect image.Rectangle) {
+func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.Editor, rect, visible image.Rectangle, cellStyle document.CellStyle, style gridPaintStyle) {
+	area := clip.Rect(visible).Push(gtx.Ops)
+	defer area.Pop()
 	t := op.Offset(rect.Min).Push(gtx.Ops)
 	defer t.Pop()
 	sz := rect.Size()
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: sz}.Op())
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 35, G: 105, B: 190, A: 255}, clip.Rect{Max: image.Pt(sz.X, 2)}.Op())
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 35, G: 105, B: 190, A: 255}, clip.Rect{Max: image.Pt(2, sz.Y)}.Op())
+	paint.FillShape(gtx.Ops, style.Fill, clip.Rect{Max: sz}.Op())
+	border := color.NRGBA{R: 35, G: 105, B: 190, A: 255}
+	paint.FillShape(gtx.Ops, border, clip.Rect{Max: image.Pt(sz.X, max(1, gtx.Dp(unit.Dp(1))))}.Op())
+	paint.FillShape(gtx.Ops, border, clip.Rect{Max: image.Pt(max(1, gtx.Dp(unit.Dp(1))), sz.Y)}.Op())
 	gtx.Constraints = layout.Constraints{Min: sz, Max: sz}
-	layout.Inset{Left: unit.Dp(4), Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return material.Editor(theme, editor, "").Layout(gtx) })
+	editorStyle := cellEditorStyle(theme, editor, cellStyle, style)
+	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return editorStyle.Layout(gtx) })
+	paintCellBorders(gtx, sz, cellStyle.Borders)
+}
+
+func cellEditorStyle(theme *material.Theme, editor *widget.Editor, cellStyle document.CellStyle, style gridPaintStyle) material.EditorStyle {
+	editor.Alignment = cellTextAlignment(style.Align)
+	editor.SingleLine = !cellStyle.WrapText
+	result := material.Editor(theme, editor, "")
+	result.TextSize = theme.TextSize * 14.0 / 16.0
+	result.Color = style.Font
+	if style.Bold {
+		result.Font.Weight = font.Weight(700)
+	}
+	if style.Italic {
+		result.Font.Style = font.Italic
+	}
+	return result
+}
+
+func paintCachedCell(gtx layout.Context, v *gridViewport, theme *material.Theme, cell document.Cell, fullRect, visibleRect image.Rectangle, style gridPaintStyle) {
+	key := cellPaintKey{Value: cell.Value, Source: cell.Style, Style: style, Size: fullRect.Size(), PxPerDp: gtx.Metric.PxPerDp, PxPerSp: gtx.Metric.PxPerSp}
+	entry := v.cachedCellPaint(key, func(entry *cellPaintEntry) {
+		recordGtx := gtx
+		recordGtx.Ops = &entry.ops
+		record := op.Record(recordGtx.Ops)
+		paintStyledCell(recordGtx, theme, cell, image.Rectangle{Max: fullRect.Size()}, style)
+		entry.call = record.Stop()
+	})
+	area := clip.Rect(visibleRect).Push(gtx.Ops)
+	transform := op.Offset(fullRect.Min).Push(gtx.Ops)
+	entry.call.Add(gtx.Ops)
+	transform.Pop()
+	area.Pop()
+}
+
+func (v *gridViewport) cachedCellPaint(key cellPaintKey, record func(*cellPaintEntry)) *cellPaintEntry {
+	if v.CellPaintCache == nil {
+		v.CellPaintCache = make(map[cellPaintKey]*cellPaintEntry)
+	}
+	entry := v.CellPaintCache[key]
+	if entry == nil {
+		if len(v.CellPaintCache) >= maxCachedCellPaints {
+			oldest := v.CellPaintFIFO[0]
+			v.CellPaintFIFO = v.CellPaintFIFO[1:]
+			delete(v.CellPaintCache, oldest)
+		}
+		entry = &cellPaintEntry{}
+		record(entry)
+		v.CellPaintCache[key] = entry
+		v.CellPaintFIFO = append(v.CellPaintFIFO, key)
+	}
+	return entry
 }
 
 func paintTextBox(gtx layout.Context, theme *material.Theme, text string, rect image.Rectangle, fg, bg color.NRGBA, bold bool) {
@@ -196,19 +270,16 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	if style.Italic {
 		label.Font.Style = font.Italic
 	}
-	switch strings.ToLower(style.Align) {
-	case "center":
-		label.Alignment = text.Middle
-	case "right":
-		label.Alignment = text.End
-	default:
-		label.Alignment = text.Start
-	}
+	label.Alignment = cellTextAlignment(style.Align)
 	if style.Wrap {
 		label.WrapPolicy = text.WrapWords
 	}
 	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return label.Layout(gtx) })
-	for i, b := range cell.Style.Borders {
+	paintCellBorders(gtx, size, cell.Style.Borders)
+}
+
+func paintCellBorders(gtx layout.Context, size image.Point, borders [4]document.CellBorder) {
+	for i, b := range borders {
 		if b.Style <= 0 {
 			continue
 		}
@@ -227,4 +298,16 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 		paint.FillShape(gtx.Ops, c, clip.Rect(r).Op())
 	}
 }
+
+func cellTextAlignment(alignment string) text.Alignment {
+	switch strings.ToLower(alignment) {
+	case "center":
+		return text.Middle
+	case "right":
+		return text.End
+	default:
+		return text.Start
+	}
+}
+
 func columnName(column int) string { return strings.TrimRight(xlsx.CellName(column, 1), "0123456789") }

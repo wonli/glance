@@ -166,12 +166,8 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				v.ResizeCursor = 0
 			}
 		case pointer.Scroll:
-			dx, dy := float64(pe.Scroll.X), float64(pe.Scroll.Y)
-			if pe.Modifiers.Contain(key.ModShift) {
-				dx += dy
-				dy = 0
-			}
-			v.scroll(-dx, -dy, contentW, contentH)
+			dx, dy := gridScrollDelta(float64(pe.Scroll.X), float64(pe.Scroll.Y), pe.Modifiers.Contain(key.ModShift))
+			v.scroll(dx, dy, contentW, contentH)
 			if v.Resize != nil {
 				rs := v.Resize.State
 				edge := resizeScreenEdge(v, rs, gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
