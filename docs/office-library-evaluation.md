@@ -1,10 +1,10 @@
 # Office Library Evaluation
 
-Status: candidate guidance, not a final dependency lock. Select libraries only after running the project's representative-file and round-trip corpus.
+Status: initial implementation dependencies selected and evaluated on 2026-09-28. `go.mod`/`go.sum` are the version authority; the feature boundary and evidence are in [office-support.md](office-support.md).
 
 ## GUI dependency
 
-Use **Gio v0.10.2**, the latest released `gioui.org` version checked on 2026-09-28. The desktop command is isolated at `cmd/desktop` so the existing server CLI and its cross-compilation settings do not need to import the native UI package. Lock updates in `go.mod` and `go.sum` and rebuild the desktop target when upgrading Gio.
+Use **Gio v0.10.2**, the latest released `gioui.org` version checked on 2026-09-28, as requested. The desktop command is isolated at `cmd/desktop`. The XLSX surface is drawn directly by Gio; it does not depend on a web view or third-party Office widget.
 
 Source checked: [gioui.org/app on pkg.go.dev](https://pkg.go.dev/gioui.org/app).
 
@@ -17,13 +17,17 @@ Source checked: [gioui.org/app on pkg.go.dev](https://pkg.go.dev/gioui.org/app).
 
 ## Candidates to validate
 
-### XLSX: Excelize
+### XLSX: Excelize (selected)
 
-Excelize is the leading initial candidate for Go-native XLSX read/write and cell/style operations. Its official documentation describes OOXML spreadsheet read/write support and streaming APIs. Evaluate the exact operations needed for bounded ranges, displayed values, formulas/cached values, styles, merged regions, and preservation on save.
+The implementation uses `github.com/xuri/excelize/v2 v2.11.0`. The adapter exposes bounded cell windows, common styles, merge ranges, row heights, and column widths through neutral DTOs. `internal/format/xlsx/workbook_test.go` covers synthetic styled/merged/dimension workbooks plus the local employee-performance sample, including save/reopen checks after edits/resizes and unchanged source bytes. Formula calculation and universal unsupported-part preservation are not established.
 
 Sources: [Excelize documentation](https://xuri.me/excelize/en/index.html), [source repository](https://github.com/xuri/excelize).
 
-### DOCX: compare based on preservation and license
+### DOCX: project-local OOXML adapter (selected for the first slice)
+
+`internal/format/docx` uses Go ZIP/XML libraries for a narrow paragraph-text replacement path. It preserves non-document package parts and limits editing to paragraphs represented by a single text run. Local sample round-trip tests compare package parts. This does not promise pagination or broad Word fidelity.
+
+### Deferred third-party DOCX candidates
 
 - **UniOffice** advertises existing DOCX read/edit operations, formatting, images, tables, and conversion features. Its project states that it is commercial and requires a license code. Consider it only if its license/price model is acceptable and corpus tests justify it.
 - **godocx** and **fumiama/go-docx** describe Go APIs for reading and writing DOCX. Treat them as candidates for a limited workflow, not as evidence of broad Word fidelity. Review project activity, license, API coverage, and round-trip output for the exact fixture corpus before selection.

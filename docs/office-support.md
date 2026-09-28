@@ -11,11 +11,13 @@ Run `go run ./cmd/desktop [path]` from the repository root. Gio renders the wind
 | Feature | Status | Current boundary |
 |---|---|---|
 | Open workbook and switch worksheets | Implemented | `.xlsx` only. |
-| Preview cell values | Implemented, basic | First 300 rows and 16 columns; no horizontal scrolling yet. Style IDs receive a subtle display treatment; complete Excel styling is not rendered. |
-| Edit a cell constant | Implemented, basic | Text, finite numbers, booleans, and blank values. Formula-like input is rejected. Select a cell, edit in the footer editor, apply, then Save. |
-| Save edited workbook | Implemented, sample verified | Sibling temporary file then replacement. Unit round-trip checks value/style; local sample tests reopen saved copies and compare bounded cell previews. This is not a universal Office-part preservation guarantee. |
-| Formula calculation, formatting UI, merged-cell interaction | Not implemented | Cached values may display through Excelize; calculation and full layout are not promised. |
-| Resize row heights / column widths | Not implemented | When added, reuse `../mysql-ai/docs/drag-patterns.md` for coordinate normalization, stable preview, edge extension, cursor coverage, and release-time commit. |
+| Preview cell values | Implemented, virtualized | Full legal XLSX address extent (1,048,576 rows × 16,384 columns), rendered from the visible window with two rows/columns of overscan. Horizontal and vertical scrolling are supported; blank cells outside the used range can be selected. Opens and range reads run off the Gio frame loop. |
+| Cell styles | Partial | Common fill/font colors, bold, italic, horizontal alignment, wrapping, and simple cell borders render from neutral style data. Theme/indexed colors fall back to defaults; number formats, rich text, conditional formatting, and Excel-perfect typography are not rendered. |
+| Merged cells | Partial | Visible merge ranges render as the anchor cell across rows/columns, clipped to the viewport. Clicking an interior selects the anchor. |
+| Edit a cell constant | Implemented, basic | Click selects; double-click or F2 opens an editor over the cell. Enter commits, Escape cancels. The name box and formula/value bar track the active cell. Text, finite numbers, booleans, and blanks are supported; formula-like input is rejected. |
+| Save edited workbook | Implemented, sample verified | Background save through a sibling temporary file then replacement. Adapter tests reopen synthetic and `~/Downloads/office/人事表格-员工绩效表.xlsx` copies after cell edits and dimension changes; representative untouched values, styles, merges, and formula data survive, and the source sample remains unchanged. This is not a universal Office-part preservation guarantee. |
+| Formula calculation and broad formatting edits | Not implemented | Cached values may display through Excelize; formula calculation and full Excel layout are not promised. |
+| Resize row heights / column widths | Implemented, fixture scope | Drag a row/column heading boundary. Preview geometry and cursor remain active during drag; cancellation or write failure restores prior dimensions. Only release writes dimensions. Pixels convert to points/Excel character widths; XLSX limits are enforced. |
 | Legacy `.xls` | Read-only, limited | Opens the first worksheet only. The supplied `.xls` sample contains three empty sheets, so it verifies package opening but not cell-value fidelity. Editing/saving is disabled. |
 
 ## DOCX
@@ -31,7 +33,7 @@ Run `go run ./cmd/desktop [path]` from the repository root. Gio renders the wind
 To include the user's local files without checking them into the repository:
 
 ```sh
-GLANCE_OFFICE_TEST_DIR="$HOME/Downloads/office" go test ./internal/format/...
+GOCACHE=/tmp/glance-go-gocache GLANCE_OFFICE_TEST_DIR="$HOME/Downloads/office" go test ./...
 ```
 
 The tests open and save copies of `.xlsx`/`.docx` samples, reopen the copies, and leave originals untouched. The `.xls` sample is opened read-only. `.ppt` and PDF files are outside this first desktop slice.
