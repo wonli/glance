@@ -173,6 +173,25 @@ func (a *AxisGeometry) Clone() *AxisGeometry {
 	return clone
 }
 
+// Scale converts all stored geometry to a different pixel density while
+// preserving the sparse overrides and their relative dimensions.
+func (a *AxisGeometry) Scale(factor float64) error {
+	if a == nil || !finite(factor) || factor <= 0 {
+		return fmt.Errorf("geometry scale must be finite and positive: %v", factor)
+	}
+	if factor == 1 {
+		return nil
+	}
+	a.defaultSize *= factor
+	for i := range a.deltaTree {
+		a.deltaTree[i] *= factor
+	}
+	for i, size := range a.overrides {
+		a.overrides[i] = size * factor
+	}
+	return nil
+}
+
 func (a *AxisGeometry) sizeAt(index int) float64 {
 	if size, ok := a.overrides[index]; ok {
 		return size

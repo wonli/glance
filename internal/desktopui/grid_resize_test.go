@@ -92,6 +92,19 @@ func TestExcelDimensionConversions(t *testing.T) {
 	}
 }
 
+func TestDevicePixelDimensionConversionsAtRetinaScale(t *testing.T) {
+	for _, p := range []float64{10, 15, 30, 409.5} {
+		if got := devicePixelsToPoints(pointsToDevicePixels(p, 2), 2); math.Abs(got-p) > 1e-8 {
+			t.Fatalf("scaled points %v => %v", p, got)
+		}
+	}
+	for _, w := range []float64{8.43, 12, 255} {
+		if got := devicePixelsToChars(charsToDevicePixels(w, 2), 2); math.Abs(got-w) > 1e-8 {
+			t.Fatalf("scaled chars %v => %v", w, got)
+		}
+	}
+}
+
 func TestGridResizePreviewIsTransientAndReleaseCommits(t *testing.T) {
 	v := newGridViewport()
 	before := v.Columns.TotalSize()

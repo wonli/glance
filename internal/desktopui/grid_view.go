@@ -19,6 +19,7 @@ const (
 
 type gridViewport struct {
 	X, Y                        float64
+	Scale                       float64
 	Rows, Columns               *AxisGeometry
 	Window                      document.SheetWindow
 	WindowRange                 document.CellRange
@@ -51,7 +52,31 @@ type gridLoadResult struct {
 func newGridViewport() *gridViewport {
 	r, _ := NewAxisGeometry(xlsxRows, gridDefaultRow)
 	c, _ := NewAxisGeometry(xlsxColumns, gridDefaultColumn)
-	return &gridViewport{Rows: r, Columns: c}
+	return &gridViewport{Rows: r, Columns: c, Scale: 1}
+}
+
+func (v *gridViewport) setScale(scale float64) {
+	if !finite(scale) || scale <= 0 {
+		scale = 1
+	}
+	if v.Scale == scale {
+		return
+	}
+	factor := scale / v.Scale
+	if v.Resize != nil {
+		v.cancelResize()
+		v.ResizeCursor = 0
+	}
+	_ = v.Rows.Scale(factor)
+	_ = v.Columns.Scale(factor)
+	v.X *= factor
+	v.Y *= factor
+	v.Scale = scale
+	if v.WindowRange.StartRow > 0 {
+		v.GeometryChanged = false
+		_ = v.applyWindow(v.WindowSheet, v.WindowRange, v.Window)
+	}
+	v.GeometryChanged = true
 }
 
 func (v *gridViewport) invalidateWindow() {
@@ -94,7 +119,7 @@ func (v *gridViewport) applyWindow(sheet string, visible document.CellRange, w d
 				continue
 			}
 			old := v.Rows.sizeAt(w.StartRow - 1 + i)
-			_ = v.Rows.SetSize(w.StartRow-1+i, pointsToGridPixels(h))
+			_ = v.Rows.SetSize(w.StartRow-1+i, pointsToGridPixels(h)*v.Scale)
 			if old != v.Rows.sizeAt(w.StartRow-1+i) {
 				v.GeometryChanged = true
 			}
@@ -106,7 +131,7 @@ func (v *gridViewport) applyWindow(sheet string, visible document.CellRange, w d
 				continue
 			}
 			old := v.Columns.sizeAt(w.StartColumn - 1 + i)
-			_ = v.Columns.SetSize(w.StartColumn-1+i, math.Max(minGridColumnPx, columnCharsToGridPixels(width)))
+			_ = v.Columns.SetSize(w.StartColumn-1+i, math.Max(minGridColumnPx*v.Scale, columnCharsToGridPixels(width)*v.Scale))
 			if old != v.Columns.sizeAt(w.StartColumn-1+i) {
 				v.GeometryChanged = true
 			}

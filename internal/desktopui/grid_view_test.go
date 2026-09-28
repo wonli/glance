@@ -61,3 +61,38 @@ func TestGridViewRetainsPreviousWindowOnReadError(t *testing.T) {
 		t.Fatal("previous window was discarded")
 	}
 }
+
+func TestGridViewportScalesGeometryToDevicePixels(t *testing.T) {
+	v := newGridViewport()
+	v.setScale(2)
+	if got, _ := v.Rows.Boundary(1); got != 40 {
+		t.Fatalf("first row boundary=%v; want 40 device pixels", got)
+	}
+	if got, _ := v.Columns.Boundary(1); got != 128 {
+		t.Fatalf("first column boundary=%v; want 128 device pixels", got)
+	}
+	v.setScale(2)
+	if got, _ := v.Rows.Boundary(2); got != 80 {
+		t.Fatalf("repeated scale changed row geometry: boundary=%v", got)
+	}
+}
+
+func TestGridViewportScalesWorkbookDimensionsToDevicePixels(t *testing.T) {
+	v := newGridViewport()
+	v.setScale(2)
+	window := document.SheetWindow{
+		StartRow: 1, StartColumn: 1,
+		Cells:             [][]document.Cell{{{Value: "x"}}},
+		RowHeightsPoints:  []float64{18},
+		ColumnWidthsChars: []float64{10},
+	}
+	if err := v.applyWindow("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, window); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := v.Rows.Boundary(1); got != 48 {
+		t.Fatalf("row boundary=%v; want 48 device pixels", got)
+	}
+	if got, _ := v.Columns.Boundary(1); got != 150 {
+		t.Fatalf("column boundary=%v; want 150 device pixels", got)
+	}
+}

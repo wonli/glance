@@ -9,6 +9,7 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
+	"gioui.org/op/clip"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -96,8 +97,11 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		a.virtualGrid = newGridViewport()
 	}
 	v := a.virtualGrid
+	v.setScale(float64(gtx.Metric.PxPerDp))
 	width, height := float64(gtx.Constraints.Max.X), float64(gtx.Constraints.Max.Y)
-	contentW, contentH := width-gridRowHeader, height-gridColumnHeader
+	rowHeaderPx := gtx.Dp(unit.Dp(gridRowHeader))
+	columnHeaderPx := gtx.Dp(unit.Dp(gridColumnHeader))
+	contentW, contentH := width-float64(rowHeaderPx), height-float64(columnHeaderPx)
 	a.lastGridWidth, a.lastGridHeight = contentW, contentH
 	visible := visibleCellWindow(v.Rows, v.Columns, v.X, v.Y, contentW, contentH)
 	a.pollGridLoad(v)
@@ -192,9 +196,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				if axis == resizeRows {
 					pos = float64(pe.Position.Y)
 				}
-				fileUnits := gridPixelsToPoints(sizePx)
+				fileUnits := devicePixelsToPoints(sizePx, v.Scale)
 				if axis == resizeColumns {
-					fileUnits = gridPixelsToColumnChars(sizePx)
+					fileUnits = devicePixelsToChars(sizePx, v.Scale)
 				}
 				v.beginResize(axis, index, pos, edge)
 				v.Resize.State.OriginalFile = fileUnits
@@ -264,6 +268,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			}
 		}
 	}
+	area := clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Push(gtx.Ops)
 	event.Op(gtx.Ops, &v.PointerTag)
 	key.InputHintOp{Tag: &v.PointerTag, Hint: key.HintText}.Add(gtx.Ops)
 	pointer.PassOp{}.Push(gtx.Ops)
@@ -272,7 +277,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 	} else if v.ResizeCursor == resizeRows {
 		pointer.CursorNorthSouthResize.Add(gtx.Ops)
 	}
-	return paintVirtualGrid(gtx, a, v)
+	dims := paintVirtualGrid(gtx, a, v)
+	area.Pop()
+	return dims
 }
 
 func (a *App) requestGridWindow(v *gridViewport, reader document.GridReader, sheet string, r document.CellRange) {

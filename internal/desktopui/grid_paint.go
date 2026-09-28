@@ -136,14 +136,15 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 		rs := v.Resize.State
 		preview := rs.previewEdge()
 		line := color.NRGBA{R: 30, G: 105, B: 205, A: 255}
+		lineWidth := max(1, gtx.Dp(unit.Dp(resizePreviewLinePx)))
 		if rs.Axis == resizeColumns {
 			x := int(preview)
-			_ = resizePreviewExtent(float64(size.X), preview, resizePreviewLinePx)
-			paint.FillShape(gtx.Ops, line, clip.Rect{Min: image.Pt(x, 0), Max: image.Pt(x+2, size.Y)}.Op())
+			_ = resizePreviewExtent(float64(size.X), preview, float64(lineWidth))
+			paint.FillShape(gtx.Ops, line, clip.Rect{Min: image.Pt(x, 0), Max: image.Pt(x+lineWidth, size.Y)}.Op())
 		} else {
 			y := int(preview)
-			_ = resizePreviewExtent(float64(size.Y), preview, resizePreviewLinePx)
-			paint.FillShape(gtx.Ops, line, clip.Rect{Min: image.Pt(0, y), Max: image.Pt(size.X, y+2)}.Op())
+			_ = resizePreviewExtent(float64(size.Y), preview, float64(lineWidth))
+			paint.FillShape(gtx.Ops, line, clip.Rect{Min: image.Pt(0, y), Max: image.Pt(size.X, y+lineWidth)}.Op())
 		}
 	}
 	return layout.Dimensions{Size: size}
@@ -181,6 +182,8 @@ func paintTextBox(gtx layout.Context, theme *material.Theme, text string, rect i
 
 func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Cell, rect image.Rectangle, style gridPaintStyle) {
 	paintTextBox(gtx, theme, "", rect, style.Font, style.Fill, false)
+	clipOp := clip.Rect(rect).Push(gtx.Ops)
+	defer clipOp.Pop()
 	transform := op.Offset(rect.Min).Push(gtx.Ops)
 	defer transform.Pop()
 	size := rect.Size()
@@ -204,7 +207,7 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	if style.Wrap {
 		label.WrapPolicy = text.WrapWords
 	}
-	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return label.Layout(gtx) })
+	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return label.Layout(gtx) })
 	for i, b := range cell.Style.Borders {
 		if b.Style <= 0 {
 			continue
