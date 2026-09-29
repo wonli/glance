@@ -45,6 +45,7 @@ type documentSessionState struct {
 	toolbarActionButtons          [25]widget.Clickable
 	toolbarPickerButtons          [9]widget.Clickable
 	toolbarPicker                 spreadsheetToolbarPicker
+	toolbarPickerSlot             int
 	formatRunning                 bool
 	valueFilter                   *ValueFilter
 	clipboardTarget               struct{}

@@ -337,11 +337,16 @@ func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
 func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 	if _, ok := a.book.(document.GridReader); ok {
 		a.handleSpreadsheetToolbarEvents(gtx)
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(a.layoutSpreadsheetToolbar),
-			layout.Rigid(a.layoutGridControls),
-			layout.Flexed(1, a.layoutVirtualGrid),
-			layout.Rigid(a.layoutSheetTabs),
+		return layout.Stack{Alignment: layout.NW}.Layout(gtx,
+			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(a.layoutSpreadsheetToolbar),
+					layout.Rigid(a.layoutGridControls),
+					layout.Flexed(1, a.layoutVirtualGrid),
+					layout.Rigid(a.layoutSheetTabs),
+				)
+			}),
+			layout.Stacked(a.layoutSpreadsheetToolbarPickerOverlay),
 		)
 	}
 	if len(a.grid) == 0 {

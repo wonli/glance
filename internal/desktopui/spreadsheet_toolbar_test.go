@@ -1,7 +1,14 @@
 package desktopui
 
 import (
+	"image"
+	"image/color"
 	"testing"
+
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/unit"
+	"gioui.org/widget/material"
 
 	"glance/internal/document"
 )
@@ -64,6 +71,100 @@ func TestSpreadsheetToolbarActionsHaveIconGlyphsAndAccessibleLabels(t *testing.T
 		if _, ok := toolbarIconData(action.icon); !ok {
 			t.Errorf("toolbar action %q references missing icon %q", action.label, action.icon)
 		}
+	}
+}
+
+func TestToolbarIconTintWritesRequestedColorIntoPixels(t *testing.T) {
+	mask := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	mask.SetNRGBA(0, 0, color.NRGBA{R: 255, G: 255, B: 255, A: 85})
+	want := color.NRGBA{R: 0, G: 153, B: 255, A: 85}
+
+	tinted := tintToolbarIcon(mask, color.NRGBA{R: want.R, G: want.G, B: want.B, A: 255})
+	got := color.NRGBAModel.Convert(tinted.At(0, 0)).(color.NRGBA)
+	if got != want {
+		t.Fatalf("tinted icon pixel=%v; want %v", got, want)
+	}
+}
+
+func TestToolbarIconsUseOfficeStyleMonochromeColors(t *testing.T) {
+	enabledColor := color.NRGBA{R: 54, G: 60, B: 67, A: 255}
+	checks := []struct {
+		slot int
+		icon string
+	}{
+		{slot: 0, icon: "undo"},
+		{slot: 2, icon: "copy"},
+		{slot: 8, icon: "paint-bucket"},
+		{slot: 13, icon: "row-delete"},
+	}
+	for _, check := range checks {
+		if got := toolbarIconColor(true); got != enabledColor {
+			t.Errorf("enabled toolbar icon color for slot %d=%v; want %v", check.slot, got, enabledColor)
+			continue
+		}
+		icon, ok := tintedToolbarIcon(check.icon, enabledColor)
+		if !ok {
+			t.Errorf("toolbar icon %q was not loaded", check.icon)
+			continue
+		}
+		near := func(a, b uint8) bool {
+			if a > b {
+				return a-b <= 6
+			}
+			return b-a <= 6
+		}
+		foundGlyph := false
+		for y := icon.Bounds().Min.Y; y < icon.Bounds().Max.Y && !foundGlyph; y++ {
+			for x := icon.Bounds().Min.X; x < icon.Bounds().Max.X; x++ {
+				pixel := color.NRGBAModel.Convert(icon.At(x, y)).(color.NRGBA)
+				if pixel.A == 0 {
+					continue
+				}
+				foundGlyph = true
+				if !near(pixel.R, enabledColor.R) || !near(pixel.G, enabledColor.G) || !near(pixel.B, enabledColor.B) {
+					t.Errorf("toolbar icon %q pixel RGB=(%d,%d,%d); want (%d,%d,%d)", check.icon, pixel.R, pixel.G, pixel.B, enabledColor.R, enabledColor.G, enabledColor.B)
+				}
+				break
+			}
+		}
+		if !foundGlyph {
+			t.Errorf("toolbar icon %q has no visible pixels", check.icon)
+		}
+	}
+	if got := toolbarIconColor(false); got != disabledToolbarText || int(got.B)-int(got.R) > 20 {
+		t.Errorf("disabled toolbar icon should be light gray, got %v", got)
+	}
+}
+func TestToolbarPickerPanelTracksItsScrolledActionAndStaysInViewport(t *testing.T) {
+	position := layout.Position{First: 7, Offset: 8}
+	if got := toolbarPickerPanelX(10, homeToolbarActions, position, 40, 48, 800, 260); got != 120 {
+		t.Fatalf("panel x=%d; want 120px under the scrolled action", got)
+	}
+	if got := toolbarPickerPanelX(17, homeToolbarActions, layout.Position{}, 40, 48, 300, 260); got != 40 {
+		t.Fatalf("panel x=%d; want 40px after clamping to the viewport", got)
+	}
+}
+
+func TestSpreadsheetToolbarHeightDoesNotChangeWhenPickerOpens(t *testing.T) {
+	book := &toolbarTestBook{editable: true}
+	state := newDocumentSessionState("")
+	state.book = book
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	app.book = book
+
+	heightForPicker := func(picker spreadsheetToolbarPicker) int {
+		state.toolbarPicker = picker
+		var ops op.Ops
+		gtx := layout.Context{
+			Ops:         &ops,
+			Constraints: layout.Constraints{Max: image.Pt(800, 600)},
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		}
+		return app.layoutSpreadsheetToolbar(gtx).Size.Y
+	}
+
+	if closed, open := heightForPicker(pickerNone), heightForPicker(pickerAlignment); closed != open {
+		t.Fatalf("toolbar height closed=%d open=%d; submenu must float without resizing it", closed, open)
 	}
 }
 

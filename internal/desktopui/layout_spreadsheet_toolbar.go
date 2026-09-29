@@ -75,7 +75,16 @@ var (
 	toolbarIconSpriteOnce sync.Once
 	toolbarIconSprite     *image.RGBA
 	toolbarIconSpriteErr  error
+	toolbarIconTintCache  = struct {
+		sync.RWMutex
+		icons map[toolbarIconTintKey]*image.NRGBA
+	}{icons: make(map[toolbarIconTintKey]*image.NRGBA)}
 )
+
+type toolbarIconTintKey struct {
+	name  string
+	color color.NRGBA
+}
 
 func toolbarIconData(name string) (image.Image, bool) {
 	cell, ok := toolbarIconCells[name]
@@ -98,6 +107,83 @@ func toolbarIconData(name string) (image.Image, bool) {
 	return toolbarIconSprite.SubImage(image.Rect(cell.X*cellSize, cell.Y*cellSize, (cell.X+1)*cellSize, (cell.Y+1)*cellSize)), true
 }
 
+func tintedToolbarIcon(name string, tint color.NRGBA) (image.Image, bool) {
+	key := toolbarIconTintKey{name: name, color: tint}
+	toolbarIconTintCache.RLock()
+	icon, ok := toolbarIconTintCache.icons[key]
+	toolbarIconTintCache.RUnlock()
+	if ok {
+		return icon, true
+	}
+	mask, ok := toolbarIconData(name)
+	if !ok {
+		return nil, false
+	}
+	icon = tintToolbarIcon(mask, tint)
+	toolbarIconTintCache.Lock()
+	if cached, exists := toolbarIconTintCache.icons[key]; exists {
+		icon = cached
+	} else {
+		toolbarIconTintCache.icons[key] = icon
+	}
+	toolbarIconTintCache.Unlock()
+	return icon, true
+}
+
+func tintToolbarIcon(mask image.Image, tint color.NRGBA) *image.NRGBA {
+	bounds := mask.Bounds()
+	tinted := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
+	for y := 0; y < bounds.Dy(); y++ {
+		for x := 0; x < bounds.Dx(); x++ {
+			pixel := color.NRGBAModel.Convert(mask.At(bounds.Min.X+x, bounds.Min.Y+y)).(color.NRGBA)
+			tinted.SetNRGBA(x, y, color.NRGBA{R: tint.R, G: tint.G, B: tint.B, A: pixel.A})
+		}
+	}
+	return tinted
+}
+
+func toolbarIconColor(enabled bool) color.NRGBA {
+	if !enabled {
+		return disabledToolbarText
+	}
+	return toolbarGlyphText
+}
+
+func toolbarPickerPanelX(slot int, actions []spreadsheetToolbarAction, position layout.Position, normalWidth, groupWidth, viewportWidth, panelWidth int) int {
+	if viewportWidth <= 0 {
+		return 0
+	}
+	maxX := viewportWidth - panelWidth
+	if maxX < 0 {
+		maxX = 0
+	}
+	target := -1
+	for index, action := range actions {
+		if action.slot == slot {
+			target = index
+			break
+		}
+	}
+	if target < 0 || target < position.First {
+		return 0
+	}
+	x := -position.Offset
+	for index := position.First; index < target; index++ {
+		width := normalWidth
+		if index > 0 && actions[index-1].group != actions[index].group {
+			width = groupWidth
+		}
+		x += width
+	}
+	if x < 0 {
+		return 0
+	}
+	if x > maxX {
+		return maxX
+	}
+	return x
+}
+
 var toolbarIconCells = map[string]image.Point{
 	"undo": {X: 0, Y: 0}, "redo": {X: 1, Y: 0}, "copy": {X: 2, Y: 0}, "cut": {X: 3, Y: 0},
 	"bold": {X: 4, Y: 0}, "italic": {X: 5, Y: 0}, "underline": {X: 6, Y: 0}, "type": {X: 7, Y: 0},
@@ -110,10 +196,11 @@ var toolbarIconCells = map[string]image.Point{
 
 var (
 	disabledToolbarBackground = color.NRGBA{R: 232, G: 235, B: 240, A: 255}
-	disabledToolbarText       = color.NRGBA{R: 132, G: 140, B: 151, A: 255}
-	mixedToolbarBackground    = color.NRGBA{R: 250, G: 239, B: 204, A: 255}
-	activeToolbarText         = color.NRGBA{R: 35, G: 82, B: 154, A: 255}
-	toolbarHoverBackground    = color.NRGBA{R: 232, G: 239, B: 249, A: 255}
+	disabledToolbarText       = color.NRGBA{R: 150, G: 156, B: 165, A: 255}
+	mixedToolbarBackground    = color.NRGBA{R: 239, G: 241, B: 243, A: 255}
+	toolbarActiveBackground   = color.NRGBA{R: 232, G: 234, B: 237, A: 255}
+	toolbarHoverBackground    = color.NRGBA{R: 244, G: 245, B: 247, A: 255}
+	toolbarGlyphText          = color.NRGBA{R: 54, G: 60, B: 67, A: 255}
 )
 
 func (a *App) spreadsheetToolbarVisible() bool {
@@ -131,9 +218,11 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 	}
 	if state.toolbarTabs[0].Clicked(gtx) {
 		state.toolbarTab = toolbarTabHome
+		state.toolbarPicker = pickerNone
 	}
 	if state.toolbarTabs[1].Clicked(gtx) {
 		state.toolbarTab = toolbarTabData
+		state.toolbarPicker = pickerNone
 	}
 	actions := homeToolbarActions
 	if state.toolbarTab == toolbarTabData {
@@ -143,6 +232,16 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 		if !state.toolbarActionButtons[action.slot].Clicked(gtx) || !a.toolbarActionEnabled(action.slot) {
 			continue
 		}
+		if picker := pickerForToolbarAction(action.slot); picker != pickerNone {
+			if state.toolbarPicker == picker {
+				state.toolbarPicker = pickerNone
+			} else {
+				state.toolbarPicker = picker
+				state.toolbarPickerSlot = action.slot
+			}
+			continue
+		}
+		state.toolbarPicker = pickerNone
 		if action.slot == 0 || action.slot == 1 {
 			a.applyHistory(action.slot == 0)
 			continue
@@ -202,13 +301,6 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
 			continue
-		}
-		if picker := pickerForToolbarAction(action.slot); picker != pickerNone {
-			if state.toolbarPicker == picker {
-				state.toolbarPicker = pickerNone
-			} else {
-				state.toolbarPicker = picker
-			}
 		}
 	}
 	if state.toolbarPicker != pickerNone {
@@ -286,10 +378,6 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(94))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	state := a.documentSessionState
-	if state.toolbarPicker != pickerNone {
-		height = gtx.Dp(unit.Dp(130))
-		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-	}
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, chromeSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
@@ -325,10 +413,9 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 								if button.Hovered() || gtx.Focused(button) {
 									hoveredLabel = action.label
 								}
-								icon, _ := toolbarIconData(action.icon)
-								iconColor, background := mutedText, contentSurface
+								iconColor, background := toolbarIconColor(enabled), contentSurface
 								if active {
-									iconColor, background = activeToolbarText, selectedFill
+									background = toolbarActiveBackground
 								}
 								if mixed {
 									background = mixedToolbarBackground
@@ -336,12 +423,13 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 								if !enabled {
 									iconColor, background = disabledToolbarText, disabledToolbarBackground
 								}
+								icon, _ := tintedToolbarIcon(action.icon, iconColor)
 								left := unit.Dp(2)
 								if index > 0 && actions[index-1].group != action.group {
 									left = unit.Dp(10)
 								}
 								return layout.Inset{Left: left, Right: unit.Dp(2), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return toolbarIconButton(gtx, button, icon, action.label, enabled, mixed, iconColor, background)
+									return toolbarIconButton(gtx, button, icon, action.label, enabled, mixed, background)
 								})
 							})
 						}),
@@ -356,31 +444,113 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 					)
 					return dims
 				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if state.toolbarPicker == pickerNone {
-						return layout.Dimensions{}
-					}
-					options := toolbarPickerOptions(state.toolbarPicker)
-					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, func() []layout.FlexChild {
-						children := make([]layout.FlexChild, 0, len(options))
-						for i, option := range options {
-							index, label := i, option
-							children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								b := material.Button(a.theme, &state.toolbarPickerButtons[index], label)
-								b.TextSize = a.theme.TextSize * 11 / 16
-								return layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, b.Layout)
-							}))
-						}
-						return children
-					}()...)
-				}),
 			)
 		},
 	)
 }
 
-func toolbarIconButton(gtx layout.Context, button *widget.Clickable, icon image.Image, label string, enabled, mixed bool, iconColor, background color.NRGBA) layout.Dimensions {
-	const buttonSize = unit.Dp(40)
+func (a *App) layoutSpreadsheetToolbarPickerOverlay(gtx layout.Context) layout.Dimensions {
+	state := a.documentSessionState
+	if state == nil || state.toolbarPicker == pickerNone {
+		return layout.Dimensions{}
+	}
+	options := toolbarPickerOptions(state.toolbarPicker)
+	if len(options) == 0 {
+		return layout.Dimensions{}
+	}
+	actions := homeToolbarActions
+	if state.toolbarTab == toolbarTabData {
+		actions = dataToolbarActions
+	}
+	panelWidth := gtx.Dp(unit.Dp(276))
+	if panelWidth > gtx.Constraints.Max.X {
+		panelWidth = gtx.Constraints.Max.X
+	}
+	normalWidth := gtx.Dp(unit.Dp(36)) + gtx.Dp(unit.Dp(2))*2
+	groupWidth := gtx.Dp(unit.Dp(36)) + gtx.Dp(unit.Dp(10)) + gtx.Dp(unit.Dp(2))
+	panelX := toolbarPickerPanelX(state.toolbarPickerSlot, actions, state.toolbarActionList.List.Position, normalWidth, groupWidth, gtx.Constraints.Max.X, panelWidth)
+	left := unit.Dp(0)
+	if gtx.Metric.PxPerDp > 0 {
+		left = unit.Dp(float32(panelX) / gtx.Metric.PxPerDp)
+	}
+	return layout.Inset{Left: left, Top: unit.Dp(98)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		width := panelWidth
+		if width > gtx.Constraints.Max.X {
+			width = gtx.Constraints.Max.X
+		}
+		gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
+		return a.layoutToolbarPickerPanel(gtx, options)
+	})
+}
+
+func (a *App) layoutToolbarPickerPanel(gtx layout.Context, options []string) layout.Dimensions {
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			bounds := image.Rectangle{Max: gtx.Constraints.Min}
+			shadowBounds := bounds.Add(image.Pt(1, 2))
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 28, G: 38, B: 54, A: 28}, clip.UniformRRect(shadowBounds, gtx.Dp(unit.Dp(9))).Op(gtx.Ops))
+			paint.FillShape(gtx.Ops, gridLine, clip.UniformRRect(bounds, gtx.Dp(unit.Dp(9))).Op(gtx.Ops))
+			inner := bounds.Inset(1)
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.UniformRRect(inner, gtx.Dp(unit.Dp(8))).Op(gtx.Ops))
+			return layout.Dimensions{Size: bounds.Max}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Top: unit.Dp(6), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				rows := make([]layout.FlexChild, 0, (len(options)+1)/2+2)
+				title := material.Body2(a.theme, toolbarPickerTitle(a.documentSessionState.toolbarPicker))
+				title.Color = mutedText
+				rows = append(rows, layout.Rigid(title.Layout))
+				rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(unit.Dp(4)))}
+				}))
+				for row := 0; row < (len(options)+1)/2; row++ {
+					rowIndex := row
+					rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						children := make([]layout.FlexChild, 0, 2)
+						for column := 0; column < 2; column++ {
+							index := rowIndex*2 + column
+							if index >= len(options) {
+								children = append(children, layout.Flexed(1, func(layout.Context) layout.Dimensions { return layout.Dimensions{} }))
+								continue
+							}
+							children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								button := material.Button(a.theme, &a.documentSessionState.toolbarPickerButtons[index], options[index])
+								button.TextSize = a.theme.TextSize * 12 / 16
+								button.Background = contentSurface
+								button.Color = mutedText
+								button.CornerRadius = 6
+								button.Inset = layout.Inset{Left: unit.Dp(5), Right: unit.Dp(5), Top: unit.Dp(4), Bottom: unit.Dp(4)}
+								return layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, button.Layout)
+							}))
+						}
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+					}))
+				}
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
+			})
+		},
+	)
+}
+
+func toolbarPickerTitle(picker spreadsheetToolbarPicker) string {
+	switch picker {
+	case pickerFontColor:
+		return "字体颜色"
+	case pickerFillColor:
+		return "填充颜色"
+	case pickerAlignment:
+		return "对齐方式"
+	case pickerNumberFormat:
+		return "数字格式"
+	case pickerBorder:
+		return "单元格边框"
+	default:
+		return ""
+	}
+}
+
+func toolbarIconButton(gtx layout.Context, button *widget.Clickable, icon image.Image, label string, enabled, mixed bool, background color.NRGBA) layout.Dimensions {
+	const buttonSize = unit.Dp(36)
 	size := gtx.Dp(buttonSize)
 	gtx.Constraints.Min = image.Pt(size, size)
 	gtx.Constraints.Max = image.Pt(size, size)
@@ -394,19 +564,18 @@ func toolbarIconButton(gtx layout.Context, button *widget.Clickable, icon image.
 		}
 		paint.FillShape(gtx.Ops, buttonBackground, clip.UniformRRect(image.Rectangle{Max: image.Pt(size, size)}, gtx.Dp(unit.Dp(7))).Op(gtx.Ops))
 		if icon != nil {
-			paint.ColorOp{Color: iconColor}.Add(gtx.Ops)
 			widget.Image{
 				Src:      paint.NewImageOp(icon),
 				Fit:      widget.Contain,
 				Position: layout.Center,
-				Scale:    0.25,
+				Scale:    0.1875,
 			}.Layout(gtx)
 		}
 		if mixed {
 			dotSize := gtx.Dp(unit.Dp(5))
 			inset := gtx.Dp(unit.Dp(5))
 			dot := image.Rect(size-dotSize-inset, inset, size-inset, dotSize+inset)
-			paint.FillShape(gtx.Ops, activeToolbarText, clip.Ellipse(dot).Op(gtx.Ops))
+			paint.FillShape(gtx.Ops, toolbarGlyphText, clip.Ellipse(dot).Op(gtx.Ops))
 		}
 		return layout.Dimensions{Size: image.Pt(size, size)}
 	})
