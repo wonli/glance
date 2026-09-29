@@ -42,6 +42,20 @@ func TestMacWindowControlsKeepIntrinsicWidth(t *testing.T) {
 	}
 }
 
+func TestWorkspaceTabStripAddsTopGapAndMeetsContentEdge(t *testing.T) {
+	a := New(nil, "")
+	a.clientTitlebar = true
+	gtx := layout.Context{
+		Ops:         new(op.Ops),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(800, 80)},
+	}
+	dims := a.layoutWorkspaceTabs(gtx)
+	if dims.Size.Y != 44 {
+		t.Fatalf("workspace tab strip height = %d px, want 44 px including the top gap", dims.Size.Y)
+	}
+}
+
 func TestWindowConfigSelectsClientTitlebarOnlyWhenPlatformAllowsIt(t *testing.T) {
 	a := &App{}
 	a.applyWindowConfig(app.Config{Decorated: false, Mode: app.Maximized})

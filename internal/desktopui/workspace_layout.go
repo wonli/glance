@@ -24,9 +24,15 @@ import (
 	"glance/internal/workspace"
 )
 
+const (
+	workspaceTabTopGap    unit.Dp = 8
+	workspaceTabHeight    unit.Dp = 36
+	workspaceTabStripSize unit.Dp = workspaceTabTopGap + workspaceTabHeight
+)
+
 func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 	ids := a.workspaceTabIDs()
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(40)), gtx.Dp(unit.Dp(40))
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabStripSize), gtx.Dp(workspaceTabStripSize)
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
 			return fill(gtx, color.NRGBA{R: 239, G: 242, B: 246, A: 255})
@@ -60,14 +66,16 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Dimensions {
-	return material.List(a.theme, &a.workspaceTabsList).Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
-		if index == 0 {
-			return a.layoutRecentTab(gtx)
-		}
-		if index == len(ids)+1 {
-			return a.layoutPlusTab(gtx)
-		}
-		return a.layoutDocumentTab(gtx, ids[index-1])
+	return layout.Inset{Top: workspaceTabTopGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return material.List(a.theme, &a.workspaceTabsList).Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
+			if index == 0 {
+				return a.layoutRecentTab(gtx)
+			}
+			if index == len(ids)+1 {
+				return a.layoutPlusTab(gtx)
+			}
+			return a.layoutDocumentTab(gtx, ids[index-1])
+		})
 	})
 }
 
@@ -206,13 +214,13 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 	if state := a.sessions[id]; state != nil && state.book != nil && state.book.Dirty() || state != nil && state.word != nil && state.word.Dirty() || state != nil && state.jsonDoc != nil && state.jsonDoc.Dirty() {
 		label += " •"
 	}
-	return layout.Inset{Top: unit.Dp(2), Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return a.paintDocumentTab(gtx, a.tabButtons[id], a.tabCloseButtons[id], label, id == a.activeTabID)
 	})
 }
 
 func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable, label string, active bool) layout.Dimensions {
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(36)), gtx.Dp(unit.Dp(36))
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabHeight), gtx.Dp(workspaceTabHeight)
 	runes := []rune(label)
 	if len(runes) > 24 {
 		label = string(runes[:21]) + "…"
@@ -242,7 +250,7 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 	call := child.Stop()
 	bg := color.NRGBA{R: 234, G: 237, B: 241, A: 255}
 	if active {
-		bg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		bg = pageBackground
 	}
 	paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(7)), NE: gtx.Dp(unit.Dp(7))}.Op(gtx.Ops))
 	call.Add(gtx.Ops)
@@ -251,7 +259,7 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 
 func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label string, active bool) layout.Dimensions {
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(36)), gtx.Dp(unit.Dp(36))
+		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabHeight), gtx.Dp(workspaceTabHeight)
 		runes := []rune(label)
 		if len(runes) > 24 {
 			label = string(runes[:21]) + "…"
@@ -266,7 +274,7 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 		call := child.Stop()
 		bg := color.NRGBA{R: 234, G: 237, B: 241, A: 255}
 		if active {
-			bg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			bg = pageBackground
 		}
 		paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(7)), NE: gtx.Dp(unit.Dp(7))}.Op(gtx.Ops))
 		call.Add(gtx.Ops)
