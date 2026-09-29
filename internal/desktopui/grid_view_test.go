@@ -15,6 +15,35 @@ func TestGridScrollDeltaFollowsPointerScrollDirection(t *testing.T) {
 	}
 }
 
+func TestValueFilterHidesRowsAndClearsToOriginalHeights(t *testing.T) {
+	v := newGridViewport()
+	v.WindowSheet = "Sheet1"
+	v.WindowRange = document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 1}
+	base := v.Rows.sizeAt(2)
+	state := newDocumentSessionState("")
+	state.valueFilter = &ValueFilter{Sheet: "Sheet1", Bounds: v.WindowRange, VisibleRows: map[int]bool{2: true}, OriginalHeights: map[int]float64{0: v.Rows.sizeAt(0), 1: v.Rows.sizeAt(1), 2: base}}
+	state.virtualGrid = v
+	app := &App{documentSessionState: state}
+	app.applyValueFilterWindow(state, v)
+	if got := v.Rows.sizeAt(2); got != 0 {
+		t.Fatalf("filtered row size=%v; want 0", got)
+	}
+	app.clearValueFilter(state)
+	if got := v.Rows.sizeAt(2); got != base {
+		t.Fatalf("cleared row size=%v; want %v", got, base)
+	}
+}
+
+func TestFilterMatchingRowsSkipsHeaderAndMatchesBlankExactly(t *testing.T) {
+	cells := [][]document.Cell{{{Value: "类型"}}, {{Value: ""}}, {{Value: "A"}}, {{Value: ""}}}
+	if got := filterMatchingRows(cells, 10, 0, ""); len(got) != 2 || !got[11] || !got[13] {
+		t.Fatalf("blank filter visible rows=%v; want 11 and 13", got)
+	}
+	if got := filterMatchingRows(cells, 10, 0, "A"); len(got) != 1 || !got[12] {
+		t.Fatalf("exact filter visible rows=%v; want 12", got)
+	}
+}
+
 type memoryGridReader struct {
 	calls int
 	fail  bool

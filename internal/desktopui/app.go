@@ -78,6 +78,7 @@ type App struct {
 	workspaceWriterDone   chan struct{}
 	fileCommandResults    chan fileCommandResult
 	gridLoadResults       chan gridLoadResult
+	formatResults         chan spreadsheetFormatResult
 	saveResults           chan saveResult
 	openResults           chan openResult
 	saving                bool
@@ -96,6 +97,7 @@ func New(window *app.Window, initialPath string) *App {
 		activeTabID:          workspace.RecentTabID,
 		status:               "打开一个 .xlsx 或 .docx 文件开始预览",
 		gridLoadResults:      make(chan gridLoadResult, 8),
+		formatResults:        make(chan spreadsheetFormatResult, 8),
 		saveResults:          make(chan saveResult, 1),
 		openResults:          make(chan openResult, 1),
 		fileCommandResults:   make(chan fileCommandResult, 1),
@@ -310,6 +312,8 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		if _, ok := loaded.book.(document.GridReader); ok {
 			a.virtualGrid = newGridViewport()
 			a.selectedCell = "A1"
+			state.selection = CellSelection{}
+			state.selectionSet = true
 			a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn = 1, 1
 			a.virtualGrid.PendingSelectionLoad = true
 			a.cellEdit.selectCell("A1", "")

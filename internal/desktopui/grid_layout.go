@@ -3,11 +3,13 @@ package desktopui
 import (
 	"fmt"
 	"image"
+	"io"
 	"time"
 
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
+	"gioui.org/io/transfer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/unit"
@@ -75,12 +77,8 @@ func (a *App) goToCell() {
 		return
 	}
 	v := a.virtualGrid
-	v.SelectedRow, v.SelectedColumn = r, c
-	a.selectedCell = xlsx.CellName(c, r)
+	a.updateGridSelection(v, CellPosition{Row: r - 1, Column: c - 1}, false, false)
 	a.persistViewState()
-	a.cellEdit.selectCell(a.selectedCell, "")
-	a.nameBox.SetText(a.selectedCell)
-	a.formulaEditor.SetText("")
 	x, _ := v.Columns.Boundary(c - 1)
 	y, _ := v.Rows.Boundary(r - 1)
 	v.scroll(x-v.X, y-v.Y, gtxGridContentWidth(a), gtxGridContentHeight(a))
@@ -118,6 +116,22 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		a.cellEdit.selectCell(a.selectedCell, cell.Value)
 		a.formulaEditor.SetText(cell.Value)
 		v.PendingSelectionLoad = false
+	}
+	for {
+		ev, ok := gtx.Event(transfer.TargetFilter{Target: &a.documentSessionState.clipboardTarget, Type: "application/text"})
+		if !ok {
+			break
+		}
+		if data, yes := ev.(transfer.DataEvent); yes {
+			reader := data.Open()
+			raw, err := io.ReadAll(reader)
+			_ = reader.Close()
+			if err != nil {
+				a.status = "读取剪贴板失败：" + err.Error()
+			} else if err := a.pasteClipboard(string(raw)); err != nil {
+				a.status = "粘贴失败：" + err.Error()
+			}
+		}
 	}
 	for {
 		if a.cellEdit.Editing {
@@ -220,15 +234,16 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			}
 			row, col, hit := cellAtPoint(v.Rows, v.Columns, v.X, v.Y, image.Pt(int(pe.Position.X), int(pe.Position.Y)), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
 			if hit {
-				row, col, _ = mergeAnchorAt(v.Window.Merges, row, col)
-				v.SelectedRow, v.SelectedColumn = row, col
-				a.selectedCell = xlsx.CellName(col, row)
-				a.persistViewState()
-				cell := windowCell(v.Window, row, col)
-				a.cellEdit.selectCell(a.selectedCell, cell.Value)
-				a.nameBox.SetText(a.selectedCell)
-				a.formulaEditor.SetText(cell.Value)
-				if pe.Time-v.LastClickTime <= 500*time.Millisecond && v.LastClickAddress == a.selectedCell {
+				position := selectionAnchor(v.Window.Merges, CellPosition{Row: row - 1, Column: col - 1})
+				row, col = position.Row+1, position.Column+1
+				previousAddress := a.selectedCell
+				address := xlsx.CellName(col, row)
+				extend := pe.Modifiers.Contain(key.ModShift)
+				a.updateGridSelection(v, position, extend, false)
+				a.selectionDragging = true
+				gtx.Execute(pointer.GrabCmd{Tag: &v.PointerTag, ID: pe.PointerID})
+				if !extend && pe.Time-v.LastClickTime <= 500*time.Millisecond && v.LastClickAddress == address && previousAddress == address {
+					cell := windowCell(v.Window, row, col)
 					a.cellEdit.begin()
 					a.cellEditor.SetText(cell.Value)
 					gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
@@ -247,6 +262,12 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				v.updateResize(pos)
 				v.ResizeCursor = v.Resize.State.Axis
 				a.window.Invalidate()
+			} else if a.selectionDragging {
+				if position, hit := selectionAtPoint(v, image.Pt(int(pe.Position.X), int(pe.Position.Y))); hit {
+					position = selectionAnchor(v.Window.Merges, position)
+					a.updateGridSelection(v, position, true, false)
+					a.window.Invalidate()
+				}
 			}
 		case pointer.Release:
 			if v.Resize != nil {
@@ -270,12 +291,18 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				}
 				v.ResizeCursor = 0
 				a.window.Invalidate()
+			} else if a.selectionDragging {
+				a.selectionDragging = false
+				a.persistViewState()
+				a.window.Invalidate()
 			}
 		case pointer.Cancel:
 			if v.Resize != nil {
 				v.cancelResize()
 				v.ResizeCursor = 0
 				a.window.Invalidate()
+			} else {
+				a.selectionDragging = false
 			}
 		}
 	}
@@ -291,6 +318,31 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 	dims := paintVirtualGrid(gtx, a, v)
 	area.Pop()
 	return dims
+}
+
+func (a *App) updateGridSelection(v *gridViewport, position CellPosition, extend, persist bool) {
+	state := a.documentSessionState
+	if state == nil || v == nil {
+		return
+	}
+	state.selection = updatedSelection(state.selection, state.selectionSet, position, extend)
+	state.selectionSet = true
+	position = state.selection.Active
+	row, column := position.Row+1, position.Column+1
+	v.SelectedRow, v.SelectedColumn = row, column
+	a.selectedCell = xlsx.CellName(column, row)
+	cell := document.Cell{}
+	if v.WindowSheet == a.sheet && row >= v.WindowRange.StartRow && row <= v.WindowRange.EndRow && column >= v.WindowRange.StartColumn && column <= v.WindowRange.EndColumn {
+		cell = windowCell(v.Window, row, column)
+	} else {
+		v.PendingSelectionLoad = true
+	}
+	a.cellEdit.selectCell(a.selectedCell, cell.Value)
+	a.nameBox.SetText(a.selectedCell)
+	a.formulaEditor.SetText(cell.Value)
+	if persist {
+		a.persistViewState()
+	}
 }
 
 func (a *App) requestGridWindow(v *gridViewport, reader document.GridReader, sheet string, r document.CellRange) {
@@ -339,6 +391,7 @@ func (a *App) pollGridLoad(v *gridViewport) {
 			}
 			previousSheet := v.WindowSheet
 			_ = v.applyWindow(result.sheet, result.rangeOf, result.window)
+			a.applyValueFilterWindow(a.documentSessionState, v)
 			if previousSheet != result.sheet {
 				start := xlsx.CellName(result.rangeOf.StartColumn, result.rangeOf.StartRow)
 				end := xlsx.CellName(result.rangeOf.EndColumn, result.rangeOf.EndRow)

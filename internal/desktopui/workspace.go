@@ -182,6 +182,9 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		if view.SelectedColumn > 0 {
 			state.virtualGrid.SelectedColumn = view.SelectedColumn
 		}
+		position := clampCellPosition(CellPosition{Row: state.virtualGrid.SelectedRow - 1, Column: state.virtualGrid.SelectedColumn - 1})
+		state.selection = CellSelection{Anchor: position, Active: position}
+		state.selectionSet = true
 	}
 	state.nameBox.SetText(state.selectedCell)
 	return state, nil
@@ -190,6 +193,9 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 func (a *App) activateSession(id string, state *documentSessionState) {
 	a.documentGeneration++
 	if a.activeTabID != "" && a.documentSessionState != nil {
+		if a.documentSessionState.valueFilter != nil {
+			a.clearValueFilter(a.documentSessionState)
+		}
 		a.sessions[a.activeTabID] = a.documentSessionState
 	}
 	a.documentSessionState = state

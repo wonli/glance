@@ -18,11 +18,27 @@ type CellStyle struct {
 	FontFamily          string
 	Bold                bool
 	Italic              bool
+	Underline           bool
 	FontSize            float64
+	NumberFormat        string
 	HorizontalAlignment string
 	VerticalAlignment   string
 	WrapText            bool
 	Borders             [4]CellBorder
+}
+
+// CellFormatPatch represents changes to a subset of cell formatting. Nil
+// fields leave the existing property untouched; ClearFormat resets all style.
+type CellFormatPatch struct {
+	Bold                *bool
+	Italic              *bool
+	Underline           *bool
+	FontColor           *string
+	FillColor           *string
+	HorizontalAlignment *string
+	NumberFormat        *string
+	BorderPreset        *string
+	ClearFormat         bool
 }
 
 // CellBorder describes one cell edge. Borders are ordered top, right,
@@ -74,4 +90,59 @@ type GridReader interface {
 	Window(sheet string, startRow, startColumn, rowCount, columnCount int) (SheetWindow, error)
 	SetRowHeight(sheet string, row int, heightPoints float64) error
 	SetColumnWidth(sheet string, column int, widthChars float64) error
+}
+
+// SpreadsheetFormatter is an optional capability for editing cell styles in
+// a bounded range without exposing format-library types to the UI.
+type SpreadsheetFormatter interface {
+	SetCellFormats(sheet string, bounds CellRange, patch CellFormatPatch) error
+}
+
+type SpreadsheetHistory interface {
+	Undo() (bool, error)
+	Redo() (bool, error)
+	RebaseHistory()
+}
+
+type CellEdit struct {
+	Row, Column int
+	Value       string
+}
+
+type SpreadsheetBatchEditor interface {
+	SetCells(sheet string, edits []CellEdit) error
+}
+type SpreadsheetRangeReader interface {
+	ReadRange(sheet string, bounds CellRange) ([][]Cell, error)
+}
+
+type StructureEditKind uint8
+
+const (
+	StructureInsertRows StructureEditKind = iota + 1
+	StructureDeleteRows
+	StructureInsertColumns
+	StructureDeleteColumns
+	StructureCreateSheet
+	StructureRenameSheet
+	StructureDeleteSheet
+)
+
+type StructureEdit struct {
+	Kind           StructureEditKind
+	Sheet, NewName string
+	Index, Count   int
+}
+type SpreadsheetStructureEditor interface {
+	EditStructure(edit StructureEdit) error
+}
+
+type SortRequest struct {
+	Sheet      string
+	Bounds     CellRange
+	KeyColumn  int
+	Descending bool
+}
+type SpreadsheetSorter interface {
+	SortRange(request SortRequest) error
 }

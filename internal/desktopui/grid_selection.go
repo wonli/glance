@@ -1,0 +1,94 @@
+package desktopui
+
+import (
+	"image"
+
+	"glance/internal/document"
+)
+
+// CellPosition is a zero-based cell coordinate used by transient UI state.
+type CellPosition struct {
+	Row, Column int
+}
+
+// CellSelection stores a rectangular selection from its fixed anchor to its active cell.
+type CellSelection struct {
+	Anchor, Active CellPosition
+}
+
+func updatedSelection(current CellSelection, hasSelection bool, active CellPosition, extend bool) CellSelection {
+	active = clampCellPosition(active)
+	if !hasSelection || !extend {
+		return CellSelection{Anchor: active, Active: active}
+	}
+	current.Active = active
+	return current
+}
+
+func selectionAnchor(merges []document.MergeRegion, position CellPosition) CellPosition {
+	row, column, _ := mergeAnchorAt(merges, position.Row+1, position.Column+1)
+	return clampCellPosition(CellPosition{Row: row - 1, Column: column - 1})
+}
+
+func (s CellSelection) Bounds() document.CellRange {
+	anchor := clampCellPosition(s.Anchor)
+	active := clampCellPosition(s.Active)
+	startRow, endRow := min(anchor.Row, active.Row), max(anchor.Row, active.Row)
+	startColumn, endColumn := min(anchor.Column, active.Column), max(anchor.Column, active.Column)
+	return document.CellRange{
+		StartRow: startRow + 1, StartColumn: startColumn + 1,
+		EndRow: endRow + 1, EndColumn: endColumn + 1,
+	}
+}
+
+func (s CellSelection) Contains(position CellPosition) bool {
+	position = clampCellPosition(position)
+	bounds := s.Bounds()
+	return position.Row+1 >= bounds.StartRow && position.Row+1 <= bounds.EndRow &&
+		position.Column+1 >= bounds.StartColumn && position.Column+1 <= bounds.EndColumn
+}
+
+func clampCellPosition(position CellPosition) CellPosition {
+	return CellPosition{
+		Row:    max(0, min(position.Row, xlsxRows-1)),
+		Column: max(0, min(position.Column, xlsxColumns-1)),
+	}
+}
+
+// selectionAtPoint maps a pointer position local to the full grid widget to a
+// zero-based cell coordinate. The row and column headers are part of that widget.
+func selectionAtPoint(v *gridViewport, point image.Point) (CellPosition, bool) {
+	if v == nil || v.Rows == nil || v.Columns == nil || !finite(v.Scale) || v.Scale <= 0 {
+		return CellPosition{}, false
+	}
+	row, column, ok := cellAtPoint(
+		v.Rows, v.Columns, v.X, v.Y, point,
+		int(gridRowHeader*v.Scale), int(gridColumnHeader*v.Scale),
+	)
+	if !ok {
+		return CellPosition{}, false
+	}
+	return clampCellPosition(CellPosition{Row: row - 1, Column: column - 1}), true
+}
+
+func selectionRect(v *gridViewport, selection CellSelection) image.Rectangle {
+	if v == nil || v.Rows == nil || v.Columns == nil {
+		return image.Rectangle{}
+	}
+	return cellRect(v.Rows, v.Columns, selection.Bounds(), v.X, v.Y).Add(image.Pt(
+		int(gridRowHeader*v.Scale), int(gridColumnHeader*v.Scale),
+	))
+}
+
+func selectionBorderRects(rect image.Rectangle, width int) [4]image.Rectangle {
+	if width <= 0 || rect.Empty() {
+		return [4]image.Rectangle{}
+	}
+	width = min(width, min(rect.Dx(), rect.Dy()))
+	return [4]image.Rectangle{
+		image.Rect(rect.Min.X, rect.Min.Y, rect.Max.X, rect.Min.Y+width),
+		image.Rect(rect.Min.X, rect.Max.Y-width, rect.Max.X, rect.Max.Y),
+		image.Rect(rect.Min.X, rect.Min.Y+width, rect.Min.X+width, rect.Max.Y-width),
+		image.Rect(rect.Max.X-width, rect.Min.Y+width, rect.Max.X, rect.Max.Y-width),
+	}
+}

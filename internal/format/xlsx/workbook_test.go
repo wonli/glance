@@ -144,6 +144,181 @@ func TestWorkbookParsesBasicConstantsAndIgnoresNoOp(t *testing.T) {
 	}
 }
 
+func TestSetCellFormatsPreservesUntouchedPropertiesAndRoundTrips(t *testing.T) {
+	f := excelize.NewFile()
+	if err := f.SetCellValue("Sheet1", "A1", 12.5); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetCellValue("Sheet1", "B1", "untouched"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetCellFormula("Sheet1", "C1", "SUM(1,2)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.MergeCell("Sheet1", "D1", "E1"); err != nil {
+		t.Fatal(err)
+	}
+	format := "0.00"
+	styleID, err := f.NewStyle(&excelize.Style{
+		Font:         &excelize.Font{Bold: true, Italic: true, Underline: "single", Color: "FF112233"},
+		Fill:         excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFFF00"}},
+		Alignment:    &excelize.Alignment{Horizontal: "center"},
+		CustomNumFmt: &format,
+		Border:       []excelize.Border{{Type: "left", Color: "000000", Style: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetCellStyle("Sheet1", "A1", "A1", styleID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetRowHeight("Sheet1", 1, 27); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "format-roundtrip.xlsx")
+	if err := f.SaveAs(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	wb, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wb.Close()
+	formatter, ok := any(wb).(document.SpreadsheetFormatter)
+	if !ok {
+		t.Fatal("XLSX workbook does not expose SpreadsheetFormatter")
+	}
+	bold := false
+	fontColor := "#FF0000"
+	if err := formatter.SetCellFormats("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, document.CellFormatPatch{Bold: &bold, FontColor: &fontColor}); err != nil {
+		t.Fatal(err)
+	}
+	window, err := wb.Window("Sheet1", 1, 1, 1, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := window.Cells[0][0].Style
+	if got.Bold || !got.Italic || !got.Underline || got.FontColor != fontColor || got.FillColor != "#FFFF00" || got.HorizontalAlignment != "center" || got.NumberFormat != "0.00" || got.Borders[3].Style != 1 {
+		t.Fatalf("format patch lost or misapplied properties: %+v", got)
+	}
+	if err := wb.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	window, err = reopened.Window("Sheet1", 1, 1, 1, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = window.Cells[0][0].Style
+	if got.Bold || !got.Italic || !got.Underline || got.FontColor != fontColor || got.FillColor != "#FFFF00" || got.HorizontalAlignment != "center" || got.NumberFormat != "0.00" || got.Borders[3].Style != 1 {
+		t.Fatalf("reopened format=%+v", got)
+	}
+	if value, err := reopened.Value("Sheet1", "B1"); err != nil || value != "untouched" {
+		t.Fatalf("untouched B1=%q, err=%v", value, err)
+	}
+	if formula, err := reopened.file.GetCellFormula("Sheet1", "C1"); err != nil || formula != "SUM(1,2)" {
+		t.Fatalf("untouched formula=%q, err=%v", formula, err)
+	}
+	if height, err := reopened.file.GetRowHeight("Sheet1", 1); err != nil || height != 27 {
+		t.Fatalf("untouched row height=%v, err=%v", height, err)
+	}
+	if merges, err := reopened.file.GetMergeCells("Sheet1"); err != nil || len(merges) != 1 {
+		t.Fatalf("untouched merges=%v, err=%v", merges, err)
+	}
+}
+
+func TestSetCellFormatsNoOpAndInvalidRangeStayClean(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	wb.SetDirty(false)
+	formatter, ok := any(wb).(document.SpreadsheetFormatter)
+	if !ok {
+		t.Fatal("XLSX workbook does not expose SpreadsheetFormatter")
+	}
+	bold := false
+	if err := formatter.SetCellFormats("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, document.CellFormatPatch{Bold: &bold}); err != nil {
+		t.Fatal(err)
+	}
+	if wb.Dirty() {
+		t.Fatal("applying an existing default format should not dirty the workbook")
+	}
+	if err := formatter.SetCellFormats("Sheet1", document.CellRange{StartRow: 2, StartColumn: 1, EndRow: 1, EndColumn: 1}, document.CellFormatPatch{Bold: &bold}); err == nil {
+		t.Fatal("expected invalid range to fail")
+	}
+	if err := formatter.SetCellFormats("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: maxClipboardCells + 1, EndColumn: 1}, document.CellFormatPatch{Bold: &bold}); err == nil {
+		t.Fatal("expected oversized range to fail before scanning cells")
+	}
+	if wb.Dirty() {
+		t.Fatal("invalid range should not dirty the workbook")
+	}
+}
+
+func TestSetCellFormatsAppliesAllSupportedPropertiesAndClears(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	wb.SetDirty(false)
+	formatter := document.SpreadsheetFormatter(wb)
+	trueValue := true
+	fill := "#AABBCC"
+	center := "center"
+	date := "yyyy-mm-dd"
+	allBorders := "all"
+	for _, item := range []struct {
+		cell  string
+		patch document.CellFormatPatch
+	}{
+		{"A1", document.CellFormatPatch{Italic: &trueValue}},
+		{"B1", document.CellFormatPatch{Underline: &trueValue}},
+		{"C1", document.CellFormatPatch{FillColor: &fill}},
+		{"D1", document.CellFormatPatch{HorizontalAlignment: &center}},
+		{"E1", document.CellFormatPatch{NumberFormat: &date}},
+		{"F1", document.CellFormatPatch{BorderPreset: &allBorders}},
+	} {
+		if err := formatter.SetCellFormats("Sheet1", singleCellRange(item.cell), item.patch); err != nil {
+			t.Fatalf("format %s: %v", item.cell, err)
+		}
+	}
+	window, err := wb.Window("Sheet1", 1, 1, 1, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !window.Cells[0][0].Style.Italic || !window.Cells[0][1].Style.Underline || window.Cells[0][2].Style.FillColor != fill || window.Cells[0][3].Style.HorizontalAlignment != center || window.Cells[0][4].Style.NumberFormat != date {
+		t.Fatalf("supported formats were not applied: %+v", window.Cells[0])
+	}
+	for index, border := range window.Cells[0][5].Style.Borders {
+		if border.Style != 1 {
+			t.Fatalf("border %d was not set: %+v", index, window.Cells[0][5].Style.Borders)
+		}
+	}
+	if err := formatter.SetCellFormats("Sheet1", singleCellRange("F1"), document.CellFormatPatch{ClearFormat: true}); err != nil {
+		t.Fatal(err)
+	}
+	window, err = wb.Window("Sheet1", 1, 6, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if style := window.Cells[0][0].Style; style.Bold || style.Italic || style.Underline || style.FillColor != "" || style.FontColor != "" || style.Borders != ([4]document.CellBorder{}) || style.NumberFormat != "General" {
+		t.Fatalf("clear format left style properties: %+v", style)
+	}
+}
+
+func singleCellRange(cell string) document.CellRange {
+	column, row, err := excelize.CellNameToCoordinates(cell)
+	if err != nil {
+		panic(err)
+	}
+	return document.CellRange{StartRow: row, StartColumn: column, EndRow: row, EndColumn: column}
+}
+
 func TestOfficeXlsxSamplesOpenAndSaveWithoutChangingSource(t *testing.T) {
 	dir := os.Getenv("GLANCE_OFFICE_TEST_DIR")
 	if dir == "" {
@@ -563,4 +738,403 @@ func saveTestWorkbook(t *testing.T, file *excelize.File) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestSpreadsheetHistoryUndoRedoAndSaveRebase(t *testing.T) {
+	path := saveTestWorkbook(t, excelize.NewFile())
+	book, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer book.Close()
+	book.SetDirty(false)
+	bold := true
+	if err := book.SetCellFormats("Sheet1", singleCellRange("A1"), document.CellFormatPatch{Bold: &bold}); err != nil {
+		t.Fatal(err)
+	}
+	if applied, err := book.Undo(); err != nil || !applied {
+		t.Fatalf("undo=(%t,%v)", applied, err)
+	}
+	if book.Dirty() {
+		t.Fatal("undo back to the saved state should clear dirty")
+	}
+	window, err := book.Window("Sheet1", 1, 1, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if window.Cells[0][0].Style.Bold {
+		t.Fatal("undo left bold formatting applied")
+	}
+	if applied, err := book.Redo(); err != nil || !applied {
+		t.Fatalf("redo=(%t,%v)", applied, err)
+	}
+	window, err = book.Window("Sheet1", 1, 1, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !window.Cells[0][0].Style.Bold {
+		t.Fatal("redo did not restore bold formatting")
+	}
+	if err := book.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if applied, err := book.Undo(); err != nil || !applied {
+		t.Fatalf("undo after save rebase=(%t,%v); want true,nil", applied, err)
+	}
+	if !book.Dirty() {
+		t.Fatal("undo past the saved state should mark the workbook dirty")
+	}
+	if applied, err := book.Redo(); err != nil || !applied {
+		t.Fatalf("redo back to save baseline=(%t,%v)", applied, err)
+	}
+	if book.Dirty() {
+		t.Fatal("redo back to saved state should clear dirty")
+	}
+	italic := true
+	if err := book.SetCellFormats("Sheet1", singleCellRange("A1"), document.CellFormatPatch{Italic: &italic}); err != nil {
+		t.Fatal(err)
+	}
+	if applied, err := book.Undo(); err != nil || !applied {
+		t.Fatalf("undo after save rebase and new edit=(%t,%v)", applied, err)
+	}
+}
+
+func TestSetCellsBatchPreservesStylesAndIsUndoable(t *testing.T) {
+	f := excelize.NewFile()
+	style, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.SetCellStyle("Sheet1", "A1", "A1", style); err != nil {
+		t.Fatal(err)
+	}
+	path := saveTestWorkbook(t, f)
+	book, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer book.Close()
+	book.SetDirty(false)
+	if err := book.SetCells("Sheet1", []document.CellEdit{{Row: 1, Column: 1, Value: "new"}, {Row: 1, Column: 2, Value: "2"}}); err != nil {
+		t.Fatal(err)
+	}
+	window, err := book.Window("Sheet1", 1, 1, 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if window.Cells[0][0].Value != "new" || !window.Cells[0][0].Style.Bold || window.Cells[0][1].Value != "2" {
+		t.Fatalf("batch window=%#v", window.Cells)
+	}
+	if applied, err := book.Undo(); err != nil || !applied {
+		t.Fatalf("undo=(%t,%v)", applied, err)
+	}
+	value, err := book.Value("Sheet1", "A1")
+	if err != nil || value != "" {
+		t.Fatalf("A1=%q,%v after undo", value, err)
+	}
+}
+
+func TestSetCellsRejectsFormulaAtomically(t *testing.T) {
+	book := NewBlank()
+	defer book.Close()
+	book.SetDirty(false)
+	err := book.SetCells("Sheet1", []document.CellEdit{{Row: 1, Column: 1, Value: "first"}, {Row: 1, Column: 2, Value: "=1+1"}})
+	if err == nil {
+		t.Fatal("formula input should be rejected")
+	}
+	value, _ := book.Value("Sheet1", "A1")
+	if value != "" || book.Dirty() {
+		t.Fatalf("failed batch changed workbook: A1=%q dirty=%t", value, book.Dirty())
+	}
+}
+
+func TestSetCellsSaveReopenPreservesUntouchedWorkbookContent(t *testing.T) {
+	f := excelize.NewFile()
+	_ = f.SetCellValue("Sheet1", "A1", "styled")
+	style, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.SetCellStyle("Sheet1", "A1", "A1", style)
+	_ = f.SetCellFormula("Sheet1", "B1", "1+1")
+	_ = f.SetCellValue("Sheet1", "C1", "merge")
+	_ = f.MergeCell("Sheet1", "C1", "D1")
+	path := saveTestWorkbook(t, f)
+	book, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := book.SetCells("Sheet1", []document.CellEdit{{Row: 2, Column: 1, Value: "copied"}, {Row: 2, Column: 2, Value: "42"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := book.Save(); err != nil {
+		t.Fatal(err)
+	}
+	_ = book.Close()
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	window, err := reopened.Window("Sheet1", 1, 1, 2, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formula, formulaErr := reopened.file.GetCellFormula("Sheet1", "B1")
+	if window.Cells[0][0].Value != "styled" || !window.Cells[0][0].Style.Bold || formulaErr != nil || formula == "" || window.Cells[1][0].Value != "copied" || window.Cells[1][1].Value != "42" {
+		t.Fatalf("reopened clipboard region=%#v formula=%q err=%v", window.Cells, formula, formulaErr)
+	}
+	if len(window.Merges) != 1 || window.Merges[0].Range.StartColumn != 3 {
+		t.Fatalf("untouched merges=%#v", window.Merges)
+	}
+}
+
+func TestEditStructureSheetsRowsColumnsAndUndo(t *testing.T) {
+	f := excelize.NewFile()
+	_ = f.SetCellValue("Sheet1", "A1", "keep")
+	_ = f.SetCellValue("Sheet1", "B2", "right")
+	path := saveTestWorkbook(t, f)
+	book, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer book.Close()
+	if err := book.EditStructure(document.StructureEdit{Kind: document.StructureInsertRows, Sheet: "Sheet1", Index: 1, Count: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := book.Value("Sheet1", "A2"); got != "keep" {
+		t.Fatalf("row insert moved A1 to %q", got)
+	}
+	if applied, err := book.Undo(); err != nil || !applied {
+		t.Fatalf("undo row insert=(%t,%v)", applied, err)
+	}
+	if got, _ := book.Value("Sheet1", "A1"); got != "keep" {
+		t.Fatalf("undo left A1=%q", got)
+	}
+	if err := book.EditStructure(document.StructureEdit{Kind: document.StructureCreateSheet}); err != nil {
+		t.Fatal(err)
+	}
+	if !contains(book.SheetNames(), "Sheet2") {
+		t.Fatalf("sheet list=%v", book.SheetNames())
+	}
+	if err := book.EditStructure(document.StructureEdit{Kind: document.StructureRenameSheet, Sheet: "Sheet2", NewName: "汇总"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := book.EditStructure(document.StructureEdit{Kind: document.StructureDeleteSheet, Sheet: "汇总"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := book.EditStructure(document.StructureEdit{Kind: document.StructureDeleteSheet, Sheet: "Sheet1"}); err == nil {
+		t.Fatal("deleting last sheet should fail")
+	}
+	if err := book.EditStructure(document.StructureEdit{Kind: document.StructureInsertColumns, Sheet: "Sheet1", Index: 1, Count: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := book.Value("Sheet1", "B1"); got != "keep" {
+		t.Fatalf("column insert moved A1 to %q", got)
+	}
+	if err := book.EditStructure(document.StructureEdit{Kind: document.StructureDeleteColumns, Sheet: "Sheet1", Index: 1, Count: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := book.Value("Sheet1", "A1"); got != "keep" {
+		t.Fatalf("column delete left A1=%q", got)
+	}
+}
+
+func TestEditStructureRejectsInvalidSheetNamesAndBounds(t *testing.T) {
+	book := NewBlank()
+	defer book.Close()
+	for _, edit := range []document.StructureEdit{{Kind: document.StructureCreateSheet, NewName: "bad/name"}, {Kind: document.StructureRenameSheet, Sheet: "Sheet1", NewName: ""}, {Kind: document.StructureInsertRows, Sheet: "Sheet1", Index: maxXLSXRows, Count: 2}} {
+		if err := book.EditStructure(edit); err == nil {
+			t.Errorf("expected rejection for %+v", edit)
+		}
+	}
+}
+
+func TestEditStructureSaveReopenPreservesStylesFormulasAndMerges(t *testing.T) {
+	f := excelize.NewFile()
+	_ = f.SetCellValue("Sheet1", "A1", "styled")
+	style, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.SetCellStyle("Sheet1", "A1", "A1", style)
+	_ = f.SetCellFormula("Sheet1", "B2", "1+1")
+	_ = f.SetCellValue("Sheet1", "C3", "merged")
+	_ = f.MergeCell("Sheet1", "C3", "D3")
+	path := saveTestWorkbook(t, f)
+	book, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := book.EditStructure(document.StructureEdit{Kind: document.StructureInsertRows, Sheet: "Sheet1", Index: 1, Count: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := book.Save(); err != nil {
+		t.Fatal(err)
+	}
+	_ = book.Close()
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	window, err := reopened.Window("Sheet1", 1, 1, 4, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formula, formulaErr := reopened.file.GetCellFormula("Sheet1", "B3")
+	if window.Cells[1][0].Value != "styled" || !window.Cells[1][0].Style.Bold || formulaErr != nil || formula == "" {
+		t.Fatalf("row insert lost content/styles/formula: %#v formula=%q err=%v", window.Cells, formula, formulaErr)
+	}
+	if len(window.Merges) != 1 || window.Merges[0].Range.StartRow != 4 {
+		t.Fatalf("row insert changed merged range unexpectedly: %#v", window.Merges)
+	}
+}
+
+func TestSortRangeNumericTextBlankAndUndo(t *testing.T) {
+	f := excelize.NewFile()
+	_ = f.SetCellValue("Sheet1", "A1", "10")
+	_ = f.SetCellValue("Sheet1", "B1", "ten")
+	_ = f.SetCellValue("Sheet1", "A2", "2")
+	_ = f.SetCellValue("Sheet1", "B2", "two")
+	_ = f.SetCellValue("Sheet1", "A3", "apple")
+	_ = f.SetCellValue("Sheet1", "B3", "text")
+	style, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.SetCellStyle("Sheet1", "A2", "B2", style)
+	path := saveTestWorkbook(t, f)
+	book, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer book.Close()
+	req := document.SortRequest{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 2}, KeyColumn: 1}
+	if err := book.SortRange(req); err != nil {
+		t.Fatal(err)
+	}
+	w, err := book.Window("Sheet1", 1, 1, 4, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []string{w.Cells[0][0].Value, w.Cells[1][0].Value, w.Cells[2][0].Value, w.Cells[3][0].Value}; !reflect.DeepEqual(got, []string{"2", "10", "apple", ""}) {
+		t.Fatalf("ascending keys=%v", got)
+	}
+	if !w.Cells[0][0].Style.Bold || w.Cells[0][1].Value != "two" {
+		t.Fatalf("row style/content didn't move with key: %#v", w.Cells[0])
+	}
+	if applied, err := book.Undo(); err != nil || !applied {
+		t.Fatalf("undo=(%t,%v)", applied, err)
+	}
+	if err := book.SortRange(document.SortRequest{Sheet: "Sheet1", Bounds: req.Bounds, KeyColumn: 1, Descending: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := book.Value("Sheet1", "A1"); got != "apple" {
+		t.Fatalf("descending A1=%q", got)
+	}
+	if err := book.Save(); err != nil {
+		t.Fatal(err)
+	}
+	_ = book.Close()
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got, _ := reopened.Value("Sheet1", "A1"); got != "apple" {
+		t.Fatalf("saved descending order A1=%q", got)
+	}
+}
+
+func TestSortRangeRejectsFormulaAndMergedRangesAtomically(t *testing.T) {
+	f := excelize.NewFile()
+	_ = f.SetCellValue("Sheet1", "A1", "2")
+	_ = f.SetCellFormula("Sheet1", "B1", "1+1")
+	_ = f.SetCellValue("Sheet1", "A2", "1")
+	path := saveTestWorkbook(t, f)
+	book, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer book.Close()
+	book.SetDirty(false)
+	b := document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 2}
+	if err := book.SortRange(document.SortRequest{Sheet: "Sheet1", Bounds: b, KeyColumn: 3}); err == nil {
+		t.Fatal("sort key outside selection should be rejected")
+	}
+	if err := book.SortRange(document.SortRequest{Sheet: "Sheet1", Bounds: b, KeyColumn: 1}); err == nil {
+		t.Fatal("formula-containing sort should be rejected")
+	}
+	if got, _ := book.Value("Sheet1", "A1"); got != "2" || book.Dirty() {
+		t.Fatalf("rejected sort changed workbook: A1=%q dirty=%t", got, book.Dirty())
+	}
+	f2 := excelize.NewFile()
+	_ = f2.SetCellValue("Sheet1", "A1", "one")
+	_ = f2.MergeCell("Sheet1", "A1", "B1")
+	path2 := saveTestWorkbook(t, f2)
+	merged, err := Open(path2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer merged.Close()
+	if err := merged.SortRange(document.SortRequest{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 2}, KeyColumn: 1}); err == nil {
+		t.Fatal("merged-cell sort should be rejected")
+	}
+}
+
+func TestSortRangePreservesNativeCellTypes(t *testing.T) {
+	f := excelize.NewFile()
+	if err := f.SetCellValue("Sheet1", "A1", 10.0); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetCellValue("Sheet1", "B1", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetCellValue("Sheet1", "A2", 2.0); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetCellValue("Sheet1", "B2", false); err != nil {
+		t.Fatal(err)
+	}
+	path := saveTestWorkbook(t, f)
+	book, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer book.Close()
+	initialType, _ := book.file.GetCellType("Sheet1", "A1")
+	if initialType != excelize.CellTypeUnset {
+		t.Fatalf("fixture A1 type=%v", initialType)
+	}
+	if err := book.SortRange(document.SortRequest{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 2}, KeyColumn: 1}); err != nil {
+		t.Fatal(err)
+	}
+	typ, err := book.file.GetCellType("Sheet1", "A1")
+	if err != nil || typ != excelize.CellTypeUnset {
+		t.Fatalf("sorted numeric cell type=%v err=%v", typ, err)
+	}
+	value, err := book.file.GetCellValue("Sheet1", "A1", excelize.Options{RawCellValue: true})
+	if err != nil || value != "2" {
+		t.Fatalf("sorted number raw=%q err=%v", value, err)
+	}
+	typ, err = book.file.GetCellType("Sheet1", "B1")
+	if err != nil || typ != excelize.CellTypeBool {
+		t.Fatalf("sorted bool cell type=%v err=%v", typ, err)
+	}
+	copyPath := filepath.Join(t.TempDir(), "sorted.xlsx")
+	if err := book.SaveAs(copyPath); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(copyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if raw, err := reopened.file.GetCellValue("Sheet1", "A1", excelize.Options{RawCellValue: true}); err != nil || raw != "2" {
+		t.Fatalf("reopened numeric cell raw=%q err=%v", raw, err)
+	}
+	if typ, err := reopened.file.GetCellType("Sheet1", "B1"); err != nil || typ != excelize.CellTypeBool {
+		t.Fatalf("reopened bool cell type=%v err=%v", typ, err)
+	}
 }

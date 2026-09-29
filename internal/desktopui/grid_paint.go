@@ -21,10 +21,10 @@ import (
 )
 
 type gridPaintStyle struct {
-	Fill, Font         color.NRGBA
-	Bold, Italic, Wrap bool
-	Align, FontFamily  string
-	Vertical           string
+	Fill, Font                    color.NRGBA
+	Bold, Italic, Underline, Wrap bool
+	Align, FontFamily             string
+	Vertical                      string
 }
 
 const maxCachedCellPaints = 1024
@@ -44,7 +44,7 @@ type cellPaintEntry struct {
 }
 
 func paintStyle(style document.CellStyle) gridPaintStyle {
-	return gridPaintStyle{Fill: parseGridColor(style.FillColor, contentSurface), Font: parseGridColor(style.FontColor, color.NRGBA{R: 35, G: 39, B: 45, A: 255}), Bold: style.Bold, Italic: style.Italic, Wrap: style.WrapText, Align: style.HorizontalAlignment, FontFamily: style.FontFamily, Vertical: style.VerticalAlignment}
+	return gridPaintStyle{Fill: parseGridColor(style.FillColor, contentSurface), Font: parseGridColor(style.FontColor, color.NRGBA{R: 35, G: 39, B: 45, A: 255}), Bold: style.Bold, Italic: style.Italic, Underline: style.Underline, Wrap: style.WrapText, Align: style.HorizontalAlignment, FontFamily: style.FontFamily, Vertical: style.VerticalAlignment}
 }
 
 func parseGridColor(s string, fallback color.NRGBA) color.NRGBA {
@@ -70,6 +70,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	paint.FillShape(gtx.Ops, gridHeaderFill, clip.Rect{Max: image.Pt(rowHead, size.Y)}.Op())
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(rowHead, 0), Max: image.Pt(rowHead+1, size.Y)}.Op())
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(0, colHead), Max: image.Pt(size.X, colHead+1)}.Op())
+	selection, hasSelection := a.selection, a.selectionSet
 	if v.WindowRange.StartRow > 0 {
 		paintedMerges := make(map[document.CellRange]bool, len(v.Window.Merges))
 		for i, row := range v.Window.Cells {
@@ -110,10 +111,25 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 					continue
 				}
 				style := paintStyle(cell.Style)
-				if rr == v.SelectedRow && cc == v.SelectedColumn || merged && mr == v.SelectedRow && mc == v.SelectedColumn {
+				selected := rr == v.SelectedRow && cc == v.SelectedColumn || merged && mr == v.SelectedRow && mc == v.SelectedColumn
+				if hasSelection {
+					selected = selection.Contains(CellPosition{Row: rr - 1, Column: cc - 1}) ||
+						merged && selection.Contains(CellPosition{Row: mr - 1, Column: mc - 1})
+				}
+				if selected {
 					style.Fill = selectedFill
 				}
 				paintCachedCell(gtx, v, a.theme, cell, fullRect, visibleRect, style)
+			}
+		}
+	}
+	if hasSelection {
+		selectionViewport := image.Rect(rowHead, colHead, size.X, size.Y)
+		outline := color.NRGBA{R: 35, G: 105, B: 190, A: 255}
+		for _, edge := range selectionBorderRects(selectionRect(v, selection), max(1, gtx.Dp(unit.Dp(2)))) {
+			edge = edge.Intersect(selectionViewport)
+			if !edge.Empty() {
+				paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
 			}
 		}
 	}
@@ -298,6 +314,10 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 			layout.Stacked(label.Layout),
 		)
 	})
+	if style.Underline {
+		lineY := size.Y - gtx.Dp(unit.Dp(3))
+		paint.FillShape(gtx.Ops, style.Font, clip.Rect{Min: image.Pt(gtx.Dp(unit.Dp(5)), lineY), Max: image.Pt(size.X-gtx.Dp(unit.Dp(4)), lineY+1)}.Op())
+	}
 	paintCellBorders(gtx, size, cell.Style.Borders)
 }
 

@@ -20,15 +20,21 @@ import (
 
 // Workbook keeps Excelize behind the format adapter boundary.
 type Workbook struct {
-	mu     sync.Mutex
-	path   string
-	file   *excelize.File
-	dirty  bool
-	closed bool
+	mu                sync.Mutex
+	path              string
+	file              *excelize.File
+	dirty             bool
+	closed            bool
+	undo              []workbookHistoryEntry
+	redo              []workbookHistoryEntry
+	historyState      uint64
+	savedHistoryState uint64
+	nextHistoryState  uint64
 }
 
 var _ document.Spreadsheet = (*Workbook)(nil)
 var _ document.GridReader = (*Workbook)(nil)
+var _ document.SpreadsheetHistory = (*Workbook)(nil)
 
 const (
 	maxXLSXRows    = 1_048_576
@@ -48,7 +54,8 @@ func Open(path string) (*Workbook, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open xlsx %q: %w", path, err)
 	}
-	return &Workbook{path: path, file: f}, nil
+	w := &Workbook{path: path, file: f, historyState: 1, savedHistoryState: 1, nextHistoryState: 2}
+	return w, nil
 }
 
 // OpenSnapshot restores a self-contained XLSX package persisted for recovery.
@@ -57,11 +64,14 @@ func OpenSnapshot(payload []byte) (*Workbook, error) {
 	if err != nil {
 		return nil, fmt.Errorf("restore XLSX snapshot: %w", err)
 	}
-	return &Workbook{file: f}, nil
+	w := &Workbook{file: f, historyState: 1, savedHistoryState: 1, nextHistoryState: 2}
+	return w, nil
 }
 
 // NewBlank creates an unsaved workbook draft.
-func NewBlank() *Workbook { return &Workbook{file: excelize.NewFile(), dirty: true} }
+func NewBlank() *Workbook {
+	return &Workbook{file: excelize.NewFile(), dirty: true, historyState: 1, nextHistoryState: 2}
+}
 
 // Snapshot serializes the current in-memory workbook without changing dirty state.
 func (w *Workbook) Snapshot() ([]byte, error) {
@@ -78,7 +88,14 @@ func (w *Workbook) Snapshot() ([]byte, error) {
 }
 
 func (w *Workbook) SetSourcePath(path string) { w.mu.Lock(); defer w.mu.Unlock(); w.path = path }
-func (w *Workbook) SetDirty(dirty bool)       { w.mu.Lock(); defer w.mu.Unlock(); w.dirty = dirty }
+func (w *Workbook) SetDirty(dirty bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.dirty = dirty
+	if !dirty {
+		w.savedHistoryState = w.historyState
+	}
+}
 
 func (w *Workbook) SheetNames() []string {
 	w.mu.Lock()
@@ -203,7 +220,7 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 		RowHeightsPoints:  make([]float64, rowCount),
 		ColumnWidthsChars: make([]float64, columnCount),
 	}
-	styleCache := make(map[int]document.CellStyle)
+	styleCache := map[int]document.CellStyle{0: {NumberFormat: "General"}}
 	for r := 0; r < rowCount; r++ {
 		row := startRow + r
 		window.Cells[r] = make([]document.Cell, columnCount)
@@ -307,8 +324,10 @@ func readCellStyle(file *excelize.File, styleID int) (document.CellStyle, error)
 		result.FontFamily = style.Font.Family
 		result.Bold = style.Font.Bold
 		result.Italic = style.Font.Italic
+		result.Underline = style.Font.Underline != ""
 		result.FontSize = style.Font.Size
 	}
+	result.NumberFormat = cellNumberFormat(style)
 	if style.Alignment != nil {
 		result.HorizontalAlignment = style.Alignment.Horizontal
 		result.VerticalAlignment = style.Alignment.Vertical
@@ -457,7 +476,15 @@ func (w *Workbook) SetCellText(sheet, cell, value string) error {
 			return errors.New("numeric cell values must be finite")
 		}
 	}
+	beforeSnapshot, err := w.snapshotLocked()
+	if err != nil {
+		return fmt.Errorf("capture cell edit history: %w", err)
+	}
 	if err := w.file.SetCellValue(sheet, cell, typedValue); err != nil {
+		return err
+	}
+	if err := w.recordHistoryLocked(beforeSnapshot); err != nil {
+		_ = w.restoreSnapshotLocked(beforeSnapshot)
 		return err
 	}
 	w.dirty = true
@@ -484,7 +511,10 @@ func (w *Workbook) Save() error {
 	if err := w.saveTo(w.path); err != nil {
 		return err
 	}
-	w.dirty = false
+	if err := w.rebaseHistoryLocked(); err != nil {
+		w.dirty = true
+		return err
+	}
 	return nil
 }
 
@@ -495,7 +525,10 @@ func (w *Workbook) SaveAs(path string) error {
 	if err := w.checkOpen(); err != nil {
 		return err
 	}
-	return w.saveTo(path)
+	if err := w.saveTo(path); err != nil {
+		return err
+	}
+	return nil
 }
 
 // SaveAsDocument writes and adopts a new source path for Save operations that follow.
@@ -508,7 +541,11 @@ func (w *Workbook) SaveAsDocument(path string) error {
 	if err := w.saveTo(path); err != nil {
 		return err
 	}
-	w.path, w.dirty = path, false
+	w.path = path
+	if err := w.rebaseHistoryLocked(); err != nil {
+		w.dirty = true
+		return err
+	}
 	return nil
 }
 

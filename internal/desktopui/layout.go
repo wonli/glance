@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"gioui.org/layout"
 	"gioui.org/op/clip"
@@ -75,6 +76,59 @@ func (a *App) layoutWorkspaceBody(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) processAsyncResults() {
+	select {
+	case result := <-a.formatResults:
+		result.state.formatRunning = false
+		if result.err == nil && result.filter != nil {
+			if result.state.valueFilter != nil {
+				a.clearValueFilter(result.state)
+			}
+			result.filter.OriginalHeights = make(map[int]float64)
+			if result.state.virtualGrid != nil {
+				for row := result.filter.Bounds.StartRow; row <= result.filter.Bounds.EndRow; row++ {
+					index := row - 1
+					base := result.state.virtualGrid.Rows.sizeAt(index)
+					if offset := row - result.filter.Bounds.StartRow; offset >= 0 && offset < len(result.filter.RowHeightsPoints) && result.filter.RowHeightsPoints[offset] > 0 {
+						base = pointsToGridPixels(result.filter.RowHeightsPoints[offset]) * result.state.virtualGrid.Scale
+					}
+					result.filter.OriginalHeights[index] = base
+				}
+			}
+			result.state.valueFilter = result.filter
+			a.applyValueFilterWindow(result.state, result.state.virtualGrid)
+		}
+		if result.err == nil && result.structure != nil {
+			a.refreshAfterStructure(result.state, *result.structure)
+		}
+		if result.generation == a.documentGeneration && result.state == a.documentSessionState && result.sheet == a.sheet {
+			if result.err != nil {
+				a.status = "格式应用失败：" + result.err.Error()
+				if result.operation != "" {
+					a.status = result.operation + "失败：" + result.err.Error()
+				}
+			} else if !result.history || result.applied {
+				a.status = "已应用单元格格式"
+				if result.operation != "" {
+					a.status = "已完成" + result.operation
+				}
+				if result.history {
+					if result.undo {
+						a.status = "已撤销"
+					} else {
+						a.status = "已重做"
+					}
+				}
+				if result.window != nil {
+					result.window.invalidateWindow()
+				}
+				a.persistActiveSession()
+			}
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		}
+	default:
+	}
 	select {
 	case result := <-a.fileCommandResults:
 		a.fileCommandRunning = false
@@ -185,6 +239,76 @@ func (a *App) processAsyncResults() {
 	}
 }
 
+func (a *App) refreshAfterStructure(state *documentSessionState, edit document.StructureEdit) {
+	oldSheet := state.sheet
+	state.sheets = state.book.SheetNames()
+	switch edit.Kind {
+	case document.StructureCreateSheet:
+		if len(state.sheets) > 0 {
+			state.sheet = state.sheets[len(state.sheets)-1]
+		}
+	case document.StructureRenameSheet:
+		if strings.EqualFold(oldSheet, edit.Sheet) {
+			state.sheet = strings.TrimSpace(edit.NewName)
+		}
+	case document.StructureDeleteSheet:
+		if strings.EqualFold(oldSheet, edit.Sheet) && len(state.sheets) > 0 {
+			state.sheet = state.sheets[0]
+		}
+	}
+	if edit.Kind == document.StructureInsertRows || edit.Kind == document.StructureDeleteRows || edit.Kind == document.StructureInsertColumns || edit.Kind == document.StructureDeleteColumns {
+		state.selection.Anchor = rebasePosition(state.selection.Anchor, edit)
+		state.selection.Active = rebasePosition(state.selection.Active, edit)
+	} else {
+		state.selection = CellSelection{}
+	}
+	state.selectionSet = true
+	active := state.selection.Active
+	state.selectedCell = xlsx.CellName(active.Column+1, active.Row+1)
+	state.cellEdit.selectCell(state.selectedCell, "")
+	state.nameBox.SetText(state.selectedCell)
+	state.formulaEditor.SetText("")
+	if state.virtualGrid != nil {
+		state.virtualGrid.SelectedRow, state.virtualGrid.SelectedColumn = active.Row+1, active.Column+1
+		state.virtualGrid.PendingSelectionLoad = true
+		state.virtualGrid.invalidateWindow()
+	}
+	if state == a.documentSessionState {
+		a.sheet = state.sheet
+		a.sheets = state.sheets
+	}
+	state.sheetNameEditor.SetText("")
+}
+
+func rebasePosition(position CellPosition, edit document.StructureEdit) CellPosition {
+	coordinate := position.Row
+	if edit.Kind == document.StructureInsertColumns || edit.Kind == document.StructureDeleteColumns {
+		coordinate = position.Column
+	}
+	index := edit.Index - 1
+	switch edit.Kind {
+	case document.StructureInsertRows, document.StructureInsertColumns:
+		if coordinate >= index {
+			coordinate += edit.Count
+		}
+	case document.StructureDeleteRows, document.StructureDeleteColumns:
+		if coordinate >= index+edit.Count {
+			coordinate -= edit.Count
+		} else if coordinate >= index {
+			coordinate = index
+		}
+	}
+	if coordinate < 0 {
+		coordinate = 0
+	}
+	if edit.Kind == document.StructureInsertColumns || edit.Kind == document.StructureDeleteColumns {
+		position.Column = coordinate
+	} else {
+		position.Row = coordinate
+	}
+	return position
+}
+
 func (a *App) visibleStatus() string {
 	if a.workspaceWriteError != "" {
 		return a.workspaceWriteError
@@ -212,7 +336,9 @@ func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
 
 func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 	if _, ok := a.book.(document.GridReader); ok {
+		a.handleSpreadsheetToolbarEvents(gtx)
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(a.layoutSpreadsheetToolbar),
 			layout.Rigid(a.layoutGridControls),
 			layout.Flexed(1, a.layoutVirtualGrid),
 			layout.Rigid(a.layoutSheetTabs),
@@ -256,6 +382,9 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 				sheetName := name
 				button := a.sheetButton(sheetName)
 				if button.Clicked(gtx) {
+					if a.documentSessionState.valueFilter != nil {
+						a.clearValueFilter(a.documentSessionState)
+					}
 					if a.cellEdit.Editing {
 						if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
 							a.status = "修改失败：" + err.Error()
@@ -271,7 +400,10 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 							a.virtualGrid.PendingSelectionLoad = true
 						}
 						a.selectedCell = "A1"
-						a.cellEdit.selectCell("A1", "")
+						a.documentSessionState.selection = CellSelection{}
+						a.documentSessionState.selectionSet = true
+						a.documentSessionState.selectionDragging = false
+						a.documentSessionState.cellEdit.selectCell("A1", "")
 						a.nameBox.SetText("A1")
 						a.formulaEditor.SetText("")
 					} else if err := a.loadSheet(); err != nil {
@@ -285,6 +417,33 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 					})
 				}))
 			}
+			if a.documentSessionState.sheetCreateButton.Clicked(gtx) {
+				a.applyStructure(document.StructureEdit{Kind: document.StructureCreateSheet})
+			}
+			if a.documentSessionState.sheetRenameButton.Clicked(gtx) {
+				a.applyStructure(document.StructureEdit{Kind: document.StructureRenameSheet, Sheet: a.sheet, NewName: a.documentSessionState.sheetNameEditor.Text()})
+			}
+			if a.documentSessionState.sheetDeleteButton.Clicked(gtx) {
+				a.applyStructure(document.StructureEdit{Kind: document.StructureDeleteSheet, Sheet: a.sheet})
+			}
+			children = append(children,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(5), Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						style := material.Editor(a.theme, &a.documentSessionState.sheetNameEditor, "新工作表名")
+						style.TextSize = a.theme.TextSize * 11 / 16
+						return style.Layout(gtx)
+					})
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return material.Button(a.theme, &a.documentSessionState.sheetCreateButton, "+").Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return material.Button(a.theme, &a.documentSessionState.sheetRenameButton, "改名").Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return material.Button(a.theme, &a.documentSessionState.sheetDeleteButton, "删除").Layout(gtx)
+				}),
+			)
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 		},
 	)
