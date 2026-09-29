@@ -35,7 +35,11 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabStripSize), gtx.Dp(workspaceTabStripSize)
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			return fill(gtx, color.NRGBA{R: 239, G: 242, B: 246, A: 255})
+			size := gtx.Constraints.Max
+			paint.FillShape(gtx.Ops, chromeSurface, clip.Rect{Max: size}.Op())
+			joinHeight := gtx.Dp(unit.Dp(12))
+			paint.FillShape(gtx.Ops, pageBackground, clip.Rect{Min: image.Pt(0, size.Y-joinHeight), Max: size}.Op())
+			return layout.Dimensions{Size: size}
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 202, G: 208, B: 216, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
@@ -168,7 +172,7 @@ func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
 		a.persistActiveSession()
 		a.activateRecent()
 	}
-	return a.paintTab(gtx, &a.recentTabButton, "⌂  最近", a.activeTabID == workspace.RecentTabID)
+	return a.paintTab(gtx, &a.recentTabButton, "⌂  Glance", a.activeTabID == workspace.RecentTabID)
 }
 
 func (a *App) layoutPlusTab(gtx layout.Context) layout.Dimensions {
@@ -195,19 +199,14 @@ func (a *App) workspaceTabIDs() []string {
 
 func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions {
 	meta := a.tabMeta[id]
-	if a.tabButtons[id] == nil {
-		a.tabButtons[id] = new(widget.Clickable)
-	}
-	if a.tabCloseButtons[id] == nil {
-		a.tabCloseButtons[id] = new(widget.Clickable)
-	}
-	if a.tabButtons[id].Clicked(gtx) {
+	tabButton, closeButton := a.documentTabWidgets(id)
+	if tabButton.Clicked(gtx) {
 		a.persistActiveSession()
 		if state := a.sessions[id]; state != nil {
 			a.activateSession(id, state)
 		}
 	}
-	if a.tabCloseButtons[id].Clicked(gtx) {
+	if closeButton.Clicked(gtx) {
 		a.closeWorkspaceTab(id)
 	}
 	label := meta.Title
@@ -215,8 +214,20 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 		label += " •"
 	}
 	return layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return a.paintDocumentTab(gtx, a.tabButtons[id], a.tabCloseButtons[id], label, id == a.activeTabID)
+		// Keep this frame's widgets alive even if the close click removed the
+		// tab and its widget map entries above.
+		return a.paintDocumentTab(gtx, tabButton, closeButton, label, id == a.activeTabID)
 	})
+}
+
+func (a *App) documentTabWidgets(id string) (*widget.Clickable, *widget.Clickable) {
+	if a.tabButtons[id] == nil {
+		a.tabButtons[id] = new(widget.Clickable)
+	}
+	if a.tabCloseButtons[id] == nil {
+		a.tabCloseButtons[id] = new(widget.Clickable)
+	}
+	return a.tabButtons[id], a.tabCloseButtons[id]
 }
 
 func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable, label string, active bool) layout.Dimensions {
@@ -248,12 +259,15 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 	)
 	dims.Size.Y = gtx.Constraints.Max.Y
 	call := child.Stop()
-	bg := color.NRGBA{R: 234, G: 237, B: 241, A: 255}
+	bg := tabSurface
 	if active {
 		bg = pageBackground
 	}
 	paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(7)), NE: gtx.Dp(unit.Dp(7))}.Op(gtx.Ops))
 	call.Add(gtx.Ops)
+	if active {
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 0, G: 190, B: 140, A: 255}, clip.Rect{Min: image.Pt(0, dims.Size.Y-gtx.Dp(unit.Dp(1))), Max: dims.Size}.Op())
+	}
 	return dims
 }
 
@@ -272,12 +286,15 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 		})
 		dims.Size.Y = gtx.Constraints.Max.Y
 		call := child.Stop()
-		bg := color.NRGBA{R: 234, G: 237, B: 241, A: 255}
+		bg := tabSurface
 		if active {
 			bg = pageBackground
 		}
 		paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(7)), NE: gtx.Dp(unit.Dp(7))}.Op(gtx.Ops))
 		call.Add(gtx.Ops)
+		if active {
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 0, G: 190, B: 140, A: 255}, clip.Rect{Min: image.Pt(0, dims.Size.Y-gtx.Dp(unit.Dp(1))), Max: dims.Size}.Op())
+		}
 		return dims
 	})
 }
@@ -293,21 +310,50 @@ func (a *App) activateRecent() {
 }
 
 func (a *App) closeWorkspaceTab(id string) {
+	if a.modal.Visible {
+		return
+	}
 	state := a.sessions[id]
 	if state == nil {
 		return
 	}
-	if (state.book != nil && state.book.Dirty()) || (state.word != nil && state.word.Dirty()) || (state.jsonDoc != nil && state.jsonDoc.Dirty()) {
-		a.status = "该标签有未保存更改；请先保存后再关闭"
+	if state.path == "" || (state.book != nil && state.book.Dirty()) || (state.word != nil && state.word.Dirty()) || (state.jsonDoc != nil && state.jsonDoc.Dirty()) {
+		title, message := "保存更改？", "此文档有尚未保存的修改。关闭前要保存吗？"
+		if state.path == "" {
+			title, message = "保存新文档？", "此新建文档尚未保存到本地目录。关闭后将丢弃草稿；要先保存吗？"
+		}
+		a.showCloseConfirmation(id, title, message)
+		return
+	}
+	a.closeWorkspaceTabNow(id)
+}
+
+func (a *App) showCloseConfirmation(id, title, message string) {
+	a.pendingCloseTabID = id
+	a.showModalDialog(title, message, a.handleCloseConfirmation,
+		modalDialogActionSpec{ID: "save", Label: "保存"},
+		modalDialogActionSpec{ID: "discard", Label: "不保存"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) closeWorkspaceTabNow(id string) {
+	state := a.sessions[id]
+	if state == nil {
 		return
 	}
 	wasActive := a.activeTabID == id
+	state.closed.Store(true)
 	if a.collection != nil {
 		if _, persisted := a.collection.Get(id); persisted {
+			a.workspaceDBMu.Lock()
 			if err := a.collection.CloseTab(id); err != nil {
+				a.workspaceDBMu.Unlock()
+				state.closed.Store(false)
 				a.status = err.Error()
 				return
 			}
+			a.workspaceDBMu.Unlock()
 		}
 	}
 	closeSessionState(state)
@@ -321,11 +367,57 @@ func (a *App) closeWorkspaceTab(id string) {
 		if a.collection != nil {
 			next = a.collection.ActiveTabID()
 		}
+		// The active session has already been removed above. Clear its identity
+		// before activation so activateSession cannot reinsert the closed state.
+		a.activeTabID = ""
 		if s := a.sessions[next]; s != nil {
 			a.activateSession(next, s)
 		} else {
 			a.activateRecent()
 		}
+	}
+	// The current frame's tab list was built before this close removed its ID.
+	// Schedule a fresh frame so the stale list snapshot is replaced immediately.
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+
+func (a *App) handleCloseConfirmation(action string) {
+	id := a.pendingCloseTabID
+	if a.saving && action != "cancel" {
+		return
+	}
+	switch action {
+	case "cancel":
+		a.modal.Hide()
+		a.pendingCloseTabID = ""
+	case "discard":
+		a.modal.Hide()
+		a.pendingCloseTabID = ""
+		a.closeWorkspaceTabNow(id)
+	case "save":
+		state := a.sessions[id]
+		if state == nil {
+			a.modal.Hide()
+			a.pendingCloseTabID = ""
+			return
+		}
+		if a.activeTabID != id {
+			a.activateSession(id, state)
+		}
+		a.modal.Hide()
+		if a.path == "" {
+			ext := "xlsx"
+			if a.word != nil {
+				ext = "docx"
+			} else if a.jsonDoc != nil {
+				ext = "json"
+			}
+			a.startSaveAsPicker(ext)
+			return
+		}
+		a.startSave()
 	}
 }
 

@@ -1,6 +1,8 @@
 package desktopui
 
 import (
+	"sync/atomic"
+
 	"glance/internal/document"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
@@ -11,6 +13,7 @@ import (
 
 // documentSessionState holds persistent Gio widgets and view state for one document tab.
 type documentSessionState struct {
+	closed                        atomic.Bool
 	path                          string
 	book                          document.Spreadsheet
 	word                          *docx.Document

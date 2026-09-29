@@ -20,9 +20,13 @@ import (
 )
 
 var (
-	pageBackground = color.NRGBA{R: 247, G: 249, B: 252, A: 255}
-	gridLine       = color.NRGBA{R: 220, G: 225, B: 232, A: 255}
-	selectedFill   = color.NRGBA{R: 221, G: 237, B: 255, A: 255}
+	pageBackground = color.NRGBA{R: 251, G: 251, B: 251, A: 255}
+	chromeSurface  = color.NRGBA{R: 239, G: 239, B: 239, A: 255}
+	tabSurface     = color.NRGBA{R: 234, G: 234, B: 234, A: 255}
+	contentSurface = color.NRGBA{R: 247, G: 247, B: 247, A: 255}
+	gridHeaderFill = color.NRGBA{R: 239, G: 239, B: 239, A: 255}
+	gridLine       = color.NRGBA{R: 219, G: 219, B: 219, A: 255}
+	selectedFill   = color.NRGBA{R: 204, G: 224, B: 250, A: 255}
 	mutedText      = color.NRGBA{R: 91, G: 101, B: 116, A: 255}
 )
 
@@ -32,9 +36,20 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions { return fill(gtx, pageBackground) },
 		func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
-				layout.Rigid(a.layoutWorkspaceTabs),
-				layout.Flexed(1, a.layoutWorkspaceBody),
+			return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
+						layout.Rigid(a.layoutWorkspaceTabs),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							height := gtx.Dp(unit.Dp(2))
+							gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+							paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 0, B: 0, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
+							return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, height)}
+						}),
+						layout.Flexed(1, a.layoutWorkspaceBody),
+					)
+				}),
+				layout.Stacked(a.layoutModalDialog),
 			)
 		},
 	)
@@ -65,6 +80,9 @@ func (a *App) processAsyncResults() {
 		a.fileCommandRunning = false
 		if result.err != nil {
 			a.status = result.err.Error()
+			if result.kind == commandSaveAs && a.pendingCloseTabID != "" {
+				a.showCloseConfirmation(a.pendingCloseTabID, "保存失败", "无法选择另存为位置。可以重试保存、不保存并关闭，或取消关闭。")
+			}
 		} else {
 			switch result.kind {
 			case commandOpenFile:
@@ -90,6 +108,9 @@ func (a *App) processAsyncResults() {
 					a.startSaveAs(result.path)
 				} else {
 					a.status = "已取消另存为"
+					if a.pendingCloseTabID != "" {
+						a.pendingCloseTabID = ""
+					}
 				}
 			}
 		}
@@ -119,6 +140,9 @@ func (a *App) processAsyncResults() {
 		a.saving = false
 		if result.err != nil {
 			a.status = "保存失败：" + result.err.Error()
+			if result.tabID == a.pendingCloseTabID && result.tabID != "" {
+				a.showCloseConfirmation(result.tabID, "保存失败", "保存没有完成。可以重试保存、不保存并关闭，或取消关闭。")
+			}
 		} else {
 			if result.saveAs {
 				if state := a.sessions[result.tabID]; state != nil {
@@ -151,6 +175,10 @@ func (a *App) processAsyncResults() {
 				if result.tabID == a.activeTabID {
 					a.persistViewState()
 				}
+			}
+			if result.tabID != "" && result.tabID == a.pendingCloseTabID {
+				a.pendingCloseTabID = ""
+				a.closeWorkspaceTab(result.tabID)
 			}
 		}
 	default:
@@ -219,10 +247,10 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(34)), gtx.Dp(unit.Dp(34))
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			return fill(gtx, color.NRGBA{R: 239, G: 242, B: 246, A: 255})
+			return fill(gtx, chromeSurface)
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, color.NRGBA{R: 202, G: 208, B: 216, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
+			paint.FillShape(gtx.Ops, gridLine, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
 			children := make([]layout.FlexChild, 0, len(a.sheets))
 			for _, name := range a.sheets {
 				sheetName := name
@@ -264,10 +292,10 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 
 func layoutSheetTab(gtx layout.Context, theme *material.Theme, button *widget.Clickable, name string, selected bool) layout.Dimensions {
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		bg := color.NRGBA{R: 230, G: 234, B: 240, A: 255}
-		fg := color.NRGBA{R: 70, G: 78, B: 88, A: 255}
+		bg := tabSurface
+		fg := color.NRGBA{R: 61, G: 69, B: 80, A: 255}
 		if selected {
-			bg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			bg = contentSurface
 			fg = color.NRGBA{R: 35, G: 43, B: 53, A: 255}
 		}
 		label := material.Body2(theme, name)
@@ -442,7 +470,7 @@ func gridHeaderCell(gtx layout.Context, theme *material.Theme, text string, widt
 	gtx.Constraints.Max.Y = gtx.Dp(36)
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			return fill(gtx, color.NRGBA{R: 235, G: 239, B: 245, A: 255})
+			return fill(gtx, gridHeaderFill)
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -482,9 +510,9 @@ func cellBackground(selected bool, styleID int) color.NRGBA {
 		return selectedFill
 	}
 	if styleID != 0 {
-		return color.NRGBA{R: 249, G: 251, B: 254, A: 255}
+		return contentSurface
 	}
-	return color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	return contentSurface
 }
 
 func tableRows(a *App, rows [][]string) []layout.FlexChild {
@@ -503,7 +531,7 @@ func tableRows(a *App, rows [][]string) []layout.FlexChild {
 			}
 			return layout.Background{}.Layout(gtx,
 				func(gtx layout.Context) layout.Dimensions {
-					return fill(gtx, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+					return fill(gtx, contentSurface)
 				},
 				func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, items...)

@@ -104,13 +104,11 @@ func (a *App) initializeWorkspace() {
 		}
 		a.sessions[record.Tab.ID] = state
 	}
-	active := collection.ActiveTabID()
-	if active != workspace.RecentTabID {
-		if state := a.sessions[active]; state != nil {
-			a.activateSession(active, state)
-		} else {
-			a.activeTabID = workspace.RecentTabID
-		}
+	// Restore all document sessions, but start on Glance's home tab.
+	a.activeTabID = workspace.RecentTabID
+	a.documentSessionState = newDocumentSessionState("")
+	if err := collection.Activate(workspace.RecentTabID); err != nil {
+		a.status = err.Error()
 	}
 }
 
@@ -392,12 +390,20 @@ func (a *App) publishWorkspaceWriteResult(err error) {
 
 func (a *App) writeWorkspaceSnapshot(job workspaceWriteJob) error {
 	state := job.state
+	if state.closed.Load() {
+		return nil
+	}
 	payload, err := snapshotState(state)
 	if err != nil {
 		return err
 	}
 	if a.workspaceStore == nil {
 		return fmt.Errorf("工作区数据库不可用")
+	}
+	a.workspaceDBMu.Lock()
+	defer a.workspaceDBMu.Unlock()
+	if state.closed.Load() {
+		return nil
 	}
 	return a.workspaceStore.SaveDocument(workspace.Document{ID: job.documentID, Format: job.format, Payload: payload, ViewState: job.viewState, Dirty: sessionDirty(state), UpdatedAt: time.Now().UTC()})
 }

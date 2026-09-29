@@ -44,7 +44,7 @@ type cellPaintEntry struct {
 }
 
 func paintStyle(style document.CellStyle) gridPaintStyle {
-	return gridPaintStyle{Fill: parseGridColor(style.FillColor, color.NRGBA{R: 255, G: 255, B: 255, A: 255}), Font: parseGridColor(style.FontColor, color.NRGBA{R: 35, G: 39, B: 45, A: 255}), Bold: style.Bold, Italic: style.Italic, Wrap: style.WrapText, Align: style.HorizontalAlignment, FontFamily: style.FontFamily, Vertical: style.VerticalAlignment}
+	return gridPaintStyle{Fill: parseGridColor(style.FillColor, contentSurface), Font: parseGridColor(style.FontColor, color.NRGBA{R: 35, G: 39, B: 45, A: 255}), Bold: style.Bold, Italic: style.Italic, Wrap: style.WrapText, Align: style.HorizontalAlignment, FontFamily: style.FontFamily, Vertical: style.VerticalAlignment}
 }
 
 func parseGridColor(s string, fallback color.NRGBA) color.NRGBA {
@@ -66,10 +66,10 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	paint.FillShape(gtx.Ops, pageBackground, clip.Rect{Max: size}.Op())
 	rowHead := gtx.Dp(unit.Dp(gridRowHeader))
 	colHead := gtx.Dp(unit.Dp(gridColumnHeader))
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 234, G: 238, B: 244, A: 255}, clip.Rect{Max: image.Pt(size.X, colHead)}.Op())
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 234, G: 238, B: 244, A: 255}, clip.Rect{Max: image.Pt(rowHead, size.Y)}.Op())
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 190, G: 198, B: 209, A: 255}, clip.Rect{Min: image.Pt(rowHead, 0), Max: image.Pt(rowHead+1, size.Y)}.Op())
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 190, G: 198, B: 209, A: 255}, clip.Rect{Min: image.Pt(0, colHead), Max: image.Pt(size.X, colHead+1)}.Op())
+	paint.FillShape(gtx.Ops, gridHeaderFill, clip.Rect{Max: image.Pt(size.X, colHead)}.Op())
+	paint.FillShape(gtx.Ops, gridHeaderFill, clip.Rect{Max: image.Pt(rowHead, size.Y)}.Op())
+	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(rowHead, 0), Max: image.Pt(rowHead+1, size.Y)}.Op())
+	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(0, colHead), Max: image.Pt(size.X, colHead+1)}.Op())
 	if v.WindowRange.StartRow > 0 {
 		paintedMerges := make(map[document.CellRange]bool, len(v.Window.Merges))
 		for i, row := range v.Window.Cells {
@@ -81,7 +81,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 			if y1 <= colHead || y0 >= size.Y {
 				continue
 			}
-			paintTextBox(gtx, a.theme, strconv.Itoa(rr), image.Rect(0, y0, rowHead, y1), color.NRGBA{R: 72, G: 78, B: 88, A: 255}, color.NRGBA{R: 234, G: 238, B: 244, A: 255}, false)
+			paintTextBox(gtx, a.theme, strconv.Itoa(rr), image.Rect(0, y0, rowHead, y1), color.NRGBA{R: 72, G: 72, B: 72, A: 255}, gridHeaderFill, false)
 			for j, cell := range row {
 				cc := v.Window.StartColumn + j
 				mr, mc, merged := mergeAnchorAt(v.Window.Merges, rr, cc)
@@ -130,7 +130,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 		x1f, _ := v.Columns.Boundary(c + 1)
 		x0 := int(x0f-v.X) + rowHead
 		x1 := int(x1f-v.X) + rowHead
-		paintTextBox(gtx, a.theme, columnName(c+1), image.Rect(x0, 0, x1, colHead), mutedText, color.NRGBA{R: 234, G: 238, B: 244, A: 255}, false)
+		paintTextBox(gtx, a.theme, columnName(c+1), image.Rect(x0, 0, x1, colHead), mutedText, gridHeaderFill, false)
 	}
 	if a.cellEdit.Editing {
 		if row, col, ok := parseCellAddress(a.cellEdit.Address); ok {

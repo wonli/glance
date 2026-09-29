@@ -54,6 +54,7 @@ type App struct {
 	activeTabID           string
 	workspaceError        string
 	workspaceWriteError   string
+	workspaceDBMu         sync.Mutex
 	tabButtons            map[string]*widget.Clickable
 	tabCloseButtons       map[string]*widget.Clickable
 	newButton             widget.Clickable
@@ -67,6 +68,8 @@ type App struct {
 	clientTitlebar        bool
 	windowDecorations     widget.Decorations
 	showNewMenu           bool
+	modal                 modalDialog
+	pendingCloseTabID     string
 	recentButtons         map[string]*widget.Clickable
 	recentRemoveButtons   map[string]*widget.Clickable
 	recentList            widget.List
@@ -90,6 +93,7 @@ func New(window *app.Window, initialPath string) *App {
 		window:               window,
 		theme:                material.NewTheme(),
 		documentSessionState: newDocumentSessionState(initialPath),
+		activeTabID:          workspace.RecentTabID,
 		status:               "打开一个 .xlsx 或 .docx 文件开始预览",
 		gridLoadResults:      make(chan gridLoadResult, 8),
 		saveResults:          make(chan saveResult, 1),
@@ -216,6 +220,20 @@ func loadDocument(path string) (loadedDocument, error) {
 
 func (a *App) installDocument(loaded loadedDocument) error {
 	a.documentGeneration++
+	// Blank adapter constructors mark their drafts dirty so standalone callers
+	// know they have no saved path. In the workspace, a newly created empty
+	// document has no user edits to protect yet and must be closable.
+	if loaded.path == "" {
+		if book, ok := loaded.book.(interface{ SetDirty(bool) }); ok {
+			book.SetDirty(false)
+		}
+		if loaded.word != nil {
+			loaded.word.SetDirty(false)
+		}
+		if loaded.jsonDoc != nil {
+			loaded.jsonDoc.SetDirty(false)
+		}
+	}
 	for id, meta := range a.tabMeta {
 		if sameDocumentPath(meta.SourcePath, loaded.path) {
 			if state := a.sessions[id]; state != nil {
@@ -229,6 +247,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		a.sessions[a.activeTabID] = a.documentSessionState
 	}
 	state := newDocumentSessionState(loaded.path)
+	state.book, state.word = loaded.book, loaded.word
 	a.documentSessionState = state
 	a.book, a.word, a.sheets = loaded.book, loaded.word, loaded.sheets
 	a.jsonDoc = loaded.jsonDoc
@@ -383,7 +402,9 @@ func (a *App) startSave() {
 		}
 		select {
 		case a.saveResults <- saveResult{path: path, tabID: tabID, err: err}:
-			a.window.Invalidate()
+			if a.window != nil {
+				a.window.Invalidate()
+			}
 		case <-a.shutdown:
 		}
 	}()
@@ -402,6 +423,9 @@ func (a *App) startSaveAs(path string) {
 	}
 	if err := validateSaveAsExtension(format, path); err != nil {
 		a.status = err.Error()
+		if a.pendingCloseTabID != "" {
+			a.showCloseConfirmation(a.pendingCloseTabID, "保存失败", "文件扩展名不匹配。可以重试保存、不保存并关闭，或取消关闭。")
+		}
 		return
 	}
 	book, word, jsonDocument, tabID := a.book, a.word, a.jsonDoc, a.activeTabID
@@ -424,7 +448,9 @@ func (a *App) startSaveAs(path string) {
 		}
 		select {
 		case a.saveResults <- saveResult{path: path, tabID: tabID, saveAs: true, err: err}:
-			a.window.Invalidate()
+			if a.window != nil {
+				a.window.Invalidate()
+			}
 		case <-a.shutdown:
 		}
 	}()
