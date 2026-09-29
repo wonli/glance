@@ -60,6 +60,12 @@ type App struct {
 	recentTabButton       widget.Clickable
 	workspaceTabsList     widget.List
 	createActionsList     widget.List
+	windowCloseButton     widget.Clickable
+	windowMinimizeButton  widget.Clickable
+	windowMaximizeButton  widget.Clickable
+	windowMode            app.WindowMode
+	clientTitlebar        bool
+	windowDecorations     widget.Decorations
 	showNewMenu           bool
 	recentButtons         map[string]*widget.Clickable
 	recentRemoveButtons   map[string]*widget.Clickable
@@ -115,6 +121,7 @@ func Run(initialPath string) {
 	w := new(app.Window)
 	w.Option(
 		app.Title("Glance Office"),
+		app.Decorated(false),
 		app.Size(unit.Dp(1280), unit.Dp(820)),
 		app.MinSize(unit.Dp(900), unit.Dp(600)),
 	)
@@ -131,6 +138,9 @@ func Run(initialPath string) {
 			a.shutdownOnce.Do(func() { close(a.shutdown) })
 			a.closeWorkspace()
 			return
+		case app.ConfigEvent:
+			a.applyWindowConfig(e.Config)
+			a.window.Invalidate()
 		case app.FrameEvent:
 			gtx := app.NewContext(&a.ops, e)
 			a.layout(gtx)

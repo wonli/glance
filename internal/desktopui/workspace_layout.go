@@ -5,8 +5,11 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 
+	"gioui.org/app"
+	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -30,17 +33,126 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 202, G: 208, B: 216, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
-			return material.List(a.theme, &a.workspaceTabsList).Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
-				if index == 0 {
-					return a.layoutRecentTab(gtx)
-				}
-				if index == len(ids)+1 {
-					return a.layoutPlusTab(gtx)
-				}
-				return a.layoutDocumentTab(gtx, ids[index-1])
-			})
+			a.processWindowControlClicks(gtx)
+			if !a.clientTitlebar {
+				return a.layoutWorkspaceTabList(gtx, ids)
+			}
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				func() layout.FlexChild {
+					if runtime.GOOS == "darwin" {
+						return layout.Rigid(a.layoutMacWindowControls)
+					}
+					return layout.Rigid(func(layout.Context) layout.Dimensions { return layout.Dimensions{} })
+				}(),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return a.layoutWorkspaceTabList(gtx, ids)
+				}),
+				layout.Rigid(a.layoutWindowDragHandle),
+				func() layout.FlexChild {
+					if runtime.GOOS == "darwin" {
+						return layout.Rigid(func(layout.Context) layout.Dimensions { return layout.Dimensions{} })
+					}
+					return layout.Rigid(a.layoutStandardWindowControls)
+				}(),
+			)
 		},
 	)
+}
+
+func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Dimensions {
+	return material.List(a.theme, &a.workspaceTabsList).Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
+		if index == 0 {
+			return a.layoutRecentTab(gtx)
+		}
+		if index == len(ids)+1 {
+			return a.layoutPlusTab(gtx)
+		}
+		return a.layoutDocumentTab(gtx, ids[index-1])
+	})
+}
+
+func (a *App) processWindowControlClicks(gtx layout.Context) {
+	if a.window == nil {
+		return
+	}
+	if a.windowCloseButton.Clicked(gtx) {
+		a.window.Perform(system.ActionClose)
+	}
+	if a.windowMinimizeButton.Clicked(gtx) {
+		a.window.Perform(system.ActionMinimize)
+	}
+	if a.windowMaximizeButton.Clicked(gtx) {
+		a.window.Perform(windowModeToggleAction(a.windowMode))
+	}
+}
+
+func (a *App) layoutMacWindowControls(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Right: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return a.layoutTrafficLight(gtx, &a.windowCloseButton, color.NRGBA{R: 255, G: 95, B: 87, A: 255})
+				})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Right: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return a.layoutTrafficLight(gtx, &a.windowMinimizeButton, color.NRGBA{R: 254, G: 188, B: 46, A: 255})
+				})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return a.layoutTrafficLight(gtx, &a.windowMaximizeButton, color.NRGBA{R: 40, G: 201, B: 64, A: 255})
+			}),
+		)
+	})
+}
+
+func (a *App) layoutTrafficLight(gtx layout.Context, click *widget.Clickable, fill color.NRGBA) layout.Dimensions {
+	gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(18)), gtx.Dp(unit.Dp(28)))
+	gtx.Constraints.Max = gtx.Constraints.Min
+	return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			size := gtx.Dp(unit.Dp(12))
+			shape := clip.Ellipse{Max: image.Pt(size, size)}
+			paint.FillShape(gtx.Ops, fill, shape.Op(gtx.Ops))
+			return layout.Dimensions{Size: image.Pt(size, size)}
+		})
+	})
+}
+
+func (a *App) layoutStandardWindowControls(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return a.layoutStandardWindowButton(gtx, &a.windowMinimizeButton, "−")
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			label := "□"
+			if a.windowMode == app.Maximized {
+				label = "❐"
+			}
+			return a.layoutStandardWindowButton(gtx, &a.windowMaximizeButton, label)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return a.layoutStandardWindowButton(gtx, &a.windowCloseButton, "×")
+		}),
+	)
+}
+
+func (a *App) layoutStandardWindowButton(gtx layout.Context, click *widget.Clickable, label string) layout.Dimensions {
+	gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(38)), gtx.Dp(unit.Dp(38)))
+	gtx.Constraints.Max = gtx.Constraints.Min
+	return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		style := material.Body1(a.theme, label)
+		style.Color = color.NRGBA{R: 52, G: 57, B: 65, A: 255}
+		return layout.Center.Layout(gtx, style.Layout)
+	})
+}
+
+func (a *App) layoutWindowDragHandle(gtx layout.Context) layout.Dimensions {
+	gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(48)), gtx.Dp(unit.Dp(40)))
+	gtx.Constraints.Max = gtx.Constraints.Min
+	return a.windowDecorations.LayoutMove(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Dimensions{Size: gtx.Constraints.Min}
+	})
 }
 
 func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
