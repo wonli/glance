@@ -34,21 +34,28 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
 				layout.Rigid(a.layoutWorkspaceTabs),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if a.showNewMenu {
-						return a.layoutCreateActions(gtx)
-					}
-					return layout.Dimensions{}
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return material.Caption(a.theme, a.visibleStatus()).Layout(gtx)
-					})
-				}),
+				layout.Flexed(1, a.layoutWorkspaceBody),
+			)
+		},
+	)
+}
+
+// layoutWorkspaceBody keeps the document as the only content directly below
+// the tabs. Transient actions float over it and do not change its geometry.
+func (a *App) layoutWorkspaceBody(gtx layout.Context) layout.Dimensions {
+	return layout.Stack{Alignment: layout.NW}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
 				layout.Flexed(1, a.layoutDocument),
 				layout.Rigid(a.layoutEditor),
 			)
-		},
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			if !a.showNewMenu {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, a.layoutCreateActions)
+		}),
 	)
 }
 

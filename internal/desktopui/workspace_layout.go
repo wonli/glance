@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	workspaceTabTopGap    unit.Dp = 8
+	workspaceTabTopGap    unit.Dp = 12
 	workspaceTabHeight    unit.Dp = 36
 	workspaceTabStripSize unit.Dp = workspaceTabTopGap + workspaceTabHeight
 )
