@@ -52,6 +52,21 @@ func TestSpreadsheetToolbarActionsCoverHomeAndDataGroups(t *testing.T) {
 	}
 }
 
+func TestSpreadsheetToolbarActionsHaveIconGlyphsAndAccessibleLabels(t *testing.T) {
+	actions := append(append([]spreadsheetToolbarAction(nil), homeToolbarActions...), dataToolbarActions...)
+	for _, action := range actions {
+		if action.icon == "" {
+			t.Errorf("toolbar action %q has no icon", action.label)
+		}
+		if action.label == "" {
+			t.Errorf("toolbar action slot %d has no accessible label", action.slot)
+		}
+		if _, ok := toolbarIconData(action.icon); !ok {
+			t.Errorf("toolbar action %q references missing icon %q", action.label, action.icon)
+		}
+	}
+}
+
 func TestToolbarStyleUsesActiveCellAndMarksMixedSelection(t *testing.T) {
 	state := newDocumentSessionState("")
 	state.sheet = "Sheet1"

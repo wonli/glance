@@ -1,11 +1,18 @@
 package desktopui
 
 import (
+	"bytes"
+	_ "embed"
+	"image"
 	"image/color"
+	"image/draw"
+	"image/png"
 	"io"
 	"strings"
+	"sync"
 
 	"gioui.org/io/clipboard"
+	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -27,37 +34,78 @@ type spreadsheetToolbarAction struct {
 	slot  int
 	label string
 	group string
+	icon  string
 }
 
 var homeToolbarActions = []spreadsheetToolbarAction{
-	{slot: 0, label: "撤销", group: "历史"},
-	{slot: 1, label: "重做", group: "历史"},
-	{slot: 2, label: "复制", group: "剪贴板"},
-	{slot: 3, label: "剪切", group: "剪贴板"},
-	{slot: 4, label: "加粗", group: "字体"},
-	{slot: 5, label: "斜体", group: "字体"},
-	{slot: 6, label: "下划线", group: "字体"},
-	{slot: 7, label: "字体颜色", group: "字体"},
-	{slot: 8, label: "填充颜色", group: "字体"},
-	{slot: 9, label: "对齐", group: "格式"},
-	{slot: 10, label: "数字格式", group: "格式"},
-	{slot: 11, label: "边框", group: "格式"},
-	{slot: 12, label: "插入行", group: "单元格"},
-	{slot: 13, label: "删除行", group: "单元格"},
-	{slot: 14, label: "插入列", group: "单元格"},
-	{slot: 15, label: "删除列", group: "单元格"},
-	{slot: 16, label: "清除格式", group: "单元格"},
-	{slot: 17, label: "保存", group: "文件"},
-	{slot: 21, label: "粘贴", group: "剪贴板"},
-	{slot: 22, label: "新建工作表", group: "工作表"},
-	{slot: 23, label: "重命名工作表", group: "工作表"},
-	{slot: 24, label: "删除工作表", group: "工作表"},
+	{slot: 0, label: "撤销", group: "历史", icon: "undo"},
+	{slot: 1, label: "重做", group: "历史", icon: "redo"},
+	{slot: 2, label: "复制", group: "剪贴板", icon: "copy"},
+	{slot: 3, label: "剪切", group: "剪贴板", icon: "cut"},
+	{slot: 4, label: "加粗", group: "字体", icon: "bold"},
+	{slot: 5, label: "斜体", group: "字体", icon: "italic"},
+	{slot: 6, label: "下划线", group: "字体", icon: "underline"},
+	{slot: 7, label: "字体颜色", group: "字体", icon: "type"},
+	{slot: 8, label: "填充颜色", group: "字体", icon: "paint-bucket"},
+	{slot: 9, label: "对齐", group: "格式", icon: "align-center"},
+	{slot: 10, label: "数字格式", group: "格式", icon: "hash"},
+	{slot: 11, label: "边框", group: "格式", icon: "grid"},
+	{slot: 12, label: "插入行", group: "单元格", icon: "row-insert"},
+	{slot: 13, label: "删除行", group: "单元格", icon: "row-delete"},
+	{slot: 14, label: "插入列", group: "单元格", icon: "column-insert"},
+	{slot: 15, label: "删除列", group: "单元格", icon: "column-delete"},
+	{slot: 16, label: "清除格式", group: "单元格", icon: "clear"},
+	{slot: 17, label: "保存", group: "文件", icon: "save"},
+	{slot: 21, label: "粘贴", group: "剪贴板", icon: "paste"},
+	{slot: 22, label: "新建工作表", group: "工作表", icon: "sheet-plus"},
+	{slot: 23, label: "重命名工作表", group: "工作表", icon: "sheet-edit"},
+	{slot: 24, label: "删除工作表", group: "工作表", icon: "sheet-trash"},
 }
 
 var dataToolbarActions = []spreadsheetToolbarAction{
-	{slot: 18, label: "升序", group: "排序和筛选"},
-	{slot: 19, label: "降序", group: "排序和筛选"},
-	{slot: 20, label: "筛选", group: "排序和筛选"},
+	{slot: 18, label: "升序", group: "排序和筛选", icon: "sort-asc"},
+	{slot: 19, label: "降序", group: "排序和筛选", icon: "sort-desc"},
+	{slot: 20, label: "筛选", group: "排序和筛选", icon: "filter"},
+}
+
+//go:embed assets/toolbar-icons.png
+var toolbarIconSpritePNG []byte
+
+var (
+	toolbarIconSpriteOnce sync.Once
+	toolbarIconSprite     *image.RGBA
+	toolbarIconSpriteErr  error
+)
+
+func toolbarIconData(name string) (image.Image, bool) {
+	cell, ok := toolbarIconCells[name]
+	if !ok {
+		return nil, false
+	}
+	toolbarIconSpriteOnce.Do(func() {
+		decoded, err := png.Decode(bytes.NewReader(toolbarIconSpritePNG))
+		if err != nil {
+			toolbarIconSpriteErr = err
+			return
+		}
+		toolbarIconSprite = image.NewRGBA(decoded.Bounds())
+		draw.Draw(toolbarIconSprite, toolbarIconSprite.Bounds(), decoded, decoded.Bounds().Min, draw.Src)
+	})
+	if toolbarIconSpriteErr != nil || toolbarIconSprite == nil {
+		return nil, false
+	}
+	const cellSize = 96
+	return toolbarIconSprite.SubImage(image.Rect(cell.X*cellSize, cell.Y*cellSize, (cell.X+1)*cellSize, (cell.Y+1)*cellSize)), true
+}
+
+var toolbarIconCells = map[string]image.Point{
+	"undo": {X: 0, Y: 0}, "redo": {X: 1, Y: 0}, "copy": {X: 2, Y: 0}, "cut": {X: 3, Y: 0},
+	"bold": {X: 4, Y: 0}, "italic": {X: 5, Y: 0}, "underline": {X: 6, Y: 0}, "type": {X: 7, Y: 0},
+	"paint-bucket": {X: 0, Y: 1}, "align-center": {X: 1, Y: 1}, "hash": {X: 2, Y: 1}, "grid": {X: 3, Y: 1},
+	"row-insert": {X: 4, Y: 1}, "row-delete": {X: 5, Y: 1}, "column-insert": {X: 6, Y: 1}, "column-delete": {X: 7, Y: 1},
+	"clear": {X: 0, Y: 2}, "save": {X: 1, Y: 2}, "paste": {X: 2, Y: 2}, "sheet-plus": {X: 3, Y: 2},
+	"sheet-edit": {X: 4, Y: 2}, "sheet-trash": {X: 5, Y: 2}, "sort-asc": {X: 6, Y: 2}, "sort-desc": {X: 7, Y: 2},
+	"filter": {X: 0, Y: 3},
 }
 
 var (
@@ -65,6 +113,7 @@ var (
 	disabledToolbarText       = color.NRGBA{R: 132, G: 140, B: 151, A: 255}
 	mixedToolbarBackground    = color.NRGBA{R: 250, G: 239, B: 204, A: 255}
 	activeToolbarText         = color.NRGBA{R: 35, G: 82, B: 154, A: 255}
+	toolbarHoverBackground    = color.NRGBA{R: 232, G: 239, B: 249, A: 255}
 )
 
 func (a *App) spreadsheetToolbarVisible() bool {
@@ -263,46 +312,49 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 					if state.toolbarTab == toolbarTabData {
 						actions = dataToolbarActions
 					}
-					return state.toolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
-						action := actions[index]
-						label := action.label
-						style := a.selectedCellStyle()
-						mixed := formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
-						if mixed {
-							label += " ◇"
-						}
-						button := material.Button(a.theme, &state.toolbarActionButtons[action.slot], label)
-						enabled := a.toolbarActionEnabled(action.slot)
-						if enabled {
-							button.Background = contentSurface
-							button.Color = mutedText
-							if mixed {
-								button.Background = mixedToolbarBackground
+					hoveredLabel := ""
+					dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							return state.toolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
+								action := actions[index]
+								style := a.selectedCellStyle()
+								mixed := formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
+								active := !mixed && formatStyleActive(action.slot, style)
+								enabled := a.toolbarActionEnabled(action.slot)
+								button := &state.toolbarActionButtons[action.slot]
+								if button.Hovered() || gtx.Focused(button) {
+									hoveredLabel = action.label
+								}
+								icon, _ := toolbarIconData(action.icon)
+								iconColor, background := mutedText, contentSurface
+								if active {
+									iconColor, background = activeToolbarText, selectedFill
+								}
+								if mixed {
+									background = mixedToolbarBackground
+								}
+								if !enabled {
+									iconColor, background = disabledToolbarText, disabledToolbarBackground
+								}
+								left := unit.Dp(2)
+								if index > 0 && actions[index-1].group != action.group {
+									left = unit.Dp(10)
+								}
+								return layout.Inset{Left: left, Right: unit.Dp(2), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return toolbarIconButton(gtx, button, icon, action.label, enabled, mixed, iconColor, background)
+								})
+							})
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if hoveredLabel == "" {
+								return layout.Dimensions{}
 							}
-							if !mixed && formatStyleActive(action.slot, style) {
-								button.Background = selectedFill
-								button.Color = activeToolbarText
-							}
-						} else {
-							button.Background = disabledToolbarBackground
-							button.Color = disabledToolbarText
-						}
-						button.TextSize = a.theme.TextSize * 12 / 16
-						return layout.Inset{Left: unit.Dp(3), Right: unit.Dp(3), Top: unit.Dp(2), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-									gtx.Constraints.Min.X = gtx.Dp(unit.Dp(75))
-									gtx.Constraints.Max.X = gtx.Dp(unit.Dp(75))
-									return button.Layout(gtx)
-								}),
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									caption := material.Caption(a.theme, action.group)
-									caption.Color = mutedText
-									return layout.Center.Layout(gtx, caption.Layout)
-								}),
-							)
-						})
-					})
+							caption := material.Caption(a.theme, hoveredLabel)
+							caption.Color = mutedText
+							return layout.Center.Layout(gtx, caption.Layout)
+						}),
+					)
+					return dims
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if state.toolbarPicker == pickerNone {
@@ -325,6 +377,39 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 			)
 		},
 	)
+}
+
+func toolbarIconButton(gtx layout.Context, button *widget.Clickable, icon image.Image, label string, enabled, mixed bool, iconColor, background color.NRGBA) layout.Dimensions {
+	const buttonSize = unit.Dp(40)
+	size := gtx.Dp(buttonSize)
+	gtx.Constraints.Min = image.Pt(size, size)
+	gtx.Constraints.Max = image.Pt(size, size)
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		semantic.Button.Add(gtx.Ops)
+		semantic.DescriptionOp(label).Add(gtx.Ops)
+
+		buttonBackground := background
+		if enabled && (button.Hovered() || gtx.Focused(button)) && !mixed {
+			buttonBackground = toolbarHoverBackground
+		}
+		paint.FillShape(gtx.Ops, buttonBackground, clip.UniformRRect(image.Rectangle{Max: image.Pt(size, size)}, gtx.Dp(unit.Dp(7))).Op(gtx.Ops))
+		if icon != nil {
+			paint.ColorOp{Color: iconColor}.Add(gtx.Ops)
+			widget.Image{
+				Src:      paint.NewImageOp(icon),
+				Fit:      widget.Contain,
+				Position: layout.Center,
+				Scale:    0.25,
+			}.Layout(gtx)
+		}
+		if mixed {
+			dotSize := gtx.Dp(unit.Dp(5))
+			inset := gtx.Dp(unit.Dp(5))
+			dot := image.Rect(size-dotSize-inset, inset, size-inset, dotSize+inset)
+			paint.FillShape(gtx.Ops, activeToolbarText, clip.Ellipse(dot).Op(gtx.Ops))
+		}
+		return layout.Dimensions{Size: image.Pt(size, size)}
+	})
 }
 
 func formatStyleSlot(slot int) bool { return slot >= 4 && slot <= 11 }
