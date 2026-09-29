@@ -21,14 +21,15 @@ import (
 )
 
 var (
-	pageBackground = color.NRGBA{R: 251, G: 251, B: 251, A: 255}
-	chromeSurface  = color.NRGBA{R: 239, G: 239, B: 239, A: 255}
-	tabSurface     = color.NRGBA{R: 234, G: 234, B: 234, A: 255}
-	contentSurface = color.NRGBA{R: 247, G: 247, B: 247, A: 255}
-	gridHeaderFill = color.NRGBA{R: 239, G: 239, B: 239, A: 255}
-	gridLine       = color.NRGBA{R: 219, G: 219, B: 219, A: 255}
-	selectedFill   = color.NRGBA{R: 204, G: 224, B: 250, A: 255}
-	mutedText      = color.NRGBA{R: 91, G: 101, B: 116, A: 255}
+	pageBackground           = color.NRGBA{R: 247, G: 248, B: 250, A: 255}
+	chromeSurface            = color.NRGBA{R: 241, G: 243, B: 245, A: 255}
+	workspaceTabStripSurface = color.NRGBA{R: 238, G: 241, B: 244, A: 255}
+	tabSurface               = color.NRGBA{R: 238, G: 241, B: 244, A: 255}
+	contentSurface           = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	gridHeaderFill           = color.NRGBA{R: 242, G: 244, B: 246, A: 255}
+	gridLine                 = color.NRGBA{R: 216, G: 221, B: 227, A: 255}
+	selectedFill             = color.NRGBA{R: 231, G: 240, B: 251, A: 255}
+	mutedText                = color.NRGBA{R: 104, G: 113, B: 123, A: 255}
 )
 
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
@@ -41,12 +42,6 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
 						layout.Rigid(a.layoutWorkspaceTabs),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							height := gtx.Dp(unit.Dp(2))
-							gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-							paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 0, B: 0, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
-							return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, height)}
-						}),
 						layout.Flexed(1, a.layoutWorkspaceBody),
 					)
 				}),
@@ -342,8 +337,13 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(a.layoutSpreadsheetToolbar),
 					layout.Rigid(a.layoutGridControls),
-					layout.Flexed(1, a.layoutVirtualGrid),
-					layout.Rigid(a.layoutSheetTabs),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, a.layoutVirtualGrid)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, a.layoutSheetTabs)
+					}),
+					layout.Rigid(a.layoutSpreadsheetStatusBar),
 				)
 			}),
 			layout.Stacked(a.layoutSpreadsheetToolbarPickerOverlay),
@@ -375,14 +375,15 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(34)), gtx.Dp(unit.Dp(34))
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(32)), gtx.Dp(unit.Dp(32))
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			return fill(gtx, chromeSurface)
+			paint.FillShape(gtx.Ops, chromeSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			paint.FillShape(gtx.Ops, gridLine, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
+			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, gridLine, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
-			children := make([]layout.FlexChild, 0, len(a.sheets))
+			children := make([]layout.FlexChild, 0, len(a.sheets)+1)
 			for _, name := range a.sheets {
 				sheetName := name
 				button := a.sheetButton(sheetName)
@@ -417,7 +418,7 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 					a.persistViewState()
 				}
 				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Top: unit.Dp(1), Left: unit.Dp(3), Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layoutSheetTab(gtx, a.theme, button, sheetName, sheetName == a.sheet)
 					})
 				}))
@@ -425,62 +426,135 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 			if a.documentSessionState.sheetCreateButton.Clicked(gtx) {
 				a.applyStructure(document.StructureEdit{Kind: document.StructureCreateSheet})
 			}
-			if a.documentSessionState.sheetRenameButton.Clicked(gtx) {
-				a.applyStructure(document.StructureEdit{Kind: document.StructureRenameSheet, Sheet: a.sheet, NewName: a.documentSessionState.sheetNameEditor.Text()})
-			}
-			if a.documentSessionState.sheetDeleteButton.Clicked(gtx) {
-				a.applyStructure(document.StructureEdit{Kind: document.StructureDeleteSheet, Sheet: a.sheet})
-			}
-			children = append(children,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(5), Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						style := material.Editor(a.theme, &a.documentSessionState.sheetNameEditor, "新工作表名")
-						style.TextSize = a.theme.TextSize * 11 / 16
-						return style.Layout(gtx)
-					})
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return material.Button(a.theme, &a.documentSessionState.sheetCreateButton, "+").Layout(gtx)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return material.Button(a.theme, &a.documentSessionState.sheetRenameButton, "改名").Layout(gtx)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return material.Button(a.theme, &a.documentSessionState.sheetDeleteButton, "删除").Layout(gtx)
-				}),
-			)
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layoutSheetPlusTab(gtx, a.theme, &a.documentSessionState.sheetCreateButton)
+			}))
+			return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layoutSheetTabRow(gtx, children...)
+			})
 		},
 	)
 }
 
+func layoutSheetTabRow(gtx layout.Context, children ...layout.FlexChild) layout.Dimensions {
+	// The document body is laid out as an Expanded child of a Stack, which
+	// gives it a zero minimum width. Fill the strip so Background doesn't
+	// center this intrinsic-width row of sheet tabs.
+	gtx.Constraints.Min.X = gtx.Constraints.Max.X
+	return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEnd}.Layout(gtx, children...)
+}
+
 func layoutSheetTab(gtx layout.Context, theme *material.Theme, button *widget.Clickable, name string, selected bool) layout.Dimensions {
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		bg := tabSurface
-		fg := color.NRGBA{R: 61, G: 69, B: 80, A: 255}
+		height := gtx.Dp(unit.Dp(26))
+		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+		bg := chromeSurface
+		fg := color.NRGBA{R: 104, G: 113, B: 123, A: 255}
 		if selected {
 			bg = contentSurface
-			fg = color.NRGBA{R: 35, G: 43, B: 53, A: 255}
+			fg = color.NRGBA{R: 62, G: 111, B: 169, A: 255}
 		}
 		label := material.Body2(theme, name)
 		label.Color = fg
+		label.TextSize = unit.Sp(12)
 		return layout.Stack{}.Layout(gtx,
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 				size := gtx.Constraints.Min
-				paint.FillShape(gtx.Ops, bg, clip.Rect{Max: size}.Op())
-				if selected {
-					paint.FillShape(gtx.Ops, color.NRGBA{R: 35, G: 125, B: 85, A: 255}, clip.Rect{Max: image.Pt(size.X, gtx.Dp(unit.Dp(2)))}.Op())
-				}
+				paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rectangle{Max: size}, gtx.Dp(unit.Dp(4))).Op(gtx.Ops))
 				return layout.Dimensions{Size: size}
 			}),
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints.Min.Y = gtx.Dp(unit.Dp(31))
-				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Center.Layout(gtx, label.Layout)
 				})
 			}),
 		)
 	})
+}
+
+func layoutSheetPlusTab(gtx layout.Context, theme *material.Theme, button *widget.Clickable) layout.Dimensions {
+	gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(28)), gtx.Dp(unit.Dp(26)))
+	gtx.Constraints.Max = gtx.Constraints.Min
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		label := material.Body1(theme, "+")
+		label.TextSize = unit.Sp(17)
+		label.Color = color.NRGBA{R: 89, G: 99, B: 110, A: 255}
+		return layout.Center.Layout(gtx, label.Layout)
+	})
+}
+
+func (a *App) layoutSpreadsheetStatusBar(gtx layout.Context) layout.Dimensions {
+	height := gtx.Dp(unit.Dp(50))
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, chromeSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			return layout.Dimensions{Size: gtx.Constraints.Max}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			status := a.status
+			if status == "" {
+				status = "就绪"
+			}
+			if runes := []rune(status); len(runes) > 18 {
+				status = string(runes[:17]) + "…"
+			}
+			return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return spreadsheetStatusText(gtx, a.theme, status)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							index := 0
+							for i, name := range a.sheets {
+								if name == a.sheet {
+									index = i + 1
+									break
+								}
+							}
+							if index == 0 {
+								index = 1
+							}
+							return spreadsheetStatusText(gtx, a.theme, fmt.Sprintf("工作表 %d", index))
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions { return spreadsheetStatusIcon(gtx, "minus") }),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(13)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										railWidth, railHeight := gtx.Dp(unit.Dp(110)), gtx.Dp(unit.Dp(4))
+										paint.FillShape(gtx.Ops, color.NRGBA{R: 205, G: 211, B: 218, A: 255}, clip.UniformRRect(image.Rect(0, 0, railWidth, railHeight), railHeight/2).Op(gtx.Ops))
+										return layout.Dimensions{Size: image.Pt(railWidth, railHeight)}
+									})
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions { return spreadsheetStatusIcon(gtx, "plus") }),
+							)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(32)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return spreadsheetStatusText(gtx, a.theme, "100%")
+						})
+					}),
+				)
+			})
+		},
+	)
+}
+
+func spreadsheetStatusText(gtx layout.Context, theme *material.Theme, text string) layout.Dimensions {
+	style := material.Body2(theme, text)
+	style.TextSize = unit.Sp(12)
+	style.Color = mutedText
+	return style.Layout(gtx)
+}
+
+func spreadsheetStatusIcon(gtx layout.Context, name string) layout.Dimensions {
+	icon, _ := tintedToolbarIcon(name, color.NRGBA{R: 105, G: 114, B: 125, A: 255})
+	return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
 }
 
 func (a *App) layoutColumnHeader(gtx layout.Context) layout.Dimensions {

@@ -40,7 +40,7 @@ type documentSessionState struct {
 	selectionSet                  bool
 	selectionDragging             bool
 	toolbarTab                    spreadsheetToolbarTab
-	toolbarTabs                   [2]widget.Clickable
+	toolbarTabs                   [7]widget.Clickable
 	toolbarActionList             widget.List
 	toolbarActionButtons          [25]widget.Clickable
 	toolbarPickerButtons          [9]widget.Clickable

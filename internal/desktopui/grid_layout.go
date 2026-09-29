@@ -3,6 +3,7 @@ package desktopui
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"io"
 	"time"
 
@@ -11,7 +12,9 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/io/transfer"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -43,28 +46,74 @@ func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 			a.window.Invalidate()
 		}
 	}
-	return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Editor(a.theme, &a.nameBox, "A1").Layout(gtx)
-				})
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Button(a.theme, &a.goToCellButton, "前往").Layout(gtx)
-				})
-			}),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return material.Editor(a.theme, &a.formulaEditor, "单元格内容").Layout(gtx)
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Button(a.theme, &a.applyButton, "✓").Layout(gtx)
-				})
-			}),
-		)
-	})
+	height := gtx.Dp(unit.Dp(56))
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+	outerSize := gtx.Constraints.Max
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			barHeight := gtx.Dp(unit.Dp(44))
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 244, G: 245, B: 246, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, barHeight)}.Op())
+			return layout.Dimensions{Size: gtx.Constraints.Max}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			transform := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(19)))).Push(gtx.Ops)
+			defer transform.Pop()
+			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(30)), gtx.Dp(unit.Dp(30))
+			layout.Inset{Left: unit.Dp(20), Right: unit.Dp(28)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layoutFormulaEditorField(gtx, a.theme, &a.nameBox, "A1", unit.Dp(110))
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(12)), 0)}
+					}),
+					layout.Rigid(a.layoutFormulaFunctionIcon),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(10)), 0)}
+					}),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return layoutFormulaEditorField(gtx, a.theme, &a.formulaEditor, "", 0)
+					}),
+				)
+			})
+			return layout.Dimensions{Size: outerSize}
+		},
+	)
+}
+
+func layoutFormulaEditorField(gtx layout.Context, theme *material.Theme, editor *widget.Editor, hint string, width unit.Dp) layout.Dimensions {
+	height := gtx.Dp(unit.Dp(30))
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+	if width > 0 {
+		fixedWidth := gtx.Dp(width)
+		gtx.Constraints.Min.X, gtx.Constraints.Max.X = fixedWidth, fixedWidth
+	}
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			bounds := image.Rectangle{Max: gtx.Constraints.Max}
+			shape := clip.UniformRRect(bounds, gtx.Dp(unit.Dp(4)))
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, shape.Op(gtx.Ops))
+			paint.FillShape(gtx.Ops, gridLine, clip.Stroke{Path: shape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+			return layout.Dimensions{Size: bounds.Max}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				style := material.Editor(theme, editor, hint)
+				style.TextSize = unit.Sp(13)
+				style.Color = color.NRGBA{R: 76, G: 85, B: 96, A: 255}
+				style.HintColor = color.NRGBA{R: 104, G: 113, B: 123, A: 255}
+				return style.Layout(gtx)
+			})
+		},
+	)
+}
+
+func (a *App) layoutFormulaFunctionIcon(gtx layout.Context) layout.Dimensions {
+	size := gtx.Dp(unit.Dp(20))
+	gtx.Constraints.Min = image.Pt(size, size)
+	gtx.Constraints.Max = image.Pt(size, size)
+	icon, _ := tintedToolbarIcon("sigma", color.NRGBA{R: 104, G: 113, B: 125, A: 255})
+	return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 20.0 / 96.0}.Layout(gtx)
 }
 
 func (a *App) goToCell() {
@@ -306,7 +355,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			}
 		}
 	}
-	area := clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Push(gtx.Ops)
+	gridBounds := image.Rectangle{Max: gtx.Constraints.Max}
+	gridShape := clip.UniformRRect(gridBounds, gtx.Dp(unit.Dp(4)))
+	area := gridShape.Push(gtx.Ops)
 	event.Op(gtx.Ops, &v.PointerTag)
 	key.InputHintOp{Tag: &v.PointerTag, Hint: key.HintText}.Add(gtx.Ops)
 	pointer.PassOp{}.Push(gtx.Ops)
@@ -316,6 +367,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		pointer.CursorNorthSouthResize.Add(gtx.Ops)
 	}
 	dims := paintVirtualGrid(gtx, a, v)
+	paint.FillShape(gtx.Ops, gridLine, clip.Stroke{Path: gridShape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
 	area.Pop()
 	return dims
 }

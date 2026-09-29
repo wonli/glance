@@ -24,21 +24,36 @@ type modalDialogAction struct {
 
 // modalDialog is a reusable, stateful modal surface for app-level prompts.
 type modalDialog struct {
-	Visible  bool
-	Title    string
-	Message  string
-	Actions  []modalDialogAction
-	scrim    widget.Clickable
-	OnAction func(string)
+	Visible   bool
+	Title     string
+	Message   string
+	Actions   []modalDialogAction
+	Input     widget.Editor
+	InputHint string
+	HasInput  bool
+	scrim     widget.Clickable
+	OnAction  func(string)
 }
 
 func (d *modalDialog) Show(title, message string, onAction func(string), actions ...modalDialogActionSpec) {
 	d.Title, d.Message, d.Visible = title, message, true
+	d.HasInput = false
+	d.InputHint = ""
+	d.Input.SetText("")
 	d.OnAction = onAction
 	d.Actions = make([]modalDialogAction, len(actions))
 	for i, action := range actions {
 		d.Actions[i] = modalDialogAction{ID: action.ID, Label: action.Label}
 	}
+}
+
+func (d *modalDialog) ShowInput(title, message, initial, hint string, onAction func(string), actions ...modalDialogActionSpec) {
+	d.Show(title, message, onAction, actions...)
+	d.HasInput = true
+	d.InputHint = hint
+	d.Input.SingleLine = true
+	d.Input.Submit = true
+	d.Input.SetText(initial)
 }
 
 func (d *modalDialog) Hide() { d.Visible = false }
@@ -50,6 +65,13 @@ func (a *App) showModalDialog(title, message string, onAction func(string), acti
 func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 	if !a.modal.Visible {
 		return layout.Dimensions{}
+	}
+	if a.modal.HasInput {
+		for ev, ok := a.modal.Input.Update(gtx); ok; ev, ok = a.modal.Input.Update(gtx) {
+			if _, submit := ev.(widget.SubmitEvent); submit && a.modal.OnAction != nil {
+				a.modal.OnAction("confirm")
+			}
+		}
 	}
 	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
@@ -74,20 +96,27 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(24)}.Layout(gtx, material.Body1(a.theme, a.modal.Message).Layout)
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						buttons := make([]layout.FlexChild, 0, len(a.modal.Actions))
-						for i := range a.modal.Actions {
-							action := &a.modal.Actions[i]
-							buttons = append(buttons, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								if action.button.Clicked(gtx) && a.modal.OnAction != nil {
-									a.modal.OnAction(action.ID)
-								}
-								return material.Button(a.theme, &action.button, action.Label).Layout(gtx)
-							}))
-						}
-						return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween}.Layout(gtx, buttons...)
-					}),
 				}
+				if a.modal.HasInput {
+					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Bottom: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layoutFormulaEditorField(gtx, a.theme, &a.modal.Input, a.modal.InputHint, 0)
+						})
+					}))
+				}
+				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					buttons := make([]layout.FlexChild, 0, len(a.modal.Actions))
+					for i := range a.modal.Actions {
+						action := &a.modal.Actions[i]
+						buttons = append(buttons, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if action.button.Clicked(gtx) && a.modal.OnAction != nil {
+								a.modal.OnAction(action.ID)
+							}
+							return material.Button(a.theme, &action.button, action.Label).Layout(gtx)
+						}))
+					}
+					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween}.Layout(gtx, buttons...)
+				}))
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 			})
 			call := child.Stop()

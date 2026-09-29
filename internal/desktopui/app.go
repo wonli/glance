@@ -28,7 +28,7 @@ const (
 	maxPreviewColumns = 16
 )
 
-const preferredSystemTypeface = font.Typeface("PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif")
+const preferredSystemTypeface = font.Typeface("Inter, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif")
 
 type App struct {
 	*documentSessionState

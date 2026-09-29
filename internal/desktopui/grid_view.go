@@ -11,10 +11,10 @@ import (
 const (
 	xlsxRows          = 1048576
 	xlsxColumns       = 16384
-	gridDefaultRow    = 20.0
-	gridDefaultColumn = 64.0
-	gridRowHeader     = 48.0
-	gridColumnHeader  = 28.0
+	gridDefaultRow    = 32.0
+	gridDefaultColumn = 90.0
+	gridRowHeader     = 42.0
+	gridColumnHeader  = 32.0
 )
 
 type gridViewport struct {

@@ -5,7 +5,6 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 
 	"gioui.org/app"
@@ -25,8 +24,8 @@ import (
 )
 
 const (
-	workspaceTabTopGap    unit.Dp = 12
-	workspaceTabHeight    unit.Dp = 48
+	workspaceTabTopGap    unit.Dp = 5
+	workspaceTabHeight    unit.Dp = 37
 	workspaceTabStripSize unit.Dp = workspaceTabTopGap + workspaceTabHeight
 )
 
@@ -36,41 +35,25 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
 			size := gtx.Constraints.Max
-			paint.FillShape(gtx.Ops, chromeSurface, clip.Rect{Max: size}.Op())
-			joinHeight := gtx.Dp(unit.Dp(12))
-			paint.FillShape(gtx.Ops, pageBackground, clip.Rect{Min: image.Pt(0, size.Y-joinHeight), Max: size}.Op())
+			paint.FillShape(gtx.Ops, workspaceTabStripSurface, clip.Rect{Max: size}.Op())
 			return layout.Dimensions{Size: size}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, color.NRGBA{R: 202, G: 208, B: 216, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
-			a.processWindowControlClicks(gtx)
 			if !a.clientTitlebar {
 				return a.layoutWorkspaceTabList(gtx, ids)
 			}
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				func() layout.FlexChild {
-					if runtime.GOOS == "darwin" {
-						return layout.Rigid(a.layoutMacWindowControls)
-					}
-					return layout.Rigid(func(layout.Context) layout.Dimensions { return layout.Dimensions{} })
-				}(),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return a.layoutWorkspaceTabList(gtx, ids)
 				}),
 				layout.Rigid(a.layoutWindowDragHandle),
-				func() layout.FlexChild {
-					if runtime.GOOS == "darwin" {
-						return layout.Rigid(func(layout.Context) layout.Dimensions { return layout.Dimensions{} })
-					}
-					return layout.Rigid(a.layoutStandardWindowControls)
-				}(),
 			)
 		},
 	)
 }
 
 func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Dimensions {
-	return layout.Inset{Top: workspaceTabTopGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: workspaceTabTopGap, Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return material.List(a.theme, &a.workspaceTabsList).Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
 			if index == 0 {
 				return a.layoutRecentTab(gtx)
@@ -179,7 +162,9 @@ func (a *App) layoutPlusTab(gtx layout.Context) layout.Dimensions {
 	if a.newButton.Clicked(gtx) {
 		a.showNewMenu = !a.showNewMenu
 	}
-	return a.paintTab(gtx, &a.newButton, "+", false)
+	return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return a.paintTab(gtx, &a.newButton, "+", false)
+	})
 }
 
 func (a *App) workspaceTabIDs() []string {
@@ -213,7 +198,7 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 	if state := a.sessions[id]; state != nil && state.book != nil && state.book.Dirty() || state != nil && state.word != nil && state.word.Dirty() || state != nil && state.jsonDoc != nil && state.jsonDoc.Dirty() {
 		label += " •"
 	}
-	return layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		// Keep this frame's widgets alive even if the close click removed the
 		// tab and its widget map entries above.
 		return a.paintDocumentTab(gtx, tabButton, closeButton, label, id == a.activeTabID)
@@ -231,6 +216,8 @@ func (a *App) documentTabWidgets(id string) (*widget.Clickable, *widget.Clickabl
 }
 
 func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable, label string, active bool) layout.Dimensions {
+	width := gtx.Dp(unit.Dp(190))
+	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabHeight), gtx.Dp(workspaceTabHeight)
 	runes := []rune(label)
 	if len(runes) > 24 {
@@ -238,11 +225,15 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 	}
 	child := op.Record(gtx.Ops)
 	dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return tab.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					style := material.Body2(a.theme, label)
-					style.Color = color.NRGBA{R: 52, G: 57, B: 65, A: 255}
+					style.TextSize = unit.Sp(12)
+					style.Color = color.NRGBA{R: 93, G: 102, B: 113, A: 255}
+					if active {
+						style.Color = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
+					}
 					return layout.Center.Layout(gtx, style.Layout)
 				})
 			})
@@ -251,50 +242,81 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 			return close.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(5), Right: unit.Dp(9)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					style := material.Body2(a.theme, "×")
-					style.Color = color.NRGBA{R: 91, G: 101, B: 116, A: 255}
+					style.TextSize = unit.Sp(18)
+					style.Color = color.NRGBA{R: 104, G: 113, B: 123, A: 255}
 					return layout.Center.Layout(gtx, style.Layout)
 				})
 			})
 		}),
 	)
+	dims.Size.X = width
 	dims.Size.Y = gtx.Constraints.Max.Y
 	call := child.Stop()
-	bg := tabSurface
+	bg := workspaceTabStripSurface
 	if active {
-		bg = pageBackground
+		bg = contentSurface
 	}
-	paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(7)), NE: gtx.Dp(unit.Dp(7))}.Op(gtx.Ops))
+	paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(6)), NE: gtx.Dp(unit.Dp(6))}.Op(gtx.Ops))
 	call.Add(gtx.Ops)
-	if active {
-		paint.FillShape(gtx.Ops, color.NRGBA{R: 0, G: 190, B: 140, A: 255}, clip.Rect{Min: image.Pt(0, dims.Size.Y-gtx.Dp(unit.Dp(1))), Max: dims.Size}.Op())
-	}
 	return dims
 }
 
 func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label string, active bool) layout.Dimensions {
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabHeight), gtx.Dp(workspaceTabHeight)
-		runes := []rune(label)
-		if len(runes) > 24 {
-			label = string(runes[:21]) + "…"
+		width := unit.Dp(32)
+		if label != "+" {
+			width = unit.Dp(112)
 		}
+		fixedWidth := gtx.Dp(width)
+		gtx.Constraints.Min.X, gtx.Constraints.Max.X = fixedWidth, fixedWidth
+		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabHeight), gtx.Dp(workspaceTabHeight)
 		child := op.Record(gtx.Ops)
-		dims := layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		var dims layout.Dimensions
+		if label == "+" {
 			style := material.Body2(a.theme, label)
-			style.Color = color.NRGBA{R: 52, G: 57, B: 65, A: 255}
-			return layout.Center.Layout(gtx, style.Layout)
-		})
+			style.TextSize = unit.Sp(18)
+			style.Color = color.NRGBA{R: 88, G: 97, B: 108, A: 255}
+			dims = layout.Center.Layout(gtx, style.Layout)
+		} else {
+			dims = layout.Inset{Left: unit.Dp(10), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						iconColor := color.NRGBA{R: 105, G: 114, B: 125, A: 255}
+						if active {
+							iconColor = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
+						}
+						icon, _ := tintedToolbarIcon("house", iconColor)
+						if icon == nil {
+							return layout.Dimensions{}
+						}
+						return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(8)), 0)}
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						style := material.Body2(a.theme, "Glance")
+						style.TextSize = unit.Sp(13)
+						style.Color = color.NRGBA{R: 104, G: 113, B: 123, A: 255}
+						if active {
+							style.Color = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
+						}
+						return style.Layout(gtx)
+					}),
+				)
+			})
+		}
 		dims.Size.Y = gtx.Constraints.Max.Y
+		dims.Size.X = fixedWidth
 		call := child.Stop()
 		bg := tabSurface
 		if active {
-			bg = pageBackground
+			bg = contentSurface
+		} else if label == "+" {
+			bg = color.NRGBA{R: 231, G: 234, B: 237, A: 255}
 		}
-		paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(7)), NE: gtx.Dp(unit.Dp(7))}.Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(6)), NE: gtx.Dp(unit.Dp(6))}.Op(gtx.Ops))
 		call.Add(gtx.Ops)
-		if active {
-			paint.FillShape(gtx.Ops, color.NRGBA{R: 0, G: 190, B: 140, A: 255}, clip.Rect{Min: image.Pt(0, dims.Size.Y-gtx.Dp(unit.Dp(1))), Max: dims.Size}.Op())
-		}
 		return dims
 	})
 }

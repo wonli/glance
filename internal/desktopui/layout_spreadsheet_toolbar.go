@@ -14,6 +14,7 @@ import (
 	"gioui.org/io/clipboard"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -27,8 +28,15 @@ type spreadsheetToolbarTab uint8
 
 const (
 	toolbarTabHome spreadsheetToolbarTab = iota
+	toolbarTabInsert
+	toolbarTabPageLayout
+	toolbarTabFormula
 	toolbarTabData
+	toolbarTabReview
+	toolbarTabView
 )
+
+var toolbarCategoryLabels = []string{"主页", "插入", "页面布局", "公式", "数据", "审阅", "视图"}
 
 type spreadsheetToolbarAction struct {
 	slot  int
@@ -66,6 +74,49 @@ var dataToolbarActions = []spreadsheetToolbarAction{
 	{slot: 18, label: "升序", group: "排序和筛选", icon: "sort-asc"},
 	{slot: 19, label: "降序", group: "排序和筛选", icon: "sort-desc"},
 	{slot: 20, label: "筛选", group: "排序和筛选", icon: "filter"},
+}
+
+// homeRibbonActions follows the Pen reference's five compact command groups.
+// Negative slots are visual-only controls whose workbook operation is not
+// implemented yet; rendering them as disabled keeps the layout honest.
+var homeRibbonActions = []spreadsheetToolbarAction{
+	{slot: 3, label: "剪切", group: "剪贴板", icon: "cut"},
+	{slot: 2, label: "复制", group: "剪贴板", icon: "copy"},
+	{slot: 21, label: "粘贴", group: "剪贴板", icon: "paste"},
+	{slot: 7, label: "字体颜色", group: "字体", icon: "type"},
+	{slot: -1, label: "减小字号", group: "字体", icon: "minus"},
+	{slot: -2, label: "增大字号", group: "字体", icon: "plus"},
+	{slot: 4, label: "加粗", group: "字体", icon: "bold"},
+	{slot: 5, label: "斜体", group: "字体", icon: "italic"},
+	{slot: 6, label: "下划线", group: "字体", icon: "underline"},
+	{slot: -3, label: "左对齐", group: "对齐", icon: "menu"},
+	{slot: 9, label: "居中对齐", group: "对齐", icon: "align-center-vertical"},
+	{slot: -4, label: "右对齐", group: "对齐", icon: "list"},
+	{slot: -5, label: "分散对齐", group: "对齐", icon: "grip-horizontal"},
+	{slot: -6, label: "自动换行", group: "对齐", icon: "text-wrap"},
+	{slot: 8, label: "填充颜色", group: "格式", icon: "paintbrush"},
+	{slot: -7, label: "百分比格式", group: "格式", icon: "percent"},
+	{slot: 10, label: "数字格式", group: "格式", icon: "hash"},
+	{slot: 12, label: "插入行", group: "单元格", icon: "square-plus"},
+	{slot: 13, label: "删除行", group: "单元格", icon: "trash-2"},
+	{slot: 11, label: "单元格边框", group: "单元格", icon: "settings-2"},
+}
+
+var insertToolbarActions = []spreadsheetToolbarAction{
+	{slot: 12, label: "插入行", group: "行列", icon: "row-insert"},
+	{slot: 13, label: "删除行", group: "行列", icon: "row-delete"},
+	{slot: 14, label: "插入列", group: "行列", icon: "column-insert"},
+	{slot: 15, label: "删除列", group: "行列", icon: "column-delete"},
+	{slot: 22, label: "新建工作表", group: "工作表", icon: "sheet-plus"},
+	{slot: 23, label: "重命名工作表", group: "工作表", icon: "sheet-edit"},
+	{slot: 24, label: "删除工作表", group: "工作表", icon: "sheet-trash"},
+}
+
+var reviewToolbarActions = []spreadsheetToolbarAction{
+	{slot: 0, label: "撤销", group: "历史", icon: "undo"},
+	{slot: 1, label: "重做", group: "历史", icon: "redo"},
+	{slot: 17, label: "保存", group: "文件", icon: "save"},
+	{slot: 16, label: "清除格式", group: "格式", icon: "clear"},
 }
 
 //go:embed assets/toolbar-icons.png
@@ -185,22 +236,27 @@ func toolbarPickerPanelX(slot int, actions []spreadsheetToolbarAction, position 
 }
 
 var toolbarIconCells = map[string]image.Point{
-	"undo": {X: 0, Y: 0}, "redo": {X: 1, Y: 0}, "copy": {X: 2, Y: 0}, "cut": {X: 3, Y: 0},
-	"bold": {X: 4, Y: 0}, "italic": {X: 5, Y: 0}, "underline": {X: 6, Y: 0}, "type": {X: 7, Y: 0},
-	"paint-bucket": {X: 0, Y: 1}, "align-center": {X: 1, Y: 1}, "hash": {X: 2, Y: 1}, "grid": {X: 3, Y: 1},
-	"row-insert": {X: 4, Y: 1}, "row-delete": {X: 5, Y: 1}, "column-insert": {X: 6, Y: 1}, "column-delete": {X: 7, Y: 1},
-	"clear": {X: 0, Y: 2}, "save": {X: 1, Y: 2}, "paste": {X: 2, Y: 2}, "sheet-plus": {X: 3, Y: 2},
-	"sheet-edit": {X: 4, Y: 2}, "sheet-trash": {X: 5, Y: 2}, "sort-asc": {X: 6, Y: 2}, "sort-desc": {X: 7, Y: 2},
-	"filter": {X: 0, Y: 3},
+	"cut": {X: 0, Y: 0}, "copy": {X: 1, Y: 0}, "paste": {X: 2, Y: 0}, "type": {X: 3, Y: 0},
+	"minus": {X: 4, Y: 0}, "plus": {X: 5, Y: 0}, "bold": {X: 6, Y: 0}, "italic": {X: 7, Y: 0},
+	"underline": {X: 0, Y: 1}, "align-left": {X: 1, Y: 1}, "align-center": {X: 2, Y: 1}, "align-right": {X: 3, Y: 1},
+	"align-distributed": {X: 4, Y: 1}, "text-wrap": {X: 5, Y: 1}, "paintbrush": {X: 6, Y: 1}, "percent": {X: 7, Y: 1},
+	"hash": {X: 0, Y: 2}, "square-plus": {X: 1, Y: 2}, "trash-2": {X: 2, Y: 2}, "settings-2": {X: 3, Y: 2},
+	"undo": {X: 4, Y: 2}, "redo": {X: 5, Y: 2}, "save": {X: 6, Y: 2}, "clear": {X: 7, Y: 2},
+	"row-insert": {X: 0, Y: 3}, "row-delete": {X: 1, Y: 3}, "column-insert": {X: 2, Y: 3}, "column-delete": {X: 3, Y: 3},
+	"sheet-plus": {X: 4, Y: 3}, "sheet-edit": {X: 5, Y: 3}, "sheet-trash": {X: 6, Y: 3}, "sort-asc": {X: 7, Y: 3},
+	"sort-desc": {X: 0, Y: 4}, "filter": {X: 1, Y: 4}, "house": {X: 2, Y: 4},
+	"menu": {X: 0, Y: 5}, "align-center-vertical": {X: 1, Y: 5}, "list": {X: 2, Y: 5}, "grip-horizontal": {X: 3, Y: 5}, "sigma": {X: 4, Y: 5},
+	"paint-bucket": {X: 6, Y: 1}, "grid": {X: 3, Y: 2},
 }
 
 var (
 	disabledToolbarBackground = color.NRGBA{R: 232, G: 235, B: 240, A: 255}
 	disabledToolbarText       = color.NRGBA{R: 150, G: 156, B: 165, A: 255}
 	mixedToolbarBackground    = color.NRGBA{R: 239, G: 241, B: 243, A: 255}
-	toolbarActiveBackground   = color.NRGBA{R: 232, G: 234, B: 237, A: 255}
-	toolbarHoverBackground    = color.NRGBA{R: 244, G: 245, B: 247, A: 255}
-	toolbarGlyphText          = color.NRGBA{R: 54, G: 60, B: 67, A: 255}
+	toolbarActiveBackground   = color.NRGBA{R: 241, G: 243, B: 245, A: 255}
+	toolbarHoverBackground    = color.NRGBA{R: 247, G: 248, B: 250, A: 255}
+	toolbarGlyphText          = color.NRGBA{R: 75, G: 83, B: 94, A: 255}
+	ribbonDividerColor        = color.NRGBA{R: 225, G: 228, B: 232, A: 255}
 )
 
 func (a *App) spreadsheetToolbarVisible() bool {
@@ -213,22 +269,22 @@ func (a *App) spreadsheetToolbarVisible() bool {
 
 func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 	state := a.documentSessionState
-	if state == nil {
+	if state == nil || a.modal.Visible {
 		return
 	}
-	if state.toolbarTabs[0].Clicked(gtx) {
-		state.toolbarTab = toolbarTabHome
-		state.toolbarPicker = pickerNone
+	for index := range toolbarCategoryLabels {
+		if state.toolbarTabs[index].Clicked(gtx) {
+			state.toolbarTab = spreadsheetToolbarTab(index)
+			state.toolbarPicker = pickerNone
+			state.toolbarActionList.List.Position = layout.Position{}
+			break
+		}
 	}
-	if state.toolbarTabs[1].Clicked(gtx) {
-		state.toolbarTab = toolbarTabData
-		state.toolbarPicker = pickerNone
-	}
-	actions := homeToolbarActions
-	if state.toolbarTab == toolbarTabData {
-		actions = dataToolbarActions
-	}
+	actions := toolbarActionsForTab(state.toolbarTab)
 	for _, action := range actions {
+		if action.slot < 0 {
+			continue
+		}
 		if !state.toolbarActionButtons[action.slot].Clicked(gtx) || !a.toolbarActionEnabled(action.slot) {
 			continue
 		}
@@ -290,7 +346,19 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			continue
 		}
 		if action.slot == 23 {
-			a.applyStructure(document.StructureEdit{Kind: document.StructureRenameSheet, Sheet: state.sheet, NewName: state.sheetNameEditor.Text()})
+			a.modal.ShowInput("重命名工作表", "输入新的工作表名称", state.sheet, "工作表名称", func(action string) {
+				a.modal.Hide()
+				if action != "confirm" {
+					return
+				}
+				name := strings.TrimSpace(a.modal.Input.Text())
+				if name == "" {
+					a.status = "工作表名称不能为空"
+					a.window.Invalidate()
+					return
+				}
+				a.applyStructure(document.StructureEdit{Kind: document.StructureRenameSheet, Sheet: state.sheet, NewName: name})
+			}, modalDialogActionSpec{ID: "confirm", Label: "重命名"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
 			continue
 		}
 		if action.slot == 24 {
@@ -316,9 +384,24 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 	}
 }
 
+func toolbarActionsForTab(tab spreadsheetToolbarTab) []spreadsheetToolbarAction {
+	switch tab {
+	case toolbarTabHome:
+		return homeRibbonActions
+	case toolbarTabInsert:
+		return insertToolbarActions
+	case toolbarTabData:
+		return dataToolbarActions
+	case toolbarTabReview:
+		return reviewToolbarActions
+	default:
+		return nil
+	}
+}
+
 func (a *App) toolbarActionEnabled(slot int) bool {
 	state := a.documentSessionState
-	if state == nil {
+	if state == nil || slot < 0 || slot >= len(state.toolbarActionButtons) {
 		return false
 	}
 	switch slot {
@@ -344,9 +427,6 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return state.valueFilter != nil || (ok && state.selectionSet && state.selection.Bounds().EndRow > state.selection.Bounds().StartRow && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.formatRunning)
 	case 12, 13, 14, 15, 22, 23, 24:
 		_, ok := state.book.(document.SpreadsheetStructureEditor)
-		if slot == 23 && strings.TrimSpace(state.sheetNameEditor.Text()) == "" {
-			return false
-		}
 		if slot == 24 && len(state.sheets) <= 1 {
 			return false
 		}
@@ -375,78 +455,115 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 	if !a.spreadsheetToolbarVisible() {
 		return layout.Dimensions{}
 	}
-	height := gtx.Dp(unit.Dp(94))
+	height := gtx.Dp(unit.Dp(90))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	state := a.documentSessionState
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, chromeSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			shift := op.Offset(image.Pt(0, -gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
+			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			shift.Pop()
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return toolbarTabButton(gtx, a.theme, &state.toolbarTabs[0], "主页", state.toolbarTab == toolbarTabHome)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return toolbarTabButton(gtx, a.theme, &state.toolbarTabs[1], "数据", state.toolbarTab == toolbarTabData)
-						}),
-					)
+					shift := op.Offset(image.Pt(0, -gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
+					defer shift.Pop()
+					return layoutRibbonCategoryTabs(gtx, a.theme, &state.toolbarTabs, state.toolbarTab)
 				}),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					actions := homeToolbarActions
-					if state.toolbarTab == toolbarTabData {
-						actions = dataToolbarActions
-					}
-					hoveredLabel := ""
-					dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return state.toolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
-								action := actions[index]
-								style := a.selectedCellStyle()
-								mixed := formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
-								active := !mixed && formatStyleActive(action.slot, style)
-								enabled := a.toolbarActionEnabled(action.slot)
-								button := &state.toolbarActionButtons[action.slot]
-								if button.Hovered() || gtx.Focused(button) {
-									hoveredLabel = action.label
-								}
-								iconColor, background := toolbarIconColor(enabled), contentSurface
-								if active {
-									background = toolbarActiveBackground
-								}
-								if mixed {
-									background = mixedToolbarBackground
-								}
-								if !enabled {
-									iconColor, background = disabledToolbarText, disabledToolbarBackground
-								}
-								icon, _ := tintedToolbarIcon(action.icon, iconColor)
-								left := unit.Dp(2)
-								if index > 0 && actions[index-1].group != action.group {
-									left = unit.Dp(10)
-								}
-								return layout.Inset{Left: left, Right: unit.Dp(2), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return toolbarIconButton(gtx, button, icon, action.label, enabled, mixed, background)
-								})
-							})
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if hoveredLabel == "" {
-								return layout.Dimensions{}
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					stripHeight := gtx.Dp(unit.Dp(56))
+					gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = stripHeight, stripHeight
+					actions := toolbarActionsForTab(state.toolbarTab)
+					shift := op.Offset(image.Pt(0, -gtx.Dp(unit.Dp(4)))).Push(gtx.Ops)
+					defer shift.Pop()
+					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return state.toolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
+							action := actions[index]
+							style := a.selectedCellStyle()
+							mixed := action.slot >= 0 && formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
+							active := action.slot >= 0 && !mixed && formatStyleActive(action.slot, style)
+							enabled := action.slot >= 0 && a.toolbarActionEnabled(action.slot)
+							var button *widget.Clickable
+							if action.slot >= 0 {
+								button = &state.toolbarActionButtons[action.slot]
 							}
-							caption := material.Caption(a.theme, hoveredLabel)
-							caption.Color = mutedText
-							return layout.Center.Layout(gtx, caption.Layout)
-						}),
-					)
-					return dims
+							iconColor, background := toolbarIconColor(true), contentSurface
+							if active {
+								background = toolbarActiveBackground
+							}
+							if mixed {
+								background = mixedToolbarBackground
+							}
+							if !enabled {
+								background = contentSurface
+							}
+							icon, _ := tintedToolbarIcon(action.icon, iconColor)
+							return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
+								return toolbarIconButton(gtx, button, icon, action.label, enabled, mixed, background)
+							})
+						})
+					})
 				}),
 			)
 		},
 	)
+}
+
+func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, buttons *[7]widget.Clickable, selected spreadsheetToolbarTab) layout.Dimensions {
+	height := gtx.Dp(unit.Dp(34))
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+	children := make([]layout.FlexChild, 0, len(toolbarCategoryLabels))
+	for index, label := range toolbarCategoryLabels {
+		index, label := index, label
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Right: unit.Dp(28)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return toolbarTabButton(gtx, theme, &buttons[index], label, spreadsheetToolbarTab(index) == selected)
+			})
+		}))
+	}
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			return layout.Dimensions{Size: gtx.Constraints.Max}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+			})
+		},
+	)
+}
+
+func layoutToolbarActionItem(gtx layout.Context, action spreadsheetToolbarAction, index int, actions []spreadsheetToolbarAction, child layout.Widget) layout.Dimensions {
+	groupStart := index == 0 || actions[index-1].group != action.group
+	groupEnd := index == len(actions)-1 || actions[index+1].group != action.group
+	children := make([]layout.FlexChild, 0, 5)
+	if groupStart {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(12)), 0)}
+		}))
+	}
+	children = append(children, layout.Rigid(child))
+	gap := unit.Dp(6)
+	if groupEnd {
+		gap = unit.Dp(12)
+	}
+	children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		return layout.Dimensions{Size: image.Pt(gtx.Dp(gap), 0)}
+	}))
+	if groupEnd && index < len(actions)-1 {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(1)), gtx.Dp(unit.Dp(32)))
+			gtx.Constraints.Max = gtx.Constraints.Min
+			shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(4)))).Push(gtx.Ops)
+			paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Max: gtx.Constraints.Min}.Op())
+			shift.Pop()
+			return layout.Dimensions{Size: gtx.Constraints.Min}
+		}))
+	}
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 }
 
 func (a *App) layoutSpreadsheetToolbarPickerOverlay(gtx layout.Context) layout.Dimensions {
@@ -458,22 +575,27 @@ func (a *App) layoutSpreadsheetToolbarPickerOverlay(gtx layout.Context) layout.D
 	if len(options) == 0 {
 		return layout.Dimensions{}
 	}
-	actions := homeToolbarActions
-	if state.toolbarTab == toolbarTabData {
-		actions = dataToolbarActions
-	}
+	actions := toolbarActionsForTab(state.toolbarTab)
 	panelWidth := gtx.Dp(unit.Dp(276))
 	if panelWidth > gtx.Constraints.Max.X {
 		panelWidth = gtx.Constraints.Max.X
 	}
-	normalWidth := gtx.Dp(unit.Dp(36)) + gtx.Dp(unit.Dp(2))*2
-	groupWidth := gtx.Dp(unit.Dp(36)) + gtx.Dp(unit.Dp(10)) + gtx.Dp(unit.Dp(2))
+	normalWidth := gtx.Dp(unit.Dp(42))
+	groupWidth := gtx.Dp(unit.Dp(49))
 	panelX := toolbarPickerPanelX(state.toolbarPickerSlot, actions, state.toolbarActionList.List.Position, normalWidth, groupWidth, gtx.Constraints.Max.X, panelWidth)
+	panelX += gtx.Dp(unit.Dp(22))
+	maxX := gtx.Constraints.Max.X - panelWidth
+	if maxX < 0 {
+		maxX = 0
+	}
+	if panelX > maxX {
+		panelX = maxX
+	}
 	left := unit.Dp(0)
 	if gtx.Metric.PxPerDp > 0 {
 		left = unit.Dp(float32(panelX) / gtx.Metric.PxPerDp)
 	}
-	return layout.Inset{Left: left, Top: unit.Dp(98)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: left, Top: unit.Dp(94)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		width := panelWidth
 		if width > gtx.Constraints.Max.X {
 			width = gtx.Constraints.Max.X
@@ -554,12 +676,12 @@ func toolbarIconButton(gtx layout.Context, button *widget.Clickable, icon image.
 	size := gtx.Dp(buttonSize)
 	gtx.Constraints.Min = image.Pt(size, size)
 	gtx.Constraints.Max = image.Pt(size, size)
-	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	draw := func(gtx layout.Context) layout.Dimensions {
 		semantic.Button.Add(gtx.Ops)
 		semantic.DescriptionOp(label).Add(gtx.Ops)
 
 		buttonBackground := background
-		if enabled && (button.Hovered() || gtx.Focused(button)) && !mixed {
+		if button != nil && enabled && (button.Hovered() || gtx.Focused(button)) && !mixed {
 			buttonBackground = toolbarHoverBackground
 		}
 		paint.FillShape(gtx.Ops, buttonBackground, clip.UniformRRect(image.Rectangle{Max: image.Pt(size, size)}, gtx.Dp(unit.Dp(7))).Op(gtx.Ops))
@@ -568,7 +690,7 @@ func toolbarIconButton(gtx layout.Context, button *widget.Clickable, icon image.
 				Src:      paint.NewImageOp(icon),
 				Fit:      widget.Contain,
 				Position: layout.Center,
-				Scale:    0.1875,
+				Scale:    20.0 / 96.0,
 			}.Layout(gtx)
 		}
 		if mixed {
@@ -578,7 +700,11 @@ func toolbarIconButton(gtx layout.Context, button *widget.Clickable, icon image.
 			paint.FillShape(gtx.Ops, toolbarGlyphText, clip.Ellipse(dot).Op(gtx.Ops))
 		}
 		return layout.Dimensions{Size: image.Pt(size, size)}
-	})
+	}
+	if button == nil {
+		return draw(gtx)
+	}
+	return button.Layout(gtx, draw)
 }
 
 func formatStyleSlot(slot int) bool { return slot >= 4 && slot <= 11 }
@@ -735,14 +861,23 @@ func toolbarPickerPatch(kind spreadsheetToolbarPicker, index int) (document.Cell
 }
 
 func toolbarTabButton(gtx layout.Context, theme *material.Theme, button *widget.Clickable, label string, selected bool) layout.Dimensions {
-	style := material.Button(theme, button, label)
-	if selected {
-		style.Background = contentSurface
-		style.Color = color.NRGBA{R: 35, G: 82, B: 154, A: 255}
-	} else {
-		style.Background = chromeSurface
-		style.Color = mutedText
-	}
-	style.TextSize = theme.TextSize * 12 / 16
-	return layout.Inset{Left: unit.Dp(5), Right: unit.Dp(5), Bottom: unit.Dp(2)}.Layout(gtx, style.Layout)
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		height := gtx.Dp(unit.Dp(30))
+		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+		style := material.Body2(theme, label)
+		style.TextSize = unit.Sp(13)
+		style.Color = color.NRGBA{R: 89, G: 98, B: 109, A: 255}
+		if selected {
+			style.Color = color.NRGBA{R: 53, G: 95, B: 150, A: 255}
+		}
+		dims := layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Center.Layout(gtx, style.Layout)
+		})
+		if selected {
+			lineY := height - gtx.Dp(unit.Dp(1))
+			paint.FillShape(gtx.Ops, style.Color, clip.Rect{Min: image.Pt(0, lineY), Max: image.Pt(dims.Size.X, height)}.Op())
+		}
+		dims.Size.Y = height
+		return dims
+	})
 }

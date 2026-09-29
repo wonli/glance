@@ -118,6 +118,9 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 				}
 				if selected {
 					style.Fill = selectedFill
+					if rr == v.SelectedRow && cc == v.SelectedColumn {
+						style.Font = color.NRGBA{R: 62, G: 111, B: 169, A: 255}
+					}
 				}
 				paintCachedCell(gtx, v, a.theme, cell, fullRect, visibleRect, style)
 			}
@@ -125,8 +128,8 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	}
 	if hasSelection {
 		selectionViewport := image.Rect(rowHead, colHead, size.X, size.Y)
-		outline := color.NRGBA{R: 35, G: 105, B: 190, A: 255}
-		for _, edge := range selectionBorderRects(selectionRect(v, selection), max(1, gtx.Dp(unit.Dp(2)))) {
+		outline := color.NRGBA{R: 190, G: 211, B: 237, A: 255}
+		for _, edge := range selectionBorderRects(selectionRect(v, selection), max(1, gtx.Dp(unit.Dp(1)))) {
 			edge = edge.Intersect(selectionViewport)
 			if !edge.Empty() {
 				paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
@@ -274,6 +277,7 @@ func paintTextBox(gtx layout.Context, theme *material.Theme, text string, rect i
 	gtx.Constraints = layout.Constraints{Min: sz, Max: sz}
 	label := material.Body2(theme, text)
 	label.Color = fg
+	label.TextSize = unit.Sp(12)
 	if bold {
 		label.Font.Weight = cellFontWeight(true)
 	}
@@ -295,6 +299,7 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	size := rect.Size()
 	gtx.Constraints = layout.Constraints{Min: size, Max: size}
 	label := material.Body2(theme, cell.Value)
+	label.TextSize = unit.Sp(12)
 	label.Color = style.Font
 	label.Font.Typeface = cellTypeface(style)
 	if style.Bold {

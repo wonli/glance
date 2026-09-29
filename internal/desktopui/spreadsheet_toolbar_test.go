@@ -87,7 +87,7 @@ func TestToolbarIconTintWritesRequestedColorIntoPixels(t *testing.T) {
 }
 
 func TestToolbarIconsUseOfficeStyleMonochromeColors(t *testing.T) {
-	enabledColor := color.NRGBA{R: 54, G: 60, B: 67, A: 255}
+	enabledColor := color.NRGBA{R: 75, G: 83, B: 94, A: 255}
 	checks := []struct {
 		slot int
 		icon string
