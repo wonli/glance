@@ -51,8 +51,8 @@ func TestWorkspaceTabStripAddsTopGapAndMeetsContentEdge(t *testing.T) {
 		Constraints: layout.Constraints{Max: image.Pt(800, 80)},
 	}
 	dims := a.layoutWorkspaceTabs(gtx)
-	if dims.Size.Y != 44 {
-		t.Fatalf("workspace tab strip height = %d px, want 44 px including the top gap", dims.Size.Y)
+	if dims.Size.Y != 60 {
+		t.Fatalf("workspace tab strip height = %d px, want 60 px including the top gap", dims.Size.Y)
 	}
 }
 
