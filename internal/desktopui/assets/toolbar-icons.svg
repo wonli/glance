@@ -48,6 +48,7 @@
 
     <g id="clock-3" transform="translate(0 144)"><circle cx="12" cy="12" r="9"/><path d="M12 7v5h5"/></g>
     <g id="star" transform="translate(24 144)"><path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1.1 6.2L12 17.4 6.4 20.3l1.1-6.2L3 9.7l6.2-.9z"/></g>
+    <g id="star-filled" fill="#fff" stroke="none" transform="translate(168 168)"><path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1.1 6.2L12 17.4 6.4 20.3l1.1-6.2L3 9.7l6.2-.9z"/></g>
     <g id="folder" transform="translate(48 144)"><path d="M3 7V5h7l2 2h9v12H3z"/></g>
     <g id="folder-open" transform="translate(72 144)"><path d="M3 8V5h7l2 2h9v3M2 10h20l-2 9H4z"/></g>
     <g id="folder-plus" transform="translate(96 144)"><path d="M3 8V5h7l2 2h9v12H3zM12 12v6m-3-3h6"/></g>

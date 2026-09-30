@@ -33,6 +33,18 @@ func TestHomeActionCardsMatchPenDimensions(t *testing.T) {
 	}
 }
 
+func TestHomeFavoriteStarFillsGoldWhenSelected(t *testing.T) {
+	want := color.NRGBA{R: 176, G: 138, B: 55, A: 255}
+	icon, ok := tintedToolbarIcon("star-filled", want)
+	if !ok {
+		t.Fatal("filled favorite star icon is unavailable")
+	}
+	got := color.NRGBAModel.Convert(icon.At(icon.Bounds().Dx()/2, icon.Bounds().Dy()/2)).(color.NRGBA)
+	if got != want {
+		t.Fatalf("selected favorite star center=%+v; want solid gold %+v", got, want)
+	}
+}
+
 func TestHomeGreetingMatchesTimeOfDay(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

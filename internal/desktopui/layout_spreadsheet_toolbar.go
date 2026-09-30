@@ -250,6 +250,7 @@ var toolbarIconCells = map[string]image.Point{
 	"folder-plus": {X: 4, Y: 6}, "file-text": {X: 5, Y: 6}, "file-spreadsheet": {X: 6, Y: 6}, "presentation": {X: 7, Y: 6},
 	"file-code": {X: 0, Y: 7}, "code": {X: 1, Y: 7}, "file": {X: 2, Y: 7}, "search": {X: 3, Y: 7},
 	"list-filter": {X: 4, Y: 7}, "ellipsis": {X: 5, Y: 7}, "chevron-down": {X: 6, Y: 7},
+	"star-filled":  {X: 7, Y: 7},
 	"paint-bucket": {X: 6, Y: 1}, "grid": {X: 3, Y: 2},
 }
 

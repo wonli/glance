@@ -76,6 +76,7 @@ var (
 	homeMuted         = color.NRGBA{R: 138, G: 146, B: 157, A: 255}
 	homeSelectedFill  = color.NRGBA{R: 241, G: 242, B: 244, A: 255}
 	homeHoverFill     = color.NRGBA{R: 247, G: 248, B: 249, A: 255}
+	homeFavoriteGold  = color.NRGBA{R: 176, G: 138, B: 55, A: 255}
 )
 
 func (a *App) refreshHomeMetadata() {

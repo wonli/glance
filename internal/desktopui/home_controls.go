@@ -253,7 +253,12 @@ func homeIconButton(gtx layout.Context, button *widget.Clickable, icon string, s
 	buttonSize := gtx.Dp(size)
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(buttonSize, buttonSize), image.Pt(buttonSize, buttonSize)
 	if selected {
-		fg = color.NRGBA{R: 110, G: 119, B: 130, A: 255}
+		if icon == "star" {
+			icon = "star-filled"
+			fg = homeFavoriteGold
+		} else {
+			fg = color.NRGBA{R: 110, G: 119, B: 130, A: 255}
+		}
 	}
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return homeIcon(gtx, icon, size, fg) })
