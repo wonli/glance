@@ -65,12 +65,22 @@ func (a *App) layoutWorkspaceBody(gtx layout.Context) layout.Dimensions {
 			if !a.showNewMenu {
 				return layout.Dimensions{}
 			}
-			return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, a.layoutCreateActions)
+			return a.layoutCreateMenuPopover(gtx)
 		}),
 	)
 }
 
 func (a *App) processAsyncResults() {
+	select {
+	case result := <-a.homeMetadataResults:
+		if result.generation == a.homeMetadataGeneration {
+			a.homeMetadata = result.entries
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		}
+	default:
+	}
 	select {
 	case result := <-a.formatResults:
 		result.state.formatRunning = false
@@ -149,6 +159,7 @@ func (a *App) processAsyncResults() {
 					a.status = "所选文件夹中没有支持的文档"
 				} else {
 					a.collection.StageRecents(result.recents)
+					a.refreshHomeMetadata()
 					a.persistRecentsAsync()
 					a.status = fmt.Sprintf("已添加 %d 个文档到最近打开", len(result.recents))
 				}
@@ -484,7 +495,7 @@ func layoutSheetPlusTab(gtx layout.Context, theme *material.Theme, button *widge
 }
 
 func (a *App) layoutSpreadsheetStatusBar(gtx layout.Context) layout.Dimensions {
-	height := gtx.Dp(unit.Dp(50))
+	height := gtx.Dp(unit.Dp(34))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
@@ -499,47 +510,52 @@ func (a *App) layoutSpreadsheetStatusBar(gtx layout.Context) layout.Dimensions {
 			if runes := []rune(status); len(runes) > 18 {
 				status = string(runes[:17]) + "…"
 			}
-			return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return spreadsheetStatusText(gtx, a.theme, status)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							index := 0
-							for i, name := range a.sheets {
-								if name == a.sheet {
-									index = i + 1
-									break
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				gtx.Constraints.Min.Y = 0
+				return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return spreadsheetStatusText(gtx, a.theme, status)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								index := 0
+								for i, name := range a.sheets {
+									if name == a.sheet {
+										index = i + 1
+										break
+									}
 								}
-							}
-							if index == 0 {
-								index = 1
-							}
-							return spreadsheetStatusText(gtx, a.theme, fmt.Sprintf("工作表 %d", index))
-						})
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions { return spreadsheetStatusIcon(gtx, "minus") }),
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(13)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										railWidth, railHeight := gtx.Dp(unit.Dp(110)), gtx.Dp(unit.Dp(4))
-										paint.FillShape(gtx.Ops, color.NRGBA{R: 205, G: 211, B: 218, A: 255}, clip.UniformRRect(image.Rect(0, 0, railWidth, railHeight), railHeight/2).Op(gtx.Ops))
-										return layout.Dimensions{Size: image.Pt(railWidth, railHeight)}
-									})
-								}),
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions { return spreadsheetStatusIcon(gtx, "plus") }),
-							)
-						})
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(32)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return spreadsheetStatusText(gtx, a.theme, "100%")
-						})
-					}),
-				)
+								if index == 0 {
+									index = 1
+								}
+								return spreadsheetStatusText(gtx, a.theme, fmt.Sprintf("工作表 %d", index))
+							})
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions { return spreadsheetStatusIcon(gtx, "minus") }),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(13)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											railWidth, railHeight := gtx.Dp(unit.Dp(110)), gtx.Dp(unit.Dp(4))
+											paint.FillShape(gtx.Ops, color.NRGBA{R: 205, G: 211, B: 218, A: 255}, clip.UniformRRect(image.Rect(0, 0, railWidth, railHeight), railHeight/2).Op(gtx.Ops))
+											return layout.Dimensions{Size: image.Pt(railWidth, railHeight)}
+										})
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions { return spreadsheetStatusIcon(gtx, "plus") }),
+								)
+							})
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(32)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return spreadsheetStatusText(gtx, a.theme, "100%")
+							})
+						}),
+					)
+				})
 			})
 		},
 	)
@@ -554,6 +570,9 @@ func spreadsheetStatusText(gtx layout.Context, theme *material.Theme, text strin
 
 func spreadsheetStatusIcon(gtx layout.Context, name string) layout.Dimensions {
 	icon, _ := tintedToolbarIcon(name, color.NRGBA{R: 105, G: 114, B: 125, A: 255})
+	iconSize := gtx.Dp(unit.Dp(18))
+	gtx.Constraints.Min = image.Pt(iconSize, iconSize)
+	gtx.Constraints.Max = gtx.Constraints.Min
 	return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
 }
 

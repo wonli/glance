@@ -22,6 +22,57 @@ func TestOpenMigratesEmptyDatabase(t *testing.T) {
 	}
 }
 
+func TestFavoritesSurviveRestartAndMigrateVersionTwoDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`DROP TABLE favorites`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`PRAGMA user_version = 2`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveFavorite("/tmp/budget.xlsx", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	favorites, err := store.LoadFavorites()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(favorites) != 1 || favorites[0] != "/tmp/budget.xlsx" {
+		t.Fatalf("persisted favorites=%v; want [/tmp/budget.xlsx]", favorites)
+	}
+	if err := store.SaveFavorite("/tmp/budget.xlsx", false); err != nil {
+		t.Fatal(err)
+	}
+	favorites, err = store.LoadFavorites()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(favorites) != 0 {
+		t.Fatalf("favorites after removal=%v; want empty", favorites)
+	}
+}
+
 func TestWorkspaceAndDocumentPayloadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "workspace.db")
 	s, err := Open(path)

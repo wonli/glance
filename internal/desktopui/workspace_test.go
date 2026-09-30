@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"errors"
+	"image"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/unit"
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
@@ -332,6 +335,40 @@ func TestSaveActionsLiveInPlusMenuForActiveDocument(t *testing.T) {
 	got = a.createActionLabels()
 	if !containsLabel(got, "保存") || !containsLabel(got, "另存为…") {
 		t.Fatalf("document save actions missing from plus menu: %v", got)
+	}
+}
+
+func TestPlusTabKeepsAVisibleLeftGap(t *testing.T) {
+	a := New(nil, "")
+	var ops op.Ops
+	gtx := layout.Context{
+		Ops:         &ops,
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(500, 42)},
+	}
+	dims := a.layoutPlusTab(gtx)
+	if dims.Size != image.Pt(44, int(workspaceTabHeight)) {
+		t.Fatalf("plus tab size=%v; want 44x%v (32px button plus 12px left gap)", dims.Size, workspaceTabHeight)
+	}
+}
+
+func TestCreateMenuItemsHaveMonochromeIconsAndASectionDivider(t *testing.T) {
+	a := New(nil, "")
+	items := a.createActionItems()
+	if len(items) != 6 || !items[2].separator {
+		t.Fatalf("new-document menu items=%+v; want open actions, one divider, and three create actions", items)
+	}
+	for _, item := range items {
+		if item.separator {
+			continue
+		}
+		if item.icon == "" {
+			t.Errorf("menu action %q has no icon", item.label)
+			continue
+		}
+		if _, ok := toolbarIconData(item.icon); !ok {
+			t.Errorf("menu action %q has no monochrome sprite icon %q", item.label, item.icon)
+		}
 	}
 }
 

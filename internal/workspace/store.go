@@ -85,8 +85,8 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version > 2 {
-		return fmt.Errorf("workspace database version %d is newer than supported version 2", version)
+	if version > 3 {
+		return fmt.Errorf("workspace database version %d is newer than supported version 3", version)
 	}
 	if version == 0 {
 		tx, err := db.Begin()
@@ -121,6 +121,23 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 		if _, err := tx.Exec(`PRAGMA user_version = 2`); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		version = 2
+	}
+	if version == 2 {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`CREATE TABLE favorites (path TEXT PRIMARY KEY)`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`PRAGMA user_version = 3`); err != nil {
 			return err
 		}
 		if err := tx.Commit(); err != nil {
@@ -300,5 +317,34 @@ func (s *Store) SaveViewState(id string, state []byte) error {
 
 func (s *Store) DeleteRecent(path string) error {
 	_, err := s.db.Exec(`DELETE FROM recents WHERE path=?`, path)
+	return err
+}
+
+func (s *Store) LoadFavorites() ([]string, error) {
+	rows, err := s.db.Query(`SELECT path FROM favorites ORDER BY path`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var favorites []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		favorites = append(favorites, path)
+	}
+	return favorites, rows.Err()
+}
+
+func (s *Store) SaveFavorite(path string, favorite bool) error {
+	if path == "" {
+		return errors.New("favorite path is required")
+	}
+	if favorite {
+		_, err := s.db.Exec(`INSERT INTO favorites(path) VALUES (?) ON CONFLICT(path) DO NOTHING`, path)
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM favorites WHERE path=?`, path)
 	return err
 }

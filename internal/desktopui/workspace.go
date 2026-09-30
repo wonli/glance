@@ -92,6 +92,7 @@ func (a *App) initializeWorkspace() {
 		return
 	}
 	a.collection = collection
+	a.loadHomeFavorites()
 	for _, record := range collection.Tabs() {
 		a.tabMeta[record.Tab.ID] = record.Tab
 		if !hasRestorableSnapshot(record) {
@@ -110,6 +111,7 @@ func (a *App) initializeWorkspace() {
 	if err := collection.Activate(workspace.RecentTabID); err != nil {
 		a.status = err.Error()
 	}
+	a.refreshHomeMetadata()
 }
 
 func hasRestorableSnapshot(record workspace.Session) bool {
@@ -254,6 +256,9 @@ type workspaceWriteJob struct {
 	state              *documentSessionState
 	viewState          []byte
 	recents            []workspace.Recent
+	favoritePath       string
+	favoriteValue      bool
+	saveFavorite       bool
 }
 
 type fileCommandKind uint8
@@ -364,6 +369,8 @@ func (a *App) startWorkspaceWriter() {
 			var err error
 			if job.recents != nil {
 				err = a.workspaceStore.SaveRecents(job.recents)
+			} else if job.saveFavorite {
+				err = a.workspaceStore.SaveFavorite(job.favoritePath, job.favoriteValue)
 			} else {
 				err = a.writeWorkspaceSnapshot(job)
 			}

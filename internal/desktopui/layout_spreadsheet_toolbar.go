@@ -246,6 +246,10 @@ var toolbarIconCells = map[string]image.Point{
 	"sheet-plus": {X: 4, Y: 3}, "sheet-edit": {X: 5, Y: 3}, "sheet-trash": {X: 6, Y: 3}, "sort-asc": {X: 7, Y: 3},
 	"sort-desc": {X: 0, Y: 4}, "filter": {X: 1, Y: 4}, "house": {X: 2, Y: 4},
 	"menu": {X: 0, Y: 5}, "align-center-vertical": {X: 1, Y: 5}, "list": {X: 2, Y: 5}, "grip-horizontal": {X: 3, Y: 5}, "sigma": {X: 4, Y: 5},
+	"clock-3": {X: 0, Y: 6}, "star": {X: 1, Y: 6}, "folder": {X: 2, Y: 6}, "folder-open": {X: 3, Y: 6},
+	"folder-plus": {X: 4, Y: 6}, "file-text": {X: 5, Y: 6}, "file-spreadsheet": {X: 6, Y: 6}, "presentation": {X: 7, Y: 6},
+	"file-code": {X: 0, Y: 7}, "code": {X: 1, Y: 7}, "file": {X: 2, Y: 7}, "search": {X: 3, Y: 7},
+	"list-filter": {X: 4, Y: 7}, "ellipsis": {X: 5, Y: 7}, "chevron-down": {X: 6, Y: 7},
 	"paint-bucket": {X: 6, Y: 1}, "grid": {X: 3, Y: 2},
 }
 
@@ -460,16 +464,12 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 	state := a.documentSessionState
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			shift := op.Offset(image.Pt(0, -gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
 			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
-			shift.Pop()
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					shift := op.Offset(image.Pt(0, -gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
-					defer shift.Pop()
 					return layoutRibbonCategoryTabs(gtx, a.theme, &state.toolbarTabs, state.toolbarTab)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -478,7 +478,7 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 					actions := toolbarActionsForTab(state.toolbarTab)
 					shift := op.Offset(image.Pt(0, -gtx.Dp(unit.Dp(4)))).Push(gtx.Ops)
 					defer shift.Pop()
-					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(16), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return state.toolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
 							action := actions[index]
 							style := a.selectedCellStyle()
@@ -514,6 +514,7 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, buttons *[7]widget.Clickable, selected spreadsheetToolbarTab) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(34))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+	gtx.Constraints.Min.X = gtx.Constraints.Max.X
 	children := make([]layout.FlexChild, 0, len(toolbarCategoryLabels))
 	for index, label := range toolbarCategoryLabels {
 		index, label := index, label
@@ -529,8 +530,12 @@ func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, buttons
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				gtx.Constraints.Min.Y = 0
+				return layout.Inset{Left: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+				})
 			})
 		},
 	)
@@ -540,7 +545,7 @@ func layoutToolbarActionItem(gtx layout.Context, action spreadsheetToolbarAction
 	groupStart := index == 0 || actions[index-1].group != action.group
 	groupEnd := index == len(actions)-1 || actions[index+1].group != action.group
 	children := make([]layout.FlexChild, 0, 5)
-	if groupStart {
+	if groupStart && index > 0 {
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(12)), 0)}
 		}))
@@ -686,12 +691,17 @@ func toolbarIconButton(gtx layout.Context, button *widget.Clickable, icon image.
 		}
 		paint.FillShape(gtx.Ops, buttonBackground, clip.UniformRRect(image.Rectangle{Max: image.Pt(size, size)}, gtx.Dp(unit.Dp(7))).Op(gtx.Ops))
 		if icon != nil {
-			widget.Image{
-				Src:      paint.NewImageOp(icon),
-				Fit:      widget.Contain,
-				Position: layout.Center,
-				Scale:    20.0 / 96.0,
-			}.Layout(gtx)
+			layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				iconSize := gtx.Dp(unit.Dp(20))
+				gtx.Constraints.Min = image.Pt(iconSize, iconSize)
+				gtx.Constraints.Max = gtx.Constraints.Min
+				return widget.Image{
+					Src:      paint.NewImageOp(icon),
+					Fit:      widget.Contain,
+					Position: layout.Center,
+					Scale:    20.0 / 96.0,
+				}.Layout(gtx)
+			})
 		}
 		if mixed {
 			dotSize := gtx.Dp(unit.Dp(5))

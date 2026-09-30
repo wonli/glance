@@ -441,14 +441,9 @@ func (a *App) pollGridLoad(v *gridViewport) {
 				a.window.Invalidate()
 				continue
 			}
-			previousSheet := v.WindowSheet
 			_ = v.applyWindow(result.sheet, result.rangeOf, result.window)
 			a.applyValueFilterWindow(a.documentSessionState, v)
-			if previousSheet != result.sheet {
-				start := xlsx.CellName(result.rangeOf.StartColumn, result.rangeOf.StartRow)
-				end := xlsx.CellName(result.rangeOf.EndColumn, result.rangeOf.EndRow)
-				a.status = fmt.Sprintf("工作表「%s」已读取 %s:%s（当前窗口）", a.sheet, start, end)
-			}
+			a.status = "就绪"
 			a.window.Invalidate()
 		default:
 			return

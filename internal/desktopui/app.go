@@ -46,47 +46,65 @@ type App struct {
 	applyButton      widget.Clickable
 	goToCellButton   widget.Clickable
 
-	status                string
-	collection            *workspace.Collection
-	workspaceStore        *workspace.Store
-	sessions              map[string]*documentSessionState
-	tabMeta               map[string]workspace.Tab
-	activeTabID           string
-	workspaceError        string
-	workspaceWriteError   string
-	workspaceDBMu         sync.Mutex
-	tabButtons            map[string]*widget.Clickable
-	tabCloseButtons       map[string]*widget.Clickable
-	newButton             widget.Clickable
-	recentTabButton       widget.Clickable
-	workspaceTabsList     widget.List
-	createActionsList     widget.List
-	windowCloseButton     widget.Clickable
-	windowMinimizeButton  widget.Clickable
-	windowMaximizeButton  widget.Clickable
-	windowMode            app.WindowMode
-	clientTitlebar        bool
-	windowDecorations     widget.Decorations
-	showNewMenu           bool
-	modal                 modalDialog
-	pendingCloseTabID     string
-	recentButtons         map[string]*widget.Clickable
-	recentRemoveButtons   map[string]*widget.Clickable
-	recentList            widget.List
-	workspaceWriteJobs    chan workspaceWriteJob
-	workspaceWriteResults chan error
-	workspaceWriterDone   chan struct{}
-	fileCommandResults    chan fileCommandResult
-	gridLoadResults       chan gridLoadResult
-	formatResults         chan spreadsheetFormatResult
-	saveResults           chan saveResult
-	openResults           chan openResult
-	saving                bool
-	opening               bool
-	fileCommandRunning    bool
-	documentGeneration    uint64
-	shutdown              chan struct{}
-	shutdownOnce          sync.Once
+	status                 string
+	collection             *workspace.Collection
+	workspaceStore         *workspace.Store
+	sessions               map[string]*documentSessionState
+	tabMeta                map[string]workspace.Tab
+	activeTabID            string
+	workspaceError         string
+	workspaceWriteError    string
+	workspaceDBMu          sync.Mutex
+	tabButtons             map[string]*widget.Clickable
+	tabCloseButtons        map[string]*widget.Clickable
+	newButton              widget.Clickable
+	recentTabButton        widget.Clickable
+	workspaceTabsList      widget.List
+	createActionsList      widget.List
+	createMenuList         widget.List
+	windowCloseButton      widget.Clickable
+	windowMinimizeButton   widget.Clickable
+	windowMaximizeButton   widget.Clickable
+	windowMode             app.WindowMode
+	clientTitlebar         bool
+	windowDecorations      widget.Decorations
+	showNewMenu            bool
+	modal                  modalDialog
+	pendingCloseTabID      string
+	recentList             widget.List
+	homeSection            homeSection
+	homeTypeFilter         string
+	homeSearch             widget.Editor
+	homeSortModifiedDesc   bool
+	homeContentList        widget.List
+	homeActionButtons      map[string]*widget.Clickable
+	homeNavButtons         map[string]*widget.Clickable
+	homeFilterButtons      map[string]*widget.Clickable
+	homeOpenButtons        map[string]*widget.Clickable
+	homeFavoriteButtons    map[string]*widget.Clickable
+	homeMoreButtons        map[string]*widget.Clickable
+	homeFolderButton       widget.Clickable
+	homeNewFolderButton    widget.Clickable
+	homeFolderAddButton    widget.Clickable
+	homeSortButton         widget.Clickable
+	homeFavorites          map[string]bool
+	homeMetadata           map[string]homeFileMetadata
+	homeMetadataResults    chan homeMetadataResult
+	homeMetadataGeneration uint64
+	workspaceWriteJobs     chan workspaceWriteJob
+	workspaceWriteResults  chan error
+	workspaceWriterDone    chan struct{}
+	fileCommandResults     chan fileCommandResult
+	gridLoadResults        chan gridLoadResult
+	formatResults          chan spreadsheetFormatResult
+	saveResults            chan saveResult
+	openResults            chan openResult
+	saving                 bool
+	opening                bool
+	fileCommandRunning     bool
+	documentGeneration     uint64
+	shutdown               chan struct{}
+	shutdownOnce           sync.Once
 }
 
 func New(window *app.Window, initialPath string) *App {
@@ -106,10 +124,22 @@ func New(window *app.Window, initialPath string) *App {
 		tabMeta:              make(map[string]workspace.Tab),
 		tabButtons:           make(map[string]*widget.Clickable),
 		tabCloseButtons:      make(map[string]*widget.Clickable),
-		recentButtons:        make(map[string]*widget.Clickable),
-		recentRemoveButtons:  make(map[string]*widget.Clickable),
+		homeSection:          homeSectionRecent,
+		homeTypeFilter:       "全部",
+		homeSortModifiedDesc: true,
+		homeActionButtons:    make(map[string]*widget.Clickable),
+		homeNavButtons:       make(map[string]*widget.Clickable),
+		homeFilterButtons:    make(map[string]*widget.Clickable),
+		homeOpenButtons:      make(map[string]*widget.Clickable),
+		homeFavoriteButtons:  make(map[string]*widget.Clickable),
+		homeMoreButtons:      make(map[string]*widget.Clickable),
+		homeFavorites:        make(map[string]bool),
+		homeMetadata:         make(map[string]homeFileMetadata),
+		homeMetadataResults:  make(chan homeMetadataResult, 8),
 		workspaceTabsList:    widget.List{List: layout.List{Axis: layout.Horizontal}},
 		createActionsList:    widget.List{List: layout.List{Axis: layout.Horizontal}},
+		createMenuList:       widget.List{List: layout.List{Axis: layout.Vertical}},
+		homeContentList:      widget.List{List: layout.List{Axis: layout.Vertical}},
 		recentList:           widget.List{List: layout.List{Axis: layout.Vertical}},
 	}
 	if window != nil {
@@ -118,6 +148,7 @@ func New(window *app.Window, initialPath string) *App {
 			a.startWorkspaceWriter()
 		}
 	}
+	a.homeSearch.SingleLine = true
 	a.theme.Shaper = text.NewShaper()
 	a.theme.Face = preferredSystemTypeface
 	return a
@@ -301,6 +332,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 			a.reindexTabMetadata()
 			if loaded.path != "" {
 				a.collection.StageRecents([]workspace.Recent{{Path: loaded.path, Kind: format}})
+				a.refreshHomeMetadata()
 				a.persistRecentsAsync()
 			}
 			a.persistActiveSession()

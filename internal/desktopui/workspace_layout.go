@@ -3,11 +3,11 @@ package desktopui
 import (
 	"image"
 	"image/color"
-	"os"
-	"path/filepath"
+	"runtime"
 	"sort"
 
 	"gioui.org/app"
+	"gioui.org/font"
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -24,13 +24,17 @@ import (
 )
 
 const (
-	workspaceTabTopGap    unit.Dp = 5
-	workspaceTabHeight    unit.Dp = 37
-	workspaceTabStripSize unit.Dp = workspaceTabTopGap + workspaceTabHeight
+	workspaceTabTopGap        unit.Dp = 5
+	workspaceTabHeight        unit.Dp = 37
+	workspaceDocumentTabWidth unit.Dp = 224
+	workspaceTabStripSize     unit.Dp = workspaceTabTopGap + workspaceTabHeight
 )
 
 func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 	ids := a.workspaceTabIDs()
+	if a.clientTitlebar {
+		a.processWindowControlClicks(gtx)
+	}
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabStripSize), gtx.Dp(workspaceTabStripSize)
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
@@ -43,6 +47,12 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 				return a.layoutWorkspaceTabList(gtx, ids)
 			}
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if runtime.GOOS == "darwin" {
+						return a.layoutMacWindowControls(gtx)
+					}
+					return a.layoutStandardWindowControls(gtx)
+				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return a.layoutWorkspaceTabList(gtx, ids)
 				}),
@@ -54,7 +64,12 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 
 func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Dimensions {
 	return layout.Inset{Top: workspaceTabTopGap, Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return material.List(a.theme, &a.workspaceTabsList).Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
+		// A horizontal list reports the width of its laid-out tabs. Keep its
+		// viewport as wide as the tab strip so Background doesn't center that
+		// shorter natural width (which shifts the selected tab away from the
+		// ribbon seam).
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		return a.workspaceTabsList.Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
 			if index == 0 {
 				return a.layoutRecentTab(gtx)
 			}
@@ -162,9 +177,46 @@ func (a *App) layoutPlusTab(gtx layout.Context) layout.Dimensions {
 	if a.newButton.Clicked(gtx) {
 		a.showNewMenu = !a.showNewMenu
 	}
-	return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return a.paintTab(gtx, &a.newButton, "+", false)
 	})
+}
+
+func (a *App) layoutCreateMenuPopover(gtx layout.Context) layout.Dimensions {
+	left := a.plusMenuOffset(gtx)
+	shift := op.Offset(image.Pt(left, gtx.Dp(unit.Dp(7)))).Push(gtx.Ops)
+	dims := a.layoutCreateActions(gtx)
+	shift.Pop()
+	return dims
+}
+
+func (a *App) plusMenuOffset(gtx layout.Context) int {
+	ids := a.workspaceTabIDs()
+	plusIndex := len(ids) + 1
+	x := -a.workspaceTabsList.Position.Offset
+	for index := a.workspaceTabsList.Position.First; index < plusIndex; index++ {
+		if index == 0 {
+			x += gtx.Dp(unit.Dp(112))
+		} else {
+			x += gtx.Dp(workspaceDocumentTabWidth)
+		}
+	}
+	x += gtx.Dp(unit.Dp(28))
+	if a.clientTitlebar {
+		if runtime.GOOS == "darwin" {
+			x += gtx.Dp(unit.Dp(84))
+		} else {
+			x += gtx.Dp(unit.Dp(114))
+		}
+	}
+	maxX := gtx.Constraints.Max.X - gtx.Dp(unit.Dp(260)) - gtx.Dp(unit.Dp(8))
+	if x > maxX {
+		x = maxX
+	}
+	if x < gtx.Dp(unit.Dp(8)) {
+		x = gtx.Dp(unit.Dp(8))
+	}
+	return x
 }
 
 func (a *App) workspaceTabIDs() []string {
@@ -198,11 +250,9 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 	if state := a.sessions[id]; state != nil && state.book != nil && state.book.Dirty() || state != nil && state.word != nil && state.word.Dirty() || state != nil && state.jsonDoc != nil && state.jsonDoc.Dirty() {
 		label += " •"
 	}
-	return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		// Keep this frame's widgets alive even if the close click removed the
-		// tab and its widget map entries above.
-		return a.paintDocumentTab(gtx, tabButton, closeButton, label, id == a.activeTabID)
-	})
+	// Keep this frame's widgets alive even if the close click removed the
+	// tab and its widget map entries above.
+	return a.paintDocumentTab(gtx, tabButton, closeButton, label, id == a.activeTabID)
 }
 
 func (a *App) documentTabWidgets(id string) (*widget.Clickable, *widget.Clickable) {
@@ -216,13 +266,9 @@ func (a *App) documentTabWidgets(id string) (*widget.Clickable, *widget.Clickabl
 }
 
 func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable, label string, active bool) layout.Dimensions {
-	width := gtx.Dp(unit.Dp(190))
+	width := gtx.Dp(workspaceDocumentTabWidth)
 	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabHeight), gtx.Dp(workspaceTabHeight)
-	runes := []rune(label)
-	if len(runes) > 24 {
-		label = string(runes[:21]) + "…"
-	}
 	child := op.Record(gtx.Ops)
 	dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -230,6 +276,7 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 				return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					style := material.Body2(a.theme, label)
 					style.TextSize = unit.Sp(12)
+					style.MaxLines = 1
 					style.Color = color.NRGBA{R: 93, G: 102, B: 113, A: 255}
 					if active {
 						style.Color = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
@@ -278,32 +325,42 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 			style.Color = color.NRGBA{R: 88, G: 97, B: 108, A: 255}
 			dims = layout.Center.Layout(gtx, style.Layout)
 		} else {
-			dims = layout.Inset{Left: unit.Dp(10), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						iconColor := color.NRGBA{R: 105, G: 114, B: 125, A: 255}
-						if active {
-							iconColor = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
-						}
-						icon, _ := tintedToolbarIcon("house", iconColor)
-						if icon == nil {
-							return layout.Dimensions{}
-						}
-						return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(8)), 0)}
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						style := material.Body2(a.theme, "Glance")
-						style.TextSize = unit.Sp(13)
-						style.Color = color.NRGBA{R: 104, G: 113, B: 123, A: 255}
-						if active {
-							style.Color = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
-						}
-						return style.Layout(gtx)
-					}),
-				)
+			dims = layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				gtx.Constraints.Min.Y = 0
+				return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							iconColor := color.NRGBA{R: 105, G: 114, B: 125, A: 255}
+							if active {
+								iconColor = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
+							}
+							icon, _ := tintedToolbarIcon("house", iconColor)
+							if icon == nil {
+								return layout.Dimensions{}
+							}
+							iconSize := gtx.Dp(unit.Dp(18))
+							gtx.Constraints.Min = image.Pt(iconSize, iconSize)
+							gtx.Constraints.Max = gtx.Constraints.Min
+							shift := op.Offset(image.Pt(0, -gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
+							dims := widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
+							shift.Pop()
+							return dims
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(8)), 0)}
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							style := material.Body2(a.theme, "Glance")
+							style.TextSize = unit.Sp(13)
+							style.Color = color.NRGBA{R: 104, G: 113, B: 123, A: 255}
+							if active {
+								style.Color = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
+							}
+							return style.Layout(gtx)
+						}),
+					)
+				})
 			})
 		}
 		dims.Size.Y = gtx.Constraints.Max.Y
@@ -490,75 +547,6 @@ func (a *App) closeWorkspace() {
 	}
 }
 
-func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
-	children := []layout.FlexChild{layout.Rigid(func(gtx layout.Context) layout.Dimensions { return material.H6(a.theme, "最近打开").Layout(gtx) })}
-	if a.workspaceError != "" {
-		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return material.Body2(a.theme, "工作区恢复失败："+a.workspaceError).Layout(gtx)
-		}))
-	}
-	var recents []workspace.Recent
-	if a.collection != nil {
-		recents = a.collection.Recents()
-	}
-	if len(recents) == 0 {
-		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return material.Body1(a.theme, "选择 + 打开文件，或新建 Excel / Word / JSON 文档").Layout(gtx)
-			})
-		}))
-	} else {
-		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return material.List(a.theme, &a.recentList).Layout(gtx, len(recents), func(gtx layout.Context, i int) layout.Dimensions {
-				item := recents[i]
-				button := a.recentButtons[item.Path]
-				if button == nil {
-					button = new(widget.Clickable)
-					a.recentButtons[item.Path] = button
-				}
-				_, statErr := os.Stat(item.Path)
-				if button.Clicked(gtx) && statErr == nil {
-					a.startOpen(item.Path)
-				}
-				return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					label := filepath.Base(item.Path) + "   " + item.Path
-					if statErr != nil {
-						label += "（不可用）"
-					}
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							style := material.Button(a.theme, button, label)
-							if statErr != nil {
-								style.Background = color.NRGBA{R: 180, G: 184, B: 192, A: 255}
-							}
-							return style.Layout(gtx)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							remove := a.recentRemoveButtons[item.Path]
-							if remove == nil {
-								remove = new(widget.Clickable)
-								a.recentRemoveButtons[item.Path] = remove
-							}
-							if remove.Clicked(gtx) && statErr != nil {
-								if err := a.collection.RemoveRecent(item.Path); err != nil {
-									a.status = err.Error()
-								}
-								delete(a.recentButtons, item.Path)
-								delete(a.recentRemoveButtons, item.Path)
-							}
-							if statErr != nil {
-								return material.Button(a.theme, remove, "移除").Layout(gtx)
-							}
-							return layout.Dimensions{}
-						}),
-					)
-				})
-			})
-		}))
-	}
-	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceAround}.Layout(gtx, children...)
-}
-
 func (a *App) layoutCreateActions(gtx layout.Context) layout.Dimensions {
 	if a.actionOpenFile.Clicked(gtx) {
 		a.showNewMenu = false
@@ -599,40 +587,120 @@ func (a *App) layoutCreateActions(gtx layout.Context) layout.Dimensions {
 		_ = a.installDocument(loadedDocument{jsonDoc: jsondoc.NewBlank()})
 	}
 	buttons := a.createActionItems()
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(40)), gtx.Dp(unit.Dp(40))
-	return material.List(a.theme, &a.createActionsList).Layout(gtx, len(buttons), func(gtx layout.Context, index int) layout.Dimensions {
-		return layout.Inset{Left: unit.Dp(4), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return material.Button(a.theme, buttons[index].click, buttons[index].label).Layout(gtx)
+	width := gtx.Dp(unit.Dp(252))
+	heightDp := unit.Dp(14)
+	for _, item := range buttons {
+		if item.separator {
+			heightDp += 9
+		} else {
+			heightDp += 34
+		}
+	}
+	height := gtx.Dp(heightDp)
+	gtx.Constraints.Min = image.Pt(width, height)
+	gtx.Constraints.Max = gtx.Constraints.Min
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			bounds := image.Rectangle{Max: gtx.Constraints.Max}
+			shadow := clip.UniformRRect(bounds.Add(image.Pt(0, gtx.Dp(unit.Dp(3)))), gtx.Dp(unit.Dp(9)))
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 36, G: 43, B: 52, A: 22}, shadow.Op(gtx.Ops))
+			panel := clip.UniformRRect(bounds, gtx.Dp(unit.Dp(8)))
+			paint.FillShape(gtx.Ops, contentSurface, panel.Op(gtx.Ops))
+			paint.FillShape(gtx.Ops, homeBorder, clip.Stroke{Path: panel.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+			return layout.Dimensions{Size: bounds.Max}
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(7), Bottom: unit.Dp(7), Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return material.List(a.theme, &a.createMenuList).Layout(gtx, len(buttons), func(gtx layout.Context, index int) layout.Dimensions {
+					item := buttons[index]
+					return createActionRow(gtx, a.theme, item)
+				})
+			})
+		}),
+	)
+}
+
+func createActionRow(gtx layout.Context, theme *material.Theme, item createActionItem) layout.Dimensions {
+	if item.separator {
+		height := gtx.Dp(unit.Dp(9))
+		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+		return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			lineHeight := gtx.Dp(unit.Dp(1))
+			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = lineHeight, lineHeight
+			paint.FillShape(gtx.Ops, homeRowBorder, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, lineHeight)}.Op())
+			return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, lineHeight)}
 		})
+	}
+	height := gtx.Dp(unit.Dp(34))
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+	return item.click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
+				bg := color.NRGBA{A: 0}
+				if item.click.Hovered() {
+					bg = homeHoverFill
+				}
+				shape := clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(5)))
+				paint.FillShape(gtx.Ops, bg, shape.Op(gtx.Ops))
+				return layout.Dimensions{Size: gtx.Constraints.Max}
+			},
+			func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(9), Right: unit.Dp(9)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return homeIcon(gtx, item.icon, 16, color.NRGBA{R: 110, G: 119, B: 130, A: 255})
+							})
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return homeLabelStyle(theme, item.label, 13, homeText, font.Normal).Layout(gtx)
+						}),
+					)
+				})
+			},
+		)
 	})
 }
 
 type createActionItem struct {
-	click *widget.Clickable
-	label string
+	click     *widget.Clickable
+	label     string
+	icon      string
+	separator bool
 }
 
 func (a *App) createActionItems() []createActionItem {
-	buttons := []createActionItem{{&a.actionOpenFile, "打开文件…"}, {&a.actionOpenFolder, "打开文件夹…"}}
+	buttons := []createActionItem{
+		{click: &a.actionOpenFile, label: "打开文件…", icon: "file-text"},
+		{click: &a.actionOpenFolder, label: "打开文件夹…", icon: "folder-open"},
+	}
 	if a.hasActiveDocument() {
+		buttons = append(buttons, createActionItem{separator: true})
 		if a.isDirty() {
 			label := "保存"
 			if a.path == "" {
 				label = "保存…"
 			}
-			buttons = append(buttons, createActionItem{&a.actionSave, label})
+			buttons = append(buttons, createActionItem{click: &a.actionSave, label: label, icon: "save"})
 		}
-		buttons = append(buttons, createActionItem{&a.actionSaveAs, "另存为…"})
+		buttons = append(buttons, createActionItem{click: &a.actionSaveAs, label: "另存为…", icon: "sheet-edit"})
 	}
-	buttons = append(buttons, createActionItem{&a.actionNewXLSX, "新建 Excel"}, createActionItem{&a.actionNewDOCX, "新建 Word"}, createActionItem{&a.actionNewJSON, "新建 JSON"})
+	buttons = append(buttons,
+		createActionItem{separator: true},
+		createActionItem{click: &a.actionNewXLSX, label: "新建 Excel", icon: "file-spreadsheet"},
+		createActionItem{click: &a.actionNewDOCX, label: "新建 Word", icon: "file-text"},
+		createActionItem{click: &a.actionNewJSON, label: "新建 JSON", icon: "file-code"},
+	)
 	return buttons
 }
 
 func (a *App) createActionLabels() []string {
 	items := a.createActionItems()
-	labels := make([]string, len(items))
-	for i, item := range items {
-		labels[i] = item.label
+	labels := make([]string, 0, len(items))
+	for _, item := range items {
+		if !item.separator {
+			labels = append(labels, item.label)
+		}
 	}
 	return labels
 }
