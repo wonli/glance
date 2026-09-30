@@ -1,0 +1,410 @@
+package docx
+
+import (
+	"archive/zip"
+	"bytes"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"glance/internal/document"
+)
+
+func textEditingFixture(t *testing.T) *Document {
+	t.Helper()
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+<w:p><w:pPr><w:keepNext/><w:jc w:val="left"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="AABBCC"/><w:vanish/><w:rFonts w:ascii="Aptos"/></w:rPr><w:t>bold</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t> normal</w:t></w:r></w:p>
+<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell text</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+</w:body></w:document>`
+	return projectionFixture(t, documentXML, "", nil)
+}
+
+func requireWordTextEditor(t *testing.T, doc *Document) document.WordTextEditor {
+	t.Helper()
+	editor, ok := any(doc).(document.WordTextEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose safe Word text editing")
+	}
+	return editor
+}
+
+func requireWordHistory(t *testing.T, doc *Document) document.WordHistory {
+	t.Helper()
+	history, ok := any(doc).(document.WordHistory)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose Word undo/redo")
+	}
+	return history
+}
+
+func findRunByText(t *testing.T, blocks []document.WordBlock, value string) (string, string) {
+	t.Helper()
+	for _, block := range blocks {
+		if block.Paragraph != nil {
+			for _, inline := range block.Paragraph.Inlines {
+				if inline.Text != nil && inline.Text.Text == value {
+					return inline.Text.ID, block.Paragraph.ID
+				}
+			}
+		}
+		if block.Table != nil {
+			for _, row := range block.Table.Rows {
+				for _, cell := range row.Cells {
+					for _, paragraph := range cell.Paragraphs {
+						for _, inline := range paragraph.Inlines {
+							if inline.Text != nil && inline.Text.Text == value {
+								return inline.Text.ID, paragraph.ID
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	t.Fatalf("text run %q not found", value)
+	return "", ""
+}
+
+func TestReplaceTextRunEditsSelectedRunAndTableCellAndRoundTrips(t *testing.T) {
+	doc := textEditingFixture(t)
+	blocks := doc.WordBlocks()
+	originalPackage, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstID, _ := findRunByText(t, blocks, "bold")
+	cellID, _ := findRunByText(t, blocks, "cell text")
+	editor := requireWordTextEditor(t, doc)
+	if err := editor.ReplaceTextRun(firstID, "  你好 & <world>  "); err != nil {
+		t.Fatal(err)
+	}
+	if err := editor.ReplaceTextRun(cellID, "单元格 & <内容>"); err != nil {
+		t.Fatal(err)
+	}
+	updated := doc.WordBlocks()
+	if got := updated[0].Paragraph.Inlines[0].Text.Text; got != "  你好 & <world>  " {
+		t.Fatalf("edited first run = %q", got)
+	}
+	if got := updated[0].Paragraph.Inlines[1].Text.Text; got != " normal" {
+		t.Fatalf("adjacent run changed to %q", got)
+	}
+	if got := updated[1].Table.Rows[0].Cells[0].Paragraphs[0].Inlines[0].Text.Text; got != "单元格 & <内容>" {
+		t.Fatalf("edited table-cell run = %q", got)
+	}
+	if !doc.Dirty() {
+		t.Fatal("text edits did not mark the document dirty")
+	}
+
+	output := filepath.Join(t.TempDir(), "edited.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	textID, _ := findRunByText(t, reopened.WordBlocks(), "  你好 & <world>  ")
+	if textID == "" {
+		t.Fatal("edited run not found after reopen")
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentXML := readZipPart(t, data, "word/document.xml")
+	if !bytes.Contains(documentXML, []byte(`xml:space="preserve"`)) || !bytes.Contains(documentXML, []byte("&amp; &lt;world&gt;")) {
+		t.Fatalf("saved XML did not preserve boundary whitespace or escape text: %s", documentXML)
+	}
+	assertPackagePartsEqual(t, originalPackage, output)
+}
+
+func TestTextFormatPatchKeepsUnknownRunProperties(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	originalPackage, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := findRunByText(t, doc.WordBlocks(), "bold")
+	editor := requireWordTextEditor(t, doc)
+	no := false
+	yes := true
+	color := "#112233"
+	if err := editor.SetTextRunStyle(runID, document.WordTextFormatPatch{Bold: &no, Italic: &yes, Underline: &yes, FontColor: &color}); err != nil {
+		t.Fatal(err)
+	}
+	style := doc.WordBlocks()[0].Paragraph.Inlines[0].Text.Style
+	if style.Bold || !style.Italic || !style.Underline || style.FontColor != "112233" {
+		t.Fatalf("updated style = %#v", style)
+	}
+	data, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentXML := readZipPart(t, data, "word/document.xml")
+	for _, untouched := range [][]byte{[]byte("w:vanish"), []byte(`w:ascii="Aptos"`), []byte("w:keepNext")} {
+		if !bytes.Contains(documentXML, untouched) {
+			t.Errorf("format patch removed unrelated property %s: %s", untouched, documentXML)
+		}
+	}
+	if !bytes.Contains(documentXML, []byte(`w:val="112233"`)) {
+		t.Fatalf("font color patch was not written: %s", documentXML)
+	}
+	output := filepath.Join(t.TempDir(), "formatted.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	reopenedStyle := reopened.WordBlocks()[0].Paragraph.Inlines[0].Text.Style
+	if reopenedStyle.Bold || !reopenedStyle.Italic || !reopenedStyle.Underline || reopenedStyle.FontColor != "112233" {
+		t.Fatalf("saved run style = %#v", reopenedStyle)
+	}
+	assertPackagePartsEqual(t, originalPackage, output)
+}
+
+func TestParagraphAlignmentWritesSupportedValuesAndKeepsOtherProperties(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	_, paragraphID := findRunByText(t, doc.WordBlocks(), "bold")
+	editor := requireWordTextEditor(t, doc)
+	for _, test := range []struct {
+		alignment document.WordAlignment
+		projected document.WordAlignment
+		xmlValue  string
+	}{
+		{alignment: document.WordAlignLeft, projected: document.WordAlignLeft, xmlValue: "left"},
+		{alignment: document.WordAlignCenter, projected: document.WordAlignCenter, xmlValue: "center"},
+		{alignment: document.WordAlignRight, projected: document.WordAlignRight, xmlValue: "right"},
+		{alignment: document.WordAlignJustified, projected: document.WordAlignJustified, xmlValue: "both"},
+	} {
+		if err := editor.SetParagraphAlignment(paragraphID, test.alignment); err != nil {
+			t.Fatalf("set %s alignment: %v", test.alignment, err)
+		}
+		if got := doc.WordBlocks()[0].Paragraph.Alignment; got != test.projected {
+			t.Errorf("projected alignment = %q; want %q", got, test.projected)
+		}
+		data, err := doc.Snapshot()
+		if err != nil {
+			t.Fatal(err)
+		}
+		documentXML := readZipPart(t, data, "word/document.xml")
+		if !bytes.Contains(documentXML, []byte(`w:jc w:val="`+test.xmlValue+`"`)) || !bytes.Contains(documentXML, []byte("w:keepNext")) {
+			t.Fatalf("alignment patch %s lost pPr content: %s", test.alignment, documentXML)
+		}
+	}
+	output := filepath.Join(t.TempDir(), "aligned.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got := reopened.WordBlocks()[0].Paragraph.Alignment; got != document.WordAlignJustified {
+		t.Fatalf("saved alignment = %q; want justified", got)
+	}
+}
+
+func TestFailedTextEditLeavesDocumentCleanAndHistoryEmpty(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	editor := requireWordTextEditor(t, doc)
+	if err := editor.ReplaceTextRun("missing-run", "replacement"); err == nil {
+		t.Fatal("expected missing text-run ID to be rejected")
+	}
+	runID, paragraphID := findRunByText(t, doc.WordBlocks(), "bold")
+	invalidColor := "not-a-color"
+	if err := editor.SetTextRunStyle(runID, document.WordTextFormatPatch{FontColor: &invalidColor}); err == nil {
+		t.Fatal("expected invalid font color to be rejected")
+	}
+	if err := editor.SetParagraphAlignment(paragraphID, document.WordAlignDefault); err == nil {
+		t.Fatal("expected default alignment to be rejected as an edit target")
+	}
+	if doc.Dirty() {
+		t.Fatal("failed edit changed dirty state")
+	}
+	if applied, err := requireWordHistory(t, doc).Undo(); err != nil || applied {
+		t.Fatalf("undo after failed edit = %v, %v; want false, nil", applied, err)
+	}
+}
+
+func TestWordTextStyleAndAlignmentCanBeInsertedWhenPropertiesAreAbsent(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	cellRun, _ := findRunByText(t, blocks, "cell text")
+	cellParagraph := blocks[1].Table.Rows[0].Cells[0].Paragraphs[0].ID
+	yes := true
+	editor := requireWordTextEditor(t, doc)
+	if err := editor.SetTextRunStyle(cellRun, document.WordTextFormatPatch{Bold: &yes}); err != nil {
+		t.Fatal(err)
+	}
+	if !doc.WordBlocks()[1].Table.Rows[0].Cells[0].Paragraphs[0].Inlines[0].Text.Style.Bold {
+		t.Fatal("bold was not inserted for a run without w:rPr")
+	}
+	if err := editor.SetParagraphAlignment(cellParagraph, document.WordAlignRight); err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.WordBlocks()[1].Table.Rows[0].Cells[0].Paragraphs[0].Alignment; got != document.WordAlignRight {
+		t.Fatalf("inserted paragraph alignment = %q", got)
+	}
+}
+
+func TestTextEditUpgradesExplicitDefaultSpacePreservation(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t xml:space="default">text</w:t></w:r></w:p></w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	runID, _ := findRunByText(t, doc.WordBlocks(), "text")
+	if err := requireWordTextEditor(t, doc).ReplaceTextRun(runID, " spaced "); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := readZipPart(t, snapshot, "word/document.xml")
+	if !bytes.Contains(data, []byte(`xml:space="preserve"`)) {
+		t.Fatalf("boundary whitespace left with xml:space default: %s", data)
+	}
+}
+
+func TestComplexFieldRunsRemainReadOnly(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>7</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	runID, _ := findRunByText(t, doc.WordBlocks(), "7")
+	if inline := doc.WordBlocks()[0].Paragraph.Inlines[3]; inline.Text == nil || inline.Text.Editable {
+		t.Fatalf("field result inline = %#v; want read-only text", inline)
+	}
+	if err := requireWordTextEditor(t, doc).ReplaceTextRun(runID, "8"); err == nil {
+		t.Fatal("field result text should not be editable")
+	}
+	if doc.Dirty() {
+		t.Fatal("failed field edit changed dirty state")
+	}
+}
+
+func TestEmptySelfClosingTextRunCanBeFilledAndSaved(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t/></w:r></w:p></w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	if len(blocks) != 1 || len(blocks[0].Paragraph.Inlines) != 1 || blocks[0].Paragraph.Inlines[0].Text.Text != "" {
+		t.Fatalf("empty text projection = %#v", blocks)
+	}
+	runID := blocks[0].Paragraph.Inlines[0].Text.ID
+	if err := requireWordTextEditor(t, doc).ReplaceTextRun(runID, "filled"); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "filled.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got := reopened.WordBlocks()[0].Paragraph.Inlines[0].Text.Text; got != "filled" {
+		t.Fatalf("reopened self-closing text = %q", got)
+	}
+}
+
+func TestNoOpWordTextAndFormattingEditsDoNotCreateHistory(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	runID, paragraphID := findRunByText(t, blocks, "bold")
+	editor := requireWordTextEditor(t, doc)
+	history := requireWordHistory(t, doc)
+	yes := true
+	if err := editor.ReplaceTextRun(runID, "bold"); err != nil {
+		t.Fatal(err)
+	}
+	if err := editor.SetTextRunStyle(runID, document.WordTextFormatPatch{Bold: &yes}); err != nil {
+		t.Fatal(err)
+	}
+	if err := editor.SetParagraphAlignment(paragraphID, document.WordAlignLeft); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Dirty() || history.CanUndo() {
+		t.Fatalf("no-op edit changed document: dirty=%v canUndo=%v", doc.Dirty(), history.CanUndo())
+	}
+}
+
+func assertPackagePartsEqual(t *testing.T, originalData []byte, savedPath string) {
+	t.Helper()
+	original := readZipParts(t, originalData)
+	savedData, err := os.ReadFile(savedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := readZipParts(t, savedData)
+	for name, originalPart := range original {
+		if name == "word/document.xml" {
+			continue
+		}
+		if !bytes.Equal(originalPart, saved[name]) {
+			t.Errorf("untouched package part %q changed", name)
+		}
+	}
+}
+
+func readZipPart(t *testing.T, data []byte, name string) []byte {
+	t.Helper()
+	return readZipParts(t, data)[name]
+}
+
+func readZipParts(t *testing.T, data []byte) map[string][]byte {
+	t.Helper()
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := make(map[string][]byte, len(reader.File))
+	for _, file := range reader.File {
+		stream, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		part, readErr := io.ReadAll(stream)
+		closeErr := stream.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		parts[file.Name] = part
+	}
+	return parts
+}
+
+func TestWordTextEditDoesNotDropUnescapedMarkup(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	runID, _ := findRunByText(t, doc.WordBlocks(), "bold")
+	if err := requireWordTextEditor(t, doc).ReplaceTextRun(runID, "<& \"text\""); err != nil {
+		t.Fatal(err)
+	}
+	data, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(readZipPart(t, data, "word/document.xml"))
+	if strings.Contains(text, "<& \"text\"") || !strings.Contains(text, `&lt;&amp; &#34;text&#34;`) {
+		t.Fatalf("text was not safely XML escaped: %s", text)
+	}
+}

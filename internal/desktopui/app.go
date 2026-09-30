@@ -96,7 +96,18 @@ type App struct {
 	workspaceWriterDone    chan struct{}
 	fileCommandResults     chan fileCommandResult
 	gridLoadResults        chan gridLoadResult
+	gridPictureMetaResults chan gridPictureMetadataResult
+	gridPictureResults     chan gridPicturePreviewResult
+	gridPictureCommands    chan gridPictureCommandResult
 	formatResults          chan spreadsheetFormatResult
+	wordCommandResults     chan wordCommandResult
+	wordImageResults       chan wordImageDecodeResult
+	wordImagePickerResults chan wordImagePickerResult
+	wordImagePickerRunning bool
+	wordImageFilePicker    func() (string, error)
+	xlsxImagePickerResults chan spreadsheetImagePickerResult
+	xlsxImagePickerRunning bool
+	xlsxImageFilePicker    func() (string, error)
 	saveResults            chan saveResult
 	openResults            chan openResult
 	saving                 bool
@@ -109,38 +120,45 @@ type App struct {
 
 func New(window *app.Window, initialPath string) *App {
 	a := &App{
-		window:               window,
-		theme:                material.NewTheme(),
-		documentSessionState: newDocumentSessionState(initialPath),
-		activeTabID:          workspace.RecentTabID,
-		status:               "打开一个 .xlsx 或 .docx 文件开始预览",
-		gridLoadResults:      make(chan gridLoadResult, 8),
-		formatResults:        make(chan spreadsheetFormatResult, 8),
-		saveResults:          make(chan saveResult, 1),
-		openResults:          make(chan openResult, 1),
-		fileCommandResults:   make(chan fileCommandResult, 1),
-		shutdown:             make(chan struct{}),
-		sessions:             make(map[string]*documentSessionState),
-		tabMeta:              make(map[string]workspace.Tab),
-		tabButtons:           make(map[string]*widget.Clickable),
-		tabCloseButtons:      make(map[string]*widget.Clickable),
-		homeSection:          homeSectionRecent,
-		homeTypeFilter:       "全部",
-		homeSortModifiedDesc: true,
-		homeActionButtons:    make(map[string]*widget.Clickable),
-		homeNavButtons:       make(map[string]*widget.Clickable),
-		homeFilterButtons:    make(map[string]*widget.Clickable),
-		homeOpenButtons:      make(map[string]*widget.Clickable),
-		homeFavoriteButtons:  make(map[string]*widget.Clickable),
-		homeMoreButtons:      make(map[string]*widget.Clickable),
-		homeFavorites:        make(map[string]bool),
-		homeMetadata:         make(map[string]homeFileMetadata),
-		homeMetadataResults:  make(chan homeMetadataResult, 8),
-		workspaceTabsList:    widget.List{List: layout.List{Axis: layout.Horizontal}},
-		createActionsList:    widget.List{List: layout.List{Axis: layout.Horizontal}},
-		createMenuList:       widget.List{List: layout.List{Axis: layout.Vertical}},
-		homeContentList:      widget.List{List: layout.List{Axis: layout.Vertical}},
-		recentList:           widget.List{List: layout.List{Axis: layout.Vertical}},
+		window:                 window,
+		theme:                  material.NewTheme(),
+		documentSessionState:   newDocumentSessionState(initialPath),
+		activeTabID:            workspace.RecentTabID,
+		status:                 "打开一个 .xlsx 或 .docx 文件开始预览",
+		gridLoadResults:        make(chan gridLoadResult, 8),
+		gridPictureMetaResults: make(chan gridPictureMetadataResult, 8),
+		gridPictureResults:     make(chan gridPicturePreviewResult, 64),
+		gridPictureCommands:    make(chan gridPictureCommandResult, 8),
+		formatResults:          make(chan spreadsheetFormatResult, 8),
+		wordCommandResults:     make(chan wordCommandResult, 8),
+		wordImageResults:       make(chan wordImageDecodeResult, 64),
+		wordImagePickerResults: make(chan wordImagePickerResult, 1),
+		xlsxImagePickerResults: make(chan spreadsheetImagePickerResult, 1),
+		saveResults:            make(chan saveResult, 1),
+		openResults:            make(chan openResult, 1),
+		fileCommandResults:     make(chan fileCommandResult, 1),
+		shutdown:               make(chan struct{}),
+		sessions:               make(map[string]*documentSessionState),
+		tabMeta:                make(map[string]workspace.Tab),
+		tabButtons:             make(map[string]*widget.Clickable),
+		tabCloseButtons:        make(map[string]*widget.Clickable),
+		homeSection:            homeSectionRecent,
+		homeTypeFilter:         "全部",
+		homeSortModifiedDesc:   true,
+		homeActionButtons:      make(map[string]*widget.Clickable),
+		homeNavButtons:         make(map[string]*widget.Clickable),
+		homeFilterButtons:      make(map[string]*widget.Clickable),
+		homeOpenButtons:        make(map[string]*widget.Clickable),
+		homeFavoriteButtons:    make(map[string]*widget.Clickable),
+		homeMoreButtons:        make(map[string]*widget.Clickable),
+		homeFavorites:          make(map[string]bool),
+		homeMetadata:           make(map[string]homeFileMetadata),
+		homeMetadataResults:    make(chan homeMetadataResult, 8),
+		workspaceTabsList:      widget.List{List: layout.List{Axis: layout.Horizontal}},
+		createActionsList:      widget.List{List: layout.List{Axis: layout.Horizontal}},
+		createMenuList:         widget.List{List: layout.List{Axis: layout.Vertical}},
+		homeContentList:        widget.List{List: layout.List{Axis: layout.Vertical}},
+		recentList:             widget.List{List: layout.List{Axis: layout.Vertical}},
 	}
 	if window != nil {
 		a.initializeWorkspace()
@@ -198,15 +216,20 @@ func (a *App) open(path string) error {
 }
 
 type loadedDocument struct {
-	path    string
-	book    document.Spreadsheet
-	word    *docx.Document
-	jsonDoc *jsondoc.Document
-	sheets  []string
+	path       string
+	book       document.Spreadsheet
+	word       *docx.Document
+	wordBlocks []document.WordBlock
+	jsonDoc    *jsondoc.Document
+	sheets     []string
 }
 type openResult struct {
 	loaded loadedDocument
 	err    error
+}
+
+func cloneWordBlockSnapshot(blocks []document.WordBlock) []document.WordBlock {
+	return append([]document.WordBlock{}, blocks...)
 }
 
 func loadDocument(path string) (loadedDocument, error) {
@@ -228,7 +251,7 @@ func loadDocument(path string) (loadedDocument, error) {
 		if err != nil {
 			return loadedDocument{}, err
 		}
-		return loadedDocument{path: path, word: word}, nil
+		return loadedDocument{path: path, word: word, wordBlocks: cloneWordBlockSnapshot(word.WordBlocks())}, nil
 	case ".json":
 		jsonDocument, err := jsondoc.Open(path)
 		if err != nil {
@@ -281,6 +304,12 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	}
 	state := newDocumentSessionState(loaded.path)
 	state.book, state.word = loaded.book, loaded.word
+	if loaded.word != nil {
+		state.wordBlocks = cloneWordBlockSnapshot(loaded.wordBlocks)
+		if loaded.wordBlocks == nil {
+			state.wordBlocks = cloneWordBlockSnapshot(loaded.word.WordBlocks())
+		}
+	}
 	a.documentSessionState = state
 	a.book, a.word, a.sheets = loaded.book, loaded.word, loaded.sheets
 	a.jsonDoc = loaded.jsonDoc
@@ -587,6 +616,7 @@ func (a *App) applyWordEdit() error {
 	if err := a.word.ReplaceParagraph(a.selectedBlock, a.wordEditor.Text()); err != nil {
 		return err
 	}
+	a.documentSessionState.wordBlocks = cloneWordBlockSnapshot(a.word.WordBlocks())
 	a.persistActiveSession()
 	return nil
 }

@@ -15,7 +15,7 @@ Render the common body content of DOCX files in document order, including paragr
 
 ## Current evidence and sample corpus
 
-The user-provided external sample `大猫OA软件使用说明.docx` contains 106 body paragraphs, 28 inline drawings, 28 image relationships, and 28 PNG media parts. It contains no tables or floating drawings. Use it as a local regression sample without checking the document into the repository. The regression accepts its path through `GLANCE_OFFICE_TEST_DOCX`. Keep synthetic DOCX fixtures for table content, text/image interleaving, and relationship edge cases.
+The user-provided external sample `大猫OA软件使用说明.docx` contains 106 body paragraphs and 28 inline drawings/image relationships. Inspection found one dangling image relationship (`rId4` targets `../NULL`) with no package part; the package has 27 actual PNG media parts, so 27 images resolve and one drawing must render as a visible missing-media placeholder. The sample contains no tables or floating drawings. Use it as a local regression sample without checking the document into the repository. The regression accepts its path through `GLANCE_OFFICE_TEST_DOCX`. Keep synthetic DOCX fixtures for table content, text/image interleaving, and relationship edge cases.
 
 ## Architecture
 
@@ -64,7 +64,7 @@ DOCX adapter (internal/format/docx)
 
 - Adapter fixtures cover mixed text runs, boundary whitespace, text and formatting edits, paragraph alignment, inline images between text runs, images in table cells, relationship resolution, supported PNG/JPEG replacement/insertion/deletion, move/resize dimensions, malformed relationships, and unsupported content preservation.
 - Save/reopen tests reopen the produced DOCX and verify edited text/media/relationships and representative untouched package parts. No operation is enabled for overwrite before its corresponding round-trip evidence passes.
-- A desktop regression opens the user's sample through `GLANCE_OFFICE_TEST_DOCX`, verifies all 28 inline pictures are projected in order with the expected aspect ratios, edits text and resizes or replaces an image on a copy, saves, reopens, and checks the original file is unchanged.
+- A desktop regression opens the user's sample through `GLANCE_OFFICE_TEST_DOCX`, verifies 27 resolved inline pictures in order with the expected aspect ratios plus one missing-media placeholder, edits text and resizes or replaces an image on a copy, saves, reopens, and checks the original file is unchanged.
 - UI tests cover selection, text editor handoff, ribbon formatting/paragraph commands, image selection and resize/move gestures, ribbon capability state, undo/redo, and async result application. Visual checks use the sample and synthetic table fixture; they do not claim Word page pagination.
 - Update `docs/office-support.md`, `docs/office-library-evaluation.md`, and the evidence-based compatibility matrix at `../tools/docs/compatibility/office-feature-matrix.md` as verified features land.
 

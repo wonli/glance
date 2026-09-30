@@ -40,6 +40,7 @@ func (w *Workbook) recordHistoryLocked(before []byte) error {
 		w.undo = append([]workbookHistoryEntry(nil), w.undo[len(w.undo)-workbookHistoryLimit:]...)
 	}
 	w.redo = nil
+	w.pictureIndexes = nil
 	return nil
 }
 
@@ -72,6 +73,7 @@ func (w *Workbook) applyHistory(undo bool) (bool, error) {
 	*to = append(*to, entry)
 	previous := w.file
 	w.file = restored
+	w.pictureIndexes = nil
 	if previous != nil {
 		_ = previous.Close()
 	}

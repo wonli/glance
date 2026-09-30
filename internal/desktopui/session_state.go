@@ -17,6 +17,7 @@ type documentSessionState struct {
 	path                          string
 	book                          document.Spreadsheet
 	word                          *docx.Document
+	wordBlocks                    []document.WordBlock
 	jsonDoc                       *jsondoc.Document
 	sheets                        []string
 	sheet                         string
@@ -40,17 +41,51 @@ type documentSessionState struct {
 	selectionSet                  bool
 	selectionDragging             bool
 	toolbarTab                    spreadsheetToolbarTab
-	toolbarTabs                   [7]widget.Clickable
+	toolbarTabs                   [8]widget.Clickable
 	toolbarActionList             widget.List
-	toolbarActionButtons          [25]widget.Clickable
+	toolbarActionButtons          [29]widget.Clickable
 	toolbarPickerButtons          [9]widget.Clickable
 	toolbarPicker                 spreadsheetToolbarPicker
 	toolbarPickerSlot             int
+	wordToolbarTab                wordToolbarTab
+	wordToolbarTabs               [3]widget.Clickable
+	wordToolbarActionList         widget.List
+	wordToolbarActionButtons      map[string]*widget.Clickable
+	wordToolbarColorButtons       [8]widget.Clickable
+	wordToolbarColorPicker        bool
+	wordObjectButtons             map[string]*widget.Clickable
+	wordResizeHandleButtons       map[string]*widget.Clickable
+	wordImageInteractions         map[string]*wordImageInteraction
+	wordImageCache                *wordImageCache
+	wordImagePending              map[string]uint64
+	wordImageVersions             map[string]uint64
+	wordImageErrors               map[string]string
+	wordImageDropTargetID         string
+	wordImageDropParagraphID      string
+	wordClipboardTarget           struct{}
+	wordClipboardRunID            string
 	formatRunning                 bool
 	valueFilter                   *ValueFilter
 	clipboardTarget               struct{}
 	selectedBlock                 int
 	selectedBlockEditable         bool
+	selectedWordRunID             string
+	selectedWordParagraphID       string
+	selectedWordImageID           string
+	gridPictures                  []document.SpreadsheetImage
+	gridPicturesSheet             string
+	gridPicturesRequestedSheet    string
+	gridPicturesLoading           bool
+	gridPicturesError             string
+	selectedGridPictureID         string
+	gridPictureGesture            gridPictureGesture
+	gridPictureCommitID           string
+	gridPictureCommitPreview      gridPictureGeometry
+	gridPictureCommitActive       bool
+	gridPictureCache              *wordImageCache
+	gridPicturePending            map[string]uint64
+	gridPictureVersions           map[string]uint64
+	gridPictureErrors             map[string]string
 	cellEdit                      cellEditState
 	lastGridWidth, lastGridHeight float64
 	virtualGrid                   *gridViewport
@@ -67,7 +102,7 @@ type ValueFilter struct {
 }
 
 func newDocumentSessionState(path string) *documentSessionState {
-	s := &documentSessionState{path: path, gridList: widget.List{List: layout.List{Axis: layout.Vertical}}, wordListState: widget.List{List: layout.List{Axis: layout.Vertical}}, toolbarTab: toolbarTabHome, toolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, cellButtons: make(map[string]*widget.Clickable), sheetButtons: make(map[string]*widget.Clickable), blockButtons: make(map[int]*widget.Clickable), selectedBlock: -1}
+	s := &documentSessionState{path: path, gridList: widget.List{List: layout.List{Axis: layout.Vertical}}, wordListState: widget.List{List: layout.List{Axis: layout.Vertical}}, toolbarTab: toolbarTabHome, toolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionButtons: make(map[string]*widget.Clickable), wordObjectButtons: make(map[string]*widget.Clickable), wordResizeHandleButtons: make(map[string]*widget.Clickable), wordImageInteractions: make(map[string]*wordImageInteraction), wordImageCache: newWordImageCache(wordImageCacheLimit), wordImagePending: make(map[string]uint64), wordImageVersions: make(map[string]uint64), wordImageErrors: make(map[string]string), gridPictureCache: newWordImageCache(wordImageCacheLimit), gridPicturePending: make(map[string]uint64), gridPictureVersions: make(map[string]uint64), gridPictureErrors: make(map[string]string), cellButtons: make(map[string]*widget.Clickable), sheetButtons: make(map[string]*widget.Clickable), blockButtons: make(map[int]*widget.Clickable), selectedBlock: -1}
 	s.cellEditor.SingleLine = true
 	s.cellEditor.Submit = true
 	s.formulaEditor.SingleLine = true
@@ -76,7 +111,7 @@ func newDocumentSessionState(path string) *documentSessionState {
 	s.nameBox.Submit = true
 	s.sheetNameEditor.SingleLine = true
 	s.sheetNameEditor.Submit = true
-	s.wordEditor.SingleLine = true
+	s.wordEditor.SingleLine = false
 	s.jsonEditor.SingleLine = false
 	return s
 }

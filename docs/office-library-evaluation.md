@@ -19,13 +19,13 @@ Source checked: [gioui.org/app on pkg.go.dev](https://pkg.go.dev/gioui.org/app).
 
 ### XLSX: Excelize (selected)
 
-The implementation uses `github.com/xuri/excelize/v2 v2.11.0`. The adapter exposes bounded cell windows, common styles, merge ranges, row heights, and column widths through neutral DTOs. `internal/format/xlsx/workbook_test.go` covers synthetic styled/merged/dimension workbooks plus the local employee-performance sample, including save/reopen checks after edits/resizes and unchanged source bytes. Formula calculation and universal unsupported-part preservation are not established.
+The implementation uses `github.com/xuri/excelize/v2 v2.11.0`. The adapter exposes bounded cell windows, common styles, merge ranges, row heights, column widths, and ordinary over-cell pictures through neutral DTOs. `internal/format/xlsx/pictures.go` uses the public picture read/add/delete surface behind the adapter; tests show that `GetPictures` returns drawing scale rounded to two decimal places and `DeletePicture(sheet, cell)` targets a cell rather than one drawing, so same-anchor pictures are read-only. The first slice does not preserve full DrawingML anchor geometry or promise exact Excel layout. Synthetic picture fixtures cover insert/replace/move/resize/delete, undo/redo, save/reopen, and unrelated content preservation. The local employee-performance sample has malformed `xl/styles.xml` (`<font>` closed by `</name>`) and is not an Excelize-readable evidence source. Formula calculation and universal unsupported-part preservation are not established.
 
 Sources: [Excelize documentation](https://xuri.me/excelize/en/index.html), [source repository](https://github.com/xuri/excelize).
 
 ### DOCX: project-local OOXML adapter (selected for the first slice)
 
-`internal/format/docx` uses Go ZIP/XML libraries for a narrow paragraph-text replacement path. It preserves non-document package parts and limits editing to paragraphs represented by a single text run. Local sample round-trip tests compare package parts. This does not promise pagination or broad Word fidelity.
+`internal/format/docx` uses Go ZIP/XML libraries for neutral ordered body projection and targeted text, formatting, alignment, and inline-image operations. The Gio renderer handles paragraphs, tables, and inline raster previews; package types remain behind the adapter. Its toolbar reuses the Excel Ribbon chrome and adds Word-specific groups. The supplied sample round-trip verifies text and image resize edits, untouched package parts, 27 resolved images, and one dangling media relationship that stays a placeholder. Synthetic fixtures cover table-cell image rendering and editing. This does not promise pagination, floating-image layout, or broad Word fidelity.
 
 ### Deferred third-party DOCX candidates
 
@@ -51,7 +51,7 @@ For every candidate, record: open success/error, extracted model, visible render
 
 ## Provisional product boundary
 
-- First XLSX editing slice: constants in ordinary cells; formula calculation, broad formatting edits, range paste, macros, charts, and pivots remain out of scope.
+- First XLSX editing slice: constants in ordinary cells plus ordinary over-cell picture objects with PNG/JPEG/GIF preview and safe unique-anchor edits. Formula calculation, broad formatting edits, macros, charts, pivots, in-cell images, and non-picture drawings remain out of scope.
 - First DOCX editing slice: define and test a narrow text-editing operation. If preserving unrelated structure cannot be demonstrated, ship DOCX as preview-only until it can.
 - `.xls` and `.doc` are separate format work; do not infer legacy-format support from `.xlsx`/`.docx` support.
 

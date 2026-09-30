@@ -16,7 +16,6 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
-	"glance/internal/format/docx"
 	"glance/internal/format/xlsx"
 )
 
@@ -71,6 +70,7 @@ func (a *App) layoutWorkspaceBody(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) processAsyncResults() {
+	a.pollGridPictureResults()
 	select {
 	case result := <-a.homeMetadataResults:
 		if result.generation == a.homeMetadataGeneration {
@@ -172,6 +172,102 @@ func (a *App) processAsyncResults() {
 						a.pendingCloseTabID = ""
 					}
 				}
+			}
+		}
+	default:
+	}
+	select {
+	case result := <-a.wordImagePickerResults:
+		a.handleWordImagePickerResult(result)
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	default:
+	}
+	select {
+	case result := <-a.xlsxImagePickerResults:
+		a.handleSpreadsheetImagePickerResult(result)
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	default:
+	}
+	select {
+	case result := <-a.wordCommandResults:
+		if result.state != nil {
+			result.state.formatRunning = false
+		}
+		if result.generation == a.documentGeneration && result.state == a.documentSessionState {
+			if result.err != nil {
+				a.status = wordCommandError(result.operation, result.err)
+			} else if !result.history || result.applied {
+				if result.blocks != nil {
+					result.state.wordBlocks = result.blocks
+				}
+				if result.history {
+					invalidateAllWordImagePreviews(result.state)
+				} else if result.imageID != "" {
+					invalidateWordImagePreview(result.state, result.imageID)
+				}
+				reconcileWordSelection(result.state, result.history)
+				if result.history {
+					if result.undo {
+						a.status = "已撤销 Word 编辑"
+					} else {
+						a.status = "已重做 Word 编辑"
+					}
+				} else {
+					a.status = wordCommandError(result.operation, nil)
+				}
+				if result.clearImageSelection && result.state.selectedWordImageID == result.imageID {
+					result.state.selectedWordImageID = ""
+				}
+				if result.selectInsertedImage && result.imageID != "" {
+					result.state.selectedWordRunID = ""
+					result.state.selectedWordImageID = result.imageID
+					result.state.selectedBlock = -1
+					result.state.selectedBlockEditable = false
+					result.state.wordToolbarTab = wordTabPicture
+					for _, paragraph := range allWordParagraphs(result.state.wordBlocks) {
+						for _, inline := range paragraph.Inlines {
+							if inline.Image != nil && inline.Image.ID == result.imageID {
+								result.state.selectedWordParagraphID = paragraph.ID
+							}
+						}
+					}
+				}
+				a.persistActiveSession()
+			}
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		}
+	default:
+	}
+	select {
+	case result := <-a.wordImageResults:
+		state := result.state
+		if state != nil {
+			if pendingVersion, pending := state.wordImagePending[result.id]; pending && pendingVersion == result.version {
+				delete(state.wordImagePending, result.id)
+			}
+			if !state.closed.Load() && state.wordImageVersions[result.id] == result.version {
+				if result.err != nil {
+					state.wordImageErrors[result.id] = result.err.Error()
+					if state == a.documentSessionState {
+						a.status = "图片预览失败：" + result.err.Error()
+					}
+				} else if !state.wordImageCache.Put(result.id, result.image) {
+					state.wordImageErrors[result.id] = "图片无法放入文档预览缓存"
+					if state == a.documentSessionState {
+						a.status = "图片预览失败：图片无法放入文档预览缓存"
+					}
+				} else {
+					delete(state.wordImageErrors, result.id)
+				}
+			}
+			if state == a.documentSessionState && a.window != nil {
+				a.window.Invalidate()
 			}
 		}
 	default:
@@ -641,29 +737,9 @@ func (a *App) layoutGridRow(gtx layout.Context, row int) layout.Dimensions {
 }
 
 func (a *App) layoutWord(gtx layout.Context) layout.Dimensions {
-	blocks := a.word.Blocks()
-	list := a.wordList()
-	return material.List(a.theme, list).Layout(gtx, len(blocks), func(gtx layout.Context, index int) layout.Dimensions {
-		block := blocks[index]
-		if block.Kind == docx.TableBlock {
-			return layout.Inset{Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, tableRows(a, block.Rows)...)
-			})
-		}
-		button := a.blockButton(index)
-		if button.Clicked(gtx) {
-			a.selectedBlock = index
-			a.selectedBlockEditable = block.Editable
-			a.wordEditor.SetText(block.Text)
-		}
-		return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.UniformInset(unit.Dp(12)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Body1(a.theme, block.Text).Layout(gtx)
-				})
-			})
-		})
-	})
+	a.handleWordToolbarEvents(gtx)
+	a.handleWordClipboardEvents(gtx)
+	return a.layoutWordFlow(gtx)
 }
 
 func (a *App) layoutEditor(gtx layout.Context) layout.Dimensions {
@@ -683,15 +759,14 @@ func (a *App) layoutEditor(gtx layout.Context) layout.Dimensions {
 		}
 		return editorPanel(gtx, a, a.selectedCell, &a.cellEditor, "应用单元格", &a.applyButton)
 	}
-	if a.word != nil && a.selectedBlock >= 0 {
+	if a.word != nil && a.selectedWordRunID != "" {
 		if a.applyButton.Clicked(gtx) {
-			if err := a.applyWordEdit(); err != nil {
-				a.status = "修改失败：" + err.Error()
-			} else {
-				a.status = "段落已修改；点击保存写入原文件"
-			}
+			runID, value := a.selectedWordRunID, a.wordEditor.Text()
+			a.runWordCommand("编辑文字", func(editor document.WordTextEditor) error {
+				return editor.ReplaceTextRun(runID, value)
+			})
 		}
-		return editorPanel(gtx, a, "编辑所选段落", &a.wordEditor, "应用段落", &a.applyButton)
+		return editorPanel(gtx, a, "编辑所选文字", &a.wordEditor, "应用文字", &a.applyButton)
 	}
 	return layout.Dimensions{}
 }

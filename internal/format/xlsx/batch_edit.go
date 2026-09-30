@@ -136,6 +136,7 @@ func (w *Workbook) restoreSnapshotLocked(snapshot []byte) error {
 	}
 	previous := w.file
 	w.file = restored
+	w.pictureIndexes = nil
 	if previous != nil {
 		_ = previous.Close()
 	}

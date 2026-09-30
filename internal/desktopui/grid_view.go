@@ -32,6 +32,8 @@ type gridViewport struct {
 	PendingSelectionLoad        bool
 	Resize                      *gridResizeSession
 	ResizeCursor                resizeAxis
+	PictureResizeCursor         bool
+	PictureMoveCursor           bool
 	GeometryChanged             bool
 	Loading                     bool
 	RequestedRange              document.CellRange

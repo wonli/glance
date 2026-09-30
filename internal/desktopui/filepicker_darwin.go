@@ -57,3 +57,21 @@ func chooseSavePath(ext string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+func chooseOfficeImageFile() (string, error) {
+	cmd := exec.Command("osascript", "-e", `set pickedFile to choose file with prompt "选择 PNG 或 JPEG 图片"`+"\n"+`POSIX path of pickedFile`)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if strings.Contains(message, "User canceled") {
+			return "", nil
+		}
+		if message == "" {
+			message = err.Error()
+		}
+		return "", errors.New(message)
+	}
+	return strings.TrimSpace(string(output)), nil
+}

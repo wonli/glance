@@ -49,3 +49,8 @@ func windowsPicker(command string) (string, error) {
 	}
 	return strings.TrimSpace(string(output)), nil
 }
+
+func chooseOfficeImageFile() (string, error) {
+	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = 'PNG or JPEG images (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }"
+	return windowsPicker(command)
+}

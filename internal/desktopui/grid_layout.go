@@ -154,6 +154,11 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 	a.lastGridWidth, a.lastGridHeight = contentW, contentH
 	visible := visibleCellWindow(v.Rows, v.Columns, v.X, v.Y, contentW, contentH)
 	a.pollGridLoad(v)
+	if imageReader, ok := any(a.book).(document.SpreadsheetImageReader); ok {
+		a.requestGridPictureMetadata(a.documentSessionState, imageReader, a.sheet)
+	} else if a.documentSessionState.gridPicturesSheet != "" {
+		a.invalidateGridPictures(a.documentSessionState)
+	}
 	if !v.Loading && !(v.WindowSheet == a.sheet && containsRange(v.WindowRange, visible)) && !(v.FailedSheet == a.sheet && v.FailedRange == visible) {
 		a.requestGridWindow(v, reader, a.sheet, visible)
 	}
@@ -230,9 +235,17 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			if v.Resize == nil {
 				v.ResizeCursor = 0
 			}
+			if a.documentSessionState.gridPictureGesture.Mode == gridPictureGestureNone {
+				v.PictureResizeCursor = false
+				v.PictureMoveCursor = false
+			}
 		case pointer.Scroll:
 			dx, dy := gridScrollDelta(float64(pe.Scroll.X), float64(pe.Scroll.Y), pe.Modifiers.Contain(key.ModShift))
 			v.scroll(dx, dy, contentW, contentH)
+			if a.documentSessionState.gridPictureGesture.Mode != gridPictureGestureNone {
+				point := gridPictureContentPointer(v, pe.Position, rowHeaderPx, columnHeaderPx)
+				a.documentSessionState.gridPictureGesture.rebase(point)
+			}
 			if v.Resize != nil {
 				rs := v.Resize.State
 				edge := resizeScreenEdge(v, rs, gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
@@ -247,8 +260,19 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			if hit {
 				v.ResizeCursor = axis
 			}
+			v.PictureResizeCursor, v.PictureMoveCursor = false, false
+			if v.Resize == nil && v.ResizeCursor == 0 {
+				pictureHit := gridPictureHitAt(v, activeGridPictures(a.documentSessionState, a.sheet), a.documentSessionState.selectedGridPictureID, image.Pt(int(pe.Position.X), int(pe.Position.Y)), image.Rect(rowHeaderPx, columnHeaderPx, gtx.Constraints.Max.X, gtx.Constraints.Max.Y), rowHeaderPx, columnHeaderPx, gridPictureResizeHandleSize(gtx))
+				v.PictureResizeCursor = pictureHit.ResizeHandle
+				v.PictureMoveCursor = pictureHit.ImageID != "" && !pictureHit.ResizeHandle
+			}
 			if v.Resize != nil {
 				v.ResizeCursor = v.Resize.State.Axis
+			}
+			if a.documentSessionState.gridPictureGesture.Mode == gridPictureGestureResize {
+				v.PictureResizeCursor = true
+			} else if a.documentSessionState.gridPictureGesture.Mode == gridPictureGestureMove {
+				v.PictureMoveCursor = true
 			}
 		case pointer.Press:
 			if a.cellEdit.Editing {
@@ -282,6 +306,28 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				gtx.Execute(pointer.GrabCmd{Tag: &v.PointerTag, ID: pe.PointerID})
 				break
 			}
+			state := a.documentSessionState
+			pictureHit := gridPictureHitAt(v, activeGridPictures(state, a.sheet), state.selectedGridPictureID, image.Pt(int(pe.Position.X), int(pe.Position.Y)), image.Rect(rowHeaderPx, columnHeaderPx, gtx.Constraints.Max.X, gtx.Constraints.Max.Y), rowHeaderPx, columnHeaderPx, gridPictureResizeHandleSize(gtx))
+			if pictureHit.ImageID != "" {
+				setSelectedGridPicture(state, pictureHit.ImageID)
+				a.selectionDragging = false
+				if picture, found := gridPictureByID(state.gridPictures, pictureHit.ImageID); found && picture.Editable && !state.formatRunning && !a.saving {
+					mode := gridPictureGestureMove
+					if pictureHit.ResizeHandle {
+						mode = gridPictureGestureResize
+					}
+					geometry := gridPictureContentGeometry(v, picture)
+					point := gridPictureContentPointer(v, pe.Position, rowHeaderPx, columnHeaderPx)
+					state.gridPictureGesture.begin(picture.ID, mode, geometry, point)
+					gtx.Execute(pointer.GrabCmd{Tag: &v.PointerTag, ID: pe.PointerID})
+				}
+				gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
+				v.PictureResizeCursor = pictureHit.ResizeHandle
+				v.PictureMoveCursor = !pictureHit.ResizeHandle
+				a.window.Invalidate()
+				break
+			}
+			setSelectedGridPicture(state, "")
 			row, col, hit := cellAtPoint(v.Rows, v.Columns, v.X, v.Y, image.Pt(int(pe.Position.X), int(pe.Position.Y)), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
 			if hit {
 				position := selectionAnchor(v.Window.Merges, CellPosition{Row: row - 1, Column: col - 1})
@@ -312,6 +358,15 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				v.updateResize(pos)
 				v.ResizeCursor = v.Resize.State.Axis
 				a.window.Invalidate()
+			} else if a.documentSessionState.gridPictureGesture.Mode != gridPictureGestureNone {
+				point := gridPictureContentPointer(v, pe.Position, rowHeaderPx, columnHeaderPx)
+				a.documentSessionState.gridPictureGesture.update(point)
+				if a.documentSessionState.gridPictureGesture.Mode == gridPictureGestureResize {
+					v.PictureResizeCursor = true
+				} else {
+					v.PictureMoveCursor = true
+				}
+				a.window.Invalidate()
 			} else if a.selectionDragging {
 				if position, hit := selectionAtPoint(v, image.Pt(int(pe.Position.X), int(pe.Position.Y))); hit {
 					position = selectionAnchor(v.Window.Merges, position)
@@ -341,6 +396,22 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				}
 				v.ResizeCursor = 0
 				a.window.Invalidate()
+			} else if a.documentSessionState.gridPictureGesture.Mode != gridPictureGestureNone {
+				state := a.documentSessionState
+				mode, id := state.gridPictureGesture.Mode, state.gridPictureGesture.ImageID
+				preview, changed := state.gridPictureGesture.finish()
+				v.PictureResizeCursor, v.PictureMoveCursor = false, false
+				if changed {
+					if picture, found := gridPictureByID(state.gridPictures, id); found {
+						target, err := gridPicturePlacementAt(v, picture, preview)
+						if err != nil {
+							a.status = "图片位置无效：" + err.Error()
+						} else {
+							a.startGridPictureMoveResize(state, picture, mode, target, preview)
+						}
+					}
+				}
+				a.window.Invalidate()
 			} else if a.selectionDragging {
 				a.selectionDragging = false
 				a.persistViewState()
@@ -350,6 +421,10 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			if v.Resize != nil {
 				v.cancelResize()
 				v.ResizeCursor = 0
+				a.window.Invalidate()
+			} else if a.documentSessionState.gridPictureGesture.Mode != gridPictureGestureNone {
+				a.documentSessionState.gridPictureGesture.cancel()
+				v.PictureResizeCursor, v.PictureMoveCursor = false, false
 				a.window.Invalidate()
 			} else {
 				a.selectionDragging = false
@@ -366,6 +441,14 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		pointer.CursorEastWestResize.Add(gtx.Ops)
 	} else if v.ResizeCursor == resizeRows {
 		pointer.CursorNorthSouthResize.Add(gtx.Ops)
+	} else if v.PictureResizeCursor {
+		pointer.CursorSouthEastResize.Add(gtx.Ops)
+	} else if v.PictureMoveCursor {
+		if a.documentSessionState.gridPictureGesture.Mode == gridPictureGestureMove {
+			pointer.CursorGrabbing.Add(gtx.Ops)
+		} else {
+			pointer.CursorGrab.Add(gtx.Ops)
+		}
 	}
 	dims := paintVirtualGrid(gtx, a, v)
 	paint.FillShape(gtx.Ops, gridLine, clip.Stroke{Path: gridShape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
@@ -378,6 +461,8 @@ func (a *App) updateGridSelection(v *gridViewport, position CellPosition, extend
 	if state == nil || v == nil {
 		return
 	}
+	setSelectedGridPicture(state, "")
+	state.gridPictureGesture.cancel()
 	state.selection = updatedSelection(state.selection, state.selectionSet, position, extend)
 	state.selectionSet = true
 	position = state.selection.Active

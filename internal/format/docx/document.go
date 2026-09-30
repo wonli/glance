@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"glance/internal/document"
 	"glance/internal/fileutil"
 )
 
@@ -38,14 +39,26 @@ type part struct {
 type textSpan struct{ start, end int }
 
 type Document struct {
-	mu          sync.Mutex
-	path        string
-	parts       []part
-	documentIdx int
-	blocks      []Block
-	spans       [][]textSpan
-	dirty       bool
-	closed      bool
+	mu                   sync.Mutex
+	path                 string
+	parts                []part
+	documentIdx          int
+	blocks               []Block
+	spans                [][]textSpan
+	wordBlocks           []document.WordBlock
+	wordImages           map[string]int
+	wordImageTargets     map[string]wordImageTarget
+	wordInlineTargets    map[string]wordInlineTarget
+	wordParagraphInlines map[string][]string
+	wordTextTargets      map[string]wordTextTarget
+	wordParagraphTargets map[string]*wordXMLNode
+	undo                 []wordHistoryEntry
+	redo                 []wordHistoryEntry
+	historyState         uint64
+	savedHistoryState    uint64
+	nextHistoryState     uint64
+	dirty                bool
+	closed               bool
 }
 
 func Open(path string) (*Document, error) {
@@ -68,6 +81,7 @@ func OpenSnapshot(data []byte) (*Document, error) {
 		return nil, fmt.Errorf("read DOCX snapshot: %w", err)
 	}
 	doc := &Document{documentIdx: -1}
+	doc.historyState, doc.savedHistoryState, doc.nextHistoryState = 1, 1, 2
 	for _, file := range zr.File {
 		r, err := file.Open()
 		if err != nil {
@@ -119,6 +133,7 @@ func NewBlank() (*Document, error) {
 	doc, err := OpenSnapshot(buf.Bytes())
 	if err == nil {
 		doc.dirty = true
+		doc.savedHistoryState = 0
 	}
 	return doc, err
 }
@@ -134,7 +149,20 @@ func (d *Document) Snapshot() ([]byte, error) {
 }
 
 func (d *Document) SetSourcePath(path string) { d.mu.Lock(); defer d.mu.Unlock(); d.path = path }
-func (d *Document) SetDirty(dirty bool)       { d.mu.Lock(); defer d.mu.Unlock(); d.dirty = dirty }
+func (d *Document) SetDirty(dirty bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if dirty {
+		if !d.dirty && d.historyState == d.savedHistoryState {
+			d.historyState = d.nextHistoryState
+			d.nextHistoryState++
+		}
+		d.dirty = true
+		return
+	}
+	d.savedHistoryState = d.historyState
+	d.dirty = false
+}
 
 func (d *Document) packageBytes() ([]byte, error) {
 	var buf bytes.Buffer
@@ -173,8 +201,8 @@ func (d *Document) Blocks() []Block {
 	return blocks
 }
 
-// ReplaceParagraph edits a paragraph only when all its text belongs to one
-// Word run. This preserves run formatting; multi-run editing needs a richer UI.
+// ReplaceParagraph preserves the legacy paragraph-index API for existing
+// callers. New UI code should edit a selected run through WordTextEditor.
 func (d *Document) ReplaceParagraph(index int, value string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -188,39 +216,12 @@ func (d *Document) ReplaceParagraph(index int, value string) error {
 		return errors.New("paragraph has formatting or inline content that is not supported for editing")
 	}
 	span := d.spans[index][0]
-	var escaped bytes.Buffer
-	if err := xml.EscapeText(&escaped, []byte(value)); err != nil {
-		return err
-	}
-	xmlData := d.parts[d.documentIdx].data
-	preserveSpace := len(value) > 0 && strings.TrimSpace(value) != value
-	insertAt := span.start
-	if preserveSpace {
-		tagStart := bytes.LastIndex(xmlData[:span.start], []byte("<"))
-		if tagStart < 0 {
-			return errors.New("cannot locate Word text element")
-		}
-		if !bytes.Contains(xmlData[tagStart:span.start], []byte("xml:space=")) {
-			insertAt = span.start - 1
+	for runID, target := range d.wordTextTargets {
+		if target.text != nil && target.text.contentStart == span.start && target.text.contentEnd == span.end {
+			return d.replaceTextRunLocked(runID, value)
 		}
 	}
-	patched := make([]byte, 0, len(xmlData)-span.end+span.start+escaped.Len()+24)
-	patched = append(patched, xmlData[:insertAt]...)
-	if preserveSpace && insertAt < span.start {
-		patched = append(patched, []byte(` xml:space="preserve"`)...)
-		patched = append(patched, xmlData[insertAt:span.start]...)
-	}
-	patched = append(patched, escaped.Bytes()...)
-	patched = append(patched, xmlData[span.end:]...)
-	original := d.parts[d.documentIdx].data
-	d.parts[d.documentIdx].data = patched
-	if err := d.reparse(); err != nil {
-		d.parts[d.documentIdx].data = original
-		_ = d.reparse()
-		return err
-	}
-	d.dirty = true
-	return nil
+	return errors.New("paragraph text could not be resolved to an editable Word run")
 }
 
 func (d *Document) Dirty() bool {
@@ -241,6 +242,7 @@ func (d *Document) Save() error {
 	if err := d.saveAs(d.path); err != nil {
 		return err
 	}
+	d.savedHistoryState = d.historyState
 	d.dirty = false
 	return nil
 }
@@ -265,6 +267,7 @@ func (d *Document) SaveAsDocument(path string) error {
 		return err
 	}
 	d.path, d.dirty = path, false
+	d.savedHistoryState = d.historyState
 	return nil
 }
 
@@ -312,6 +315,14 @@ func (d *Document) Close() error {
 	d.parts = nil
 	d.blocks = nil
 	d.spans = nil
+	d.wordBlocks = nil
+	d.wordImages = nil
+	d.wordImageTargets = nil
+	d.wordInlineTargets = nil
+	d.wordParagraphInlines = nil
+	d.wordTextTargets = nil
+	d.wordParagraphTargets = nil
+	d.undo, d.redo = nil, nil
 	return nil
 }
 
@@ -380,6 +391,17 @@ func (d *Document) reparse() error {
 	if inBody {
 		return errors.New("unterminated Word body")
 	}
+	projection, err := projectWordDocument(d.parts, d.documentIdx)
+	if err != nil {
+		return err
+	}
+	d.wordBlocks = projection.blocks
+	d.wordImages = projection.imageParts
+	d.wordImageTargets = projection.imageTargets
+	d.wordInlineTargets = projection.inlineTargets
+	d.wordParagraphInlines = projection.paragraphInlines
+	d.wordTextTargets = projection.textTargets
+	d.wordParagraphTargets = projection.paragraphTargets
 	return nil
 }
 
@@ -418,6 +440,12 @@ func readParagraph(decoder *xml.Decoder, root xml.StartElement, data []byte) (Bl
 		case xml.EndElement:
 			if value.Name.Local == "t" && activeStart >= 0 {
 				endOffset := int(decoder.InputOffset())
+				if endOffset == activeStart {
+					spans = append(spans, textSpan{start: activeStart, end: activeStart})
+					activeStart = -1
+					depth--
+					continue
+				}
 				relative := bytes.LastIndex(data[activeStart:endOffset], []byte("</"))
 				if relative < 0 {
 					return Block{}, nil, errors.New("cannot locate end of Word text run")

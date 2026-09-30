@@ -25,6 +25,7 @@ type Workbook struct {
 	file              *excelize.File
 	dirty             bool
 	closed            bool
+	pictureIndexes    map[string]spreadsheetPictureIndex
 	undo              []workbookHistoryEntry
 	redo              []workbookHistoryEntry
 	historyState      uint64
@@ -35,6 +36,7 @@ type Workbook struct {
 var _ document.Spreadsheet = (*Workbook)(nil)
 var _ document.GridReader = (*Workbook)(nil)
 var _ document.SpreadsheetHistory = (*Workbook)(nil)
+var _ document.SpreadsheetImageReader = (*Workbook)(nil)
 
 const (
 	maxXLSXRows    = 1_048_576

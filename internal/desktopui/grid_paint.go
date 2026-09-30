@@ -126,6 +126,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 			}
 		}
 	}
+	paintGridPictures(gtx, a, v)
 	if hasSelection {
 		selectionViewport := image.Rect(rowHead, colHead, size.X, size.Y)
 		outline := color.NRGBA{R: 190, G: 211, B: 237, A: 255}
@@ -151,6 +152,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 		x1 := int(x1f-v.X) + rowHead
 		paintTextBox(gtx, a.theme, columnName(c+1), image.Rect(x0, 0, x1, colHead), mutedText, gridHeaderFill, false)
 	}
+	paintGridPictureSelection(gtx, a, v)
 	if a.cellEdit.Editing {
 		if row, col, ok := parseCellAddress(a.cellEdit.Address); ok {
 			rng := document.CellRange{StartRow: row, StartColumn: col, EndRow: row, EndColumn: col}

@@ -74,6 +74,22 @@ type SheetWindow struct {
 	ColumnWidthsChars []float64
 }
 
+// SpreadsheetImage describes an ordinary image object anchored above cells.
+// Row/Column are one-based; offsets and rendered extents are pixels at 96 DPI.
+type SpreadsheetImage struct {
+	ID, Sheet, Cell   string
+	Row, Column       int
+	OffsetX, OffsetY  int
+	WidthPx, HeightPx int
+	MediaType         string
+	Name, AltText     string
+	MoveWithCells     bool
+	SizeWithCells     bool
+	LockAspectRatio   bool
+	Editable          bool
+	ReadOnlyReason    string
+}
+
 type Spreadsheet interface {
 	SheetNames() []string
 	Range(sheet string, maxRows, maxColumns int) ([][]Cell, error)
@@ -90,6 +106,33 @@ type GridReader interface {
 	Window(sheet string, startRow, startColumn, rowCount, columnCount int) (SheetWindow, error)
 	SetRowHeight(sheet string, row int, heightPoints float64) error
 	SetColumnWidth(sheet string, column int, widthChars float64) error
+}
+
+// SpreadsheetImageReader is an optional capability for over-cell picture
+// objects. Image bytes are separate so a UI can load visible images
+// asynchronously without placing format-library values in widget state.
+type SpreadsheetImageReader interface {
+	SpreadsheetImages(sheet string) ([]SpreadsheetImage, error)
+	SpreadsheetImageBytes(imageID string) ([]byte, error)
+}
+
+// SpreadsheetImagePlacement describes a newly inserted over-cell picture.
+// Coordinates and rendered dimensions use one-based cells and 96-DPI pixels.
+type SpreadsheetImagePlacement struct {
+	Sheet, MediaType, Name, AltText string
+	Row, Column                     int
+	OffsetX, OffsetY                int
+	WidthPx, HeightPx               int
+}
+
+// SpreadsheetImageEditor is an optional capability for safe picture-object
+// mutations. Resize takes the target width and preserves the current ratio.
+type SpreadsheetImageEditor interface {
+	InsertSpreadsheetImage(placement SpreadsheetImagePlacement, data []byte) (imageID string, err error)
+	ReplaceSpreadsheetImage(imageID, mediaType string, data []byte) error
+	MoveSpreadsheetImage(imageID string, row, column, offsetX, offsetY int) error
+	ResizeSpreadsheetImage(imageID string, widthPx int) error
+	DeleteSpreadsheetImage(imageID string) error
 }
 
 // SpreadsheetFormatter is an optional capability for editing cell styles in

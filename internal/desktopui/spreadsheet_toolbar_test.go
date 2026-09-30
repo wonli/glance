@@ -60,7 +60,8 @@ func TestSpreadsheetToolbarActionsCoverHomeAndDataGroups(t *testing.T) {
 }
 
 func TestSpreadsheetToolbarActionsHaveIconGlyphsAndAccessibleLabels(t *testing.T) {
-	actions := append(append([]spreadsheetToolbarAction(nil), homeToolbarActions...), dataToolbarActions...)
+	actions := append(append(append([]spreadsheetToolbarAction(nil), homeToolbarActions...), dataToolbarActions...), insertToolbarActions...)
+	actions = append(actions, pictureToolbarActions...)
 	for _, action := range actions {
 		if action.icon == "" {
 			t.Errorf("toolbar action %q has no icon", action.label)
