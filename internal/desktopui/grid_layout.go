@@ -98,6 +98,7 @@ func layoutFormulaEditorField(gtx layout.Context, theme *material.Theme, editor 
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.Y = 0
 				style := material.Editor(theme, editor, hint)
 				style.TextSize = unit.Sp(13)
 				style.Color = color.NRGBA{R: 76, G: 85, B: 96, A: 255}

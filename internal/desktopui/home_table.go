@@ -104,10 +104,8 @@ func (a *App) layoutHomeRecentRow(gtx layout.Context, item workspace.Recent) lay
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return homeTableColumns(gtx, a.theme, false, &homeRowData{app: a, item: item, favorite: star, more: more}, "")
-				})
+			return layout.Inset{Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return homeTableColumns(gtx, a.theme, false, &homeRowData{app: a, item: item, open: button, favorite: star, more: more}, "")
 			})
 		},
 	)
@@ -116,6 +114,7 @@ func (a *App) layoutHomeRecentRow(gtx layout.Context, item workspace.Recent) lay
 type homeRowData struct {
 	app      *App
 	item     workspace.Recent
+	open     *widget.Clickable
 	favorite *widget.Clickable
 	more     *widget.Clickable
 }
@@ -178,7 +177,7 @@ func homeTableColumns(gtx layout.Context, theme *material.Theme, header bool, ro
 			return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, label.Layout)
 		}
 	}
-	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+	dataColumns := []layout.FlexChild{
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.X, gtx.Constraints.Max.X = nameWidth, nameWidth
 			if header {
@@ -235,6 +234,17 @@ func homeTableColumns(gtx layout.Context, theme *material.Theme, header bool, ro
 			return textStyle(formatHomeFileSize(meta.size), false)(gtx)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
+	}
+	layoutDataColumns := func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, dataColumns...)
+	}
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if !header && row != nil && row.open != nil {
+				return row.open.Layout(gtx, layoutDataColumns)
+			}
+			return layoutDataColumns(gtx)
+		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.X, gtx.Constraints.Max.X = actionWidth, actionWidth
 			if header {
