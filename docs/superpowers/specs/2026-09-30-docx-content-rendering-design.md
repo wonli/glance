@@ -15,7 +15,7 @@ Render the common body content of DOCX files in document order, including paragr
 
 ## Current evidence and sample corpus
 
-The user-provided `/Users/mima1234/Downloads/office/大猫OA软件使用说明.docx` contains 106 body paragraphs, 28 inline drawings, 28 image relationships, and 28 PNG media parts. It contains no tables or floating drawings. Use it as an external, local regression sample without checking the document into the repository. The regression accepts its path through `GLANCE_OFFICE_TEST_DOCX`. Keep synthetic DOCX fixtures for table content, text/image interleaving, and relationship edge cases.
+The user-provided external sample `大猫OA软件使用说明.docx` contains 106 body paragraphs, 28 inline drawings, 28 image relationships, and 28 PNG media parts. It contains no tables or floating drawings. Use it as a local regression sample without checking the document into the repository. The regression accepts its path through `GLANCE_OFFICE_TEST_DOCX`. Keep synthetic DOCX fixtures for table content, text/image interleaving, and relationship edge cases.
 
 ## Architecture
 
