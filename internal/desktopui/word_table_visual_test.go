@@ -58,8 +58,11 @@ func TestWordTableCellImageFlowsThroughGioLayout(t *testing.T) {
 		t.Fatalf("table fixture layout dimensions = %v", dimensions.Size)
 	}
 	for _, id := range expectedIDs[1:6] {
-		if state.wordObjectButtons[id] == nil {
+		isImage := findWordImage(state.wordBlocks, id) != nil
+		if isImage && state.wordObjectButtons[id] == nil {
 			t.Errorf("visible table text/image slot %q has no persistent selection widget", id)
+		} else if !isImage && state.wordRunEditors[id] == nil {
+			t.Errorf("visible table text/image slot %q has no persistent in-place editor", id)
 		}
 	}
 	window, err := headless.NewWindow(960, 760)
@@ -145,16 +148,16 @@ func TestWordSampleFlowBuildsVisibleTextAndImageWidgets(t *testing.T) {
 	if len(state.wordBlocks) == 0 {
 		t.Fatal("sample has no projected Word blocks")
 	}
-	visibleTextWidgets := 0
+	visibleTextEditors := 0
 	for _, paragraph := range allWordParagraphs(state.wordBlocks) {
 		for _, inline := range paragraph.Inlines {
-			if inline.Text != nil && state.wordObjectButtons[inline.Text.ID] != nil {
-				visibleTextWidgets++
+			if inline.Text != nil && state.wordRunEditors[inline.Text.ID] != nil {
+				visibleTextEditors++
 			}
 		}
 	}
-	if visibleTextWidgets < 2 {
-		t.Fatalf("sample viewport rendered only %d text runs; later paragraphs must flow after the first", visibleTextWidgets)
+	if visibleTextEditors < 2 {
+		t.Fatalf("sample viewport rendered only %d editable text runs; later paragraphs must flow after the first", visibleTextEditors)
 	}
 	var firstImage *document.WordImage
 	var firstImageBlock int

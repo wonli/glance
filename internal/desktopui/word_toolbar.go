@@ -120,7 +120,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
 		return editable && ok
 	case "save":
-		return state.word.Dirty() && state.path != ""
+		return (state.word.Dirty() || wordHasPendingTextDrafts(state)) && state.path != ""
 	case "insert-image":
 		_, editable := any(state.word).(document.WordImageEditor)
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
@@ -240,6 +240,39 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 		if button == nil || !button.Clicked(gtx) || !a.wordToolbarActionEnabled(action) {
 			continue
 		}
+		if wordHasPendingTextDrafts(state) && action.id == "paste" {
+			state.wordClipboardRunID = state.selectedWordRunID
+			state.wordForceDraftFlush = true
+			state.wordFlushRequested = true
+			state.wordFlushAllDrafts = true
+			gtx.Execute(clipboard.ReadCmd{Tag: &state.wordClipboardTarget})
+			continue
+		}
+		if wordHasPendingTextDrafts(state) && action.id == "cut" {
+			if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
+				value := editor.Text()
+				if selected := editor.SelectedText(); selected != "" {
+					value = selected
+				}
+				gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(value))})
+			}
+			state.wordForceDraftFlush = true
+			state.wordFlushRequested = true
+			state.wordFlushAllDrafts = true
+			state.wordDeferredToolbarAction = action.id
+			continue
+		}
+		if wordHasPendingTextDrafts(state) && action.id != "copy" {
+			state.wordForceDraftFlush = true
+			state.wordFlushRequested = true
+			state.wordFlushAllDrafts = true
+			if action.id == "save" {
+				state.wordSaveAfterDrafts = true
+			} else {
+				state.wordDeferredToolbarAction = action.id
+			}
+			continue
+		}
 		switch action.id {
 		case "undo":
 			a.applyWordHistory(true)
@@ -247,7 +280,14 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.applyWordHistory(false)
 		case "cut", "copy":
 			if run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID); ok {
-				gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(run.Text))})
+				value := run.Text
+				if editor := state.wordRunEditors[run.ID]; editor != nil {
+					value = editor.Text()
+					if selected := editor.SelectedText(); selected != "" {
+						value = selected
+					}
+				}
+				gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(value))})
 				if action.id == "cut" {
 					runID := state.selectedWordRunID
 					a.runWordCommand("剪切文字", func(editor document.WordTextEditor) error { return editor.ReplaceTextRun(runID, "") })
@@ -288,6 +328,41 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 	}
 }
 
+func (a *App) executeWordToolbarAction(actionID string) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	switch actionID {
+	case "undo":
+		a.applyWordHistory(true)
+	case "redo":
+		a.applyWordHistory(false)
+	case "cut":
+		runID := state.selectedWordRunID
+		a.runWordCommand("剪切文字", func(editor document.WordTextEditor) error { return editor.ReplaceTextRun(runID, "") })
+	case "paste":
+		return
+	case "bold", "italic", "underline":
+		a.toggleWordTextStyle(actionID)
+	case "font-color":
+		state.wordToolbarColorPicker = !state.wordToolbarColorPicker
+	case "align-left", "align-center", "align-right", "align-justify":
+		a.setWordAlignment(actionID)
+	case "save":
+		a.startSave()
+	case "insert-image":
+		a.startWordImagePicker(wordImageInsert)
+	case "replace-image":
+		a.startWordImagePicker(wordImageReplace)
+	case "delete-image":
+		imageID := state.selectedWordImageID
+		a.runWordImageCommand("删除图片", imageID, func(editor document.WordImageEditor) error { return editor.DeleteInlineImage(imageID) }, true)
+	case "resize-image":
+		a.showWordImageResizeDialog()
+	}
+}
+
 func (a *App) handleWordClipboardEvents(gtx layout.Context) {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
@@ -311,6 +386,16 @@ func (a *App) handleWordClipboardEvents(gtx layout.Context) {
 		}
 		runID := state.wordClipboardRunID
 		state.wordClipboardRunID = ""
+		if state.formatRunning || wordHasPendingTextDrafts(state) {
+			state.wordPendingPasteRunID = runID
+			state.wordPendingPasteText = string(value)
+			if wordHasPendingTextDrafts(state) {
+				state.wordForceDraftFlush = true
+				state.wordFlushRequested = true
+				state.wordFlushAllDrafts = true
+			}
+			continue
+		}
 		a.runWordCommand("粘贴文字", func(editor document.WordTextEditor) error { return editor.ReplaceTextRun(runID, string(value)) })
 	}
 }
@@ -414,6 +499,11 @@ type wordCommandResult struct {
 	undo                bool
 	history             bool
 	applied             bool
+	textDraft           bool
+	runID               string
+	runText             string
+	insertedParagraphID string
+	bodyParagraphInsert bool
 }
 
 func (a *App) publishWordCommand(result wordCommandResult) {

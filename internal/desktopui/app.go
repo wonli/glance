@@ -451,6 +451,12 @@ type saveResult struct {
 }
 
 func (a *App) startSave() {
+	if a.word != nil && wordHasPendingTextDrafts(a.documentSessionState) {
+		a.documentSessionState.wordSaveAfterDrafts = true
+		a.documentSessionState.wordForceDraftFlush = true
+		a.requestWordTextFlush(true)
+		return
+	}
 	if a.saving || !a.isDirty() {
 		return
 	}
@@ -645,7 +651,7 @@ func (a *App) save() error {
 }
 
 func (a *App) isDirty() bool {
-	return (a.book != nil && a.book.Dirty()) || (a.word != nil && a.word.Dirty()) || (a.jsonDoc != nil && a.jsonDoc.Dirty())
+	return (a.book != nil && a.book.Dirty()) || (a.word != nil && a.word.Dirty()) || wordHasPendingTextDrafts(a.documentSessionState) || (a.jsonDoc != nil && a.jsonDoc.Dirty())
 }
 
 func (a *App) closeDocument() error {

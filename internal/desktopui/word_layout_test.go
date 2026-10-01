@@ -56,9 +56,9 @@ func TestWordRunSelectionHandsTextToStableMultilineEditor(t *testing.T) {
 	if state.wordEditor.SingleLine {
 		t.Fatal("Word editor should support multiline text")
 	}
-	first := wordObjectButton(state, run.ID)
-	if first == nil || first != wordObjectButton(state, run.ID) {
-		t.Fatal("Word inline clickable must persist across layout frames")
+	first := wordRunEditor(state, *run)
+	if first == nil || first != wordRunEditor(state, *run) {
+		t.Fatal("Word in-place editor must persist across layout frames")
 	}
 }
 

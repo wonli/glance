@@ -196,9 +196,32 @@ func (a *App) processAsyncResults() {
 	case result := <-a.wordCommandResults:
 		if result.state != nil {
 			result.state.formatRunning = false
+			if result.bodyParagraphInsert {
+				result.state.wordInsertionRunning = false
+			}
 		}
 		if result.generation == a.documentGeneration && result.state == a.documentSessionState {
-			if result.err != nil {
+			if result.textDraft {
+				if result.err != nil {
+					a.status = wordCommandError(result.operation, result.err)
+					result.state.wordFlushRequested = false
+					result.state.wordFlushAllDrafts = false
+				} else {
+					result.state.wordRunCommitted[result.runID] = result.runText
+					if result.state.wordRunDrafts[result.runID] == result.runText {
+						delete(result.state.wordRunDrafts, result.runID)
+					}
+					if result.blocks != nil {
+						result.state.wordBlocks = result.blocks
+					}
+					reconcileWordSelection(result.state, false)
+					a.status = "正在编辑 Word 正文"
+					a.persistActiveSession()
+				}
+				if result.err == nil && result.state.wordFlushRequested {
+					a.startNextWordTextCommit()
+				}
+			} else if result.err != nil {
 				a.status = wordCommandError(result.operation, result.err)
 			} else if !result.history || result.applied {
 				if result.blocks != nil {
@@ -237,6 +260,9 @@ func (a *App) processAsyncResults() {
 					}
 				}
 				a.persistActiveSession()
+				if result.insertedParagraphID != "" {
+					a.focusInsertedWordParagraph(result.state, result.insertedParagraphID)
+				}
 			}
 			if a.window != nil {
 				a.window.Invalidate()
@@ -759,14 +785,8 @@ func (a *App) layoutEditor(gtx layout.Context) layout.Dimensions {
 		}
 		return editorPanel(gtx, a, a.selectedCell, &a.cellEditor, "应用单元格", &a.applyButton)
 	}
-	if a.word != nil && a.selectedWordRunID != "" {
-		if a.applyButton.Clicked(gtx) {
-			runID, value := a.selectedWordRunID, a.wordEditor.Text()
-			a.runWordCommand("编辑文字", func(editor document.WordTextEditor) error {
-				return editor.ReplaceTextRun(runID, value)
-			})
-		}
-		return editorPanel(gtx, a, "编辑所选文字", &a.wordEditor, "应用文字", &a.applyButton)
+	if a.word != nil {
+		return layout.Dimensions{}
 	}
 	return layout.Dimensions{}
 }

@@ -7,6 +7,7 @@ import (
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
 
+	"gioui.org/gesture"
 	"gioui.org/layout"
 	"gioui.org/widget"
 )
@@ -24,6 +25,7 @@ type documentSessionState struct {
 	grid                          [][]document.Cell
 	gridList                      widget.List
 	wordListState                 widget.List
+	wordBodyScroll                gesture.Scroll
 	cellEditor                    widget.Editor
 	formulaEditor                 widget.Editor
 	nameBox                       widget.Editor
@@ -32,6 +34,22 @@ type documentSessionState struct {
 	sheetRenameButton             widget.Clickable
 	sheetDeleteButton             widget.Clickable
 	wordEditor                    widget.Editor
+	wordRunEditors                map[string]*widget.Editor
+	wordRunCommitted              map[string]string
+	wordRunDrafts                 map[string]string
+	wordFocusedRunID              string
+	wordLayoutFocusedRunID        string
+	wordPendingFocusRunID         string
+	wordAppendTarget              widget.Clickable
+	wordInsertionRunning          bool
+	wordFlushRequested            bool
+	wordFlushAllDrafts            bool
+	wordForceDraftFlush           bool
+	wordSaveAfterDrafts           bool
+	wordDeferredToolbarAction     string
+	wordInsertAfterDraftFlush     bool
+	wordPendingPasteRunID         string
+	wordPendingPasteText          string
 	jsonEditor                    widget.Editor
 	cellButtons                   map[string]*widget.Clickable
 	sheetButtons                  map[string]*widget.Clickable
@@ -102,7 +120,7 @@ type ValueFilter struct {
 }
 
 func newDocumentSessionState(path string) *documentSessionState {
-	s := &documentSessionState{path: path, gridList: widget.List{List: layout.List{Axis: layout.Vertical}}, wordListState: widget.List{List: layout.List{Axis: layout.Vertical}}, toolbarTab: toolbarTabHome, toolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionButtons: make(map[string]*widget.Clickable), wordObjectButtons: make(map[string]*widget.Clickable), wordResizeHandleButtons: make(map[string]*widget.Clickable), wordImageInteractions: make(map[string]*wordImageInteraction), wordImageCache: newWordImageCache(wordImageCacheLimit), wordImagePending: make(map[string]uint64), wordImageVersions: make(map[string]uint64), wordImageErrors: make(map[string]string), gridPictureCache: newWordImageCache(wordImageCacheLimit), gridPicturePending: make(map[string]uint64), gridPictureVersions: make(map[string]uint64), gridPictureErrors: make(map[string]string), cellButtons: make(map[string]*widget.Clickable), sheetButtons: make(map[string]*widget.Clickable), blockButtons: make(map[int]*widget.Clickable), selectedBlock: -1}
+	s := &documentSessionState{path: path, gridList: widget.List{List: layout.List{Axis: layout.Vertical}}, wordListState: widget.List{List: layout.List{Axis: layout.Vertical}}, toolbarTab: toolbarTabHome, toolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionButtons: make(map[string]*widget.Clickable), wordRunEditors: make(map[string]*widget.Editor), wordRunCommitted: make(map[string]string), wordRunDrafts: make(map[string]string), wordObjectButtons: make(map[string]*widget.Clickable), wordResizeHandleButtons: make(map[string]*widget.Clickable), wordImageInteractions: make(map[string]*wordImageInteraction), wordImageCache: newWordImageCache(wordImageCacheLimit), wordImagePending: make(map[string]uint64), wordImageVersions: make(map[string]uint64), wordImageErrors: make(map[string]string), gridPictureCache: newWordImageCache(wordImageCacheLimit), gridPicturePending: make(map[string]uint64), gridPictureVersions: make(map[string]uint64), gridPictureErrors: make(map[string]string), cellButtons: make(map[string]*widget.Clickable), sheetButtons: make(map[string]*widget.Clickable), blockButtons: make(map[int]*widget.Clickable), selectedBlock: -1}
 	s.cellEditor.SingleLine = true
 	s.cellEditor.Submit = true
 	s.formulaEditor.SingleLine = true

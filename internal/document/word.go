@@ -123,6 +123,11 @@ type WordTextEditor interface {
 	SetParagraphAlignment(paragraphID string, alignment WordAlignment) error
 }
 
+// WordBodyEditor is an optional capability for adding a body paragraph at the end of a Word document.
+type WordBodyEditor interface {
+	InsertBodyParagraph() (paragraphID string, err error)
+}
+
 // WordImageEditor is an optional capability for inline raster image operations.
 type WordImageEditor interface {
 	InsertInlineImage(paragraphID, afterInlineID, mediaType string, data []byte) (imageID string, err error)

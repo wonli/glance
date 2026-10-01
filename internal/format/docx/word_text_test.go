@@ -40,6 +40,69 @@ func requireWordHistory(t *testing.T, doc *Document) document.WordHistory {
 	return history
 }
 
+func requireWordBodyEditor(t *testing.T, doc *Document) document.WordBodyEditor {
+	t.Helper()
+	editor, ok := any(doc).(document.WordBodyEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose body paragraph insertion")
+	}
+	return editor
+}
+
+func TestInsertBodyParagraphBeforeSectionPropertiesAndRoundTrips(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	paragraphID, err := requireWordBodyEditor(t, doc).InsertBodyParagraph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := doc.WordBlocks()
+	if len(blocks) != 2 || blocks[1].Paragraph == nil || blocks[1].Paragraph.ID != paragraphID {
+		t.Fatalf("inserted body blocks = %#v; returned paragraph ID %q", blocks, paragraphID)
+	}
+	if len(blocks[1].Paragraph.Inlines) != 1 || blocks[1].Paragraph.Inlines[0].Text == nil || !blocks[1].Paragraph.Inlines[0].Text.Editable {
+		t.Fatalf("inserted paragraph lacks an editable empty text run: %#v", blocks[1].Paragraph.Inlines)
+	}
+	runID := blocks[1].Paragraph.Inlines[0].Text.ID
+	if err := requireWordTextEditor(t, doc).ReplaceTextRun(runID, "typed at the end"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := OpenSnapshot(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	restoredBlocks := restored.WordBlocks()
+	if len(restoredBlocks) != 2 || restoredBlocks[1].Paragraph.Inlines[0].Text.Text != "typed at the end" {
+		t.Fatalf("reopened body paragraphs = %#v", restoredBlocks)
+	}
+	reopenedXML := string(readZipPart(t, data, "word/document.xml"))
+	if strings.Index(reopenedXML, "typed at the end") > strings.Index(reopenedXML, "<w:sectPr") {
+		t.Fatalf("inserted paragraph must remain before section properties: %s", reopenedXML)
+	}
+
+	history := requireWordHistory(t, doc)
+	if applied, err := history.Undo(); err != nil || !applied {
+		t.Fatalf("undo text edit = %v, %v", applied, err)
+	}
+	if applied, err := history.Undo(); err != nil || !applied {
+		t.Fatalf("undo inserted paragraph = %v, %v", applied, err)
+	}
+	if len(doc.WordBlocks()) != 1 {
+		t.Fatalf("undo left inserted body paragraph: %#v", doc.WordBlocks())
+	}
+	if applied, err := history.Redo(); err != nil || !applied {
+		t.Fatalf("redo inserted paragraph = %v, %v", applied, err)
+	}
+}
+
 func findRunByText(t *testing.T, blocks []document.WordBlock, value string) (string, string) {
 	t.Helper()
 	for _, block := range blocks {
