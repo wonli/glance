@@ -22,18 +22,18 @@ func TestWordToolbarTabsActionsAndIcons(t *testing.T) {
 	defer word.Close()
 	word.SetDirty(false)
 	state.word = word
-	if tabs := wordToolbarTabs(state); len(tabs) != 2 || tabs[0] != wordTabHome || tabs[1] != wordTabInsert {
-		t.Fatalf("Word tabs without an image selection = %#v; want Home and Insert", tabs)
+	if tabs := wordToolbarTabs(state); len(tabs) != 11 {
+		t.Fatalf("Word tabs without an image selection = %#v; want the 11 reference categories", tabs)
 	}
 	state.selectedWordImageID = "img-7"
-	if tabs := wordToolbarTabs(state); len(tabs) != 3 || tabs[2] != wordTabPicture {
+	if tabs := wordToolbarTabs(state); len(tabs) != 12 || tabs[11] != wordTabPicture {
 		t.Fatalf("Word tabs with an image selection = %#v; want contextual Picture tab", tabs)
 	}
 
 	want := map[string]bool{
 		"undo": true, "redo": true, "cut": true, "copy": true, "paste": true,
 		"bold": true, "italic": true, "underline": true, "font-color": true,
-		"align-left": true, "align-center": true, "align-right": true, "align-justify": true, "save": true,
+		"align-left": true, "align-center": true, "align-right": true, "align-justify": true,
 	}
 	seen := make(map[string]bool)
 	for _, action := range wordToolbarActions(wordTabHome) {
@@ -53,11 +53,45 @@ func TestWordToolbarTabsActionsAndIcons(t *testing.T) {
 			t.Errorf("Word Home is missing action %q", id)
 		}
 	}
-	if got := wordToolbarActions(wordTabInsert); len(got) != 1 || got[0].id != "insert-image" {
+	if got := wordToolbarActions(wordTabInsert); len(got) < 1 || got[0].id != "insert-image" {
 		t.Fatalf("Word Insert actions = %#v; want image insertion", got)
+	}
+	if got := wordToolbarActions(wordTabFile); len(got) != 1 || got[0].id != "save" {
+		t.Fatalf("Word File actions = %#v; want Save", got)
 	}
 	if got := wordToolbarActions(wordTabPicture); len(got) != 5 || got[0].id != "replace-image" || got[1].id != "delete-image" || got[2].id != "resize-image" || got[3].id != "rotate-left" || got[4].id != "rotate-right" {
 		t.Fatalf("Word Picture actions = %#v; want replace, delete, resize and 90° rotation", got)
+	}
+}
+
+func TestWordToolbarExposesPenReferenceCategories(t *testing.T) {
+	state := newDocumentSessionState("sample.docx")
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state.word = word
+
+	if got := len(wordToolbarTabs(state)); got != 11 {
+		t.Fatalf("Word category count = %d; want the 11 reference categories", got)
+	}
+	if got := len(wordToolbarTabLabels); got != 12 {
+		t.Fatalf("Word category labels = %d; want 11 reference labels and contextual Picture", got)
+	}
+	want := "文件,开始,插入,绘图,设计,布局,引用,邮件,审阅,视图,帮助"
+	if got := strings.Join(wordToolbarTabLabels, ","); got != want+",图片" {
+		t.Fatalf("Word category labels = %q; want %q plus contextual Picture", got, want)
+	}
+	for tab := wordTabFile; tab <= wordTabPicture; tab++ {
+		for _, action := range wordToolbarActions(tab) {
+			if action.label == "" || action.icon == "" {
+				t.Errorf("Word tab %q has an action without a label or icon: %#v", wordToolbarTabLabels[tab], action)
+			}
+			if _, ok := toolbarIconData(action.icon); !ok {
+				t.Errorf("Word tab %q action %q references missing icon %q", wordToolbarTabLabels[tab], action.id, action.icon)
+			}
+		}
 	}
 }
 
@@ -101,14 +135,14 @@ func TestWordToolbarEnablesCommandsForTheirSelectedWordObjects(t *testing.T) {
 	if !app.wordToolbarActionEnabled(findAction(wordTabInsert, "insert-image")) {
 		t.Fatal("image insertion should be enabled for a selected paragraph")
 	}
-	if app.wordToolbarActionEnabled(findAction(wordTabHome, "save")) {
+	if app.wordToolbarActionEnabled(findAction(wordTabFile, "save")) {
 		t.Fatal("save should remain disabled for a clean document")
 	}
 	if err := word.ReplaceTextRun(state.selectedWordRunID, "Edited"); err != nil {
 		t.Fatal(err)
 	}
 	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
-	if !app.wordToolbarActionEnabled(findAction(wordTabHome, "save")) || !app.wordToolbarActionEnabled(findAction(wordTabHome, "undo")) {
+	if !app.wordToolbarActionEnabled(findAction(wordTabFile, "save")) || !app.wordToolbarActionEnabled(findAction(wordTabHome, "undo")) {
 		t.Fatal("dirty Word document should enable save and undo")
 	}
 	state.selectedWordRunID = ""

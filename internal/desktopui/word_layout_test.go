@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/io/input"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -97,6 +98,64 @@ func TestWordFlowLayoutRendersWithStableVerticalListAndRibbon(t *testing.T) {
 	}
 	if state.wordToolbarActionButtons["bold"] == nil {
 		t.Fatal("Word Ribbon did not retain its action widgets after layout")
+	}
+}
+
+func TestWordFlowLayoutRemainsResponsiveAtNarrowWidth(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state := newDocumentSessionState("sample.docx")
+	state.word = word
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	var ops op.Ops
+	gtx := layout.Context{Ops: &ops, Constraints: layout.Constraints{Max: image.Pt(480, 600)}, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	dimensions := app.layoutWordFlow(gtx)
+	if dimensions.Size != image.Pt(480, 600) {
+		t.Fatalf("narrow Word flow dimensions = %v; want viewport size", dimensions.Size)
+	}
+	if state.wordListState.List.Axis != layout.Vertical || state.wordToolbarTabList.List.Axis != layout.Horizontal || state.wordToolbarActionList.List.Axis != layout.Horizontal {
+		t.Fatalf("narrow Word list axes = flow %v categories %v commands %v", state.wordListState.List.Axis, state.wordToolbarTabList.List.Axis, state.wordToolbarActionList.List.Axis)
+	}
+}
+
+func TestWordFlowExposesReferenceRibbonRulersAndStatus(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state := newDocumentSessionState("sample.docx")
+	state.word = word
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Constraints: layout.Constraints{Max: image.Pt(1440, 900)}, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	app.layoutWordFlow(gtx)
+	router.Frame(&ops)
+
+	want := map[string]bool{
+		"Word 功能区":  false,
+		"Word 水平标尺": false,
+		"Word 垂直标尺": false,
+		"Word 状态栏":  false,
+	}
+	var visit func([]input.SemanticNode)
+	visit = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if _, ok := want[node.Desc.Description]; ok && !node.Desc.Bounds.Empty() {
+				want[node.Desc.Description] = true
+			}
+			visit(node.Children)
+		}
+	}
+	visit(router.AppendSemantics(nil))
+	for label, found := range want {
+		if !found {
+			t.Errorf("Word workspace is missing visible semantic bounds for %q", label)
+		}
 	}
 }
 

@@ -225,6 +225,18 @@ func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordPar
 		if alignment := firstChild(properties, "jc"); alignment != nil {
 			paragraph.Alignment = parseWordAlignment(attrValue(alignment, "val"))
 		}
+		if indent := firstChild(properties, "ind"); indent != nil {
+			left := attrValue(indent, "left")
+			if left == "" {
+				left = attrValue(indent, "start")
+			}
+			right := attrValue(indent, "right")
+			if right == "" {
+				right = attrValue(indent, "end")
+			}
+			paragraph.LeftIndentEMU = parseWordIndentEMU(left)
+			paragraph.RightIndentEMU = parseWordIndentEMU(right)
+		}
 	}
 	inlineIndex := 0
 	p.paragraphInlines[id] = nil
@@ -272,6 +284,19 @@ func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordPar
 		}
 	}
 	return paragraph
+}
+
+func parseWordIndentEMU(value string) int64 {
+	if value == "" {
+		return 0
+	}
+	twips, err := strconv.ParseInt(value, 10, 64)
+	const maxTwips = int64(1<<63-1) / 635
+	const minTwips = -maxTwips - 1
+	if err != nil || twips > maxTwips || twips < minTwips {
+		return 0
+	}
+	return twips * 635
 }
 
 func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, paragraphNode, run *wordXMLNode, inlineIndex *int) {

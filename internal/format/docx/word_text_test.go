@@ -760,6 +760,53 @@ func TestWordTextStyleAndAlignmentCanBeInsertedWhenPropertiesAreAbsent(t *testin
 	}
 }
 
+func TestWordParagraphIndentsRoundTripAndPreserveOtherParagraphProperties(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:keepNext/><w:ind w:firstLine="360" w:left="720" w:right="180"/></w:pPr><w:r><w:t>adjusted</w:t></w:r></w:p><w:p><w:r><w:t>untouched</w:t></w:r></w:p></w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	paragraph := doc.WordBlocks()[0].Paragraph
+	const leftIndentEMU, rightIndentEMU int64 = 914400, 457200
+	if err := requireWordTextEditor(t, doc).SetParagraphIndents(paragraph.ID, leftIndentEMU, rightIndentEMU); err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.WordBlocks()[0].Paragraph; got.LeftIndentEMU != leftIndentEMU || got.RightIndentEMU != rightIndentEMU {
+		t.Fatalf("projected paragraph indents = %d/%d EMU; want %d/%d", got.LeftIndentEMU, got.RightIndentEMU, leftIndentEMU, rightIndentEMU)
+	}
+	output := filepath.Join(t.TempDir(), "indented.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	blocks := reopened.WordBlocks()
+	got := blocks[0].Paragraph
+	if got.LeftIndentEMU != leftIndentEMU || got.RightIndentEMU != rightIndentEMU {
+		t.Fatalf("reopened paragraph indents = %d/%d EMU; want %d/%d", got.LeftIndentEMU, got.RightIndentEMU, leftIndentEMU, rightIndentEMU)
+	}
+	if got := blocks[0].Paragraph.Inlines[0].Text.Text; got != "adjusted" {
+		t.Fatalf("edited paragraph text changed to %q", got)
+	}
+	if got := blocks[1].Paragraph.Inlines[0].Text.Text; got != "untouched" {
+		t.Fatalf("untouched paragraph text changed to %q", got)
+	}
+	if blocks[1].Paragraph.LeftIndentEMU != 0 || blocks[1].Paragraph.RightIndentEMU != 0 {
+		t.Fatalf("untouched paragraph gained indents %d/%d EMU", blocks[1].Paragraph.LeftIndentEMU, blocks[1].Paragraph.RightIndentEMU)
+	}
+	snapshot, err := reopened.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedXML := readZipPart(t, snapshot, "word/document.xml")
+	for _, preserved := range [][]byte{[]byte(`<w:keepNext/>`), []byte(`w:firstLine="360"`)} {
+		if !bytes.Contains(savedXML, preserved) {
+			t.Errorf("indent edit did not preserve %s in document.xml: %s", preserved, savedXML)
+		}
+	}
+}
+
 func TestTextEditUpgradesExplicitDefaultSpacePreservation(t *testing.T) {
 	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t xml:space="default">text</w:t></w:r></w:p></w:body></w:document>`
 	doc := projectionFixture(t, documentXML, "", nil)

@@ -25,7 +25,7 @@ Sources: [Excelize documentation](https://xuri.me/excelize/en/index.html), [sour
 
 ### DOCX: project-local OOXML adapter (selected for the first slice)
 
-`internal/format/docx` uses Go ZIP/XML libraries for neutral ordered body projection and targeted text, formatting, alignment, and inline-image operations. The Gio renderer handles paragraphs, tables, and inline raster previews; package types remain behind the adapter. Its toolbar reuses the Excel Ribbon chrome and adds Word-specific groups. The supplied sample round-trip verifies text and image resize edits, untouched package parts, 27 resolved images, and one dangling media relationship that stays a placeholder. Synthetic fixtures cover table-cell image rendering and editing. This does not promise pagination, floating-image layout, or broad Word fidelity.
+`internal/format/docx` uses Go ZIP/XML libraries for neutral ordered body projection and targeted text, formatting, alignment, paragraph-indentation, and inline-image operations. The Gio renderer handles paragraphs, tables, and inline raster previews; package types remain behind the adapter. Its toolbar uses a fixed-height, single-row control layout with Word-specific groups. The supplied sample round-trip verifies text and image resize edits, untouched package parts, 27 resolved images, and one dangling media relationship that stays a placeholder. Synthetic fixtures cover table-cell image rendering and editing, plus horizontal-ruler paragraph indents that preserve unrelated paragraph properties through save/reopen. This does not promise pagination, floating-image layout, or broad Word fidelity.
 
 ### Deferred third-party DOCX candidates
 

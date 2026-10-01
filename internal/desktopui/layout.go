@@ -196,6 +196,9 @@ func (a *App) processAsyncResults() {
 	case result := <-a.wordCommandResults:
 		if result.state != nil {
 			result.state.formatRunning = false
+			if result.operation == "调整段落缩进" {
+				result.state.wordRulerIndentIntent = nil
+			}
 			if result.bodyParagraphInsert {
 				result.state.wordInsertionRunning = false
 			}
@@ -213,6 +216,10 @@ func (a *App) processAsyncResults() {
 					result.state.wordFlushAllDrafts = false
 					result.state.wordParagraphSplitIntent = nil
 					result.state.wordParagraphJoinIntent = nil
+					if result.state.wordDeferredToolbarAction == "ruler-indents" {
+						result.state.wordDeferredToolbarAction = ""
+						result.state.wordRulerIndentIntent = nil
+					}
 				} else {
 					result.state.wordRunCommitted[result.runID] = result.runText
 					if result.state.wordRunDrafts[result.runID] == result.runText {
@@ -236,7 +243,7 @@ func (a *App) processAsyncResults() {
 				}
 				if result.history {
 					invalidateAllWordImagePreviews(result.state)
-				} else if result.imageID != "" {
+				} else if result.imageID != "" && (result.operation == "替换图片" || result.operation == "删除图片") {
 					invalidateWordImagePreview(result.state, result.imageID)
 				}
 				reconcileWordSelection(result.state, result.history)
@@ -251,10 +258,12 @@ func (a *App) processAsyncResults() {
 				}
 				if result.clearImageSelection && result.state.selectedWordImageID == result.imageID {
 					result.state.selectedWordImageID = ""
+					result.state.wordImageFocusRequestID = ""
 				}
 				if result.selectInsertedImage && result.imageID != "" {
 					result.state.selectedWordRunID = ""
 					result.state.selectedWordImageID = result.imageID
+					result.state.wordImageFocusRequestID = result.imageID
 					result.state.selectedBlock = -1
 					result.state.selectedBlockEditable = false
 					result.state.wordToolbarTab = wordTabPicture
@@ -270,6 +279,9 @@ func (a *App) processAsyncResults() {
 				if result.insertedParagraphID != "" {
 					a.focusInsertedWordParagraph(result.state, result.insertedParagraphID)
 				}
+			}
+			if result.imageID != "" && (result.operation == "调整图片" || result.operation == "旋转图片") {
+				finishWordImagePreviewCommand(result.state, result.imageID)
 			}
 			if result.state.wordFlushRequested && !result.state.formatRunning {
 				a.startNextWordTextCommit()
@@ -775,7 +787,9 @@ func (a *App) layoutGridRow(gtx layout.Context, row int) layout.Dimensions {
 func (a *App) layoutWord(gtx layout.Context) layout.Dimensions {
 	a.handleWordToolbarEvents(gtx)
 	a.handleWordClipboardEvents(gtx)
-	return a.layoutWordFlow(gtx)
+	// Clpgm leaves a two-pixel seam between the document tabs and Word's
+	// category row; keep the total ribbon height itself at 138 dp.
+	return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, a.layoutWordFlow)
 }
 
 func (a *App) layoutEditor(gtx layout.Context) layout.Dimensions {

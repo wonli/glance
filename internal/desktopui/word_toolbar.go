@@ -13,7 +13,6 @@ import (
 	"gioui.org/io/semantic"
 	"gioui.org/io/transfer"
 	"gioui.org/layout"
-	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -26,31 +25,109 @@ type wordToolbarTab uint8
 type wordToolbarAction = ribbonAction
 
 const (
-	wordTabHome wordToolbarTab = iota
+	wordTabFile wordToolbarTab = iota
+	wordTabHome
 	wordTabInsert
+	wordTabDraw
+	wordTabDesign
+	wordTabLayout
+	wordTabReferences
+	wordTabMailings
+	wordTabReview
+	wordTabView
+	wordTabHelp
 	wordTabPicture
 )
 
 var (
-	wordToolbarTabLabels = []string{"主页", "插入", "图片"}
-	wordHomeActions      = []ribbonAction{
+	wordToolbarTabLabels = []string{"文件", "开始", "插入", "绘图", "设计", "布局", "引用", "邮件", "审阅", "视图", "帮助", "图片"}
+	wordFileActions      = []ribbonAction{
+		{slot: -1, id: "save", label: "保存", group: "文档", icon: "save"},
+	}
+	wordHomeActions = []ribbonAction{
 		{slot: -1, id: "undo", label: "撤销", group: "历史", icon: "undo"},
 		{slot: -1, id: "redo", label: "重做", group: "历史", icon: "redo"},
+		{slot: -1, id: "paste", label: "粘贴", group: "剪贴板", icon: "paste"},
 		{slot: -1, id: "cut", label: "剪切", group: "剪贴板", icon: "cut"},
 		{slot: -1, id: "copy", label: "复制", group: "剪贴板", icon: "copy"},
-		{slot: -1, id: "paste", label: "粘贴", group: "剪贴板", icon: "paste"},
+		{slot: -1, id: "format-painter", label: "格式刷", group: "剪贴板", icon: "paintbrush"},
+		{slot: -1, id: "font-family", label: "字体", group: "字体", icon: "file-text"},
+		{slot: -1, id: "font-size", label: "字号", group: "字体", icon: "hash"},
 		{slot: -1, id: "bold", label: "加粗", group: "字体", icon: "bold"},
 		{slot: -1, id: "italic", label: "斜体", group: "字体", icon: "italic"},
 		{slot: -1, id: "underline", label: "下划线", group: "字体", icon: "underline"},
+		{slot: -1, id: "strikethrough", label: "删除线", group: "字体", icon: "clear"},
+		{slot: -1, id: "superscript", label: "上标", group: "字体", icon: "type"},
+		{slot: -1, id: "subscript", label: "下标", group: "字体", icon: "hash"},
+		{slot: -1, id: "text-highlight", label: "文本突出显示", group: "字体", icon: "paint-bucket"},
 		{slot: -1, id: "font-color", label: "字体颜色", group: "字体", icon: "type"},
+		{slot: -1, id: "bullet-list", label: "项目符号", group: "段落", icon: "list"},
+		{slot: -1, id: "numbered-list", label: "编号", group: "段落", icon: "sort-asc"},
+		{slot: -1, id: "multilevel-list", label: "多级列表", group: "段落", icon: "list"},
 		{slot: -1, id: "align-left", label: "左对齐", group: "段落", icon: "align-left"},
 		{slot: -1, id: "align-center", label: "居中对齐", group: "段落", icon: "align-center"},
 		{slot: -1, id: "align-right", label: "右对齐", group: "段落", icon: "align-right"},
 		{slot: -1, id: "align-justify", label: "两端对齐", group: "段落", icon: "align-distributed"},
-		{slot: -1, id: "save", label: "保存", group: "文件", icon: "save"},
+		{slot: -1, id: "decrease-indent", label: "减少缩进", group: "段落", icon: "minus"},
+		{slot: -1, id: "increase-indent", label: "增加缩进", group: "段落", icon: "plus"},
+		{slot: -1, id: "sort", label: "排序", group: "段落", icon: "sort-asc"},
+		{slot: -1, id: "show-marks", label: "显示编辑标记", group: "段落", icon: "file-text"},
+		{slot: -1, id: "style-normal", label: "正文", group: "样式", icon: "file-text"},
+		{slot: -1, id: "style-no-spacing", label: "无间距", group: "样式", icon: "file-text"},
+		{slot: -1, id: "style-heading", label: "标题 1", group: "样式", icon: "file-text"},
+		{slot: -1, id: "find", label: "查找", group: "编辑", icon: "search"},
+		{slot: -1, id: "replace", label: "替换", group: "编辑", icon: "list-filter"},
+		{slot: -1, id: "select", label: "选择", group: "编辑", icon: "grid"},
+		{slot: -1, id: "editor", label: "编辑器", group: "编辑器", icon: "file-text"},
+		{slot: -1, id: "dictate", label: "听写", group: "编辑器", icon: "file"},
+		{slot: -1, id: "add-ins", label: "加载项", group: "编辑器", icon: "grid"},
+		{slot: -1, id: "designer", label: "设计器", group: "编辑器", icon: "star"},
 	}
 	wordInsertActions = []ribbonAction{
-		{slot: -1, id: "insert-image", label: "插入图片", group: "插图", icon: "file"},
+		{slot: -1, id: "insert-image", label: "图片", group: "插图", icon: "file"},
+		{slot: -1, id: "insert-table", label: "表格", group: "插图", icon: "grid"},
+		{slot: -1, id: "insert-shapes", label: "形状", group: "插图", icon: "square-plus"},
+		{slot: -1, id: "insert-chart", label: "图表", group: "插图", icon: "file-spreadsheet"},
+	}
+	wordDrawActions = []ribbonAction{
+		{slot: -1, id: "draw-pen", label: "画笔", group: "绘制", icon: "type"},
+		{slot: -1, id: "draw-highlighter", label: "荧光笔", group: "绘制", icon: "paint-bucket"},
+		{slot: -1, id: "draw-eraser", label: "橡皮擦", group: "绘制", icon: "clear"},
+	}
+	wordDesignActions = []ribbonAction{
+		{slot: -1, id: "design-themes", label: "主题", group: "文档格式", icon: "grid"},
+		{slot: -1, id: "design-colors", label: "颜色", group: "文档格式", icon: "paint-bucket"},
+		{slot: -1, id: "design-watermark", label: "水印", group: "页面背景", icon: "file"},
+	}
+	wordLayoutActions = []ribbonAction{
+		{slot: -1, id: "layout-margins", label: "页边距", group: "页面设置", icon: "grid"},
+		{slot: -1, id: "layout-orientation", label: "纸张方向", group: "页面设置", icon: "file"},
+		{slot: -1, id: "layout-size", label: "纸张大小", group: "页面设置", icon: "file-text"},
+		{slot: -1, id: "layout-columns", label: "分栏", group: "页面设置", icon: "align-distributed"},
+	}
+	wordReferenceActions = []ribbonAction{
+		{slot: -1, id: "reference-toc", label: "目录", group: "目录", icon: "list"},
+		{slot: -1, id: "reference-footnote", label: "脚注", group: "脚注", icon: "file-text"},
+		{slot: -1, id: "reference-citation", label: "引文", group: "引文与书目", icon: "file"},
+	}
+	wordMailingActions = []ribbonAction{
+		{slot: -1, id: "mailing-envelope", label: "信封", group: "创建", icon: "file"},
+		{slot: -1, id: "mailing-labels", label: "标签", group: "创建", icon: "file-text"},
+		{slot: -1, id: "mailing-merge", label: "邮件合并", group: "开始邮件合并", icon: "grid"},
+	}
+	wordReviewActions = []ribbonAction{
+		{slot: -1, id: "review-spelling", label: "拼写检查", group: "校对", icon: "file-text"},
+		{slot: -1, id: "review-comment", label: "新建批注", group: "批注", icon: "plus"},
+		{slot: -1, id: "review-track", label: "修订", group: "跟踪", icon: "list-filter"},
+	}
+	wordViewActions = []ribbonAction{
+		{slot: -1, id: "view-focus", label: "专注模式", group: "视图", icon: "grid"},
+		{slot: -1, id: "view-print", label: "页面视图", group: "视图", icon: "file"},
+		{slot: -1, id: "view-zoom", label: "缩放", group: "缩放", icon: "plus"},
+	}
+	wordHelpActions = []ribbonAction{
+		{slot: -1, id: "help-search", label: "帮助搜索", group: "帮助", icon: "search"},
+		{slot: -1, id: "help-feedback", label: "反馈", group: "反馈", icon: "file"},
 	}
 	wordPictureActions = []ribbonAction{
 		{slot: -1, id: "replace-image", label: "替换图片", group: "图片", icon: "copy"},
@@ -76,18 +153,37 @@ var (
 )
 
 func wordToolbarTabs(state *documentSessionState) []wordToolbarTab {
+	tabs := []wordToolbarTab{wordTabFile, wordTabHome, wordTabInsert, wordTabDraw, wordTabDesign, wordTabLayout, wordTabReferences, wordTabMailings, wordTabReview, wordTabView, wordTabHelp}
 	if state != nil && state.selectedWordImageID != "" {
-		return []wordToolbarTab{wordTabHome, wordTabInsert, wordTabPicture}
+		tabs = append(tabs, wordTabPicture)
 	}
-	return []wordToolbarTab{wordTabHome, wordTabInsert}
+	return tabs
 }
 
 func wordToolbarActions(tab wordToolbarTab) []ribbonAction {
 	switch tab {
+	case wordTabFile:
+		return wordFileActions
 	case wordTabHome:
 		return wordHomeActions
 	case wordTabInsert:
 		return wordInsertActions
+	case wordTabDraw:
+		return wordDrawActions
+	case wordTabDesign:
+		return wordDesignActions
+	case wordTabLayout:
+		return wordLayoutActions
+	case wordTabReferences:
+		return wordReferenceActions
+	case wordTabMailings:
+		return wordMailingActions
+	case wordTabReview:
+		return wordReviewActions
+	case wordTabView:
+		return wordViewActions
+	case wordTabHelp:
+		return wordHelpActions
 	case wordTabPicture:
 		return wordPictureActions
 	default:
@@ -136,58 +232,6 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	default:
 		return false
 	}
-}
-
-func (a *App) layoutWordToolbar(gtx layout.Context) layout.Dimensions {
-	state := a.documentSessionState
-	if state == nil || state.word == nil {
-		return layout.Dimensions{}
-	}
-	if state.wordToolbarTab == wordTabPicture && state.selectedWordImageID == "" {
-		state.wordToolbarTab = wordTabHome
-	}
-	tabs := wordToolbarTabs(state)
-	labels := make([]string, len(tabs))
-	for i, tab := range tabs {
-		labels[i] = wordToolbarTabLabels[tab]
-	}
-	height := gtx.Dp(unit.Dp(90))
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-	return layout.Background{}.Layout(gtx,
-		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
-			return layout.Dimensions{Size: gtx.Constraints.Max}
-		},
-		func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layoutRibbonCategoryTabs(gtx, a.theme, labels, state.wordToolbarTabs[:len(tabs)], int(state.wordToolbarTab))
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					stripHeight := gtx.Dp(unit.Dp(56))
-					gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = stripHeight, stripHeight
-					actions := wordToolbarActions(state.wordToolbarTab)
-					shift := op.Offset(image.Pt(0, -gtx.Dp(unit.Dp(4)))).Push(gtx.Ops)
-					defer shift.Pop()
-					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(16), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return state.wordToolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
-							action := actions[index]
-							enabled := a.wordToolbarActionEnabled(action)
-							button := wordToolbarButton(state, action.id)
-							background := contentSurface
-							if wordToolbarActionActive(state, action) {
-								background = toolbarActiveBackground
-							}
-							icon, _ := tintedToolbarIcon(action.icon, toolbarIconColor(true))
-							return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
-								return toolbarIconButton(gtx, button, icon, action.label, enabled, false, background)
-							})
-						})
-					})
-				}),
-			)
-		},
-	)
 }
 
 func wordToolbarButton(state *documentSessionState, id string) *widget.Clickable {
@@ -358,6 +402,15 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		state.wordToolbarColorPicker = !state.wordToolbarColorPicker
 	case "align-left", "align-center", "align-right", "align-justify":
 		a.setWordAlignment(actionID)
+	case "ruler-indents":
+		intent := state.wordRulerIndentIntent
+		if intent == nil {
+			return
+		}
+		paragraphID, leftEMU, rightEMU := intent.paragraphID, intent.leftEMU, intent.rightEMU
+		a.runWordCommand("调整段落缩进", func(editor document.WordTextEditor) error {
+			return editor.SetParagraphIndents(paragraphID, leftEMU, rightEMU)
+		})
 	case "save":
 		a.startSave()
 	case "insert-image":
@@ -479,14 +532,14 @@ func (a *App) runWordCommand(operation string, edit func(document.WordTextEditor
 	}()
 }
 
-func (a *App) runWordImageCommand(operation, imageID string, edit func(document.WordImageEditor) error, clearSelection bool) {
+func (a *App) runWordImageCommand(operation, imageID string, edit func(document.WordImageEditor) error, clearSelection bool) bool {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || state.formatRunning || a.saving {
-		return
+		return false
 	}
 	editor, ok := any(state.word).(document.WordImageEditor)
 	if !ok {
-		return
+		return false
 	}
 	state.formatRunning = true
 	generation := a.documentGeneration
@@ -498,6 +551,7 @@ func (a *App) runWordImageCommand(operation, imageID string, edit func(document.
 		}
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, clearImageSelection: clearSelection && err == nil, imageID: imageID, blocks: blocks})
 	}()
+	return true
 }
 
 func (a *App) rotateSelectedWordImage(delta float64) {
@@ -613,7 +667,7 @@ func (a *App) layoutWordToolbarColorPicker(gtx layout.Context) layout.Dimensions
 	if state == nil || !state.wordToolbarColorPicker {
 		return layout.Dimensions{}
 	}
-	return layout.Inset{Top: unit.Dp(86), Left: unit.Dp(368)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(wordRibbonHeightDP + 8), Left: unit.Dp(440)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		width := gtx.Dp(unit.Dp(8*28 + 7*6 + 16))
 		height := gtx.Dp(unit.Dp(44))
 		gtx.Constraints.Min = image.Pt(width, height)

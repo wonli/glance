@@ -58,7 +58,6 @@ func (a *App) focusInsertedWordParagraph(state *documentSessionState, paragraphI
 			state.selectedWordImageID = ""
 			state.selectedBlock = -1
 			state.selectedBlockEditable = true
-			state.wordToolbarTab = wordTabHome
 			state.wordPendingFocusRunID = inline.Text.ID
 			wordRunEditor(state, *inline.Text)
 			state.wordListState.ScrollTo(max(0, len(state.wordBlocks)-1))
@@ -335,7 +334,6 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 	state.selectedWordImageID = ""
 	state.selectedBlock = -1
 	state.selectedBlockEditable = true
-	state.wordToolbarTab = wordTabHome
 	if active {
 		state.wordPendingFocusRunID = run.ID
 		a.status = "正在编辑 Word 正文"
@@ -446,7 +444,6 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 	state.selectedWordImageID = ""
 	state.selectedBlock = -1
 	state.selectedBlockEditable = true
-	state.wordToolbarTab = wordTabHome
 	state.wordPendingFocusRunID = result.splitRunID
 	a.status = "正在编辑 Word 正文"
 	a.persistActiveSession()

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -168,6 +169,295 @@ func TestWordCanvasSideDragResizesCenteredCanvas(t *testing.T) {
 	}
 }
 
+func TestWordRibbonKeepsHeightAndPictureActionsStayOnOneRow(t *testing.T) {
+	state, closeDocument := newLongWordFlowState(t, 2)
+	defer closeDocument()
+	state.wordToolbarTab = wordTabPicture
+	state.selectedWordImageID = "selected-image"
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{
+		Source:      router.Source(),
+		Ops:         &ops,
+		Now:         time.Now(),
+		Constraints: layout.Constraints{Max: image.Pt(1100, 700)},
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+	}
+	app.layoutWordFlow(gtx)
+	router.Frame(&ops)
+	if wordRibbonHeightDP != 138 {
+		t.Fatalf("Word ribbon height = %d dp; preserve the current 138 dp height", wordRibbonHeightDP)
+	}
+	want := map[string]image.Rectangle{
+		"替换图片": {}, "删除图片": {}, "调整大小": {}, "向左旋转 90°": {}, "向右旋转 90°": {},
+	}
+	var visit func([]input.SemanticNode)
+	visit = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if _, ok := want[node.Desc.Description]; ok {
+				want[node.Desc.Description] = node.Desc.Bounds
+			}
+			visit(node.Children)
+		}
+	}
+	visit(router.AppendSemantics(nil))
+	rowTop, rowBottom := 0, 0
+	for label, bounds := range want {
+		if bounds.Empty() {
+			t.Errorf("picture action %q has no visible bounds", label)
+			continue
+		}
+		if rowTop == 0 || bounds.Min.Y < rowTop {
+			rowTop = bounds.Min.Y
+		}
+		if bounds.Max.Y > rowBottom {
+			rowBottom = bounds.Max.Y
+		}
+	}
+	if rowBottom-rowTop > 70 {
+		t.Errorf("picture ribbon actions occupy %d vertical pixels; want one row within the unchanged ribbon height", rowBottom-rowTop)
+	}
+	firstTop := -1
+	for label, bounds := range want {
+		if bounds.Empty() {
+			continue
+		}
+		if firstTop < 0 {
+			firstTop = bounds.Min.Y
+			continue
+		}
+		if delta := bounds.Min.Y - firstTop; delta < -2 || delta > 2 {
+			t.Errorf("picture action %q starts at y=%d; want all actions on one horizontal row near y=%d", label, bounds.Min.Y, firstTop)
+		}
+	}
+}
+
+func TestWordHomeRibbonMatchesPenClpgmGroupGeometry(t *testing.T) {
+	state, closeDocument := newLongWordFlowState(t, 2)
+	defer closeDocument()
+	state.wordToolbarTab = wordTabHome
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{
+		Source:      router.Source(),
+		Ops:         &ops,
+		Now:         time.Now(),
+		Constraints: layout.Constraints{Max: image.Pt(1440, 900)},
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+	}
+	app.layoutWordFlow(gtx)
+	router.Frame(&ops)
+	want := map[string]image.Rectangle{
+		"文件":  {Min: image.Pt(18, 0), Max: image.Pt(71, 42)},
+		"开始":  {Min: image.Pt(71, 0), Max: image.Pt(130, 42)},
+		"粘贴":  {Min: image.Pt(18, 53), Max: image.Pt(88, 115)},
+		"剪切":  {Min: image.Pt(101, 56)},
+		"字体":  {Min: image.Pt(201, 52), Max: image.Pt(351, 80)},
+		"加粗":  {Min: image.Pt(204, 90), Max: image.Pt(230, 118)},
+		"左对齐": {Min: image.Pt(609, 70), Max: image.Pt(635, 98)},
+		"查找":  {Min: image.Pt(1068, 56)},
+		"编辑器": {Min: image.Pt(1171, 53), Max: image.Pt(1223, 115)},
+		"正文":  {Min: image.Pt(903, 53), Max: image.Pt(941, 109)},
+	}
+	found := make(map[string]image.Rectangle, len(want))
+	hasHistoryAction := false
+	var visit func([]input.SemanticNode)
+	visit = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			switch node.Desc.Description {
+			case "撤销", "重做":
+				hasHistoryAction = true
+			}
+			if _, ok := want[node.Desc.Description]; ok {
+				found[node.Desc.Description] = node.Desc.Bounds
+			}
+			visit(node.Children)
+		}
+	}
+	visit(router.AppendSemantics(nil))
+	for label, expected := range want {
+		bounds := found[label]
+		if bounds.Empty() {
+			t.Errorf("Clpgm ribbon control %q has no semantic bounds", label)
+			continue
+		}
+		if bounds.Min.X != expected.Min.X || (expected.Max.X > expected.Min.X && bounds.Max.X != expected.Max.X) || bounds.Min.Y != expected.Min.Y || (expected.Max.Y > expected.Min.Y && bounds.Max.Y != expected.Max.Y) {
+			t.Errorf("Clpgm ribbon control %q bounds = %v; want %v", label, bounds, expected)
+		}
+	}
+	if hasHistoryAction {
+		t.Error("Home ribbon includes undo/redo controls that are absent from Pen node Clpgm")
+	}
+}
+
+func TestWordCanvasWidthCanBeDraggedFromHorizontalRuler(t *testing.T) {
+	state, closeDocument := newLongWordFlowState(t, 8)
+	defer closeDocument()
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	metric := unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	frame := func() {
+		t.Helper()
+		ops.Reset()
+		gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: metric, Constraints: layout.Constraints{Max: image.Pt(1100, 700)}}
+		app.layoutWordFlow(gtx)
+		router.Frame(&ops)
+	}
+	canvasBounds := func() image.Rectangle {
+		t.Helper()
+		var bounds image.Rectangle
+		var visit func([]input.SemanticNode)
+		visit = func(nodes []input.SemanticNode) {
+			for _, node := range nodes {
+				if node.Desc.Description == "Word 文档画布" {
+					bounds = node.Desc.Bounds
+				}
+				visit(node.Children)
+			}
+		}
+		visit(router.AppendSemantics(nil))
+		if bounds.Empty() {
+			t.Fatal("Word page canvas has no accessible bounds")
+		}
+		return bounds
+	}
+	frame()
+	initial := canvasBounds()
+	startWidth := state.wordCanvasWidthDP
+	start := f32.Pt(float32(initial.Max.X), float32(wordRibbonHeightDP+wordRulerHeightDP/2))
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 8, Buttons: pointer.ButtonPrimary, Position: start})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, PointerID: 8, Buttons: pointer.ButtonPrimary, Position: start.Add(f32.Pt(40, 0))})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 8, Position: start.Add(f32.Pt(40, 0))})
+	frame()
+	if state.wordCanvasWidthDP <= startWidth {
+		t.Fatalf("Word canvas width after dragging ruler edge = %d dp; want more than %d dp", state.wordCanvasWidthDP, startWidth)
+	}
+}
+
+func TestWordRulerIndentMarkersPersistParagraphWidthChanges(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state := newDocumentSessionState("ruler-indents.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	paragraph := *state.wordBlocks[0].Paragraph
+	run := *paragraph.Inlines[0].Text
+	state.selectedWordRunID = run.ID
+	state.selectedWordParagraphID = paragraph.ID
+	app := &App{documentSessionState: state, theme: material.NewTheme(), wordCommandResults: make(chan wordCommandResult, 1)}
+	router := new(input.Router)
+	var ops op.Ops
+	metric := unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	frame := func() {
+		t.Helper()
+		ops.Reset()
+		gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: metric, Constraints: layout.Constraints{Max: image.Pt(1100, 700)}}
+		app.layoutWordFlow(gtx)
+		router.Frame(&ops)
+	}
+	editor := focusWordRunForInteraction(t, state, router, frame, run.ID)
+	draftText := run.Text + " pending ruler draft"
+	editor.SetText(draftText)
+	state.wordRunDrafts[run.ID] = draftText
+	state.wordRunCommitted[run.ID] = run.Text
+	waitForIndentCommit := func() {
+		t.Helper()
+		deadline := time.After(3 * time.Second)
+		for state.formatRunning {
+			select {
+			case result := <-app.wordCommandResults:
+				app.wordCommandResults <- result
+				app.processAsyncResults()
+			case <-deadline:
+				t.Fatal("ruler indentation edit did not complete")
+			default:
+				time.Sleep(time.Millisecond)
+			}
+		}
+	}
+	dragMarker := func(description string, deltaX float32, pointerID pointer.ID) {
+		t.Helper()
+		frame()
+		var bounds image.Rectangle
+		var visit func([]input.SemanticNode)
+		visit = func(nodes []input.SemanticNode) {
+			for _, node := range nodes {
+				if node.Desc.Description == description {
+					bounds = node.Desc.Bounds
+				}
+				visit(node.Children)
+			}
+		}
+		visit(router.AppendSemantics(nil))
+		if bounds.Empty() {
+			t.Fatalf("Word ruler is missing the interactive handle %q", description)
+		}
+		start := f32.Pt(float32(bounds.Min.X+bounds.Dx()/2), float32(bounds.Min.Y+bounds.Dy()/2))
+		end := start.Add(f32.Pt(deltaX, 0))
+		router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: pointerID, Buttons: pointer.ButtonPrimary, Position: start})
+		frame()
+		if state.wordRulerIndentDragSide == 0 {
+			t.Fatalf("ruler handle %q did not capture the pointer press", description)
+		}
+		// Model the Word text flush that can start when the ruler takes focus while
+		// retaining the active pointer capture for this drag.
+		state.formatRunning = true
+		state.wordFlushRequested = true
+		state.wordFlushAllDrafts = true
+		router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, PointerID: pointerID, Buttons: pointer.ButtonPrimary, Position: end})
+		frame()
+		if state.wordRulerIndentDragPreviewEMU == state.wordRulerIndentDragStartEMU {
+			t.Fatalf("ruler handle %q stopped tracking movement while a Word text flush was running", description)
+		}
+		router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: pointerID, Position: end})
+		frame()
+		if state.wordDeferredToolbarAction != "ruler-indents" {
+			t.Fatalf("ruler handle %q did not defer its commit behind the pending text draft: %q", description, state.wordDeferredToolbarAction)
+		}
+		state.formatRunning = false
+		app.startNextWordTextCommit()
+		waitForIndentCommit()
+		frame()
+	}
+	dragMarker("拖动调整段落左缩进", 48, 20)
+	leftParagraph, ok := selectedWordParagraph(state.wordBlocks, paragraph.ID)
+	if !ok || leftParagraph.LeftIndentEMU < 48*wordEMUPerDP-100 {
+		t.Fatalf("left ruler drag produced paragraph indents %d/%d EMU; want at least %d left EMU (status %q, dirty %v)", leftParagraph.LeftIndentEMU, leftParagraph.RightIndentEMU, 48*wordEMUPerDP-100, app.status, state.word.Dirty())
+	}
+	draftText += " after second ruler drag"
+	editor.SetText(draftText)
+	state.wordRunDrafts[run.ID] = draftText
+	dragMarker("拖动调整段落右缩进", -24, 21)
+	updated, ok := selectedWordParagraph(state.wordBlocks, paragraph.ID)
+	if !ok || updated.RightIndentEMU < 24*wordEMUPerDP-100 {
+		t.Fatalf("right ruler drag produced paragraph indents %d/%d EMU; want at least %d right EMU", updated.LeftIndentEMU, updated.RightIndentEMU, 24*wordEMUPerDP-100)
+	}
+	output := filepath.Join(t.TempDir(), "ruler-indents.docx")
+	if err := state.word.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := docx.Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	reopenedParagraph, ok := selectedWordParagraph(reopened.WordBlocks(), paragraph.ID)
+	if !ok || reopenedParagraph.LeftIndentEMU != updated.LeftIndentEMU || reopenedParagraph.RightIndentEMU != updated.RightIndentEMU {
+		t.Fatalf("reopened ruler indents = %d/%d EMU, want %d/%d", reopenedParagraph.LeftIndentEMU, reopenedParagraph.RightIndentEMU, updated.LeftIndentEMU, updated.RightIndentEMU)
+	}
+	if got := reopenedParagraph.Inlines[0].Text.Text; got != draftText {
+		t.Fatalf("ruler edit did not flush the pending Word text draft before save: got %q, want %q", got, draftText)
+	}
+}
+
 func TestWordParagraphEditorUsesCanvasWidthBeforeCommit(t *testing.T) {
 	word, err := docx.NewBlank()
 	if err != nil {
@@ -247,13 +537,57 @@ func TestWordInlineGeometryHonorsCenterAlignment(t *testing.T) {
 }
 
 func TestWordPageColumnCentersAndFitsNarrowWindows(t *testing.T) {
-	wide, wideLeft := wordPageGeometry(1200, 816)
-	if wide != 816 || wideLeft != 192 {
-		t.Fatalf("wide page geometry = width %d left %d; want 816/192", wide, wideLeft)
+	wide, wideLeft := wordPageGeometry(1200, wordPaperMaxWidthDP)
+	if wide != 900 || wideLeft != 150 {
+		t.Fatalf("wide page geometry = width %d left %d; want 900/150", wide, wideLeft)
 	}
-	narrow, narrowLeft := wordPageGeometry(600, 816)
+	narrow, narrowLeft := wordPageGeometry(600, wordPaperMaxWidthDP)
 	if narrow != 600 || narrowLeft != 0 {
 		t.Fatalf("narrow page geometry = width %d left %d; want 600/0", narrow, narrowLeft)
+	}
+}
+
+func TestWordCanvasAndRulersMatchPenClpgmGeometry(t *testing.T) {
+	state, closeDocument := newLongWordFlowState(t, 2)
+	defer closeDocument()
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{
+		Source:      router.Source(),
+		Ops:         &ops,
+		Now:         time.Now(),
+		Constraints: layout.Constraints{Max: image.Pt(1440, 858)},
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+	}
+	rootOffset := op.Offset(image.Pt(0, 42)).Push(gtx.Ops)
+	app.layoutWord(gtx)
+	rootOffset.Pop()
+	router.Frame(&ops)
+	want := map[string]image.Rectangle{
+		"文件":        {Min: image.Pt(18, 44), Max: image.Pt(71, 86)},
+		"开始":        {Min: image.Pt(71, 44), Max: image.Pt(130, 86)},
+		"粘贴":        {Min: image.Pt(18, 97), Max: image.Pt(88, 159)},
+		"Word 水平标尺": {Min: image.Pt(0, 182), Max: image.Pt(1440, 215)},
+		"Word 文档画布": {Min: image.Pt(270, 231), Max: image.Pt(1170, 831)},
+		"Word 垂直标尺": {Min: image.Pt(231, 235), Max: image.Pt(256, 833)},
+		"Word 状态栏":  {Min: image.Pt(0, 866), Max: image.Pt(1440, 900)},
+	}
+	found := make(map[string]image.Rectangle, len(want))
+	var visit func([]input.SemanticNode)
+	visit = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if _, ok := want[node.Desc.Description]; ok {
+				found[node.Desc.Description] = node.Desc.Bounds
+			}
+			visit(node.Children)
+		}
+	}
+	visit(router.AppendSemantics(nil))
+	for description, expected := range want {
+		if got := found[description]; got != expected {
+			t.Errorf("Pen Clpgm %q bounds = %v; want %v", description, got, expected)
+		}
 	}
 }
 
@@ -679,6 +1013,216 @@ func TestWordQueuedRightArrowBeforeBackspaceDeletesInParagraph(t *testing.T) {
 	frame()
 	if len(state.wordBlocks) != 2 || editor.Text() != "ight" || state.wordRunDrafts[run.ID] != "ight" {
 		t.Fatalf("queued Right then Backspace produced %q, %d paragraphs, draft %q; want ordinary deletion to leave two paragraphs and \"ight\"", editor.Text(), len(state.wordBlocks), state.wordRunDrafts[run.ID])
+	}
+}
+
+func TestWordRightArrowMovesToNextStyledRun(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	paragraph := document.WordParagraph{ID: "p0", Inlines: []document.WordInline{
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "run-a", Text: "left", Editable: true}},
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "run-b", Text: "right", Style: document.WordTextStyle{Bold: true}, Editable: true}},
+	}}
+	state := newDocumentSessionState("navigation.docx")
+	state.word = word
+	state.wordBlocks = []document.WordBlock{{ID: "p0", Kind: document.WordParagraphBlock, Paragraph: &paragraph}}
+	_, router, frame := newWordJoinFrame(t, state)
+	first := focusWordRunForInteraction(t, state, router, frame, "run-a")
+	first.SetCaret(first.Len(), first.Len())
+	frame()
+
+	router.Queue(key.Event{Name: key.NameRightArrow, State: key.Press})
+	frame()
+	next := state.wordRunEditors["run-b"]
+	if next == nil || !router.Source().Focused(next) {
+		t.Fatal("Right at a run end did not focus the next styled Word run")
+	}
+	if start, end := next.Selection(); start != 0 || end != 0 {
+		t.Fatalf("caret after moving right between runs = %d:%d; want 0:0", start, end)
+	}
+	if state.selectedWordRunID != "run-b" || state.selectedWordParagraphID != "p0" {
+		t.Fatalf("selection after run handoff = %q/%q; want run-b/p0", state.selectedWordRunID, state.selectedWordParagraphID)
+	}
+}
+
+func TestWordLeftArrowMovesToPreviousParagraphRun(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	first := document.WordParagraph{ID: "p0", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "run-a", Text: "first", Editable: true}}}}
+	second := document.WordParagraph{ID: "p1", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "run-b", Text: "second", Editable: true}}}}
+	state := newDocumentSessionState("navigation.docx")
+	state.word = word
+	state.wordBlocks = []document.WordBlock{
+		{ID: "p0", Kind: document.WordParagraphBlock, Paragraph: &first},
+		{ID: "p1", Kind: document.WordParagraphBlock, Paragraph: &second},
+	}
+	_, router, frame := newWordJoinFrame(t, state)
+	secondEditor := focusWordRunForInteraction(t, state, router, frame, "run-b")
+	secondEditor.SetCaret(0, 0)
+	frame()
+
+	router.Queue(key.Event{Name: key.NameLeftArrow, State: key.Press})
+	frame()
+	previous := state.wordRunEditors["run-a"]
+	if previous == nil || !router.Source().Focused(previous) {
+		t.Fatal("Left at a paragraph start did not focus the previous paragraph run")
+	}
+	if start, end := previous.Selection(); start != previous.Len() || end != previous.Len() {
+		t.Fatalf("caret after moving left between paragraphs = %d:%d; want %d:%d", start, end, previous.Len(), previous.Len())
+	}
+}
+
+func TestWordModifiedArrowKeepsNativeSelectionAndDocumentEdges(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	paragraph := document.WordParagraph{ID: "p0", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "run-a", Text: "selection", Editable: true}}}}
+	state := newDocumentSessionState("navigation.docx")
+	state.word = word
+	state.wordBlocks = []document.WordBlock{{ID: "p0", Kind: document.WordParagraphBlock, Paragraph: &paragraph}}
+	_, router, frame := newWordJoinFrame(t, state)
+	editor := focusWordRunForInteraction(t, state, router, frame, "run-a")
+	editor.SetCaret(0, 0)
+	frame()
+
+	router.Queue(key.Event{Name: key.NameRightArrow, State: key.Press, Modifiers: key.ModShift})
+	frame()
+	if start, end := editor.Selection(); min(start, end) != 0 || max(start, end) != 1 {
+		t.Fatalf("Shift+Right selection = %d:%d; want native selection across offsets 0 and 1", start, end)
+	}
+	editor.SetCaret(0, 0)
+	frame()
+	router.Queue(key.Event{Name: key.NameLeftArrow, State: key.Press})
+	frame()
+	if !router.Source().Focused(editor) {
+		t.Fatal("Left at the document start moved focus outside the document")
+	}
+	if start, end := editor.Selection(); start != 0 || end != 0 {
+		t.Fatalf("caret at document start after Left = %d:%d; want 0:0", start, end)
+	}
+}
+
+func TestWordNavigationRunOrderIncludesEditableTableCellsOnly(t *testing.T) {
+	paragraph := func(id, text string, editable bool) document.WordParagraph {
+		return document.WordParagraph{ID: id, Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: id + ".run", Text: text, Editable: editable}}}}
+	}
+	first := paragraph("body", "body", true)
+	readOnly := paragraph("locked", "locked", false)
+	cellA := document.WordTableCell{ID: "a", Paragraphs: []document.WordParagraph{paragraph("a.p0", "A1", true), paragraph("a.p1", "A2", true)}}
+	cellB := document.WordTableCell{ID: "b", Paragraphs: []document.WordParagraph{paragraph("b.p0", "B1", true)}}
+	blocks := []document.WordBlock{
+		{ID: "body", Kind: document.WordParagraphBlock, Paragraph: &first},
+		{ID: "locked", Kind: document.WordParagraphBlock, Paragraph: &readOnly},
+		{ID: "table", Kind: document.WordTableBlock, Table: &document.WordTable{Rows: []document.WordTableRow{{Cells: []document.WordTableCell{cellA, cellB}}}}},
+	}
+	var got []string
+	for _, item := range wordNavigationRuns(blocks) {
+		got = append(got, item.run.ID)
+	}
+	want := []string{"body.run", "a.p0.run", "a.p1.run", "b.p0.run"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Word navigation order = %#v; want row-major editable runs %#v", got, want)
+	}
+}
+
+func TestWordUpDownKeepsPreferredVisualColumnAcrossVisualLines(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	text := strings.Repeat("abcdefghij", 5) + "\n" + strings.Repeat("abcdefghij", 3) + "\n" + strings.Repeat("abc", 20)
+	paragraph := document.WordParagraph{ID: "p0", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "run-a", Text: text, Editable: true}}}}
+	state := newDocumentSessionState("navigation.docx")
+	state.word = word
+	state.wordBlocks = []document.WordBlock{{ID: "p0", Kind: document.WordParagraphBlock, Paragraph: &paragraph}}
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	metric := unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	frame := func() {
+		t.Helper()
+		ops.Reset()
+		gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: metric, Constraints: layout.Constraints{Max: image.Pt(620, 700)}}
+		app.layoutWord(gtx)
+		router.Frame(&ops)
+	}
+	editor := focusWordRunForInteraction(t, state, router, frame, "run-a")
+	editor.SetCaret(8, 8)
+	frame()
+	geometry := state.wordNavLayouts["run-a"]
+	start := editor.CaretCoords()
+	startY := geometry.y + int(start.Y)
+
+	for move := 0; move < 2; move++ {
+		router.Queue(key.Event{Name: key.NameDownArrow, State: key.Press})
+		frame()
+		coords := editor.CaretCoords()
+		if gotY := geometry.y + int(coords.Y); gotY <= startY {
+			t.Fatalf("Down %d left caret on the same visual line: y=%d, start=%d, caret=%v geometry=%+v", move+1, gotY, startY, coords, geometry)
+		}
+		if !state.wordPreferredVerticalXSet {
+			t.Fatal("Up/Down did not retain a preferred horizontal column")
+		}
+		visualX := geometry.x + int(coords.X)
+		if distance := absWordInt(visualX - state.wordPreferredVerticalX); distance > 10 {
+			t.Fatalf("Down %d moved to x=%d; preferred visual x=%d (distance %d)", move+1, visualX, state.wordPreferredVerticalX, distance)
+		}
+		startY = geometry.y + int(coords.Y)
+		geometry = state.wordNavLayouts["run-a"]
+	}
+}
+
+func TestWordUpDownCrossesParagraphsAtPreferredVisualColumn(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	text := strings.Repeat("0123456789", 40)
+	first := document.WordParagraph{ID: "p0", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "run-a", Text: text, Editable: true}}}}
+	second := document.WordParagraph{ID: "p1", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "run-b", Text: text, Editable: true}}}}
+	state := newDocumentSessionState("navigation.docx")
+	state.word = word
+	state.wordBlocks = []document.WordBlock{{ID: "p0", Kind: document.WordParagraphBlock, Paragraph: &first}, {ID: "p1", Kind: document.WordParagraphBlock, Paragraph: &second}}
+	_, router, frame := newWordJoinFrame(t, state)
+	firstEditor := focusWordRunForInteraction(t, state, router, frame, "run-a")
+	firstEditor.SetCaret(100, 100)
+	frame()
+	preferred := state.wordNavLayouts["run-a"].x + int(firstEditor.CaretCoords().X)
+
+	router.Queue(key.Event{Name: key.NameDownArrow, State: key.Press})
+	frame()
+	frame()
+	secondEditor := state.wordRunEditors["run-b"]
+	if secondEditor == nil || !router.Source().Focused(secondEditor) {
+		t.Fatalf("Down at the last visual line did not focus the next paragraph: selected=%q/%q pending=%q/%q preferred=%v/%d sourceFocusedA=%v bounds=%#v", state.selectedWordRunID, state.selectedWordParagraphID, state.wordPendingFocusRunID, state.wordPendingCaretRunID, state.wordPreferredVerticalXSet, state.wordPreferredVerticalX, router.Source().Focused(firstEditor), state.wordNavLayouts)
+	}
+	if !state.wordPreferredVerticalXSet {
+		t.Fatal("vertical caret column was cleared while moving to the next paragraph")
+	}
+	secondX := state.wordNavLayouts["run-b"].x + int(secondEditor.CaretCoords().X)
+	if distance := absWordInt(secondX - preferred); distance > 10 {
+		t.Fatalf("next paragraph caret x=%d; preferred x=%d (distance %d)", secondX, preferred, distance)
+	}
+
+	router.Queue(key.Event{Name: key.NameUpArrow, State: key.Press})
+	frame()
+	frame()
+	if !router.Source().Focused(firstEditor) {
+		t.Fatal("Up at the first visual line did not return to the previous paragraph")
+	}
+	firstX := state.wordNavLayouts["run-a"].x + int(firstEditor.CaretCoords().X)
+	if distance := absWordInt(firstX - preferred); distance > 10 {
+		t.Fatalf("previous paragraph caret x=%d; preferred x=%d (distance %d)", firstX, preferred, distance)
 	}
 }
 

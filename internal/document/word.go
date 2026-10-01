@@ -40,10 +40,12 @@ type WordBlock struct {
 
 // WordParagraph preserves the ordered inline contents of one paragraph.
 type WordParagraph struct {
-	ID        string
-	Style     string
-	Alignment WordAlignment
-	Inlines   []WordInline
+	ID             string
+	Style          string
+	Alignment      WordAlignment
+	LeftIndentEMU  int64
+	RightIndentEMU int64
+	Inlines        []WordInline
 }
 
 // WordTable contains rows and cells in their source order.
@@ -122,6 +124,7 @@ type WordTextEditor interface {
 	ReplaceTextRun(runID, value string) error
 	SetTextRunStyle(runID string, patch WordTextFormatPatch) error
 	SetParagraphAlignment(paragraphID string, alignment WordAlignment) error
+	SetParagraphIndents(paragraphID string, leftEMU, rightEMU int64) error
 }
 
 // WordBodyEditor is an optional capability for adding a body paragraph at the end of a Word document.

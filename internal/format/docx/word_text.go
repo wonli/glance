@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"glance/internal/document"
@@ -136,6 +137,103 @@ func (d *Document) SetParagraphAlignment(paragraphID string, alignment document.
 		return err
 	}
 	return d.applyWordDocumentXMLLocked(patched)
+}
+
+func (d *Document) SetParagraphIndents(paragraphID string, leftEMU, rightEMU int64) error {
+	leftTwips, err := wordIndentEMUToTwips(leftEMU)
+	if err != nil {
+		return fmt.Errorf("left paragraph indent: %w", err)
+	}
+	rightTwips, err := wordIndentEMUToTwips(rightEMU)
+	if err != nil {
+		return fmt.Errorf("right paragraph indent: %w", err)
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	paragraph, ok := d.wordParagraphTargets[paragraphID]
+	if !ok || paragraph == nil {
+		return fmt.Errorf("Word paragraph %q is not editable", paragraphID)
+	}
+	properties := firstChild(paragraph, "pPr")
+	var indent *wordXMLNode
+	if properties != nil {
+		indent = firstChild(properties, "ind")
+	}
+	leftName := wordIndentAttributeName(indent, "left", "start")
+	rightName := wordIndentAttributeName(indent, "right", "end")
+	var currentLeftEMU, currentRightEMU int64
+	if indent != nil {
+		currentLeftEMU = parseWordIndentEMU(attrValue(indent, leftName))
+		currentRightEMU = parseWordIndentEMU(attrValue(indent, rightName))
+	}
+	if currentLeftEMU == leftTwips*635 && currentRightEMU == rightTwips*635 {
+		return nil
+	}
+	leftValue, rightValue := strconv.FormatInt(leftTwips, 10), strconv.FormatInt(rightTwips, 10)
+	prefix := elementPrefix(paragraph.rawName)
+	data := d.parts[d.documentIdx].data
+	var patched []byte
+	if properties == nil {
+		property := makeWordPropertyMarkup(prefix, "ind", leftName, leftValue)
+		property, err = setRawXMLAttribute(property, prefix, rightName, rightValue)
+		if err != nil {
+			return err
+		}
+		patched, err = insertElementContent(data, paragraph, wrapWordElement(prefix, "pPr", property))
+	} else if indent == nil {
+		property := makeWordPropertyMarkup(prefix, "ind", leftName, leftValue)
+		property, err = setRawXMLAttribute(property, prefix, rightName, rightValue)
+		if err != nil {
+			return err
+		}
+		patched, err = insertElementContent(data, properties, property)
+	} else {
+		opening := data[indent.start:indent.openEnd]
+		patchedOpening, patchErr := setRawXMLAttribute(opening, prefix, leftName, leftValue)
+		if patchErr != nil {
+			return patchErr
+		}
+		patchedOpening, patchErr = setRawXMLAttribute(patchedOpening, prefix, rightName, rightValue)
+		if patchErr != nil {
+			return patchErr
+		}
+		patched, err = applyXMLReplacements(data, []xmlReplacement{{start: indent.start, end: indent.openEnd, value: patchedOpening}})
+	}
+	if err != nil {
+		return err
+	}
+	return d.applyWordDocumentXMLLocked(patched)
+}
+
+func wordIndentAttributeName(node *wordXMLNode, physical, logical string) string {
+	if node != nil {
+		for _, attribute := range node.attrs {
+			if attribute.Name.Local == physical {
+				return physical
+			}
+		}
+		for _, attribute := range node.attrs {
+			if attribute.Name.Local == logical {
+				return logical
+			}
+		}
+	}
+	return physical
+}
+
+func wordIndentEMUToTwips(value int64) (int64, error) {
+	const maxTwips = int64(1<<31 - 1)
+	const maxEMU = maxTwips * 635
+	if value > maxEMU || value < -maxEMU {
+		return 0, fmt.Errorf("value exceeds the supported DOCX range")
+	}
+	if value < 0 {
+		return -((-value + 317) / 635), nil
+	}
+	return (value + 317) / 635, nil
 }
 
 func (d *Document) applyWordDocumentXMLLocked(patched []byte) error {
