@@ -395,6 +395,95 @@ saved:
 	}
 }
 
+func TestWordEnterSplitsAtCaretAndFocusesFollowingParagraph(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	run := word.WordBlocks()[0].Paragraph.Inlines[0].Text
+	if err := word.ReplaceTextRun(run.ID, "HelloWorld"); err != nil {
+		t.Fatal(err)
+	}
+	state := newDocumentSessionState("enter.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	app := &App{documentSessionState: state, theme: material.NewTheme(), wordCommandResults: make(chan wordCommandResult, 1)}
+	router := new(input.Router)
+	var ops op.Ops
+	metric := unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	frame := func() {
+		t.Helper()
+		ops.Reset()
+		gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: metric, Constraints: layout.Constraints{Max: image.Pt(1100, 700)}}
+		app.layoutWord(gtx)
+		router.Frame(&ops)
+	}
+	frame()
+	var bounds image.Rectangle
+	var findRun func([]input.SemanticNode)
+	findRun = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if node.Desc.Description == "正文文字 "+run.ID {
+				bounds = node.Desc.Bounds
+			}
+			findRun(node.Children)
+		}
+	}
+	findRun(router.AppendSemantics(nil))
+	if bounds.Empty() {
+		t.Fatal("editable text has no accessible hit bounds")
+	}
+	position := f32.Pt(float32(bounds.Min.X+bounds.Dx()/2), float32(bounds.Min.Y+bounds.Dy()/2))
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: position})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: position})
+	frame()
+	editor := state.wordRunEditors[run.ID]
+	if editor == nil || !router.Source().Focused(editor) {
+		t.Fatal("text run did not receive focus before Enter")
+	}
+	editor.SetCaret(5, 5)
+	frame()
+	router.Queue(key.Event{Name: key.NameReturn, State: key.Press})
+	router.Queue(key.EditEvent{Text: "X"})
+	frame()
+	if editor.Text() != "HelloWorld" {
+		t.Fatalf("input after Enter modified the old paragraph while its split was pending: %q", editor.Text())
+	}
+
+	deadline := time.After(3 * time.Second)
+	for len(state.wordBlocks) < 2 {
+		select {
+		case result := <-app.wordCommandResults:
+			app.wordCommandResults <- result
+			app.processAsyncResults()
+		case <-deadline:
+			t.Fatalf("Enter did not split the paragraph before timeout (blocks=%d, running=%v)", len(state.wordBlocks), state.formatRunning)
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	blocks := word.WordBlocks()
+	if len(blocks) != 2 || blocks[0].Paragraph == nil || blocks[1].Paragraph == nil || blocks[0].Paragraph.Inlines[0].Text.Text != "Hello" || blocks[1].Paragraph.Inlines[0].Text.Text != "World" {
+		t.Fatalf("Enter at character five produced body blocks %#v; want paragraphs Hello / World", blocks)
+	}
+	newRunID := blocks[1].Paragraph.Inlines[0].Text.ID
+	frame()
+	newEditor := state.wordRunEditors[newRunID]
+	if state.selectedWordParagraphID != blocks[1].Paragraph.ID || state.selectedWordRunID != newRunID || newEditor == nil || !router.Source().Focused(newEditor) {
+		t.Fatalf("following paragraph did not receive editing focus: paragraph=%q run=%q editor=%p focused=%v", state.selectedWordParagraphID, state.selectedWordRunID, newEditor, newEditor != nil && router.Source().Focused(newEditor))
+	}
+	if _, col := newEditor.CaretPos(); col != 0 {
+		t.Fatalf("caret in following paragraph = %d; want 0", col)
+	}
+	router.Queue(key.EditEvent{Text: "Y"})
+	frame()
+	if newEditor.Text() != "YWorld" || state.wordRunDrafts[newRunID] != "YWorld" {
+		t.Fatalf("typing after the split did not continue in the new paragraph: editor=%q draft=%q", newEditor.Text(), state.wordRunDrafts[newRunID])
+	}
+}
+
 func newLongWordFlowState(t *testing.T, paragraphs int) (*documentSessionState, func()) {
 	t.Helper()
 	word, err := docx.NewBlank()

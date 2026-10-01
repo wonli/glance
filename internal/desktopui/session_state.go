@@ -40,6 +40,7 @@ type documentSessionState struct {
 	wordFocusedRunID              string
 	wordLayoutFocusedRunID        string
 	wordPendingFocusRunID         string
+	wordParagraphSplitIntent      *wordParagraphSplitIntent
 	wordAppendTarget              widget.Clickable
 	wordInsertionRunning          bool
 	wordFlushRequested            bool

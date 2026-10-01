@@ -120,7 +120,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
 		return editable && ok
 	case "save":
-		return (state.word.Dirty() || wordHasPendingTextDrafts(state)) && state.path != ""
+		return (state.word.Dirty() || wordHasPendingTextDrafts(state) || state.wordParagraphSplitIntent != nil) && state.path != ""
 	case "insert-image":
 		_, editable := any(state.word).(document.WordImageEditor)
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
@@ -500,8 +500,14 @@ type wordCommandResult struct {
 	history             bool
 	applied             bool
 	textDraft           bool
+	paragraphSplit      bool
 	runID               string
 	runText             string
+	splitSourceRunID    string
+	splitPrefix         string
+	splitParagraphID    string
+	splitRunID          string
+	splitRunText        string
 	insertedParagraphID string
 	bodyParagraphInsert bool
 }

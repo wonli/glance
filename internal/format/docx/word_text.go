@@ -20,6 +20,8 @@ type rawXMLAttribute struct {
 	name      string
 	prefix    string
 	local     string
+	start     int
+	end       int
 	valueFrom int
 	valueTo   int
 	quote     byte
@@ -494,7 +496,7 @@ func scanRawXMLAttributes(rawOpen []byte) ([]rawXMLAttribute, int, int, error) {
 		valueTo := index
 		index++
 		prefix, local := splitQualifiedName(name)
-		attributes = append(attributes, rawXMLAttribute{name: name, prefix: prefix, local: local, valueFrom: valueFrom, valueTo: valueTo, quote: quote})
+		attributes = append(attributes, rawXMLAttribute{name: name, prefix: prefix, local: local, start: nameStart, end: index, valueFrom: valueFrom, valueTo: valueTo, quote: quote})
 	}
 	return attributes, nameEnd, end, nil
 }

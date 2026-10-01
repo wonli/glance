@@ -139,7 +139,7 @@ func wordRunEditor(state *documentSessionState, run document.WordTextRun) *widge
 		state.wordRunCommitted[run.ID] = run.Text
 	}
 	editor.SingleLine = false
-	editor.Submit = false
+	editor.Submit = true
 	return editor
 }
 
@@ -444,7 +444,20 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	editor := wordRunEditor(state, run)
 	selected := state.selectedWordRunID == run.ID
 	label := wordRunLabel(a.theme, paragraph, run)
-	editor.ReadOnly = !run.Editable || a.saving
+	focusTargetPending := state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != run.ID
+	paragraphSplitPending := state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID
+	editor.ReadOnly = !run.Editable || a.saving || paragraphSplitPending || focusTargetPending
+	if !editor.ReadOnly {
+		for event, ok := editor.Update(gtx); ok; event, ok = editor.Update(gtx) {
+			if _, submit := event.(widget.SubmitEvent); submit {
+				selectionStart, selectionEnd := editor.Selection()
+				a.queueWordParagraphSplit(run.ID, editor.Text(), selectionStart, selectionEnd)
+				if state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID {
+					editor.ReadOnly = true
+				}
+			}
+		}
+	}
 	editor.Alignment = wordParagraphAlignment(paragraph.Alignment)
 	style := material.Editor(a.theme, editor, "")
 	style.Font, style.TextSize, style.Color = label.Font, label.TextSize, label.Color
@@ -461,7 +474,7 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 		}
 		return dims
 	})
-	if gtx.Focused(editor) && run.Editable {
+	if gtx.Focused(editor) && run.Editable && !focusTargetPending {
 		state.selectedWordRunID = run.ID
 		state.selectedWordParagraphID = paragraph.ID
 		state.selectedWordImageID = ""

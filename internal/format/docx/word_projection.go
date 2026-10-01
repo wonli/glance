@@ -44,8 +44,10 @@ type wordProjection struct {
 }
 
 type wordTextTarget struct {
-	text *wordXMLNode
-	run  *wordXMLNode
+	text        *wordXMLNode
+	run         *wordXMLNode
+	paragraph   *wordXMLNode
+	paragraphID string
 }
 
 type wordInlineTarget struct {
@@ -230,11 +232,11 @@ func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordPar
 		case "pPr", "bookmarkStart", "bookmarkEnd", "proofErr", "commentRangeStart", "commentRangeEnd", "permStart", "permEnd":
 			continue
 		case "r":
-			p.appendRunInlines(&paragraph, child, &inlineIndex)
+			p.appendRunInlines(&paragraph, node, child, &inlineIndex)
 		case "hyperlink":
 			for _, linked := range child.children {
 				if linked.name.Local == "r" {
-					p.appendRunInlines(&paragraph, linked, &inlineIndex)
+					p.appendRunInlines(&paragraph, node, linked, &inlineIndex)
 				} else {
 					inlineID := fmt.Sprintf("%s.i%d", id, inlineIndex)
 					p.appendProjectedInline(&paragraph, inlineID, unsupportedInline(inlineID, "Unsupported hyperlink content: "+linked.name.Local), linked, nil)
@@ -271,7 +273,7 @@ func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordPar
 	return paragraph
 }
 
-func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, run *wordXMLNode, inlineIndex *int) {
+func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, paragraphNode, run *wordXMLNode, inlineIndex *int) {
 	style := parseWordTextStyle(firstChild(run, "rPr"))
 	for _, child := range run.children {
 		id := fmt.Sprintf("%s.i%d", paragraph.ID, *inlineIndex)
@@ -280,7 +282,7 @@ func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, run 
 			continue
 		case "t":
 			text := &document.WordTextRun{ID: id, Text: child.text, Style: style, Editable: true}
-			p.textTargets[id] = wordTextTarget{text: child, run: run}
+			p.textTargets[id] = wordTextTarget{text: child, run: run, paragraph: paragraphNode, paragraphID: paragraph.ID}
 			p.appendProjectedInline(paragraph, id, document.WordInline{Kind: document.WordTextInline, Text: text}, child, run)
 			*inlineIndex++
 		case "drawing":

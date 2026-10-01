@@ -201,11 +201,14 @@ func (a *App) processAsyncResults() {
 			}
 		}
 		if result.generation == a.documentGeneration && result.state == a.documentSessionState {
-			if result.textDraft {
+			if result.paragraphSplit {
+				a.completeWordParagraphSplit(result)
+			} else if result.textDraft {
 				if result.err != nil {
 					a.status = wordCommandError(result.operation, result.err)
 					result.state.wordFlushRequested = false
 					result.state.wordFlushAllDrafts = false
+					result.state.wordParagraphSplitIntent = nil
 				} else {
 					result.state.wordRunCommitted[result.runID] = result.runText
 					if result.state.wordRunDrafts[result.runID] == result.runText {
@@ -263,6 +266,9 @@ func (a *App) processAsyncResults() {
 				if result.insertedParagraphID != "" {
 					a.focusInsertedWordParagraph(result.state, result.insertedParagraphID)
 				}
+			}
+			if result.state.wordFlushRequested && !result.state.formatRunning {
+				a.startNextWordTextCommit()
 			}
 			if a.window != nil {
 				a.window.Invalidate()

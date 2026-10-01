@@ -128,6 +128,11 @@ type WordBodyEditor interface {
 	InsertBodyParagraph() (paragraphID string, err error)
 }
 
+// WordParagraphEditor exposes safe keyboard-driven paragraph structure edits.
+type WordParagraphEditor interface {
+	SplitParagraphAt(runID, value string, selectionStart, selectionEnd int) (paragraphID, newRunID string, err error)
+}
+
 // WordImageEditor is an optional capability for inline raster image operations.
 type WordImageEditor interface {
 	InsertInlineImage(paragraphID, afterInlineID, mediaType string, data []byte) (imageID string, err error)
