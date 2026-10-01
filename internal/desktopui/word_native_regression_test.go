@@ -15,6 +15,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+	"gioui.org/widget"
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
@@ -76,6 +77,149 @@ func TestWordFlowScrollsDownImmediatelyFromTop(t *testing.T) {
 	down := state.wordListState.Position
 	if down.First == top.First && down.Offset == top.Offset {
 		t.Fatalf("one downward wheel event did not move down from top: top=%#v after=%#v", top, down)
+	}
+}
+
+func TestWordScrollbarTracksAtWorkspaceRightEdge(t *testing.T) {
+	state, closeDocument := newLongWordFlowState(t, 160)
+	defer closeDocument()
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(1200, 700)}}
+	app.layoutWordFlow(gtx)
+	router.Frame(&ops)
+	var bounds, pageBounds image.Rectangle
+	var visit func([]input.SemanticNode)
+	visit = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if node.Desc.Description == "Word 文档滚动条" {
+				bounds = node.Desc.Bounds
+			}
+			if node.Desc.Description == "Word 文档画布" {
+				pageBounds = node.Desc.Bounds
+			}
+			visit(node.Children)
+		}
+	}
+	visit(router.AppendSemantics(nil))
+	if bounds.Empty() {
+		t.Fatal("Word document scrollbar has no accessible bounds")
+	}
+	if bounds.Max.X < 1180 || bounds.Max.X > 1200 {
+		t.Fatalf("Word scrollbar bounds = %v; want the right edge of the 1200px workspace", bounds)
+	}
+	if pageBounds.Empty() {
+		t.Fatal("Word page canvas has no accessible bounds")
+	}
+	if center := (pageBounds.Min.X + pageBounds.Max.X) / 2; center < 590 || center > 610 {
+		t.Fatalf("Word page canvas bounds = %v; want it centered in the 1200px workspace", pageBounds)
+	}
+}
+
+func TestWordCanvasSideDragResizesCenteredCanvas(t *testing.T) {
+	state, closeDocument := newLongWordFlowState(t, 12)
+	defer closeDocument()
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	metric := unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	frame := func() {
+		t.Helper()
+		ops.Reset()
+		gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: metric, Constraints: layout.Constraints{Max: image.Pt(1100, 700)}}
+		app.layoutWordFlow(gtx)
+		router.Frame(&ops)
+	}
+	canvasBounds := func() image.Rectangle {
+		t.Helper()
+		var bounds image.Rectangle
+		var visit func([]input.SemanticNode)
+		visit = func(nodes []input.SemanticNode) {
+			for _, node := range nodes {
+				if node.Desc.Description == "Word 文档画布" {
+					bounds = node.Desc.Bounds
+				}
+				visit(node.Children)
+			}
+		}
+		visit(router.AppendSemantics(nil))
+		if bounds.Empty() {
+			t.Fatal("Word page canvas has no accessible bounds")
+		}
+		return bounds
+	}
+	frame()
+	initial := canvasBounds()
+	startWidth := state.wordCanvasWidthDP
+	start := f32.Pt(float32(initial.Max.X), float32(initial.Min.Y+100))
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 5, Buttons: pointer.ButtonPrimary, Position: start})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, PointerID: 5, Buttons: pointer.ButtonPrimary, Position: start.Add(f32.Pt(40, 0))})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 5, Position: start.Add(f32.Pt(40, 0))})
+	frame()
+	if state.wordCanvasWidthDP <= startWidth {
+		t.Fatalf("Word canvas width after dragging right edge = %d dp; want more than %d dp", state.wordCanvasWidthDP, startWidth)
+	}
+	resized := canvasBounds()
+	if center := (resized.Min.X + resized.Max.X) / 2; center < 540 || center > 560 {
+		t.Fatalf("resized Word canvas bounds = %v; want centered in the 1100px workspace", resized)
+	}
+}
+
+func TestWordParagraphEditorUsesCanvasWidthBeforeCommit(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	run := word.WordBlocks()[0].Paragraph.Inlines[0].Text
+	if err := word.ReplaceTextRun(run.ID, "短"); err != nil {
+		t.Fatal(err)
+	}
+	state := newDocumentSessionState("draft-width.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	metric := unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	frame := func() {
+		t.Helper()
+		ops.Reset()
+		gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: metric, Constraints: layout.Constraints{Max: image.Pt(1200, 700)}}
+		app.layoutWordFlow(gtx)
+		router.Frame(&ops)
+	}
+	readRunBounds := func() image.Rectangle {
+		t.Helper()
+		var bounds image.Rectangle
+		var visit func([]input.SemanticNode)
+		visit = func(nodes []input.SemanticNode) {
+			for _, node := range nodes {
+				if node.Desc.Description == "正文文字 "+run.ID {
+					bounds = node.Desc.Bounds
+				}
+				visit(node.Children)
+			}
+		}
+		visit(router.AppendSemantics(nil))
+		if bounds.Empty() {
+			t.Fatalf("Word text run %q has no accessible bounds", run.ID)
+		}
+		return bounds
+	}
+	frame()
+	initial := readRunBounds()
+	if initial.Dx() < 500 {
+		t.Fatalf("Word paragraph editor width = %d; want it to follow the available page text width", initial.Dx())
+	}
+	wordRunEditor(state, *run).SetText(strings.Repeat("追加", 12))
+	frame()
+	afterTyping := readRunBounds()
+	if afterTyping.Dx() != initial.Dx() {
+		t.Fatalf("paragraph editor width changed from %d to %d while typing; it should stay tied to the page canvas", initial.Dx(), afterTyping.Dx())
 	}
 }
 
@@ -271,7 +415,7 @@ func TestWordClickTextFocusesRunAtCaretAndAcceptsTyping(t *testing.T) {
 	if textBounds.Empty() {
 		t.Fatal("editable Word text has no accessible hit bounds")
 	}
-	clickAt := image.Pt(textBounds.Min.X+textBounds.Dx()*2/3, textBounds.Min.Y+textBounds.Dy()/2)
+	clickAt := image.Pt(textBounds.Min.X+min(10, max(1, textBounds.Dx()-1)), textBounds.Min.Y+textBounds.Dy()/2)
 	position := f32.Pt(float32(clickAt.X), float32(clickAt.Y))
 	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: position})
 	frame()
@@ -481,6 +625,276 @@ func TestWordEnterSplitsAtCaretAndFocusesFollowingParagraph(t *testing.T) {
 	frame()
 	if newEditor.Text() != "YWorld" || state.wordRunDrafts[newRunID] != "YWorld" {
 		t.Fatalf("typing after the split did not continue in the new paragraph: editor=%q draft=%q", newEditor.Text(), state.wordRunDrafts[newRunID])
+	}
+}
+
+func TestWordBackspaceAtStartAndDeleteAtEndJoinParagraphs(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		keyName key.Name
+		target  int
+		caret   int
+	}{
+		{name: "backspace at start", keyName: key.NameDeleteBackward, target: 1, caret: 0},
+		{name: "delete at end", keyName: key.NameDeleteForward, target: 0, caret: 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			word, state, app, router, frame := newWordJoinInteraction(t, "left", "right")
+			defer word.Close()
+			run := state.wordBlocks[test.target].Paragraph.Inlines[0].Text
+			editor := focusWordRunForInteraction(t, state, router, frame, run.ID)
+			editor.SetCaret(test.caret, test.caret)
+			frame()
+			router.Queue(key.Event{Name: test.keyName, State: key.Press})
+			frame()
+			waitWordInteraction(t, app, func() bool { return len(state.wordBlocks) == 1 && !state.formatRunning })
+			paragraph := state.wordBlocks[0].Paragraph
+			if paragraph == nil || len(paragraph.Inlines) != 2 || paragraph.Inlines[0].Text.Text != "left" || paragraph.Inlines[1].Text.Text != "right" {
+				t.Fatalf("joined paragraphs = %#v; want left/right in one paragraph", state.wordBlocks)
+			}
+			if state.selectedWordParagraphID != paragraph.ID || state.selectedWordRunID != paragraph.Inlines[0].Text.ID {
+				t.Fatalf("join selection = %q/%q; want seam in left run %q", state.selectedWordParagraphID, state.selectedWordRunID, paragraph.Inlines[0].Text.ID)
+			}
+			frame()
+			joinedEditor := state.wordRunEditors[state.selectedWordRunID]
+			if joinedEditor == nil || !router.Source().Focused(joinedEditor) {
+				t.Fatal("editor at the paragraph seam did not regain focus")
+			}
+			if caret, selection := joinedEditor.Selection(); caret != 4 || selection != 4 {
+				t.Fatalf("caret after paragraph join = %d:%d; want 4:4", caret, selection)
+			}
+		})
+	}
+}
+
+func TestWordQueuedRightArrowBeforeBackspaceDeletesInParagraph(t *testing.T) {
+	word, state, _, router, frame := newWordJoinInteraction(t, "left", "right")
+	defer word.Close()
+	run := state.wordBlocks[1].Paragraph.Inlines[0].Text
+	editor := focusWordRunForInteraction(t, state, router, frame, run.ID)
+	editor.SetCaret(0, 0)
+	frame()
+	router.Queue(key.Event{Name: key.NameRightArrow, State: key.Press})
+	router.Queue(key.Event{Name: key.NameDeleteBackward, State: key.Press})
+	frame()
+	if len(state.wordBlocks) != 2 || editor.Text() != "ight" || state.wordRunDrafts[run.ID] != "ight" {
+		t.Fatalf("queued Right then Backspace produced %q, %d paragraphs, draft %q; want ordinary deletion to leave two paragraphs and \"ight\"", editor.Text(), len(state.wordBlocks), state.wordRunDrafts[run.ID])
+	}
+}
+
+func TestWordParagraphJoinCompletionUpdatesInactiveSession(t *testing.T) {
+	word, state, _, _, _ := newWordJoinInteraction(t, "left", "right")
+	defer word.Close()
+	run := state.wordBlocks[1].Paragraph.Inlines[0].Text
+	joined, err := any(word).(document.WordParagraphJoiner).JoinParagraphAtBoundary(run.ID, document.WordJoinPrevious)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.wordParagraphJoinIntent = &wordParagraphJoinIntent{runID: run.ID, direction: document.WordJoinPrevious}
+	state.wordFlushRequested = true
+	state.wordFlushAllDrafts = true
+	state.formatRunning = true
+	blocks := cloneWordBlockSnapshot(word.WordBlocks())
+	otherState := newDocumentSessionState("other.docx")
+	app := &App{
+		documentSessionState: otherState,
+		documentGeneration:   2,
+		wordCommandResults:   make(chan wordCommandResult, 1),
+	}
+	app.wordCommandResults <- wordCommandResult{
+		state:           state,
+		generation:      1,
+		operation:       "合并段落",
+		blocks:          blocks,
+		paragraphJoin:   true,
+		joinParagraphID: joined.ParagraphID,
+		joinRunID:       joined.RunID,
+		joinCaret:       joined.Caret,
+	}
+	app.processAsyncResults()
+	if state.formatRunning || state.wordParagraphJoinIntent != nil || state.wordFlushRequested || state.wordFlushAllDrafts {
+		t.Fatalf("inactive session join remained pending: running=%v intent=%#v flush=%v/%v", state.formatRunning, state.wordParagraphJoinIntent, state.wordFlushRequested, state.wordFlushAllDrafts)
+	}
+	if len(state.wordBlocks) != 1 || state.wordBlocks[0].Paragraph == nil || state.wordBlocks[0].Paragraph.ID != joined.ParagraphID {
+		t.Fatalf("inactive session projection was not refreshed: %#v", state.wordBlocks)
+	}
+}
+
+func TestWordParagraphJoinFlushesFocusedDraftBeforeJoining(t *testing.T) {
+	word, state, app, router, frame := newWordJoinInteraction(t, "left", "right")
+	defer word.Close()
+	run := state.wordBlocks[1].Paragraph.Inlines[0].Text
+	editor := focusWordRunForInteraction(t, state, router, frame, run.ID)
+	editor.SetText("draft right")
+	editor.SetCaret(0, 0)
+	frame()
+	if state.wordRunDrafts[run.ID] != "draft right" {
+		t.Fatalf("focused editor draft = %q; want captured pending text", state.wordRunDrafts[run.ID])
+	}
+	router.Queue(key.Event{Name: key.NameDeleteBackward, State: key.Press})
+	frame()
+	waitWordInteraction(t, app, func() bool { return len(state.wordBlocks) == 1 && !state.formatRunning })
+	blocks := word.WordBlocks()
+	if len(blocks) != 1 || len(blocks[0].Paragraph.Inlines) != 2 || blocks[0].Paragraph.Inlines[1].Text.Text != "draft right" {
+		t.Fatalf("join did not flush focused text draft first: %#v", blocks)
+	}
+}
+
+func TestWordParagraphJoinLeavesOrdinaryDeleteGesturesAlone(t *testing.T) {
+	tests := []struct {
+		name      string
+		caret     int
+		selection int
+		modifiers key.Modifiers
+		keyName   key.Name
+		want      string
+	}{
+		{name: "interior backspace", caret: 1, selection: 1, keyName: key.NameDeleteBackward, want: "ight"},
+		{name: "selected text", caret: 0, selection: 2, keyName: key.NameDeleteBackward, want: "ght"},
+		{name: "modified backspace", caret: 0, selection: 0, modifiers: key.ModShift, keyName: key.NameDeleteBackward, want: "right"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			word, state, app, router, frame := newWordJoinInteraction(t, "left", "right")
+			defer word.Close()
+			run := state.wordBlocks[1].Paragraph.Inlines[0].Text
+			editor := focusWordRunForInteraction(t, state, router, frame, run.ID)
+			editor.SetCaret(test.caret, test.selection)
+			frame()
+			router.Queue(key.Event{Name: test.keyName, Modifiers: test.modifiers, State: key.Press})
+			frame()
+			if test.modifiers == 0 && test.selection == test.caret {
+				waitWordInteraction(t, app, func() bool { return state.wordRunDrafts[run.ID] == test.want })
+			} else {
+				frame()
+			}
+			if len(state.wordBlocks) != 2 || editor.Text() != test.want {
+				t.Fatalf("ordinary delete produced %q and %d paragraphs; want %q and 2", editor.Text(), len(state.wordBlocks), test.want)
+			}
+		})
+	}
+}
+
+func TestWordParagraphJoinDoesNothingWithoutAdjacentParagraph(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	run := word.WordBlocks()[0].Paragraph.Inlines[0].Text
+	if err := word.ReplaceTextRun(run.ID, "only"); err != nil {
+		t.Fatal(err)
+	}
+	state := newDocumentSessionState("single.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	_, router, frame := newWordJoinFrame(t, state)
+	editor := focusWordRunForInteraction(t, state, router, frame, run.ID)
+	editor.SetCaret(0, 0)
+	frame()
+	router.Queue(key.Event{Name: key.NameDeleteBackward, State: key.Press})
+	frame()
+	if len(state.wordBlocks) != 1 || editor.Text() != "only" {
+		t.Fatalf("boundary key with no previous paragraph changed document: %#v / %q", state.wordBlocks, editor.Text())
+	}
+	editor.SetCaret(editor.Len(), editor.Len())
+	frame()
+	router.Queue(key.Event{Name: key.NameDeleteForward, State: key.Press})
+	frame()
+	if len(state.wordBlocks) != 1 || editor.Text() != "only" {
+		t.Fatalf("boundary key with no next paragraph changed document: %#v / %q", state.wordBlocks, editor.Text())
+	}
+}
+
+func newWordJoinInteraction(t *testing.T, first, second string) (*docx.Document, *documentSessionState, *App, *input.Router, func()) {
+	t.Helper()
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRun := word.WordBlocks()[0].Paragraph.Inlines[0].Text
+	if err := word.ReplaceTextRun(firstRun.ID, first); err != nil {
+		t.Fatal(err)
+	}
+	paragraphID, err := any(word).(document.WordBodyEditor).InsertBodyParagraph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var secondRun *document.WordTextRun
+	for _, block := range word.WordBlocks() {
+		if block.Paragraph != nil && block.Paragraph.ID == paragraphID {
+			secondRun = block.Paragraph.Inlines[0].Text
+		}
+	}
+	if secondRun == nil {
+		t.Fatal("new Word paragraph has no text run")
+	}
+	if err := word.ReplaceTextRun(secondRun.ID, second); err != nil {
+		t.Fatal(err)
+	}
+	state := newDocumentSessionState("join.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	app, router, frame := newWordJoinFrame(t, state)
+	return word, state, app, router, frame
+}
+
+func newWordJoinFrame(t *testing.T, state *documentSessionState) (*App, *input.Router, func()) {
+	t.Helper()
+	app := &App{documentSessionState: state, theme: material.NewTheme(), wordCommandResults: make(chan wordCommandResult, 4)}
+	router := new(input.Router)
+	var ops op.Ops
+	metric := unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	frame := func() {
+		t.Helper()
+		ops.Reset()
+		gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: metric, Constraints: layout.Constraints{Max: image.Pt(1100, 700)}}
+		app.layoutWord(gtx)
+		router.Frame(&ops)
+	}
+	return app, router, frame
+}
+
+func focusWordRunForInteraction(t *testing.T, state *documentSessionState, router *input.Router, frame func(), runID string) *widget.Editor {
+	t.Helper()
+	frame()
+	var bounds image.Rectangle
+	var findRun func([]input.SemanticNode)
+	findRun = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if node.Desc.Description == "正文文字 "+runID {
+				bounds = node.Desc.Bounds
+			}
+			findRun(node.Children)
+		}
+	}
+	findRun(router.AppendSemantics(nil))
+	if bounds.Empty() {
+		t.Fatalf("Word text run %q has no accessible hit bounds", runID)
+	}
+	position := f32.Pt(float32(bounds.Min.X+bounds.Dx()/2), float32(bounds.Min.Y+bounds.Dy()/2))
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: position})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: position})
+	frame()
+	editor := state.wordRunEditors[runID]
+	if editor == nil || !router.Source().Focused(editor) {
+		t.Fatalf("Word text run %q did not receive focus", runID)
+	}
+	return editor
+}
+
+func waitWordInteraction(t *testing.T, app *App, done func() bool) {
+	t.Helper()
+	deadline := time.After(3 * time.Second)
+	for !done() {
+		app.processAsyncResults()
+		select {
+		case <-deadline:
+			t.Fatal("Word paragraph join did not complete before timeout")
+		default:
+			time.Sleep(time.Millisecond)
+		}
 	}
 }
 

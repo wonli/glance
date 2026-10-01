@@ -2,10 +2,12 @@ package desktopui
 
 import (
 	"encoding/hex"
+	"fmt"
 	"image"
 	"image/color"
 	"math"
 	"strings"
+	"unicode"
 
 	"gioui.org/f32"
 	"gioui.org/font"
@@ -27,13 +29,17 @@ import (
 )
 
 type wordImageInteraction struct {
-	moveDrag       gesture.Drag
-	resizeDrag     gesture.Drag
-	preview        wordImageGesture
-	moveStart      f32.Point
-	resizeStartX   float32
-	resizeStartEMU int64
-	displayWidth   int
+	moveDrag         gesture.Drag
+	resizeDrags      [8]gesture.Drag
+	rotationDrag     gesture.Drag
+	preview          wordImageGesture
+	moveStart        f32.Point
+	resizeStart      f32.Point
+	resizeStartFrame image.Point
+	resizeStartEMU   int64
+	rotationStart    f32.Point
+	rotationCenter   f32.Point
+	rotationStartDeg float64
 }
 
 func wordContentOrder(blocks []document.WordBlock) []string {
@@ -235,6 +241,7 @@ func (a *App) layoutWordFlow(gtx layout.Context) layout.Dimensions {
 }
 
 const wordPaperMaxWidthDP = 816
+const wordCanvasMinWidthDP = 480
 
 func wordPageGeometry(availableWidth, maxWidth int) (pageWidth, left int) {
 	pageWidth = min(max(0, availableWidth), max(0, maxWidth))
@@ -247,65 +254,157 @@ func wordPageHorizontalMargin(pageWidth, preferred int) int {
 }
 
 func (a *App) layoutWordCanvas(gtx layout.Context, state *documentSessionState, blocks []document.WordBlock) layout.Dimensions {
-	return layout.Background{}.Layout(gtx,
-		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, wordWorkspaceBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
-			return layout.Dimensions{Size: gtx.Constraints.Max}
-		},
-		func(gtx layout.Context) layout.Dimensions {
-			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				pageWidth, _ := wordPageGeometry(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(wordPaperMaxWidthDP)))
-				gtx.Constraints.Min.X = pageWidth
-				gtx.Constraints.Max.X = pageWidth
-				margin := wordPageHorizontalMargin(pageWidth, gtx.Dp(unit.Dp(72)))
-				return layout.Background{}.Layout(gtx,
-					func(gtx layout.Context) layout.Dimensions {
-						paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
-						return layout.Dimensions{Size: gtx.Constraints.Max}
-					},
-					func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: unit.Dp(28), Bottom: unit.Dp(28), Left: unit.Dp(margin), Right: unit.Dp(margin)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return a.layoutWordList(gtx, state, blocks)
-						})
-					},
-				)
-			})
-		},
-	)
-}
-
-var wordWorkspaceBackground = color.NRGBA{R: 238, G: 241, B: 245, A: 255}
-
-func (a *App) layoutWordList(gtx layout.Context, state *documentSessionState, blocks []document.WordBlock) layout.Dimensions {
 	state.wordListState.List.Axis = layout.Vertical
+	if state.wordCanvasWidthDP <= 0 {
+		state.wordCanvasWidthDP = wordPaperMaxWidthDP
+	}
+	availableWidth := gtx.Constraints.Max.X
+	preferredWidth := gtx.Dp(unit.Dp(state.wordCanvasWidthDP))
+	pageWidth, pageLeft := wordPageGeometry(availableWidth, preferredWidth)
+	a.updateWordCanvasResize(gtx, state, pageLeft, pageLeft+pageWidth)
 	const scrollLimit = 1 << 30
-	positionDelta := state.wordBodyScroll.Update(
+	if delta := state.wordBodyScroll.Update(
 		gtx.Metric,
 		gtx.Source,
 		gtx.Now,
 		gesture.Vertical,
 		pointer.ScrollRange{Min: -scrollLimit, Max: scrollLimit},
 		pointer.ScrollRange{Min: -scrollLimit, Max: scrollLimit},
-	)
-	if positionDelta != 0 {
-		state.wordListState.Position.Offset += positionDelta
+	); delta != 0 {
+		state.wordListState.Position.Offset += delta
 	}
-	return layout.Stack{Alignment: layout.NW}.Layout(gtx,
-		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			return material.List(a.theme, &state.wordListState).Layout(gtx, len(blocks)+1, func(gtx layout.Context, index int) layout.Dimensions {
-				if index == len(blocks) {
-					return a.layoutWordAppendTarget(gtx, state)
-				}
-				return a.layoutWordBlock(gtx, blocks[index])
-			})
-		}),
-		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			pass := pointer.PassOp{}.Push(gtx.Ops)
-			state.wordBodyScroll.Add(gtx.Ops)
-			pass.Pop()
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, wordWorkspaceBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Max}
-		}),
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Stack{Alignment: layout.NW}.Layout(gtx,
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.X = gtx.Constraints.Max.X
+					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						pageWidth, _ := wordPageGeometry(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(state.wordCanvasWidthDP)))
+						gtx.Constraints.Min.X = pageWidth
+						gtx.Constraints.Max.X = pageWidth
+						margin := wordPageHorizontalMargin(pageWidth, gtx.Dp(unit.Dp(72)))
+						return layout.Background{}.Layout(gtx,
+							func(gtx layout.Context) layout.Dimensions {
+								paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+								canvasClip := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
+								semantic.DescriptionOp("Word 文档画布").Add(gtx.Ops)
+								canvasClip.Pop()
+								return layout.Dimensions{Size: gtx.Constraints.Max}
+							},
+							func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Top: unit.Dp(28), Bottom: unit.Dp(28), Left: unit.Dp(margin), Right: unit.Dp(margin)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return a.layoutWordList(gtx, state, blocks)
+								})
+							},
+						)
+					})
+				}),
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+					pass := pointer.PassOp{}.Push(gtx.Ops)
+					state.wordBodyScroll.Add(gtx.Ops)
+					pass.Pop()
+					return layout.Dimensions{Size: gtx.Constraints.Max}
+				}),
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+					hitWidth := max(1, gtx.Dp(unit.Dp(8)))
+					for _, edge := range []int{pageLeft, pageLeft + pageWidth} {
+						area := clip.Rect{Min: image.Pt(max(0, edge-hitWidth), 0), Max: image.Pt(min(gtx.Constraints.Max.X, edge+hitWidth), gtx.Constraints.Max.Y)}.Push(gtx.Ops)
+						pointer.CursorColResize.Add(gtx.Ops)
+						state.wordCanvasResizeDrag.Add(gtx.Ops)
+						area.Pop()
+					}
+					return layout.Dimensions{Size: gtx.Constraints.Max}
+				}),
+				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+					start, end := wordListViewportRange(state.wordListState.Position, len(blocks)+1, gtx.Constraints.Max.Y)
+					trackWidth := gtx.Dp(material.Scrollbar(a.theme, &state.wordListState.Scrollbar).Width())
+					trackClip := clip.Rect{Min: image.Pt(max(0, gtx.Constraints.Max.X-trackWidth), 0), Max: gtx.Constraints.Max}.Push(gtx.Ops)
+					semantic.DescriptionOp("Word 文档滚动条").Add(gtx.Ops)
+					trackClip.Pop()
+					gtx.Constraints.Min.X = gtx.Constraints.Max.X
+					return layout.E.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						dimensions := material.Scrollbar(a.theme, &state.wordListState.Scrollbar).Layout(gtx, layout.Vertical, start, end)
+						if delta := state.wordListState.ScrollDistance(); delta != 0 {
+							state.wordListState.List.ScrollBy(delta * float32(len(blocks)+1))
+						}
+						return dimensions
+					})
+				}),
+			)
+		},
 	)
+}
+
+func (a *App) updateWordCanvasResize(gtx layout.Context, state *documentSessionState, left, right int) {
+	for event, ok := state.wordCanvasResizeDrag.Update(gtx.Metric, gtx.Source, gesture.Both); ok; event, ok = state.wordCanvasResizeDrag.Update(gtx.Metric, gtx.Source, gesture.Both) {
+		switch event.Kind {
+		case pointer.Press:
+			const edgeHitWidth = 14
+			state.wordCanvasResizeSide = 0
+			if math.Abs(float64(event.Position.X-float32(left))) <= edgeHitWidth {
+				state.wordCanvasResizeSide = -1
+			} else if math.Abs(float64(event.Position.X-float32(right))) <= edgeHitWidth {
+				state.wordCanvasResizeSide = 1
+			}
+			if state.wordCanvasResizeSide != 0 {
+				state.wordCanvasResizeStartX = event.Position.X
+				maxWidthDP := max(1, int(math.Floor(float64(gtx.Constraints.Max.X)/float64(max32(0.1, gtx.Metric.PxPerDp)))))
+				state.wordCanvasResizeStartWidthDP = min(state.wordCanvasWidthDP, maxWidthDP)
+			}
+		case pointer.Drag:
+			if state.wordCanvasResizeSide == 0 {
+				continue
+			}
+			pixelsPerDP := max32(0.1, gtx.Metric.PxPerDp)
+			delta := int(math.Round(float64(event.Position.X-state.wordCanvasResizeStartX) / float64(pixelsPerDP)))
+			width := state.wordCanvasResizeStartWidthDP + state.wordCanvasResizeSide*delta*2
+			maxWidth := max(1, int(math.Floor(float64(gtx.Constraints.Max.X)/float64(pixelsPerDP))))
+			minWidth := min(wordCanvasMinWidthDP, maxWidth)
+			state.wordCanvasWidthDP = max(minWidth, min(maxWidth, width))
+		case pointer.Release, pointer.Cancel:
+			state.wordCanvasResizeSide = 0
+		}
+	}
+}
+
+var wordWorkspaceBackground = color.NRGBA{R: 238, G: 241, B: 245, A: 255}
+
+func (a *App) layoutWordList(gtx layout.Context, state *documentSessionState, blocks []document.WordBlock) layout.Dimensions {
+	state.wordListState.List.Axis = layout.Vertical
+	return state.wordListState.List.Layout(gtx, len(blocks)+1, func(gtx layout.Context, index int) layout.Dimensions {
+		if index == len(blocks) {
+			return a.layoutWordAppendTarget(gtx, state)
+		}
+		return a.layoutWordBlock(gtx, blocks[index])
+	})
+}
+
+func wordListViewportRange(position layout.Position, elements, viewportSize int) (start, end float32) {
+	if position.Length <= 0 || elements <= 0 || viewportSize <= 0 {
+		return 0, 1
+	}
+	length := float32(position.Length)
+	elementLength := length / float32(elements)
+	start = clampWordFraction((float32(position.First)*elementLength + float32(position.Offset)) / length)
+	end = clampWordFraction((float32(position.First+position.Count)*elementLength + float32(position.OffsetLast)) / length)
+	viewportFraction := end - start
+	visibleFraction := min(1, float32(viewportSize)/length)
+	err := visibleFraction - viewportFraction
+	if viewportFraction < 1 {
+		startShare := start / (1 - viewportFraction)
+		endShare := (1 - end) / (1 - viewportFraction)
+		start -= startShare * err
+		end += endShare * err
+	}
+	return clampWordFraction(start), clampWordFraction(end)
+}
+
+func clampWordFraction(value float32) float32 {
+	return max(0, min(1, value))
 }
 
 func (a *App) layoutWordAppendTarget(gtx layout.Context, state *documentSessionState) layout.Dimensions {
@@ -416,7 +515,19 @@ func (a *App) layoutWordParagraph(gtx layout.Context, paragraph document.WordPar
 		switch {
 		case inline.Text != nil:
 			run := *inline.Text
-			children = append(children, wordInlineLayoutChild{width: wordRunPreferredWidth(gtx, a.theme, paragraph, run), layout: func(gtx layout.Context) layout.Dimensions {
+			var width int
+			if len(paragraph.Inlines) == 1 {
+				width = maxWidth
+			} else {
+				widthRun := run
+				if editor := a.documentSessionState.wordRunEditors[run.ID]; editor != nil {
+					widthRun.Text = editor.Text()
+				} else if draft, exists := a.documentSessionState.wordRunDrafts[run.ID]; exists {
+					widthRun.Text = draft
+				}
+				width = wordRunPreferredWidth(gtx, a.theme, paragraph, widthRun)
+			}
+			children = append(children, wordInlineLayoutChild{width: width, layout: func(gtx layout.Context) layout.Dimensions {
 				return a.layoutWordTextRun(gtx, paragraph, *inline.Text)
 			}})
 		case inline.Image != nil:
@@ -442,18 +553,22 @@ func (a *App) layoutWordParagraph(gtx layout.Context, paragraph document.WordPar
 func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParagraph, run document.WordTextRun) layout.Dimensions {
 	state := a.documentSessionState
 	editor := wordRunEditor(state, run)
-	selected := state.selectedWordRunID == run.ID
 	label := wordRunLabel(a.theme, paragraph, run)
 	focusTargetPending := state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != run.ID
 	paragraphSplitPending := state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID
-	editor.ReadOnly = !run.Editable || a.saving || paragraphSplitPending || focusTargetPending
+	paragraphJoinPending := state.wordParagraphJoinIntent != nil
+	editor.ReadOnly = !run.Editable || a.saving || paragraphSplitPending || paragraphJoinPending || focusTargetPending
 	if !editor.ReadOnly {
-		for event, ok := editor.Update(gtx); ok; event, ok = editor.Update(gtx) {
-			if _, submit := event.(widget.SubmitEvent); submit {
-				selectionStart, selectionEnd := editor.Selection()
-				a.queueWordParagraphSplit(run.ID, editor.Text(), selectionStart, selectionEnd)
-				if state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID {
-					editor.ReadOnly = true
+		if a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {
+			editor.ReadOnly = true
+		} else {
+			for event, ok := editor.Update(gtx); ok; event, ok = editor.Update(gtx) {
+				if _, submit := event.(widget.SubmitEvent); submit {
+					selectionStart, selectionEnd := editor.Selection()
+					a.queueWordParagraphSplit(run.ID, editor.Text(), selectionStart, selectionEnd)
+					if state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID {
+						editor.ReadOnly = true
+					}
 				}
 			}
 		}
@@ -462,9 +577,6 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	style := material.Editor(a.theme, editor, "")
 	style.Font, style.TextSize, style.Color = label.Font, label.TextSize, label.Color
 	background := contentSurface
-	if selected {
-		background = selectedFill
-	}
 	dimensions := wordMeasuredBackground(gtx, background, func(gtx layout.Context) layout.Dimensions {
 		dims := layoutWordRunEditor(gtx, style, run.ID)
 		if run.Style.Underline && dims.Size.X > 0 && dims.Size.Y > 0 {
@@ -496,6 +608,118 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 		state.wordPendingFocusRunID = ""
 	}
 	return dimensions
+}
+
+func (a *App) handleWordParagraphJoinKey(gtx layout.Context, paragraph document.WordParagraph, run document.WordTextRun, editor *widget.Editor) bool {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || !run.Editable || !gtx.Focused(editor) || state.formatRunning || state.wordParagraphJoinIntent != nil || state.wordParagraphSplitIntent != nil || a.saving {
+		return false
+	}
+	start, end := editor.Selection()
+	if start != end {
+		return false
+	}
+	var filters []key.Filter
+	if start == 0 && wordTextRunAtBoundary(paragraph, run.ID, true) && wordHasAdjacentParagraph(state.wordBlocks, paragraph.ID, document.WordJoinPrevious) {
+		filters = append(filters, key.Filter{Focus: editor, Name: key.NameDeleteBackward})
+	}
+	if start == editor.Len() && wordTextRunAtBoundary(paragraph, run.ID, false) && wordHasAdjacentParagraph(state.wordBlocks, paragraph.ID, document.WordJoinNext) {
+		filters = append(filters, key.Filter{Focus: editor, Name: key.NameDeleteForward})
+	}
+	for _, filter := range filters {
+		event, ok := gtx.Event(filter)
+		if !ok {
+			continue
+		}
+		keyEvent, ok := event.(key.Event)
+		if !ok || keyEvent.State != key.Press {
+			continue
+		}
+		// The targeted Gio filter can find a later delete key while earlier
+		// navigation or text events are still queued. Let the editor consume
+		// those first, then decide whether this delete is still at a paragraph
+		// boundary.
+		for event, ok := editor.Update(gtx); ok; event, ok = editor.Update(gtx) {
+			if _, submit := event.(widget.SubmitEvent); submit {
+				selectionStart, selectionEnd := editor.Selection()
+				a.queueWordParagraphSplit(run.ID, editor.Text(), selectionStart, selectionEnd)
+				if state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID {
+					return true
+				}
+			}
+		}
+		start, end = editor.Selection()
+		atBoundary := start == end
+		direction := document.WordJoinPrevious
+		if keyEvent.Name == key.NameDeleteForward {
+			direction = document.WordJoinNext
+		}
+		joinBoundary := (direction == document.WordJoinPrevious && atBoundary && start == 0 && wordTextRunAtBoundary(paragraph, run.ID, true)) ||
+			(direction == document.WordJoinNext && atBoundary && start == editor.Len() && wordTextRunAtBoundary(paragraph, run.ID, false))
+		if joinBoundary && wordHasAdjacentParagraph(state.wordBlocks, paragraph.ID, direction) {
+			a.queueWordParagraphJoin(run.ID, editor.Text(), direction)
+			return true
+		}
+		if direction == document.WordJoinPrevious {
+			editor.Delete(-1)
+		} else {
+			editor.Delete(1)
+		}
+		return true
+	}
+	return false
+}
+
+func wordTextRunAtBoundary(paragraph document.WordParagraph, runID string, first bool) bool {
+	if first {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text != nil && inline.Text.Editable {
+				return inline.Text.ID == runID
+			}
+		}
+		return false
+	}
+	for index := len(paragraph.Inlines) - 1; index >= 0; index-- {
+		inline := paragraph.Inlines[index]
+		if inline.Text != nil && inline.Text.Editable {
+			return inline.Text.ID == runID
+		}
+	}
+	return false
+}
+
+func wordHasAdjacentParagraph(blocks []document.WordBlock, paragraphID string, direction document.WordParagraphJoinDirection) bool {
+	for blockIndex := range blocks {
+		block := &blocks[blockIndex]
+		if block.Paragraph != nil && block.Paragraph.ID == paragraphID {
+			adjacentIndex := blockIndex - 1
+			if direction == document.WordJoinNext {
+				adjacentIndex = blockIndex + 1
+			}
+			if adjacentIndex < 0 || adjacentIndex >= len(blocks) || blocks[adjacentIndex].Kind != document.WordParagraphBlock || blocks[adjacentIndex].Paragraph == nil {
+				return false
+			}
+			return true
+		}
+		if block.Table == nil {
+			continue
+		}
+		for _, row := range block.Table.Rows {
+			for _, cell := range row.Cells {
+				for paragraphIndex := range cell.Paragraphs {
+					if cell.Paragraphs[paragraphIndex].ID != paragraphID {
+						continue
+					}
+					adjacentIndex := paragraphIndex - 1
+					if direction == document.WordJoinNext {
+						adjacentIndex = paragraphIndex + 1
+					}
+					return adjacentIndex >= 0 && adjacentIndex < len(cell.Paragraphs)
+				}
+			}
+		}
+	}
+	return false
 }
 
 func layoutWordRunEditor(gtx layout.Context, style material.EditorStyle, runID string) layout.Dimensions {
@@ -596,7 +820,23 @@ func wordRunPreferredWidth(gtx layout.Context, theme *material.Theme, paragraph 
 		}
 	}
 	pixels := (int(width) + 63) / 64
-	return max(1, pixels+gtx.Dp(unit.Dp(4)))
+	return max(1, max(pixels, wordRunFallbackWidth(gtx, label.TextSize, run.Text))+gtx.Dp(unit.Dp(4)))
+}
+
+func wordRunFallbackWidth(gtx layout.Context, size unit.Sp, value string) int {
+	em := max(1, gtx.Sp(size))
+	width := 0
+	for _, r := range value {
+		switch {
+		case unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || r == '\n' || r == '\r':
+		case unicode.Is(unicode.Han, r), unicode.Is(unicode.Hiragana, r), unicode.Is(unicode.Katakana, r), unicode.Is(unicode.Hangul, r), unicode.Is(unicode.Bopomofo, r),
+			r >= 0x3000 && r <= 0x303F, r >= 0xFF01 && r <= 0xFF60, r >= 0xFFE0 && r <= 0xFFE6, r >= 0x1F300 && r <= 0x1FAFF:
+			width += em
+		default:
+			width += max(1, int(math.Round(float64(em)*0.55)))
+		}
+	}
+	return width
 }
 
 func (a *App) wordImagePreferredWidth(gtx layout.Context, item document.WordImage, maxWidth int) int {
@@ -606,13 +846,15 @@ func (a *App) wordImagePreferredWidth(gtx layout.Context, item document.WordImag
 			width = wordImageEMUToPixels(item.WidthEMU, gtx.Metric.PxPerDp)
 			height = wordImageEMUToPixels(item.HeightEMU, gtx.Metric.PxPerDp)
 		}
-		return max(1, fitWordImageSize(width, height, maxWidth, gtx.Dp(unit.Dp(360))).X)
+		source := fitRotatedWordImageSize(width, height, maxWidth, gtx.Dp(unit.Dp(360)), item.RotationDegrees)
+		return max(1, rotatedWordImageBounds(source, item.RotationDegrees).X)
 	}
 	width, height := wordImageEMUToPixels(item.WidthEMU, gtx.Metric.PxPerDp), wordImageEMUToPixels(item.HeightEMU, gtx.Metric.PxPerDp)
 	if width <= 0 || height <= 0 {
 		return min(maxWidth, gtx.Dp(unit.Dp(240)))
 	}
-	return max(1, fitWordImageSize(width, height, maxWidth, gtx.Dp(unit.Dp(360))).X)
+	source := fitRotatedWordImageSize(width, height, maxWidth, gtx.Dp(unit.Dp(360)), item.RotationDegrees)
+	return max(1, rotatedWordImageBounds(source, item.RotationDegrees).X)
 }
 
 func wordRunLabel(theme *material.Theme, paragraph document.WordParagraph, run document.WordTextRun) material.LabelStyle {
@@ -816,21 +1058,25 @@ func (a *App) layoutWordImage(gtx layout.Context, paragraph document.WordParagra
 	}
 	preview := interaction.preview.Preview()
 	widthEMU, heightEMU := item.WidthEMU, item.HeightEMU
+	rotationDegrees := item.RotationDegrees
 	if preview.Active && interaction.preview.mode == wordImageGestureResize {
 		widthEMU, heightEMU = preview.WidthEMU, preview.HeightEMU
 	}
+	if preview.Active && interaction.preview.mode == wordImageGestureRotate {
+		rotationDegrees = preview.RotationDegrees
+	}
 	maxWidth := max(1, gtx.Constraints.Max.X)
 	maxHeight := gtx.Dp(unit.Dp(360))
-	var visualSize image.Point
+	var sourceSize, visualSize image.Point
 	if decoded != nil {
 		if widthEMU <= 0 || heightEMU <= 0 {
-			visualSize = fitWordImageSize(decoded.Bounds().Dx(), decoded.Bounds().Dy(), maxWidth, maxHeight)
+			sourceSize = fitRotatedWordImageSize(decoded.Bounds().Dx(), decoded.Bounds().Dy(), maxWidth, maxHeight, rotationDegrees)
 		} else {
 			visualWidth := wordImageEMUToPixels(widthEMU, gtx.Metric.PxPerDp)
 			visualHeight := wordImageEMUToPixels(heightEMU, gtx.Metric.PxPerDp)
-			visualSize = fitWordImageSize(visualWidth, visualHeight, maxWidth, maxHeight)
+			sourceSize = fitRotatedWordImageSize(visualWidth, visualHeight, maxWidth, maxHeight, rotationDegrees)
 		}
-		interaction.displayWidth = visualSize.X
+		visualSize = rotatedWordImageBounds(sourceSize, rotationDegrees)
 	}
 	if button.Clicked(gtx) {
 		selectWordImage(state, item.ID)
@@ -839,39 +1085,65 @@ func (a *App) layoutWordImage(gtx layout.Context, paragraph document.WordParagra
 		}
 	}
 	return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		background := contentSurface
-		if selected {
-			background = selectedFill
-		}
-		return wordMeasuredBackground(gtx, background, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						interaction.moveDrag.Add(gtx.Ops)
-						if decoded == nil {
-							message := state.wordImageErrors[item.ID]
-							if message == "" {
-								message = "正在载入图片…"
-							} else {
-								message = "图片无法预览：" + message
-							}
-							return wordReadOnlyPlaceholder(gtx, a.theme, message)
-						}
-						gtx.Constraints.Min = visualSize
-						gtx.Constraints.Max = visualSize
-						semantic.DescriptionOp("内嵌图片 " + item.ID).Add(gtx.Ops)
-						return widget.Image{Src: paint.NewImageOp(decoded), Fit: widget.Contain, Position: layout.Center, Scale: float32(visualSize.X) / float32(max(1, decoded.Bounds().Dx())) / max32(1, gtx.Metric.PxPerDp)}.Layout(gtx)
-					})
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if !selected {
-						return layout.Dimensions{}
+		return wordMeasuredBackground(gtx, contentSurface, func(gtx layout.Context) layout.Dimensions {
+			if decoded == nil {
+				return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					interaction.moveDrag.Add(gtx.Ops)
+					message := state.wordImageErrors[item.ID]
+					if message == "" {
+						message = "正在载入图片…"
+					} else {
+						message = "图片无法预览：" + message
 					}
-					return a.layoutWordResizeHandle(gtx, interaction, item)
-				}),
-			)
+					return wordReadOnlyPlaceholder(gtx, a.theme, message)
+				})
+			}
+
+			imageRect := image.Rectangle{Max: visualSize}
+			containerSize := visualSize
+			if selected {
+				pad := gtx.Dp(unit.Dp(12))
+				topPad := gtx.Dp(unit.Dp(34))
+				bottomPad := gtx.Dp(unit.Dp(12))
+				imageRect = image.Rectangle{Min: image.Pt(pad, topPad), Max: image.Pt(pad+visualSize.X, topPad+visualSize.Y)}
+				containerSize = image.Pt(visualSize.X+2*pad, visualSize.Y+topPad+bottomPad)
+			}
+			gtx.Constraints = layout.Constraints{Min: containerSize, Max: containerSize}
+			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				interaction.moveDrag.Add(gtx.Ops)
+				semantic.DescriptionOp("内嵌图片 " + item.ID).Add(gtx.Ops)
+				a.drawWordImage(gtx, decoded, sourceSize, visualSize, imageRect, rotationDegrees)
+				if selected {
+					a.drawWordImageSelection(gtx, imageRect)
+					a.layoutWordImageResizeHandles(gtx, interaction, item, visualSize, imageRect)
+					a.layoutWordImageRotationHandle(gtx, interaction, item, imageRect)
+				}
+				return layout.Dimensions{Size: containerSize}
+			})
 		})
 	})
+}
+
+func (a *App) drawWordImage(gtx layout.Context, decoded image.Image, sourceSize, visualSize image.Point, imageRect image.Rectangle, rotationDegrees float64) {
+	center := f32.Pt(float32(visualSize.X)/2, float32(visualSize.Y)/2)
+	offset := op.Offset(imageRect.Min).Push(gtx.Ops)
+	imageOffset := op.Offset(image.Pt((visualSize.X-sourceSize.X)/2, (visualSize.Y-sourceSize.Y)/2)).Push(gtx.Ops)
+	rotation := op.Affine(f32.AffineId().Rotate(center, float32(rotationDegrees*math.Pi/180))).Push(gtx.Ops)
+	imageGtx := gtx
+	imageGtx.Constraints = layout.Constraints{Min: sourceSize, Max: sourceSize}
+	widget.Image{Src: paint.NewImageOp(decoded), Fit: widget.Contain, Position: layout.Center, Scale: float32(sourceSize.X) / float32(max(1, decoded.Bounds().Dx())) / max32(1, gtx.Metric.PxPerDp)}.Layout(imageGtx)
+	rotation.Pop()
+	imageOffset.Pop()
+	offset.Pop()
+}
+
+func (a *App) drawWordImageSelection(gtx layout.Context, imageRect image.Rectangle) {
+	border := max(1, gtx.Dp(unit.Dp(1)))
+	blue := color.NRGBA{R: 38, G: 117, B: 214, A: 255}
+	paint.FillShape(gtx.Ops, blue, clip.Rect{Min: imageRect.Min, Max: image.Pt(imageRect.Max.X, imageRect.Min.Y+border)}.Op())
+	paint.FillShape(gtx.Ops, blue, clip.Rect{Min: image.Pt(imageRect.Min.X, imageRect.Max.Y-border), Max: imageRect.Max}.Op())
+	paint.FillShape(gtx.Ops, blue, clip.Rect{Min: imageRect.Min, Max: image.Pt(imageRect.Min.X+border, imageRect.Max.Y)}.Op())
+	paint.FillShape(gtx.Ops, blue, clip.Rect{Min: image.Pt(imageRect.Max.X-border, imageRect.Min.Y), Max: imageRect.Max}.Op())
 }
 
 func (a *App) updateWordImageMoveGesture(gtx layout.Context, interaction *wordImageInteraction, item document.WordImage, paragraphID string) {
@@ -895,40 +1167,98 @@ func (a *App) updateWordImageMoveGesture(gtx layout.Context, interaction *wordIm
 	}
 }
 
-func (a *App) layoutWordResizeHandle(gtx layout.Context, interaction *wordImageInteraction, item document.WordImage) layout.Dimensions {
-	button := wordResizeHandleButton(a.documentSessionState, item.ID)
-	for event, ok := interaction.resizeDrag.Update(gtx.Metric, gtx.Source, gesture.Horizontal); ok; event, ok = interaction.resizeDrag.Update(gtx.Metric, gtx.Source, gesture.Horizontal) {
+func (a *App) layoutWordImageResizeHandles(gtx layout.Context, interaction *wordImageInteraction, item document.WordImage, frame image.Point, imageRect image.Rectangle) {
+	const hitSizeDP = 18
+	hitSize := gtx.Dp(unit.Dp(hitSizeDP))
+	dotSize := max(6, gtx.Dp(unit.Dp(8)))
+	for index, handle := range wordImageResizeHandles {
+		center := image.Pt(imageRect.Min.X+frame.X/2+(handle.x*frame.X)/2, imageRect.Min.Y+frame.Y/2+(handle.y*frame.Y)/2)
+		hitRect := image.Rectangle{Min: image.Pt(center.X-hitSize/2, center.Y-hitSize/2), Max: image.Pt(center.X+(hitSize+1)/2, center.Y+(hitSize+1)/2)}
+		drag := &interaction.resizeDrags[index]
+		area := clip.Rect{Min: hitRect.Min, Max: hitRect.Max}.Push(gtx.Ops)
+		drag.Add(gtx.Ops)
+		area.Pop()
+		for event, ok := drag.Update(gtx.Metric, gtx.Source, gesture.Both); ok; event, ok = drag.Update(gtx.Metric, gtx.Source, gesture.Both) {
+			switch event.Kind {
+			case pointer.Press:
+				interaction.resizeStart = event.Position
+				interaction.resizeStartFrame = frame
+				interaction.resizeStartEMU = item.WidthEMU
+				interaction.preview.BeginResize(item.ID, item.WidthEMU, item.HeightEMU)
+			case pointer.Drag:
+				width := wordImageResizeWidthForHandle(interaction.resizeStartEMU, interaction.resizeStartFrame, index, event.Position.Sub(interaction.resizeStart))
+				interaction.preview.ResizePreview(width)
+			case pointer.Release:
+				interaction.preview.ReleaseResize()
+				preview := interaction.preview.Preview()
+				if interaction.preview.CommitResize() {
+					a.runWordImageCommand("调整图片", item.ID, func(editor document.WordImageEditor) error {
+						return editor.ResizeInlineImage(item.ID, preview.WidthEMU)
+					}, false)
+				}
+			case pointer.Cancel:
+				interaction.preview.Cancel()
+			}
+		}
+		semantic.Button.Add(gtx.Ops)
+		semantic.DescriptionOp("拖动调整图片大小：" + handle.name).Add(gtx.Ops)
+		paintWordImageHandle(gtx, center, dotSize)
+	}
+}
+
+func (a *App) layoutWordImageRotationHandle(gtx layout.Context, interaction *wordImageInteraction, item document.WordImage, imageRect image.Rectangle) {
+	const handleSizeDP = 18
+	size := gtx.Dp(unit.Dp(handleSizeDP))
+	gap := gtx.Dp(unit.Dp(20))
+	center := f32.Pt(float32(imageRect.Min.X+imageRect.Dx()/2), float32(imageRect.Min.Y+imageRect.Dy()/2))
+	rotationPoint := image.Pt(int(center.X), imageRect.Min.Y-gap)
+	hitRect := image.Rectangle{Min: image.Pt(rotationPoint.X-size/2, rotationPoint.Y-size/2), Max: image.Pt(rotationPoint.X+(size+1)/2, rotationPoint.Y+(size+1)/2)}
+	area := clip.Rect{Min: hitRect.Min, Max: hitRect.Max}.Push(gtx.Ops)
+	interaction.rotationDrag.Add(gtx.Ops)
+	area.Pop()
+	for event, ok := interaction.rotationDrag.Update(gtx.Metric, gtx.Source, gesture.Both); ok; event, ok = interaction.rotationDrag.Update(gtx.Metric, gtx.Source, gesture.Both) {
 		switch event.Kind {
 		case pointer.Press:
-			interaction.resizeStartX = event.Position.X
-			interaction.resizeStartEMU = item.WidthEMU
-			interaction.preview.BeginResize(item.ID, item.WidthEMU, item.HeightEMU)
+			interaction.rotationStart = event.Position
+			interaction.rotationCenter = center
+			interaction.rotationStartDeg = item.RotationDegrees
+			interaction.preview.BeginRotate(item.ID, item.RotationDegrees)
 		case pointer.Drag:
-			displayWidth := max(1, interaction.displayWidth)
-			deltaEMU := resizeWordImageWidthEMU(float64(event.Position.X-interaction.resizeStartX), item.WidthEMU, displayWidth)
-			interaction.preview.ResizePreview(interaction.resizeStartEMU + deltaEMU)
+			interaction.preview.RotatePreview(wordImageRotationForPointer(interaction.rotationStartDeg, interaction.rotationCenter, interaction.rotationStart, event.Position))
 		case pointer.Release:
-			interaction.preview.ReleaseResize()
+			interaction.preview.ReleaseRotate()
 			preview := interaction.preview.Preview()
-			if interaction.preview.CommitResize() {
-				a.runWordImageCommand("调整图片", item.ID, func(editor document.WordImageEditor) error {
-					return editor.ResizeInlineImage(item.ID, preview.WidthEMU)
-				}, false)
+			if interaction.preview.CommitRotate() {
+				a.runWordImageRotationCommand(item.ID, preview.RotationDegrees)
 			}
 		case pointer.Cancel:
 			interaction.preview.Cancel()
 		}
 	}
-	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		interaction.resizeDrag.Add(gtx.Ops)
-		size := gtx.Dp(unit.Dp(22))
-		gtx.Constraints.Min = image.Pt(size, size)
-		gtx.Constraints.Max = gtx.Constraints.Min
-		semantic.Button.Add(gtx.Ops)
-		semantic.DescriptionOp("拖动调整图片大小").Add(gtx.Ops)
-		paint.FillShape(gtx.Ops, toolbarActiveBackground, clip.UniformRRect(image.Rectangle{Max: image.Pt(size, size)}, gtx.Dp(unit.Dp(4))).Op(gtx.Ops))
-		return layout.Center.Layout(gtx, material.Caption(a.theme, "↘").Layout)
-	})
+	semantic.Button.Add(gtx.Ops)
+	semantic.DescriptionOp("拖动旋转图片").Add(gtx.Ops)
+	dotSize := max(6, gtx.Dp(unit.Dp(8)))
+	stem := image.Rectangle{Min: image.Pt(rotationPoint.X-1, rotationPoint.Y+dotSize/2), Max: image.Pt(rotationPoint.X+1, imageRect.Min.Y+1)}
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 38, G: 117, B: 214, A: 255}, clip.Rect{Min: stem.Min, Max: stem.Max}.Op())
+	paintWordImageHandle(gtx, rotationPoint, dotSize)
+}
+
+func paintWordImageHandle(gtx layout.Context, center image.Point, size int) {
+	outer := image.Rectangle{Min: image.Pt(center.X-size/2, center.Y-size/2), Max: image.Pt(center.X+(size+1)/2, center.Y+(size+1)/2)}
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 38, G: 117, B: 214, A: 255}, clip.Ellipse(outer).Op(gtx.Ops))
+	innerSize := max(2, size-4)
+	inner := image.Rectangle{Min: image.Pt(center.X-innerSize/2, center.Y-innerSize/2), Max: image.Pt(center.X+(innerSize+1)/2, center.Y+(innerSize+1)/2)}
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Ellipse(inner).Op(gtx.Ops))
+}
+
+func (a *App) runWordImageRotationCommand(imageID string, rotation float64) {
+	a.runWordImageCommand("旋转图片", imageID, func(editor document.WordImageEditor) error {
+		rotator, ok := any(editor).(document.WordImageRotator)
+		if !ok {
+			return fmt.Errorf("当前 Word 适配器不支持旋转图片")
+		}
+		return rotator.SetInlineImageRotation(imageID, rotation)
+	}, false)
 }
 
 func wordImageEMUToPixels(widthEMU int64, pxPerDp float32) int {
@@ -940,32 +1270,6 @@ func wordImageEMUToPixels(widthEMU int64, pxPerDp float32) int {
 		return math.MaxInt
 	}
 	return max(1, int(math.Round(pixels)))
-}
-
-func resizeWordImageWidthEMU(deltaScreenPx float64, currentWidthEMU int64, displayedWidthPx int) int64 {
-	if currentWidthEMU <= 0 || displayedWidthPx <= 0 || math.IsNaN(deltaScreenPx) || math.IsInf(deltaScreenPx, 0) {
-		return currentWidthEMU
-	}
-	delta := int64(math.Round(deltaScreenPx * float64(currentWidthEMU) / float64(displayedWidthPx)))
-	if delta > 0 && currentWidthEMU > math.MaxInt64-delta {
-		return math.MaxInt64
-	}
-	if delta < 0 && currentWidthEMU < math.MinInt64-delta {
-		return 1
-	}
-	return max(int64(1), currentWidthEMU+delta)
-}
-
-func wordResizeHandleButton(state *documentSessionState, id string) *widget.Clickable {
-	if state.wordResizeHandleButtons == nil {
-		state.wordResizeHandleButtons = make(map[string]*widget.Clickable)
-	}
-	button := state.wordResizeHandleButtons[id]
-	if button == nil {
-		button = new(widget.Clickable)
-		state.wordResizeHandleButtons[id] = button
-	}
-	return button
 }
 
 func wordReadOnlyPlaceholder(gtx layout.Context, theme *material.Theme, message string) layout.Dimensions {

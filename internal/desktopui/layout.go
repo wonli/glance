@@ -200,7 +200,10 @@ func (a *App) processAsyncResults() {
 				result.state.wordInsertionRunning = false
 			}
 		}
-		if result.generation == a.documentGeneration && result.state == a.documentSessionState {
+		activeResult := result.generation == a.documentGeneration && result.state == a.documentSessionState
+		if result.paragraphJoin {
+			a.completeWordParagraphJoin(result, activeResult)
+		} else if activeResult {
 			if result.paragraphSplit {
 				a.completeWordParagraphSplit(result)
 			} else if result.textDraft {
@@ -209,6 +212,7 @@ func (a *App) processAsyncResults() {
 					result.state.wordFlushRequested = false
 					result.state.wordFlushAllDrafts = false
 					result.state.wordParagraphSplitIntent = nil
+					result.state.wordParagraphJoinIntent = nil
 				} else {
 					result.state.wordRunCommitted[result.runID] = result.runText
 					if result.state.wordRunDrafts[result.runID] == result.runText {

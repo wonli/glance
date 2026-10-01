@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"strings"
 	"testing"
+	"time"
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
@@ -55,8 +56,8 @@ func TestWordToolbarTabsActionsAndIcons(t *testing.T) {
 	if got := wordToolbarActions(wordTabInsert); len(got) != 1 || got[0].id != "insert-image" {
 		t.Fatalf("Word Insert actions = %#v; want image insertion", got)
 	}
-	if got := wordToolbarActions(wordTabPicture); len(got) != 3 || got[0].id != "replace-image" || got[1].id != "delete-image" || got[2].id != "resize-image" {
-		t.Fatalf("Word Picture actions = %#v; want replace, delete, resize", got)
+	if got := wordToolbarActions(wordTabPicture); len(got) != 5 || got[0].id != "replace-image" || got[1].id != "delete-image" || got[2].id != "resize-image" || got[3].id != "rotate-left" || got[4].id != "rotate-right" {
+		t.Fatalf("Word Picture actions = %#v; want replace, delete, resize and 90° rotation", got)
 	}
 }
 
@@ -121,7 +122,7 @@ func TestWordToolbarEnablesCommandsForTheirSelectedWordObjects(t *testing.T) {
 	}
 	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
 	state.selectedWordImageID = imageID
-	for _, id := range []string{"replace-image", "delete-image", "resize-image"} {
+	for _, id := range []string{"replace-image", "delete-image", "resize-image", "rotate-left", "rotate-right"} {
 		if !app.wordToolbarActionEnabled(findAction(wordTabPicture, id)) {
 			t.Errorf("Picture action %q should be enabled for a selected inline image", id)
 		}
@@ -131,6 +132,45 @@ func TestWordToolbarEnablesCommandsForTheirSelectedWordObjects(t *testing.T) {
 		if app.wordToolbarActionEnabled(action) {
 			t.Errorf("Picture action %q should disable without an image selection", action.id)
 		}
+	}
+}
+
+func TestRotateSelectedWordImageRunsAsyncAndKeepsSelection(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	paragraph := word.WordBlocks()[0].Paragraph
+	imageID, err := word.InsertInlineImage(paragraph.ID, "", "image/png", tinyToolbarPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := newDocumentSessionState("rotate.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	state.selectedWordImageID = imageID
+	app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 1)}
+	app.rotateSelectedWordImage(90)
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("rotate selected image: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for Word image rotation")
+	}
+	rotated := findWordImage(state.wordBlocks, imageID)
+	if rotated == nil || rotated.RotationDegrees != 90 {
+		t.Fatalf("selected image after rotation = %#v; want 90 degrees", rotated)
+	}
+	if state.selectedWordImageID != imageID {
+		t.Fatalf("selected image after rotation = %q; want %q", state.selectedWordImageID, imageID)
+	}
+	if !word.CanUndo() {
+		t.Fatal("rotating an image did not add an undo step")
 	}
 }
 

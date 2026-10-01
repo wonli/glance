@@ -88,12 +88,13 @@ type WordTextStyle struct {
 
 // WordImage describes an inline image without exposing package relationships.
 type WordImage struct {
-	ID        string
-	MediaType string
-	WidthEMU  int64
-	HeightEMU int64
-	Resolved  bool
-	Editable  bool
+	ID              string
+	MediaType       string
+	WidthEMU        int64
+	HeightEMU       int64
+	RotationDegrees float64
+	Resolved        bool
+	Editable        bool
 }
 
 // WordUnsupported describes retained content that cannot be projected safely.
@@ -133,6 +134,26 @@ type WordParagraphEditor interface {
 	SplitParagraphAt(runID, value string, selectionStart, selectionEnd int) (paragraphID, newRunID string, err error)
 }
 
+// WordParagraphJoinDirection selects the adjacent paragraph to join at a text boundary.
+type WordParagraphJoinDirection uint8
+
+const (
+	WordJoinPrevious WordParagraphJoinDirection = iota + 1
+	WordJoinNext
+)
+
+// WordParagraphJoinResult identifies the editable caret position at the paragraph seam.
+type WordParagraphJoinResult struct {
+	ParagraphID string
+	RunID       string
+	Caret       int
+}
+
+// WordParagraphJoiner exposes safe adjacent paragraph joins for Word documents.
+type WordParagraphJoiner interface {
+	JoinParagraphAtBoundary(runID string, direction WordParagraphJoinDirection) (WordParagraphJoinResult, error)
+}
+
 // WordImageEditor is an optional capability for inline raster image operations.
 type WordImageEditor interface {
 	InsertInlineImage(paragraphID, afterInlineID, mediaType string, data []byte) (imageID string, err error)
@@ -140,6 +161,11 @@ type WordImageEditor interface {
 	MoveInlineImage(imageID, targetParagraphID, afterInlineID string) error
 	ResizeInlineImage(imageID string, widthEMU int64) error
 	DeleteInlineImage(imageID string) error
+}
+
+// WordImageRotator is an optional capability for rotating inline Word images.
+type WordImageRotator interface {
+	SetInlineImageRotation(imageID string, degrees float64) error
 }
 
 // WordHistory is the undo/redo capability for supported Word edits.

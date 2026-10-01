@@ -56,6 +56,8 @@ var (
 		{slot: -1, id: "replace-image", label: "替换图片", group: "图片", icon: "copy"},
 		{slot: -1, id: "delete-image", label: "删除图片", group: "图片", icon: "trash-2"},
 		{slot: -1, id: "resize-image", label: "调整大小", group: "图片", icon: "settings-2"},
+		{slot: -1, id: "rotate-left", label: "向左旋转 90°", group: "图片", icon: "undo"},
+		{slot: -1, id: "rotate-right", label: "向右旋转 90°", group: "图片", icon: "redo"},
 	}
 	wordFontColors = []struct {
 		label string
@@ -120,7 +122,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
 		return editable && ok
 	case "save":
-		return (state.word.Dirty() || wordHasPendingTextDrafts(state) || state.wordParagraphSplitIntent != nil) && state.path != ""
+		return (state.word.Dirty() || wordHasPendingTextDrafts(state) || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil) && state.path != ""
 	case "insert-image":
 		_, editable := any(state.word).(document.WordImageEditor)
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
@@ -128,6 +130,9 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "replace-image", "delete-image", "resize-image":
 		_, editable := any(state.word).(document.WordImageEditor)
 		return editable && selectedWordImage(wordBlocksForState(state), state.selectedWordImageID)
+	case "rotate-left", "rotate-right":
+		_, rotatable := any(state.word).(document.WordImageRotator)
+		return rotatable && selectedWordImage(wordBlocksForState(state), state.selectedWordImageID)
 	default:
 		return false
 	}
@@ -313,6 +318,10 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.runWordImageCommand("删除图片", imageID, func(editor document.WordImageEditor) error { return editor.DeleteInlineImage(imageID) }, true)
 		case "resize-image":
 			a.showWordImageResizeDialog()
+		case "rotate-left":
+			a.rotateSelectedWordImage(-90)
+		case "rotate-right":
+			a.rotateSelectedWordImage(90)
 		}
 	}
 	if state.wordToolbarColorPicker {
@@ -360,6 +369,10 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.runWordImageCommand("删除图片", imageID, func(editor document.WordImageEditor) error { return editor.DeleteInlineImage(imageID) }, true)
 	case "resize-image":
 		a.showWordImageResizeDialog()
+	case "rotate-left":
+		a.rotateSelectedWordImage(-90)
+	case "rotate-right":
+		a.rotateSelectedWordImage(90)
 	}
 }
 
@@ -487,6 +500,19 @@ func (a *App) runWordImageCommand(operation, imageID string, edit func(document.
 	}()
 }
 
+func (a *App) rotateSelectedWordImage(delta float64) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	image := findWordImage(wordBlocksForState(state), state.selectedWordImageID)
+	if image == nil {
+		return
+	}
+	imageID := image.ID
+	a.runWordImageRotationCommand(imageID, image.RotationDegrees+delta)
+}
+
 type wordCommandResult struct {
 	state               *documentSessionState
 	blocks              []document.WordBlock
@@ -501,6 +527,7 @@ type wordCommandResult struct {
 	applied             bool
 	textDraft           bool
 	paragraphSplit      bool
+	paragraphJoin       bool
 	runID               string
 	runText             string
 	splitSourceRunID    string
@@ -508,6 +535,9 @@ type wordCommandResult struct {
 	splitParagraphID    string
 	splitRunID          string
 	splitRunText        string
+	joinParagraphID     string
+	joinRunID           string
+	joinCaret           int
 	insertedParagraphID string
 	bodyParagraphInsert bool
 }

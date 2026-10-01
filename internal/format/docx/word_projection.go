@@ -60,6 +60,7 @@ type wordImageTarget struct {
 	drawing        *wordXMLNode
 	extent         *wordXMLNode
 	blip           *wordXMLNode
+	transform      *wordXMLNode
 	paragraphID    string
 	relationshipID string
 }
@@ -337,9 +338,18 @@ func (p *wordProjector) drawingInline(drawing *wordXMLNode, fallbackID, paragrap
 	if !supportedWordImageMedia(mediaType) {
 		return unsupportedInline(id, "Unsupported image media type: "+mediaType), id
 	}
-	image := &document.WordImage{ID: id, MediaType: mediaType, WidthEMU: width, HeightEMU: height, Resolved: true, Editable: true}
+	transform := findDescendant(drawing, "xfrm")
+	rotation := 0.0
+	if transform != nil {
+		if rawRotation := attrValue(transform, "rot"); rawRotation != "" {
+			if value, err := strconv.ParseInt(rawRotation, 10, 64); err == nil {
+				rotation = normalizeWordImageRotation(float64(value) / 60000)
+			}
+		}
+	}
+	image := &document.WordImage{ID: id, MediaType: mediaType, WidthEMU: width, HeightEMU: height, RotationDegrees: rotation, Resolved: true, Editable: true}
 	p.imageParts[id] = partIndex
-	p.imageTargets[id] = wordImageTarget{drawing: drawing, extent: extent, blip: blip, paragraphID: paragraphID, relationshipID: relID}
+	p.imageTargets[id] = wordImageTarget{drawing: drawing, extent: extent, blip: blip, transform: transform, paragraphID: paragraphID, relationshipID: relID}
 	return document.WordInline{Kind: document.WordImageInline, Image: image}, id
 }
 

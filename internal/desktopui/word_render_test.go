@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"testing"
 	"time"
 
@@ -174,6 +175,29 @@ func TestWordImageDecodeRunsOffFrameAndPopulatesSessionCache(t *testing.T) {
 		default:
 			time.Sleep(time.Millisecond)
 		}
+	}
+}
+
+func TestRotatedWordImageBoundsSwapAtRightAngle(t *testing.T) {
+	for _, test := range []struct {
+		degrees int
+		want    image.Point
+	}{
+		{degrees: 0, want: image.Pt(120, 60)},
+		{degrees: 90, want: image.Pt(60, 120)},
+		{degrees: 180, want: image.Pt(120, 60)},
+		{degrees: 270, want: image.Pt(60, 120)},
+	} {
+		if got := rotatedWordImageBounds(image.Pt(120, 60), float64(test.degrees)); got != test.want {
+			t.Errorf("rotated image bounds at %d° = %v; want %v", test.degrees, got, test.want)
+		}
+	}
+	source := fitRotatedWordImageSize(800, 400, 300, 300, 90)
+	if bounds := rotatedWordImageBounds(source, 90); bounds.X > 300 || bounds.Y > 300 {
+		t.Fatalf("rotated image bounds %v exceed 300x300 viewport", bounds)
+	}
+	if ratio := float64(source.X) / float64(source.Y); math.Abs(ratio-2) > 0.02 {
+		t.Fatalf("rotated image fit changed source aspect ratio to %.3f; want 2:1", ratio)
 	}
 }
 

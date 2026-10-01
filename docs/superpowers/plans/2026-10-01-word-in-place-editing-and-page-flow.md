@@ -13,6 +13,7 @@ Design: `docs/superpowers/specs/2026-10-01-word-in-place-editing-and-page-flow-d
 - Add regression coverage for a centered bounded page, narrow-window sizing, inline text/image order, shared-line placement, wrapping, and preserved paragraph alignment.
 - Replace per-run vertical stacking with measured inline flow. Record each child once, then replay its Gio operations at its wrapped position.
 - Center the paper column, add page margins and a workspace background, and keep list items at measured heights.
+- Make the centered paper width adjustable by dragging either side edge. Single-run paragraph editors fill the page text width and wrap naturally; clicking text should not paint a selected-run background.
 
 ## Task 3: Add in-place run editors and safe draft commits
 
@@ -29,6 +30,7 @@ Design: `docs/superpowers/specs/2026-10-01-word-in-place-editing-and-page-flow-d
 ## Task 5: Verify sample and update support evidence
 
 - Run focused adapter and desktop UI suites, relevant repository regressions, and the opt-in user sample on a temporary copy.
+- Cover image rotation in the picture toolbar, OOXML round trip, and undo/redo; verify the scroll bar remains at the workspace right edge and the page stays centered after resizing.
 - Review the rendered sample for centered content, inline order, scrolling, and caret editing. Confirm the original sample file hash is unchanged.
 - Update `docs/office-support.md` and the compatibility matrix with only verified behavior; preserve the no-pagination caveat.
 

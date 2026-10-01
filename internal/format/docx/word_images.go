@@ -9,10 +9,13 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"math"
 	"math/big"
 	"path"
 	"strconv"
 	"strings"
+
+	"glance/internal/document"
 )
 
 const (
@@ -20,6 +23,50 @@ const (
 	maxWordImageEMU    = int64(100 * 914400)
 	wordPixelToEMU     = int64(9525)
 )
+
+const drawingMLRotationUnitsPerDegree = int64(60000)
+
+func normalizeWordImageRotation(degrees float64) float64 {
+	degrees = math.Mod(degrees, 360)
+	if degrees < 0 {
+		degrees += 360
+	}
+	if math.Abs(degrees) < 1e-9 || math.Abs(degrees-360) < 1e-9 {
+		return 0
+	}
+	return degrees
+}
+
+func (d *Document) SetInlineImageRotation(imageID string, degrees float64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	if math.IsNaN(degrees) || math.IsInf(degrees, 0) {
+		return errors.New("Word image rotation must be a finite angle")
+	}
+	target, ok := d.wordImageTargets[imageID]
+	if !ok || target.drawing == nil || target.transform == nil {
+		return fmt.Errorf("Word image %q has no editable DrawingML transform", imageID)
+	}
+	normalized := normalizeWordImageRotation(degrees)
+	rotationUnits := int64(math.Round(normalized * float64(drawingMLRotationUnitsPerDegree)))
+	currentUnits, _ := strconv.ParseInt(attrValue(target.transform, "rot"), 10, 64)
+	if currentUnits == rotationUnits {
+		return nil
+	}
+	opening := d.parts[d.documentIdx].data[target.transform.start:target.transform.openEnd]
+	patchedOpening, err := setRawXMLAttribute(opening, "", "rot", strconv.FormatInt(rotationUnits, 10))
+	if err != nil {
+		return err
+	}
+	patched, err := applyXMLReplacements(d.parts[d.documentIdx].data, []xmlReplacement{{start: target.transform.start, end: target.transform.openEnd, value: patchedOpening}})
+	if err != nil {
+		return err
+	}
+	return d.commitWordImagePackageChange(map[string]*part{"word/document.xml": d.partWithData("word/document.xml", patched)})
+}
 
 func (d *Document) InsertInlineImage(paragraphID, afterInlineID, mediaType string, data []byte) (string, error) {
 	d.mu.Lock()
@@ -509,6 +556,8 @@ func (d *Document) commitWordImagePackageChange(changes map[string]*part) error 
 	d.recordWordHistoryLocked(before)
 	return nil
 }
+
+var _ document.WordImageRotator = (*Document)(nil)
 
 func (d *Document) pruneUnusedImageRelationship(changes map[string]*part, relationshipID string) error {
 	if relationshipID == "" {

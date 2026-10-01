@@ -13,6 +13,11 @@ type wordParagraphSplitIntent struct {
 	selectionEnd   int
 }
 
+type wordParagraphJoinIntent struct {
+	runID     string
+	direction document.WordParagraphJoinDirection
+}
+
 func (a *App) startWordBodyParagraphInsert() {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || state.wordInsertionRunning || state.formatRunning || a.saving {
@@ -114,6 +119,25 @@ func (a *App) queueWordParagraphSplit(runID, value string, selectionStart, selec
 	}
 }
 
+func (a *App) queueWordParagraphJoin(runID string, value string, direction document.WordParagraphJoinDirection) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.wordParagraphJoinIntent != nil || state.wordParagraphSplitIntent != nil || state.formatRunning || a.saving {
+		return
+	}
+	if _, ok := any(state.word).(document.WordParagraphJoiner); !ok {
+		a.status = "当前 DOCX 适配器不支持合并段落"
+		return
+	}
+	state.wordParagraphJoinIntent = &wordParagraphJoinIntent{runID: runID, direction: direction}
+	captureWordTextDraft(state, runID, value)
+	state.wordForceDraftFlush = true
+	state.wordFlushRequested = true
+	state.wordFlushAllDrafts = true
+	if !state.formatRunning {
+		a.startNextWordTextCommit()
+	}
+}
+
 func captureWordTextDraft(state *documentSessionState, runID, value string) {
 	if state.wordRunDrafts == nil {
 		state.wordRunDrafts = make(map[string]string)
@@ -157,6 +181,13 @@ func (a *App) startNextWordTextCommit() {
 		runIDs = append(runIDs, runID)
 	}
 	if len(runIDs) == 0 {
+		if state.wordParagraphJoinIntent != nil {
+			if wordHasPendingTextDrafts(state) {
+				return
+			}
+			a.finishWordTextFlush(state)
+			return
+		}
 		if intent := state.wordParagraphSplitIntent; intent != nil {
 			if wordHasPendingTextDraftsExcept(state, intent.runID) {
 				return
@@ -179,6 +210,7 @@ func (a *App) startNextWordTextCommit() {
 	editor, ok := any(state.word).(document.WordTextEditor)
 	if !ok {
 		state.wordFlushRequested = false
+		state.wordParagraphJoinIntent = nil
 		a.status = "当前 DOCX 适配器不支持原位文字编辑"
 		return
 	}
@@ -204,6 +236,10 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 		a.startWordParagraphSplit(state)
 		return
 	}
+	if state.wordParagraphJoinIntent != nil {
+		a.startWordParagraphJoin(state)
+		return
+	}
 	if state.wordSaveAfterDrafts {
 		state.wordSaveAfterDrafts = false
 		a.startSave()
@@ -223,6 +259,90 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 	if action := state.wordDeferredToolbarAction; action != "" {
 		state.wordDeferredToolbarAction = ""
 		a.executeWordToolbarAction(action)
+	}
+}
+
+func (a *App) startWordParagraphJoin(state *documentSessionState) {
+	if state == nil || state.word == nil || state.formatRunning || a.saving || state.wordParagraphJoinIntent == nil {
+		return
+	}
+	joiner, ok := any(state.word).(document.WordParagraphJoiner)
+	if !ok {
+		state.wordParagraphJoinIntent = nil
+		state.wordFlushRequested = false
+		state.wordFlushAllDrafts = false
+		a.status = "当前 DOCX 适配器不支持合并段落"
+		return
+	}
+	intent := *state.wordParagraphJoinIntent
+	state.formatRunning = true
+	generation := a.documentGeneration
+	go func() {
+		joined, err := joiner.JoinParagraphAtBoundary(intent.runID, intent.direction)
+		var blocks []document.WordBlock
+		if err == nil {
+			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
+		}
+		a.publishWordCommand(wordCommandResult{
+			state:           state,
+			generation:      generation,
+			operation:       "合并段落",
+			err:             err,
+			blocks:          blocks,
+			paragraphJoin:   true,
+			joinParagraphID: joined.ParagraphID,
+			joinRunID:       joined.RunID,
+			joinCaret:       joined.Caret,
+		})
+	}()
+}
+
+func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
+	state := result.state
+	if state == nil {
+		return
+	}
+	state.wordParagraphJoinIntent = nil
+	state.wordFlushRequested = false
+	state.wordFlushAllDrafts = false
+	if result.err != nil {
+		if active {
+			a.status = wordCommandError(result.operation, result.err)
+			a.finishWordTextFlush(state)
+		}
+		return
+	}
+	if result.blocks != nil {
+		state.wordBlocks = result.blocks
+	}
+	reconcileWordSelection(state, false)
+	run, ok := selectedWordRun(state.wordBlocks, result.joinRunID)
+	if !ok || !run.Editable {
+		if active {
+			a.status = "段落已合并，但无法定位接缝文字"
+			a.finishWordTextFlush(state)
+		}
+		return
+	}
+	delete(state.wordRunDrafts, run.ID)
+	state.wordRunCommitted[run.ID] = run.Text
+	editor := wordRunEditor(state, run)
+	editor.SetText(run.Text)
+	caret := max(0, min(result.joinCaret, len([]rune(run.Text))))
+	editor.SetCaret(caret, caret)
+	state.selectedWordRunID = run.ID
+	state.selectedWordParagraphID = result.joinParagraphID
+	state.selectedWordImageID = ""
+	state.selectedBlock = -1
+	state.selectedBlockEditable = true
+	state.wordToolbarTab = wordTabHome
+	if active {
+		state.wordPendingFocusRunID = run.ID
+		a.status = "正在编辑 Word 正文"
+		a.persistActiveSession()
+		a.finishWordTextFlush(state)
+	} else {
+		state.wordPendingFocusRunID = ""
 	}
 }
 

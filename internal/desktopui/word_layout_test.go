@@ -15,6 +15,21 @@ import (
 	"glance/internal/format/docx"
 )
 
+func TestWordAdjacentParagraphAllowsEmptyAndImageOnlyNeighbors(t *testing.T) {
+	current := document.WordParagraph{ID: "current", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "current.run", Editable: true}}}}
+	empty := document.WordParagraph{ID: "empty"}
+	imageOnly := document.WordParagraph{ID: "image-only", Inlines: []document.WordInline{{Kind: document.WordImageInline, Image: &document.WordImage{ID: "image"}}}}
+	for _, neighbor := range []document.WordParagraph{empty, imageOnly} {
+		blocks := []document.WordBlock{
+			{ID: "neighbor", Kind: document.WordParagraphBlock, Paragraph: &neighbor},
+			{ID: "current", Kind: document.WordParagraphBlock, Paragraph: &current},
+		}
+		if !wordHasAdjacentParagraph(blocks, current.ID, document.WordJoinPrevious) {
+			t.Errorf("paragraph %q was not recognized as joinable adjacent content", neighbor.ID)
+		}
+	}
+}
+
 func TestWordFlowKeepsParagraphAndTableCellOrder(t *testing.T) {
 	paragraph := document.WordParagraph{ID: "p0", Inlines: []document.WordInline{
 		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "p0.i0", Text: "Before"}},

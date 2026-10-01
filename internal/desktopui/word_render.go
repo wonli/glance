@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"strings"
 
+	"gioui.org/f32"
 	"glance/internal/document"
 	xdraw "golang.org/x/image/draw"
 )
@@ -28,6 +29,46 @@ func fitWordImageSize(sourceWidth, sourceHeight, maxWidth, maxHeight int) image.
 	}
 	scale := math.Min(1, math.Min(float64(maxWidth)/float64(sourceWidth), float64(maxHeight)/float64(sourceHeight)))
 	return image.Pt(max(1, int(math.Round(float64(sourceWidth)*scale))), max(1, int(math.Round(float64(sourceHeight)*scale))))
+}
+
+func rotatedWordImageBounds(size image.Point, degrees float64) image.Point {
+	if size.X <= 0 || size.Y <= 0 {
+		return image.Point{}
+	}
+	angle := math.Mod(degrees, 360)
+	if angle < 0 {
+		angle += 360
+	}
+	if math.Abs(angle-90) < 1e-9 || math.Abs(angle-270) < 1e-9 {
+		return image.Pt(size.Y, size.X)
+	}
+	if math.Abs(angle) < 1e-9 || math.Abs(angle-180) < 1e-9 {
+		return size
+	}
+	radians := angle * math.Pi / 180
+	width := math.Abs(math.Cos(radians))*float64(size.X) + math.Abs(math.Sin(radians))*float64(size.Y)
+	height := math.Abs(math.Sin(radians))*float64(size.X) + math.Abs(math.Cos(radians))*float64(size.Y)
+	return image.Pt(max(1, int(math.Ceil(width-1e-9))), max(1, int(math.Ceil(height-1e-9))))
+}
+
+// fitRotatedWordImageSize returns the unrotated image size whose rotated bounds fit the viewport.
+func fitRotatedWordImageSize(sourceWidth, sourceHeight, maxWidth, maxHeight int, degrees float64) image.Point {
+	if sourceWidth <= 0 || sourceHeight <= 0 || maxWidth <= 0 || maxHeight <= 0 {
+		return image.Point{}
+	}
+	angle := math.Mod(degrees, 360) * math.Pi / 180
+	cosine, sine := math.Abs(math.Cos(angle)), math.Abs(math.Sin(angle))
+	boundWidth := cosine*float64(sourceWidth) + sine*float64(sourceHeight)
+	boundHeight := sine*float64(sourceWidth) + cosine*float64(sourceHeight)
+	scale := math.Min(1, math.Min(float64(maxWidth)/boundWidth, float64(maxHeight)/boundHeight))
+	for {
+		size := image.Pt(max(1, int(math.Floor(float64(sourceWidth)*scale))), max(1, int(math.Floor(float64(sourceHeight)*scale))))
+		bounds := rotatedWordImageBounds(size, degrees)
+		if bounds.X <= maxWidth && bounds.Y <= maxHeight {
+			return size
+		}
+		scale *= 0.99
+	}
 }
 
 func validateWordPreviewConfig(config image.Config, format string) error {
@@ -168,18 +209,21 @@ const (
 	wordImageGestureNone wordImageGestureMode = iota
 	wordImageGestureMove
 	wordImageGestureResize
+	wordImageGestureRotate
 )
 
 type wordImagePreview struct {
-	Active            bool
-	ImageID           string
-	SourceParagraph   string
-	TargetParagraph   string
-	AfterInlineID     string
-	WidthEMU          int64
-	HeightEMU         int64
-	OriginalWidthEMU  int64
-	OriginalHeightEMU int64
+	Active                  bool
+	ImageID                 string
+	SourceParagraph         string
+	TargetParagraph         string
+	AfterInlineID           string
+	WidthEMU                int64
+	HeightEMU               int64
+	OriginalWidthEMU        int64
+	OriginalHeightEMU       int64
+	RotationDegrees         float64
+	OriginalRotationDegrees float64
 }
 
 type wordImageGesture struct {
@@ -257,6 +301,116 @@ func (gesture *wordImageGesture) CommitResize() bool {
 	}
 	gesture.reset()
 	return true
+}
+
+func (gesture *wordImageGesture) BeginRotate(imageID string, degrees float64) bool {
+	gesture.reset()
+	if imageID == "" || math.IsNaN(degrees) || math.IsInf(degrees, 0) {
+		return false
+	}
+	gesture.mode = wordImageGestureRotate
+	gesture.preview = wordImagePreview{Active: true, ImageID: imageID, RotationDegrees: degrees, OriginalRotationDegrees: degrees}
+	return true
+}
+
+func (gesture *wordImageGesture) RotatePreview(degrees float64) {
+	if gesture.mode != wordImageGestureRotate || !gesture.preview.Active || math.IsNaN(degrees) || math.IsInf(degrees, 0) {
+		return
+	}
+	gesture.preview.RotationDegrees = normalizeWordRotationForUI(degrees)
+}
+
+func (gesture *wordImageGesture) ReleaseRotate() {
+	if gesture.mode == wordImageGestureRotate && gesture.preview.Active {
+		gesture.released = true
+		gesture.commitReady = math.Abs(shortestWordRotationDelta(gesture.preview.RotationDegrees, gesture.preview.OriginalRotationDegrees)) > 1e-6
+	}
+}
+
+func (gesture *wordImageGesture) CommitRotate() bool {
+	if gesture.mode != wordImageGestureRotate || !gesture.released || !gesture.commitReady {
+		return false
+	}
+	gesture.reset()
+	return true
+}
+
+type wordImageResizeHandle struct {
+	name string
+	x    int
+	y    int
+}
+
+var wordImageResizeHandles = [8]wordImageResizeHandle{
+	{name: "左上", x: -1, y: -1},
+	{name: "上", y: -1},
+	{name: "右上", x: 1, y: -1},
+	{name: "右", x: 1},
+	{name: "右下", x: 1, y: 1},
+	{name: "下", y: 1},
+	{name: "左下", x: -1, y: 1},
+	{name: "左", x: -1},
+}
+
+func wordImageResizeWidthForHandle(widthEMU int64, frame image.Point, handleIndex int, drag f32.Point) int64 {
+	if widthEMU <= 0 || frame.X <= 0 || frame.Y <= 0 || handleIndex < 0 || handleIndex >= len(wordImageResizeHandles) {
+		return widthEMU
+	}
+	handle := wordImageResizeHandles[handleIndex]
+	var scaleX, scaleY float64
+	if handle.x != 0 {
+		scaleX = (float64(frame.X) + float64(handle.x)*float64(drag.X)) / float64(frame.X)
+	}
+	if handle.y != 0 {
+		scaleY = (float64(frame.Y) + float64(handle.y)*float64(drag.Y)) / float64(frame.Y)
+	}
+	var scale float64
+	switch {
+	case handle.x == 0:
+		scale = scaleY
+	case handle.y == 0:
+		scale = scaleX
+	default:
+		// Follow the stronger axis. This keeps a purely horizontal or vertical
+		// corner drag responsive while diagonal drags still combine naturally.
+		if math.Abs(scaleX-1) >= math.Abs(scaleY-1) {
+			scale = scaleX
+		} else {
+			scale = scaleY
+		}
+	}
+	scale = math.Max(0.05, scale)
+	result := math.Round(float64(widthEMU) * scale)
+	if result >= float64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return max(int64(1), int64(result))
+}
+
+func normalizeWordRotationForUI(degrees float64) float64 {
+	degrees = math.Mod(degrees, 360)
+	if degrees < 0 {
+		degrees += 360
+	}
+	if math.Abs(degrees) < 1e-9 || math.Abs(degrees-360) < 1e-9 {
+		return 0
+	}
+	return degrees
+}
+
+func shortestWordRotationDelta(from, to float64) float64 {
+	delta := math.Mod(from-to+180, 360)
+	if delta < 0 {
+		delta += 360
+	}
+	return delta - 180
+}
+
+func wordImageRotationForPointer(startDegrees float64, center, start, current f32.Point) float64 {
+	startAngle := math.Atan2(float64(start.Y-center.Y), float64(start.X-center.X))
+	currentAngle := math.Atan2(float64(current.Y-center.Y), float64(current.X-center.X))
+	delta := (currentAngle - startAngle) * 180 / math.Pi
+	return normalizeWordRotationForUI(startDegrees + delta)
 }
 
 func (gesture *wordImageGesture) Cancel() { gesture.reset() }

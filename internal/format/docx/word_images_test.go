@@ -103,6 +103,80 @@ func requireWordImageEditor(t *testing.T, doc *Document) document.WordImageEdito
 	return editor
 }
 
+func projectedWordImage(doc *Document, imageID string) *document.WordImage {
+	for _, block := range doc.WordBlocks() {
+		if block.Paragraph != nil {
+			for _, inline := range block.Paragraph.Inlines {
+				if inline.Image != nil && inline.Image.ID == imageID {
+					return inline.Image
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func TestRotateInlineImageSnapshotUndoRedo(t *testing.T) {
+	doc := imageOperationFixture(t,
+		imageDocRoot(`<w:p><w:r><w:t>text</w:t></w:r></w:p>`),
+		imageRelationshipRoot(), imageContentTypes(), nil)
+	defer doc.Close()
+	paragraph := doc.WordBlocks()[0].Paragraph
+	imageBytes := imageFixtureBytes(t, 2, 1, color.NRGBA{R: 30, G: 120, B: 210, A: 255})
+	imageID, err := requireWordImageEditor(t, doc).InsertInlineImage(paragraph.ID, "", "image/png", imageBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotator, ok := any(doc).(document.WordImageRotator)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose inline image rotation")
+	}
+	if err := rotator.SetInlineImageRotation(imageID, 90); err != nil {
+		t.Fatal(err)
+	}
+	projected := projectedWordImage(doc, imageID)
+	if projected == nil || projected.RotationDegrees != 90 {
+		t.Fatalf("projected image rotation = %#v; want 90 degrees", projected)
+	}
+	snapshot, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := readZipParts(t, snapshot)
+	if !strings.Contains(string(parts["word/document.xml"]), `rot="5400000"`) {
+		t.Fatalf("DrawingML rotation was not encoded as 90 degrees: %s", parts["word/document.xml"])
+	}
+	output := filepath.Join(t.TempDir(), "rotated.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	reopenedImage := projectedWordImage(reopened, imageID)
+	if reopenedImage == nil || reopenedImage.RotationDegrees != 90 {
+		t.Fatalf("rotation after save/reopen = %#v; want 90 degrees", reopenedImage)
+	}
+	reopenedBytes, err := reopened.WordImageBytes(imageID)
+	if err != nil || !bytes.Equal(reopenedBytes, imageBytes) {
+		t.Fatalf("image bytes changed after rotation: %v", err)
+	}
+	if applied, err := requireWordHistory(t, doc).Undo(); err != nil || !applied {
+		t.Fatalf("undo image rotation = %v, %v", applied, err)
+	}
+	if got := projectedWordImage(doc, imageID).RotationDegrees; got != 0 {
+		t.Fatalf("rotation after undo = %v; want 0", got)
+	}
+	if applied, err := requireWordHistory(t, doc).Redo(); err != nil || !applied {
+		t.Fatalf("redo image rotation = %v, %v", applied, err)
+	}
+	if got := projectedWordImage(doc, imageID).RotationDegrees; got != 90 {
+		t.Fatalf("rotation after redo = %v; want 90", got)
+	}
+}
+
 func TestInsertInlineImageAfterTextRoundTripsAndUsesCollisionFreeParts(t *testing.T) {
 	doc := imageOperationFixture(t,
 		imageDocRoot(`<w:p><w:r><w:t>before</w:t></w:r><w:r><w:t>after</w:t></w:r></w:p>`),
@@ -305,6 +379,68 @@ func TestMoveResizeDeleteTableImageRoundTripsAndUndoRestoresMedia(t *testing.T) 
 		t.Fatal("redo did not remove deleted image")
 	}
 	_ = reopened.Close()
+}
+
+func TestRotateInlineImagePersistsInDrawingMLAndHistory(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	paragraph := doc.WordBlocks()[0].Paragraph
+	imageBytes := imageFixtureBytes(t, 3, 2, color.NRGBA{R: 20, G: 110, B: 230, A: 255})
+	imageID, err := requireWordImageEditor(t, doc).InsertInlineImage(paragraph.ID, "", "image/png", imageBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type wordImageRotationEditor interface {
+		SetInlineImageRotation(imageID string, degrees float64) error
+	}
+	rotator, ok := any(doc).(wordImageRotationEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose inline image rotation")
+	}
+	if err := rotator.SetInlineImageRotation(imageID, 90); err != nil {
+		t.Fatalf("rotate inline image clockwise: %v", err)
+	}
+	snapshot, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentXML := string(readZipPart(t, snapshot, "word/document.xml"))
+	if !strings.Contains(documentXML, `<a:xfrm rot="5400000">`) {
+		t.Fatalf("90 degree rotation was not written in DrawingML units: %s", documentXML)
+	}
+	reopened, err := OpenSnapshot(snapshot)
+	if err != nil {
+		t.Fatalf("reopen rotated image: %v", err)
+	}
+	reopenedImage, err := reopened.WordImageBytes(imageID)
+	if err != nil || !bytes.Equal(reopenedImage, imageBytes) {
+		t.Fatalf("rotating image changed the media bytes: %v", err)
+	}
+	_ = reopened.Close()
+	history := requireWordHistory(t, doc)
+	if applied, err := history.Undo(); err != nil || !applied {
+		t.Fatalf("undo image rotation = %v, %v", applied, err)
+	}
+	undone, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(readZipPart(t, undone, "word/document.xml")), `rot="5400000"`) {
+		t.Fatal("undo left the image rotated")
+	}
+	if applied, err := history.Redo(); err != nil || !applied {
+		t.Fatalf("redo image rotation = %v, %v", applied, err)
+	}
+	redone, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readZipPart(t, redone, "word/document.xml")), `rot="5400000"`) {
+		t.Fatal("redo did not restore the image rotation")
+	}
 }
 
 func TestInvalidImagePayloadAndSizeLeavePackageAndHistoryUnchanged(t *testing.T) {
