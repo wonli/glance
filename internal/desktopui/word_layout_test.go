@@ -85,6 +85,19 @@ func TestWordFlowLayoutRendersWithStableVerticalListAndRibbon(t *testing.T) {
 	}
 }
 
+func TestWordUnsupportedPlaceholderUsesMeasuredHeight(t *testing.T) {
+	var ops op.Ops
+	gtx := layout.Context{
+		Ops:         &ops,
+		Constraints: layout.Constraints{Max: image.Pt(640, 720)},
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+	}
+	dimensions := wordReadOnlyPlaceholder(gtx, material.NewTheme(), "Unsupported content remains visible and read-only")
+	if dimensions.Size.Y <= 0 || dimensions.Size.Y >= gtx.Constraints.Max.Y/2 {
+		t.Fatalf("unsupported-content placeholder height = %d; want its measured label height, independent of the %dpx viewport", dimensions.Size.Y, gtx.Constraints.Max.Y)
+	}
+}
+
 func TestWordTableCellParagraphsExposeIndependentSelections(t *testing.T) {
 	cell := document.WordTableCell{ID: "a", Paragraphs: []document.WordParagraph{
 		{ID: "a.p0", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "a.p0.i0", Text: "First", Editable: true}}}},

@@ -159,6 +159,26 @@ func TestWordSampleFlowBuildsVisibleTextAndImageWidgets(t *testing.T) {
 	if visibleTextEditors < 2 {
 		t.Fatalf("sample viewport rendered only %d editable text runs; later paragraphs must flow after the first", visibleTextEditors)
 	}
+	var textAfterFirstUnsupportedBlock string
+	seenUnsupportedBlock := false
+	for _, block := range state.wordBlocks {
+		if block.Kind == document.WordUnsupportedBlock {
+			seenUnsupportedBlock = true
+		}
+		if block.Paragraph == nil {
+			continue
+		}
+		for _, inline := range block.Paragraph.Inlines {
+			if inline.Text != nil && inline.Text.Text == "聊天窗口" {
+				if seenUnsupportedBlock {
+					textAfterFirstUnsupportedBlock = inline.Text.ID
+				}
+			}
+		}
+	}
+	if textAfterFirstUnsupportedBlock == "" || state.wordRunEditors[textAfterFirstUnsupportedBlock] == nil {
+		t.Fatal("sample text after the first unsupported-content block did not flow into the initial viewport")
+	}
 	var firstImage *document.WordImage
 	var firstImageBlock int
 	for index, block := range state.wordBlocks {

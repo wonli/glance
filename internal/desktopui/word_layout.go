@@ -969,18 +969,12 @@ func wordResizeHandleButton(state *documentSessionState, id string) *widget.Clic
 }
 
 func wordReadOnlyPlaceholder(gtx layout.Context, theme *material.Theme, message string) layout.Dimensions {
-	return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				paint.FillShape(gtx.Ops, gridHeaderFill, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(4))).Op(gtx.Ops))
-				return layout.Dimensions{Size: gtx.Constraints.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				label := material.Body2(theme, message)
-				label.Color = mutedText
-				return layout.UniformInset(unit.Dp(7)).Layout(gtx, label.Layout)
-			},
-		)
+	label := material.Body2(theme, message)
+	label.Color = mutedText
+	return wordMeasuredBackground(gtx, gridHeaderFill, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.UniformInset(unit.Dp(7)).Layout(gtx, label.Layout)
+		})
 	})
 }
 
