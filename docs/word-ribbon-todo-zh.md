@@ -40,9 +40,9 @@
 - [x] 当前底栏字数由正文内容动态计算。
 - [x] 标尺、纸张画布和底栏在当前实现中已有对应布局。
 
-### 已接通的 32 个常驻功能区图标
+### 已接通的 33 个常驻功能区图标
 
-- [x] 文件：新建、打开、最近使用、保存、另存为、自动保存、文档信息。
+- [x] 文件：新建、打开、最近使用、保存、另存为、自动保存、打印、文档信息。
 - [x] 开始：粘贴、剪切、复制、格式刷、字体族、减小字号、增大字号、加粗、斜体、下划线、高亮、字体颜色、项目符号、编号、左对齐、居中、右对齐、两端对齐、减少缩进、增加缩进、查找、替换。
 - [x] 插入：图片、分页符。
 - [x] 审阅：字数统计。
@@ -201,9 +201,9 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 - [x] 对 Excel 图集缺少的 glyph 使用已有近似图形映射；Word ribbon 不再混用 Pen PNG 和 Excel sprite。
 - [x] 沿用 Excel 的正常态和禁用态着色；保留原有 hover/active 命中与背景行为，图标替换没有改变 action 可用性。
 - [x] 检查 Pen PNG 引用后保留状态栏仍使用的资源；移除了 ribbon 专用的 Pen action 图标映射。
-- [ ] 使用 Computer Use 在 1440×900 基准尺寸逐标签对照 Word/Excel，并在窄窗口检查滚动和缩放；保存对照截图或记录视觉问题并迭代。Pen 参考画布可访问，`getState()` 能看到 Glance Office 正在运行；但 `getApp("Glance Office")`、bundle ID `local.codex.glanceoffice` 和本地构建路径 `/private/tmp/glance-go-desktop` 均返回 `Invalid app`。直接启动该二进制报告 LaunchServices/Hiservices 连接错误；将它放进最小 `.app` 后 `open -a` 返回 `kLSNoExecutableErr`，Computer Use 仍未枚举出 QA 窗口。后续需通过完整且可被 LaunchServices 注册的 `.app` bundle 启动，并验证 CUA 可绑定；或修复 CUA 对该本地窗口的绑定，再做视觉验收。
+- [ ] 使用 Computer Use 在 1440×900 基准尺寸逐标签对照 Word/Excel，并在窄窗口检查滚动和缩放；保存对照截图或记录视觉问题并迭代。Glance 已通过同源构建的临时 macOS `.app` wrapper 被 CUA 绑定，打印面板已实测。Pen 可绑定但当前画布停留在 Spreadsheet App；Word 画板在图层树中，CUA 还不能将其带入视口，故 Word/Excel 同尺寸视觉对照待完成。
 
-代码侧已完成图集迁移。待 CUA 能绑定 Glance Office 窗口后，再完成基准尺寸及窄窗口的视觉验收。
+代码侧已完成图集迁移。Glance 的 CUA 绑定问题已由同源临时 `.app` wrapper 解决；待 Pen Word 画板可操作后，再完成基准尺寸及窄窗口的视觉验收。
 
 此项在当前栈内可完成：Excel 已有 96×96 图集裁切、图标着色和缓存函数。风险主要是图标语义映射、Home 位图拆分后的命中区域和小尺寸下的视觉差异，不需要更换 UI 框架。
 
@@ -283,11 +283,11 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 - [ ] 形状/图表/文本框/艺术字/公式。
 - [ ] 批注、修订、比较、保护编辑。
 - [ ] 语音、翻译、加载项、Designer。
-- [ ] 实现应用内 Go 分页、PDF 和原生打印路径；不得引入 LibreOffice/外部 Office 运行时。该能力会影响页眉页脚和多个 View 功能。
+- [x] 实现应用内 Go 分页、PDF 和原生打印路径；macOS 面板已通过 CUA 取消/页数显示检查，Windows/Linux 仍 disabled；不得引入 LibreOffice/外部 Office 运行时。该能力会影响页眉页脚和多个 View 功能。
 
 ## 验收标准
 
-- [ ] 99 个 Pen 常驻功能区命令逐项有明确状态：当前 32 项已接通，67 项待实现；已接通项须经过验证，未实现项保持不可操作，不留“看起来可点、实际无效”的按钮。
+- [ ] 99 个 Pen 常驻功能区命令逐项有明确状态：当前 33 项已接通，66 项待实现；已接通项须经过验证，未实现项保持不可操作，不留“看起来可点、实际无效”的按钮。
 - [ ] Word ribbon icon 使用 Excel 的共享图集和着色方式；正常、禁用、hover/active 状态与 Excel 一致。
 - [ ] Pen 的功能区标签、组名、分组顺序、图标语义和控件位置在 1440×900 对照尺寸保持；窄窗口可滚动且控件命中位置正确。
 - [ ] 保存类编辑先在临时 DOCX 上验证保存/重开；失败不丢 dirty 状态，未支持的 OOXML 内容不得静默丢弃。
@@ -310,4 +310,4 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 - `internal/desktopui/word_status_bar.go`：`FsQrk` 状态栏；页码/总页数接真实结果，打印布局切换、缩小/放大及缩放百分比接真实会话状态，缩放滑块拖动尚未接通。
 - `docs/office-support.md`：DOCX 当前支持范围、连续流边界和保存验证状态。
 
-当前轮静态验收：Pen 中已放大检查 `Word Document Editor` 1440×900 画板及 `FsQrk` 底栏。底栏参考为“第 1 页，共 3 页”、582 个字、中文(中国)、辅助功能状态；右侧含焦点/打印/Web 视图和缩放滑块。主尺寸与实现常量一致（1440×900 画布，42/34 dp 标签条，90 dp ribbon，33 dp 标尺，900×600 dp 纸张和 34 dp 底栏）；修正了顶部文档标签由 224 dp 改为 190 dp、标签间距由 12 dp 改为 6 dp，并修正加号菜单锚点。几何用例覆盖标签尺寸、槽位间距和菜单 x=526 dp。另从 Pen ribbon 自动布局计算了七个常驻标签的命令图标横坐标与组分割线，并用 `TestWordRibbonActionSlotsMatchPenNodeClpgm` 锁定这些坐标。DOCX 全包测试、Word 查找/替换、格式刷、列表、嵌套层级、缩进工具栏、文档信息、分页符及标记布局定向测试通过；桌面构建通过。分页符用例覆盖 Unicode caret/选区替换、原 run 格式保留、native `w:br` 投影、保存重开、撤销/重做及工具栏草稿提交和 caret 回位；表格段落不开放。文档信息用例覆盖五个核心属性的转义、保存重开、未知元数据与其他包部件保留、缺失/孤立部件关系修复、撤销/重做，以及重复或嵌套目标值拒绝写入；UI 用例验证 Ribbon 异步打开表单并提交。替换用例验证大小写不敏感地替换当前选中范围、保留 run 格式、跳转下一命中项、保持对话框打开及保存重开。替换范围以 Unicode 字符为单位，错误边界不会修改文档。格式刷用例验证支持的 run/paragraph 属性复制、目标文本及未支持属性保留、一个 Undo/Redo 步骤和 DOCX 保存重开。列表用例覆盖多级项目符号/编号、父级变更后的子级重启、撤销/重做、保存重开、包内其他文件字节保留，以及自定义 restart 只读保护。缩进用例验证普通段落 0.5 英寸步进、列表 `ilvl` 变化、右缩进保留和保存重开；查找用例验证草稿、大小写不敏感、跨 run 遍历、命中选区和循环回绕。字数统计面板用例覆盖未提交文字草稿、表格文字和段落/表格计数；文件 ribbon 用例覆盖新建草稿、Open/Save As 取消、最近页切换保留会话，以及自动保存的 DOCX 重开与开关恢复。完整 `internal/desktopui` 测试仍失败于 4 个 Excel/Grid 用例：单元格字体回退、固定表头缩放手柄、可见网格选择框几何、设备像素缩放。Computer Use 当前可访问 Pen，但 Glance Office 绑定持续返回 `Invalid app`；为继续 1:1 对照已请求用户确认把仓库构建的 QA 包安装到 `~/Applications` 并启动。
+静态尺寸验收记录：曾对 Pen `Word Document Editor` 1440×900 画板及 `FsQrk` 底栏做尺寸检查，记录了“第 1 页，共 3 页”、582 个字、中文(中国)、辅助功能状态，以及 42/34 dp 标签条、90 dp ribbon、33 dp 标尺、900×600 dp 纸张和 34 dp 底栏。文档标签 190×37 dp、6 dp 间距和加号菜单 x=526 dp 有几何用例；七个常驻标签的命令图标横坐标与组分割线由 `TestWordRibbonActionSlotsMatchPenNodeClpgm` 锁定。这些历史尺寸和自动布局证据不能代替本轮同窗截图对照：当前 CUA 能打开 Pen，但画布仍停留在 Spreadsheet App，无法将 Word 画板带入视口。Glance 同源构建已通过临时 macOS app wrapper 绑定为 `Glance Native Print Acceptance`，打印面板及取消流程已实测；Pen 与 Glance 的页面/ribbon 并排 1:1 验收仍未完成。DOCX 全包、Word 查找/替换、格式刷、列表、嵌套层级、缩进、文档信息、分页符及布局定向测试通过；完整 `internal/desktopui` 测试仍有四个 Grid/typeface/geometry 失败和一个段落垂直导航失败。
