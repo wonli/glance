@@ -69,7 +69,7 @@ internal/wordlayout → pages, positioned line/object fragments and source mappi
 
 - PDF writer 使用随 Go 可执行文件构建的库；库的选型须先在 `docs/office-library-evaluation.md` 记录许可证、CJK 字形/ToUnicode、字体嵌入、字形定位、透明图像、页数和跨平台构建证据。库不得要求用户安装单独程序或在运行时下载组件。
 - PDF 逐页重放布局服务给出的几何与字形/对象位置，使用支持的字体子集嵌入；字体授权不允许嵌入时，明确提示字体替代并使用兼容 fallback。PDF 页数、文字换行、图片矩形必须与打印布局结果一致。
-- 平台打印 adapter 只调用操作系统打印 API 和系统打印服务。禁止通过 `exec` 启动 LibreOffice、浏览器、系统 PDF 阅读器或命令行打印程序。原生打印能力逐平台实现并验证；平台 adapter 未通过验证的平台上禁用打印入口，PDF 导出仍可独立提供。
+- 平台打印 adapter 只调用操作系统打印 API 和系统打印服务。macOS 路径使用 PDFKit 从进程内 PDF 数据构造 `PDFDocument`，再通过 AppKit 原生打印操作显示系统打印面板；实现时需验证 Objective-C bridge 与 Gio Cocoa 主线程/事件循环的交接。禁止通过 `exec` 启动 LibreOffice、浏览器、系统 PDF 阅读器或命令行打印程序。原生打印能力逐平台实现并验证；平台 adapter 未通过验证的平台上禁用打印入口，PDF 导出仍可独立提供。
 - 新增平台代码按文件/构建标签隔离；Go 主 UI、neutral model 和 layout 核心不直接调用平台 API。
 
 ## 初版支持范围与明确边界

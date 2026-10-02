@@ -35,6 +35,22 @@ Sources: [Excelize documentation](https://xuri.me/excelize/en/index.html), [sour
 
 Sources: [UniOffice](https://github.com/unidoc/unioffice), [godocx](https://github.com/gomutex/godocx), [fumiama/go-docx](https://github.com/fumiama/go-docx), [office_oxide Go README](https://github.com/yfedoseev/office_oxide/blob/main/go/README.md).
 
+### PDF generation: initial screen (not selected)
+
+No PDF writer is currently present in `go.mod`. Initial primary-source review on 2026-10-02 found:
+
+- [`go-pdf/fpdf`](https://github.com/go-pdf/fpdf) advertises UTF-8, TrueType fonts, image and vector drawing, and no non-standard-library dependencies under MIT. GitHub marks the repository archived on 2025-03-04, so it is not selected for a new product dependency without a separately maintained, reviewed fork.
+- [`signintech/gopdf`](https://github.com/signintech/gopdf) is MIT-licensed and documents Unicode subfont embedding for Chinese/Japanese/Korean, page geometry, images, and positioned text APIs. Its `go.mod` includes `github.com/phpdave11/gofpdi`; the dependency and its build behavior must be inspected. The candidate still needs a project probe for per-fragment positioning, CJK font embedding/ToUnicode, generated-file validation, and macOS/Windows/Linux builds.
+- [`SalvioniDigitalSolutions/gopdf`](https://github.com/SalvioniDigitalSolutions/gopdf) declares MIT, Go 1.22, no third-party module dependencies, TrueType/OpenType/CID font subsetting and ToUnicode. The repository showed 74 commits, no releases, and one star during this screen. Those repository signals and broad README claims do not replace independent output tests; treat it only as a candidate for a controlled probe.
+
+Do not add or advertise a PDF dependency until a probe confirms: the chosen Go page/run coordinates can be emitted without the library reflowing text; simplified Chinese and mixed Latin text remain visible and extractable; selected fonts embed legally with ToUnicode; output is accepted by an independent PDF parser/renderer; and supported desktop builds require no external runtime command or office application. Record exact version, transitive dependencies, license notices, font licensing, and platform build results at selection time.
+
+### macOS print service: native API path screened
+
+Apple documents `PDFDocument(data:)` for constructing a PDFKit document from in-memory PDF data and a PDF print operation that integrates with AppKit printing. This supports a macOS adapter that passes the in-process Go PDF bytes to PDFKit/AppKit and displays the native print panel without launching a PDF reader process. The actual Objective-C bridge, Gio main-thread/event-loop interaction, print-panel cancellation, and virtual-printer behavior remain unverified; do not mark Print complete based on API availability alone. Other operating systems need their own native adapter and remain disabled until each adapter passes its platform verification.
+
+Sources: [PDFKit `PDFDocument(data:)`](https://developer.apple.com/documentation/pdfkit/pdfdocument/init%28data%3A%29), [PDFKit print scaling / print operation](https://developer.apple.com/documentation/pdfkit/pdfprintscalingmode), [AppKit `NSPrintOperation`](https://developer.apple.com/documentation/appkit/nsprintoperation/).
+
 ### Legacy XLS: `extrame/xls` (read-only candidate)
 
 The app currently uses `github.com/extrame/xls` to attempt first-sheet read-only access to BIFF `.xls`. The provided sample opens, but LibreOffice inspection shows all three sheets are empty; this is not evidence of cell-value fidelity. Do not advertise useful legacy XLS preview until a populated `.xls` corpus fixture passes. No XLS write path is enabled.
