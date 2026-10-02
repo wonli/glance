@@ -69,8 +69,8 @@
 - [x] 保存 `save`：保存当前 DOCX；等待待提交文字草稿后执行。
 - [x] 另存为 `save-as`：接入工作区已有的 DOCX Save As 流程；取消时保留原文档、路径和脏状态。
 - [x] 自动保存 `autosave`：按文档保存开关状态；成功提交 Word 编辑后后台保存。无路径草稿先由工作区快照恢复保护，另存后自动保存源 DOCX；保存失败使用错误状态且保留脏状态，关闭仍按未保存文档流程确认。重启恢复开关状态有用例。
-- [ ] 打印 `print`：需要打印页面布局或 PDF 渲染路径，详见“当前技术边界”。
-- [ ] 导出 PDF `export-pdf`：先选定渲染方案，不能把连续流截图伪称 Word 打印版。
+- [ ] 打印 `print`：需要本机原生打印 adapter 与系统打印面板验证；目前不调用外部 Office、PDF 阅读器或打印命令。
+- [x] 导出 PDF `export-pdf`：Word File ribbon 可触发原生保存对话框；后台重放共享分页场景并原子写入 PDF，页面内矢量字形和图片沿用同一坐标，隐藏 Unicode 层供搜索/复制。
 - [ ] 共享 `share`：接入平台分享服务或安全的导出文件流程；当前无 Word 专属分享入口。
 - [x] 文档信息 `doc-info`：异步读取并编辑标题、主题、作者、关键词、说明五个 DOCX 核心属性；保存重开、XML 特殊字符、未知元数据保留、撤销/重做均有适配器回归。缺失核心属性时补齐部件、包根关系和内容类型；重复、嵌套或含非文本标记的目标属性拒绝写入，避免破坏无法安全解释的元数据。
 - [ ] 保护文档 `protect-document`：先确定保护模式范围；密码/权限保护需单独做安全与兼容性验证。
@@ -214,10 +214,10 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 | 阶段 | 状态 | 已完成 | 未完成与验收项 |
 |---|---|---|---|
 | 1. DOCX 分页输入投影 | ✅ 完成 | 以中立 DTO 读取页面尺寸/方向/边距、样式继承输入、段落间距/行高/缩进/分页控制、表格网格和列宽；只读投影不改 DOCX 包；已覆盖多节、分栏、特殊缩进、合并/嵌套表格等定位诊断。 | 后续只在具体布局规则开始支持时补保存重开与 Word 样例证据；投影本身不等于算页数。 |
-| 2. 字形 shaping 与字体 | ✅ 完成（接口与探针） | 接入 Go-text HarfBuzz shaping 和系统字体 fallback，输出实际 glyph ID、字体键、Unicode cluster 与点单位 advance/offset；混合简中/拉丁缺字回归通过。选择并固定纯 Go PDF 矢量/图片后端版本，完成简中可见、ToUnicode/复制提取、透明 PNG 和 Poppler 打开/渲染探针。 | 还没有生产 PDF 导出。正式输出需按具体字体的 `OS/2.fsType` 检查嵌入许可，并在 Task 5 验证系统回退字体和独立文本提取。 |
+| 2. 字形 shaping 与字体 | ✅ 完成（接口、探针和 PDF 集成） | 接入 Go-text HarfBuzz shaping 和系统字体 fallback，输出实际 glyph ID、字体键、Unicode cluster 与点单位 advance/offset；混合简中/拉丁缺字回归通过。纯 Go `gopdf` 后端已集成；PDF 可见字形使用页面场景中的矢量轮廓，隐藏 Unicode 层只负责搜索/复制；检查 `OS/2.fsType`、字形 cmap 和字体面索引。PDF reader 用例验证 CJK/Latin 文本提取（宿主有 Arial Unicode 时）与页面渲染。 | 当前系统字体许可不允许或缺失 `OS/2` 时会拒绝导出；TrueType 禁止子集、位图专用以及非首个 TTC 字体面也拒绝。未实现不嵌字字体的 `ActualText` 提取替代路径；其他操作系统字体 fallback 仍需各自验证。 |
 | 3. 共享分页引擎 | ✅ 完成（引擎） | 新增纯 Go `internal/wordlayout`；以点为单位输出页框、正文框和页面 clip、定位文字片段/glyph 矢量轮廓、行内图片矩形、表格单元格和 run/Unicode 字符偏移→页面坐标映射。支持首个 section 几何、默认 A4、段落和字符样式继承、基础 run/段落格式、常见换行/列表/图片/分页符、段落分页控制和普通表格按行跨页。超宽行、超高表格行、未支持内容会产生定位错误并阻止输出；默认纸张/边距和估算列宽等 warning 要求后续预览确认。回归覆盖精确页边界、取消、source map、轮廓缓存、缺失表格列宽和 keep-with-next。 | 保守边界：只布局单 section；RTL、分栏、多节、合并/嵌套表格、表格内分页符会阻止输出；keep-with-next 只对连续段落分组，目标不是段落时给 warning；缺失列宽按已知列均值补齐并归一到正文宽度，同时给 warning，避免无提示地猜列宽。 |
 | 4. 打印布局界面 | 🟨 已接通，视觉验收未完成 | 后台按文档 ID/版本/页面设置键启动分页；取消旧版本任务，仅接受同文档、同版本、同页面设置结果。虚拟化 Gio 页面列表重放原始 PageScene 的字形矢量轮廓、图片位置/旋转和表格边线；打印布局可从 ribbon 或 `FsQrk` 切换；状态栏基于 caret rune source map 与首个可见页面显示实际页码/总页数。页缩放 50%–150% 可用缩小/放大按钮调整。 | 页面视图里的正文目前只读，编辑请切回连续视图；缩放滑块拖动、页内 caret/editor overlay、单页/多页布局尚未实现。图片解码完成前显示占位框。Pen `Clpgm`/`FsQrk` 的实际同窗口 Computer Use 对照尚未通过。阶段测试：分页状态/取消失效结果/模式切换和 FsQrk 几何用例通过；完整 UI 包还受已有 Grid 坐标用例失败影响，导航用例在主 checkout 同样失败。 |
-| 5. PDF 导出 | ⬜ 未开始 | 已确定可用技术路径：页面矢量对象按共享场景落点绘制；整形 glyph 轮廓绘为 PDF vector path；Unicode 隐形文字层只负责搜索/复制，不参与可见排版。 | 实现后台导出、准确页框/对象矩形/字体 fallback、字体许可检查、Unicode 独立提取、PDF reopen、取消/失败原子替换；导出不得改变 DOCX dirty state。 |
+| 5. PDF 导出 | ✅ 已接通（有限版；视觉验收未完成） | File ribbon 触发 PDF 保存框；先 flush 正文草稿、分页未就绪时后台等待对应 revision；warning 需要用户确认，blocking diagnostic 禁止输出。`internal/format/pdf` 重放页尺寸、glyph outlines、字体颜色/高亮/下划线、表格边线和 PNG/JPEG 图片矩形/旋转；隐藏文字层只供提取。字体按 OS/2 嵌入许可与 cmap 覆盖校验。导出用同目录临时文件，reopen 校验页数/页面尺寸后原子替换；revision 与草稿 epoch 在替换前再检查。回归覆盖页面/矢量可见性、CJK/Latin 提取、图片矩形、阻断诊断、取消/失败/旧版本保护，以及源 DOCX snapshot/dirty state 不变。 | `gopdf.Reader` 用于 reopen、页数/尺寸、渲染与文本提取验证；尚无独立 Poppler/PDFKit 文本提取交叉验证。当前打印 adapter 未实现，打印和 PDF 的系统输出验证仍未完成。Pen 与 PDF 的 Computer Use 像素对照未做；字体许可拒绝、超出支持的 DOCX 结构、透明/复杂图片细节及平台 fallback 差异可能阻止输出或需要继续验证。 |
 | 6. 原生打印 | ⬜ 未开始 | — | 以 Task 5 已生成的内存 PDF 调系统原生打印面板；macOS 评估 PDFKit/AppKit 主线程桥接；Windows/Linux 各有独立 adapter。验证取消/确认、页数/范围/份数与 Gio 窗口响应；禁止启动外部 Office/PDF/打印 CLI。 |
 | 7. 统一验收 | ⬜ 未开始 | — | 运行目标回归和 `go run ./cmd/desktop`；用 Computer Use 在 1440×900 按 Pen `Clpgm`（正文）、`kiBim`（主菜单）和 `FsQrk`（底栏）截图逐项对照；比较屏幕/PDF/打印尺寸、页数和对象坐标，记录 fixture、字体、诊断、截图、打印设备及残留差异。未达到像素级证据前不标记 1:1 通过。 |
 
@@ -225,9 +225,9 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 
 | 边界 | 原因 | 解决方案与当前状态 |
 |---|---|---|
-| PDF 库的普通文字 API 不接受 HarfBuzz glyph ID/精确定位 | 它会按 Unicode 和自身 kerning 编码；若把分页好的文字再交给它排版，打印版就会与屏幕不一致。 | 已探针验证将 Go-text glyph outline 转成矢量 path，按共享页面场景原点绘制；再加 alpha=0 的 Unicode/ToUnicode 文本层供提取。屏幕和 PDF 必须重放同一 outline 几何。集成尚未实现。 |
+| PDF 库的普通文字 API 不接受 HarfBuzz glyph ID/精确定位 | 它会按 Unicode 和自身 kerning 编码；若把分页好的文字再交给它排版，打印版就会与屏幕不一致。 | 已实现 Go-text glyph outline 到 PDF vector path 的重放，并加 alpha=0 的 Unicode/ToUnicode 文字层供提取。可见页面不由 PDF Text API 再排版；writer 与 Gio 重放同一 PageScene outline、字形原点和对象框。 |
 | 任意 DOCX 无法承诺 Microsoft Word 像素级一致 | 当前适配器只读取定义的分页输入；分节、分栏、浮动对象、域、修订、字体度量和复杂表格等语义并未全部建模。 | 逐个扩展 neutral 模型并用离线样例对照（LibreOffice 仅可作开发时参考，绝不作为运行时依赖）；未支持且影响页数的情况给出源位置错误并阻止 PDF/打印。当前多节/分栏及复杂表格边界已报告，完整兼容和 Pen 1:1 验收未完成。 |
-| 可见字形路径和可搜索文字层依赖实际字体 | 系统 fallback 字体各平台不同；PDF 嵌入许可由字体文件决定，不能假设所有系统字体均可嵌入。 | 不随程序捆绑系统字体；导出前读取字体嵌入标志，嵌入被禁止时报告诊断或以后实现不嵌入字体的 `ActualText` 文字层。当前只测得系统 Arial Unicode 样例 `fsType=0x0008`，其他 fallback 需逐一验证。 |
+| 可见字形路径和可搜索文字层依赖实际字体 | 系统 fallback 字体各平台不同；PDF 嵌入许可由字体文件决定，不能假设所有系统字体均可嵌入。 | 不随程序捆绑系统字体。导出前解析 `OS/2.fsType` 并验证选中 face 与 Unicode cmap；当前平台 Arial Unicode `fsType=0x0008` 的 mixed CJK/Latin 提取用例通过。无 OS/2、restricted、bitmap-only、TrueType no-subsetting 和 TTC 非首 face 明确失败关闭。各平台实际 fallback 字体需逐一验证；不嵌字体的 `ActualText` 仍是后续方案。 |
 | 原生打印不是 Go UI 的通用 API | 面板、主线程要求和打印对象在 macOS、Windows、Linux 不同。 | 每个平台独立适配器消费同一份 PDF 字节；没通过面板、取消、确认及虚拟打印机测试的平台保持 disabled。禁止调用外部 LibreOffice/PDF reader。 |
 | Linux GUI 跨平台编译暂不能在当前 macOS 环境确认 | Gio 的 Vulkan/CGo 源文件在本机 `CGO_ENABLED=0` Linux cross compile 中不参与构建。 | 纯 Go shaper/PDF 路径已在 macOS、Windows、Linux 三目标交叉编译；Gio Linux 桌面包需后续在 Linux 原生 runner/toolchain 验证，不能用纯 Go 探针结果替代。 |
 
@@ -237,7 +237,7 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 
 | 能力 | 当前边界与原因 | 可行方案 | 建议当前处理 |
 |---|---|---|---|
-| Word 分页、打印布局、单页/多页与总页数 | `internal/wordlayout` 为支持输入计算真实分页。Task 4 已将页面场景画到 Gio 并接入异步 revision-safe 结果及 `FsQrk` 页码；页面视图中的正文当前只读，窗口内 Pen CUA 对照未验收。PDF 与原生打印尚未实现。不得依赖 LibreOffice 或外部 Office 运行时。 | 屏幕、PDF、打印复用 PageScene glyph outline、clip、坐标和对象矩形；PDF 使用已探针确认的纯 Go `SalvioniDigitalSolutions/gopdf` 路径/图片输出，普通 Text API 不用于可见排版。详情见 `docs/superpowers/plans/2026-10-02-word-pagination-pdf-print.md`。 | 支持文档只显示分页实算状态；未支持且影响页数的内容会定位并阻止输出；默认页参数/估算列宽以 warning 暴露并等待后续确认。尚未通过 Pen 视觉对照，不标记 1:1。 |
+| Word 分页、打印布局、单页/多页与总页数 | `internal/wordlayout` 为支持输入计算真实分页。Task 4 已将页面场景画到 Gio 并接入异步 revision-safe 结果及 `FsQrk` 页码；页面视图中的正文当前只读，窗口内 Pen CUA 对照未验收。Task 5 PDF writer/export 已接通；原生打印尚未实现。不得依赖 LibreOffice 或外部 Office 运行时。 | 屏幕与 PDF 复用 PageScene glyph outline、clip、坐标和对象矩形；PDF 使用纯 Go `SalvioniDigitalSolutions/gopdf`，普通 Text API 不参与可见排版。原生打印计划由系统 adapter 消费同一份 PDF。详情见 `docs/superpowers/plans/2026-10-02-word-pagination-pdf-print.md`。 | 支持输入可显示分页实算状态并导出 PDF；blocking 内容定位后禁止输出，默认页参数/估算列宽等 warning 需确认。页内正文编辑、原生打印、独立 PDF 解析器验证和 Pen 视觉对照未完成，不标记 1:1。 |
 | 页眉、页脚、页码、节设置 | 当前投影/编辑能力主要针对正文段落、表格、run 与行内图片；没有 section/header/footer part 的 neutral 编辑接口。页码字段的实际页数依赖分页。 | 扩展 section 与 header/footer DTO、DOCX relationship/part 读写和保存重开用例。先可支持固定内容页眉页脚；动态页码与总页数等待分页引擎。 | 固定页眉页脚可作为 DOCX 适配器扩展；动态页码归分页技术决策。 |
 | 字体、字号、颜色高亮、段距、主题等样式写入 | 字号、字体族和高亮已通过 run 级格式能力局部写入；高亮支持 Word 标准命名颜色，颜色选择面板可清除高亮，但不支持主题色或任意 RGB 高亮。保存重开与未修改 OOXML 部件保留有用例。无显式字号时目前没有完整的 Word style/theme 继承解析，ribbon 以 11 pt 作为增减起点。 | 为段距、主题等剩余属性扩展 neutral patch 和 `word/document.xml` / styles/theme 的局部更新；后续可加入 style/theme 继承解析。保留未改 OOXML 属性，使用临时副本做保存重开与 untouched-content 检查。 | 字体族、字号增减和标准高亮色已可用；继承字号解析和其他样式属性继续分项实现。 |
 | 表格、链接、书签、列表写入 | 表格可读取/显示，但尚无通用结构创建接口；超链接、书签需要关系或唯一 ID。项目符号、十进制编号和嵌套层级 0–8 已支持 `numbering.xml` 局部写入。其他编号格式、`lvlOverride` 自定义 restart，以及样式继承编号仍只读。 | 表格、链接、书签继续扩展 neutral Word 编辑能力与 DOCX XML/关系写入。后续可加入字母/罗马数字格式和覆盖重启解析，再验证 Word 重开及连续性。 | 生成或识别出的常见项目符号/十进制层级可用；无法安全理解的编号定义不允许改写。 |
@@ -247,7 +247,7 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 | 批注、修订、接受/拒绝 | 缺少 comment、revision 的对象模型和包内关系；直接改 XML 易丢作者、时间、范围或修订语义。 | 建立 comments/revisions neutral 模型和受限操作；先选定支持的 DOCX 子集，验证 Word 重开及未处理修订保留。 | 高兼容性风险；作为独立 DOCX 适配器项目，不能仅用普通文本差异模拟。 |
 | 语音听写、翻译 | Gio/Go 当前没有语音识别或翻译服务。 | 增加平台语音适配器或有明确隐私/网络授权的服务接口；需定义离线/失败反馈和语言选择。 | 作为可选外部能力，不作为当前 ribbon 的内建能力；未接入前禁用。 |
 | 加载项、设计器、宏 | 当前没有 Office Add-ins 宿主、Designer 服务或 VBA 宏安全沙箱。宏执行会越出普通文档编辑的安全边界。 | 加载项需设计受限插件协议；Designer 可定义本地规则或服务；宏优先只做安全识别/提示，执行只能经独立、明确授权的隔离方案。 | 不在当前 MVP 内；宏执行保持禁用。 |
-| 文件打印、PDF、系统分享 | 新建、打开、最近、保存、另存为和按编辑自动保存已接入工作区；分页引擎已生成可供 UI/PDF/打印共用的 `PageScene`，但视图、后台版本校验和平台打印服务尚未接入。分享仍需平台集成。 | 打印/PDF 复用应用内 Go 分页结果；打印调用系统原生 API，不启动外部 Office/PDF 应用。分享走操作系统分享面板或导出文件。 | Open/Save As 等已复用工作区功能；gopdf 的矢量输出路径已探针通过，生产 PDF、用户可见页面、原生打印和分享仍未实现。 |
+| 文件打印、PDF、系统分享 | 新建、打开、最近、保存、另存为和按编辑自动保存已接入工作区；真实分页/只读打印布局与 revision-safe PDF 导出已接入。native print adapter 和系统分享仍未实现。 | PDF 复用应用内 Go PageScene，先确认 warning 再原子替换目标文件；打印 adapter 消费同一 PDF 并调用 OS 原生 API，不启动外部 Office/PDF 应用。分享走操作系统分享面板或导出文件。 | PDF 对支持范围已可用，但独立解析器交叉验证与 Pen 视觉检查未做；原生打印与分享仍未接通。 |
 | 文档信息与核心属性 | 当前 neutral 能力只开放标题、主题、作者、关键词、说明五个通用核心属性；自定义属性、扩展命名空间属性及带嵌套内容的目标属性没有编辑模型，直接覆盖可能破坏语义。 | 扩展 neutral 属性模型和 DOCX 属性映射，并定义未知/多值字段的编辑策略；每种字段以最小 XML patch 验证保存重开和未知属性保留。 | 五个常用字段已在当前栈实现；其余属性保持原样，不在表单内改写。 |
 
 ## 建议执行顺序

@@ -279,6 +279,7 @@ const (
 	commandOpenFile fileCommandKind = iota + 1
 	commandOpenFolder
 	commandSaveAs
+	commandExportPDF
 )
 
 type fileCommandResult struct {
@@ -300,6 +301,14 @@ func (a *App) startSaveAsPicker(format string) {
 	a.startFileCommand(commandSaveAs, format)
 }
 
+func (a *App) startWordPDFSavePicker(state *documentSessionState, key wordLayoutKey) {
+	if state == nil || state.word == nil || a.fileCommandRunning {
+		return
+	}
+	a.wordPDFPickerRequest = &wordPDFPickerRequest{state: state, key: key}
+	a.startFileCommand(commandExportPDF, "pdf")
+}
+
 // setWordFileCommandRunner is a narrow injection seam for exercising the Word
 // ribbon's file commands without opening a native platform picker.
 func (a *App) setWordFileCommandRunner(runner func(fileCommandKind, string) fileCommandResult) {
@@ -318,6 +327,8 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 		a.status = "选择要浏览的文件夹…"
 	case commandSaveAs:
 		a.status = "选择另存为位置…"
+	case commandExportPDF:
+		a.status = "选择 PDF 保存位置…"
 	}
 	runner := a.fileCommandRunner
 	go func() {

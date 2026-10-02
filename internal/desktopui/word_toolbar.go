@@ -200,7 +200,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		return false
 	}
 	switch action.id {
-	case "new", "open", "recent", "save-as":
+	case "new", "open", "recent", "save-as", "export-pdf":
 		return true
 	case "autosave":
 		return true
@@ -520,6 +520,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.activateRecent()
 	case "save-as":
 		a.startSaveAsPicker("docx")
+	case "export-pdf":
+		a.requestWordPDFExport()
 	case "doc-info":
 		a.startWordDocumentInfoLoad()
 	case "autosave":

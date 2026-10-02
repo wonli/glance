@@ -438,13 +438,17 @@ func (a *App) closeWorkspaceTabNow(id string) {
 		return
 	}
 	wasActive := a.activeTabID == id
+	state.wordExportCommitMu.Lock()
 	state.closed.Store(true)
+	state.wordExportCommitMu.Unlock()
 	if a.collection != nil {
 		if _, persisted := a.collection.Get(id); persisted {
 			a.workspaceDBMu.Lock()
 			if err := a.collection.CloseTab(id); err != nil {
 				a.workspaceDBMu.Unlock()
+				state.wordExportCommitMu.Lock()
 				state.closed.Store(false)
+				state.wordExportCommitMu.Unlock()
 				a.status = err.Error()
 				return
 			}

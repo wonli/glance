@@ -44,8 +44,14 @@ func (state *documentSessionState) setWordBlocks(blocks []document.WordBlock) {
 	if state == nil {
 		return
 	}
+	state.wordExportCommitMu.Lock()
 	state.wordBlocks = blocks
 	state.wordRevision++
+	state.wordRevisionAtomic.Store(state.wordRevision)
+	state.wordExportCommitMu.Unlock()
+	if state.wordPDFExportCancel != nil {
+		state.wordPDFExportCancel()
+	}
 	state.wordLayoutResult = nil
 	state.wordLayoutAcceptedKey = nil
 	state.wordLayoutErrorKey = nil
@@ -126,6 +132,7 @@ func (a *App) startWordPagination(state *documentSessionState) {
 		}
 		engine = wordlayout.NewEngine(shaper)
 		a.wordLayoutEngine = engine
+		a.wordPDFFontSource = shaper
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	state.wordLayoutCancel = cancel
@@ -175,6 +182,15 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 		state.wordLayoutAcceptedKey = &acceptedKey
 		state.wordLayoutErrorKey = nil
 		state.wordLayoutError = ""
+	}
+	if state.wordPDFExportAfterLayout {
+		state.wordPDFExportAfterLayout = false
+		if result.err != nil {
+			state.wordPDFExportAfterLayout = false
+			a.status = "PDF 导出前分页失败：" + result.err.Error()
+		} else {
+			a.beginWordPDFExport(state)
+		}
 	}
 }
 

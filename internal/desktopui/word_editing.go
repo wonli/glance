@@ -138,14 +138,23 @@ func (a *App) queueWordParagraphJoin(runID string, value string, direction docum
 }
 
 func captureWordTextDraft(state *documentSessionState, runID, value string) {
+	state.wordExportCommitMu.Lock()
+	defer state.wordExportCommitMu.Unlock()
 	if state.wordRunDrafts == nil {
 		state.wordRunDrafts = make(map[string]string)
 	}
 	if value == state.wordRunCommitted[runID] {
-		delete(state.wordRunDrafts, runID)
+		if _, exists := state.wordRunDrafts[runID]; exists {
+			delete(state.wordRunDrafts, runID)
+			state.wordDraftEpoch.Add(1)
+		}
+		return
+	}
+	if previous, exists := state.wordRunDrafts[runID]; exists && previous == value {
 		return
 	}
 	state.wordRunDrafts[runID] = value
+	state.wordDraftEpoch.Add(1)
 }
 
 func (a *App) requestWordTextFlush(all bool) {
@@ -251,6 +260,11 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 	}
 	if state.wordPageBreakIntent != nil {
 		a.startWordPageBreak(state)
+		return
+	}
+	if state.wordPDFExportAfterDrafts {
+		state.wordPDFExportAfterDrafts = false
+		a.beginWordPDFExport(state)
 		return
 	}
 	if state.wordSaveAfterDrafts {

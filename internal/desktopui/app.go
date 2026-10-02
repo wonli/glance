@@ -18,6 +18,7 @@ import (
 	"glance/internal/document"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
+	wordpdf "glance/internal/format/pdf"
 	legacyxls "glance/internal/format/xls"
 	"glance/internal/format/xlsx"
 	"glance/internal/workspace"
@@ -121,6 +122,9 @@ type App struct {
 	wordDocumentInfoResults chan wordDocumentInfoResult
 	wordLayoutResults       chan wordLayoutResult
 	wordLayoutEngine        wordLayoutEngine
+	wordPDFExportResults    chan wordPDFExportResult
+	wordPDFPickerRequest    *wordPDFPickerRequest
+	wordPDFFontSource       wordpdf.FontSource
 }
 
 func New(window *app.Window, initialPath string) *App {
@@ -142,6 +146,7 @@ func New(window *app.Window, initialPath string) *App {
 		saveResults:            make(chan saveResult, 1),
 		openResults:            make(chan openResult, 1),
 		fileCommandResults:     make(chan fileCommandResult, 1),
+		wordPDFExportResults:   make(chan wordPDFExportResult, 1),
 		shutdown:               make(chan struct{}),
 		sessions:               make(map[string]*documentSessionState),
 		tabMeta:                make(map[string]workspace.Tab),

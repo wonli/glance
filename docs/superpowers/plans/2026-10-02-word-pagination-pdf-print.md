@@ -195,41 +195,46 @@ Task 4 Step 3 is partial: Gio replays the accepted `PageScene` as a read-only pr
 ### Task 5: Add PDF backend and safe asynchronous PDF export
 
 **Files:**
-- Create: `internal/format/pdf/word_writer.go`
-- Create: `internal/format/pdf/word_writer_test.go`
-- Create: `internal/desktopui/word_pdf.go`
+- Create: `internal/format/pdf/word.go`
+- Create: `internal/format/pdf/word_test.go`
+- Create: `internal/desktopui/word_pdf_export.go`
+- Create: `internal/desktopui/word_pdf_export_test.go`
+- Modify: `internal/desktopui/app.go`, `internal/desktopui/workspace.go`, and `internal/desktopui/word_pagination.go`
 - Modify: `internal/desktopui/session_state.go`
 - Modify: `internal/desktopui/word_toolbar.go`
 - Modify: `internal/desktopui/layout.go`
-- Modify: `go.mod` and `go.sum` for the selected writer only
 - Modify: `docs/office-library-evaluation.md`, `docs/office-support.md`, and `docs/compatibility/office-feature-matrix.md`
+
+The selected PDF backend was pinned and probed during Task 2, so Task 5 does not change `go.mod` or `go.sum`.
 
 **Interfaces:**
 - Consumes Task 3 `wordlayout.Result` and the selected Task 2 font data/shaped glyphs.
-- Produces `WriteWordPDF(dst io.Writer, result wordlayout.Result, fonts wordlayout.FontSource) error` in `internal/format/pdf`; PDF types do not escape this adapter.
+- Produces `WriteWordPDF(ctx, dst, result, fonts, images)` and atomic `ExportWordPDFFile` in `internal/format/pdf`; PDF types do not escape this adapter. Images use a narrow ID-to-bytes source because the neutral page scene contains image IDs, not package bytes.
 - UI export captures the committed document revision, requests layout, requires confirmation for warnings, then chooses a `.pdf` destination and atomically writes a temporary sibling file. Existing files remain intact on any error/cancel; DOCX dirty state is unchanged.
 
-- [ ] **Step 1: Add PDF writer geometry and content tests**
+- [x] **Step 1: Add PDF writer geometry and content tests**
 
 Add `TestWriteWordPDFPreservesPageCountAndPlacedGlyphs`, `TestWriteWordPDFEmbedsCJKFontAndToUnicode`, `TestWriteWordPDFPreservesImageRectangles`, and `TestWriteWordPDFRejectsBlockingDiagnostics`. Validate page count, extracted Chinese/mixed Latin boundary text, font embedding/ToUnicode, and image rectangles using a test-only parser/inspector; compare extracted/page geometry with the input layout result.
 
-- [ ] **Step 2: Run PDF tests against the selected library probe**
+- [x] **Step 2: Run the focused PDF writer/export tests**
 
 Run: `go test ./internal/format/pdf -run 'TestWriteWordPDF' -count=1`
-Expected: FAIL until positioned page replay and PDF adapter are implemented.
+Result: PASS after implementation. The first isolated red test run was not recorded before writing the implementation; the focused tests now cover geometry, visible vector output, extraction, image rotation, font permissions, diagnostics, and atomicity.
 
-- [ ] **Step 3: Implement in-process page replay**
+- [x] **Step 3: Implement in-process page replay**
 
 Implement `WriteWordPDF` by replaying layout page dimensions, glyph IDs/positions, image rectangles, and supported table/paragraph geometry. Embed reviewed fonts/subsets where licensing permits; use reported fallback fonts and `ToUnicode` mappings. Do not reflow text in the PDF writer.
 
-- [ ] **Step 4: Implement atomic export and cancellation/error handling**
+- [x] **Step 4: Implement atomic export and cancellation/error handling**
 
 Add an export worker that consumes only the committed snapshot revision. Reuse a cached layout only when document ID, revision, and page setup all match; otherwise paginate that snapshot before PDF writing. Write/close/validate in a same-directory temporary file, then atomically replace the target. On cancel/failure remove the temporary file and preserve any existing target and source dirty state. Ignore stale worker results.
 
-- [ ] **Step 5: Run writer/export tests and commit Task 5**
+- [x] **Step 5: Run writer/export tests and commit Task 5**
 
 Run: `go test ./internal/format/pdf ./internal/desktopui -run 'Test(WriteWordPDF|WordPDFExport)' -count=1`
 Expected: PASS for PDF geometry/content, blocking diagnostics, cancel/failure atomicity, and unchanged DOCX dirty state.
+
+Verified with the focused command above. The test suite uses `gopdf.Reader` for reopen, rendered vectors, page boxes, image bounds, and CJK/Latin extraction when the host font is present. Independent PDF parser extraction and Pen/Glance visual comparison remain Task 7 acceptance work.
 
 ### Task 6: Add native print adapter and user-confirmed print flow
 
