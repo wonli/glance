@@ -89,25 +89,26 @@ Document precisely which page/style metadata is projected and which section/tabl
 - `FontSource` is the narrow PDF-facing interface `{ FontData(fontKey string) ([]byte, error) }`; `TextShaper` implements it.
 - `ShapedText` carries a stable font key, ascent/descent, glyph IDs, glyph advances/offsets, and Unicode rune-cluster start/end offsets. Layout consumes point units; no pixel dimensions are stored here.
 - `ShapedGlyph` carries glyph ID, rune range, advance X, and X/Y offset, all in points. Implement a deterministic fake shaper in tests; production shaping must remain in-process and usable by the Go PDF backend.
+- Probe ruling: the selected `SalvioniDigitalSolutions/gopdf` API does not accept shaped glyph IDs/positions as visible text. The shared page scene must replay vector glyph outlines derived from these glyph IDs and font keys at the supplied positions; use an alpha-zero Unicode text layer for extraction only, after checking that embedding is permitted. The Gio screen painter and PDF writer must consume identical outline geometry and positions.
 
-- [ ] **Step 1: Add shaping contract tests**
+- [x] **Step 1: Add shaping contract tests**
 
 Add `TestTextShaperReturnsGlyphClustersAndMetrics` in `internal/wordlayout` and the Review Focus regression `TestWordTextShaperMixedCJKLatinMissingGlyphUsesReportedFallback` in `internal/desktopui`. Assert monotonically ordered rune clusters cover the original input exactly once, metrics are finite/nonnegative, and fallback font keys are explicit.
 
-- [ ] **Step 2: Run shaping tests before implementation**
+- [x] **Step 2: Run shaping tests before implementation**
 
 Run: `go test ./internal/wordlayout ./internal/desktopui -run 'Test(TextShaperReturnsGlyphClustersAndMetrics|WordTextShaperMixedCJKLatinMissingGlyphUsesReportedFallback)' -count=1`
 Expected: FAIL until the shaping package and contract exist.
 
-- [ ] **Step 3: Probe available Go/Gio shaping and PDF font requirements**
+- [x] **Step 3: Probe available Go/Gio shaping and PDF font requirements**
 
 Build a focused probe for the current Gio/font stack and candidate Go PDF writers (including the candidates recorded in `docs/office-library-evaluation.md`). Verify positioned glyph output, simplified Chinese and mixed Latin visibility/extraction, embeddable licensed font data/ToUnicode, transparent PNG handling, and macOS/Windows/Linux compile behavior. Keep the Gio-dependent production adapter in `internal/desktopui`; `internal/wordlayout` must stay independent of Gio. Do not choose a library based on README claims alone.
 
-- [ ] **Step 4: Record and implement the selected production shaper**
+- [x] **Step 4: Record and implement the selected production shaper**
 
 Record the measured API, version, license, font source/fallback policy, dependencies, and test evidence in `docs/office-library-evaluation.md`. Implement `Shape`/`FontData` behind the neutral interface in `internal/desktopui/word_text_shaper.go`. If existing Gio APIs cannot provide reusable glyph positions and font data without frame state, add the smallest reviewed pure-Go dependency and keep it inside this adapter.
 
-- [ ] **Step 5: Run shaper tests and commit Task 2**
+- [x] **Step 5: Run shaper tests and commit Task 2**
 
 Run: `go test ./internal/wordlayout ./internal/desktopui -run 'Test(TextShaperReturnsGlyphClustersAndMetrics|WordTextShaperMixedCJKLatinMissingGlyphUsesReportedFallback)' -count=1`
 Expected: PASS, including the CJK/missing-glyph fallback regression; no external process is started.
@@ -123,7 +124,7 @@ Expected: PASS, including the CJK/missing-glyph fallback regression; no external
 **Interfaces:**
 - Consumes Task 1 neutral `WordLayoutData`, existing `[]document.WordBlock`, and Task 2 `TextShaper`.
 - Produces `Engine.Layout(ctx context.Context, input Input) (Result, error)`. `Input` contains document ID, revision, blocks, layout metadata, and product default page setup.
-- `Result` contains ordered `Pages []PageScene`, `Diagnostics`, and `Locations map[SourcePosition]Position`. `SourcePosition` is `{RunID string; RuneOffset int}`; `Position` is `{Page int; XPT, YPT float64}`. Each `PageScene` is a neutral Canvas-like vector display list in points: page geometry plus positioned glyph runs, images, table cells, clipping, and source ranges. It contains no Gio/PDF/platform drawing objects, so the screen painter and PDF writer replay the same operations without measuring or wrapping again.
+- `Result` contains ordered `Pages []PageScene`, `Diagnostics`, and `Locations map[SourcePosition]Position`. `SourcePosition` is `{RunID string; RuneOffset int}`; `Position` is `{Page int; XPT, YPT float64}`. Each `PageScene` is a neutral Canvas-like vector display list in points: page geometry plus positioned glyph runs, glyph font keys/IDs, images, table cells, clipping, and source ranges. Visible glyphs resolve to outlines once from the selected font face and are replayed at identical origins by the Gio painter and PDF writer; neither sink measures or wraps text again. The scene contains no Gio/PDF/platform drawing objects.
 - Diagnostics use a typed severity (`warning`/`error`), stable source ID, code, and user-readable detail. `Result.CanPreview` is false for fatal layout errors; warnings require explicit user confirmation before PDF/print.
 
 - [ ] **Step 1: Add deterministic pagination tests using the fake shaper**
