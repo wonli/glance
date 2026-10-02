@@ -125,7 +125,7 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 		return
 	}
 	if result.blocks != nil {
-		state.wordBlocks = result.blocks
+		state.setWordBlocks(result.blocks)
 	}
 	if intent != nil {
 		if result.pageBreakSourcePrefix == "" {

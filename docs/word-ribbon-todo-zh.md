@@ -166,15 +166,15 @@
 - [ ] 比较 `review-compare`：可先做 neutral 文本/段落差异；完整 Word 比较及修订生成需更广的 OOXML 支持。
 - [ ] 限制编辑 `review-restrict`：增加保护设置模型和明确的防误操作边界；不等同加密或强安全权限控制。
 
-### 视图（12 项：已完成 0，待实现 12）
+### 视图（12 项：已完成 1，待实现 11）
 
 - [ ] 阅读模式 `view-reading`：定义简化视图状态及恢复路径。
-- [ ] 打印布局 `view-print-layout`：依赖分页/打印布局渲染，当前连续流模式不能冒充该视图。
+- [x] 打印布局 `view-print-layout`：Word ribbon 和底栏开关均可切换到共享 `PageScene` 页面视图；遇到阻断诊断时明确显示错误，不回退成连续流假装打印版。页面内文字仍为只读场景，需切回连续视图编辑正文。
 - [ ] Web 版式 `view-web-layout`：定义无纸张边界的连续排版规则。
 - [ ] 标尺 `view-ruler`：横竖标尺当前已显示；图标尚未接入显示/隐藏开关。
 - [ ] 网格线 `view-gridlines`：增加 Word 画布网格线状态和绘制，不修改 DOCX 内容。
 - [ ] 导航窗格 `view-navigation`：增加标题/查找结果索引；当前 DOCX 投影尚无完整标题导航索引。
-- [ ] 缩放 `view-zoom`：底栏当前绘有静态滑块及 100% 文本；实现真正缩放前需定义缩放对纸张、字体、光标及拖拽坐标的统一换算。
+- [ ] 缩放 `view-zoom`：底栏缩小/放大可按 10% 调整页面场景（50%–150%）；滑块目前只显示位置，拖动和 ribbon 缩放菜单尚未接通。
 - [ ] 单页 `view-single-page`：依赖分页模型。
 - [ ] 多页 `view-multiple-pages`：依赖分页模型和多页 viewport。
 - [ ] 新建窗口 `view-new-window`：接入 workspace/window 生命周期并明确是否复用当前文档会话。
@@ -186,8 +186,9 @@
 Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 页”、`582 个字`、`中文(中国)`、辅助功能图标和“辅助功能：正常”；右侧依次是焦点模式、打印布局、Web 版式、缩小、缩放滑块、放大和 `100%`。底栏的**区域与图形已绘制**，但绘制出来不代表控件已有功能。
 
 - [x] 底栏位置、尺寸、字数区域及左右侧图形已画出。
-- [x] 修正静态页数文案：当前显示“第 1 页”，但应用没有 Word 分页器。现显示“连续视图”；在分页能力未完成前不显示页码/总页数。
-- [ ] 视图/缩放图标、滑块和 `100%` 当前为静态绘制；要么接入真实状态与点击/拖拽行为，要么按设计明确绘制为不可交互状态。
+- [x] 移除静态页数文案；当前底栏使用 rune source map / 首个可见页面和接受的分页结果显示真实页码/总页数，未完成时显示“正在计算页数…”或“页数未计算”，失败/不支持时明确显示状态。
+- [x] 打印布局图标和缩小/放大可交互；缩放百分比和滑块位置读取会话缩放值。
+- [ ] 缩放滑块本身的拖动、单页/多页视图及 ribbon 缩放对话框尚未接通。
 - [ ] 辅助功能图标当前是静态状态图形；若设计要求打开辅助功能面板，再增加有实际内容的操作。
 
 底栏的 6 个图形图标和缩放滑块不计入上文的 99 个功能区命令图标。底栏继续按 `FsQrk` 使用 Pen 资源；本 TODO 中“改用 Excel 图标方案”的范围仅指 ribbon 命令图标。
@@ -214,8 +215,8 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 |---|---|---|---|
 | 1. DOCX 分页输入投影 | ✅ 完成 | 以中立 DTO 读取页面尺寸/方向/边距、样式继承输入、段落间距/行高/缩进/分页控制、表格网格和列宽；只读投影不改 DOCX 包；已覆盖多节、分栏、特殊缩进、合并/嵌套表格等定位诊断。 | 后续只在具体布局规则开始支持时补保存重开与 Word 样例证据；投影本身不等于算页数。 |
 | 2. 字形 shaping 与字体 | ✅ 完成（接口与探针） | 接入 Go-text HarfBuzz shaping 和系统字体 fallback，输出实际 glyph ID、字体键、Unicode cluster 与点单位 advance/offset；混合简中/拉丁缺字回归通过。选择并固定纯 Go PDF 矢量/图片后端版本，完成简中可见、ToUnicode/复制提取、透明 PNG 和 Poppler 打开/渲染探针。 | 还没有生产 PDF 导出。正式输出需按具体字体的 `OS/2.fsType` 检查嵌入许可，并在 Task 5 验证系统回退字体和独立文本提取。 |
-| 3. 共享分页引擎 | ✅ 完成（引擎） | 新增纯 Go `internal/wordlayout`；以点为单位输出页框、正文框和页面 clip、定位文字片段/glyph 矢量轮廓、行内图片矩形、表格单元格和 run/Unicode 字符偏移→页面坐标映射。支持首个 section 几何、默认 A4、段落和字符样式继承、基础 run/段落格式、常见换行/列表/图片/分页符、段落分页控制和普通表格按行跨页。超宽行、超高表格行、未支持内容会产生定位错误并阻止输出；默认纸张/边距和估算列宽等 warning 要求后续预览确认。回归覆盖精确页边界、取消、source map、轮廓缓存、缺失表格列宽和 keep-with-next。 | 还未接入 Gio 页面绘制、后台 revision-safe 工作流、PDF writer 或系统原生打印，因此 UI 页数/打印布局仍未完成。保守边界：只布局单 section；RTL、分栏、多节、合并/嵌套表格、表格内分页符会阻止输出；keep-with-next 只对连续段落分组，目标不是段落时给 warning；缺失列宽按已知列均值补齐并归一到正文宽度，同时给 warning，避免无提示地猜列宽。 |
-| 4. 打印布局界面 | ⬜ 未开始 | — | 后台按文档 ID/版本/页面设置键计算布局；页面视图按原始 PageScene 画字形/图片/表格；页数只显示真实结果；补缩放、状态栏、导航、脏版本防过期结果和 Pen Node `Clpgm`/`FsQrk` 对照。 |
+| 3. 共享分页引擎 | ✅ 完成（引擎） | 新增纯 Go `internal/wordlayout`；以点为单位输出页框、正文框和页面 clip、定位文字片段/glyph 矢量轮廓、行内图片矩形、表格单元格和 run/Unicode 字符偏移→页面坐标映射。支持首个 section 几何、默认 A4、段落和字符样式继承、基础 run/段落格式、常见换行/列表/图片/分页符、段落分页控制和普通表格按行跨页。超宽行、超高表格行、未支持内容会产生定位错误并阻止输出；默认纸张/边距和估算列宽等 warning 要求后续预览确认。回归覆盖精确页边界、取消、source map、轮廓缓存、缺失表格列宽和 keep-with-next。 | 保守边界：只布局单 section；RTL、分栏、多节、合并/嵌套表格、表格内分页符会阻止输出；keep-with-next 只对连续段落分组，目标不是段落时给 warning；缺失列宽按已知列均值补齐并归一到正文宽度，同时给 warning，避免无提示地猜列宽。 |
+| 4. 打印布局界面 | 🟨 已接通，视觉验收未完成 | 后台按文档 ID/版本/页面设置键启动分页；取消旧版本任务，仅接受同文档、同版本、同页面设置结果。虚拟化 Gio 页面列表重放原始 PageScene 的字形矢量轮廓、图片位置/旋转和表格边线；打印布局可从 ribbon 或 `FsQrk` 切换；状态栏基于 caret rune source map 与首个可见页面显示实际页码/总页数。页缩放 50%–150% 可用缩小/放大按钮调整。 | 页面视图里的正文目前只读，编辑请切回连续视图；缩放滑块拖动、页内 caret/editor overlay、单页/多页布局尚未实现。图片解码完成前显示占位框。Pen `Clpgm`/`FsQrk` 的实际同窗口 Computer Use 对照尚未通过。阶段测试：分页状态/取消失效结果/模式切换和 FsQrk 几何用例通过；完整 UI 包还受已有 Grid 坐标用例失败影响，导航用例在主 checkout 同样失败。 |
 | 5. PDF 导出 | ⬜ 未开始 | 已确定可用技术路径：页面矢量对象按共享场景落点绘制；整形 glyph 轮廓绘为 PDF vector path；Unicode 隐形文字层只负责搜索/复制，不参与可见排版。 | 实现后台导出、准确页框/对象矩形/字体 fallback、字体许可检查、Unicode 独立提取、PDF reopen、取消/失败原子替换；导出不得改变 DOCX dirty state。 |
 | 6. 原生打印 | ⬜ 未开始 | — | 以 Task 5 已生成的内存 PDF 调系统原生打印面板；macOS 评估 PDFKit/AppKit 主线程桥接；Windows/Linux 各有独立 adapter。验证取消/确认、页数/范围/份数与 Gio 窗口响应；禁止启动外部 Office/PDF/打印 CLI。 |
 | 7. 统一验收 | ⬜ 未开始 | — | 运行目标回归和 `go run ./cmd/desktop`；用 Computer Use 在 1440×900 按 Pen `Clpgm`（正文）、`kiBim`（主菜单）和 `FsQrk`（底栏）截图逐项对照；比较屏幕/PDF/打印尺寸、页数和对象坐标，记录 fixture、字体、诊断、截图、打印设备及残留差异。未达到像素级证据前不标记 1:1 通过。 |
@@ -225,7 +226,7 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 | 边界 | 原因 | 解决方案与当前状态 |
 |---|---|---|
 | PDF 库的普通文字 API 不接受 HarfBuzz glyph ID/精确定位 | 它会按 Unicode 和自身 kerning 编码；若把分页好的文字再交给它排版，打印版就会与屏幕不一致。 | 已探针验证将 Go-text glyph outline 转成矢量 path，按共享页面场景原点绘制；再加 alpha=0 的 Unicode/ToUnicode 文本层供提取。屏幕和 PDF 必须重放同一 outline 几何。集成尚未实现。 |
-| 任意 DOCX 无法承诺 Microsoft Word 像素级一致 | 当前适配器只读取定义的分页输入；分节、分栏、浮动对象、域、修订、字体度量和复杂表格等语义并未全部建模。 | 逐个扩展 neutral 模型并用 Word/LibreOffice 不作运行时依赖的离线样例进行对照；未支持且影响页数的情况给出源位置错误并阻止 PDF/打印。当前多节/分栏及复杂表格边界已报告，完整分页未实现。 |
+| 任意 DOCX 无法承诺 Microsoft Word 像素级一致 | 当前适配器只读取定义的分页输入；分节、分栏、浮动对象、域、修订、字体度量和复杂表格等语义并未全部建模。 | 逐个扩展 neutral 模型并用离线样例对照（LibreOffice 仅可作开发时参考，绝不作为运行时依赖）；未支持且影响页数的情况给出源位置错误并阻止 PDF/打印。当前多节/分栏及复杂表格边界已报告，完整兼容和 Pen 1:1 验收未完成。 |
 | 可见字形路径和可搜索文字层依赖实际字体 | 系统 fallback 字体各平台不同；PDF 嵌入许可由字体文件决定，不能假设所有系统字体均可嵌入。 | 不随程序捆绑系统字体；导出前读取字体嵌入标志，嵌入被禁止时报告诊断或以后实现不嵌入字体的 `ActualText` 文字层。当前只测得系统 Arial Unicode 样例 `fsType=0x0008`，其他 fallback 需逐一验证。 |
 | 原生打印不是 Go UI 的通用 API | 面板、主线程要求和打印对象在 macOS、Windows、Linux 不同。 | 每个平台独立适配器消费同一份 PDF 字节；没通过面板、取消、确认及虚拟打印机测试的平台保持 disabled。禁止调用外部 LibreOffice/PDF reader。 |
 | Linux GUI 跨平台编译暂不能在当前 macOS 环境确认 | Gio 的 Vulkan/CGo 源文件在本机 `CGO_ENABLED=0` Linux cross compile 中不参与构建。 | 纯 Go shaper/PDF 路径已在 macOS、Windows、Linux 三目标交叉编译；Gio Linux 桌面包需后续在 Linux 原生 runner/toolchain 验证，不能用纯 Go 探针结果替代。 |
@@ -236,7 +237,7 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 
 | 能力 | 当前边界与原因 | 可行方案 | 建议当前处理 |
 |---|---|---|---|
-| Word 分页、打印布局、单页/多页与总页数 | `internal/wordlayout` 已能为支持的输入计算真实分页，并输出中立 `PageScene`；当前 Gio 正文仍使用连续流，PageScene 尚未绘制或异步接入，因此界面仍不能显示真实总页数。Stage 1 投影、Stage 2 Go-text shaping、Stage 3 分页引擎已完成。产品约束：不得依赖 LibreOffice 或外部 Office。 | UI、PDF 和打印将复用同一 PageScene，包括 glyph outline、页面 clip、坐标和对象矩形；PDF 采用已探针确认的纯 Go `SalvioniDigitalSolutions/gopdf` 路径/图片输出。普通 Text API 会自行编码/kerning，不能用于可见文字。方案和阶段进度见 `docs/superpowers/plans/2026-10-02-word-pagination-pdf-print.md`；页面 UI、完整 PDF 导出与原生打印尚未实现。 | 不在当前连续流状态下猜页数，不用连续流截图冒充打印版。未支持且影响页数的内容会定位并阻止输出；默认页参数/估算列宽仅以 warning 暴露并留给后续预览确认；字体嵌入许可必须检查。该方案不承诺任意 DOCX 与 Microsoft Word 像素级一致。 |
+| Word 分页、打印布局、单页/多页与总页数 | `internal/wordlayout` 为支持输入计算真实分页。Task 4 已将页面场景画到 Gio 并接入异步 revision-safe 结果及 `FsQrk` 页码；页面视图中的正文当前只读，窗口内 Pen CUA 对照未验收。PDF 与原生打印尚未实现。不得依赖 LibreOffice 或外部 Office 运行时。 | 屏幕、PDF、打印复用 PageScene glyph outline、clip、坐标和对象矩形；PDF 使用已探针确认的纯 Go `SalvioniDigitalSolutions/gopdf` 路径/图片输出，普通 Text API 不用于可见排版。详情见 `docs/superpowers/plans/2026-10-02-word-pagination-pdf-print.md`。 | 支持文档只显示分页实算状态；未支持且影响页数的内容会定位并阻止输出；默认页参数/估算列宽以 warning 暴露并等待后续确认。尚未通过 Pen 视觉对照，不标记 1:1。 |
 | 页眉、页脚、页码、节设置 | 当前投影/编辑能力主要针对正文段落、表格、run 与行内图片；没有 section/header/footer part 的 neutral 编辑接口。页码字段的实际页数依赖分页。 | 扩展 section 与 header/footer DTO、DOCX relationship/part 读写和保存重开用例。先可支持固定内容页眉页脚；动态页码与总页数等待分页引擎。 | 固定页眉页脚可作为 DOCX 适配器扩展；动态页码归分页技术决策。 |
 | 字体、字号、颜色高亮、段距、主题等样式写入 | 字号、字体族和高亮已通过 run 级格式能力局部写入；高亮支持 Word 标准命名颜色，颜色选择面板可清除高亮，但不支持主题色或任意 RGB 高亮。保存重开与未修改 OOXML 部件保留有用例。无显式字号时目前没有完整的 Word style/theme 继承解析，ribbon 以 11 pt 作为增减起点。 | 为段距、主题等剩余属性扩展 neutral patch 和 `word/document.xml` / styles/theme 的局部更新；后续可加入 style/theme 继承解析。保留未改 OOXML 属性，使用临时副本做保存重开与 untouched-content 检查。 | 字体族、字号增减和标准高亮色已可用；继承字号解析和其他样式属性继续分项实现。 |
 | 表格、链接、书签、列表写入 | 表格可读取/显示，但尚无通用结构创建接口；超链接、书签需要关系或唯一 ID。项目符号、十进制编号和嵌套层级 0–8 已支持 `numbering.xml` 局部写入。其他编号格式、`lvlOverride` 自定义 restart，以及样式继承编号仍只读。 | 表格、链接、书签继续扩展 neutral Word 编辑能力与 DOCX XML/关系写入。后续可加入字母/罗马数字格式和覆盖重启解析，再验证 Word 重开及连续性。 | 生成或识别出的常见项目符号/十进制层级可用；无法安全理解的编号定义不允许改写。 |
@@ -290,7 +291,8 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 - [ ] Word ribbon icon 使用 Excel 的共享图集和着色方式；正常、禁用、hover/active 状态与 Excel 一致。
 - [ ] Pen 的功能区标签、组名、分组顺序、图标语义和控件位置在 1440×900 对照尺寸保持；窄窗口可滚动且控件命中位置正确。
 - [ ] 保存类编辑先在临时 DOCX 上验证保存/重开；失败不丢 dirty 状态，未支持的 OOXML 内容不得静默丢弃。
-- [ ] 底栏 `FsQrk` 结构与位置保留；页面/缩放状态仅显示真实数据。没有分页引擎前不显示静态页码或总页数。
+- [x] 底栏 `FsQrk` 保持图标几何；页码/页数使用真实分页结果，未完成时显示计算/错误状态；缩小、放大和打印布局切换已接线。
+- [ ] Computer Use 确认打印布局的实际页面和 Pen `Clpgm` 完全对齐，且 PDF 与原生打印重放相同场景。
 - [ ] 最终使用 Computer Use 实际并排检查 Pen 参考、Word 页面和 Excel ribbon；截图或问题清单记录在验收结果中。
 
 ## 代码与状态依据
@@ -305,7 +307,7 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 - `internal/format/docx/word_properties.go`、`internal/desktopui/word_document_info.go`：五个核心属性的 DOCX 局部读写、包关系/内容类型处理及异步文档信息表单。
 - `internal/format/docx/word_text.go`、`internal/format/docx/word_list.go`、`internal/format/docx/word_images.go`：当前 DOCX 文本样式、单 run 文本范围、列表和图片写入能力。
 - `internal/format/docx/word_format_painter.go`：格式刷对所支持 run/paragraph 属性的单次、可撤销 XML patch。
-- `internal/desktopui/word_status_bar.go`：`FsQrk` 状态栏；静态页码已改为真实的“连续视图”状态，视图图标、缩放滑块和百分比仍为静态绘制。
+- `internal/desktopui/word_status_bar.go`：`FsQrk` 状态栏；页码/总页数接真实结果，打印布局切换、缩小/放大及缩放百分比接真实会话状态，缩放滑块拖动尚未接通。
 - `docs/office-support.md`：DOCX 当前支持范围、连续流边界和保存验证状态。
 
 当前轮静态验收：Pen 中已放大检查 `Word Document Editor` 1440×900 画板及 `FsQrk` 底栏。底栏参考为“第 1 页，共 3 页”、582 个字、中文(中国)、辅助功能状态；右侧含焦点/打印/Web 视图和缩放滑块。主尺寸与实现常量一致（1440×900 画布，42/34 dp 标签条，90 dp ribbon，33 dp 标尺，900×600 dp 纸张和 34 dp 底栏）；修正了顶部文档标签由 224 dp 改为 190 dp、标签间距由 12 dp 改为 6 dp，并修正加号菜单锚点。几何用例覆盖标签尺寸、槽位间距和菜单 x=526 dp。另从 Pen ribbon 自动布局计算了七个常驻标签的命令图标横坐标与组分割线，并用 `TestWordRibbonActionSlotsMatchPenNodeClpgm` 锁定这些坐标。DOCX 全包测试、Word 查找/替换、格式刷、列表、嵌套层级、缩进工具栏、文档信息、分页符及标记布局定向测试通过；桌面构建通过。分页符用例覆盖 Unicode caret/选区替换、原 run 格式保留、native `w:br` 投影、保存重开、撤销/重做及工具栏草稿提交和 caret 回位；表格段落不开放。文档信息用例覆盖五个核心属性的转义、保存重开、未知元数据与其他包部件保留、缺失/孤立部件关系修复、撤销/重做，以及重复或嵌套目标值拒绝写入；UI 用例验证 Ribbon 异步打开表单并提交。替换用例验证大小写不敏感地替换当前选中范围、保留 run 格式、跳转下一命中项、保持对话框打开及保存重开。替换范围以 Unicode 字符为单位，错误边界不会修改文档。格式刷用例验证支持的 run/paragraph 属性复制、目标文本及未支持属性保留、一个 Undo/Redo 步骤和 DOCX 保存重开。列表用例覆盖多级项目符号/编号、父级变更后的子级重启、撤销/重做、保存重开、包内其他文件字节保留，以及自定义 restart 只读保护。缩进用例验证普通段落 0.5 英寸步进、列表 `ilvl` 变化、右缩进保留和保存重开；查找用例验证草稿、大小写不敏感、跨 run 遍历、命中选区和循环回绕。字数统计面板用例覆盖未提交文字草稿、表格文字和段落/表格计数；文件 ribbon 用例覆盖新建草稿、Open/Save As 取消、最近页切换保留会话，以及自动保存的 DOCX 重开与开关恢复。完整 `internal/desktopui` 测试仍失败于 4 个 Excel/Grid 用例：单元格字体回退、固定表头缩放手柄、可见网格选择框几何、设备像素缩放。Computer Use 当前可访问 Pen，但 Glance Office 绑定持续返回 `Invalid app`；为继续 1:1 对照已请求用户确认把仓库构建的 QA 包安装到 `~/Applications` 并启动。

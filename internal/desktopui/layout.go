@@ -72,6 +72,11 @@ func (a *App) layoutWorkspaceBody(gtx layout.Context) layout.Dimensions {
 func (a *App) processAsyncResults() {
 	a.pollGridPictureResults()
 	select {
+	case result := <-a.wordLayoutResults:
+		a.applyWordLayoutResult(result)
+	default:
+	}
+	select {
 	case result := <-a.homeMetadataResults:
 		if result.generation == a.homeMetadataGeneration {
 			a.homeMetadata = result.entries
@@ -251,7 +256,7 @@ func (a *App) processAsyncResults() {
 						delete(result.state.wordRunDrafts, result.runID)
 					}
 					if result.blocks != nil {
-						result.state.wordBlocks = result.blocks
+						result.state.setWordBlocks(result.blocks)
 					}
 					reconcileWordSelection(result.state, false)
 					a.status = "正在编辑 Word 正文"
@@ -266,7 +271,7 @@ func (a *App) processAsyncResults() {
 				a.status = wordCommandError(result.operation, result.err)
 			} else if !result.history || result.applied {
 				if result.blocks != nil {
-					result.state.wordBlocks = result.blocks
+					result.state.setWordBlocks(result.blocks)
 				}
 				if result.history {
 					invalidateAllWordImagePreviews(result.state)

@@ -151,6 +151,7 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		}
 		state.word = word
 		state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+		state.documentID = record.Tab.DocumentID
 		word.SetSourcePath(record.Tab.SourcePath)
 		word.SetDirty(record.Dirty)
 	case "json":
@@ -208,6 +209,7 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 	}
 	a.documentSessionState = state
 	a.activeTabID = id
+	state.documentID = id
 	if a.collection != nil {
 		if err := a.collection.Activate(id); err != nil {
 			a.status = err.Error()
@@ -217,6 +219,9 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 		if _, err := os.Stat(meta.SourcePath); err != nil {
 			a.status = "源文件不可用，正在显示本地恢复快照：" + meta.SourcePath
 		}
+	}
+	if state.word != nil {
+		a.startWordPagination(state)
 	}
 	a.maybeAutoSaveWord(state)
 }

@@ -169,11 +169,11 @@ Expected: PASS with deterministic page geometry, source mapping, cancellation, a
 - Produces an asynchronous `wordLayoutJob`/`wordLayoutResult` keyed by `{documentID, revision, pageSetupKey}`. Keep view mode, pending job, cancellation, accepted result, active page, and warning confirmation in stable session state.
 - `wordPageForCaret(result wordlayout.Result, runID string, runeOffset int) (page int, ok bool)` uses the layout source map; status page labels display one-based indexes only at the UI boundary.
 
-- [ ] **Step 1: Add status/page mapping, open-time layout, and stale-job tests**
+- [x] **Step 1: Add status/page mapping, open-time layout, and stale-job tests**
 
 Add `TestWordPageForCaretUsesRuneSourceMap`, `TestWordStatusShowsLayoutErrorInsteadOfEstimatedPageCount`, `TestWordOpenStartsBackgroundPagination`, and the Review Focus regression `TestWordPaginationIgnoresResultForSupersededRevision`. Assert opening a DOCX schedules layout without blocking the Gio loop, status says calculating until a matching result arrives, no page count is guessed, and a stale result cannot replace a newer revision.
 
-- [ ] **Step 2: Implement asynchronous layout lifecycle**
+- [x] **Step 2: Implement asynchronous layout lifecycle**
 
 When a DOCX opens, schedule initial pagination in the background. Also flush Word editor drafts through the existing controller path before user-triggered layout, capture immutable blocks/layout metadata/snapshot revision, run `Engine.Layout` off the frame loop, and publish through the app's synchronized result channel. Cancel obsolete jobs and accept results only when all request keys still match.
 
@@ -181,14 +181,16 @@ When a DOCX opens, schedule initial pagination in the background. Also flush Wor
 
 Add a print-layout toggle while preserving continuous flow. Replay the accepted `PageScene` at the current zoom into Gio page painting; reuse persistent run editors at mapped fragment positions for supported edits. Virtualize painting to visible pages and do not paginate from `Layout`/frame code.
 
-- [ ] **Step 4: Wire `FsQrk` page and zoom status**
+- [x] **Step 4: Wire `FsQrk` page and zoom status**
 
 Map active run/caret to the one-based current page and result page count; when there is no text focus use the first visible page. Keep word count and existing status controls. Show explicit calculating/unsupported/error states rather than fallback/static values. Keep the `Clpgm`/`kiBim` layout, Excel icon sprite/tints, and `desktop` title unchanged.
 
-- [ ] **Step 5: Run focused UI tests and commit Task 4**
+- [x] **Step 5: Run focused UI tests and commit the Task 4 slice**
 
 Run: `go test ./internal/desktopui -run 'TestWord(PageForCaret|StatusShowsLayoutError|PaginationIgnoresResult|PrintLayout)' -count=1`
 Expected: PASS; UI tests cover page mapping, stale results, and view toggle without depending on wall-clock layout.
+
+Task 4 Step 3 is partial: Gio replays the accepted `PageScene` as a read-only print-layout view and virtualizes pages, but it does not overlay the persistent editors. Keeping the visible page as the engine's vector scene preserves the screen/PDF/print geometry; text editing currently returns to continuous flow. A future editor overlay can be added with a separate draft-layout result and caret scene so in-progress edits also reflow through the same engine rather than replacing positioned glyphs with Gio's independent text shaper.
 
 ### Task 5: Add PDF backend and safe asynchronous PDF export
 

@@ -190,7 +190,7 @@ func TestWordStatusBarMatchesPenFsQrkGeometry(t *testing.T) {
 	router.Frame(&ops)
 	want := map[string]image.Rectangle{
 		"Word 状态栏":    image.Rect(0, 0, 1440, 34),
-		"Word 连续视图":   image.Rect(18, 11, 97, 27),
+		"Word 页码":     image.Rect(18, 11, 136, 27),
 		"Word 字数":     image.Rect(142, 11, 188, 27),
 		"Word 语言":     image.Rect(250, 11, 303, 27),
 		"Word 辅助功能图标": image.Rect(350, 9, 365, 24),

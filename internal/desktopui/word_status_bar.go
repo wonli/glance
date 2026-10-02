@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"unicode"
 
 	"gioui.org/io/semantic"
@@ -33,6 +34,15 @@ var (
 )
 
 func (a *App) layoutWordStatusBar(gtx layout.Context, state *documentSessionState) layout.Dimensions {
+	if state.wordStatusPrintLayoutButton.Clicked(gtx) {
+		a.toggleWordPrintLayout()
+	}
+	if state.wordStatusZoomOutButton.Clicked(gtx) {
+		state.wordLayoutZoom = math.Max(0.5, state.wordLayoutZoom-0.1)
+	}
+	if state.wordStatusZoomInButton.Clicked(gtx) {
+		state.wordLayoutZoom = math.Min(1.5, state.wordLayoutZoom+0.1)
+	}
 	height := gtx.Dp(unit.Dp(wordStatusBarHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	paint.FillShape(gtx.Ops, wordStatusBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
@@ -41,7 +51,7 @@ func (a *App) layoutWordStatusBar(gtx layout.Context, state *documentSessionStat
 	semantic.DescriptionOp("Word 状态栏").Add(gtx.Ops)
 	barBounds.Pop()
 
-	a.drawWordStatusText(gtx, 18, 11, 79, 16, "Word 连续视图", "连续视图")
+	a.drawWordStatusText(gtx, 18, 11, 118, 16, "Word 页码", wordPaginationStatusText(state))
 	a.drawWordStatusText(gtx, 142, 11, 46, 16, "Word 字数", wordStatusWordCount(state))
 	a.drawWordStatusText(gtx, 250, 11, 53, 16, "Word 语言", "中文(中国)")
 	a.drawWordStatusIcon(gtx, 350, 9, 15, 15, "tX3tP", "Word 辅助功能图标")
@@ -50,13 +60,15 @@ func (a *App) layoutWordStatusBar(gtx layout.Context, state *documentSessionStat
 	widthDP := int(float32(gtx.Constraints.Max.X) / gtx.Metric.PxPerDp)
 	rightShift := widthDP - 1440
 	a.drawWordStatusIcon(gtx, 1112+rightShift, 9, 15, 15, "X8Le51", "Word 专注模式")
-	a.drawWordStatusIcon(gtx, 1145+rightShift, 9, 15, 15, "rTjWY", "Word 打印布局")
+	a.drawWordStatusClickableIcon(gtx, 1145+rightShift, 9, "rTjWY", "Word 打印布局", &state.wordStatusPrintLayoutButton, state.wordViewMode == wordViewPrintLayout)
 	a.drawWordStatusIcon(gtx, 1178+rightShift, 9, 15, 15, "RWUft", "Word Web版式")
-	a.drawWordStatusIcon(gtx, 1230+rightShift, 9, 15, 15, "x6Trh", "Word 缩小")
+	a.drawWordStatusClickableIcon(gtx, 1230+rightShift, 9, "x6Trh", "Word 缩小", &state.wordStatusZoomOutButton, false)
 	a.drawWordStatusRect(gtx, 1257+rightShift, 16, 92, 2, "Word 缩放轨道", wordStatusTrack, 0)
-	a.drawWordStatusRect(gtx, 1304+rightShift, 11, 11, 11, "Word 缩放滑块", wordStatusThumb, 6)
-	a.drawWordStatusIcon(gtx, 1361+rightShift, 9, 15, 15, "kqOIJ", "Word 放大")
-	a.drawWordStatusText(gtx, 1390+rightShift, 11, 30, 13, "Word 缩放百分比", "100%")
+	zoom := math.Max(0.5, math.Min(1.5, state.wordLayoutZoom))
+	thumbX := min(1338, 1257+int(math.Round((zoom-0.5)*94)))
+	a.drawWordStatusRect(gtx, thumbX+rightShift, 11, 11, 11, "Word 缩放滑块", wordStatusThumb, 6)
+	a.drawWordStatusClickableIcon(gtx, 1361+rightShift, 9, "kqOIJ", "Word 放大", &state.wordStatusZoomInButton, false)
+	a.drawWordStatusText(gtx, 1390+rightShift, 11, 30, 13, "Word 缩放百分比", fmt.Sprintf("%.0f%%", zoom*100))
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
@@ -89,6 +101,34 @@ func (a *App) drawWordStatusIcon(gtx layout.Context, xDP, yDP, widthDP, heightDP
 		widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(width) / float32(maxEdge)}.Layout(iconGtx)
 	}
 	bounds.Pop()
+	transform.Pop()
+}
+
+func (a *App) drawWordStatusClickableIcon(gtx layout.Context, xDP, yDP int, asset, description string, button *widget.Clickable, active bool) {
+	xDP -= 4
+	yDP -= 4
+	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(yDP))
+	size := gtx.Dp(unit.Dp(23))
+	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
+	button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min = image.Pt(size, size)
+		gtx.Constraints.Max = gtx.Constraints.Min
+		if active {
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 224, G: 235, B: 248, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+		}
+		if icon := wordPenAsset(asset); icon != nil {
+			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				size := gtx.Dp(unit.Dp(15))
+				gtx.Constraints = layout.Constraints{Min: image.Pt(size, size), Max: image.Pt(size, size)}
+				bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
+				semantic.DescriptionOp(description).Add(gtx.Ops)
+				bounds.Pop()
+				maxEdge := max(icon.Bounds().Dx(), icon.Bounds().Dy())
+				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(size) / float32(max(1, maxEdge))}.Layout(gtx)
+			})
+		}
+		return layout.Dimensions{Size: gtx.Constraints.Max}
+	})
 	transform.Pop()
 }
 

@@ -1,11 +1,13 @@
 package desktopui
 
 import (
+	"context"
 	"sync/atomic"
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
+	"glance/internal/wordlayout"
 
 	"gioui.org/gesture"
 	"gioui.org/layout"
@@ -15,6 +17,22 @@ import (
 // documentSessionState holds persistent Gio widgets and view state for one document tab.
 type documentSessionState struct {
 	closed                              atomic.Bool
+	documentID                          string
+	wordRevision                        uint64
+	wordViewMode                        wordViewMode
+	wordLayoutPendingKey                *wordLayoutKey
+	wordLayoutAcceptedKey               *wordLayoutKey
+	wordLayoutErrorKey                  *wordLayoutKey
+	wordLayoutResult                    *wordlayout.Result
+	wordLayoutError                     string
+	wordLayoutCancel                    context.CancelFunc
+	wordLayoutActivePage                int
+	wordLayoutZoom                      float64
+	wordLayoutWarningConfirmed          bool
+	wordPageListState                   widget.List
+	wordStatusPrintLayoutButton         widget.Clickable
+	wordStatusZoomOutButton             widget.Clickable
+	wordStatusZoomInButton              widget.Clickable
 	path                                string
 	book                                document.Spreadsheet
 	word                                *docx.Document
@@ -156,7 +174,7 @@ type ValueFilter struct {
 }
 
 func newDocumentSessionState(path string) *documentSessionState {
-	s := &documentSessionState{path: path, gridList: widget.List{List: layout.List{Axis: layout.Vertical}}, wordListState: widget.List{List: layout.List{Axis: layout.Vertical}}, toolbarTab: toolbarTabHome, wordToolbarTab: wordTabHome, toolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarTabList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionButtons: make(map[string]*widget.Clickable), wordRunEditors: make(map[string]*widget.Editor), wordRunCommitted: make(map[string]string), wordRunDrafts: make(map[string]string), wordObjectButtons: make(map[string]*widget.Clickable), wordImageInteractions: make(map[string]*wordImageInteraction), wordImageCache: newWordImageCache(wordImageCacheLimit), wordImagePending: make(map[string]uint64), wordImageVersions: make(map[string]uint64), wordImageErrors: make(map[string]string), gridPictureCache: newWordImageCache(wordImageCacheLimit), gridPicturePending: make(map[string]uint64), gridPictureVersions: make(map[string]uint64), gridPictureErrors: make(map[string]string), cellButtons: make(map[string]*widget.Clickable), sheetButtons: make(map[string]*widget.Clickable), blockButtons: make(map[int]*widget.Clickable), selectedBlock: -1}
+	s := &documentSessionState{path: path, wordRevision: 1, wordViewMode: wordViewContinuous, wordLayoutZoom: 1, gridList: widget.List{List: layout.List{Axis: layout.Vertical}}, wordListState: widget.List{List: layout.List{Axis: layout.Vertical}}, wordPageListState: widget.List{List: layout.List{Axis: layout.Vertical}}, toolbarTab: toolbarTabHome, wordToolbarTab: wordTabHome, toolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarTabList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionButtons: make(map[string]*widget.Clickable), wordRunEditors: make(map[string]*widget.Editor), wordRunCommitted: make(map[string]string), wordRunDrafts: make(map[string]string), wordObjectButtons: make(map[string]*widget.Clickable), wordImageInteractions: make(map[string]*wordImageInteraction), wordImageCache: newWordImageCache(wordImageCacheLimit), wordImagePending: make(map[string]uint64), wordImageVersions: make(map[string]uint64), wordImageErrors: make(map[string]string), gridPictureCache: newWordImageCache(wordImageCacheLimit), gridPicturePending: make(map[string]uint64), gridPictureVersions: make(map[string]uint64), gridPictureErrors: make(map[string]string), cellButtons: make(map[string]*widget.Clickable), sheetButtons: make(map[string]*widget.Clickable), blockButtons: make(map[int]*widget.Clickable), selectedBlock: -1}
 	s.cellEditor.SingleLine = true
 	s.cellEditor.Submit = true
 	s.formulaEditor.SingleLine = true

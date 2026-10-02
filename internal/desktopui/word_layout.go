@@ -245,6 +245,7 @@ func (a *App) layoutWordFlow(gtx layout.Context) layout.Dimensions {
 	if state == nil || state.word == nil {
 		return layout.Dimensions{}
 	}
+	a.startWordPagination(state)
 	blocks := wordBlocksForState(state)
 	state.wordListState.List.Axis = layout.Vertical
 	state.wordToolbarTabList.List.Axis = layout.Horizontal
@@ -262,6 +263,9 @@ func (a *App) layoutWordFlow(gtx layout.Context) layout.Dimensions {
 					return a.layoutWordHorizontalRuler(gtx, state)
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					if state.wordViewMode == wordViewPrintLayout {
+						return a.layoutWordPageView(gtx, state)
+					}
 					return a.layoutWordCanvas(gtx, state, blocks)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {

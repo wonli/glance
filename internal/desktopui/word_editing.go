@@ -326,7 +326,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 		return
 	}
 	if result.blocks != nil {
-		state.wordBlocks = result.blocks
+		state.setWordBlocks(result.blocks)
 	}
 	reconcileWordSelection(state, false)
 	run, ok := selectedWordRun(state.wordBlocks, result.joinRunID)
@@ -432,7 +432,7 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 		return
 	}
 	if result.blocks != nil {
-		state.wordBlocks = result.blocks
+		state.setWordBlocks(result.blocks)
 	}
 	if sourceEditor := state.wordRunEditors[result.splitSourceRunID]; sourceEditor != nil {
 		sourceEditor.SetText(result.splitPrefix)

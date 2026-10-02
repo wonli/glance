@@ -119,6 +119,8 @@ type App struct {
 	shutdownOnce           sync.Once
 
 	wordDocumentInfoResults chan wordDocumentInfoResult
+	wordLayoutResults       chan wordLayoutResult
+	wordLayoutEngine        wordLayoutEngine
 }
 
 func New(window *app.Window, initialPath string) *App {
@@ -164,6 +166,7 @@ func New(window *app.Window, initialPath string) *App {
 		recentList:             widget.List{List: layout.List{Axis: layout.Vertical}},
 
 		wordDocumentInfoResults: make(chan wordDocumentInfoResult, 1),
+		wordLayoutResults:       make(chan wordLayoutResult, 8),
 	}
 	if window != nil {
 		a.initializeWorkspace()
@@ -180,7 +183,7 @@ func New(window *app.Window, initialPath string) *App {
 func Run(initialPath string) {
 	w := new(app.Window)
 	w.Option(
-		app.Title("Glance Office"),
+		app.Title("desktop"),
 		app.Decorated(false),
 		app.Size(unit.Dp(1280), unit.Dp(820)),
 		app.MinSize(unit.Dp(900), unit.Dp(600)),
@@ -356,6 +359,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	}
 	meta := workspace.Tab{ID: id, Kind: kind, Title: title, DocumentID: id, SourcePath: loaded.path, Position: len(a.tabMeta)}
 	a.activeTabID = id
+	state.documentID = id
 	a.tabMeta[id] = meta
 	a.sessions[id] = state
 	if a.collection != nil {
@@ -397,6 +401,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	a.selectedBlock = -1
 	if loaded.word != nil {
 		a.status = fmt.Sprintf("已打开 %s；读取 %d 个内容块", loaded.path, len(a.word.Blocks()))
+		a.startWordPagination(state)
 	} else if loaded.jsonDoc != nil {
 		a.status = "已打开 JSON 文本"
 	}
@@ -633,7 +638,8 @@ func (a *App) applyWordEdit() error {
 	if err := a.word.ReplaceParagraph(a.selectedBlock, a.wordEditor.Text()); err != nil {
 		return err
 	}
-	a.documentSessionState.wordBlocks = cloneWordBlockSnapshot(a.word.WordBlocks())
+	a.documentSessionState.setWordBlocks(cloneWordBlockSnapshot(a.word.WordBlocks()))
+	a.startWordPagination(a.documentSessionState)
 	a.persistActiveSession()
 	return nil
 }

@@ -207,6 +207,8 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "doc-info":
 		_, supported := any(state.word).(document.WordDocumentPropertiesEditor)
 		return supported
+	case "view-print-layout":
+		return true
 	case "undo", "redo":
 		history, ok := any(state.word).(document.WordHistory)
 		if !ok {
@@ -535,6 +537,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.maybeAutoSaveWord(state)
 	case "format-painter":
 		a.toggleWordFormatPainter()
+	case "view-print-layout":
+		a.toggleWordPrintLayout()
 	case "apply-format-painter":
 		a.startWordFormatPainter()
 	case "undo":
@@ -1185,7 +1189,7 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 		return
 	}
 	if result.blocks != nil {
-		state.wordBlocks = result.blocks
+		state.setWordBlocks(result.blocks)
 	}
 	run, ok := selectedWordRun(state.wordBlocks, result.replaceRunID)
 	if !ok || !run.Editable {
