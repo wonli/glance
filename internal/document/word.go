@@ -56,6 +56,7 @@ type WordParagraph struct {
 	Alignment      WordAlignment
 	LeftIndentEMU  int64
 	RightIndentEMU int64
+	Layout         WordParagraphLayout
 	ListKind       WordListKind
 	ListLevel      int
 	ListMaxLevel   int
@@ -65,7 +66,8 @@ type WordParagraph struct {
 
 // WordTable contains rows and cells in their source order.
 type WordTable struct {
-	Rows []WordTableRow
+	Layout WordTableLayout
+	Rows   []WordTableRow
 }
 
 type WordTableRow struct {
@@ -74,6 +76,7 @@ type WordTableRow struct {
 
 type WordTableCell struct {
 	ID         string
+	WidthEMU   int64
 	Paragraphs []WordParagraph
 }
 
@@ -88,10 +91,12 @@ type WordInline struct {
 
 // WordTextRun exposes supported text and the formatting applied by its source run.
 type WordTextRun struct {
-	ID       string
-	Text     string
-	Style    WordTextStyle
-	Editable bool
+	ID             string
+	Text           string
+	Style          WordTextStyle
+	StyleSet       WordTextStyleMask
+	CharacterStyle string
+	Editable       bool
 }
 
 // WordTextStyle is the format-neutral text style subset rendered by the UI.

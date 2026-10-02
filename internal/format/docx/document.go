@@ -46,6 +46,7 @@ type Document struct {
 	blocks               []Block
 	spans                [][]textSpan
 	wordBlocks           []document.WordBlock
+	wordLayoutData       document.WordLayoutData
 	wordImages           map[string]int
 	wordImageTargets     map[string]wordImageTarget
 	wordInlineTargets    map[string]wordInlineTarget
@@ -396,6 +397,7 @@ func (d *Document) reparse() error {
 		return err
 	}
 	d.wordBlocks = projection.blocks
+	d.wordLayoutData = projection.layout
 	d.wordImages = projection.imageParts
 	d.wordImageTargets = projection.imageTargets
 	d.wordInlineTargets = projection.inlineTargets

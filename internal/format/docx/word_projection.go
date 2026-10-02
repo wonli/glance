@@ -32,6 +32,7 @@ type wordRelationship struct {
 	target    string
 	image     bool
 	numbering bool
+	styles    bool
 	external  bool
 }
 
@@ -47,6 +48,7 @@ type wordNumberingDefinition struct {
 
 type wordProjection struct {
 	blocks           []document.WordBlock
+	layout           document.WordLayoutData
 	imageParts       map[string]int
 	imageTargets     map[string]wordImageTarget
 	inlineTargets    map[string]wordInlineTarget
@@ -213,7 +215,8 @@ func projectWordDocument(parts []part, documentIdx int) (wordProjection, error) 
 			blocks = append(blocks, document.WordBlock{ID: blockID, Kind: document.WordUnsupportedBlock, Unsupported: unsupported})
 		}
 	}
-	return wordProjection{blocks: blocks, imageParts: projector.imageParts, imageTargets: projector.imageTargets, inlineTargets: projector.inlineTargets, paragraphInlines: projector.paragraphInlines, textTargets: projector.textTargets, paragraphTargets: projector.paragraphTargets}, nil
+	layout := projectWordLayoutData(parts, partIndexes, relationships, documentRoot)
+	return wordProjection{blocks: blocks, layout: layout, imageParts: projector.imageParts, imageTargets: projector.imageTargets, inlineTargets: projector.inlineTargets, paragraphInlines: projector.paragraphInlines, textTargets: projector.textTargets, paragraphTargets: projector.paragraphTargets}, nil
 }
 
 type wordProjector struct {
@@ -237,6 +240,7 @@ func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordPar
 	paragraph.ListMaxLevel = p.paragraphListMaxLevel(node, paragraph.ListKind)
 	p.paragraphTargets[id] = node
 	if properties := firstChild(node, "pPr"); properties != nil {
+		paragraph.Layout = parseWordParagraphLayout(properties)
 		if style := firstChild(properties, "pStyle"); style != nil {
 			paragraph.Style = attrValue(style, "val")
 		}
@@ -449,14 +453,17 @@ func parseWordIndentEMU(value string) int64 {
 }
 
 func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, paragraphNode, run *wordXMLNode, inlineIndex *int) {
-	style := parseWordTextStyle(firstChild(run, "rPr"))
+	runProperties := firstChild(run, "rPr")
+	style := parseWordTextStyle(runProperties)
+	styleSet := parseWordTextStyleSet(runProperties)
+	characterStyle := attrValue(firstChild(runProperties, "rStyle"), "val")
 	for _, child := range run.children {
 		id := fmt.Sprintf("%s.i%d", paragraph.ID, *inlineIndex)
 		switch child.name.Local {
 		case "rPr":
 			continue
 		case "t":
-			text := &document.WordTextRun{ID: id, Text: child.text, Style: style, Editable: true}
+			text := &document.WordTextRun{ID: id, Text: child.text, Style: style, StyleSet: styleSet, CharacterStyle: characterStyle, Editable: true}
 			p.textTargets[id] = wordTextTarget{text: child, run: run, paragraph: paragraphNode, paragraphID: paragraph.ID}
 			p.appendProjectedInline(paragraph, id, document.WordInline{Kind: document.WordTextInline, Text: text}, child, run)
 			*inlineIndex++
@@ -564,6 +571,14 @@ func (p *wordProjector) table(node *wordXMLNode, id string) document.WordTable {
 	table := document.WordTable{}
 	rowIndex := 0
 	for _, child := range node.children {
+		if child.name.Local == "tblGrid" {
+			for _, gridColumn := range child.children {
+				if gridColumn.name.Local == "gridCol" {
+					table.Layout.GridColumnsEMU = append(table.Layout.GridColumnsEMU, parseWordIndentEMU(attrValue(gridColumn, "w")))
+				}
+			}
+			continue
+		}
 		if child.name.Local != "tr" {
 			continue
 		}
@@ -574,7 +589,7 @@ func (p *wordProjector) table(node *wordXMLNode, id string) document.WordTable {
 				continue
 			}
 			cellID := fmt.Sprintf("%s.r%d.c%d", id, rowIndex, cellIndex)
-			cell := document.WordTableCell{ID: cellID}
+			cell := document.WordTableCell{ID: cellID, WidthEMU: wordCellWidthEMU(firstChild(firstChild(cellNode, "tcPr"), "tcW"))}
 			paragraphIndex := 0
 			for _, content := range cellNode.children {
 				switch content.name.Local {
@@ -698,14 +713,16 @@ func readDocumentRelationships(parts []part, partIndexes map[string]int) map[str
 		}
 		id := attrValue(node, "Id")
 		target := attrValue(node, "Target")
+		relationType := strings.ToLower(attrValue(node, "Type"))
 		if id == "" {
 			continue
 		}
 		external := strings.EqualFold(attrValue(node, "TargetMode"), "External")
 		result[id] = wordRelationship{
 			target:    resolveDocumentTarget(target),
-			image:     strings.HasSuffix(strings.ToLower(attrValue(node, "Type")), "/image"),
-			numbering: strings.HasSuffix(strings.ToLower(attrValue(node, "Type")), "/numbering"),
+			image:     strings.HasSuffix(relationType, "/image"),
+			numbering: strings.HasSuffix(relationType, "/numbering"),
+			styles:    strings.HasSuffix(relationType, "/styles"),
 			external:  external,
 		}
 	}
@@ -885,6 +902,9 @@ func findDescendant(node *wordXMLNode, local string) *wordXMLNode {
 func containsNode(node *wordXMLNode, local string) bool { return findDescendant(node, local) != nil }
 
 func attrValue(node *wordXMLNode, local string) string {
+	if node == nil {
+		return ""
+	}
 	for _, attr := range node.attrs {
 		if attr.Name.Local == local {
 			return attr.Value
@@ -924,11 +944,12 @@ func cloneWordBlocks(blocks []document.WordBlock) []document.WordBlock {
 			clone[i].Paragraph = &paragraph
 		}
 		if block.Table != nil {
-			table := document.WordTable{Rows: make([]document.WordTableRow, len(block.Table.Rows))}
+			table := document.WordTable{Layout: block.Table.Layout, Rows: make([]document.WordTableRow, len(block.Table.Rows))}
+			table.Layout.GridColumnsEMU = append([]int64(nil), block.Table.Layout.GridColumnsEMU...)
 			for rowIndex, row := range block.Table.Rows {
 				table.Rows[rowIndex].Cells = make([]document.WordTableCell, len(row.Cells))
 				for cellIndex, cell := range row.Cells {
-					table.Rows[rowIndex].Cells[cellIndex] = document.WordTableCell{ID: cell.ID, Paragraphs: make([]document.WordParagraph, len(cell.Paragraphs))}
+					table.Rows[rowIndex].Cells[cellIndex] = document.WordTableCell{ID: cell.ID, WidthEMU: cell.WidthEMU, Paragraphs: make([]document.WordParagraph, len(cell.Paragraphs))}
 					for paragraphIndex, paragraph := range cell.Paragraphs {
 						table.Rows[rowIndex].Cells[cellIndex].Paragraphs[paragraphIndex] = cloneWordParagraph(paragraph)
 					}
