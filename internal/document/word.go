@@ -16,6 +16,7 @@ const (
 	WordTextInline WordInlineKind = iota + 1
 	WordImageInline
 	WordUnsupportedInline
+	WordPageBreakInline
 )
 
 // WordAlignment is the neutral alignment subset supported by the desktop UI.
@@ -82,6 +83,7 @@ type WordInline struct {
 	Text        *WordTextRun
 	Image       *WordImage
 	Unsupported *WordUnsupported
+	PageBreak   *WordPageBreak
 }
 
 // WordTextRun exposes supported text and the formatting applied by its source run.
@@ -112,6 +114,11 @@ type WordImage struct {
 	RotationDegrees float64
 	Resolved        bool
 	Editable        bool
+}
+
+// WordPageBreak represents a native DOCX page break in continuous-flow preview.
+type WordPageBreak struct {
+	ID string
 }
 
 // WordUnsupported describes retained content that cannot be projected safely.
@@ -176,6 +183,12 @@ type WordBodyEditor interface {
 	InsertBodyParagraph() (paragraphID string, err error)
 }
 
+// WordPageBreakEditor inserts a page break at a Unicode text range in an
+// editable run. The returned run is the caret location after the break.
+type WordPageBreakEditor interface {
+	InsertPageBreakAtRange(runID, value string, start, end int) (paragraphID, caretRunID string, err error)
+}
+
 // WordParagraphEditor exposes safe keyboard-driven paragraph structure edits.
 type WordParagraphEditor interface {
 	SplitParagraphAt(runID, value string, selectionStart, selectionEnd int) (paragraphID, newRunID string, err error)
@@ -213,6 +226,22 @@ type WordImageEditor interface {
 // WordImageRotator is an optional capability for rotating inline Word images.
 type WordImageRotator interface {
 	SetInlineImageRotation(imageID string, degrees float64) error
+}
+
+// WordDocumentProperties is the safe, format-neutral core-properties subset
+// exposed by Word documents.
+type WordDocumentProperties struct {
+	Title       string
+	Subject     string
+	Creator     string
+	Keywords    string
+	Description string
+}
+
+// WordDocumentPropertiesEditor reads and updates supported document metadata.
+type WordDocumentPropertiesEditor interface {
+	GetWordDocumentProperties() (WordDocumentProperties, error)
+	SetWordDocumentProperties(WordDocumentProperties) error
 }
 
 // WordHistory is the undo/redo capability for supported Word edits.

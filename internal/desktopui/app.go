@@ -117,6 +117,8 @@ type App struct {
 	documentGeneration     uint64
 	shutdown               chan struct{}
 	shutdownOnce           sync.Once
+
+	wordDocumentInfoResults chan wordDocumentInfoResult
 }
 
 func New(window *app.Window, initialPath string) *App {
@@ -160,6 +162,8 @@ func New(window *app.Window, initialPath string) *App {
 		createMenuList:         widget.List{List: layout.List{Axis: layout.Vertical}},
 		homeContentList:        widget.List{List: layout.List{Axis: layout.Vertical}},
 		recentList:             widget.List{List: layout.List{Axis: layout.Vertical}},
+
+		wordDocumentInfoResults: make(chan wordDocumentInfoResult, 1),
 	}
 	if window != nil {
 		a.initializeWorkspace()

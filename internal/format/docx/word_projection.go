@@ -464,7 +464,15 @@ func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, para
 			inline, projectedID := p.drawingInline(child, id, paragraph.ID)
 			p.appendProjectedInline(paragraph, projectedID, inline, child, run)
 			*inlineIndex++
-		case "tab", "br", "cr", "pict", "object", "fldChar", "instrText", "sym", "footnoteReference", "endnoteReference":
+		case "br":
+			if child.name.Space == wordprocessingMLNamespace && strings.EqualFold(attrValue(child, "type"), "page") {
+				pageBreak := &document.WordPageBreak{ID: id}
+				p.appendProjectedInline(paragraph, id, document.WordInline{Kind: document.WordPageBreakInline, PageBreak: pageBreak}, child, run)
+			} else {
+				p.appendProjectedInline(paragraph, id, unsupportedInline(id, "Unsupported run content: "+child.name.Local), child, run)
+			}
+			*inlineIndex++
+		case "tab", "cr", "pict", "object", "fldChar", "instrText", "sym", "footnoteReference", "endnoteReference":
 			p.appendProjectedInline(paragraph, id, unsupportedInline(id, "Unsupported run content: "+child.name.Local), child, run)
 			*inlineIndex++
 		default:
@@ -948,6 +956,10 @@ func cloneWordParagraph(paragraph document.WordParagraph) document.WordParagraph
 		if inline.Unsupported != nil {
 			unsupported := *inline.Unsupported
 			clone.Inlines[i].Unsupported = &unsupported
+		}
+		if inline.PageBreak != nil {
+			pageBreak := *inline.PageBreak
+			clone.Inlines[i].PageBreak = &pageBreak
 		}
 	}
 	return clone

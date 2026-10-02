@@ -30,10 +30,15 @@ type modalDialog struct {
 	Actions         []modalDialogAction
 	Input           widget.Editor
 	SecondInput     widget.Editor
+	FormInputs      [5]widget.Editor
+	FormLabels      [5]string
+	FormHints       [5]string
+	FormInputCount  int
 	InputHint       string
 	SecondInputHint string
 	HasInput        bool
 	HasSecondInput  bool
+	HasForm         bool
 	scrim           widget.Clickable
 	OnAction        func(string)
 }
@@ -42,14 +47,42 @@ func (d *modalDialog) Show(title, message string, onAction func(string), actions
 	d.Title, d.Message, d.Visible = title, message, true
 	d.HasInput = false
 	d.HasSecondInput = false
+	d.HasForm = false
+	d.FormInputCount = 0
 	d.InputHint = ""
 	d.SecondInputHint = ""
 	d.Input.SetText("")
 	d.SecondInput.SetText("")
+	for i := range d.FormInputs {
+		d.FormInputs[i].SetText("")
+		d.FormLabels[i] = ""
+		d.FormHints[i] = ""
+	}
 	d.OnAction = onAction
 	d.Actions = make([]modalDialogAction, len(actions))
 	for i, action := range actions {
 		d.Actions[i] = modalDialogAction{ID: action.ID, Label: action.Label}
+	}
+}
+
+func (d *modalDialog) ShowForm(title, message string, labels, hints, initial []string, onAction func(string), actions ...modalDialogActionSpec) {
+	d.Show(title, message, onAction, actions...)
+	count := len(labels)
+	if count > len(d.FormInputs) {
+		count = len(d.FormInputs)
+	}
+	d.HasForm = count > 0
+	d.FormInputCount = count
+	for i := 0; i < count; i++ {
+		d.FormLabels[i] = labels[i]
+		if i < len(hints) {
+			d.FormHints[i] = hints[i]
+		}
+		if i < len(initial) {
+			d.FormInputs[i].SetText(initial[i])
+		}
+		d.FormInputs[i].SingleLine = true
+		d.FormInputs[i].Submit = true
 	}
 }
 
@@ -95,6 +128,15 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 			}
 		}
 	}
+	if a.modal.HasForm {
+		for index := 0; index < a.modal.FormInputCount; index++ {
+			for ev, ok := a.modal.FormInputs[index].Update(gtx); ok; ev, ok = a.modal.FormInputs[index].Update(gtx) {
+				if _, submit := ev.(widget.SubmitEvent); submit && a.modal.OnAction != nil {
+					a.modal.OnAction("confirm")
+				}
+			}
+		}
+	}
 	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			return a.modal.scrim.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -132,6 +174,25 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 							return layoutFormulaEditorField(gtx, a.theme, &a.modal.SecondInput, a.modal.SecondInputHint, 0)
 						})
 					}))
+				}
+				if a.modal.HasForm {
+					for index := 0; index < a.modal.FormInputCount; index++ {
+						fieldIndex := index
+						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Bottom: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										label := material.Caption(a.theme, a.modal.FormLabels[fieldIndex])
+										label.Color = color.NRGBA{R: 83, G: 91, B: 102, A: 255}
+										return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, label.Layout)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return layoutFormulaEditorField(gtx, a.theme, &a.modal.FormInputs[fieldIndex], a.modal.FormHints[fieldIndex], 0)
+									}),
+								)
+							})
+						}))
+					}
 				}
 				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					buttons := make([]layout.FlexChild, 0, len(a.modal.Actions))

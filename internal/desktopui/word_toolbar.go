@@ -204,6 +204,9 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		return true
 	case "autosave":
 		return true
+	case "doc-info":
+		_, supported := any(state.word).(document.WordDocumentPropertiesEditor)
+		return supported
 	case "undo", "redo":
 		history, ok := any(state.word).(document.WordHistory)
 		if !ok {
@@ -511,6 +514,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.activateRecent()
 	case "save-as":
 		a.startSaveAsPicker("docx")
+	case "doc-info":
+		a.startWordDocumentInfoLoad()
 	case "autosave":
 		state.wordAutoSave = !state.wordAutoSave
 		if state.wordAutoSave {

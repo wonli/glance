@@ -193,6 +193,23 @@ func (a *App) processAsyncResults() {
 	default:
 	}
 	select {
+	case result := <-a.wordDocumentInfoResults:
+		if result.state != nil {
+			result.state.formatRunning = false
+		}
+		if result.generation == a.documentGeneration && result.state == a.documentSessionState {
+			if result.err != nil {
+				a.status = "读取文档信息失败：" + result.err.Error()
+			} else {
+				a.showWordDocumentInfoDialog(result.properties)
+			}
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		}
+	default:
+	}
+	select {
 	case result := <-a.wordCommandResults:
 		if result.state != nil {
 			result.state.formatRunning = false
