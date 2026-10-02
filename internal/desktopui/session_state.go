@@ -98,6 +98,11 @@ type documentSessionState struct {
 	wordPDFExportAfterLayout            bool
 	wordPDFExportRunning                bool
 	wordPDFExportCancel                 context.CancelFunc
+	wordPrintAfterDrafts                bool
+	wordPrintAfterLayout                bool
+	wordPrintPreparing                  bool
+	wordPrintRunning                    bool
+	wordPrintCancel                     context.CancelFunc
 	wordAutoSave                        bool
 	wordDeferredToolbarAction           string
 	wordFindQuery                       string

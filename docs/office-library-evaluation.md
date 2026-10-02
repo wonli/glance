@@ -53,9 +53,9 @@ Embedding is fail-closed: the writer reads `OS/2.fsType`, checks the requested T
 
 Other candidates remain unselected: `go-pdf/fpdf` is archived; `signintech/gopdf` carries a `gofpdi` dependency and its positioned-CJK path has not passed a project probe. Source review is not acceptance evidence.
 
-### macOS print service: native API path screened
+### macOS print service: PDFKit/AppKit adapter implemented
 
-Apple documents `PDFDocument(data:)` for constructing a PDFKit document from in-memory PDF data and a PDF print operation that integrates with AppKit printing. This supports a macOS adapter that passes the in-process Go PDF bytes to PDFKit/AppKit and displays the native print panel without launching a PDF reader process. The actual Objective-C bridge, Gio main-thread/event-loop interaction, print-panel cancellation, and virtual-printer behavior remain unverified; do not mark Print complete based on API availability alone. Other operating systems need their own native adapter and remain disabled until each adapter passes its platform verification.
+`internal/printservice/print_darwin.go` and `print_darwin.m` accept in-memory PDF bytes, validate page count/options, copy the input for the Objective-C call, create a PDFKit document, and use AppKit's native print operation with page scaling disabled and auto-rotation off. Panel creation is dispatched to Cocoa's main queue so the Gio window-loop goroutine can continue polling job completion. `darwin/arm64` package tests/build pass. Computer Use opened the panel from a temporary blank DOCX: the native preview showed Page 1 of 1 and Copies 1; cancel returned to the document without changing its dirty state. The machine had no selected printer, so successful submission, virtual-printer copies/ranges, and paper dimensions remain unverified. Windows, Linux, and no-cgo builds return unavailable and keep Print disabled. The app does not start LibreOffice, a PDF viewer, or a command-line print program.
 
 Sources: [PDFKit `PDFDocument(data:)`](https://developer.apple.com/documentation/pdfkit/pdfdocument/init%28data%3A%29), [PDFKit print scaling / print operation](https://developer.apple.com/documentation/pdfkit/pdfprintscalingmode), [AppKit `NSPrintOperation`](https://developer.apple.com/documentation/appkit/nsprintoperation/).
 

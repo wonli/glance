@@ -21,6 +21,7 @@ import (
 	wordpdf "glance/internal/format/pdf"
 	legacyxls "glance/internal/format/xls"
 	"glance/internal/format/xlsx"
+	"glance/internal/printservice"
 	"glance/internal/workspace"
 )
 
@@ -125,6 +126,8 @@ type App struct {
 	wordPDFExportResults    chan wordPDFExportResult
 	wordPDFPickerRequest    *wordPDFPickerRequest
 	wordPDFFontSource       wordpdf.FontSource
+	wordPrinter             printservice.Printer
+	wordPrintResults        chan wordPrintResult
 }
 
 func New(window *app.Window, initialPath string) *App {
@@ -147,6 +150,8 @@ func New(window *app.Window, initialPath string) *App {
 		openResults:            make(chan openResult, 1),
 		fileCommandResults:     make(chan fileCommandResult, 1),
 		wordPDFExportResults:   make(chan wordPDFExportResult, 1),
+		wordPrinter:            printservice.New(),
+		wordPrintResults:       make(chan wordPrintResult, 1),
 		shutdown:               make(chan struct{}),
 		sessions:               make(map[string]*documentSessionState),
 		tabMeta:                make(map[string]workspace.Tab),

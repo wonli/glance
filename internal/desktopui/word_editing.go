@@ -267,6 +267,11 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 		a.beginWordPDFExport(state)
 		return
 	}
+	if state.wordPrintAfterDrafts {
+		state.wordPrintAfterDrafts = false
+		a.beginWordPrint(state)
+		return
+	}
 	if state.wordSaveAfterDrafts {
 		state.wordSaveAfterDrafts = false
 		a.startSave()

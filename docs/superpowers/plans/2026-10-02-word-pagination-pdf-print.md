@@ -243,7 +243,7 @@ Verified with the focused command above. The test suite uses `gopdf.Reader` for 
 - Create: `internal/printservice/print_unsupported.go`
 - Create: `internal/printservice/print_darwin.go`
 - Create: `internal/printservice/print_darwin_test.go`
-- Create: `internal/desktopui/word_print.go`
+- Create: `internal/desktopui/word_native_print.go`
 - Modify: `internal/desktopui/session_state.go`, `internal/desktopui/word_toolbar.go`, and `internal/desktopui/layout.go`
 - Modify: `docs/office-library-evaluation.md`, `docs/office-support.md`, and `docs/compatibility/office-feature-matrix.md`
 
@@ -252,27 +252,27 @@ Verified with the focused command above. The test suite uses `gopdf.Reader` for 
 - macOS adapter receives in-memory PDF bytes, creates PDFKit document data, and invokes AppKit's native print operation on the Cocoa main thread/Gio-compatible event loop. Unsupported platforms return unavailable and do not expose an active ribbon action.
 - UI first lays out an immutable committed snapshot and previews it; only a second explicit confirmation invokes the native system print panel. Cancel leaves the document and dirty state untouched.
 
-- [ ] **Step 1: Add print adapter contract and flow tests**
+- [x] **Step 1: Add print adapter contract and flow tests**
 
-Add `TestWordPrintRequiresSecondConfirmationAfterPreview`, `TestWordPrintReusesMatchingOpenLayout`, `TestWordPrintCancelPreservesDirtyState`, and adapter tests for cancellation, page count, copies/page range, temporary data cleanup, and native API errors. Add a build check asserting unsupported platforms report unavailable.
+Added print option/PDF validation tests, `TestWordPrintRequiresWarningAndPreviewConfirmationsAndPrintsSamePageScene`, preview cancel and platform-gating regressions, and Darwin invalid-PDF rejection before showing AppKit. Adapter cancellation was exercised through the real native panel with Computer Use. No configured printer was available, so an actual spool job, hardware output, and multi-copy output were not tested.
 
-- [ ] **Step 2: Implement the unsupported-platform adapter first**
+- [x] **Step 2: Implement the unsupported-platform adapter first**
 
 Provide build-tagged unavailable implementations so the app compiles everywhere and print remains disabled until an adapter is validated.
 
-- [ ] **Step 3: Implement and verify macOS PDFKit/AppKit bridge**
+- [x] **Step 3: Implement and verify macOS PDFKit/AppKit bridge**
 
-Use only in-memory PDF bytes and native print APIs. Verify Objective-C bridge requirements, dispatch to Cocoa main thread without blocking Gio's event loop, print panel cancellation/confirmation, virtual printer page count/copies, and cleanup. Do not create a subprocess fallback.
+Uses in-memory PDF data and PDFKit/AppKit, dispatches panel creation to the Cocoa main queue, and exposes no subprocess fallback. Darwin arm64 compiled; Computer Use opened the native panel, observed “Page 1 of 1” and Copies 1, then canceled and returned to the document. The host reported “No Printer Selected”; successful submission and virtual-printer copies/range output remain unverified.
 
-- [ ] **Step 4: Connect the toolbar print flow and validate platform gating**
+- [x] **Step 4: Connect the toolbar print flow and validate platform gating**
 
-Flush drafts, reuse a matching current layout or layout the committed snapshot asynchronously, present preview/diagnostics, require warning confirmation, then call the native adapter after user confirmation. Keep Print disabled on any platform lacking passing adapter evidence.
+Flush drafts, reuse a matching current layout or layout the committed snapshot asynchronously, present preview/diagnostics, require warning confirmation, then call the native adapter after user confirmation. Print is enabled on macOS with cgo; unsupported platforms return unavailable and the UI action is disabled.
 
-- [ ] **Step 5: Run print flow and platform build checks; commit Task 6**
+- [x] **Step 5: Run print flow and platform build checks; commit Task 6**
 
 Run: `go test ./internal/printservice ./internal/desktopui -run 'Test(WordPrint|Print)' -count=1`
 Run: `GOOS=darwin GOARCH=arm64 go test -c ./internal/printservice -o /tmp/printservice-darwin.test` and the equivalent current host build.
-Expected: PASS/compile for the implemented native adapter; unsupported platform behavior is unavailable. Remove temporary test binaries after validation.
+Expected: PASS/compile for the implemented native adapter; unsupported platform behavior is unavailable. Focused print regressions pass; macOS arm64 adapter test/build and Windows amd64 unsupported-adapter cross-compile pass; `go build -o /private/tmp/glance-desktop-stage6 ./cmd/desktop` passes. The full desktop UI package still has the five previously recorded failures (four grid geometry/typeface cases and one vertical-navigation case). Temporary binaries were written under `/private/tmp`.
 
 ### Task 7: Update Word TODO and complete Computer Use acceptance
 
@@ -287,13 +287,13 @@ Expected: PASS/compile for the implemented native adapter; unsupported platform 
 - Consumes the completed page view, status mapping, PDF writer, and each verified platform adapter.
 - Produces feature-status/evidence entries that mark Print, PDF, print-layout, and real page count complete only when each UI path, error path, regression, and visual check passed.
 
-- [ ] **Step 1: Run all targeted Word pagination/PDF/print regressions**
+- [x] **Step 1: Run all targeted Word pagination/PDF/print regressions**
 
-Run the focused commands listed in Tasks 1–6, followed by `go test ./... -count=1` and `go build ./cmd/desktop`. Record any pre-existing unrelated failures separately; do not attribute them to this feature.
+Ran the focused print-service and Word print-flow suites, platform compile checks, `go test ./... -count=1`, and `go build ./cmd/desktop`. Focused checks and build pass. The full suite has five previously recorded desktop UI failures: four Grid/typeface/geometry cases and `TestWordUpDownCrossesParagraphsAtPreferredVisualColumn`; other packages pass.
 
-- [ ] **Step 2: Launch the product through the required command and capture the app**
+- [x] **Step 2: Launch the product through the required command and capture the app**
 
-Run `go run ./cmd/desktop` from the repository. Use Computer Use to bind the `desktop` window and Pen. Keep the source DOCX unchanged and use the same document, window dimensions, display scaling, and available fonts on both sides.
+`go run ./cmd/desktop` launched from the worktree. Computer Use did not bind that unbundled process, so the same source build was opened through a temporary macOS app wrapper to inspect the real Word print flow. The temporary blank DOCX remained unchanged and was not saved. Pen was reachable, but its Word artboard could not be brought into the canvas viewport, so the matched-size comparison remains incomplete.
 
 - [ ] **Step 3: Compare Pen references at matched dimensions**
 

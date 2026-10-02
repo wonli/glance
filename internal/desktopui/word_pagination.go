@@ -52,6 +52,9 @@ func (state *documentSessionState) setWordBlocks(blocks []document.WordBlock) {
 	if state.wordPDFExportCancel != nil {
 		state.wordPDFExportCancel()
 	}
+	if state.wordPrintCancel != nil {
+		state.wordPrintCancel()
+	}
 	state.wordLayoutResult = nil
 	state.wordLayoutAcceptedKey = nil
 	state.wordLayoutErrorKey = nil
@@ -190,6 +193,14 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 			a.status = "PDF 导出前分页失败：" + result.err.Error()
 		} else {
 			a.beginWordPDFExport(state)
+		}
+	}
+	if state.wordPrintAfterLayout {
+		state.wordPrintAfterLayout = false
+		if result.err != nil {
+			a.status = "打印前分页失败：" + result.err.Error()
+		} else {
+			a.beginWordPrint(state)
 		}
 	}
 }

@@ -82,6 +82,11 @@ func (a *App) processAsyncResults() {
 	default:
 	}
 	select {
+	case result := <-a.wordPrintResults:
+		a.applyWordPrintResult(result)
+	default:
+	}
+	select {
 	case result := <-a.homeMetadataResults:
 		if result.generation == a.homeMetadataGeneration {
 			a.homeMetadata = result.entries
@@ -260,6 +265,7 @@ func (a *App) processAsyncResults() {
 					result.state.wordParagraphJoinIntent = nil
 					result.state.wordPageBreakIntent = nil
 					result.state.wordPDFExportAfterDrafts = false
+					result.state.wordPrintAfterDrafts = false
 					if result.state.wordDeferredToolbarAction == "ruler-indents" {
 						result.state.wordDeferredToolbarAction = ""
 						result.state.wordRulerIndentIntent = nil

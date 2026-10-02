@@ -202,6 +202,8 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	switch action.id {
 	case "new", "open", "recent", "save-as", "export-pdf":
 		return true
+	case "print":
+		return a.wordPrinter != nil && a.wordPrinter.Available()
 	case "autosave":
 		return true
 	case "doc-info":
@@ -414,6 +416,10 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			}
 			continue
 		}
+		if state.wordToolbarTab == wordTabFile && action.id != "save" {
+			a.executeWordToolbarAction(action.id)
+			continue
+		}
 		switch action.id {
 		case "format-painter":
 			a.toggleWordFormatPainter()
@@ -522,6 +528,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.startSaveAsPicker("docx")
 	case "export-pdf":
 		a.requestWordPDFExport()
+	case "print":
+		a.requestWordPrint()
 	case "doc-info":
 		a.startWordDocumentInfoLoad()
 	case "autosave":
