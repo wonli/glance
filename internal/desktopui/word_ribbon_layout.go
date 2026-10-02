@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	wordRibbonCategoryHeightDP = 42
-	wordRibbonCommandHeightDP  = 96
+	wordRibbonCategoryHeightDP = 34
+	wordRibbonCommandHeightDP  = 56
 	wordRibbonHeightDP         = wordRibbonCategoryHeightDP + wordRibbonCommandHeightDP
 )
 
@@ -63,122 +63,142 @@ func (a *App) layoutWordRibbonCategories(gtx layout.Context, state *documentSess
 	height := gtx.Dp(unit.Dp(wordRibbonCategoryHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	tabs := wordToolbarTabs(state)
-	return layout.Background{}.Layout(gtx,
-		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
-			paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
-			return layout.Dimensions{Size: gtx.Constraints.Max}
-		},
-		func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(18), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints.Min.X = gtx.Constraints.Max.X
-				return state.wordToolbarTabList.Layout(gtx, len(tabs), func(gtx layout.Context, index int) layout.Dimensions {
-					tab := tabs[index]
-					widthDP := 59
-					if index == 0 {
-						widthDP = 53
-					}
-					width := gtx.Dp(unit.Dp(widthDP))
-					gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
-					return a.layoutWordRibbonCategoryTab(gtx, state, index, wordToolbarTabLabels[tab], tab == state.wordToolbarTab)
-				})
-			})
-		},
-	)
+	paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+	paint.FillShape(gtx.Ops, wordStatusTopRule, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
+	for index, tab := range tabs {
+		x := 22 + index*59
+		a.layoutWordRibbonCategoryTabAt(gtx, state, index, x, 2, wordToolbarTabLabels[tab], tab == state.wordToolbarTab)
+	}
+	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
-func (a *App) layoutWordRibbonCategoryTab(gtx layout.Context, state *documentSessionState, index int, label string, selected bool) layout.Dimensions {
-	width, height := gtx.Constraints.Max.X, gtx.Constraints.Max.Y
-	return state.wordToolbarTabs[index].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentSessionState, index int, xDP, yDP int, label string, selected bool) {
+	width, height := gtx.Dp(unit.Dp(31)), gtx.Dp(unit.Dp(30))
+	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(yDP))
+	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
+	buttonGtx := gtx
+	buttonGtx.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}
+	state.wordToolbarTabs[index].Layout(buttonGtx, func(gtx layout.Context) layout.Dimensions {
 		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
 		semantic.Button.Add(gtx.Ops)
 		semantic.DescriptionOp(label).Add(gtx.Ops)
 		bounds.Pop()
 		style := material.Body2(a.theme, label)
 		style.TextSize = unit.Sp(13)
-		style.Color = color.NRGBA{R: 89, G: 98, B: 109, A: 255}
+		style.Color = color.NRGBA{R: 72, G: 81, B: 92, A: 255}
 		if selected {
-			style.Color = color.NRGBA{R: 53, G: 95, B: 150, A: 255}
+			style.Color = color.NRGBA{R: 52, G: 91, B: 146, A: 255}
 		}
-		labelOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(2)), gtx.Dp(unit.Dp(14)))).Push(gtx.Ops)
-		style.Layout(gtx)
-		labelOffset.Pop()
-		if selected {
-			x := -gtx.Dp(unit.Dp(2))
-			lineY := height - gtx.Dp(unit.Dp(3))
-			paint.FillShape(gtx.Ops, style.Color, clip.Rect{Min: image.Pt(x, lineY), Max: image.Pt(x+gtx.Dp(unit.Dp(42)), height)}.Op())
-		}
+		layout.Center.Layout(gtx, style.Layout)
 		return layout.Dimensions{Size: image.Pt(width, height)}
 	})
+	transform.Pop()
+	if selected {
+		lineX, lineY := gtx.Dp(unit.Dp(xDP-5)), gtx.Dp(unit.Dp(wordRibbonCategoryHeightDP-2))
+		line := op.Offset(image.Pt(lineX, lineY)).Push(gtx.Ops)
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 52, G: 91, B: 146, A: 255}, clip.Rect{Max: image.Pt(gtx.Dp(unit.Dp(42)), gtx.Dp(unit.Dp(2)))}.Op())
+		line.Pop()
+	}
 }
 
 func (a *App) layoutWordRibbonCommands(gtx layout.Context, state *documentSessionState) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(wordRibbonCommandHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-	groups := wordRibbonGroups(wordToolbarActions(state.wordToolbarTab))
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
-			paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
+			paint.FillShape(gtx.Ops, wordStatusTopRule, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			if state.wordToolbarTab == wordTabHome {
-				return a.layoutWordHomeRibbonContent(gtx, state)
-			}
-			return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12), Top: unit.Dp(4), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return state.wordToolbarActionList.Layout(gtx, len(groups), func(gtx layout.Context, index int) layout.Dimensions {
-					return a.layoutWordRibbonGroup(gtx, state, groups[index], index == len(groups)-1)
-				})
-			})
+			return a.layoutWordRibbonActions(gtx, state, state.wordToolbarTab)
 		},
 	)
 }
 
 func (a *App) layoutWordHomeRibbonContent(gtx layout.Context, state *documentSessionState) layout.Dimensions {
-	contentWidth := gtx.Dp(unit.Dp(1416))
-	return layout.Inset{Left: unit.Dp(18), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return state.wordToolbarActionList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
-			gtx.Constraints = layout.Constraints{Min: image.Pt(contentWidth, gtx.Dp(unit.Dp(wordRibbonCommandHeightDP))), Max: image.Pt(contentWidth, gtx.Dp(unit.Dp(wordRibbonCommandHeightDP)))}
-			return a.layoutWordHomeRibbonControls(gtx, state)
-		})
-	})
+	return a.layoutWordRibbonActions(gtx, state, wordTabHome)
 }
 
 func (a *App) layoutWordHomeRibbonControls(gtx layout.Context, state *documentSessionState) layout.Dimensions {
-	actions := make(map[string]ribbonAction)
-	for _, action := range wordHomeActions {
-		if action.id != "undo" && action.id != "redo" {
-			actions[action.id] = action
+	return a.layoutWordRibbonActions(gtx, state, wordTabHome)
+}
+
+var wordPenActionPositions = map[wordToolbarTab][]int{
+	wordTabFile:    {34, 76, 118, 179, 221, 263, 324, 366, 408, 469, 511, 553},
+	wordTabHome:    {34, 76, 118, 160, 221, 263, 305, 347, 389, 431, 473, 515, 576, 618, 660, 702, 744, 786, 828, 870, 931, 973, 1015, 1076, 1118, 1160, 1202},
+	wordTabInsert:  {34, 76, 118, 179, 240, 282, 324, 385, 427, 488, 530, 572, 633, 675, 736, 778},
+	wordTabDesign:  {34, 76, 118, 160, 221, 263, 324, 366, 408},
+	wordTabLayout:  {34, 76, 118, 160, 221, 263, 324, 366, 408, 469, 511, 553},
+	wordTabReview:  {34, 76, 137, 179, 240, 282, 343, 385, 427, 488, 530},
+	wordTabView:    {34, 76, 118, 179, 221, 263, 324, 366, 408, 469, 511, 572},
+	wordTabPicture: {34, 76, 118, 179, 221},
+}
+
+var wordPenGroupDividers = map[wordToolbarTab][]int{
+	wordTabFile:   {166, 311, 456},
+	wordTabHome:   {208, 563, 918, 1063},
+	wordTabInsert: {166, 227, 372, 475, 620, 723},
+	wordTabDesign: {208, 311},
+	wordTabLayout: {208, 311, 456},
+	wordTabReview: {124, 227, 330, 475},
+	wordTabView:   {166, 311, 456, 559},
+}
+
+func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSessionState, tab wordToolbarTab) layout.Dimensions {
+	width, height := gtx.Constraints.Max.X, gtx.Dp(unit.Dp(wordRibbonCommandHeightDP))
+	for _, x := range wordPenGroupDividers[tab] {
+		px := gtx.Dp(unit.Dp(x))
+		paint.FillShape(gtx.Ops, wordStatusTopRule, clip.Rect{Min: image.Pt(px, gtx.Dp(unit.Dp(6))), Max: image.Pt(px+gtx.Dp(unit.Dp(1)), gtx.Dp(unit.Dp(50)))}.Op())
+	}
+	actions := wordToolbarActions(tab)
+	positions := wordPenActionPositions[tab]
+	for index, action := range actions {
+		if index >= len(positions) {
+			break
 		}
+		a.layoutWordRibbonIconButtonAt(gtx, state, action, positions[index])
 	}
-	for _, x := range []int{166, 462, 1030, 1142} {
-		paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Min: image.Pt(gtx.Dp(unit.Dp(x)), gtx.Dp(unit.Dp(6))), Max: image.Pt(gtx.Dp(unit.Dp(x+1)), gtx.Dp(unit.Dp(84)))}.Op())
+	return layout.Dimensions{Size: image.Pt(width, height)}
+}
+
+func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP int) {
+	width, height := gtx.Dp(unit.Dp(36)), gtx.Dp(unit.Dp(36))
+	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(10))
+	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
+	buttonGtx := gtx
+	buttonGtx.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}
+	enabled := a.wordToolbarActionEnabled(action)
+	button := wordToolbarButton(state, action.id)
+	draw := func(gtx layout.Context) layout.Dimensions {
+		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
+		semantic.Button.Add(gtx.Ops)
+		semantic.DescriptionOp(action.label).Add(gtx.Ops)
+		semantic.EnabledOp(enabled).Add(gtx.Ops)
+		bounds.Pop()
+		if active := enabled && wordToolbarActionActive(state, action); active || (enabled && button.Hovered()) {
+			background := toolbarActiveBackground
+			if button.Hovered() {
+				background = toolbarHoverBackground
+			}
+			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+		}
+		if icon, ok := wordRibbonIcon(action.icon, enabled); ok {
+			iconSize := gtx.Dp(unit.Dp(20))
+			iconGtx := gtx
+			iconGtx.Constraints = layout.Constraints{Min: image.Pt(iconSize, iconSize), Max: image.Pt(iconSize, iconSize)}
+			iconOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(8)), gtx.Dp(unit.Dp(8)))).Push(gtx.Ops)
+			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 20.0 / 96.0}.Layout(iconGtx)
+			iconOffset.Pop()
+		}
+		return layout.Dimensions{Size: image.Pt(width, height)}
 	}
-	a.layoutWordRibbonPasteButtonAt(gtx, state, actions["paste"], 0, 11)
-	for index, id := range []string{"cut", "copy", "format-painter"} {
-		y := []int{14, 34, 55}[index]
-		a.layoutWordRibbonInlineActionAt(gtx, state, actions[id], 83, y, 78, 16, 16)
+	if enabled {
+		button.Layout(buttonGtx, draw)
+	} else {
+		draw(buttonGtx)
 	}
-	a.layoutWordRibbonFieldAt(gtx, actions["font-family"], 183, 10, 150, "等线 (正文)")
-	a.layoutWordRibbonFieldAt(gtx, actions["font-size"], 341, 10, 57, "11")
-	for index, id := range []string{"bold", "italic", "underline", "strikethrough", "superscript", "subscript", "text-highlight", "font-color"} {
-		x := []int{186, 220, 254, 288, 322, 356, 394, 426}[index]
-		a.layoutWordRibbonActionAt(gtx, state, actions[id], x, 48, 26, 28, false)
-	}
-	paragraphIDs := []string{"bullet-list", "numbered-list", "multilevel-list", "align-left", "align-center", "align-right", "align-justify", "decrease-indent", "increase-indent", "sort", "show-marks"}
-	paragraphX := []int{477, 511, 545, 591, 625, 659, 693, 737, 771, 805, 839}
-	for index, id := range paragraphIDs {
-		a.layoutWordRibbonActionAt(gtx, state, actions[id], paragraphX[index], 28, 26, 28, false)
-	}
-	a.layoutWordStyleGalleryAt(gtx, state, []ribbonAction{actions["style-normal"], actions["style-no-spacing"], actions["style-heading"]}, 883, 8, 130, 62)
-	for index, id := range []string{"find", "replace", "select"} {
-		a.layoutWordRibbonInlineActionAt(gtx, state, actions[id], 1050, 14+23*index, 84, 18, 18)
-	}
-	for index, id := range []string{"editor", "dictate", "add-ins", "designer"} {
-		a.layoutWordRibbonIconLabelActionAt(gtx, state, actions[id], 1153+62*index, 11)
-	}
-	return layout.Dimensions{Size: gtx.Constraints.Max}
+	transform.Pop()
 }
 
 func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP, yDP int) {

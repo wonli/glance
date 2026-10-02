@@ -28,53 +28,42 @@ const (
 	wordTabFile wordToolbarTab = iota
 	wordTabHome
 	wordTabInsert
-	wordTabDraw
 	wordTabDesign
 	wordTabLayout
-	wordTabReferences
-	wordTabMailings
 	wordTabReview
 	wordTabView
-	wordTabHelp
 	wordTabPicture
 )
 
 var (
-	wordToolbarTabLabels = []string{"文件", "开始", "插入", "绘图", "设计", "布局", "引用", "邮件", "审阅", "视图", "帮助", "图片"}
-	wordFileActions      = []ribbonAction{
-		{slot: -1, id: "save", label: "保存", group: "文档", icon: "save"},
-	}
+	wordToolbarTabLabels = []string{"文件", "开始", "插入", "设计", "布局", "审阅", "视图", "图片"}
+	wordFileActions      = wordActions(
+		"new|新建|文档|file-plus", "open|打开|文档|folder-open", "recent|最近使用|文档|clock-3",
+		"save|保存|保存|save", "save-as|另存为|保存|copy", "autosave|自动保存|保存|refresh-cw",
+		"print|打印|输出|printer", "export-pdf|导出 PDF|输出|file-down", "share|共享|输出|share-2",
+		"doc-info|文档信息|信息|info", "protect-document|保护文档|信息|shield-check", "version-history|版本历史|信息|history",
+	)
 	wordHomeActions = []ribbonAction{
-		{slot: -1, id: "undo", label: "撤销", group: "历史", icon: "undo"},
-		{slot: -1, id: "redo", label: "重做", group: "历史", icon: "redo"},
 		{slot: -1, id: "paste", label: "粘贴", group: "剪贴板", icon: "paste"},
 		{slot: -1, id: "cut", label: "剪切", group: "剪贴板", icon: "cut"},
 		{slot: -1, id: "copy", label: "复制", group: "剪贴板", icon: "copy"},
 		{slot: -1, id: "format-painter", label: "格式刷", group: "剪贴板", icon: "paintbrush"},
 		{slot: -1, id: "font-family", label: "字体", group: "字体", icon: "file-text"},
-		{slot: -1, id: "font-size", label: "字号", group: "字体", icon: "hash"},
+		{slot: -1, id: "font-size-decrease", label: "减小字号", group: "字体", icon: "minus"},
+		{slot: -1, id: "font-size-increase", label: "增大字号", group: "字体", icon: "plus"},
 		{slot: -1, id: "bold", label: "加粗", group: "字体", icon: "bold"},
 		{slot: -1, id: "italic", label: "斜体", group: "字体", icon: "italic"},
 		{slot: -1, id: "underline", label: "下划线", group: "字体", icon: "underline"},
-		{slot: -1, id: "strikethrough", label: "删除线", group: "字体", icon: "clear"},
-		{slot: -1, id: "superscript", label: "上标", group: "字体", icon: "type"},
-		{slot: -1, id: "subscript", label: "下标", group: "字体", icon: "hash"},
-		{slot: -1, id: "text-highlight", label: "文本突出显示", group: "字体", icon: "paint-bucket"},
+		{slot: -1, id: "text-highlight", label: "高亮", group: "字体", icon: "paint-bucket"},
 		{slot: -1, id: "font-color", label: "字体颜色", group: "字体", icon: "type"},
 		{slot: -1, id: "bullet-list", label: "项目符号", group: "段落", icon: "list"},
 		{slot: -1, id: "numbered-list", label: "编号", group: "段落", icon: "sort-asc"},
-		{slot: -1, id: "multilevel-list", label: "多级列表", group: "段落", icon: "list"},
 		{slot: -1, id: "align-left", label: "左对齐", group: "段落", icon: "align-left"},
-		{slot: -1, id: "align-center", label: "居中对齐", group: "段落", icon: "align-center"},
+		{slot: -1, id: "align-center", label: "居中", group: "段落", icon: "align-center"},
 		{slot: -1, id: "align-right", label: "右对齐", group: "段落", icon: "align-right"},
 		{slot: -1, id: "align-justify", label: "两端对齐", group: "段落", icon: "align-distributed"},
 		{slot: -1, id: "decrease-indent", label: "减少缩进", group: "段落", icon: "minus"},
 		{slot: -1, id: "increase-indent", label: "增加缩进", group: "段落", icon: "plus"},
-		{slot: -1, id: "sort", label: "排序", group: "段落", icon: "sort-asc"},
-		{slot: -1, id: "show-marks", label: "显示编辑标记", group: "段落", icon: "file-text"},
-		{slot: -1, id: "style-normal", label: "正文", group: "样式", icon: "file-text"},
-		{slot: -1, id: "style-no-spacing", label: "无间距", group: "样式", icon: "file-text"},
-		{slot: -1, id: "style-heading", label: "标题 1", group: "样式", icon: "file-text"},
 		{slot: -1, id: "find", label: "查找", group: "编辑", icon: "search"},
 		{slot: -1, id: "replace", label: "替换", group: "编辑", icon: "list-filter"},
 		{slot: -1, id: "select", label: "选择", group: "编辑", icon: "grid"},
@@ -83,52 +72,37 @@ var (
 		{slot: -1, id: "add-ins", label: "加载项", group: "编辑器", icon: "grid"},
 		{slot: -1, id: "designer", label: "设计器", group: "编辑器", icon: "star"},
 	}
-	wordInsertActions = []ribbonAction{
-		{slot: -1, id: "insert-image", label: "图片", group: "插图", icon: "file"},
-		{slot: -1, id: "insert-table", label: "表格", group: "插图", icon: "grid"},
-		{slot: -1, id: "insert-shapes", label: "形状", group: "插图", icon: "square-plus"},
-		{slot: -1, id: "insert-chart", label: "图表", group: "插图", icon: "file-spreadsheet"},
-	}
-	wordDrawActions = []ribbonAction{
-		{slot: -1, id: "draw-pen", label: "画笔", group: "绘制", icon: "type"},
-		{slot: -1, id: "draw-highlighter", label: "荧光笔", group: "绘制", icon: "paint-bucket"},
-		{slot: -1, id: "draw-eraser", label: "橡皮擦", group: "绘制", icon: "clear"},
-	}
-	wordDesignActions = []ribbonAction{
-		{slot: -1, id: "design-themes", label: "主题", group: "文档格式", icon: "grid"},
-		{slot: -1, id: "design-colors", label: "颜色", group: "文档格式", icon: "paint-bucket"},
-		{slot: -1, id: "design-watermark", label: "水印", group: "页面背景", icon: "file"},
-	}
-	wordLayoutActions = []ribbonAction{
-		{slot: -1, id: "layout-margins", label: "页边距", group: "页面设置", icon: "grid"},
-		{slot: -1, id: "layout-orientation", label: "纸张方向", group: "页面设置", icon: "file"},
-		{slot: -1, id: "layout-size", label: "纸张大小", group: "页面设置", icon: "file-text"},
-		{slot: -1, id: "layout-columns", label: "分栏", group: "页面设置", icon: "align-distributed"},
-	}
-	wordReferenceActions = []ribbonAction{
-		{slot: -1, id: "reference-toc", label: "目录", group: "目录", icon: "list"},
-		{slot: -1, id: "reference-footnote", label: "脚注", group: "脚注", icon: "file-text"},
-		{slot: -1, id: "reference-citation", label: "引文", group: "引文与书目", icon: "file"},
-	}
-	wordMailingActions = []ribbonAction{
-		{slot: -1, id: "mailing-envelope", label: "信封", group: "创建", icon: "file"},
-		{slot: -1, id: "mailing-labels", label: "标签", group: "创建", icon: "file-text"},
-		{slot: -1, id: "mailing-merge", label: "邮件合并", group: "开始邮件合并", icon: "grid"},
-	}
-	wordReviewActions = []ribbonAction{
-		{slot: -1, id: "review-spelling", label: "拼写检查", group: "校对", icon: "file-text"},
-		{slot: -1, id: "review-comment", label: "新建批注", group: "批注", icon: "plus"},
-		{slot: -1, id: "review-track", label: "修订", group: "跟踪", icon: "list-filter"},
-	}
-	wordViewActions = []ribbonAction{
-		{slot: -1, id: "view-focus", label: "专注模式", group: "视图", icon: "grid"},
-		{slot: -1, id: "view-print", label: "页面视图", group: "视图", icon: "file"},
-		{slot: -1, id: "view-zoom", label: "缩放", group: "缩放", icon: "plus"},
-	}
-	wordHelpActions = []ribbonAction{
-		{slot: -1, id: "help-search", label: "帮助搜索", group: "帮助", icon: "search"},
-		{slot: -1, id: "help-feedback", label: "反馈", group: "反馈", icon: "file"},
-	}
+	wordInsertActions = wordActions(
+		"cover|封面|页面|file-text", "blank-page|空白页|页面|file-plus", "page-break|分页|页面|split",
+		"insert-table|表格|表格|table", "insert-image|图片|插图|image", "insert-shapes|形状|插图|shapes",
+		"insert-chart|图表|插图|chart-no-axes-column", "insert-link|链接|链接|link", "insert-bookmark|书签|链接|bookmark",
+		"insert-header|页眉|页眉页脚|panel-top", "insert-footer|页脚|页眉页脚|panel-bottom", "insert-page-number|页码|页眉页脚|list-ordered",
+		"insert-textbox|文本框|文本|text-cursor-input", "insert-wordart|艺术字|文本|type", "insert-equation|公式|符号|function-square", "insert-symbol|符号|符号|omega",
+	)
+	wordDesignActions = wordActions(
+		"design-themes|主题|文档格式|layout-grid", "design-colors|颜色|文档格式|palette", "design-fonts|字体|文档格式|type",
+		"design-effects|效果|文档格式|sparkles", "design-compact|紧凑|段落间距|rows-3", "design-spacious|宽松|段落间距|rows-4",
+		"design-watermark|水印|页面背景|stamp", "design-page-color|页面颜色|页面背景|paint-bucket", "design-page-border|页面边框|页面背景|square",
+	)
+	wordLayoutActions = wordActions(
+		"layout-margins|页边距|页面设置|panel-left", "layout-orientation|方向|页面设置|rectangle-horizontal", "layout-size|纸张大小|页面设置|file-text",
+		"layout-columns|分栏|页面设置|columns-2", "layout-breaks|分隔符|分隔|panel-top", "layout-line-numbers|行号|分隔|list-ordered",
+		"layout-indent|缩进|段落|indent-increase", "layout-before|段前|段落|arrow-up-to-line", "layout-after|段后|段落|arrow-down-to-line",
+		"layout-position|位置|排列|move", "layout-wrap|环绕文字|排列|wrap-text", "layout-align|对齐|排列|align-horizontal-justify-center",
+	)
+	wordReviewActions = wordActions(
+		"review-editor|编辑器|校对|spell-check", "review-word-count|字数统计|校对|whole-word", "review-translate|翻译|语言|languages",
+		"review-language|语言|语言|languages", "review-new-comment|新建批注|批注|message-square-plus", "review-delete-comment|删除批注|批注|message-square-x",
+		"review-track|修订|修订|highlighter", "review-accept|接受|修订|check", "review-reject|拒绝|修订|x",
+		"review-compare|比较|保护|git-compare", "review-restrict|限制编辑|保护|shield-check",
+	)
+	wordViewActions = wordActions(
+		"view-reading|阅读模式|视图|book-open", "view-print-layout|打印布局|视图|printer", "view-web-layout|Web版式|视图|panels-top-left",
+		"view-ruler|标尺|显示|ruler", "view-gridlines|网格线|显示|grid-2x2", "view-navigation|导航窗格|显示|panel-left",
+		"view-zoom|缩放|缩放|zoom-in", "view-single-page|单页|缩放|file", "view-multiple-pages|多页|缩放|files",
+		"view-new-window|新建窗口|窗口|app-window", "view-side-by-side|并排查看|窗口|columns-2", "view-macros|宏|宏|code-xml",
+	)
+	wordHistoryActions = wordActions("undo|撤销|历史|undo", "redo|重做|历史|redo")
 	wordPictureActions = []ribbonAction{
 		{slot: -1, id: "replace-image", label: "替换图片", group: "图片", icon: "copy"},
 		{slot: -1, id: "delete-image", label: "删除图片", group: "图片", icon: "trash-2"},
@@ -152,8 +126,20 @@ var (
 	}
 )
 
+func wordActions(specs ...string) []ribbonAction {
+	actions := make([]ribbonAction, 0, len(specs))
+	for _, spec := range specs {
+		parts := strings.SplitN(spec, "|", 4)
+		if len(parts) != 4 {
+			continue
+		}
+		actions = append(actions, ribbonAction{slot: -1, id: parts[0], label: parts[1], group: parts[2], icon: parts[3]})
+	}
+	return actions
+}
+
 func wordToolbarTabs(state *documentSessionState) []wordToolbarTab {
-	tabs := []wordToolbarTab{wordTabFile, wordTabHome, wordTabInsert, wordTabDraw, wordTabDesign, wordTabLayout, wordTabReferences, wordTabMailings, wordTabReview, wordTabView, wordTabHelp}
+	tabs := []wordToolbarTab{wordTabFile, wordTabHome, wordTabInsert, wordTabDesign, wordTabLayout, wordTabReview, wordTabView}
 	if state != nil && state.selectedWordImageID != "" {
 		tabs = append(tabs, wordTabPicture)
 	}
@@ -168,22 +154,14 @@ func wordToolbarActions(tab wordToolbarTab) []ribbonAction {
 		return wordHomeActions
 	case wordTabInsert:
 		return wordInsertActions
-	case wordTabDraw:
-		return wordDrawActions
 	case wordTabDesign:
 		return wordDesignActions
 	case wordTabLayout:
 		return wordLayoutActions
-	case wordTabReferences:
-		return wordReferenceActions
-	case wordTabMailings:
-		return wordMailingActions
 	case wordTabReview:
 		return wordReviewActions
 	case wordTabView:
 		return wordViewActions
-	case wordTabHelp:
-		return wordHelpActions
 	case wordTabPicture:
 		return wordPictureActions
 	default:

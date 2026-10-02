@@ -186,8 +186,8 @@ func TestWordRibbonKeepsHeightAndPictureActionsStayOnOneRow(t *testing.T) {
 	}
 	app.layoutWordFlow(gtx)
 	router.Frame(&ops)
-	if wordRibbonHeightDP != 138 {
-		t.Fatalf("Word ribbon height = %d dp; preserve the current 138 dp height", wordRibbonHeightDP)
+	if wordRibbonCategoryHeightDP != 34 || wordRibbonCommandHeightDP != 56 || wordRibbonHeightDP != 90 {
+		t.Fatalf("Word ribbon heights = categories %d dp, commands %d dp, total %d dp; want Pen Clpgm 34/56/90 dp", wordRibbonCategoryHeightDP, wordRibbonCommandHeightDP, wordRibbonHeightDP)
 	}
 	want := map[string]image.Rectangle{
 		"替换图片": {}, "删除图片": {}, "调整大小": {}, "向左旋转 90°": {}, "向右旋转 90°": {},
@@ -215,8 +215,8 @@ func TestWordRibbonKeepsHeightAndPictureActionsStayOnOneRow(t *testing.T) {
 			rowBottom = bounds.Max.Y
 		}
 	}
-	if rowBottom-rowTop > 70 {
-		t.Errorf("picture ribbon actions occupy %d vertical pixels; want one row within the unchanged ribbon height", rowBottom-rowTop)
+	if rowBottom-rowTop > 36 {
+		t.Errorf("picture ribbon actions occupy %d vertical pixels; want one 36 dp row", rowBottom-rowTop)
 	}
 	firstTop := -1
 	for label, bounds := range want {
@@ -250,16 +250,15 @@ func TestWordHomeRibbonMatchesPenClpgmGroupGeometry(t *testing.T) {
 	app.layoutWordFlow(gtx)
 	router.Frame(&ops)
 	want := map[string]image.Rectangle{
-		"文件":  {Min: image.Pt(18, 0), Max: image.Pt(71, 42)},
-		"开始":  {Min: image.Pt(71, 0), Max: image.Pt(130, 42)},
-		"粘贴":  {Min: image.Pt(18, 53), Max: image.Pt(88, 115)},
-		"剪切":  {Min: image.Pt(101, 56)},
-		"字体":  {Min: image.Pt(201, 52), Max: image.Pt(351, 80)},
-		"加粗":  {Min: image.Pt(204, 90), Max: image.Pt(230, 118)},
-		"左对齐": {Min: image.Pt(609, 70), Max: image.Pt(635, 98)},
-		"查找":  {Min: image.Pt(1068, 56)},
-		"编辑器": {Min: image.Pt(1171, 53), Max: image.Pt(1223, 115)},
-		"正文":  {Min: image.Pt(903, 53), Max: image.Pt(941, 109)},
+		"文件":  {Min: image.Pt(22, 2), Max: image.Pt(53, 32)},
+		"开始":  {Min: image.Pt(81, 2), Max: image.Pt(112, 32)},
+		"粘贴":  {Min: image.Pt(34, 44), Max: image.Pt(70, 80)},
+		"剪切":  {Min: image.Pt(76, 44), Max: image.Pt(112, 80)},
+		"字体":  {Min: image.Pt(221, 44), Max: image.Pt(257, 80)},
+		"加粗":  {Min: image.Pt(347, 44), Max: image.Pt(383, 80)},
+		"左对齐": {Min: image.Pt(660, 44), Max: image.Pt(696, 80)},
+		"查找":  {Min: image.Pt(931, 44), Max: image.Pt(967, 80)},
+		"编辑器": {Min: image.Pt(1076, 44), Max: image.Pt(1112, 80)},
 	}
 	found := make(map[string]image.Rectangle, len(want))
 	hasHistoryAction := false
@@ -565,12 +564,12 @@ func TestWordCanvasAndRulersMatchPenClpgmGeometry(t *testing.T) {
 	rootOffset.Pop()
 	router.Frame(&ops)
 	want := map[string]image.Rectangle{
-		"文件":        {Min: image.Pt(18, 44), Max: image.Pt(71, 86)},
-		"开始":        {Min: image.Pt(71, 44), Max: image.Pt(130, 86)},
-		"粘贴":        {Min: image.Pt(18, 97), Max: image.Pt(88, 159)},
-		"Word 水平标尺": {Min: image.Pt(0, 182), Max: image.Pt(1440, 215)},
-		"Word 文档画布": {Min: image.Pt(270, 231), Max: image.Pt(1170, 831)},
-		"Word 垂直标尺": {Min: image.Pt(231, 235), Max: image.Pt(256, 833)},
+		"文件":        {Min: image.Pt(22, 44), Max: image.Pt(53, 74)},
+		"开始":        {Min: image.Pt(81, 44), Max: image.Pt(112, 74)},
+		"粘贴":        {Min: image.Pt(34, 86), Max: image.Pt(70, 122)},
+		"Word 水平标尺": {Min: image.Pt(0, 132), Max: image.Pt(1440, 165)},
+		"Word 文档画布": {Min: image.Pt(270, 181), Max: image.Pt(1170, 781)},
+		"Word 垂直标尺": {Min: image.Pt(231, 185), Max: image.Pt(256, 833)},
 		"Word 状态栏":  {Min: image.Pt(0, 866), Max: image.Pt(1440, 900)},
 	}
 	found := make(map[string]image.Rectangle, len(want))

@@ -787,9 +787,7 @@ func (a *App) layoutGridRow(gtx layout.Context, row int) layout.Dimensions {
 func (a *App) layoutWord(gtx layout.Context) layout.Dimensions {
 	a.handleWordToolbarEvents(gtx)
 	a.handleWordClipboardEvents(gtx)
-	// Clpgm leaves a two-pixel seam between the document tabs and Word's
-	// category row; keep the total ribbon height itself at 138 dp.
-	return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, a.layoutWordFlow)
+	return a.layoutWordFlow(gtx)
 }
 
 func (a *App) layoutEditor(gtx layout.Context) layout.Dimensions {

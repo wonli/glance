@@ -13,6 +13,15 @@ import (
 	"glance/internal/format/docx"
 )
 
+func hasWordAction(actions []ribbonAction, id string) bool {
+	for _, action := range actions {
+		if action.id == id {
+			return true
+		}
+	}
+	return false
+}
+
 func TestWordToolbarTabsActionsAndIcons(t *testing.T) {
 	state := newDocumentSessionState("sample.docx")
 	word, err := docx.NewBlank()
@@ -22,11 +31,11 @@ func TestWordToolbarTabsActionsAndIcons(t *testing.T) {
 	defer word.Close()
 	word.SetDirty(false)
 	state.word = word
-	if tabs := wordToolbarTabs(state); len(tabs) != 11 {
-		t.Fatalf("Word tabs without an image selection = %#v; want the 11 reference categories", tabs)
+	if tabs := wordToolbarTabs(state); len(tabs) != 7 {
+		t.Fatalf("Word tabs without an image selection = %#v; want the 7 Pen categories", tabs)
 	}
 	state.selectedWordImageID = "img-7"
-	if tabs := wordToolbarTabs(state); len(tabs) != 12 || tabs[11] != wordTabPicture {
+	if tabs := wordToolbarTabs(state); len(tabs) != 8 || tabs[7] != wordTabPicture {
 		t.Fatalf("Word tabs with an image selection = %#v; want contextual Picture tab", tabs)
 	}
 
@@ -48,16 +57,19 @@ func TestWordToolbarTabsActionsAndIcons(t *testing.T) {
 			t.Errorf("spreadsheet-only action leaked into Word Home: %#v", action)
 		}
 	}
+	for _, action := range wordHistoryActions {
+		seen[action.id] = true
+	}
 	for id := range want {
 		if !seen[id] {
 			t.Errorf("Word Home is missing action %q", id)
 		}
 	}
-	if got := wordToolbarActions(wordTabInsert); len(got) < 1 || got[0].id != "insert-image" {
-		t.Fatalf("Word Insert actions = %#v; want image insertion", got)
+	if got := wordToolbarActions(wordTabInsert); len(got) != 16 || !hasWordAction(got, "insert-image") {
+		t.Fatalf("Word Insert actions = %#v; want Pen insert actions including image insertion", got)
 	}
-	if got := wordToolbarActions(wordTabFile); len(got) != 1 || got[0].id != "save" {
-		t.Fatalf("Word File actions = %#v; want Save", got)
+	if got := wordToolbarActions(wordTabFile); len(got) != 12 || !hasWordAction(got, "save") {
+		t.Fatalf("Word File actions = %#v; want Pen file actions including Save", got)
 	}
 	if got := wordToolbarActions(wordTabPicture); len(got) != 5 || got[0].id != "replace-image" || got[1].id != "delete-image" || got[2].id != "resize-image" || got[3].id != "rotate-left" || got[4].id != "rotate-right" {
 		t.Fatalf("Word Picture actions = %#v; want replace, delete, resize and 90° rotation", got)
@@ -73,23 +85,43 @@ func TestWordToolbarExposesPenReferenceCategories(t *testing.T) {
 	defer word.Close()
 	state.word = word
 
-	if got := len(wordToolbarTabs(state)); got != 11 {
-		t.Fatalf("Word category count = %d; want the 11 reference categories", got)
+	if got := len(wordToolbarTabs(state)); got != 7 {
+		t.Fatalf("Word category count = %d; want the 7 categories in Pen node kiBim", got)
 	}
-	if got := len(wordToolbarTabLabels); got != 12 {
-		t.Fatalf("Word category labels = %d; want 11 reference labels and contextual Picture", got)
+	if got := len(wordToolbarTabLabels); got != 8 {
+		t.Fatalf("Word category labels = %d; want 7 reference labels and contextual Picture", got)
 	}
-	want := "文件,开始,插入,绘图,设计,布局,引用,邮件,审阅,视图,帮助"
+	want := "文件,开始,插入,设计,布局,审阅,视图"
 	if got := strings.Join(wordToolbarTabLabels, ","); got != want+",图片" {
 		t.Fatalf("Word category labels = %q; want %q plus contextual Picture", got, want)
+	}
+	wantActions := map[wordToolbarTab]string{
+		wordTabFile:   "新建,打开,最近使用,保存,另存为,自动保存,打印,导出 PDF,共享,文档信息,保护文档,版本历史",
+		wordTabHome:   "粘贴,剪切,复制,格式刷,字体,减小字号,增大字号,加粗,斜体,下划线,高亮,字体颜色,项目符号,编号,左对齐,居中,右对齐,两端对齐,减少缩进,增加缩进,查找,替换,选择,编辑器,听写,加载项,设计器",
+		wordTabInsert: "封面,空白页,分页,表格,图片,形状,图表,链接,书签,页眉,页脚,页码,文本框,艺术字,公式,符号",
+		wordTabDesign: "主题,颜色,字体,效果,紧凑,宽松,水印,页面颜色,页面边框",
+		wordTabLayout: "页边距,方向,纸张大小,分栏,分隔符,行号,缩进,段前,段后,位置,环绕文字,对齐",
+		wordTabReview: "编辑器,字数统计,翻译,语言,新建批注,删除批注,修订,接受,拒绝,比较,限制编辑",
+		wordTabView:   "阅读模式,打印布局,Web版式,标尺,网格线,导航窗格,缩放,单页,多页,新建窗口,并排查看,宏",
+	}
+	for tab, want := range wantActions {
+		var labels []string
+		for _, action := range wordToolbarActions(tab) {
+			labels = append(labels, action.label)
+		}
+		if got := strings.Join(labels, ","); got != want {
+			t.Errorf("Word tab %q actions = %q; want Pen order %q", wordToolbarTabLabels[tab], got, want)
+		}
 	}
 	for tab := wordTabFile; tab <= wordTabPicture; tab++ {
 		for _, action := range wordToolbarActions(tab) {
 			if action.label == "" || action.icon == "" {
 				t.Errorf("Word tab %q has an action without a label or icon: %#v", wordToolbarTabLabels[tab], action)
 			}
-			if _, ok := toolbarIconData(action.icon); !ok {
-				t.Errorf("Word tab %q action %q references missing icon %q", wordToolbarTabLabels[tab], action.id, action.icon)
+			for _, enabled := range []bool{true, false} {
+				if icon, ok := wordRibbonIcon(action.icon, enabled); !ok || icon == nil {
+					t.Errorf("Word tab %q action %q references an icon outside the shared Excel set: %q", wordToolbarTabLabels[tab], action.id, action.icon)
+				}
 			}
 		}
 	}
@@ -107,6 +139,13 @@ func TestWordToolbarEnablesCommandsForTheirSelectedWordObjects(t *testing.T) {
 	app := &App{documentSessionState: state}
 	findAction := func(tab wordToolbarTab, id string) wordToolbarAction {
 		t.Helper()
+		if tab == wordTabHome && (id == "undo" || id == "redo") {
+			for _, action := range wordHistoryActions {
+				if action.id == id {
+					return action
+				}
+			}
+		}
 		for _, action := range wordToolbarActions(tab) {
 			if action.id == id {
 				return action

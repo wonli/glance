@@ -91,7 +91,7 @@ type documentSessionState struct {
 	toolbarPicker                      spreadsheetToolbarPicker
 	toolbarPickerSlot                  int
 	wordToolbarTab                     wordToolbarTab
-	wordToolbarTabs                    [12]widget.Clickable
+	wordToolbarTabs                    [8]widget.Clickable
 	wordToolbarTabList                 widget.List
 	wordToolbarActionList              widget.List
 	wordToolbarActionButtons           map[string]*widget.Clickable

@@ -159,6 +159,54 @@ func TestWordFlowExposesReferenceRibbonRulersAndStatus(t *testing.T) {
 	}
 }
 
+func TestWordStatusBarMatchesPenFsQrkGeometry(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state := newDocumentSessionState("sample.docx")
+	state.word = word
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Constraints: layout.Constraints{Max: image.Pt(1440, 34)}, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	app.layoutWordStatusBar(gtx, state)
+	router.Frame(&ops)
+	want := map[string]image.Rectangle{
+		"Word 状态栏":         image.Rect(0, 0, 1440, 34),
+		"Word 页数":           image.Rect(18, 11, 97, 27),
+		"Word 字数":           image.Rect(142, 11, 188, 27),
+		"Word 语言":           image.Rect(250, 11, 303, 27),
+		"Word 辅助功能图标":     image.Rect(350, 9, 365, 24),
+		"Word 辅助功能":       image.Rect(371, 11, 448, 27),
+		"Word 专注模式":       image.Rect(1112, 9, 1127, 24),
+		"Word 打印布局":       image.Rect(1145, 9, 1160, 24),
+		"Word Web版式":        image.Rect(1178, 9, 1193, 24),
+		"Word 缩小":           image.Rect(1230, 9, 1245, 24),
+		"Word 缩放轨道":       image.Rect(1257, 16, 1349, 18),
+		"Word 缩放滑块":       image.Rect(1304, 11, 1315, 22),
+		"Word 放大":           image.Rect(1361, 9, 1376, 24),
+		"Word 缩放百分比":     image.Rect(1390, 11, 1420, 24),
+	}
+	got := make(map[string]image.Rectangle, len(want))
+	var visit func([]input.SemanticNode)
+	visit = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if _, ok := want[node.Desc.Description]; ok {
+				got[node.Desc.Description] = node.Desc.Bounds
+			}
+			visit(node.Children)
+		}
+	}
+	visit(router.AppendSemantics(nil))
+	for label, expected := range want {
+		if actual := got[label]; actual != expected {
+			t.Errorf("Pen FsQrk element %q bounds = %v; want %v", label, actual, expected)
+		}
+	}
+}
+
 func TestWordUnsupportedPlaceholderUsesMeasuredHeight(t *testing.T) {
 	var ops op.Ops
 	gtx := layout.Context{
