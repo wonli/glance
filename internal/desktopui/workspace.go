@@ -26,6 +26,7 @@ type sessionViewSnapshot struct {
 	SelectedBlock  int     `json:"selected_block"`
 	GridFirst      int     `json:"grid_first"`
 	WordFirst      int     `json:"word_first"`
+	WordAutoSave   bool    `json:"word_auto_save"`
 	GridX          float64 `json:"grid_x"`
 	GridY          float64 `json:"grid_y"`
 	GridScale      float64 `json:"grid_scale"`
@@ -177,6 +178,7 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 	state.selectedBlock = view.SelectedBlock
 	state.gridList.Position.First = view.GridFirst
 	state.wordListState.Position.First = view.WordFirst
+	state.wordAutoSave = view.WordAutoSave
 	if state.virtualGrid != nil {
 		state.virtualGrid.X, state.virtualGrid.Y = view.GridX, view.GridY
 		if view.GridScale > 0 {
@@ -216,6 +218,7 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 			a.status = "源文件不可用，正在显示本地恢复快照：" + meta.SourcePath
 		}
 	}
+	a.maybeAutoSaveWord(state)
 }
 
 func (a *App) snapshotActive() ([]byte, error) {
@@ -292,6 +295,12 @@ func (a *App) startSaveAsPicker(format string) {
 	a.startFileCommand(commandSaveAs, format)
 }
 
+// setWordFileCommandRunner is a narrow injection seam for exercising the Word
+// ribbon's file commands without opening a native platform picker.
+func (a *App) setWordFileCommandRunner(runner func(fileCommandKind, string) fileCommandResult) {
+	a.fileCommandRunner = runner
+}
+
 func (a *App) startFileCommand(kind fileCommandKind, format string) {
 	if a.fileCommandRunning {
 		return
@@ -305,18 +314,24 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 	case commandSaveAs:
 		a.status = "选择另存为位置…"
 	}
+	runner := a.fileCommandRunner
 	go func() {
 		result := fileCommandResult{kind: kind}
-		switch kind {
-		case commandOpenFile:
-			result.path, result.err = chooseOfficeFile()
-		case commandOpenFolder:
-			result.path, result.err = chooseOfficeFolder()
-			if result.err == nil && result.path != "" {
-				result.recents, result.err = scanOfficeFolder(result.path)
+		if runner != nil {
+			result = runner(kind, format)
+			result.kind = kind
+		} else {
+			switch kind {
+			case commandOpenFile:
+				result.path, result.err = chooseOfficeFile()
+			case commandOpenFolder:
+				result.path, result.err = chooseOfficeFolder()
+				if result.err == nil && result.path != "" {
+					result.recents, result.err = scanOfficeFolder(result.path)
+				}
+			case commandSaveAs:
+				result.path, result.err = chooseSavePath(format)
 			}
-		case commandSaveAs:
-			result.path, result.err = chooseSavePath(format)
 		}
 		select {
 		case a.fileCommandResults <- result:
@@ -447,7 +462,7 @@ func sessionDirty(state *documentSessionState) bool {
 }
 
 func (a *App) viewStateBytes() []byte {
-	view := sessionViewSnapshot{Sheet: a.sheet, SelectedCell: a.selectedCell, SelectedBlock: a.selectedBlock, GridFirst: a.gridList.Position.First, WordFirst: a.wordListState.Position.First}
+	view := sessionViewSnapshot{Sheet: a.sheet, SelectedCell: a.selectedCell, SelectedBlock: a.selectedBlock, GridFirst: a.gridList.Position.First, WordFirst: a.wordListState.Position.First, WordAutoSave: a.wordAutoSave}
 	if a.virtualGrid != nil {
 		view.GridX, view.GridY, view.GridScale = a.virtualGrid.X, a.virtualGrid.Y, a.virtualGrid.Scale
 		view.SelectedRow, view.SelectedColumn = a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn

@@ -649,8 +649,30 @@ func (a *App) layoutWordParagraph(gtx layout.Context, paragraph document.WordPar
 		spacing = unit.Dp(3)
 	}
 	return layout.Inset{Top: unit.Dp(5), Bottom: spacing, Left: unit.Dp(leftIndentDP), Right: unit.Dp(rightIndentDP)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layoutWordInlineFlow(gtx, a.documentSessionState, paragraph.Alignment, children)
+		flow := func(gtx layout.Context) layout.Dimensions {
+			return layoutWordInlineFlow(gtx, a.documentSessionState, paragraph.Alignment, children)
+		}
+		if paragraph.ListMarker == "" {
+			return flow(gtx)
+		}
+		markerWidth := unit.Dp(wordListMarkerWidthDP(paragraph))
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Start}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					label := material.Body1(a.theme, paragraph.ListMarker)
+					gtx.Constraints.Min.X = gtx.Dp(markerWidth) - gtx.Dp(unit.Dp(6))
+					gtx.Constraints.Max.X = gtx.Constraints.Min.X
+					return label.Layout(gtx)
+				})
+			}),
+			layout.Flexed(1, flow),
+		)
 	})
+}
+
+func wordListMarkerWidthDP(paragraph document.WordParagraph) int {
+	width := max(24, len([]rune(paragraph.ListMarker))*9+12)
+	return width + max(0, paragraph.ListLevel)*18
 }
 
 func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParagraph, run document.WordTextRun) layout.Dimensions {
@@ -687,6 +709,11 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	style.Font, style.TextSize, style.Color = label.Font, label.TextSize, label.Color
 	background := contentSurface
 	dimensions := wordMeasuredBackground(gtx, background, func(gtx layout.Context) layout.Dimensions {
+		if highlightColor, ok := wordHighlightDisplayColor(run.Style.Highlight); ok {
+			for _, rect := range wordTextHighlightRects(gtx, a.theme.Shaper, label, editor.Text()) {
+				paint.FillShape(gtx.Ops, highlightColor, clip.Rect(rect).Op())
+			}
+		}
 		dims := layoutWordRunEditor(gtx, style, run.ID)
 		if run.Style.Underline && dims.Size.X > 0 && dims.Size.Y > 0 {
 			y := max(0, dims.Baseline)
@@ -708,6 +735,10 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 		state.selectedBlock = -1
 		state.selectedBlockEditable = true
 		state.wordLayoutFocusedRunID = run.ID
+		if state.wordFormatPainterActive && run.ID != state.wordFormatPainterSourceRunID {
+			state.wordFormatPainterPendingParagraphID = paragraph.ID
+			state.wordFormatPainterPendingRunID = run.ID
+		}
 	}
 	if run.Editable {
 		current := editor.Text()
@@ -1044,6 +1075,92 @@ func wordRunLabel(theme *material.Theme, paragraph document.WordParagraph, run d
 		label.TextSize = unit.Sp(16)
 	}
 	return label
+}
+
+func wordTextHighlightRects(gtx layout.Context, shaper *text.Shaper, label material.LabelStyle, value string) []image.Rectangle {
+	width := gtx.Constraints.Max.X
+	if shaper == nil || value == "" || width <= 0 {
+		return nil
+	}
+	shaper.LayoutString(text.Parameters{
+		Font:             label.Font,
+		Alignment:        label.Alignment,
+		PxPerEm:          fixed.I(gtx.Sp(label.TextSize)),
+		MaxWidth:         width,
+		MinWidth:         gtx.Constraints.Min.X,
+		WrapPolicy:       label.WrapPolicy,
+		LineHeight:       fixed.I(gtx.Sp(label.LineHeight)),
+		LineHeightScale:  label.LineHeightScale,
+		Locale:           gtx.Locale,
+		DisableSpaceTrim: true,
+	}, value)
+	var rects []image.Rectangle
+	lineBounds := image.Rectangle{}
+	lineHasGlyph := false
+	flushLine := func() {
+		if lineHasGlyph && !lineBounds.Empty() {
+			rects = append(rects, lineBounds)
+		}
+		lineBounds = image.Rectangle{}
+		lineHasGlyph = false
+	}
+	for glyph, ok := shaper.NextGlyph(); ok; glyph, ok = shaper.NextGlyph() {
+		if glyph.Flags&text.FlagParagraphBreak == 0 {
+			bounds := image.Rect(glyph.X.Floor(), int(glyph.Y)-glyph.Ascent.Ceil(), (glyph.X + glyph.Advance).Ceil(), int(glyph.Y)+glyph.Descent.Ceil())
+			if !bounds.Empty() {
+				if !lineHasGlyph {
+					lineBounds = bounds
+					lineHasGlyph = true
+				} else {
+					lineBounds = lineBounds.Union(bounds)
+				}
+			}
+		}
+		if glyph.Flags&text.FlagLineBreak != 0 || glyph.Flags&text.FlagParagraphBreak != 0 {
+			flushLine()
+		}
+	}
+	flushLine()
+	return rects
+}
+
+func wordHighlightDisplayColor(value string) (color.NRGBA, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "black":
+		return color.NRGBA{A: 255}, true
+	case "blue":
+		return color.NRGBA{B: 255, A: 255}, true
+	case "cyan":
+		return color.NRGBA{G: 255, B: 255, A: 255}, true
+	case "darkblue":
+		return color.NRGBA{B: 128, A: 255}, true
+	case "darkcyan":
+		return color.NRGBA{G: 128, B: 128, A: 255}, true
+	case "darkgray":
+		return color.NRGBA{R: 128, G: 128, B: 128, A: 255}, true
+	case "darkgreen":
+		return color.NRGBA{G: 128, A: 255}, true
+	case "darkmagenta":
+		return color.NRGBA{R: 128, B: 128, A: 255}, true
+	case "darkred":
+		return color.NRGBA{R: 128, A: 255}, true
+	case "darkyellow":
+		return color.NRGBA{R: 128, G: 128, A: 255}, true
+	case "green":
+		return color.NRGBA{G: 255, A: 255}, true
+	case "lightgray":
+		return color.NRGBA{R: 192, G: 192, B: 192, A: 255}, true
+	case "magenta":
+		return color.NRGBA{R: 255, B: 255, A: 255}, true
+	case "red":
+		return color.NRGBA{R: 255, A: 255}, true
+	case "white":
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, true
+	case "yellow":
+		return color.NRGBA{R: 255, G: 255, A: 255}, true
+	default:
+		return color.NRGBA{}, false
+	}
 }
 
 func wordParagraphAlignment(alignment document.WordAlignment) text.Alignment {

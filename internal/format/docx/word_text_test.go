@@ -32,6 +32,45 @@ func requireWordTextEditor(t *testing.T, doc *Document) document.WordTextEditor 
 	return editor
 }
 
+type wordTextFontSizeEditor interface {
+	SetTextRunFontSize(runID string, points float64) error
+}
+
+type wordTextFontFamilyEditor interface {
+	SetTextRunFontFamily(runID, family string) error
+}
+
+type wordTextRangeEditor interface {
+	ReplaceTextRange(runID string, start, end int, replacement string) error
+}
+
+func requireWordTextRangeEditor(t *testing.T, doc *Document) wordTextRangeEditor {
+	t.Helper()
+	editor, ok := any(doc).(wordTextRangeEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose safe Word text-range replacement")
+	}
+	return editor
+}
+
+func requireWordTextFontSizeEditor(t *testing.T, doc *Document) wordTextFontSizeEditor {
+	t.Helper()
+	editor, ok := any(doc).(wordTextFontSizeEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose safe Word font-size editing")
+	}
+	return editor
+}
+
+func requireWordTextFontFamilyEditor(t *testing.T, doc *Document) wordTextFontFamilyEditor {
+	t.Helper()
+	editor, ok := any(doc).(wordTextFontFamilyEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose safe Word font-family editing")
+	}
+	return editor
+}
+
 func requireWordHistory(t *testing.T, doc *Document) document.WordHistory {
 	t.Helper()
 	history, ok := any(doc).(document.WordHistory)
@@ -70,6 +109,48 @@ func requireWordParagraphJoiner(t *testing.T, doc *Document) document.WordParagr
 		t.Fatal("DOCX adapter does not expose paragraph joining at text boundaries")
 	}
 	return joiner
+}
+
+func TestReplaceWordTextRangeUsesRuneOffsetsAndPreservesRunFormatting(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	paragraph := doc.WordBlocks()[0].Paragraph
+	firstRun := paragraph.Inlines[0].Text
+	secondRun := paragraph.Inlines[1].Text
+	before := append([]byte(nil), doc.parts[doc.documentIdx].data...)
+
+	if err := requireWordTextRangeEditor(t, doc).ReplaceTextRange(firstRun.ID, 1, 3, "🌺&"); err != nil {
+		t.Fatal(err)
+	}
+	blocks := doc.WordBlocks()
+	got := blocks[0].Paragraph.Inlines
+	if got[0].Text.Text != "b🌺&d" || !got[0].Text.Style.Bold || got[1].Text.ID != secondRun.ID || got[1].Text.Text != " normal" {
+		t.Fatalf("range replacement changed run contents or formatting unexpectedly: %#v", got)
+	}
+	if bytes.Equal(before, doc.parts[doc.documentIdx].data) {
+		t.Fatal("range replacement did not update word/document.xml")
+	}
+	changed := append([]byte(nil), doc.parts[doc.documentIdx].data...)
+	if err := requireWordTextRangeEditor(t, doc).ReplaceTextRange(firstRun.ID, 0, 99, "invalid"); err == nil {
+		t.Fatal("out-of-range replacement unexpectedly succeeded")
+	}
+	if !bytes.Equal(changed, doc.parts[doc.documentIdx].data) {
+		t.Fatal("rejected out-of-range replacement mutated word/document.xml")
+	}
+
+	snapshot, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenSnapshot(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	reopenedRuns := reopened.WordBlocks()[0].Paragraph.Inlines
+	if reopenedRuns[0].Text.Text != "b🌺&d" || !reopenedRuns[0].Text.Style.Bold || reopenedRuns[1].Text.Text != " normal" {
+		t.Fatalf("range replacement did not survive save/reopen: %#v", reopenedRuns)
+	}
 }
 
 func TestJoinParagraphPreviousPreservesFormattingImageAndHistory(t *testing.T) {
@@ -671,6 +752,234 @@ func TestTextFormatPatchKeepsUnknownRunProperties(t *testing.T) {
 	assertPackagePartsEqual(t, originalPackage, output)
 }
 
+func TestSetTextRunHighlightWritesStandardColorAndCanClearIt(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	originalPackage, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := findRunByText(t, doc.WordBlocks(), "bold")
+	editor := requireWordTextEditor(t, doc)
+	yellow := "yellow"
+	if err := editor.SetTextRunStyle(runID, document.WordTextFormatPatch{Highlight: &yellow}); err != nil {
+		t.Fatal(err)
+	}
+	style := doc.WordBlocks()[0].Paragraph.Inlines[0].Text.Style
+	if style.Highlight != "yellow" || !style.Bold || style.FontColor != "AABBCC" {
+		t.Fatalf("highlight update = %#v; want yellow highlight and preserved bold/font color", style)
+	}
+	snapshot, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentXML := readZipPart(t, snapshot, "word/document.xml")
+	if !bytes.Contains(documentXML, []byte(`<w:highlight w:val="yellow"/>`)) {
+		t.Fatalf("highlight color was not written: %s", documentXML)
+	}
+	output := filepath.Join(t.TempDir(), "highlight.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	reopenedStyle := reopened.WordBlocks()[0].Paragraph.Inlines[0].Text.Style
+	if reopenedStyle.Highlight != "yellow" || !reopenedStyle.Bold || reopenedStyle.FontColor != "AABBCC" {
+		t.Fatalf("saved run style = %#v; want yellow highlight with existing properties", reopenedStyle)
+	}
+	assertPackagePartsEqual(t, originalPackage, output)
+	none := ""
+	if err := requireWordTextEditor(t, reopened).SetTextRunStyle(runID, document.WordTextFormatPatch{Highlight: &none}); err != nil {
+		t.Fatal(err)
+	}
+	style = reopened.WordBlocks()[0].Paragraph.Inlines[0].Text.Style
+	if style.Highlight != "" || !style.Bold || style.FontColor != "AABBCC" {
+		t.Fatalf("clearing highlight changed unrelated style: %#v", style)
+	}
+	snapshot, err = reopened.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentXML = readZipPart(t, snapshot, "word/document.xml")
+	if bytes.Contains(documentXML, []byte("<w:highlight")) {
+		t.Fatalf("clearing highlight left a w:highlight property: %s", documentXML)
+	}
+}
+
+func TestSetTextRunHighlightRejectsUnsupportedValues(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	runID, _ := findRunByText(t, doc.WordBlocks(), "bold")
+	for _, value := range []string{"#FFFF00", "themeAccent1", "transparent"} {
+		if err := requireWordTextEditor(t, doc).SetTextRunStyle(runID, document.WordTextFormatPatch{Highlight: &value}); err == nil {
+			t.Errorf("unsupported Word highlight value %q was accepted", value)
+		}
+		if doc.Dirty() {
+			t.Errorf("unsupported highlight value %q dirtied the document", value)
+		}
+	}
+}
+
+func TestSetTextRunFontSizeRoundTripsAndPreservesOtherRunProperties(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	originalPackage, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := findRunByText(t, doc.WordBlocks(), "bold")
+	if err := requireWordTextFontSizeEditor(t, doc).SetTextRunFontSize(runID, 14); err != nil {
+		t.Fatal(err)
+	}
+	style := doc.WordBlocks()[0].Paragraph.Inlines[0].Text.Style
+	if style.FontSize != 14 || !style.Bold || style.FontColor != "AABBCC" {
+		t.Fatalf("updated run style = %#v; want 14pt while preserving bold and font color", style)
+	}
+	if got := doc.WordBlocks()[0].Paragraph.Inlines[1].Text.Style.FontSize; got != 0 {
+		t.Fatalf("untouched run font size = %g; want no explicit size", got)
+	}
+	snapshot, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentXML := readZipPart(t, snapshot, "word/document.xml")
+	for _, preserved := range [][]byte{[]byte(`w:val="28"`), []byte("w:vanish"), []byte(`w:ascii="Aptos"`), []byte("w:keepNext")} {
+		if !bytes.Contains(documentXML, preserved) {
+			t.Errorf("font-size edit did not write or preserve %s: %s", preserved, documentXML)
+		}
+	}
+	output := filepath.Join(t.TempDir(), "font-size.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	reopenedStyle := reopened.WordBlocks()[0].Paragraph.Inlines[0].Text.Style
+	if reopenedStyle.FontSize != 14 || !reopenedStyle.Bold || reopenedStyle.FontColor != "AABBCC" {
+		t.Fatalf("saved run style = %#v; want 14pt with preserved existing style", reopenedStyle)
+	}
+	assertPackagePartsEqual(t, originalPackage, output)
+}
+
+func TestSetTextRunFontFamilyRoundTripsAndPreservesOtherRunProperties(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	originalPackage, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := findRunByText(t, doc.WordBlocks(), "bold")
+	const family = "Noto Sans CJK SC"
+	if err := requireWordTextFontFamilyEditor(t, doc).SetTextRunFontFamily(runID, family); err != nil {
+		t.Fatal(err)
+	}
+	style := doc.WordBlocks()[0].Paragraph.Inlines[0].Text.Style
+	if style.FontFamily != family || !style.Bold || style.FontColor != "AABBCC" {
+		t.Fatalf("updated run style = %#v; want font family %q while preserving bold and font color", style, family)
+	}
+	snapshot, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentXML := readZipPart(t, snapshot, "word/document.xml")
+	for _, preserved := range [][]byte{
+		[]byte(`w:ascii="Noto Sans CJK SC"`),
+		[]byte(`w:hAnsi="Noto Sans CJK SC"`),
+		[]byte(`w:eastAsia="Noto Sans CJK SC"`),
+		[]byte(`w:cs="Noto Sans CJK SC"`),
+		[]byte("w:vanish"),
+		[]byte("w:keepNext"),
+	} {
+		if !bytes.Contains(documentXML, preserved) {
+			t.Errorf("font-family edit did not write or preserve %s: %s", preserved, documentXML)
+		}
+	}
+	output := filepath.Join(t.TempDir(), "font-family.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	reopenedStyle := reopened.WordBlocks()[0].Paragraph.Inlines[0].Text.Style
+	if reopenedStyle.FontFamily != family || !reopenedStyle.Bold || reopenedStyle.FontColor != "AABBCC" {
+		t.Fatalf("saved run style = %#v; want font family %q with existing style", reopenedStyle, family)
+	}
+	assertPackagePartsEqual(t, originalPackage, output)
+}
+
+func TestSetTextRunFontFamilyAddsFontPropertiesAndEscapesValues(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:rPr><w:i/><w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="eastAsia" w:hint="eastAsia"/></w:rPr><w:t>sample</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t> no fonts</w:t></w:r></w:p></w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	firstRunID := blocks[0].Paragraph.Inlines[0].Text.ID
+	secondRunID := blocks[0].Paragraph.Inlines[1].Text.ID
+	const family = `A&B "Quoted"`
+	editor := requireWordTextFontFamilyEditor(t, doc)
+	if err := editor.SetTextRunFontFamily(firstRunID, family); err != nil {
+		t.Fatal(err)
+	}
+	if err := editor.SetTextRunFontFamily(secondRunID, "Noto Sans CJK SC"); err != nil {
+		t.Fatal(err)
+	}
+	updated := doc.WordBlocks()[0].Paragraph.Inlines
+	if got := updated[0].Text.Style.FontFamily; got != family || !updated[0].Text.Style.Italic {
+		t.Fatalf("font-property update = %#v; want escaped family and preserved italic", updated[0].Text.Style)
+	}
+	if got := updated[1].Text.Style.FontFamily; got != "Noto Sans CJK SC" || !updated[1].Text.Style.Bold {
+		t.Fatalf("missing-font-property update = %#v; want family and preserved bold", updated[1].Text.Style)
+	}
+	snapshot, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputXML := readZipPart(t, snapshot, "word/document.xml")
+	for _, want := range [][]byte{
+		[]byte(`w:ascii="A&amp;B &quot;Quoted&quot;"`),
+		[]byte(`w:eastAsia="A&amp;B &quot;Quoted&quot;"`),
+		[]byte(`w:hint="eastAsia"`),
+		[]byte(`w:ascii="Noto Sans CJK SC"`),
+		[]byte("w:i"),
+		[]byte("w:b"),
+	} {
+		if !bytes.Contains(outputXML, want) {
+			t.Errorf("font-family XML missing %s: %s", want, outputXML)
+		}
+	}
+	for _, removed := range [][]byte{[]byte("w:asciiTheme"), []byte("w:eastAsiaTheme")} {
+		if bytes.Contains(outputXML, removed) {
+			t.Errorf("font-family override retained conflicting theme property %s: %s", removed, outputXML)
+		}
+	}
+}
+
+func TestSetTextRunFontFamilyRejectsInvalidNamesWithoutDirtyingDocument(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	runID, _ := findRunByText(t, doc.WordBlocks(), "bold")
+	if doc.Dirty() {
+		t.Fatal("fixture should begin clean")
+	}
+	for _, family := range []string{"", " \t ", strings.Repeat("x", 129), "bad\nfont"} {
+		if err := requireWordTextFontFamilyEditor(t, doc).SetTextRunFontFamily(runID, family); err == nil {
+			t.Errorf("font family %q was accepted", family)
+		}
+		if doc.Dirty() {
+			t.Errorf("invalid font family %q dirtied the document", family)
+		}
+	}
+}
+
 func TestParagraphAlignmentWritesSupportedValuesAndKeepsOtherProperties(t *testing.T) {
 	doc := textEditingFixture(t)
 	defer doc.Close()
@@ -761,7 +1070,7 @@ func TestWordTextStyleAndAlignmentCanBeInsertedWhenPropertiesAreAbsent(t *testin
 }
 
 func TestWordParagraphIndentsRoundTripAndPreserveOtherParagraphProperties(t *testing.T) {
-	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:keepNext/><w:ind w:firstLine="360" w:left="720" w:right="180"/></w:pPr><w:r><w:t>adjusted</w:t></w:r></w:p><w:p><w:r><w:t>untouched</w:t></w:r></w:p></w:body></w:document>`
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:keepNext/><w:ind w:firstLine="360" w:hanging="120" w:left="720" w:right="180"/></w:pPr><w:r><w:t>adjusted</w:t></w:r></w:p><w:p><w:r><w:t>untouched</w:t></w:r></w:p></w:body></w:document>`
 	doc := projectionFixture(t, documentXML, "", nil)
 	defer doc.Close()
 	paragraph := doc.WordBlocks()[0].Paragraph
@@ -800,10 +1109,200 @@ func TestWordParagraphIndentsRoundTripAndPreserveOtherParagraphProperties(t *tes
 		t.Fatal(err)
 	}
 	savedXML := readZipPart(t, snapshot, "word/document.xml")
-	for _, preserved := range [][]byte{[]byte(`<w:keepNext/>`), []byte(`w:firstLine="360"`)} {
+	for _, preserved := range [][]byte{[]byte(`<w:keepNext/>`), []byte(`w:firstLine="360"`), []byte(`w:hanging="120"`)} {
 		if !bytes.Contains(savedXML, preserved) {
 			t.Errorf("indent edit did not preserve %s in document.xml: %s", preserved, savedXML)
 		}
+	}
+}
+
+func TestWordParagraphListsRoundTripContinuityAndPreserveOtherPackageParts(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>first</w:t></w:r></w:p><w:p><w:r><w:t>second</w:t></w:r></w:p><w:p><w:r><w:t>between</w:t></w:r></w:p><w:p><w:r><w:t>bullet</w:t></w:r></w:p><w:p><w:r><w:t>restart</w:t></w:r></w:p></w:body></w:document>`
+	preservedPart := []byte("keep me byte-for-byte")
+	doc := projectionFixture(t, documentXML, "", map[string][]byte{"custom/data.xml": preservedPart})
+	defer doc.Close()
+	listEditor, ok := any(doc).(document.WordParagraphListEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose paragraph list editing")
+	}
+	paragraphs := make([]document.WordParagraph, 0, 5)
+	for _, block := range doc.WordBlocks() {
+		paragraphs = append(paragraphs, *block.Paragraph)
+	}
+	if err := listEditor.SetParagraphList(paragraphs[0].ID, document.WordListNumbered); err != nil {
+		t.Fatal(err)
+	}
+	paragraphs = paragraphs[:0]
+	for _, block := range doc.WordBlocks() {
+		paragraphs = append(paragraphs, *block.Paragraph)
+	}
+	if err := listEditor.SetParagraphList(paragraphs[1].ID, document.WordListNumbered); err != nil {
+		t.Fatal(err)
+	}
+	paragraphs = paragraphs[:0]
+	for _, block := range doc.WordBlocks() {
+		paragraphs = append(paragraphs, *block.Paragraph)
+	}
+	if err := listEditor.SetParagraphList(paragraphs[3].ID, document.WordListBullet); err != nil {
+		t.Fatal(err)
+	}
+	paragraphs = paragraphs[:0]
+	for _, block := range doc.WordBlocks() {
+		paragraphs = append(paragraphs, *block.Paragraph)
+	}
+	if err := listEditor.SetParagraphList(paragraphs[4].ID, document.WordListNumbered); err != nil {
+		t.Fatal(err)
+	}
+	assertMarkers := func(blocks []document.WordBlock) {
+		t.Helper()
+		want := []struct {
+			kind   document.WordListKind
+			marker string
+		}{{document.WordListNumbered, "1."}, {document.WordListNumbered, "2."}, {document.WordListNone, ""}, {document.WordListBullet, "•"}, {document.WordListNumbered, "1."}}
+		for index, expected := range want {
+			got := blocks[index].Paragraph
+			if got.ListKind != expected.kind || got.ListMarker != expected.marker || got.ListLevel != 0 {
+				t.Errorf("paragraph %d list = %q/%q level %d; want %q/%q level 0", index, got.ListKind, got.ListMarker, got.ListLevel, expected.kind, expected.marker)
+			}
+		}
+	}
+	assertMarkers(doc.WordBlocks())
+	history, ok := any(doc).(document.WordHistory)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose Word history")
+	}
+	if undone, err := history.Undo(); err != nil || !undone {
+		t.Fatalf("undo paragraph list = %v, %v", undone, err)
+	}
+	if got := doc.WordBlocks()[4].Paragraph.ListKind; got != document.WordListNone {
+		t.Fatalf("undo list kind = %q; want none", got)
+	}
+	if redone, err := history.Redo(); err != nil || !redone {
+		t.Fatalf("redo paragraph list = %v, %v", redone, err)
+	}
+	assertMarkers(doc.WordBlocks())
+
+	output := filepath.Join(t.TempDir(), "lists.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	assertMarkers(reopened.WordBlocks())
+	snapshot, err := reopened.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(readZipPart(t, snapshot, "word/document.xml"), []byte(`<w:keepNext/>`)) {
+		t.Fatal("list operation removed the untouched keepNext paragraph property")
+	}
+	if !bytes.Contains(readZipPart(t, snapshot, "word/_rels/document.xml.rels"), []byte("/numbering")) {
+		t.Fatal("numbering relationship was not saved")
+	}
+	if !bytes.Contains(readZipPart(t, snapshot, "[Content_Types].xml"), []byte("word/numbering.xml")) {
+		t.Fatal("numbering content type was not saved")
+	}
+	if got := readZipPart(t, snapshot, "custom/data.xml"); !bytes.Equal(got, preservedPart) {
+		t.Fatalf("unrelated package part changed from %q to %q", preservedPart, got)
+	}
+}
+
+func TestNestedWordNumberingCanChangeLevelAndRoundTrip(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>nested</w:t></w:r></w:p></w:body></w:document>`
+	relationships := `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>`
+	numbering := []byte(`<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2."/></w:lvl></w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="3"/></w:num></w:numbering>`)
+	doc := projectionFixture(t, documentXML, relationships, map[string][]byte{"word/numbering.xml": numbering})
+	defer doc.Close()
+	paragraph := doc.WordBlocks()[0].Paragraph
+	if paragraph.ListKind != document.WordListNumbered || paragraph.ListLevel != 1 || paragraph.ListMaxLevel != 1 || paragraph.ListMarker != "1.1." {
+		t.Fatalf("nested list projection = %q level %d max %d marker %q; want editable level 1 of 1, marker 1.1.", paragraph.ListKind, paragraph.ListLevel, paragraph.ListMaxLevel, paragraph.ListMarker)
+	}
+	listEditor, ok := any(doc).(document.WordParagraphListEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose paragraph list level editing")
+	}
+	if err := listEditor.SetParagraphListLevel(paragraph.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.WordBlocks()[0].Paragraph; got.ListLevel != 0 || got.ListMarker != "1." {
+		t.Fatalf("outdented numbered list = level %d marker %q; want level 0 marker 1.", got.ListLevel, got.ListMarker)
+	}
+	if err := listEditor.SetParagraphListLevel(paragraph.ID, 2); err == nil {
+		t.Fatal("level outside the existing abstract numbering definition should be rejected")
+	}
+	output := filepath.Join(t.TempDir(), "nested-list.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got := reopened.WordBlocks()[0].Paragraph; got.ListKind != document.WordListNumbered || got.ListLevel != 0 || got.ListMarker != "1." {
+		t.Fatalf("saved/reopened list = %q level %d marker %q; want decimal level 0 marker 1.", got.ListKind, got.ListLevel, got.ListMarker)
+	}
+}
+
+func TestNestedWordNumberingRestartsAfterParentLevel(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>one</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>one one</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>one two</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>two</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>two one</w:t></w:r></w:p></w:body></w:document>`
+	relationships := `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>`
+	numbering := []byte(`<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2."/></w:lvl></w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="3"/></w:num></w:numbering>`)
+	doc := projectionFixture(t, documentXML, relationships, map[string][]byte{"word/numbering.xml": numbering})
+	defer doc.Close()
+	want := []string{"1.", "1.1.", "1.2.", "2.", "2.1."}
+	for index, block := range doc.WordBlocks() {
+		if got := block.Paragraph.ListMarker; got != want[index] {
+			t.Errorf("nested marker %d = %q; want %q", index, got, want[index])
+		}
+	}
+}
+
+func TestCustomWordNumberingRestartRemainsReadOnly(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>custom restart</w:t></w:r></w:p></w:body></w:document>`
+	relationships := `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>`
+	numbering := []byte(`<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="3"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="8"/></w:lvlOverride></w:num></w:numbering>`)
+	doc := projectionFixture(t, documentXML, relationships, map[string][]byte{"word/numbering.xml": numbering})
+	defer doc.Close()
+	paragraph := doc.WordBlocks()[0].Paragraph
+	if paragraph.ListKind != document.WordListUnsupported {
+		t.Fatalf("custom restart list kind = %q; want read-only unsupported", paragraph.ListKind)
+	}
+	if err := doc.SetParagraphList(paragraph.ID, document.WordListBullet); err == nil {
+		t.Fatal("custom numbering restart should not be overwritten")
+	}
+}
+
+func TestWordParagraphListCanBeRemovedWithoutDroppingOtherProperties(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>remove list</w:t></w:r></w:p></w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	listEditor, ok := any(doc).(document.WordParagraphListEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose paragraph list editing")
+	}
+	paragraph := doc.WordBlocks()[0].Paragraph
+	if err := listEditor.SetParagraphList(paragraph.ID, document.WordListBullet); err != nil {
+		t.Fatal(err)
+	}
+	paragraph = doc.WordBlocks()[0].Paragraph
+	if err := listEditor.SetParagraphList(paragraph.ID, document.WordListNone); err != nil {
+		t.Fatal(err)
+	}
+	got := doc.WordBlocks()[0].Paragraph
+	if got.ListKind != document.WordListNone || got.ListMarker != "" {
+		t.Fatalf("removed list remains projected as %q marker %q", got.ListKind, got.ListMarker)
+	}
+	snapshot, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedXML := readZipPart(t, snapshot, "word/document.xml")
+	if !bytes.Contains(savedXML, []byte(`<w:keepNext/>`)) || bytes.Contains(savedXML, []byte(`<w:numPr`)) {
+		t.Fatalf("remove list changed unrelated paragraph properties: %s", savedXML)
 	}
 }
 
@@ -887,6 +1386,78 @@ func TestNoOpWordTextAndFormattingEditsDoNotCreateHistory(t *testing.T) {
 	if doc.Dirty() || history.CanUndo() {
 		t.Fatalf("no-op edit changed document: dirty=%v canUndo=%v", doc.Dirty(), history.CanUndo())
 	}
+}
+
+func TestWordFormatPainterCopiesSupportedTextAndParagraphFormatting(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+<w:p><w:pPr><w:pStyle w:val="Title"/><w:jc w:val="center"/><w:ind w:left="720" w:right="360"/><w:keepNext/></w:pPr><w:r><w:rPr><w:rStyle w:val="Emphasis"/><w:rFonts w:ascii="Aptos" w:eastAsia="Noto Sans CJK SC"/><w:b/><w:i w:val="0"/><w:u w:val="single"/><w:color w:val="123456"/><w:sz w:val="30"/><w:highlight w:val="yellow"/></w:rPr><w:t>Source</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Normal"/><w:jc w:val="right"/><w:ind w:left="120" w:right="60"/><w:keepNext/><w:spacing w:before="120"/></w:pPr><w:r><w:rPr><w:i/><w:color w:val="ABCDEF"/><w:vanish/></w:rPr><w:t>Target</w:t></w:r></w:p>
+</w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	originalPackage, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := doc.WordBlocks()
+	sourceParagraph, targetParagraph := blocks[0].Paragraph, blocks[1].Paragraph
+	sourceRun := sourceParagraph.Inlines[0].Text
+	targetRun := targetParagraph.Inlines[0].Text
+	targetBefore := *targetRun
+	targetParagraphBefore := *targetParagraph
+	painter, ok := any(doc).(interface {
+		ApplyWordFormatting(sourceRunID, targetRunID string) error
+	})
+	if !ok {
+		t.Fatal("DOCX adapter does not expose format painting")
+	}
+	if err := painter.ApplyWordFormatting(sourceRun.ID, targetRun.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	blocks = doc.WordBlocks()
+	paintedParagraph := blocks[1].Paragraph
+	paintedRun := paintedParagraph.Inlines[0].Text
+	if paintedRun.Text != "Target" || paintedRun.Style != sourceRun.Style {
+		t.Fatalf("painted target text/style = %q/%#v; want unchanged text and source style %#v", paintedRun.Text, paintedRun.Style, sourceRun.Style)
+	}
+	if paintedParagraph.Alignment != sourceParagraph.Alignment || paintedParagraph.LeftIndentEMU != sourceParagraph.LeftIndentEMU || paintedParagraph.RightIndentEMU != sourceParagraph.RightIndentEMU || paintedParagraph.Style != sourceParagraph.Style {
+		t.Fatalf("painted paragraph style = %#v; want source paragraph alignment, style, and indents %#v", paintedParagraph, sourceParagraph)
+	}
+	data := doc.parts[doc.documentIdx].data
+	if !strings.Contains(string(data[doc.wordTextTargets[targetRun.ID].run.start:doc.wordTextTargets[targetRun.ID].run.end]), "w:vanish") {
+		t.Fatal("format painting removed an unsupported target run property")
+	}
+	if !strings.Contains(string(data[doc.wordParagraphTargets[targetParagraph.ID].start:doc.wordParagraphTargets[targetParagraph.ID].end]), `w:spacing w:before="120"`) {
+		t.Fatal("format painting removed an unsupported target paragraph property")
+	}
+
+	history := requireWordHistory(t, doc)
+	if undone, err := history.Undo(); err != nil || !undone {
+		t.Fatalf("undo painted formatting: undone=%v err=%v", undone, err)
+	}
+	blocks = doc.WordBlocks()
+	if got := blocks[1].Paragraph.Inlines[0].Text.Style; got != targetBefore.Style || blocks[1].Paragraph.Alignment != targetParagraphBefore.Alignment {
+		t.Fatalf("undo restored style/alignment = %#v/%q; want %#v/%q", got, blocks[1].Paragraph.Alignment, targetBefore.Style, targetParagraphBefore.Alignment)
+	}
+	if redone, err := history.Redo(); err != nil || !redone {
+		t.Fatalf("redo painted formatting: redone=%v err=%v", redone, err)
+	}
+
+	output := filepath.Join(t.TempDir(), "painted.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got := reopened.WordBlocks()[1].Paragraph.Inlines[0].Text.Style; got != sourceRun.Style {
+		t.Fatalf("reopened painted style = %#v; want %#v", got, sourceRun.Style)
+	}
+	assertPackagePartsEqual(t, originalPackage, output)
 }
 
 func assertPackagePartsEqual(t *testing.T, originalData []byte, savedPath string) {

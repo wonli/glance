@@ -219,6 +219,11 @@ func (a *App) processAsyncResults() {
 					if result.state.wordDeferredToolbarAction == "ruler-indents" {
 						result.state.wordDeferredToolbarAction = ""
 						result.state.wordRulerIndentIntent = nil
+					} else if result.state.wordDeferredToolbarAction == "apply-format-painter" {
+						result.state.wordDeferredToolbarAction = ""
+						result.state.wordFormatPainterSourceRunID = ""
+						result.state.wordFormatPainterTargetRunID = ""
+						result.state.wordFormatPainterTargetParagraphID = ""
 					}
 				} else {
 					result.state.wordRunCommitted[result.runID] = result.runText
@@ -235,6 +240,8 @@ func (a *App) processAsyncResults() {
 				if result.err == nil && result.state.wordFlushRequested {
 					a.startNextWordTextCommit()
 				}
+			} else if result.wordRangeReplacement {
+				a.completeWordRangeReplacement(result)
 			} else if result.err != nil {
 				a.status = wordCommandError(result.operation, result.err)
 			} else if !result.history || result.applied {
@@ -285,6 +292,9 @@ func (a *App) processAsyncResults() {
 			}
 			if result.state.wordFlushRequested && !result.state.formatRunning {
 				a.startNextWordTextCommit()
+			}
+			if activeResult && result.err == nil && !result.state.formatRunning && !result.state.wordFlushRequested {
+				a.maybeAutoSaveWord(result.state)
 			}
 			if a.window != nil {
 				a.window.Invalidate()
@@ -384,6 +394,7 @@ func (a *App) processAsyncResults() {
 				a.pendingCloseTabID = ""
 				a.closeWorkspaceTab(result.tabID)
 			}
+			a.maybeAutoSaveWord(a.documentSessionState)
 		}
 	default:
 	}
@@ -787,7 +798,9 @@ func (a *App) layoutGridRow(gtx layout.Context, row int) layout.Dimensions {
 func (a *App) layoutWord(gtx layout.Context) layout.Dimensions {
 	a.handleWordToolbarEvents(gtx)
 	a.handleWordClipboardEvents(gtx)
-	return a.layoutWordFlow(gtx)
+	dimensions := a.layoutWordFlow(gtx)
+	a.processWordFormatPainterTargetIntent()
+	return dimensions
 }
 
 func (a *App) layoutEditor(gtx layout.Context) layout.Dimensions {

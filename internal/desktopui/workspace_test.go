@@ -338,7 +338,7 @@ func TestSaveActionsLiveInPlusMenuForActiveDocument(t *testing.T) {
 	}
 }
 
-func TestPlusTabKeepsAVisibleLeftGap(t *testing.T) {
+func TestPlusTabMatchesPenDocumentTabSpacing(t *testing.T) {
 	a := New(nil, "")
 	var ops op.Ops
 	gtx := layout.Context{
@@ -347,8 +347,22 @@ func TestPlusTabKeepsAVisibleLeftGap(t *testing.T) {
 		Constraints: layout.Constraints{Max: image.Pt(500, 42)},
 	}
 	dims := a.layoutPlusTab(gtx)
-	if dims.Size != image.Pt(44, int(workspaceTabHeight)) {
-		t.Fatalf("plus tab size=%v; want 44x%v (32px button plus 12px left gap)", dims.Size, workspaceTabHeight)
+	if dims.Size != image.Pt(38, int(workspaceTabHeight)) {
+		t.Fatalf("plus tab size=%v; want 38x%v (32px button plus 6px left gap)", dims.Size, workspaceTabHeight)
+	}
+}
+
+func TestPlusMenuAnchorsAtPenClpgmTabPosition(t *testing.T) {
+	a := New(nil, "")
+	a.clientTitlebar = false
+	a.tabMeta["doc-a"] = workspace.Tab{ID: "doc-a", Position: 0}
+	a.tabMeta["doc-b"] = workspace.Tab{ID: "doc-b", Position: 1}
+	gtx := layout.Context{
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(1440, 900)},
+	}
+	if got := a.plusMenuOffset(gtx); got != 526 {
+		t.Fatalf("plus menu x=%d, want Pen Clpgm x=526", got)
 	}
 }
 

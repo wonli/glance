@@ -24,22 +24,28 @@ type modalDialogAction struct {
 
 // modalDialog is a reusable, stateful modal surface for app-level prompts.
 type modalDialog struct {
-	Visible   bool
-	Title     string
-	Message   string
-	Actions   []modalDialogAction
-	Input     widget.Editor
-	InputHint string
-	HasInput  bool
-	scrim     widget.Clickable
-	OnAction  func(string)
+	Visible         bool
+	Title           string
+	Message         string
+	Actions         []modalDialogAction
+	Input           widget.Editor
+	SecondInput     widget.Editor
+	InputHint       string
+	SecondInputHint string
+	HasInput        bool
+	HasSecondInput  bool
+	scrim           widget.Clickable
+	OnAction        func(string)
 }
 
 func (d *modalDialog) Show(title, message string, onAction func(string), actions ...modalDialogActionSpec) {
 	d.Title, d.Message, d.Visible = title, message, true
 	d.HasInput = false
+	d.HasSecondInput = false
 	d.InputHint = ""
+	d.SecondInputHint = ""
 	d.Input.SetText("")
+	d.SecondInput.SetText("")
 	d.OnAction = onAction
 	d.Actions = make([]modalDialogAction, len(actions))
 	for i, action := range actions {
@@ -56,6 +62,15 @@ func (d *modalDialog) ShowInput(title, message, initial, hint string, onAction f
 	d.Input.SetText(initial)
 }
 
+func (d *modalDialog) ShowDualInput(title, message, initial, hint, secondInitial, secondHint string, onAction func(string), actions ...modalDialogActionSpec) {
+	d.ShowInput(title, message, initial, hint, onAction, actions...)
+	d.HasSecondInput = true
+	d.SecondInputHint = secondHint
+	d.SecondInput.SingleLine = true
+	d.SecondInput.Submit = true
+	d.SecondInput.SetText(secondInitial)
+}
+
 func (d *modalDialog) Hide() { d.Visible = false }
 
 func (a *App) showModalDialog(title, message string, onAction func(string), actions ...modalDialogActionSpec) {
@@ -68,6 +83,13 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 	}
 	if a.modal.HasInput {
 		for ev, ok := a.modal.Input.Update(gtx); ok; ev, ok = a.modal.Input.Update(gtx) {
+			if _, submit := ev.(widget.SubmitEvent); submit && a.modal.OnAction != nil {
+				a.modal.OnAction("confirm")
+			}
+		}
+	}
+	if a.modal.HasSecondInput {
+		for ev, ok := a.modal.SecondInput.Update(gtx); ok; ev, ok = a.modal.SecondInput.Update(gtx) {
 			if _, submit := ev.(widget.SubmitEvent); submit && a.modal.OnAction != nil {
 				a.modal.OnAction("confirm")
 			}
@@ -101,6 +123,13 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layoutFormulaEditorField(gtx, a.theme, &a.modal.Input, a.modal.InputHint, 0)
+						})
+					}))
+				}
+				if a.modal.HasSecondInput {
+					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Bottom: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layoutFormulaEditorField(gtx, a.theme, &a.modal.SecondInput, a.modal.SecondInputHint, 0)
 						})
 					}))
 				}

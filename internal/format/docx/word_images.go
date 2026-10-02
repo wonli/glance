@@ -65,7 +65,7 @@ func (d *Document) SetInlineImageRotation(imageID string, degrees float64) error
 	if err != nil {
 		return err
 	}
-	return d.commitWordImagePackageChange(map[string]*part{"word/document.xml": d.partWithData("word/document.xml", patched)})
+	return d.commitWordPackageChange(map[string]*part{"word/document.xml": d.partWithData("word/document.xml", patched)})
 }
 
 func (d *Document) InsertInlineImage(paragraphID, afterInlineID, mediaType string, data []byte) (string, error) {
@@ -116,7 +116,7 @@ func (d *Document) InsertInlineImage(paragraphID, afterInlineID, mediaType strin
 		"[Content_Types].xml":          contentTypePart,
 		mediaName:                      &part{header: zip.FileHeader{Name: mediaName, Method: zip.Deflate}, data: append([]byte(nil), data...)},
 	}
-	if err := d.commitWordImagePackageChange(changes); err != nil {
+	if err := d.commitWordPackageChange(changes); err != nil {
 		return "", err
 	}
 	return imageID, nil
@@ -164,7 +164,7 @@ func (d *Document) ReplaceInlineImage(imageID, mediaType string, data []byte) er
 	if err := d.pruneUnusedImageRelationship(changes, target.relationshipID); err != nil {
 		return err
 	}
-	return d.commitWordImagePackageChange(changes)
+	return d.commitWordPackageChange(changes)
 }
 
 func (d *Document) MoveInlineImage(imageID, targetParagraphID, afterInlineID string) error {
@@ -208,7 +208,7 @@ func (d *Document) MoveInlineImage(imageID, targetParagraphID, afterInlineID str
 	if err != nil {
 		return err
 	}
-	return d.commitWordImagePackageChange(map[string]*part{"word/document.xml": d.partWithData("word/document.xml", patched)})
+	return d.commitWordPackageChange(map[string]*part{"word/document.xml": d.partWithData("word/document.xml", patched)})
 }
 
 func (d *Document) ResizeInlineImage(imageID string, widthEMU int64) error {
@@ -250,7 +250,7 @@ func (d *Document) ResizeInlineImage(imageID string, widthEMU int64) error {
 	if err != nil {
 		return err
 	}
-	return d.commitWordImagePackageChange(map[string]*part{"word/document.xml": d.partWithData("word/document.xml", patched)})
+	return d.commitWordPackageChange(map[string]*part{"word/document.xml": d.partWithData("word/document.xml", patched)})
 }
 
 func (d *Document) DeleteInlineImage(imageID string) error {
@@ -272,7 +272,7 @@ func (d *Document) DeleteInlineImage(imageID string) error {
 	if err := d.pruneUnusedImageRelationship(changes, target.relationshipID); err != nil {
 		return err
 	}
-	return d.commitWordImagePackageChange(changes)
+	return d.commitWordPackageChange(changes)
 }
 
 func validateWordImage(data []byte, mediaType string) (image.Config, string, string, error) {
@@ -515,7 +515,7 @@ func (d *Document) partWithData(name string, data []byte) *part {
 	return &value
 }
 
-func (d *Document) commitWordImagePackageChange(changes map[string]*part) error {
+func (d *Document) commitWordPackageChange(changes map[string]*part) error {
 	names := make([]string, 0, len(changes))
 	for name := range changes {
 		names = append(names, name)
@@ -544,14 +544,14 @@ func (d *Document) commitWordImagePackageChange(changes map[string]*part) error 
 	d.documentIdx = packagePartIndex(updated, "word/document.xml")
 	if d.documentIdx < 0 {
 		d.parts, d.documentIdx = previousParts, previousIndex
-		return errors.New("DOCX image operation removed word/document.xml")
+		return errors.New("DOCX package operation removed word/document.xml")
 	}
 	if err := d.reparse(); err != nil {
 		d.parts, d.documentIdx = previousParts, previousIndex
 		if restoreErr := d.reparse(); restoreErr != nil {
-			return fmt.Errorf("image edit failed (%v), and old document reparse failed (%v)", err, restoreErr)
+			return fmt.Errorf("package edit failed (%v), and old document reparse failed (%v)", err, restoreErr)
 		}
-		return fmt.Errorf("reparse DOCX image edit: %w", err)
+		return fmt.Errorf("reparse DOCX package edit: %w", err)
 	}
 	d.recordWordHistoryLocked(before)
 	return nil

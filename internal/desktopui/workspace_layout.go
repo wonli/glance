@@ -26,7 +26,8 @@ import (
 const (
 	workspaceTabTopGap        unit.Dp = 5
 	workspaceTabHeight        unit.Dp = 37
-	workspaceDocumentTabWidth unit.Dp = 224
+	workspaceDocumentTabGap   unit.Dp = 6
+	workspaceDocumentTabWidth unit.Dp = 190
 	workspaceTabStripSize     unit.Dp = workspaceTabTopGap + workspaceTabHeight
 )
 
@@ -70,14 +71,23 @@ func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Di
 		// ribbon seam).
 		gtx.Constraints.Min.X = gtx.Constraints.Max.X
 		return a.workspaceTabsList.Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
-			if index == 0 {
-				return a.layoutRecentTab(gtx)
-			}
-			if index == len(ids)+1 {
-				return a.layoutPlusTab(gtx)
-			}
-			return a.layoutDocumentTab(gtx, ids[index-1])
+			return a.layoutWorkspaceTabListItem(gtx, ids, index)
 		})
+	})
+}
+
+func (a *App) layoutWorkspaceTabListItem(gtx layout.Context, ids []string, index int) layout.Dimensions {
+	if index == 0 {
+		return a.layoutRecentTab(gtx)
+	}
+	if index == len(ids)+1 {
+		return a.layoutPlusTab(gtx)
+	}
+	if index < 1 || index > len(ids) {
+		return layout.Dimensions{}
+	}
+	return layout.Inset{Left: workspaceDocumentTabGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return a.layoutDocumentTab(gtx, ids[index-1])
 	})
 }
 
@@ -177,7 +187,7 @@ func (a *App) layoutPlusTab(gtx layout.Context) layout.Dimensions {
 	if a.newButton.Clicked(gtx) {
 		a.showNewMenu = !a.showNewMenu
 	}
-	return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: workspaceDocumentTabGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return a.paintTab(gtx, &a.newButton, "+", false)
 	})
 }
@@ -198,10 +208,10 @@ func (a *App) plusMenuOffset(gtx layout.Context) int {
 		if index == 0 {
 			x += gtx.Dp(unit.Dp(112))
 		} else {
-			x += gtx.Dp(workspaceDocumentTabWidth)
+			x += gtx.Dp(workspaceDocumentTabWidth + workspaceDocumentTabGap)
 		}
 	}
-	x += gtx.Dp(unit.Dp(28))
+	x += gtx.Dp(unit.Dp(16)) + gtx.Dp(workspaceDocumentTabGap)
 	if a.clientTitlebar {
 		if runtime.GOOS == "darwin" {
 			x += gtx.Dp(unit.Dp(84))
@@ -380,6 +390,12 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 
 func (a *App) activateRecent() {
 	a.persistActiveSession()
+	if a.activeTabID != "" && a.activeTabID != workspace.RecentTabID && a.documentSessionState != nil {
+		if a.sessions == nil {
+			a.sessions = make(map[string]*documentSessionState)
+		}
+		a.sessions[a.activeTabID] = a.documentSessionState
+	}
 	a.activeTabID = workspace.RecentTabID
 	if a.collection != nil {
 		_ = a.collection.Activate(workspace.RecentTabID)

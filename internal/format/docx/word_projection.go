@@ -19,6 +19,7 @@ type wordXMLNode struct {
 	attrs        []xml.Attr
 	text         string
 	children     []*wordXMLNode
+	parent       *wordXMLNode
 	start        int
 	openEnd      int
 	contentStart int
@@ -28,9 +29,20 @@ type wordXMLNode struct {
 }
 
 type wordRelationship struct {
-	target   string
-	image    bool
-	external bool
+	target    string
+	image     bool
+	numbering bool
+	external  bool
+}
+
+type wordNumberingLevel struct {
+	kind  document.WordListKind
+	text  string
+	start int
+}
+
+type wordNumberingDefinition struct {
+	levels map[int]wordNumberingLevel
 }
 
 type wordProjection struct {
@@ -124,6 +136,7 @@ func parseWordXML(data []byte) (*wordXMLNode, error) {
 				root = node
 			} else {
 				parent := stack[len(stack)-1]
+				node.parent = parent
 				parent.children = append(parent.children, node)
 			}
 			stack = append(stack, node)
@@ -168,6 +181,7 @@ func projectWordDocument(parts []part, documentIdx int) (wordProjection, error) 
 	}
 	relationships := readDocumentRelationships(parts, partIndexes)
 	contentTypes := readContentTypes(parts, partIndexes)
+	numbering := readWordNumbering(parts, partIndexes, relationships)
 	documentRoot, err := parseWordXML(parts[documentIdx].data)
 	if err != nil {
 		return wordProjection{}, fmt.Errorf("parse word/document.xml: %w", err)
@@ -178,6 +192,7 @@ func projectWordDocument(parts []part, documentIdx int) (wordProjection, error) 
 	}
 	projector := wordProjector{
 		parts: parts, partIndexes: partIndexes, relationships: relationships, contentTypes: contentTypes,
+		numbering:  numbering,
 		imageParts: make(map[string]int), imageTargets: make(map[string]wordImageTarget), inlineTargets: make(map[string]wordInlineTarget),
 		paragraphInlines: make(map[string][]string), textTargets: make(map[string]wordTextTarget), paragraphTargets: make(map[string]*wordXMLNode), seenImageIDs: make(map[string]bool),
 	}
@@ -206,6 +221,7 @@ type wordProjector struct {
 	partIndexes      map[string]int
 	relationships    map[string]wordRelationship
 	contentTypes     wordContentTypes
+	numbering        map[string]wordNumberingDefinition
 	imageParts       map[string]int
 	imageTargets     map[string]wordImageTarget
 	inlineTargets    map[string]wordInlineTarget
@@ -217,6 +233,8 @@ type wordProjector struct {
 
 func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordParagraph {
 	paragraph := document.WordParagraph{ID: id, Alignment: document.WordAlignDefault}
+	paragraph.ListKind, paragraph.ListLevel, paragraph.ListMarker = p.paragraphList(node)
+	paragraph.ListMaxLevel = p.paragraphListMaxLevel(node, paragraph.ListKind)
 	p.paragraphTargets[id] = node
 	if properties := firstChild(node, "pPr"); properties != nil {
 		if style := firstChild(properties, "pStyle"); style != nil {
@@ -284,6 +302,137 @@ func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordPar
 		}
 	}
 	return paragraph
+}
+
+func (p *wordProjector) paragraphList(node *wordXMLNode) (document.WordListKind, int, string) {
+	properties := firstChild(node, "pPr")
+	numPr := firstChild(properties, "numPr")
+	if numPr == nil {
+		return document.WordListNone, 0, ""
+	}
+	numID := attrValue(firstChild(numPr, "numId"), "val")
+	if numID == "" {
+		return document.WordListUnsupported, 0, ""
+	}
+	level := 0
+	if value := attrValue(firstChild(numPr, "ilvl"), "val"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 0 || parsed > 8 {
+			return document.WordListUnsupported, 0, ""
+		}
+		level = parsed
+	}
+	definition, ok := p.numbering[numID]
+	if !ok {
+		return document.WordListUnsupported, level, ""
+	}
+	numberingLevel, ok := definition.levels[level]
+	if !ok || numberingLevel.kind == document.WordListNone {
+		return document.WordListUnsupported, level, ""
+	}
+	for parentLevel := 0; parentLevel < level; parentLevel++ {
+		parentDefinition, exists := definition.levels[parentLevel]
+		if !exists || parentDefinition.kind != numberingLevel.kind {
+			return document.WordListUnsupported, level, ""
+		}
+	}
+	if numberingLevel.kind == document.WordListBullet {
+		marker := strings.TrimSpace(numberingLevel.text)
+		if marker == "" || strings.Contains(marker, "%") {
+			marker = wordListBulletMarker(level)
+		}
+		return numberingLevel.kind, level, marker
+	}
+	if numberingLevel.kind != document.WordListNumbered {
+		return document.WordListUnsupported, level, ""
+	}
+	marker := numberingLevel.text
+	for markerLevel := 0; markerLevel <= level; markerLevel++ {
+		levelDefinition, exists := definition.levels[markerLevel]
+		if !exists {
+			continue
+		}
+		value := wordNumberingValue(node, numID, markerLevel, level, levelDefinition.start)
+		marker = strings.ReplaceAll(marker, "%"+strconv.Itoa(markerLevel+1), strconv.Itoa(value))
+	}
+	if marker == "" {
+		marker = strconv.Itoa(wordNumberingValue(node, numID, level, level, numberingLevel.start)) + "."
+	}
+	return numberingLevel.kind, level, marker
+}
+
+func (p *wordProjector) paragraphListMaxLevel(node *wordXMLNode, kind document.WordListKind) int {
+	if kind != document.WordListBullet && kind != document.WordListNumbered {
+		return 0
+	}
+	numPr := firstChild(firstChild(node, "pPr"), "numPr")
+	numID := attrValue(firstChild(numPr, "numId"), "val")
+	numberingDefinition, ok := p.numbering[numID]
+	if !ok {
+		return 0
+	}
+	maximum := -1
+	for level := 0; level <= 8; level++ {
+		levelDefinition, exists := numberingDefinition.levels[level]
+		if !exists || levelDefinition.kind != kind {
+			break
+		}
+		maximum = level
+	}
+	return max(0, maximum)
+}
+
+func wordListBulletMarker(level int) string {
+	markers := [...]string{"•", "◦", "▪"}
+	if level < 0 {
+		level = 0
+	}
+	return markers[level%len(markers)]
+}
+
+func wordNumberingValue(node *wordXMLNode, numID string, level, currentLevel, start int) int {
+	value := start
+	if node == nil || node.parent == nil {
+		return value
+	}
+	for _, sibling := range node.parent.children {
+		if sibling == node {
+			break
+		}
+		if sibling.name.Local != "p" {
+			continue
+		}
+		siblingNumID, siblingLevel := wordParagraphNumID(sibling)
+		if siblingNumID != numID {
+			continue
+		}
+		if siblingLevel == level {
+			value++
+		} else if siblingLevel >= 0 && siblingLevel < level {
+			value = start
+		}
+	}
+	if currentLevel > level && value > start {
+		value--
+	}
+	return value
+}
+
+func wordParagraphNumID(paragraph *wordXMLNode) (string, int) {
+	numPr := firstChild(firstChild(paragraph, "pPr"), "numPr")
+	if numPr == nil {
+		return "", -1
+	}
+	numID := attrValue(firstChild(numPr, "numId"), "val")
+	level := 0
+	if value := attrValue(firstChild(numPr, "ilvl"), "val"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return numID, -1
+		}
+		level = parsed
+	}
+	return numID, level
 }
 
 func parseWordIndentEMU(value string) int64 {
@@ -462,6 +611,12 @@ func parseWordTextStyle(properties *wordXMLNode) document.WordTextStyle {
 			style.FontColor = ""
 		}
 	}
+	if highlight := firstChild(properties, "highlight"); highlight != nil {
+		style.Highlight = strings.TrimSpace(attrValue(highlight, "val"))
+		if strings.EqualFold(style.Highlight, "none") {
+			style.Highlight = ""
+		}
+	}
 	if fonts := firstChild(properties, "rFonts"); fonts != nil {
 		for _, key := range []string{"eastAsia", "ascii", "hAnsi", "cs"} {
 			if value := attrValue(fonts, key); value != "" {
@@ -540,10 +695,103 @@ func readDocumentRelationships(parts []part, partIndexes map[string]int) map[str
 		}
 		external := strings.EqualFold(attrValue(node, "TargetMode"), "External")
 		result[id] = wordRelationship{
-			target:   resolveDocumentTarget(target),
-			image:    strings.HasSuffix(strings.ToLower(attrValue(node, "Type")), "/image"),
-			external: external,
+			target:    resolveDocumentTarget(target),
+			image:     strings.HasSuffix(strings.ToLower(attrValue(node, "Type")), "/image"),
+			numbering: strings.HasSuffix(strings.ToLower(attrValue(node, "Type")), "/numbering"),
+			external:  external,
 		}
+	}
+	return result
+}
+
+func readWordNumbering(parts []part, partIndexes map[string]int, relationships map[string]wordRelationship) map[string]wordNumberingDefinition {
+	result := make(map[string]wordNumberingDefinition)
+	partName := ""
+	for _, relationship := range relationships {
+		if relationship.numbering && !relationship.external {
+			partName = relationship.target
+			break
+		}
+	}
+	if partName == "" {
+		return result
+	}
+	index, ok := partIndexes[partName]
+	if !ok {
+		return result
+	}
+	root, err := parseWordXML(parts[index].data)
+	if err != nil {
+		return result
+	}
+	abstracts := make(map[string]map[int]wordNumberingLevel)
+	for _, node := range root.children {
+		if node.name.Local != "abstractNum" {
+			continue
+		}
+		abstractID := attrValue(node, "abstractNumId")
+		levels := make(map[int]wordNumberingLevel)
+		for _, levelNode := range node.children {
+			if levelNode.name.Local != "lvl" {
+				continue
+			}
+			level, parseErr := strconv.Atoi(attrValue(levelNode, "ilvl"))
+			if parseErr != nil || level < 0 || level > 8 {
+				continue
+			}
+			numFmt := strings.ToLower(attrValue(firstChild(levelNode, "numFmt"), "val"))
+			lvlText := attrValue(firstChild(levelNode, "lvlText"), "val")
+			start := 1
+			if value := attrValue(firstChild(levelNode, "start"), "val"); value != "" {
+				if parsed, parseErr := strconv.Atoi(value); parseErr == nil && parsed > 0 {
+					start = parsed
+				}
+			}
+			kind := document.WordListUnsupported
+			switch numFmt {
+			case "bullet":
+				kind = document.WordListBullet
+			case "decimal":
+				kind = document.WordListNumbered
+			}
+			for _, property := range levelNode.children {
+				if property.name.Local == "lvlRestart" || property.name.Local == "lvlPicBulletId" {
+					kind = document.WordListUnsupported
+					break
+				}
+			}
+			levels[level] = wordNumberingLevel{kind: kind, text: lvlText, start: start}
+		}
+		abstracts[abstractID] = levels
+	}
+	for _, node := range root.children {
+		if node.name.Local != "num" {
+			continue
+		}
+		numID := attrValue(node, "numId")
+		abstractID := attrValue(firstChild(node, "abstractNumId"), "val")
+		if numID == "" || abstractID == "" {
+			continue
+		}
+		levels, ok := abstracts[abstractID]
+		if !ok {
+			continue
+		}
+		hasOverrides := false
+		for _, child := range node.children {
+			if child.name.Local == "lvlOverride" || child.name.Local == "startOverride" {
+				hasOverrides = true
+				break
+			}
+		}
+		if hasOverrides {
+			levels = make(map[int]wordNumberingLevel, len(levels))
+			for level, definition := range abstracts[abstractID] {
+				definition.kind = document.WordListUnsupported
+				levels[level] = definition
+			}
+		}
+		result[numID] = wordNumberingDefinition{levels: levels}
 	}
 	return result
 }
@@ -603,6 +851,9 @@ func (types wordContentTypes) mediaType(partName string) string {
 }
 
 func firstChild(node *wordXMLNode, local string) *wordXMLNode {
+	if node == nil {
+		return nil
+	}
 	for _, child := range node.children {
 		if child.name.Local == local {
 			return child

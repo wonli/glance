@@ -95,6 +95,7 @@ type App struct {
 	workspaceWriteResults  chan error
 	workspaceWriterDone    chan struct{}
 	fileCommandResults     chan fileCommandResult
+	fileCommandRunner      func(fileCommandKind, string) fileCommandResult
 	gridLoadResults        chan gridLoadResult
 	gridPictureMetaResults chan gridPictureMetadataResult
 	gridPictureResults     chan gridPicturePreviewResult

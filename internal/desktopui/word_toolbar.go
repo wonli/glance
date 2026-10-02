@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"gioui.org/io/clipboard"
 	"gioui.org/io/semantic"
@@ -19,6 +20,7 @@ import (
 	"gioui.org/widget"
 
 	"glance/internal/document"
+	"glance/internal/format/docx"
 )
 
 type wordToolbarTab uint8
@@ -33,6 +35,15 @@ const (
 	wordTabReview
 	wordTabView
 	wordTabPicture
+)
+
+const (
+	wordDefaultFontSizePt      = 11.0
+	wordMinFontSizePt          = 1.0
+	wordMaxFontSizePt          = 1638.0
+	wordFontSizeStepPt         = 1.0
+	wordParagraphIndentStepEMU = int64(457200)
+	wordMaxParagraphIndentEMU  = int64(1<<31-1) * 635
 )
 
 var (
@@ -124,6 +135,20 @@ var (
 		{label: "紫色", value: "9C27B0", color: color.NRGBA{R: 156, G: 39, B: 176, A: 255}},
 		{label: "白色", value: "FFFFFF", color: color.NRGBA{R: 255, G: 255, B: 255, A: 255}},
 	}
+	wordHighlightColors = []struct {
+		label string
+		value string
+		color color.NRGBA
+	}{
+		{label: "黄色", value: "yellow", color: color.NRGBA{R: 255, G: 255, B: 0, A: 255}},
+		{label: "绿色", value: "green", color: color.NRGBA{R: 0, G: 255, B: 0, A: 255}},
+		{label: "青色", value: "cyan", color: color.NRGBA{R: 0, G: 255, B: 255, A: 255}},
+		{label: "品红", value: "magenta", color: color.NRGBA{R: 255, G: 0, B: 255, A: 255}},
+		{label: "蓝色", value: "blue", color: color.NRGBA{R: 0, G: 0, B: 255, A: 255}},
+		{label: "红色", value: "red", color: color.NRGBA{R: 255, G: 0, B: 0, A: 255}},
+		{label: "深灰", value: "darkGray", color: color.NRGBA{R: 128, G: 128, B: 128, A: 255}},
+		{label: "无高亮", value: "", color: color.NRGBA{R: 255, G: 255, B: 255, A: 255}},
+	}
 )
 
 func wordActions(specs ...string) []ribbonAction {
@@ -171,10 +196,14 @@ func wordToolbarActions(tab wordToolbarTab) []ribbonAction {
 
 func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving || a.wordImagePickerRunning {
+	if state == nil || state.word == nil || state.formatRunning || a.saving || a.fileCommandRunning || a.wordImagePickerRunning {
 		return false
 	}
 	switch action.id {
+	case "new", "open", "recent", "save-as":
+		return true
+	case "autosave":
+		return true
 	case "undo", "redo":
 		history, ok := any(state.word).(document.WordHistory)
 		if !ok {
@@ -187,14 +216,75 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "cut", "copy", "paste":
 		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
 		return ok && (action.id == "copy" || run.Editable)
-	case "bold", "italic", "underline", "font-color":
+	case "bold", "italic", "underline", "font-color", "text-highlight":
 		_, editable := any(state.word).(document.WordTextEditor)
 		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
 		return editable && ok && run.Editable
+	case "font-family":
+		_, editable := any(state.word).(document.WordTextFontFamilyEditor)
+		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		return editable && ok && run.Editable
+	case "font-size-decrease", "font-size-increase":
+		_, editable := any(state.word).(document.WordTextFontSizeEditor)
+		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		if !editable || !ok || !run.Editable {
+			return false
+		}
+		size := effectiveWordFontSize(run.Style.FontSize)
+		if size < wordMinFontSizePt || size > wordMaxFontSizePt {
+			return false
+		}
+		if action.id == "font-size-increase" {
+			return size < wordMaxFontSizePt
+		}
+		return size > wordMinFontSizePt
 	case "align-left", "align-center", "align-right", "align-justify":
 		_, editable := any(state.word).(document.WordTextEditor)
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
 		return editable && ok
+	case "bullet-list", "numbered-list":
+		_, editable := any(state.word).(document.WordParagraphListEditor)
+		paragraph, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
+		return editable && ok && (paragraph.ListKind == document.WordListNone || paragraph.ListKind == document.WordListBullet || paragraph.ListKind == document.WordListNumbered)
+	case "decrease-indent", "increase-indent":
+		paragraph, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
+		if !ok {
+			return false
+		}
+		if paragraph.ListKind == document.WordListBullet || paragraph.ListKind == document.WordListNumbered {
+			if action.id == "decrease-indent" {
+				return paragraph.ListLevel >= 0
+			}
+			return paragraph.ListLevel < paragraph.ListMaxLevel
+		}
+		if paragraph.ListKind == document.WordListUnsupported {
+			return false
+		}
+		_, editable := any(state.word).(document.WordTextEditor)
+		if !editable {
+			return false
+		}
+		if action.id == "decrease-indent" {
+			return paragraph.LeftIndentEMU > 0
+		}
+		return paragraph.LeftIndentEMU <= wordMaxParagraphIndentEMU-wordParagraphIndentStepEMU
+	case "find":
+		_, content := any(state.word).(document.WordContentReader)
+		return content
+	case "replace":
+		_, content := any(state.word).(document.WordContentReader)
+		_, editor := any(state.word).(document.WordTextRangeEditor)
+		return content && editor
+	case "format-painter":
+		if state.wordFormatPainterActive {
+			return true
+		}
+		_, painter := any(state.word).(document.WordFormatPainter)
+		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		return painter && ok && run.Editable
+	case "review-word-count":
+		_, content := any(state.word).(document.WordContentReader)
+		return content
 	case "save":
 		return (state.word.Dirty() || wordHasPendingTextDrafts(state) || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil) && state.path != ""
 	case "insert-image":
@@ -228,6 +318,12 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 	if state == nil || state.word == nil {
 		return false
 	}
+	if action.id == "format-painter" {
+		return state.wordFormatPainterActive
+	}
+	if action.id == "autosave" {
+		return state.wordAutoSave
+	}
 	blocks := wordBlocksForState(state)
 	if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok {
 		switch action.id {
@@ -239,9 +335,17 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 			return run.Style.Underline
 		case "font-color":
 			return run.Style.FontColor != ""
+		case "text-highlight":
+			return run.Style.Highlight != ""
 		}
 	}
 	if paragraph, ok := selectedWordParagraph(blocks, state.selectedWordParagraphID); ok {
+		if action.id == "bullet-list" {
+			return paragraph.ListKind == document.WordListBullet
+		}
+		if action.id == "numbered-list" {
+			return paragraph.ListKind == document.WordListNumbered
+		}
 		alignment, isAlignment := map[string]document.WordAlignment{"align-left": document.WordAlignLeft, "align-center": document.WordAlignCenter, "align-right": document.WordAlignRight, "align-justify": document.WordAlignJustified}[action.id]
 		return isAlignment && alignment == paragraph.Alignment
 	}
@@ -259,6 +363,7 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			state.wordToolbarTab = tab
 			state.wordToolbarActionList.List.Position = layout.Position{}
 			state.wordToolbarColorPicker = false
+			state.wordToolbarHighlightPicker = false
 			break
 		}
 	}
@@ -301,6 +406,8 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			continue
 		}
 		switch action.id {
+		case "format-painter":
+			a.toggleWordFormatPainter()
 		case "undo":
 			a.applyWordHistory(true)
 		case "redo":
@@ -325,10 +432,30 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			gtx.Execute(clipboard.ReadCmd{Tag: &state.wordClipboardTarget})
 		case "bold", "italic", "underline":
 			a.toggleWordTextStyle(action.id)
+		case "font-size-decrease":
+			a.adjustWordFontSize(-wordFontSizeStepPt)
+		case "font-size-increase":
+			a.adjustWordFontSize(wordFontSizeStepPt)
+		case "font-family":
+			a.showWordFontFamilyDialog()
 		case "font-color":
+			state.wordToolbarHighlightPicker = false
 			state.wordToolbarColorPicker = !state.wordToolbarColorPicker
+		case "text-highlight":
+			state.wordToolbarColorPicker = false
+			state.wordToolbarHighlightPicker = !state.wordToolbarHighlightPicker
 		case "align-left", "align-center", "align-right", "align-justify":
 			a.setWordAlignment(action.id)
+		case "bullet-list", "numbered-list":
+			a.setWordList(action.id)
+		case "decrease-indent", "increase-indent":
+			a.adjustWordParagraphIndent(action.id)
+		case "find":
+			a.showWordFindDialog()
+		case "replace":
+			a.showWordReplaceDialog()
+		case "review-word-count":
+			a.showWordCountDetails()
 		case "save":
 			a.startSave()
 		case "insert-image":
@@ -346,13 +473,17 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.rotateSelectedWordImage(90)
 		}
 	}
-	if state.wordToolbarColorPicker {
+	if state.wordToolbarColorPicker || state.wordToolbarHighlightPicker {
 		for index := range state.wordToolbarColorButtons {
 			if state.wordToolbarColorButtons[index].Clicked(gtx) {
-				colorValue := wordFontColors[index].value
-				runID := state.selectedWordRunID
-				state.wordToolbarColorPicker = false
-				a.setWordFontColor(runID, colorValue)
+				if state.wordToolbarHighlightPicker {
+					a.chooseWordHighlightColor(index)
+				} else {
+					colorValue := wordFontColors[index].value
+					runID := state.selectedWordRunID
+					state.wordToolbarColorPicker = false
+					a.setWordFontColor(runID, colorValue)
+				}
 				break
 			}
 		}
@@ -365,6 +496,38 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		return
 	}
 	switch actionID {
+	case "new":
+		word, err := docx.NewBlank()
+		if err != nil {
+			a.status = "新建 Word 文档失败：" + err.Error()
+			return
+		}
+		if err := a.installDocument(loadedDocument{word: word}); err != nil {
+			a.status = "新建 Word 文档失败：" + err.Error()
+		}
+	case "open":
+		a.startOpenFilePicker()
+	case "recent":
+		a.activateRecent()
+	case "save-as":
+		a.startSaveAsPicker("docx")
+	case "autosave":
+		state.wordAutoSave = !state.wordAutoSave
+		if state.wordAutoSave {
+			if state.path == "" {
+				a.status = "自动保存将在文档另存为后启用"
+			} else {
+				a.status = "已开启自动保存"
+			}
+		} else {
+			a.status = "已关闭自动保存"
+		}
+		a.persistActiveSession()
+		a.maybeAutoSaveWord(state)
+	case "format-painter":
+		a.toggleWordFormatPainter()
+	case "apply-format-painter":
+		a.startWordFormatPainter()
 	case "undo":
 		a.applyWordHistory(true)
 	case "redo":
@@ -376,10 +539,30 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		return
 	case "bold", "italic", "underline":
 		a.toggleWordTextStyle(actionID)
+	case "font-size-decrease":
+		a.adjustWordFontSize(-wordFontSizeStepPt)
+	case "font-size-increase":
+		a.adjustWordFontSize(wordFontSizeStepPt)
+	case "font-family":
+		a.showWordFontFamilyDialog()
 	case "font-color":
+		state.wordToolbarHighlightPicker = false
 		state.wordToolbarColorPicker = !state.wordToolbarColorPicker
+	case "text-highlight":
+		state.wordToolbarColorPicker = false
+		state.wordToolbarHighlightPicker = !state.wordToolbarHighlightPicker
 	case "align-left", "align-center", "align-right", "align-justify":
 		a.setWordAlignment(actionID)
+	case "bullet-list", "numbered-list":
+		a.setWordList(actionID)
+	case "decrease-indent", "increase-indent":
+		a.adjustWordParagraphIndent(actionID)
+	case "find":
+		a.showWordFindDialog()
+	case "replace":
+		a.showWordReplaceDialog()
+	case "review-word-count":
+		a.showWordCountDetails()
 	case "ruler-indents":
 		intent := state.wordRulerIndentIntent
 		if intent == nil {
@@ -405,6 +588,13 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	case "rotate-right":
 		a.rotateSelectedWordImage(90)
 	}
+}
+
+func (a *App) maybeAutoSaveWord(state *documentSessionState) {
+	if state == nil || state != a.documentSessionState || state.word == nil || !state.wordAutoSave || state.path == "" || a.saving || state.formatRunning || state.wordFlushRequested || !state.word.Dirty() {
+		return
+	}
+	a.startSave()
 }
 
 func (a *App) handleWordClipboardEvents(gtx layout.Context) {
@@ -477,6 +667,194 @@ func (a *App) setWordFontColor(runID, value string) {
 	})
 }
 
+func (a *App) chooseWordHighlightColor(index int) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || index < 0 || index >= len(wordHighlightColors) {
+		return
+	}
+	runID := state.selectedWordRunID
+	run, ok := selectedWordRun(wordBlocksForState(state), runID)
+	if !ok || !run.Editable {
+		state.wordToolbarHighlightPicker = false
+		return
+	}
+	value := wordHighlightColors[index].value
+	state.wordToolbarHighlightPicker = false
+	a.setWordTextHighlight(runID, value)
+}
+
+func (a *App) setWordTextHighlight(runID, value string) {
+	a.runWordCommand("文字高亮", func(editor document.WordTextEditor) error {
+		return editor.SetTextRunStyle(runID, document.WordTextFormatPatch{Highlight: &value})
+	})
+}
+
+func effectiveWordFontSize(points float64) float64 {
+	if points <= 0 || math.IsNaN(points) || math.IsInf(points, 0) {
+		return wordDefaultFontSizePt
+	}
+	return points
+}
+
+func (a *App) adjustWordFontSize(delta float64) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+	if !ok || !run.Editable {
+		return
+	}
+	if _, ok := any(state.word).(document.WordTextFontSizeEditor); !ok {
+		return
+	}
+	next := math.Max(wordMinFontSizePt, math.Min(wordMaxFontSizePt, effectiveWordFontSize(run.Style.FontSize)+delta))
+	runID := run.ID
+	a.runWordCommand("字号", func(editor document.WordTextEditor) error {
+		fontSizeEditor, ok := any(editor).(document.WordTextFontSizeEditor)
+		if !ok {
+			return fmt.Errorf("DOCX adapter does not support font-size editing")
+		}
+		return fontSizeEditor.SetTextRunFontSize(runID, next)
+	})
+}
+
+func (a *App) showWordFontFamilyDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	if _, ok := any(state.word).(document.WordTextFontFamilyEditor); !ok {
+		return
+	}
+	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+	if !ok || !run.Editable {
+		return
+	}
+	runID := run.ID
+	a.modal.ShowInput("设置字体", "输入字体名称", run.Style.FontFamily, "字体名称", func(action string) {
+		value := strings.TrimSpace(a.modal.Input.Text())
+		a.modal.Hide()
+		if action != "confirm" {
+			return
+		}
+		if value == "" {
+			a.status = "字体名称不能为空"
+			return
+		}
+		a.runWordCommand("字体", func(editor document.WordTextEditor) error {
+			fontFamilyEditor, ok := any(editor).(document.WordTextFontFamilyEditor)
+			if !ok {
+				return fmt.Errorf("DOCX adapter does not support font-family editing")
+			}
+			return fontFamilyEditor.SetTextRunFontFamily(runID, value)
+		})
+	}, modalDialogActionSpec{ID: "confirm", Label: "应用"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+}
+
+func (a *App) toggleWordFormatPainter() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	if state.wordFormatPainterActive {
+		state.wordFormatPainterActive = false
+		state.wordFormatPainterSourceRunID = ""
+		state.wordFormatPainterTargetRunID = ""
+		state.wordFormatPainterTargetParagraphID = ""
+		a.status = "格式刷已取消"
+		return
+	}
+	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+	if !ok || !run.Editable {
+		return
+	}
+	if _, ok := any(state.word).(document.WordFormatPainter); !ok {
+		return
+	}
+	state.wordFormatPainterSourceRunID = run.ID
+	state.wordFormatPainterActive = true
+	a.status = "已启动格式刷；单击目标文字应用，再点格式刷取消"
+}
+
+func (a *App) queueWordFormatPainterTarget(paragraphID, runID string) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || !state.wordFormatPainterActive || runID == state.wordFormatPainterSourceRunID {
+		return
+	}
+	blocks := wordBlocksForState(state)
+	run, ok := selectedWordRun(blocks, runID)
+	paragraph, paragraphOK := selectedWordParagraph(blocks, paragraphID)
+	if !ok || !run.Editable || !paragraphOK || !wordParagraphContainsRun(paragraph, runID) {
+		return
+	}
+	if _, ok := any(state.word).(document.WordFormatPainter); !ok {
+		return
+	}
+	state.wordFormatPainterActive = false
+	state.selectedWordParagraphID = paragraphID
+	state.selectedWordRunID = runID
+	state.wordFormatPainterTargetParagraphID = paragraphID
+	state.wordFormatPainterTargetRunID = runID
+	if wordHasPendingTextDrafts(state) {
+		state.wordForceDraftFlush = true
+		state.wordFlushRequested = true
+		state.wordFlushAllDrafts = true
+		state.wordDeferredToolbarAction = "apply-format-painter"
+		return
+	}
+	a.startWordFormatPainter()
+}
+
+func (a *App) processWordFormatPainterTargetIntent() {
+	state := a.documentSessionState
+	if state == nil || state.wordFormatPainterPendingRunID == "" {
+		return
+	}
+	paragraphID, runID := state.wordFormatPainterPendingParagraphID, state.wordFormatPainterPendingRunID
+	state.wordFormatPainterPendingParagraphID = ""
+	state.wordFormatPainterPendingRunID = ""
+	a.queueWordFormatPainterTarget(paragraphID, runID)
+}
+
+func wordParagraphContainsRun(paragraph document.WordParagraph, runID string) bool {
+	for _, inline := range paragraph.Inlines {
+		if inline.Text != nil && inline.Text.ID == runID {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) startWordFormatPainter() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning || a.saving || state.wordFormatPainterSourceRunID == "" || state.wordFormatPainterTargetRunID == "" {
+		return
+	}
+	painter, ok := any(state.word).(document.WordFormatPainter)
+	if !ok {
+		state.wordFormatPainterSourceRunID = ""
+		state.wordFormatPainterTargetRunID = ""
+		state.wordFormatPainterTargetParagraphID = ""
+		return
+	}
+	sourceRunID, targetRunID := state.wordFormatPainterSourceRunID, state.wordFormatPainterTargetRunID
+	state.wordFormatPainterSourceRunID = ""
+	state.wordFormatPainterTargetRunID = ""
+	state.wordFormatPainterTargetParagraphID = ""
+	state.formatRunning = true
+	a.status = "正在应用格式刷"
+	generation := a.documentGeneration
+	go func() {
+		err := painter.ApplyWordFormatting(sourceRunID, targetRunID)
+		var blocks []document.WordBlock
+		if err == nil {
+			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
+		}
+		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "格式刷", err: err, blocks: blocks})
+	}()
+}
+
 func (a *App) setWordAlignment(actionID string) {
 	state := a.documentSessionState
 	if state == nil {
@@ -489,12 +867,507 @@ func (a *App) setWordAlignment(actionID string) {
 	})
 }
 
+func (a *App) setWordList(actionID string) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	paragraph, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
+	if !ok {
+		return
+	}
+	kind := document.WordListBullet
+	if actionID == "numbered-list" {
+		kind = document.WordListNumbered
+	}
+	if paragraph.ListKind == kind {
+		kind = document.WordListNone
+	}
+	paragraphID := paragraph.ID
+	a.runWordListCommand("段落列表", func(editor document.WordParagraphListEditor) error {
+		return editor.SetParagraphList(paragraphID, kind)
+	})
+}
+
+type wordTextMatch struct {
+	ParagraphID string
+	RunID       string
+	Start       int
+	End         int
+}
+
+func findWordTextMatch(blocks []document.WordBlock, query, currentRunID string, currentEnd int, drafts map[string]string) (wordTextMatch, bool) {
+	needle := []rune(query)
+	if len(needle) == 0 {
+		return wordTextMatch{}, false
+	}
+	needle = lowerWordRunes(needle)
+	type candidate struct {
+		paragraphID string
+		run         document.WordTextRun
+	}
+	var candidates []candidate
+	currentIndex := -1
+	for _, paragraph := range allWordParagraphs(blocks) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text == nil || !inline.Text.Editable {
+				continue
+			}
+			if inline.Text.ID == currentRunID {
+				currentIndex = len(candidates)
+			}
+			candidates = append(candidates, candidate{paragraphID: paragraph.ID, run: *inline.Text})
+		}
+	}
+	if len(candidates) == 0 {
+		return wordTextMatch{}, false
+	}
+	search := func(index, from int) (wordTextMatch, bool) {
+		item := candidates[index]
+		value := item.run.Text
+		if draft, ok := drafts[item.run.ID]; ok {
+			value = draft
+		}
+		start := findWordRunes(lowerWordRunes([]rune(value)), needle, from)
+		if start < 0 {
+			return wordTextMatch{}, false
+		}
+		return wordTextMatch{ParagraphID: item.paragraphID, RunID: item.run.ID, Start: start, End: start + len(needle)}, true
+	}
+	if currentIndex < 0 {
+		for index := range candidates {
+			if match, ok := search(index, 0); ok {
+				return match, true
+			}
+		}
+		return wordTextMatch{}, false
+	}
+	if currentEnd < 0 {
+		currentEnd = 0
+	}
+	if match, ok := search(currentIndex, currentEnd); ok {
+		return match, true
+	}
+	for offset := 1; offset < len(candidates); offset++ {
+		index := (currentIndex + offset) % len(candidates)
+		if match, ok := search(index, 0); ok {
+			return match, true
+		}
+	}
+	return search(currentIndex, 0)
+}
+
+func lowerWordRunes(value []rune) []rune {
+	lowered := make([]rune, len(value))
+	for index, r := range value {
+		lowered[index] = unicode.ToLower(r)
+	}
+	return lowered
+}
+
+func findWordRunes(value, needle []rune, from int) int {
+	if len(needle) == 0 || from < 0 {
+		return -1
+	}
+	for start := from; start+len(needle) <= len(value); start++ {
+		matched := true
+		for offset, want := range needle {
+			if value[start+offset] != want {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return start
+		}
+	}
+	return -1
+}
+
+func (a *App) showWordFindDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	if _, ok := any(state.word).(document.WordContentReader); !ok {
+		return
+	}
+	a.modal.ShowInput("查找", "在当前文档中查找文字", state.wordFindQuery, "查找内容", func(action string) {
+		query := a.modal.Input.Text()
+		a.modal.Hide()
+		if action != "confirm" {
+			return
+		}
+		if query == "" {
+			a.status = "请输入要查找的文字"
+			return
+		}
+		state.wordFindQuery = query
+		blocks := wordBlocksForState(state)
+		drafts := make(map[string]string, len(state.wordRunDrafts)+len(state.wordRunEditors))
+		for runID, value := range state.wordRunDrafts {
+			drafts[runID] = value
+		}
+		for runID, editor := range state.wordRunEditors {
+			drafts[runID] = editor.Text()
+		}
+		currentEnd := 0
+		if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
+			_, currentEnd = editor.Selection()
+		}
+		match, found := findWordTextMatch(blocks, query, state.selectedWordRunID, currentEnd, drafts)
+		if !found {
+			a.status = "未找到：" + query
+			return
+		}
+		a.focusWordTextMatch(state, blocks, match)
+		a.status = "已定位：" + query
+	})
+}
+
+func (a *App) showWordReplaceDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	if _, ok := any(state.word).(document.WordContentReader); !ok {
+		return
+	}
+	if _, ok := any(state.word).(document.WordTextRangeEditor); !ok {
+		return
+	}
+	a.modal.ShowDualInput("替换", "在当前文档中查找和替换文字", state.wordFindQuery, "查找内容", "", "替换为", func(action string) {
+		if action == "close" {
+			a.modal.Hide()
+			return
+		}
+		query := a.modal.Input.Text()
+		replacement := a.modal.SecondInput.Text()
+		if query == "" {
+			a.status = "请输入要查找的文字"
+			return
+		}
+		state.wordFindQuery = query
+		if action == "confirm" {
+			a.findNextWordText(query)
+			return
+		}
+		if action != "replace" {
+			a.findNextWordText(query)
+			return
+		}
+		match, found := selectedWordTextQueryMatch(state, query)
+		if !found {
+			a.findNextWordText(query)
+			return
+		}
+		if !a.runWordRangeReplacement(match, query, replacement) {
+			a.status = "当前 DOCX 暂时无法替换文字"
+		}
+	},
+		modalDialogActionSpec{ID: "find-next", Label: "查找下一个"},
+		modalDialogActionSpec{ID: "replace", Label: "替换"},
+		modalDialogActionSpec{ID: "close", Label: "关闭"},
+	)
+}
+
+func (a *App) findNextWordText(query string) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || query == "" {
+		return
+	}
+	blocks := wordBlocksForState(state)
+	drafts := make(map[string]string, len(state.wordRunDrafts)+len(state.wordRunEditors))
+	for runID, value := range state.wordRunDrafts {
+		drafts[runID] = value
+	}
+	for runID, editor := range state.wordRunEditors {
+		drafts[runID] = editor.Text()
+	}
+	currentEnd := 0
+	if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
+		_, currentEnd = editor.Selection()
+	}
+	match, found := findWordTextMatch(blocks, query, state.selectedWordRunID, currentEnd, drafts)
+	if !found {
+		a.status = "未找到：" + query
+		return
+	}
+	a.focusWordTextMatch(state, blocks, match)
+	a.status = "已定位：" + query
+}
+
+func selectedWordTextQueryMatch(state *documentSessionState, query string) (wordTextMatch, bool) {
+	if state == nil || query == "" {
+		return wordTextMatch{}, false
+	}
+	blocks := wordBlocksForState(state)
+	run, ok := selectedWordRun(blocks, state.selectedWordRunID)
+	if !ok || !run.Editable {
+		return wordTextMatch{}, false
+	}
+	editor := state.wordRunEditors[run.ID]
+	if editor == nil {
+		return wordTextMatch{}, false
+	}
+	start, end := editor.Selection()
+	value := []rune(editor.Text())
+	needle := lowerWordRunes([]rune(query))
+	if start < 0 || end <= start || end > len(value) || end-start != len(needle) {
+		return wordTextMatch{}, false
+	}
+	if !equalWordRunes(lowerWordRunes(value[start:end]), needle) {
+		return wordTextMatch{}, false
+	}
+	paragraph, ok := selectedWordParagraph(blocks, state.selectedWordParagraphID)
+	if !ok {
+		return wordTextMatch{}, false
+	}
+	return wordTextMatch{ParagraphID: paragraph.ID, RunID: run.ID, Start: start, End: end}, true
+}
+
+func equalWordRunes(left, right []rune) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *App) runWordRangeReplacement(match wordTextMatch, query, replacement string) bool {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning || a.saving {
+		return false
+	}
+	editor, ok := any(state.word).(document.WordTextRangeEditor)
+	if !ok {
+		return false
+	}
+	state.formatRunning = true
+	generation := a.documentGeneration
+	go func() {
+		err := editor.ReplaceTextRange(match.RunID, match.Start, match.End, replacement)
+		var blocks []document.WordBlock
+		if err == nil {
+			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
+		}
+		a.publishWordCommand(wordCommandResult{
+			state: state, generation: generation, operation: "替换文字", err: err, blocks: blocks,
+			wordRangeReplacement: true, replaceRunID: match.RunID, replaceParagraphID: match.ParagraphID, replaceStart: match.Start,
+			replaceText: replacement, replaceQuery: query,
+		})
+	}()
+	return true
+}
+
+func (a *App) completeWordRangeReplacement(result wordCommandResult) {
+	state := result.state
+	if state == nil {
+		return
+	}
+	if result.err != nil {
+		a.status = wordCommandError(result.operation, result.err)
+		return
+	}
+	if result.blocks != nil {
+		state.wordBlocks = result.blocks
+	}
+	run, ok := selectedWordRun(state.wordBlocks, result.replaceRunID)
+	if !ok || !run.Editable {
+		a.status = "文字已替换，但无法定位编辑位置"
+		return
+	}
+	delete(state.wordRunDrafts, run.ID)
+	state.wordRunCommitted[run.ID] = run.Text
+	editor := wordRunEditor(state, run)
+	editor.SetText(run.Text)
+	state.selectedWordRunID = run.ID
+	state.selectedWordParagraphID = result.replaceParagraphID
+	if state.selectedWordParagraphID == "" {
+		for _, paragraph := range allWordParagraphs(state.wordBlocks) {
+			for _, inline := range paragraph.Inlines {
+				if inline.Text != nil && inline.Text.ID == run.ID {
+					state.selectedWordParagraphID = paragraph.ID
+					break
+				}
+			}
+		}
+	}
+	state.selectedWordImageID = ""
+	state.selectedBlock = -1
+	state.selectedBlockEditable = true
+	startAfter := result.replaceStart + len([]rune(result.replaceText))
+	match, found := findWordTextMatch(state.wordBlocks, result.replaceQuery, run.ID, startAfter, nil)
+	if found {
+		a.focusWordTextMatch(state, state.wordBlocks, match)
+		a.status = "已替换，并已定位下一处"
+	} else {
+		startAfter = max(0, min(startAfter, len([]rune(run.Text))))
+		editor.SetCaret(startAfter, startAfter)
+		state.wordPendingFocusRunID = run.ID
+		a.status = "已替换；没有更多匹配项"
+	}
+	a.persistActiveSession()
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+
+func (a *App) focusWordTextMatch(state *documentSessionState, blocks []document.WordBlock, match wordTextMatch) {
+	run, ok := selectedWordRun(blocks, match.RunID)
+	paragraph, paragraphOK := selectedWordParagraph(blocks, match.ParagraphID)
+	if !ok || !paragraphOK || !run.Editable {
+		return
+	}
+	editor := wordRunEditor(state, run)
+	editor.SetCaret(match.Start, match.End)
+	state.selectedWordRunID = run.ID
+	state.selectedWordParagraphID = paragraph.ID
+	state.selectedWordImageID = ""
+	state.wordImageFocusRequestID = ""
+	state.selectedBlock = -1
+	state.selectedBlockEditable = true
+	state.wordToolbarTab = wordTabHome
+	state.wordPendingFocusRunID = run.ID
+	state.wordPendingCaretRunID = ""
+	state.wordPendingCaretByX = false
+	for index, block := range blocks {
+		if wordBlockContainsParagraph(block, paragraph.ID) {
+			state.wordListState.Position.First = index
+			state.wordListState.Position.Offset = 0
+			state.wordListState.Position.OffsetLast = 0
+			state.wordListState.Position.BeforeEnd = false
+			break
+		}
+	}
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+
+func wordBlockContainsParagraph(block document.WordBlock, paragraphID string) bool {
+	if block.Paragraph != nil {
+		return block.Paragraph.ID == paragraphID
+	}
+	if block.Table == nil {
+		return false
+	}
+	for _, row := range block.Table.Rows {
+		for _, cell := range row.Cells {
+			for _, paragraph := range cell.Paragraphs {
+				if paragraph.ID == paragraphID {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (a *App) adjustWordParagraphIndent(actionID string) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	paragraph, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
+	if !ok {
+		return
+	}
+	if paragraph.ListKind == document.WordListBullet || paragraph.ListKind == document.WordListNumbered {
+		_, ok := any(state.word).(document.WordParagraphListEditor)
+		if !ok {
+			return
+		}
+		paragraphID, level := paragraph.ID, paragraph.ListLevel
+		if actionID == "increase-indent" {
+			a.runWordListCommand("调整列表层级", func(editor document.WordParagraphListEditor) error {
+				return editor.SetParagraphListLevel(paragraphID, level+1)
+			})
+			return
+		}
+		if level > 0 {
+			a.runWordListCommand("调整列表层级", func(editor document.WordParagraphListEditor) error {
+				return editor.SetParagraphListLevel(paragraphID, level-1)
+			})
+			return
+		}
+		a.runWordListCommand("取消列表", func(editor document.WordParagraphListEditor) error {
+			return editor.SetParagraphList(paragraphID, document.WordListNone)
+		})
+		return
+	}
+	if paragraph.ListKind == document.WordListUnsupported {
+		return
+	}
+	leftIndent := paragraph.LeftIndentEMU
+	if actionID == "increase-indent" {
+		if leftIndent > wordMaxParagraphIndentEMU-wordParagraphIndentStepEMU {
+			return
+		}
+		leftIndent += wordParagraphIndentStepEMU
+	} else {
+		leftIndent = max(0, leftIndent-wordParagraphIndentStepEMU)
+	}
+	paragraphID, rightIndent := paragraph.ID, paragraph.RightIndentEMU
+	a.runWordCommand("调整段落缩进", func(editor document.WordTextEditor) error {
+		return editor.SetParagraphIndents(paragraphID, leftIndent, rightIndent)
+	})
+}
+
+func (a *App) showWordCountDetails() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	if _, ok := any(state.word).(document.WordContentReader); !ok {
+		return
+	}
+	statistics := wordTextStatisticsForState(state)
+	message := fmt.Sprintf(
+		"字符数（不含空白）：%d\n字符数（含空白）：%d\n段落数：%d\n表格数：%d",
+		statistics.charactersWithoutWhitespace,
+		statistics.charactersWithWhitespace,
+		statistics.paragraphs,
+		statistics.tables,
+	)
+	a.modal.Show("字数统计", message, func(action string) {
+		if action == "close" {
+			a.modal.Hide()
+		}
+	}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+}
+
 func (a *App) runWordCommand(operation string, edit func(document.WordTextEditor) error) {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || state.formatRunning || a.saving {
 		return
 	}
 	editor, ok := any(state.word).(document.WordTextEditor)
+	if !ok {
+		return
+	}
+	state.formatRunning = true
+	generation := a.documentGeneration
+	go func() {
+		err := edit(editor)
+		var blocks []document.WordBlock
+		if err == nil {
+			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
+		}
+		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
+	}()
+}
+
+func (a *App) runWordListCommand(operation string, edit func(document.WordParagraphListEditor) error) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning || a.saving {
+		return
+	}
+	editor, ok := any(state.word).(document.WordParagraphListEditor)
 	if !ok {
 		return
 	}
@@ -546,32 +1419,38 @@ func (a *App) rotateSelectedWordImage(delta float64) {
 }
 
 type wordCommandResult struct {
-	state               *documentSessionState
-	blocks              []document.WordBlock
-	selectInsertedImage bool
-	generation          uint64
-	operation           string
-	err                 error
-	clearImageSelection bool
-	imageID             string
-	undo                bool
-	history             bool
-	applied             bool
-	textDraft           bool
-	paragraphSplit      bool
-	paragraphJoin       bool
-	runID               string
-	runText             string
-	splitSourceRunID    string
-	splitPrefix         string
-	splitParagraphID    string
-	splitRunID          string
-	splitRunText        string
-	joinParagraphID     string
-	joinRunID           string
-	joinCaret           int
-	insertedParagraphID string
-	bodyParagraphInsert bool
+	state                *documentSessionState
+	blocks               []document.WordBlock
+	selectInsertedImage  bool
+	generation           uint64
+	operation            string
+	err                  error
+	clearImageSelection  bool
+	imageID              string
+	undo                 bool
+	history              bool
+	applied              bool
+	textDraft            bool
+	paragraphSplit       bool
+	paragraphJoin        bool
+	runID                string
+	runText              string
+	splitSourceRunID     string
+	splitPrefix          string
+	splitParagraphID     string
+	splitRunID           string
+	splitRunText         string
+	joinParagraphID      string
+	joinRunID            string
+	joinCaret            int
+	insertedParagraphID  string
+	bodyParagraphInsert  bool
+	wordRangeReplacement bool
+	replaceRunID         string
+	replaceParagraphID   string
+	replaceStart         int
+	replaceText          string
+	replaceQuery         string
 }
 
 func (a *App) publishWordCommand(result wordCommandResult) {
@@ -642,11 +1521,15 @@ func (a *App) showWordImageResizeDialog() {
 
 func (a *App) layoutWordToolbarColorPicker(gtx layout.Context) layout.Dimensions {
 	state := a.documentSessionState
-	if state == nil || !state.wordToolbarColorPicker {
+	if state == nil || !state.wordToolbarColorPicker && !state.wordToolbarHighlightPicker {
 		return layout.Dimensions{}
 	}
+	colors := wordFontColors
+	if state.wordToolbarHighlightPicker {
+		colors = wordHighlightColors
+	}
 	return layout.Inset{Top: unit.Dp(wordRibbonHeightDP + 8), Left: unit.Dp(440)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		width := gtx.Dp(unit.Dp(8*28 + 7*6 + 16))
+		width := gtx.Dp(unit.Dp(len(colors)*28 + (len(colors)-1)*6 + 16))
 		height := gtx.Dp(unit.Dp(44))
 		gtx.Constraints.Min = image.Pt(width, height)
 		gtx.Constraints.Max = gtx.Constraints.Min
@@ -660,8 +1543,8 @@ func (a *App) layoutWordToolbarColorPicker(gtx layout.Context) layout.Dimensions
 			},
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					children := make([]layout.FlexChild, 0, len(wordFontColors))
-					for index, item := range wordFontColors {
+					children := make([]layout.FlexChild, 0, len(colors))
+					for index, item := range colors {
 						index, item := index, item
 						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							button := &state.wordToolbarColorButtons[index]
@@ -669,6 +1552,10 @@ func (a *App) layoutWordToolbarColorPicker(gtx layout.Context) layout.Dimensions
 								size := gtx.Dp(unit.Dp(28))
 								bounds := image.Rect(0, 0, size, size)
 								paint.FillShape(gtx.Ops, item.color, clip.UniformRRect(bounds, gtx.Dp(unit.Dp(5))).Op(gtx.Ops))
+								if state.wordToolbarHighlightPicker && item.value == "" {
+									border := clip.UniformRRect(bounds, gtx.Dp(unit.Dp(5)))
+									paint.FillShape(gtx.Ops, color.NRGBA{R: 170, G: 184, B: 199, A: 255}, clip.Stroke{Path: border.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+								}
 								semantic.Button.Add(gtx.Ops)
 								semantic.DescriptionOp(item.label).Add(gtx.Ops)
 								return layout.Dimensions{Size: image.Pt(size, size)}

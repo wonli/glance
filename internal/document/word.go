@@ -29,6 +29,16 @@ const (
 	WordAlignJustified WordAlignment = "justified"
 )
 
+// WordListKind is the supported direct paragraph list type.
+type WordListKind string
+
+const (
+	WordListNone        WordListKind = "none"
+	WordListBullet      WordListKind = "bullet"
+	WordListNumbered    WordListKind = "numbered"
+	WordListUnsupported WordListKind = "unsupported"
+)
+
 // WordBlock is one ordered paragraph, table, or read-only body item.
 type WordBlock struct {
 	ID          string
@@ -45,6 +55,10 @@ type WordParagraph struct {
 	Alignment      WordAlignment
 	LeftIndentEMU  int64
 	RightIndentEMU int64
+	ListKind       WordListKind
+	ListLevel      int
+	ListMaxLevel   int
+	ListMarker     string
 	Inlines        []WordInline
 }
 
@@ -86,6 +100,7 @@ type WordTextStyle struct {
 	FontFamily string
 	FontSize   float64
 	FontColor  string
+	Highlight  string
 }
 
 // WordImage describes an inline image without exposing package relationships.
@@ -117,6 +132,7 @@ type WordTextFormatPatch struct {
 	Italic    *bool
 	Underline *bool
 	FontColor *string
+	Highlight *string
 }
 
 // WordTextEditor is an optional capability for safe Word text operations.
@@ -125,6 +141,34 @@ type WordTextEditor interface {
 	SetTextRunStyle(runID string, patch WordTextFormatPatch) error
 	SetParagraphAlignment(paragraphID string, alignment WordAlignment) error
 	SetParagraphIndents(paragraphID string, leftEMU, rightEMU int64) error
+}
+
+// WordTextRangeEditor exposes safe replacement within one editable text run.
+// Offsets are Unicode rune indices, matching WordTextRun text selection.
+type WordTextRangeEditor interface {
+	ReplaceTextRange(runID string, start, end int, replacement string) error
+}
+
+// WordFormatPainter copies the supported direct text and paragraph formatting
+// from one editable text run to another within the same document.
+type WordFormatPainter interface {
+	ApplyWordFormatting(sourceRunID, targetRunID string) error
+}
+
+// WordParagraphListEditor exposes safe direct paragraph bullet and numbering edits.
+type WordParagraphListEditor interface {
+	SetParagraphList(paragraphID string, kind WordListKind) error
+	SetParagraphListLevel(paragraphID string, level int) error
+}
+
+// WordTextFontSizeEditor exposes safe direct font-size edits for a text run.
+type WordTextFontSizeEditor interface {
+	SetTextRunFontSize(runID string, points float64) error
+}
+
+// WordTextFontFamilyEditor exposes safe direct font-family edits for a text run.
+type WordTextFontFamilyEditor interface {
+	SetTextRunFontFamily(runID, family string) error
 }
 
 // WordBodyEditor is an optional capability for adding a body paragraph at the end of a Word document.

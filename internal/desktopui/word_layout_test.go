@@ -6,15 +6,30 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/font"
+	"gioui.org/font/gofont"
 	"gioui.org/io/input"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
 )
+
+func TestWordListMarkerGutterFitsLongAndNestedMarkers(t *testing.T) {
+	if got := wordListMarkerWidthDP(document.WordParagraph{ListMarker: "•"}); got != 24 {
+		t.Fatalf("bullet marker gutter = %d dp; want 24", got)
+	}
+	if got := wordListMarkerWidthDP(document.WordParagraph{ListMarker: "100."}); got < 48 {
+		t.Fatalf("long numbering marker gutter = %d dp; want at least 48", got)
+	}
+	if got := wordListMarkerWidthDP(document.WordParagraph{ListMarker: "1.1.", ListLevel: 1}); got != 66 {
+		t.Fatalf("nested numbering marker gutter = %d dp; want 66", got)
+	}
+}
 
 func TestWordAdjacentParagraphAllowsEmptyAndImageOnlyNeighbors(t *testing.T) {
 	current := document.WordParagraph{ID: "current", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "current.run", Editable: true}}}}
@@ -174,20 +189,20 @@ func TestWordStatusBarMatchesPenFsQrkGeometry(t *testing.T) {
 	app.layoutWordStatusBar(gtx, state)
 	router.Frame(&ops)
 	want := map[string]image.Rectangle{
-		"Word 状态栏":         image.Rect(0, 0, 1440, 34),
-		"Word 页数":           image.Rect(18, 11, 97, 27),
-		"Word 字数":           image.Rect(142, 11, 188, 27),
-		"Word 语言":           image.Rect(250, 11, 303, 27),
-		"Word 辅助功能图标":     image.Rect(350, 9, 365, 24),
-		"Word 辅助功能":       image.Rect(371, 11, 448, 27),
-		"Word 专注模式":       image.Rect(1112, 9, 1127, 24),
-		"Word 打印布局":       image.Rect(1145, 9, 1160, 24),
-		"Word Web版式":        image.Rect(1178, 9, 1193, 24),
-		"Word 缩小":           image.Rect(1230, 9, 1245, 24),
-		"Word 缩放轨道":       image.Rect(1257, 16, 1349, 18),
-		"Word 缩放滑块":       image.Rect(1304, 11, 1315, 22),
-		"Word 放大":           image.Rect(1361, 9, 1376, 24),
-		"Word 缩放百分比":     image.Rect(1390, 11, 1420, 24),
+		"Word 状态栏":    image.Rect(0, 0, 1440, 34),
+		"Word 连续视图":   image.Rect(18, 11, 97, 27),
+		"Word 字数":     image.Rect(142, 11, 188, 27),
+		"Word 语言":     image.Rect(250, 11, 303, 27),
+		"Word 辅助功能图标": image.Rect(350, 9, 365, 24),
+		"Word 辅助功能":   image.Rect(371, 11, 448, 27),
+		"Word 专注模式":   image.Rect(1112, 9, 1127, 24),
+		"Word 打印布局":   image.Rect(1145, 9, 1160, 24),
+		"Word Web版式":  image.Rect(1178, 9, 1193, 24),
+		"Word 缩小":     image.Rect(1230, 9, 1245, 24),
+		"Word 缩放轨道":   image.Rect(1257, 16, 1349, 18),
+		"Word 缩放滑块":   image.Rect(1304, 11, 1315, 22),
+		"Word 放大":     image.Rect(1361, 9, 1376, 24),
+		"Word 缩放百分比":  image.Rect(1390, 11, 1420, 24),
 	}
 	got := make(map[string]image.Rectangle, len(want))
 	var visit func([]input.SemanticNode)
@@ -203,6 +218,27 @@ func TestWordStatusBarMatchesPenFsQrkGeometry(t *testing.T) {
 	for label, expected := range want {
 		if actual := got[label]; actual != expected {
 			t.Errorf("Pen FsQrk element %q bounds = %v; want %v", label, actual, expected)
+		}
+	}
+}
+
+func TestWordHighlightGeometryTracksTextLinesInsteadOfRunWidth(t *testing.T) {
+	theme := material.NewTheme()
+	theme.Face = font.Typeface("Go")
+	theme.Shaper = text.NewShaper(text.NoSystemFonts(), text.WithCollection(gofont.Collection()))
+	textValue := "highlight wraps across multiple lines"
+	label := material.Body1(theme, textValue)
+	gtx := layout.Context{Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Min: image.Pt(72, 0), Max: image.Pt(72, 500)}}
+	rects := wordTextHighlightRects(gtx, theme.Shaper, label, textValue)
+	if len(rects) < 2 {
+		t.Fatalf("highlight geometry = %#v; want one rectangle per wrapped text line", rects)
+	}
+	for index, rect := range rects {
+		if rect.Empty() || rect.Min.X < 0 || rect.Max.X > 72 || rect.Dx() >= 72 {
+			t.Errorf("highlight rectangle %d = %v; want a nonempty text-width rectangle within the 72 px run", index, rect)
+		}
+		if index > 0 && rect.Min.Y <= rects[index-1].Min.Y {
+			t.Errorf("highlight rectangles are not ordered by line: %#v", rects)
 		}
 	}
 }

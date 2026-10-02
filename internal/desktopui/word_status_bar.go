@@ -14,6 +14,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"glance/internal/document"
 )
 
 const wordStatusBarHeightDP = 34
@@ -39,7 +41,7 @@ func (a *App) layoutWordStatusBar(gtx layout.Context, state *documentSessionStat
 	semantic.DescriptionOp("Word 状态栏").Add(gtx.Ops)
 	barBounds.Pop()
 
-	a.drawWordStatusText(gtx, 18, 11, 79, 16, "Word 页数", "第 1 页")
+	a.drawWordStatusText(gtx, 18, 11, 79, 16, "Word 连续视图", "连续视图")
 	a.drawWordStatusText(gtx, 142, 11, 46, 16, "Word 字数", wordStatusWordCount(state))
 	a.drawWordStatusText(gtx, 250, 11, 53, 16, "Word 语言", "中文(中国)")
 	a.drawWordStatusIcon(gtx, 350, 9, 15, 15, "tX3tP", "Word 辅助功能图标")
@@ -103,18 +105,46 @@ func (a *App) drawWordStatusRect(gtx layout.Context, xDP, yDP, widthDP, heightDP
 }
 
 func wordStatusWordCount(state *documentSessionState) string {
-	count := 0
-	for _, paragraph := range allWordParagraphs(wordBlocksForState(state)) {
+	return fmt.Sprintf("%d 个字", wordTextStatisticsForState(state).charactersWithoutWhitespace)
+}
+
+type wordTextStatistics struct {
+	charactersWithWhitespace    int
+	charactersWithoutWhitespace int
+	paragraphs                  int
+	tables                      int
+}
+
+func wordTextStatisticsForState(state *documentSessionState) wordTextStatistics {
+	var statistics wordTextStatistics
+	blocks := wordBlocksForState(state)
+	for _, block := range blocks {
+		if block.Kind == document.WordTableBlock && block.Table != nil {
+			statistics.tables++
+		}
+	}
+	paragraphs := allWordParagraphs(blocks)
+	statistics.paragraphs = len(paragraphs)
+	for _, paragraph := range paragraphs {
 		for _, inline := range paragraph.Inlines {
 			if inline.Text == nil {
 				continue
 			}
-			for _, r := range inline.Text.Text {
+			value := inline.Text.Text
+			if state != nil {
+				if draft, ok := state.wordRunDrafts[inline.Text.ID]; ok {
+					value = draft
+				} else if editor := state.wordRunEditors[inline.Text.ID]; editor != nil {
+					value = editor.Text()
+				}
+			}
+			for _, r := range value {
+				statistics.charactersWithWhitespace++
 				if !unicode.IsSpace(r) {
-					count++
+					statistics.charactersWithoutWhitespace++
 				}
 			}
 		}
 	}
-	return fmt.Sprintf("%d 个字", count)
+	return statistics
 }

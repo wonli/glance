@@ -5,8 +5,11 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"glance/internal/document"
 )
@@ -41,6 +44,27 @@ func (d *Document) ReplaceTextRun(runID, value string) error {
 		return err
 	}
 	return d.replaceTextRunLocked(runID, value)
+}
+
+func (d *Document) ReplaceTextRange(runID string, start, end int, replacement string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	target, ok := d.wordTextTargets[runID]
+	if !ok || target.text == nil || target.run == nil {
+		return fmt.Errorf("Word text run %q is not editable", runID)
+	}
+	current := []rune(target.text.text)
+	if start < 0 || end < start || end > len(current) {
+		return fmt.Errorf("Word text range [%d,%d) is outside run %q", start, end, runID)
+	}
+	updated := make([]rune, 0, len(current)-(end-start)+utf8.RuneCountInString(replacement))
+	updated = append(updated, current[:start]...)
+	updated = append(updated, []rune(replacement)...)
+	updated = append(updated, current[end:]...)
+	return d.replaceTextRunLocked(runID, string(updated))
 }
 
 func (d *Document) replaceTextRunLocked(runID, value string) error {
@@ -90,6 +114,17 @@ func (d *Document) SetTextRunStyle(runID string, patch document.WordTextFormatPa
 			patch.FontColor = &color
 		}
 	}
+	if patch.Highlight != nil {
+		highlight, err := normalizeWordHighlight(*patch.Highlight)
+		if err != nil {
+			return err
+		}
+		if highlight == currentStyle.Highlight {
+			patch.Highlight = nil
+		} else {
+			patch.Highlight = &highlight
+		}
+	}
 	updates, order, err := wordStyleUpdates(patch)
 	if err != nil {
 		return err
@@ -99,6 +134,100 @@ func (d *Document) SetTextRunStyle(runID string, patch document.WordTextFormatPa
 	}
 	data := d.parts[d.documentIdx].data
 	patched, err := patchRunProperties(data, target.run, updates, order)
+	if err != nil {
+		return err
+	}
+	return d.applyWordDocumentXMLLocked(patched)
+}
+
+func (d *Document) SetTextRunFontSize(runID string, points float64) error {
+	if math.IsNaN(points) || math.IsInf(points, 0) || points < 1 || points > 1638 {
+		return fmt.Errorf("Word font size must be between 1 and 1638 points")
+	}
+	halfPoints := int64(math.Round(points * 2))
+	if halfPoints < 2 || halfPoints > 3276 {
+		return fmt.Errorf("Word font size is outside the supported half-point range")
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	target, ok := d.wordTextTargets[runID]
+	if !ok || target.run == nil {
+		return fmt.Errorf("Word text run %q is not editable", runID)
+	}
+	if current := parseWordTextStyle(firstChild(target.run, "rPr")).FontSize; current == float64(halfPoints)/2 {
+		return nil
+	}
+	updates := map[string]wordPropertyUpdate{
+		"sz": {attribute: "val", value: strconv.FormatInt(halfPoints, 10)},
+	}
+	patched, err := patchRunProperties(d.parts[d.documentIdx].data, target.run, updates, []string{"sz"})
+	if err != nil {
+		return err
+	}
+	return d.applyWordDocumentXMLLocked(patched)
+}
+
+func (d *Document) SetTextRunFontFamily(runID, family string) error {
+	family = strings.TrimSpace(family)
+	if family == "" || utf8.RuneCountInString(family) > 128 || strings.IndexFunc(family, unicode.IsControl) >= 0 {
+		return fmt.Errorf("Word font family must contain 1–128 printable characters")
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	target, ok := d.wordTextTargets[runID]
+	if !ok || target.run == nil {
+		return fmt.Errorf("Word text run %q is not editable", runID)
+	}
+	properties := firstChild(target.run, "rPr")
+	if current := parseWordTextStyle(properties).FontFamily; current == family {
+		return nil
+	}
+
+	data := d.parts[d.documentIdx].data
+	prefix := elementPrefix(target.run.rawName)
+	fonts := (*wordXMLNode)(nil)
+	if properties != nil {
+		fonts = firstChild(properties, "rFonts")
+	}
+	var patched []byte
+	var err error
+	if fonts == nil {
+		markup := makeWordPropertyMarkup(prefix, "rFonts", "ascii", family)
+		for _, attribute := range []string{"hAnsi", "eastAsia", "cs"} {
+			markup, err = setRawXMLAttribute(markup, prefix, attribute, family)
+			if err != nil {
+				return err
+			}
+		}
+		if properties == nil {
+			patched, err = insertElementContent(data, target.run, wrapWordProperties(prefix, markup))
+		} else {
+			patched, err = insertElementContent(data, properties, markup)
+		}
+	} else {
+		opening := data[fonts.start:fonts.openEnd]
+		for _, attribute := range []string{"ascii", "hAnsi", "eastAsia", "cs"} {
+			opening, err = setRawXMLAttribute(opening, elementPrefix(fonts.rawName), attribute, family)
+			if err != nil {
+				return err
+			}
+		}
+		for _, attribute := range []string{"asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"} {
+			opening, err = removeRawXMLAttribute(opening, elementPrefix(fonts.rawName), attribute)
+			if err != nil {
+				return err
+			}
+		}
+		patched, err = applyXMLReplacements(data, []xmlReplacement{{start: fonts.start, end: fonts.openEnd, value: opening}})
+	}
 	if err != nil {
 		return err
 	}
@@ -327,7 +456,29 @@ func wordStyleUpdates(patch document.WordTextFormatPatch) (map[string]wordProper
 		}
 		add("color", wordPropertyUpdate{attribute: "val", value: color, remove: color == ""})
 	}
+	if patch.Highlight != nil {
+		highlight, err := normalizeWordHighlight(*patch.Highlight)
+		if err != nil {
+			return nil, nil, err
+		}
+		add("highlight", wordPropertyUpdate{attribute: "val", value: highlight, remove: highlight == ""})
+	}
 	return updates, order, nil
+}
+
+func normalizeWordHighlight(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.EqualFold(value, "none") {
+		return "", nil
+	}
+	for _, supported := range []string{
+		"black", "blue", "cyan", "darkBlue", "darkCyan", "darkGray", "darkGreen", "darkMagenta", "darkRed", "darkYellow", "green", "magenta", "red", "white", "yellow", "lightGray",
+	} {
+		if strings.EqualFold(value, supported) {
+			return supported, nil
+		}
+	}
+	return "", fmt.Errorf("unsupported Word text highlight color %q", value)
 }
 
 func normalizeWordColor(value string) (string, error) {
@@ -529,6 +680,23 @@ func setRawXMLAttribute(rawOpen []byte, prefix, local, value string) ([]byte, er
 	result = append(result, addition...)
 	result = append(result, rawOpen[insertAt:]...)
 	return result, nil
+}
+
+func removeRawXMLAttribute(rawOpen []byte, prefix, local string) ([]byte, error) {
+	attributes, _, _, err := scanRawXMLAttributes(rawOpen)
+	if err != nil {
+		return nil, err
+	}
+	for _, attribute := range attributes {
+		if attribute.prefix == prefix && attribute.local == local {
+			start := attribute.start
+			for start > 0 && xmlSpace(rawOpen[start-1]) {
+				start--
+			}
+			return append(append([]byte(nil), rawOpen[:start]...), rawOpen[attribute.end:]...), nil
+		}
+	}
+	return rawOpen, nil
 }
 
 func rawAttributeEquals(rawOpen []byte, prefix, local, value string) bool {

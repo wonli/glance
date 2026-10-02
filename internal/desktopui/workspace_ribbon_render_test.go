@@ -72,3 +72,28 @@ func TestSpreadsheetRibbonMeetsSelectedDocumentTabWithoutWideningTheSeam(t *test
 	assertPixel(selectedX, stripY-1, contentSurface, "active document tab meets the ribbon")
 	assertPixel(unselectedX, stripY, contentSurface, "ribbon starts at the tab strip edge")
 }
+
+func TestWordDocumentTabStripMatchesPenClpgmGeometry(t *testing.T) {
+	app := New(nil, "")
+	tab, close := app.documentTabWidgets("doc-a")
+	app.activeTabID = "doc-a"
+	app.tabMeta["doc-a"] = workspace.Tab{ID: "doc-a", Title: "项目策划书.docx", Position: 0}
+	ops := new(op.Ops)
+	gtx := layout.Context{
+		Ops:    ops,
+		Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{
+			Max: image.Pt(600, 42),
+		},
+	}
+	dims := app.paintDocumentTab(gtx, tab, close, "项目策划书.docx", true)
+	if dims.Size != image.Pt(190, 37) {
+		t.Fatalf("Pen Clpgm document tab size=%v, want 190×37 dp", dims.Size)
+	}
+	itemGtx := gtx
+	itemGtx.Ops = new(op.Ops)
+	itemDims := app.layoutWorkspaceTabListItem(itemGtx, []string{"doc-a"}, 1)
+	if itemDims.Size != image.Pt(196, 37) {
+		t.Fatalf("Word document tab slot size=%v, want 196×37 dp (6 dp leading gap plus 190 dp tab)", itemDims.Size)
+	}
+}
