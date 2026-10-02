@@ -638,6 +638,11 @@ func (a *App) layoutWordParagraph(gtx layout.Context, paragraph document.WordPar
 			children = append(children, wordInlineLayoutChild{width: a.wordImagePreferredWidth(gtx, item, maxWidth), overlay: overlay, layout: func(gtx layout.Context) layout.Dimensions {
 				return a.layoutWordImage(gtx, paragraph, *inline.Image, overlay)
 			}})
+		case inline.PageBreak != nil:
+			pageBreak := *inline.PageBreak
+			children = append(children, wordInlineLayoutChild{width: gtx.Dp(unit.Dp(68)), layout: func(gtx layout.Context) layout.Dimensions {
+				return layoutWordPageBreak(gtx, a.theme, pageBreak)
+			}})
 		case inline.Unsupported != nil:
 			children = append(children, wordInlineLayoutChild{width: min(maxWidth, gtx.Dp(unit.Dp(240))), layout: func(gtx layout.Context) layout.Dimensions {
 				return wordReadOnlyPlaceholder(gtx, a.theme, inline.Unsupported.Description)
@@ -667,6 +672,20 @@ func (a *App) layoutWordParagraph(gtx layout.Context, paragraph document.WordPar
 			}),
 			layout.Flexed(1, flow),
 		)
+	})
+}
+
+func layoutWordPageBreak(gtx layout.Context, theme *material.Theme, pageBreak document.WordPageBreak) layout.Dimensions {
+	semantic.DescriptionOp("分页符 " + pageBreak.ID).Add(gtx.Ops)
+	bounds := image.Rectangle{Max: gtx.Constraints.Max}
+	shape := clip.UniformRRect(bounds, gtx.Dp(unit.Dp(3)))
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 246, G: 248, B: 250, A: 255}, shape.Op(gtx.Ops))
+	paint.FillShape(gtx.Ops, gridLine, clip.Stroke{Path: shape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+	return layout.Inset{Left: unit.Dp(5), Right: unit.Dp(5), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		label := material.Caption(theme, "分页符")
+		label.Color = color.NRGBA{R: 89, G: 99, B: 111, A: 255}
+		label.TextSize = unit.Sp(11)
+		return label.Layout(gtx)
 	})
 }
 

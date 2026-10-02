@@ -221,7 +221,9 @@ func (a *App) processAsyncResults() {
 			}
 		}
 		activeResult := result.generation == a.documentGeneration && result.state == a.documentSessionState
-		if result.paragraphJoin {
+		if result.pageBreak {
+			a.completeWordPageBreak(result, activeResult)
+		} else if result.paragraphJoin {
 			a.completeWordParagraphJoin(result, activeResult)
 		} else if activeResult {
 			if result.paragraphSplit {
@@ -233,6 +235,7 @@ func (a *App) processAsyncResults() {
 					result.state.wordFlushAllDrafts = false
 					result.state.wordParagraphSplitIntent = nil
 					result.state.wordParagraphJoinIntent = nil
+					result.state.wordPageBreakIntent = nil
 					if result.state.wordDeferredToolbarAction == "ruler-indents" {
 						result.state.wordDeferredToolbarAction = ""
 						result.state.wordRulerIndentIntent = nil

@@ -278,6 +278,10 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, content := any(state.word).(document.WordContentReader)
 		_, editor := any(state.word).(document.WordTextRangeEditor)
 		return content && editor
+	case "page-break":
+		_, editor := any(state.word).(document.WordPageBreakEditor)
+		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		return editor && ok && run.Editable && wordBodyRunEditable(wordBlocksForState(state), run.ID)
 	case "format-painter":
 		if state.wordFormatPainterActive {
 			return true
@@ -566,6 +570,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.showWordFindDialog()
 	case "replace":
 		a.showWordReplaceDialog()
+	case "page-break":
+		a.queueWordPageBreak()
 	case "review-word-count":
 		a.showWordCountDetails()
 	case "ruler-indents":
@@ -1424,38 +1430,42 @@ func (a *App) rotateSelectedWordImage(delta float64) {
 }
 
 type wordCommandResult struct {
-	state                *documentSessionState
-	blocks               []document.WordBlock
-	selectInsertedImage  bool
-	generation           uint64
-	operation            string
-	err                  error
-	clearImageSelection  bool
-	imageID              string
-	undo                 bool
-	history              bool
-	applied              bool
-	textDraft            bool
-	paragraphSplit       bool
-	paragraphJoin        bool
-	runID                string
-	runText              string
-	splitSourceRunID     string
-	splitPrefix          string
-	splitParagraphID     string
-	splitRunID           string
-	splitRunText         string
-	joinParagraphID      string
-	joinRunID            string
-	joinCaret            int
-	insertedParagraphID  string
-	bodyParagraphInsert  bool
-	wordRangeReplacement bool
-	replaceRunID         string
-	replaceParagraphID   string
-	replaceStart         int
-	replaceText          string
-	replaceQuery         string
+	state                 *documentSessionState
+	blocks                []document.WordBlock
+	selectInsertedImage   bool
+	generation            uint64
+	operation             string
+	err                   error
+	clearImageSelection   bool
+	imageID               string
+	undo                  bool
+	history               bool
+	applied               bool
+	textDraft             bool
+	paragraphSplit        bool
+	paragraphJoin         bool
+	runID                 string
+	runText               string
+	splitSourceRunID      string
+	splitPrefix           string
+	splitParagraphID      string
+	splitRunID            string
+	splitRunText          string
+	joinParagraphID       string
+	joinRunID             string
+	joinCaret             int
+	insertedParagraphID   string
+	bodyParagraphInsert   bool
+	wordRangeReplacement  bool
+	pageBreak             bool
+	replaceRunID          string
+	replaceParagraphID    string
+	replaceStart          int
+	replaceText           string
+	replaceQuery          string
+	pageBreakSourcePrefix string
+	pageBreakParagraphID  string
+	pageBreakCaretRunID   string
 }
 
 func (a *App) publishWordCommand(result wordCommandResult) {

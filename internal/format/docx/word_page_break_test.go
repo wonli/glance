@@ -2,9 +2,10 @@ package docx
 
 import (
 	"bytes"
-	"reflect"
 	"strings"
 	"testing"
+
+	"glance/internal/document"
 )
 
 type wordPageBreakTestCapability interface {
@@ -89,7 +90,7 @@ func TestInsertWordPageBreakAtCaretPreservesRunFormattingAndRoundTrips(t *testin
 	}
 }
 
-func TestInsertWordPageBreakReplacesSelectionAndEmptyRunStaysEditable(t *testing.T) {
+func TestInsertWordPageBreakReplacesSelectionAndReturnsEditableSuffix(t *testing.T) {
 	doc, err := NewBlank()
 	if err != nil {
 		t.Fatal(err)
@@ -112,6 +113,32 @@ func TestInsertWordPageBreakReplacesSelectionAndEmptyRunStaysEditable(t *testing
 	}
 	if suffix := paragraph.Inlines[2].Text; suffix == nil || suffix.Text != "右" || suffix.ID != caretRunID || !suffix.Editable {
 		t.Fatalf("page-break caret run is not the editable suffix: %#v", suffix)
+	}
+}
+
+func TestInsertWordPageBreakAtEndKeepsEmptyCaretRunEditable(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	initialRun := doc.WordBlocks()[0].Paragraph.Inlines[0].Text
+	if err := requireWordTextEditor(t, doc).ReplaceTextRun(initialRun.ID, "末尾"); err != nil {
+		t.Fatal(err)
+	}
+	paragraphID, caretRunID, err := requireWordPageBreakEditor(t, doc).InsertPageBreakAtRange(initialRun.ID, "末尾", 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paragraph := doc.WordBlocks()[0].Paragraph
+	if paragraph.ID != paragraphID || len(paragraph.Inlines) != 3 {
+		t.Fatalf("end insertion inlines = %#v", paragraph.Inlines)
+	}
+	if paragraph.Inlines[1].PageBreak == nil {
+		t.Fatalf("end insertion marker = %#v; want page break", paragraph.Inlines[1])
+	}
+	if suffix := paragraph.Inlines[2].Text; suffix == nil || suffix.ID != caretRunID || suffix.Text != "" || !suffix.Editable {
+		t.Fatalf("empty caret run = %#v; want editable empty suffix %q", suffix, caretRunID)
 	}
 }
 
@@ -140,14 +167,9 @@ func TestInsertWordPageBreakRejectsInvalidRangeAndTableParagraph(t *testing.T) {
 	}
 }
 
-func isWordPageBreakInline(t *testing.T, inline any) bool {
+func isWordPageBreakInline(t *testing.T, inline document.WordInline) bool {
 	t.Helper()
-	value := reflect.ValueOf(inline)
-	if value.Kind() != reflect.Struct {
-		t.Fatalf("page-break inline has kind %s, want struct", value.Kind())
-	}
-	field := value.FieldByName("PageBreak")
-	return field.IsValid() && ((field.Kind() == reflect.Pointer && !field.IsNil()) || (field.Kind() == reflect.Struct && !field.IsZero()))
+	return inline.PageBreak != nil
 }
 
 func TestWordPageBreakXMLContainsOnlyOneNativeMarker(t *testing.T) {

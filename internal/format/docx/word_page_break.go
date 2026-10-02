@@ -19,9 +19,6 @@ func (d *Document) InsertPageBreakAtRange(runID, value string, start, end int) (
 	if !ok || target.text == nil || target.run == nil || target.paragraph == nil {
 		return "", "", fmt.Errorf("Word text run %q is not editable", runID)
 	}
-	if !target.text.Editable {
-		return "", "", fmt.Errorf("Word text run %q is read-only", runID)
-	}
 	if target.paragraph.parent == nil || target.paragraph.parent.name.Space != wordprocessingMLNamespace || target.paragraph.parent.name.Local != "body" {
 		return "", "", errors.New("page-break insertion is supported only in a direct body paragraph")
 	}
@@ -81,12 +78,15 @@ func (d *Document) InsertPageBreakAtRange(runID, value string, start, end int) (
 		return "", "", fmt.Errorf("insert DOCX page break: %w", err)
 	}
 	paragraphID := target.paragraphID
-	if err := d.applyWordDocumentXMLLocked(patched); err != nil {
-		return "", "", err
+	virtualParts := append([]part(nil), d.parts...)
+	virtualParts[d.documentIdx].data = patched
+	projection, err := projectWordDocument(virtualParts, d.documentIdx)
+	if err != nil {
+		return "", "", fmt.Errorf("project DOCX after page-break insertion: %w", err)
 	}
-
 	pageBreakSeen := false
-	for _, block := range d.wordBlocks {
+	caretRunID := ""
+	for _, block := range projection.blocks {
 		if block.Paragraph == nil || block.Paragraph.ID != paragraphID {
 			continue
 		}
@@ -96,11 +96,19 @@ func (d *Document) InsertPageBreakAtRange(runID, value string, start, end int) (
 				continue
 			}
 			if pageBreakSeen && inline.Text != nil && inline.Text.Editable {
-				return paragraphID, inline.Text.ID, nil
+				caretRunID = inline.Text.ID
+				break
 			}
 		}
+		break
 	}
-	return "", "", errors.New("inserted DOCX page break has no editable caret run after it")
+	if caretRunID == "" {
+		return "", "", errors.New("inserted DOCX page break has no editable caret run after it")
+	}
+	if err := d.applyWordDocumentXMLLocked(patched); err != nil {
+		return "", "", err
+	}
+	return paragraphID, caretRunID, nil
 }
 
 func validateWordPageBreakRun(data []byte, run, text *wordXMLNode) (*wordXMLNode, error) {

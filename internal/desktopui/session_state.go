@@ -65,6 +65,7 @@ type documentSessionState struct {
 	wordNavigationVerticalHandledRunID  string
 	wordParagraphSplitIntent            *wordParagraphSplitIntent
 	wordParagraphJoinIntent             *wordParagraphJoinIntent
+	wordPageBreakIntent                 *wordPageBreakIntent
 	wordAppendTarget                    widget.Clickable
 	wordInsertionRunning                bool
 	wordFlushRequested                  bool

@@ -174,6 +174,9 @@ func (a *App) startNextWordTextCommit() {
 		if state.wordParagraphSplitIntent != nil && runID == state.wordParagraphSplitIntent.runID {
 			continue
 		}
+		if state.wordPageBreakIntent != nil && runID == state.wordPageBreakIntent.runID {
+			continue
+		}
 		if !state.wordFlushAllDrafts && runID == state.wordFocusedRunID {
 			continue
 		}
@@ -188,6 +191,13 @@ func (a *App) startNextWordTextCommit() {
 			return
 		}
 		if intent := state.wordParagraphSplitIntent; intent != nil {
+			if wordHasPendingTextDraftsExcept(state, intent.runID) {
+				return
+			}
+			a.finishWordTextFlush(state)
+			return
+		}
+		if intent := state.wordPageBreakIntent; intent != nil {
 			if wordHasPendingTextDraftsExcept(state, intent.runID) {
 				return
 			}
@@ -237,6 +247,10 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 	}
 	if state.wordParagraphJoinIntent != nil {
 		a.startWordParagraphJoin(state)
+		return
+	}
+	if state.wordPageBreakIntent != nil {
+		a.startWordPageBreak(state)
 		return
 	}
 	if state.wordSaveAfterDrafts {
