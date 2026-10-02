@@ -90,11 +90,17 @@ func projectWordSection(startBlock int, node *wordXMLNode, sourceID string, unsu
 	section := document.WordSection{StartBlock: startBlock}
 	pageSize := firstChild(node, "pgSz")
 	if pageSize != nil {
-		section.PageSetup.WidthPT = wordTwipsToPoints(attrValue(pageSize, "w"))
-		section.PageSetup.HeightPT = wordTwipsToPoints(attrValue(pageSize, "h"))
-		section.PageSetup.Orientation = strings.ToLower(attrValue(pageSize, "orient"))
-		if section.PageSetup.Orientation == "" {
-			section.PageSetup.Orientation = "portrait"
+		if value := attrValue(pageSize, "w"); value != "" {
+			section.PageSetup.WidthPT = wordTwipsToPoints(value)
+			section.PageSetup.Set |= document.WordPageWidthSet
+		}
+		if value := attrValue(pageSize, "h"); value != "" {
+			section.PageSetup.HeightPT = wordTwipsToPoints(value)
+			section.PageSetup.Set |= document.WordPageHeightSet
+		}
+		if value := attrValue(pageSize, "orient"); value != "" {
+			section.PageSetup.Orientation = strings.ToLower(value)
+			section.PageSetup.Set |= document.WordPageOrientationSet
 		}
 		if section.PageSetup.WidthPT <= 0 || section.PageSetup.HeightPT <= 0 {
 			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: sourceID, Code: "invalid-page-size", Description: "The section has an invalid or incomplete page size."})
@@ -104,10 +110,16 @@ func projectWordSection(startBlock int, node *wordXMLNode, sourceID string, unsu
 		}
 	}
 	if margins := firstChild(node, "pgMar"); margins != nil {
-		section.PageSetup.MarginTopPT = wordTwipsToPoints(attrValue(margins, "top"))
-		section.PageSetup.MarginRightPT = wordTwipsToPoints(attrValue(margins, "right"))
-		section.PageSetup.MarginBottomPT = wordTwipsToPoints(attrValue(margins, "bottom"))
-		section.PageSetup.MarginLeftPT = wordTwipsToPoints(attrValue(margins, "left"))
+		projectMargin := func(name string, target *float64, mask document.WordPageSetupMask) {
+			if value := attrValue(margins, name); value != "" {
+				*target = wordTwipsToPoints(value)
+				section.PageSetup.Set |= mask
+			}
+		}
+		projectMargin("top", &section.PageSetup.MarginTopPT, document.WordPageMarginTopSet)
+		projectMargin("right", &section.PageSetup.MarginRightPT, document.WordPageMarginRightSet)
+		projectMargin("bottom", &section.PageSetup.MarginBottomPT, document.WordPageMarginBottomSet)
+		projectMargin("left", &section.PageSetup.MarginLeftPT, document.WordPageMarginLeftSet)
 	}
 	if columns := firstChild(node, "cols"); columns != nil {
 		count := attrValue(columns, "num")

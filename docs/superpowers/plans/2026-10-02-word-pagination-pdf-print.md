@@ -127,28 +127,28 @@ Expected: PASS, including the CJK/missing-glyph fallback regression; no external
 - `Result` contains ordered `Pages []PageScene`, `Diagnostics`, and `Locations map[SourcePosition]Position`. `SourcePosition` is `{RunID string; RuneOffset int}`; `Position` is `{Page int; XPT, YPT float64}`. Each `PageScene` is a neutral Canvas-like vector display list in points: page geometry plus positioned glyph runs, glyph font keys/IDs, images, table cells, clipping, and source ranges. Visible glyphs resolve to outlines once from the selected font face and are replayed at identical origins by the Gio painter and PDF writer; neither sink measures or wraps text again. The scene contains no Gio/PDF/platform drawing objects.
 - Diagnostics use a typed severity (`warning`/`error`), stable source ID, code, and user-readable detail. `Result.CanPreview` is false for fatal layout errors; warnings require explicit user confirmation before PDF/print.
 
-- [ ] **Step 1: Add deterministic pagination tests using the fake shaper**
+- [x] **Step 1: Add deterministic pagination tests using the fake shaper**
 
 Add table-driven tests named `TestLayoutPageSetupAndMargins`, `TestLayoutParagraphRunFormattingAndMixedScripts`, `TestLayoutListsInlineImagesAndPageBreaks`, `TestLayoutOrdinaryTableSplitsBetweenRows`, `TestLayoutMapsRunRuneOffsetsToPage`, and `TestLayoutUnsupportedSectionsBlockOutput`. Assert page count, fragment coordinates/source ranges, order, no duplicate/lost runes, and typed diagnostics.
 
-- [ ] **Step 2: Add Review Focus boundary and tall-row tests**
+- [x] **Step 2: Add Review Focus boundary and tall-row tests**
 
 Add `TestLayoutExactPageBoundaryThenExplicitBreakHasNoExtraPage` and `TestLayoutOversizedTableRowReportsOverflowAndTerminates`. Assert no unintended blank page, no unlocated overflow, finite/nonnegative geometry, and bounded layout completion.
 
-- [ ] **Step 3: Run the focused layout tests to confirm the missing behavior**
+- [x] **Step 3: Run the focused layout tests to confirm the missing behavior**
 
 Run: `go test ./internal/wordlayout -run 'TestLayout' -count=1`
 Expected: FAIL until the engine exists.
 
-- [ ] **Step 4: Implement `Engine.Layout` and paragraph placement**
+- [x] **Step 4: Implement `Engine.Layout` and paragraph placement**
 
 Implement point-based page boxes/margins, style resolution (`BasedOn` plus direct run/paragraph values), shaping-aware line breaking, supported alignments/indents/spacing/list markers, inline raster dimensions, explicit page breaks, keep controls, source maps at Unicode rune boundaries, cancellation checks, and diagnostics. Empty paragraphs/documents produce valid deterministic pages.
 
-- [ ] **Step 5: Implement ordinary table layout and conservative unsupported handling**
+- [x] **Step 5: Implement ordinary table layout and conservative unsupported handling**
 
 Lay out grid/cell widths and cell paragraphs; split only between rows. If a row cannot fit on a fresh page, emit one located overflow diagnostic and advance/terminate without retry loops. Merged/nested structures that cannot be represented accurately emit blocking diagnostics; do not silently flatten them.
 
-- [ ] **Step 6: Run focused engine tests and commit Task 3**
+- [x] **Step 6: Run focused engine tests and commit Task 3**
 
 Run: `go test ./internal/wordlayout -count=1`
 Expected: PASS with deterministic page geometry, source mapping, cancellation, and unsupported-content diagnostics.

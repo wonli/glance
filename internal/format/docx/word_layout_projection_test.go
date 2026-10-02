@@ -76,6 +76,10 @@ func TestWordLayoutProjectionReadsSectionPageSetupAndStyleDefaults(t *testing.T)
 	if section.StartBlock != 0 || section.PageSetup.WidthPT != 841.9 || section.PageSetup.HeightPT != 595.3 || section.PageSetup.Orientation != "landscape" {
 		t.Fatalf("section geometry = %+v; want landscape 841.9×595.3pt starting at block 0", section)
 	}
+	pageSetupSet := document.WordPageWidthSet | document.WordPageHeightSet | document.WordPageOrientationSet | document.WordPageMarginTopSet | document.WordPageMarginRightSet | document.WordPageMarginBottomSet | document.WordPageMarginLeftSet
+	if section.PageSetup.Set&pageSetupSet != pageSetupSet {
+		t.Fatalf("page setup presence mask = %b; want all geometry/margin values explicitly present", section.PageSetup.Set)
+	}
 	if section.PageSetup.MarginTopPT != 72 || section.PageSetup.MarginRightPT != 90 || section.PageSetup.MarginBottomPT != 72 || section.PageSetup.MarginLeftPT != 90 {
 		t.Fatalf("section margins = %+v; want top/bottom 72pt and left/right 90pt", section.PageSetup)
 	}

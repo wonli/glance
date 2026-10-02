@@ -1,8 +1,20 @@
 package document
 
-// WordPageSetup stores physical page geometry in points. Zero dimensions mean
-// that the DOCX did not define them and the layout service must apply a
-// documented product default.
+// WordPageSetup stores physical page geometry in points. Set distinguishes an
+// omitted value from an explicit zero margin. Synthetic callers may also set
+// nonzero values without the mask.
+type WordPageSetupMask uint16
+
+const (
+	WordPageWidthSet WordPageSetupMask = 1 << iota
+	WordPageHeightSet
+	WordPageOrientationSet
+	WordPageMarginTopSet
+	WordPageMarginRightSet
+	WordPageMarginBottomSet
+	WordPageMarginLeftSet
+)
+
 type WordPageSetup struct {
 	WidthPT        float64
 	HeightPT       float64
@@ -11,6 +23,7 @@ type WordPageSetup struct {
 	MarginRightPT  float64
 	MarginBottomPT float64
 	MarginLeftPT   float64
+	Set            WordPageSetupMask
 }
 
 // WordSection maps one section's page settings to the first body block using

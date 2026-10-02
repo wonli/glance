@@ -21,6 +21,48 @@ type FontSource interface {
 	FontData(fontKey string) ([]byte, error)
 }
 
+// GlyphOutlineSource resolves a font glyph to a neutral vector outline.
+// Coordinates are expressed in font units and the y axis grows upward.
+type GlyphOutlineSource interface {
+	GlyphOutline(fontKey string, glyphID uint32) (GlyphOutline, error)
+}
+
+type GlyphPathOp uint8
+
+const (
+	GlyphPathMoveTo GlyphPathOp = iota + 1
+	GlyphPathLineTo
+	GlyphPathCurveTo
+)
+
+type GlyphPathPoint struct {
+	XPT float64
+	YPT float64
+}
+
+// GlyphPathCommand is a baseline-relative vector path segment. PageScene
+// commands use points with y growing down after layout scales the font units.
+type GlyphPathCommand struct {
+	Op     GlyphPathOp
+	Points [3]GlyphPathPoint
+}
+
+type GlyphOutlinePoint struct {
+	X float64
+	Y float64
+}
+
+type GlyphOutlineCommand struct {
+	Op     GlyphPathOp
+	Points [3]GlyphOutlinePoint
+}
+
+// GlyphOutline is returned by a GlyphOutlineSource in font units.
+type GlyphOutline struct {
+	UnitsPerEm float64
+	Commands   []GlyphOutlineCommand
+}
+
 // ShapedText stores visual-order glyphs and the maximum line metrics in points.
 type ShapedText struct {
 	Glyphs    []ShapedGlyph
