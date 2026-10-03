@@ -40,6 +40,8 @@ type gridPicturePreviewResult struct {
 
 type gridPictureCommandResult struct {
 	state      *documentSessionState
+	token      sessionOperationToken
+	revision   uint64
 	generation uint64
 	sheet      string
 	operation  string
@@ -93,7 +95,9 @@ func (a *App) requestGridPictureMetadata(state *documentSessionState, reader doc
 	results := a.gridPictureMetaResults
 	shutdown, window := a.shutdown, a.window
 	go func() {
+		unlock := lockSessionAdapterRead(state)
 		images, err := reader.SpreadsheetImages(sheet)
+		unlock()
 		result := gridPictureMetadataResult{state: state, generation: generation, sheet: sheet, images: images, err: err}
 		select {
 		case results <- result:
@@ -246,7 +250,9 @@ func (a *App) requestGridPicturePreview(state *documentSessionState, picture doc
 	generation, sheet, window := a.documentGeneration, state.gridPicturesSheet, a.window
 	shutdown := a.shutdown
 	go func() {
+		unlock := lockSessionAdapterRead(state)
 		data, err := reader.SpreadsheetImageBytes(picture.ID)
+		unlock()
 		var preview image.Image
 		if err == nil {
 			if len(data) > maxSpreadsheetImagePreviewBytes {
@@ -350,7 +356,7 @@ func (a *App) startGridPictureMoveResize(state *documentSessionState, picture do
 }
 
 func (a *App) startGridPictureCommand(state *documentSessionState, request gridPictureCommandRequest) {
-	if state == nil || state.formatRunning || a.saving {
+	if state == nil || state.formatRunning.Load() || a.isSaving() {
 		if a.window != nil {
 			a.status = "正在处理其他操作，请稍后重试"
 			a.window.Invalidate()
@@ -368,7 +374,14 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 	if request.operation == "" {
 		request.operation = pictureCommandOperationName(request.kind)
 	}
-	state.formatRunning = true
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		if a.window != nil {
+			a.status = "正在处理其他操作，请稍后重试"
+			a.window.Invalidate()
+		}
+		return
+	}
 	state.gridPictureCommitID = request.imageID
 	state.gridPictureCommitPreview = gridPictureGeometry{}
 	state.gridPictureCommitActive = false
@@ -379,7 +392,8 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 	generation, sheet := a.documentGeneration, state.sheet
 	results, shutdown, window := a.gridPictureCommands, a.shutdown, a.window
 	go func() {
-		result := gridPictureCommandResult{state: state, generation: generation, sheet: sheet, operation: request.operation}
+		result := gridPictureCommandResult{state: state, token: token, generation: generation, sheet: sheet, operation: request.operation}
+		unlock := lockSessionAdapterWrite(state)
 		switch request.kind {
 		case gridPictureCommandMove:
 			if request.target == nil {
@@ -446,6 +460,12 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 				}
 			}
 		}
+		unlock()
+		if result.mutated {
+			a.ensureDesktopRuntime().publishSessionRevision(token.documentID, token.revision+1)
+		}
+		state.finishOperation(token)
+		result.revision = state.wordRevisionAtomic.Load()
 		select {
 		case results <- result:
 			if window != nil {
@@ -487,11 +507,16 @@ func (a *App) applyGridPictureCommand(result gridPictureCommandResult) {
 	if state == nil || state.closed.Load() {
 		return
 	}
-	state.formatRunning = false
 	state.gridPictureCommitID = ""
 	state.gridPictureCommitPreview = gridPictureGeometry{}
 	state.gridPictureCommitActive = false
 	state.gridPictureGesture.cancel()
+	if result.token.generation != 0 && (!state.acceptsResult(result.token) || state.wordRevisionAtomic.Load() != result.revision) {
+		if result.mutated {
+			a.invalidateGridPictures(state)
+		}
+		return
+	}
 	if result.generation != a.documentGeneration || state != a.documentSessionState || result.sheet != a.sheet {
 		if result.mutated {
 			a.invalidateGridPictures(state)

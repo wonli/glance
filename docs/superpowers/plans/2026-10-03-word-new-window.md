@@ -126,29 +126,29 @@ Commit as `feat: centralize workspace and document sessions`.
 - Produces `func (r *desktopRuntime) publishSessionRevision(documentID string, revision uint64)` to invalidate all live views after publishing a new immutable document snapshot.
 - Adapter access in layout reads immutable neutral snapshots only. Background reads/mutations/saves/snapshot generation acquire the session operation boundary; only one save or format mutation per document runs at a time. Per-window `documentGeneration` cannot substitute for the shared operation generation.
 
-- [ ] **Step 1: Add operation gate and cross-window publication regressions**
+- [x] **Step 1: Add operation gate and cross-window publication regressions**
 
 Add `TestSessionOperationGateSerializesSaveAndMutation` and `TestSessionPublicationInvalidatesEveryAttachedView`. Assert a second operation is rejected while one is active, successful publication advances the revision exactly once, and all attached windows receive invalidation. The lifecycle test for a result arriving after its source window closes is covered in Task 7.
 
-- [ ] **Step 2: Run the tests to verify no shared-session operation boundary exists**
+- [x] **Step 2: Run the tests to verify no shared-session operation boundary exists**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run '^Test(SessionOperationGate|SessionPublication)' -count=1`
 Expected: FAIL because `formatRunning`, save state, job generations, and invalidation are currently scoped to one `App`.
 
-- [ ] **Step 3: Implement shared operation tokens and revision fan-out**
+- [x] **Step 3: Implement shared operation tokens and revision fan-out**
 
 Move operation/save flags and generation to `sharedDocumentSession`; make every worker validate its session token before publishing. Publish neutral block/grid snapshots and revision under the session boundary, then invalidate live views through `desktopRuntime.viewsForSession`.
 
-- [ ] **Step 4: Audit and route adapter reads/writes**
+- [x] **Step 4: Audit and route adapter reads/writes**
 
 Run `rg -n '\.(word|book|jsonDoc)\.' internal/desktopui --glob '*.go'` and classify each production access. Move frame/layout reads to the shared immutable snapshot; route adapter reads that can race, mutations, saves, and snapshots through the session boundary. Keep parsing, serialization, and format calls outside Gio layout callbacks.
 
-- [ ] **Step 5: Run operation, Word editing, save, print, and adapter regressions**
+- [x] **Step 5: Run operation, Word editing, save, print, and adapter regressions**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run 'Test(Session|Word.*(Save|Draft|Pagination|PDF|Print)|Workspace.*(Save|Snapshot))' -count=1`
 Expected: PASS, with no stale revision accepted and no adapter operation running concurrently for one session.
 
-- [ ] **Step 6: Commit serialized session operations**
+- [x] **Step 6: Commit serialized session operations**
 
 Commit as `refactor: serialize document session operations`.
 

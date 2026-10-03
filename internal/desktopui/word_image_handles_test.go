@@ -219,7 +219,7 @@ func TestWordImageResizeAndRotationHandlesCommitPointerDrags(t *testing.T) {
 	waitForCommand := func() {
 		t.Helper()
 		deadline := time.After(3 * time.Second)
-		for state.formatRunning {
+		for state.formatRunning.Load() {
 			select {
 			case result := <-app.wordCommandResults:
 				if result.err != nil {
@@ -279,7 +279,7 @@ func TestWordImageResizeAndRotationHandlesCommitPointerDrags(t *testing.T) {
 	}
 	resized := findWordImage(word.WordBlocks(), imageID)
 	if resized == nil || resized.WidthEMU <= initialWidth {
-		t.Fatalf("right resize handle committed width %v; want more than %d EMU (running=%v preview=%#v status=%q)", resized, initialWidth, state.formatRunning, wordImageInteractionFor(state, imageID).preview.Preview(), app.status)
+		t.Fatalf("right resize handle committed width %v; want more than %d EMU (running=%v preview=%#v status=%q)", resized, initialWidth, state.formatRunning.Load(), wordImageInteractionFor(state, imageID).preview.Preview(), app.status)
 	}
 	frame()
 	container = findBounds("内嵌图片 " + imageID)

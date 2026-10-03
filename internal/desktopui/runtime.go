@@ -134,13 +134,19 @@ func closeUnregisteredSessionAdapters(candidate, existing *sharedDocumentSession
 		return
 	}
 	if candidate.book != nil && !sameAdapterInstance(candidate.book, existing.book) {
+		candidate.adapterMu.Lock()
 		_ = candidate.book.Close()
+		candidate.adapterMu.Unlock()
 	}
 	if candidate.word != nil && candidate.word != existing.word {
+		candidate.adapterMu.Lock()
 		_ = candidate.word.Close()
+		candidate.adapterMu.Unlock()
 	}
 	if candidate.jsonDoc != nil && candidate.jsonDoc != existing.jsonDoc {
+		candidate.adapterMu.Lock()
 		_ = candidate.jsonDoc.Close()
+		candidate.adapterMu.Unlock()
 	}
 	candidate.finalized.Store(true)
 }
@@ -285,6 +291,7 @@ func (r *desktopRuntime) updateSessionPath(session *sharedDocumentSession, path 
 	}
 	r.mu.Lock()
 	if r.sessions[session.documentID] == session {
+		session.adapterMu.Lock()
 		if oldKey := canonicalSessionPath(session.path); oldKey != "" && r.sessionsByCanonicalPath[oldKey] == session.documentID {
 			delete(r.sessionsByCanonicalPath, oldKey)
 		}
@@ -292,6 +299,7 @@ func (r *desktopRuntime) updateSessionPath(session *sharedDocumentSession, path 
 		if key := canonicalSessionPath(path); key != "" {
 			r.sessionsByCanonicalPath[key] = session.documentID
 		}
+		session.adapterMu.Unlock()
 	}
 	r.mu.Unlock()
 }
@@ -316,6 +324,8 @@ func closeSharedDocumentSession(session *sharedDocumentSession) {
 	if session == nil || !session.finalized.CompareAndSwap(false, true) {
 		return
 	}
+	session.adapterMu.Lock()
+	defer session.adapterMu.Unlock()
 	if session.book != nil {
 		_ = session.book.Close()
 	}
@@ -350,6 +360,7 @@ func (r *desktopRuntime) attachWindow(windowID uint64, app *App) {
 	app.windowID = windowID
 	if app.documentSessionState != nil {
 		app.documentSessionState.windowID = windowID
+		app.setActiveSessionID(app.documentSessionState.documentID)
 	}
 }
 
@@ -389,20 +400,21 @@ func (r *desktopRuntime) viewsForSession(documentID string) []*App {
 	r.mu.Unlock()
 	views := make([]*App, 0, len(apps))
 	for _, app := range apps {
-		found := app.documentSessionState != nil && app.documentSessionState.documentID == documentID
-		if !found {
-			for _, state := range app.sessions {
-				if state != nil && state.documentID == documentID {
-					found = true
-					break
-				}
-			}
-		}
-		if found {
+		if app.activeSessionID() == documentID {
 			views = append(views, app)
 		}
 	}
 	return views
+}
+
+func (r *desktopRuntime) windowCount() int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	count := len(r.windows)
+	r.mu.Unlock()
+	return count
 }
 
 func (r *desktopRuntime) startWorkspaceWriter() {
@@ -489,6 +501,11 @@ func (r *desktopRuntime) writeWorkspaceSnapshot(job workspaceWriteJob) error {
 	if state == nil || state.closed.Load() {
 		return nil
 	}
+	token, ok := state.beginOperationWait(sessionOperationSnapshot)
+	if !ok {
+		return nil
+	}
+	defer state.finishOperation(token)
 	payload, err := snapshotState(state)
 	if err != nil {
 		return err

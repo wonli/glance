@@ -14,6 +14,7 @@ func TestDocumentViewsShareSessionButOwnGioState(t *testing.T) {
 	shared.word = &docx.Document{}
 	shared.wordRevision = 7
 	shared.wordRevisionAtomic.Store(7)
+	shared.publishedRevision.Store(7)
 	shared.wordRunCommitted = map[string]string{"run-1": "committed"}
 	shared.wordRunDrafts = map[string]string{"run-1": "shared draft"}
 
@@ -31,8 +32,8 @@ func TestDocumentViewsShareSessionButOwnGioState(t *testing.T) {
 	if first.wordRevision != second.wordRevision || first.wordRevisionAtomic.Load() != second.wordRevisionAtomic.Load() {
 		t.Fatalf("shared revisions = %d/%d and atomic %d/%d", first.wordRevision, second.wordRevision, first.wordRevisionAtomic.Load(), second.wordRevisionAtomic.Load())
 	}
-	first.formatRunning = true
-	if !second.formatRunning {
+	first.formatRunning.Store(true)
+	if !second.formatRunning.Load() {
 		t.Fatal("document operation state is not shared")
 	}
 	first.wordRunDrafts["run-1"] = "updated shared draft"

@@ -311,7 +311,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			if pictureHit.ImageID != "" {
 				setSelectedGridPicture(state, pictureHit.ImageID)
 				a.selectionDragging = false
-				if picture, found := gridPictureByID(state.gridPictures, pictureHit.ImageID); found && picture.Editable && !state.formatRunning && !a.saving {
+				if picture, found := gridPictureByID(state.gridPictures, pictureHit.ImageID); found && picture.Editable && !state.formatRunning.Load() && !a.isSaving() {
 					mode := gridPictureGestureMove
 					if pictureHit.ResizeHandle {
 						mode = gridPictureGestureResize
@@ -376,7 +376,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			}
 		case pointer.Release:
 			if v.Resize != nil {
-				if a.saving {
+				if a.isSaving() {
 					v.cancelResize()
 					v.ResizeCursor = 0
 					a.status = "正在保存，请稍后调整行列尺寸"
@@ -388,7 +388,20 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					pos = float64(pe.Position.Y)
 				}
 				v.updateResize(pos)
-				if err := v.completeResize(a.book.(document.GridReader), a.sheet); err != nil {
+				state := a.documentSessionState
+				token, ok := state.beginOperation(sessionOperationMutation)
+				if !ok {
+					a.status = "正在处理其他操作，请稍后重试"
+					v.cancelResize()
+					v.ResizeCursor = 0
+					a.window.Invalidate()
+					break
+				}
+				unlock := lockSessionAdapterWrite(state)
+				err := v.completeResize(a.book.(document.GridReader), a.sheet)
+				unlock()
+				a.completeSessionOperation(state, token, err, err == nil)
+				if err != nil {
 					a.status = "尺寸调整失败：" + err.Error()
 				} else {
 					a.status = "行列尺寸已调整；点击保存写入原文件"
@@ -493,7 +506,9 @@ func (a *App) requestGridWindow(v *gridViewport, reader document.GridReader, she
 	generation := a.documentGeneration
 	rows, cols := r.EndRow-r.StartRow+1, r.EndColumn-r.StartColumn+1
 	go func() {
+		unlock := lockSessionAdapterRead(a.documentSessionState)
 		w, err := reader.Window(sheet, r.StartRow, r.StartColumn, rows, cols)
+		unlock()
 		select {
 		case a.gridLoadResults <- gridLoadResult{generation: generation, viewport: v, sheet: sheet, rangeOf: r, window: w, err: err}:
 			a.window.Invalidate()

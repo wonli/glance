@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"gioui.org/app"
 	"gioui.org/font"
@@ -50,71 +51,72 @@ type App struct {
 	applyButton      widget.Clickable
 	goToCellButton   widget.Clickable
 
-	status                 string
-	sessions               map[string]*documentSessionState
-	tabMeta                map[string]workspace.Tab
-	activeTabID            string
-	workspaceError         string
-	workspaceWriteError    string
-	tabButtons             map[string]*widget.Clickable
-	tabCloseButtons        map[string]*widget.Clickable
-	newButton              widget.Clickable
-	recentTabButton        widget.Clickable
-	workspaceTabsList      widget.List
-	createActionsList      widget.List
-	createMenuList         widget.List
-	windowCloseButton      widget.Clickable
-	windowMinimizeButton   widget.Clickable
-	windowMaximizeButton   widget.Clickable
-	windowMode             app.WindowMode
-	clientTitlebar         bool
-	windowDecorations      widget.Decorations
-	showNewMenu            bool
-	modal                  modalDialog
-	pendingCloseTabID      string
-	recentList             widget.List
-	homeSection            homeSection
-	homeTypeFilter         string
-	homeSearch             widget.Editor
-	homeSortModifiedDesc   bool
-	homeContentList        widget.List
-	homeActionButtons      map[string]*widget.Clickable
-	homeNavButtons         map[string]*widget.Clickable
-	homeFilterButtons      map[string]*widget.Clickable
-	homeOpenButtons        map[string]*widget.Clickable
-	homeFavoriteButtons    map[string]*widget.Clickable
-	homeMoreButtons        map[string]*widget.Clickable
-	homeFolderButton       widget.Clickable
-	homeNewFolderButton    widget.Clickable
-	homeFolderAddButton    widget.Clickable
-	homeSortButton         widget.Clickable
-	homeFavorites          map[string]bool
-	homeMetadata           map[string]homeFileMetadata
-	homeMetadataResults    chan homeMetadataResult
-	homeMetadataGeneration uint64
-	fileCommandResults     chan fileCommandResult
-	fileCommandRunner      func(fileCommandKind, string) fileCommandResult
-	gridLoadResults        chan gridLoadResult
-	gridPictureMetaResults chan gridPictureMetadataResult
-	gridPictureResults     chan gridPicturePreviewResult
-	gridPictureCommands    chan gridPictureCommandResult
-	formatResults          chan spreadsheetFormatResult
-	wordCommandResults     chan wordCommandResult
-	wordImageResults       chan wordImageDecodeResult
-	wordImagePickerResults chan wordImagePickerResult
-	wordImagePickerRunning bool
-	wordImageFilePicker    func() (string, error)
-	xlsxImagePickerResults chan spreadsheetImagePickerResult
-	xlsxImagePickerRunning bool
-	xlsxImageFilePicker    func() (string, error)
-	saveResults            chan saveResult
-	openResults            chan openResult
-	saving                 bool
-	opening                bool
-	fileCommandRunning     bool
-	documentGeneration     uint64
-	shutdown               chan struct{}
-	shutdownOnce           sync.Once
+	status                  string
+	activeSessionDocumentID atomic.Value
+	sessions                map[string]*documentSessionState
+	tabMeta                 map[string]workspace.Tab
+	activeTabID             string
+	workspaceError          string
+	workspaceWriteError     string
+	tabButtons              map[string]*widget.Clickable
+	tabCloseButtons         map[string]*widget.Clickable
+	newButton               widget.Clickable
+	recentTabButton         widget.Clickable
+	workspaceTabsList       widget.List
+	createActionsList       widget.List
+	createMenuList          widget.List
+	windowCloseButton       widget.Clickable
+	windowMinimizeButton    widget.Clickable
+	windowMaximizeButton    widget.Clickable
+	windowMode              app.WindowMode
+	clientTitlebar          bool
+	windowDecorations       widget.Decorations
+	showNewMenu             bool
+	modal                   modalDialog
+	pendingCloseTabID       string
+	recentList              widget.List
+	homeSection             homeSection
+	homeTypeFilter          string
+	homeSearch              widget.Editor
+	homeSortModifiedDesc    bool
+	homeContentList         widget.List
+	homeActionButtons       map[string]*widget.Clickable
+	homeNavButtons          map[string]*widget.Clickable
+	homeFilterButtons       map[string]*widget.Clickable
+	homeOpenButtons         map[string]*widget.Clickable
+	homeFavoriteButtons     map[string]*widget.Clickable
+	homeMoreButtons         map[string]*widget.Clickable
+	homeFolderButton        widget.Clickable
+	homeNewFolderButton     widget.Clickable
+	homeFolderAddButton     widget.Clickable
+	homeSortButton          widget.Clickable
+	homeFavorites           map[string]bool
+	homeMetadata            map[string]homeFileMetadata
+	homeMetadataResults     chan homeMetadataResult
+	homeMetadataGeneration  uint64
+	fileCommandResults      chan fileCommandResult
+	fileCommandRunner       func(fileCommandKind, string) fileCommandResult
+	gridLoadResults         chan gridLoadResult
+	gridPictureMetaResults  chan gridPictureMetadataResult
+	gridPictureResults      chan gridPicturePreviewResult
+	gridPictureCommands     chan gridPictureCommandResult
+	formatResults           chan spreadsheetFormatResult
+	wordCommandResults      chan wordCommandResult
+	wordImageResults        chan wordImageDecodeResult
+	wordImagePickerResults  chan wordImagePickerResult
+	wordImagePickerRunning  bool
+	wordImageFilePicker     func() (string, error)
+	xlsxImagePickerResults  chan spreadsheetImagePickerResult
+	xlsxImagePickerRunning  bool
+	xlsxImageFilePicker     func() (string, error)
+	saveResults             chan saveResult
+	openResults             chan openResult
+	saving                  bool
+	opening                 bool
+	fileCommandRunning      bool
+	documentGeneration      uint64
+	shutdown                chan struct{}
+	shutdownOnce            sync.Once
 
 	wordDocumentInfoResults chan wordDocumentInfoResult
 	wordLayoutResults       chan wordLayoutResult
@@ -183,6 +185,7 @@ func New(window *app.Window, initialPath string) *App {
 		a.initializeWorkspace()
 		a.startWorkspaceWriter()
 	}
+	a.setActiveSessionID("")
 	a.homeSearch.SingleLine = true
 	if err := prepareWordFontScanner(); err != nil {
 		log.Printf("prepare Word/system font scanner: %v", err)
@@ -225,7 +228,7 @@ func Run(initialPath string) {
 }
 
 func (a *App) open(path string) error {
-	if a.saving {
+	if a.isSaving() {
 		return fmt.Errorf("正在保存当前文件，请稍后再打开")
 	}
 	shared, err := a.ensureDesktopRuntime().openDocumentSession(path)
@@ -375,6 +378,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	}
 	meta := workspace.Tab{ID: id, Kind: kind, Title: title, DocumentID: id, SourcePath: loaded.path, Position: len(a.tabMeta)}
 	a.activeTabID = id
+	a.setActiveSessionID(id)
 	state.documentID = id
 	a.tabMeta[id] = meta
 	a.sessions[id] = state
@@ -440,7 +444,7 @@ func closeLoadedDocument(loaded loadedDocument) {
 }
 
 func (a *App) startOpen(path string) {
-	if a.opening || a.saving {
+	if a.opening || a.isSaving() {
 		return
 	}
 	a.opening = true
@@ -465,6 +469,7 @@ type saveResult struct {
 	path   string
 	tabID  string
 	saveAs bool
+	token  sessionOperationToken
 	err    error
 }
 
@@ -481,12 +486,18 @@ func (a *App) startSave() {
 		a.requestWordTextFlush(true)
 		return
 	}
-	if a.saving || !a.isDirty() {
+	if a.isSaving() || !a.isDirty() {
+		return
+	}
+	state := a.documentSessionState
+	token, ok := state.beginOperation(sessionOperationSave)
+	if !ok {
 		return
 	}
 	book, word, jsonDocument, path, tabID := a.book, a.word, a.jsonDoc, a.path, a.activeTabID
 	a.saving = true
 	go func() {
+		unlock := lockSessionAdapterWrite(state)
 		var err error
 		if book != nil {
 			err = book.Save()
@@ -495,8 +506,10 @@ func (a *App) startSave() {
 		} else if jsonDocument != nil {
 			err = jsonDocument.Save()
 		}
+		unlock()
+		state.finishOperation(token)
 		select {
-		case a.saveResults <- saveResult{path: path, tabID: tabID, err: err}:
+		case a.saveResults <- saveResult{path: path, tabID: tabID, token: token, err: err}:
 			if a.window != nil {
 				a.window.Invalidate()
 			}
@@ -506,7 +519,7 @@ func (a *App) startSave() {
 }
 
 func (a *App) startSaveAs(path string) {
-	if a.saving {
+	if a.isSaving() {
 		return
 	}
 	format := "xlsx"
@@ -523,9 +536,19 @@ func (a *App) startSaveAs(path string) {
 		}
 		return
 	}
+	state := a.documentSessionState
+	if state == nil {
+		a.status = "没有活动文档"
+		return
+	}
+	token, ok := state.beginOperation(sessionOperationSave)
+	if !ok {
+		return
+	}
 	book, word, jsonDocument, tabID := a.book, a.word, a.jsonDoc, a.activeTabID
 	a.saving = true
 	go func() {
+		unlock := lockSessionAdapterWrite(state)
 		var err error
 		switch {
 		case book != nil:
@@ -541,8 +564,10 @@ func (a *App) startSaveAs(path string) {
 		default:
 			err = fmt.Errorf("没有活动文档")
 		}
+		unlock()
+		state.finishOperation(token)
 		select {
-		case a.saveResults <- saveResult{path: path, tabID: tabID, saveAs: true, err: err}:
+		case a.saveResults <- saveResult{path: path, tabID: tabID, saveAs: true, token: token, err: err}:
 			if a.window != nil {
 				a.window.Invalidate()
 			}
@@ -566,7 +591,9 @@ func (a *App) loadSheet() error {
 	if a.book == nil {
 		return nil
 	}
+	unlock := lockSessionAdapterRead(a.documentSessionState)
 	rows, err := a.book.Range(a.sheet, maxPreviewRows, maxPreviewColumns)
+	unlock()
 	if err != nil {
 		return err
 	}
@@ -594,10 +621,20 @@ func (a *App) applyCellEdit() error {
 	if a.book == nil || a.selectedCell == "" {
 		return fmt.Errorf("请先选择单元格")
 	}
-	if err := a.book.SetCellText(a.sheet, a.selectedCell, a.cellEditor.Text()); err != nil {
+	state := a.documentSessionState
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return fmt.Errorf("表格正在处理其他操作")
+	}
+	unlock := lockSessionAdapterWrite(state)
+	err := a.book.SetCellText(a.sheet, a.selectedCell, a.cellEditor.Text())
+	_, isGridReader := a.book.(document.GridReader)
+	unlock()
+	a.completeSessionOperation(state, token, err, err == nil)
+	if err != nil {
 		return err
 	}
-	if _, ok := a.book.(document.GridReader); ok {
+	if isGridReader {
 		if a.virtualGrid != nil {
 			a.virtualGrid.invalidateWindow()
 		}
@@ -611,15 +648,25 @@ func (a *App) applyCellEdit() error {
 }
 
 func (a *App) commitGridCell(value string) error {
-	if a.saving {
+	if a.isSaving() {
 		return fmt.Errorf("正在保存，请稍后再编辑单元格")
 	}
 	if a.book == nil || a.cellEdit.Address == "" {
 		return fmt.Errorf("请先选择单元格")
 	}
+	state := a.documentSessionState
 	a.cellEdit.setDraft(value)
 	changed := a.cellEdit.Draft != a.cellEdit.Original
-	err := a.cellEdit.commit(func(address, value string) error { return a.book.SetCellText(a.sheet, address, value) })
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return fmt.Errorf("表格正在处理其他操作")
+	}
+	err := a.cellEdit.commit(func(address, value string) error {
+		unlock := lockSessionAdapterWrite(state)
+		defer unlock()
+		return a.book.SetCellText(a.sheet, address, value)
+	})
+	a.completeSessionOperation(state, token, err, err == nil && changed)
 	if err != nil {
 		return err
 	}
@@ -643,16 +690,33 @@ func (a *App) applyWordEdit() error {
 	if !a.selectedBlockEditable {
 		return fmt.Errorf("该段落包含多个格式片段，暂不支持编辑")
 	}
-	if err := a.word.ReplaceParagraph(a.selectedBlock, a.wordEditor.Text()); err != nil {
+	state := a.documentSessionState
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return fmt.Errorf("Word 文档正在处理其他操作")
+	}
+	unlock := lockSessionAdapterWrite(state)
+	err := a.word.ReplaceParagraph(a.selectedBlock, a.wordEditor.Text())
+	var blocks []document.WordBlock
+	if err == nil {
+		blocks = cloneWordBlockSnapshot(a.word.WordBlocks())
+	}
+	unlock()
+	if err != nil {
+		state.finishOperation(token)
 		return err
 	}
-	a.documentSessionState.setWordBlocks(cloneWordBlockSnapshot(a.word.WordBlocks()))
-	a.startWordPagination(a.documentSessionState)
+	state.setWordBlocks(blocks)
+	a.ensureDesktopRuntime().publishSessionRevision(state.documentID, max(token.revision+1, state.wordRevisionAtomic.Load()))
+	state.finishOperation(token)
+	a.startWordPagination(state)
 	a.persistActiveSession()
 	return nil
 }
 
 func (a *App) save() error {
+	unlock := lockSessionAdapterWrite(a.documentSessionState)
+	defer unlock()
 	switch {
 	case a.book != nil:
 		if err := a.book.Save(); err != nil {
@@ -676,11 +740,13 @@ func (a *App) save() error {
 }
 
 func (a *App) isDirty() bool {
-	return (a.book != nil && a.book.Dirty()) || (a.word != nil && a.word.Dirty()) || wordHasPendingTextDrafts(a.documentSessionState) || (a.documentSessionState != nil && (a.documentSessionState.wordParagraphSplitIntent != nil || a.documentSessionState.wordParagraphJoinIntent != nil)) || (a.jsonDoc != nil && a.jsonDoc.Dirty())
+	return sessionDirty(a.documentSessionState) || wordHasPendingTextDrafts(a.documentSessionState) || (a.documentSessionState != nil && (a.documentSessionState.wordParagraphSplitIntent != nil || a.documentSessionState.wordParagraphJoinIntent != nil))
 }
 
 func (a *App) closeDocument() error {
 	a.documentGeneration++
+	unlock := lockSessionAdapterWrite(a.documentSessionState)
+	defer unlock()
 	var err error
 	if a.book != nil {
 		err = a.book.Close()

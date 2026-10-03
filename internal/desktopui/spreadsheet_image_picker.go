@@ -45,7 +45,7 @@ func loadSpreadsheetImageFile(path string) (spreadsheetImageFile, error) {
 
 func (a *App) startSpreadsheetImagePicker(operation spreadsheetImagePickerOperation) {
 	state := a.documentSessionState
-	if state == nil || state.book == nil || state.formatRunning || a.saving || a.xlsxImagePickerRunning {
+	if state == nil || state.book == nil || state.formatRunning.Load() || a.isSaving() || a.xlsxImagePickerRunning {
 		return
 	}
 	if _, ok := state.book.(document.SpreadsheetImageEditor); !ok {
@@ -113,7 +113,7 @@ func (a *App) handleSpreadsheetImagePickerResult(result spreadsheetImagePickerRe
 		a.status = "已取消选择图片"
 		return
 	}
-	if state.formatRunning || a.saving {
+	if state.formatRunning.Load() || a.isSaving() {
 		a.status = "工作簿正在处理其他操作，请稍后重试"
 		return
 	}

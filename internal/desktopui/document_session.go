@@ -17,8 +17,16 @@ import (
 // sharedDocumentSession owns document data and work that must be consistent
 // across every window displaying the same logical document.
 type sharedDocumentSession struct {
+	adapterMu                  sync.RWMutex
+	operationMu                sync.Mutex
+	wordBlocksMu               sync.RWMutex
+	operationGeneration        uint64
+	activeOperation            sessionOperationToken
+	operationActive            bool
+	operationChanged           chan struct{}
 	finalized                  atomic.Bool
 	wordRevisionAtomic         atomic.Uint64
+	publishedRevision          atomic.Uint64
 	wordDraftEpoch             atomic.Uint64
 	wordExportCommitMu         sync.Mutex
 	documentID                 string
@@ -53,17 +61,22 @@ type sharedDocumentSession struct {
 	wordPrintRunning           bool
 	wordPrintCancel            context.CancelFunc
 	wordAutoSave               bool
-	formatRunning              bool
+	formatRunning              atomic.Bool
+	saveRunning                atomic.Bool
 }
 
 func newSharedDocumentSession(path string) *sharedDocumentSession {
+	idle := make(chan struct{})
+	close(idle)
 	session := &sharedDocumentSession{
 		path:             path,
 		wordRevision:     1,
+		operationChanged: idle,
 		wordRunCommitted: make(map[string]string),
 		wordRunDrafts:    make(map[string]string),
 	}
 	session.wordRevisionAtomic.Store(session.wordRevision)
+	session.publishedRevision.Store(session.wordRevision)
 	return session
 }
 
@@ -121,6 +134,7 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 	state.wordNavigationSearchEditor.SingleLine = true
 	state.wordEditor.SingleLine = false
 	state.jsonEditor.SingleLine = false
+	state.observedSessionRevision.Store(shared.wordRevisionAtomic.Load())
 	return state
 }
 

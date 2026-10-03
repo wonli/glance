@@ -96,7 +96,9 @@ func (a *App) copySelection() (string, error) {
 	if !ok {
 		return "", fmt.Errorf("当前表格不支持区域复制")
 	}
+	unlock := lockSessionAdapterRead(state)
 	cells, err := reader.ReadRange(state.sheet, state.selection.Bounds())
+	unlock()
 	if err != nil {
 		return "", err
 	}

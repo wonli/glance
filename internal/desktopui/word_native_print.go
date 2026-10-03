@@ -29,7 +29,7 @@ func (a *App) requestWordPrint() {
 		a.status = "当前平台不支持原生打印"
 		return
 	}
-	if state.formatRunning || a.saving || a.fileCommandRunning || state.wordPrintPreparing || state.wordPrintRunning {
+	if state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning || state.wordPrintPreparing || state.wordPrintRunning {
 		return
 	}
 	if wordHasPendingTextDrafts(state) {
@@ -48,7 +48,7 @@ func (a *App) beginWordPrint(state *documentSessionState) {
 	if state == nil || state.word == nil || state.closed.Load() || a.documentSessionState != state || a.wordPrinter == nil || !a.wordPrinter.Available() {
 		return
 	}
-	if state.formatRunning || a.saving || a.fileCommandRunning || state.wordPrintPreparing || state.wordPrintRunning {
+	if state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning || state.wordPrintPreparing || state.wordPrintRunning {
 		return
 	}
 	if wordHasPendingTextDrafts(state) || state.wordFlushRequested {
@@ -114,7 +114,7 @@ func (a *App) startWordPrintPreparation(state *documentSessionState, key wordLay
 	if state == nil || state.word == nil || state.closed.Load() || a.documentSessionState != state {
 		return
 	}
-	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning {
+	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning.Load() {
 		a.status = "文档已更改，未准备打印；请重新打印"
 		return
 	}
@@ -131,22 +131,39 @@ func (a *App) startWordPrintPreparation(state *documentSessionState, key wordLay
 		a.status = "DOCX 适配器未提供分页信息，无法打印"
 		return
 	}
+	token, ok := state.beginOperation(sessionOperationSnapshot)
+	if !ok {
+		a.status = "文档正在处理其他操作，请稍后重试"
+		return
+	}
 	pageResult := cloneWordLayoutResult(*state.wordLayoutResult)
 	blocks := cloneWordBlockSnapshot(wordBlocksForState(state))
+	unlock := lockSessionAdapterRead(state)
 	layoutData := readerWithData.WordLayoutData()
+	unlock()
 	doc := state.word
 	fontSource := a.wordPDFFontSource
-	revision := state.wordRevision
+	revision := state.wordRevisionAtomic.Load()
 	draftEpoch := state.wordDraftEpoch.Load()
 	ctx, cancel := context.WithCancel(context.Background())
 	state.wordPrintCancel = cancel
 	state.wordPrintPreparing = true
-	state.formatRunning = true
 	results, shutdown, window := a.wordPrintResults, a.shutdown, a.window
+	if results == nil {
+		state.finishOperation(token)
+		cancel()
+		state.wordPrintCancel = nil
+		state.wordPrintPreparing = false
+		a.status = "打印准备不可用"
+		return
+	}
 	stateCopy := state
 	go func() {
+		defer stateCopy.finishOperation(token)
 		result := wordPrintResult{state: stateCopy, key: key, prepared: true}
+		unlock := lockSessionAdapterRead(stateCopy)
 		snapshot, err := doc.Snapshot()
+		unlock()
 		if err != nil {
 			result.err = fmt.Errorf("读取 DOCX 打印快照：%w", err)
 		} else {
@@ -191,11 +208,26 @@ func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKe
 	ctx, cancel := context.WithCancel(context.Background())
 	state.wordPrintCancel = cancel
 	state.wordPrintRunning = true
-	state.formatRunning = true
+	token, ok := state.beginOperation(sessionOperationRead)
+	if !ok {
+		cancel()
+		state.wordPrintCancel = nil
+		state.wordPrintRunning = false
+		return
+	}
 	printer := a.wordPrinter
 	results, shutdown, window := a.wordPrintResults, a.shutdown, a.window
+	if results == nil {
+		state.finishOperation(token)
+		cancel()
+		state.wordPrintCancel = nil
+		state.wordPrintRunning = false
+		a.status = "打印服务不可用"
+		return
+	}
 	stateCopy := state
 	go func() {
+		defer stateCopy.finishOperation(token)
 		result := wordPrintResult{state: stateCopy, key: key}
 		result.err = printer.Print(ctx, data, printservice.Options{Copies: 1})
 		select {
@@ -214,7 +246,6 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 	if state == nil {
 		return
 	}
-	state.formatRunning = false
 	state.wordPrintPreparing = false
 	state.wordPrintRunning = false
 	if state.wordPrintCancel != nil {
@@ -224,7 +255,7 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 	if state.closed.Load() {
 		return
 	}
-	if state.wordRevision != result.key.Revision || state.wordRevisionAtomic.Load() != result.key.Revision || !wordPDFLayoutStillCurrent(state, result.key) {
+	if state.wordRevisionAtomic.Load() != result.key.Revision || !wordPDFLayoutStillCurrent(state, result.key) {
 		if state == a.documentSessionState {
 			a.status = "文档已更改，旧打印页面已丢弃"
 		}

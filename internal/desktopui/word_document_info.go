@@ -6,6 +6,7 @@ import (
 
 type wordDocumentInfoResult struct {
 	state      *documentSessionState
+	token      sessionOperationToken
 	generation uint64
 	properties document.WordDocumentProperties
 	err        error
@@ -13,23 +14,29 @@ type wordDocumentInfoResult struct {
 
 func (a *App) startWordDocumentInfoLoad() {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	reader, ok := any(state.word).(document.WordDocumentPropertiesEditor)
 	if !ok {
 		return
 	}
-	state.formatRunning = true
+	token, ok := state.beginOperation(sessionOperationRead)
+	if !ok {
+		return
+	}
 	a.status = "正在读取文档信息"
 	generation := a.documentGeneration
 	go func() {
+		unlock := lockSessionAdapterRead(state)
 		properties, err := reader.GetWordDocumentProperties()
+		unlock()
+		state.finishOperation(token)
 		if a.wordDocumentInfoResults == nil {
 			return
 		}
 		select {
-		case a.wordDocumentInfoResults <- wordDocumentInfoResult{state: state, generation: generation, properties: properties, err: err}:
+		case a.wordDocumentInfoResults <- wordDocumentInfoResult{state: state, token: token, generation: generation, properties: properties, err: err}:
 			if a.window != nil {
 				a.window.Invalidate()
 			}
@@ -62,21 +69,19 @@ func (a *App) showWordDocumentInfoDialog(properties document.WordDocumentPropert
 
 func (a *App) runWordDocumentInfoCommand(properties document.WordDocumentProperties) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	editor, ok := any(state.word).(document.WordDocumentPropertiesEditor)
 	if !ok {
 		return
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
-		err := editor.SetWordDocumentProperties(properties)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		blocks, err := runWordMutation(state, func() error { return editor.SetWordDocumentProperties(properties) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "更新文档信息", err: err, blocks: blocks})
 	}()
 }

@@ -34,7 +34,7 @@ func (source wordPDFImageSource) ImageBytes(imageID string) ([]byte, error) {
 
 func (a *App) requestWordPDFExport() {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving || a.fileCommandRunning || state.wordPDFExportRunning {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning || state.wordPDFExportRunning {
 		return
 	}
 	if wordHasPendingTextDrafts(state) {
@@ -50,7 +50,7 @@ func (a *App) requestWordPDFExport() {
 }
 
 func (a *App) beginWordPDFExport(state *documentSessionState) {
-	if state == nil || state.word == nil || state.closed.Load() || state.formatRunning || a.saving || a.fileCommandRunning || state.wordPDFExportRunning {
+	if state == nil || state.word == nil || state.closed.Load() || state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning || state.wordPDFExportRunning {
 		return
 	}
 	if wordHasPendingTextDrafts(state) || state.wordFlushRequested {
@@ -120,7 +120,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		a.status = "PDF 导出状态已过期，请重新导出"
 		return
 	}
-	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning {
+	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning.Load() {
 		a.status = "文档在选择保存位置期间已更改，未导出 PDF；请重新导出"
 		return
 	}
@@ -148,22 +148,39 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		a.status = "DOCX 适配器未提供分页信息，无法导出 PDF"
 		return
 	}
+	token, ok := state.beginOperation(sessionOperationSnapshot)
+	if !ok {
+		a.status = "文档正在处理其他操作，请稍后重试"
+		return
+	}
 	pageResult := cloneWordLayoutResult(*state.wordLayoutResult)
 	blocks := cloneWordBlockSnapshot(wordBlocksForState(state))
+	unlock := lockSessionAdapterRead(state)
 	layoutData := reader.WordLayoutData()
+	unlock()
 	doc := state.word
 	fontSource := a.wordPDFFontSource
-	revision := state.wordRevision
+	revision := state.wordRevisionAtomic.Load()
 	draftEpoch := state.wordDraftEpoch.Load()
 	ctx, cancel := context.WithCancel(context.Background())
 	state.wordPDFExportCancel = cancel
 	state.wordPDFExportRunning = true
-	state.formatRunning = true
 	results, shutdown, window := a.wordPDFExportResults, a.shutdown, a.window
+	if results == nil {
+		state.finishOperation(token)
+		cancel()
+		state.wordPDFExportCancel = nil
+		state.wordPDFExportRunning = false
+		a.status = "PDF 导出不可用"
+		return
+	}
 	stateCopy := state
 	go func() {
+		defer stateCopy.finishOperation(token)
 		result := wordPDFExportResult{state: stateCopy, key: key, path: path}
+		unlock := lockSessionAdapterRead(stateCopy)
 		snapshot, err := doc.Snapshot()
+		unlock()
 		if err != nil {
 			result.err = fmt.Errorf("读取 DOCX 导出快照：%w", err)
 		} else {
@@ -207,13 +224,12 @@ func (a *App) applyWordPDFExportResult(result wordPDFExportResult) {
 	if state == nil {
 		return
 	}
-	state.formatRunning = false
 	state.wordPDFExportRunning = false
 	state.wordPDFExportCancel = nil
 	if state.closed.Load() {
 		return
 	}
-	if state.wordRevision != result.key.Revision || state.wordRevisionAtomic.Load() != result.key.Revision {
+	if state.wordRevisionAtomic.Load() != result.key.Revision {
 		if state == a.documentSessionState {
 			a.status = "文档已更改，旧分页结果未用于当前文档"
 		}
@@ -232,12 +248,11 @@ func currentWordLayoutKey(state *documentSessionState) (wordLayoutKey, document.
 	if state == nil || state.word == nil {
 		return wordLayoutKey{}, document.WordLayoutData{}, false
 	}
-	reader, ok := any(state.word).(document.WordLayoutReader)
+	data, ok := wordLayoutDataForState(state)
 	if !ok {
 		return wordLayoutKey{}, document.WordLayoutData{}, false
 	}
-	data := reader.WordLayoutData()
-	return wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision, PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup)}, data, true
+	return wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevisionAtomic.Load(), PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup)}, data, true
 }
 
 func wordPDFLayoutStillCurrent(state *documentSessionState, key wordLayoutKey) bool {

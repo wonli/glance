@@ -14,6 +14,7 @@ type documentSessionState struct {
 	*sharedDocumentSession
 	windowID                            uint64
 	closed                              atomic.Bool
+	observedSessionRevision             atomic.Uint64
 	wordViewMode                        wordViewMode
 	wordPageFitMode                     bool
 	wordMultiplePagesMode               bool

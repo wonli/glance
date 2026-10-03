@@ -25,7 +25,7 @@ func wordBodyRunEditable(blocks []document.WordBlock, runID string) bool {
 
 func (a *App) queueWordPageBreak() {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.wordPageBreakIntent != nil || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.wordPageBreakIntent != nil || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	_, ok := any(state.word).(document.WordPageBreakEditor)
@@ -52,13 +52,13 @@ func (a *App) queueWordPageBreak() {
 	state.wordForceDraftFlush = true
 	state.wordFlushRequested = true
 	state.wordFlushAllDrafts = true
-	if !state.formatRunning {
+	if !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
 }
 
 func (a *App) startWordPageBreak(state *documentSessionState) {
-	if state == nil || state.word == nil || state.formatRunning || a.saving || state.wordPageBreakIntent == nil {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || state.wordPageBreakIntent == nil {
 		return
 	}
 	editor, ok := any(state.word).(document.WordPageBreakEditor)
@@ -78,14 +78,17 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 		a.status = "无法按当前光标位置插入分页符，请重试"
 		return
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
-		paragraphID, caretRunID, err := editor.InsertPageBreakAtRange(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		var paragraphID, caretRunID string
+		blocks, err := runWordMutation(state, func() error {
+			var insertErr error
+			paragraphID, caretRunID, insertErr = editor.InsertPageBreakAtRange(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd)
+			return insertErr
+		})
 		a.publishWordCommand(wordCommandResult{
 			state:                 state,
 			generation:            generation,
@@ -126,6 +129,7 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	}
 	if result.blocks != nil {
 		state.setWordBlocks(result.blocks)
+		a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 	}
 	if intent != nil {
 		if result.pageBreakSourcePrefix == "" {
@@ -143,7 +147,7 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	if !active {
 		return
 	}
-	newRun, ok := selectedWordRun(state.wordBlocks, result.pageBreakCaretRunID)
+	newRun, ok := selectedWordRun(wordBlocksForState(state), result.pageBreakCaretRunID)
 	if !ok || result.pageBreakParagraphID == "" {
 		a.status = "分页符已插入，但无法定位插入点"
 		a.persistActiveSession()

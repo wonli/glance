@@ -63,7 +63,7 @@ func (a *App) layoutWordHorizontalRuler(gtx layout.Context, state *documentSessi
 			leftIndent, rightIndent := wordRulerParagraphIndents(state, selectedParagraph)
 			leftMarker := max(pageLeft, min(pageRight, textLeft+max(0, wordEMUToPixels(gtx, leftIndent))))
 			rightMarker := max(pageLeft, min(pageRight, textRight-max(0, wordEMUToPixels(gtx, rightIndent))))
-			canStartIndentDrag := !a.saving && !state.formatRunning
+			canStartIndentDrag := !a.isSaving() && !state.formatRunning.Load()
 			indentDragActive := state.wordRulerIndentDragSide != 0
 			if hasSelectedParagraph && (canStartIndentDrag || indentDragActive) {
 				hitWidth := max(1, gtx.Dp(unit.Dp(9)))

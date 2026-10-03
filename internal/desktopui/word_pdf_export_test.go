@@ -159,7 +159,7 @@ func TestWordPDFExportWritesValidatedPDFWithoutChangingDOCX(t *testing.T) {
 	if result.err != nil {
 		t.Fatalf("PDF export error: %v", result.err)
 	}
-	if state.formatRunning || state.wordPDFExportRunning {
+	if state.formatRunning.Load() || state.wordPDFExportRunning {
 		t.Fatal("PDF export completion left the session busy")
 	}
 	if word.Dirty() != true {

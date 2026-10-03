@@ -89,12 +89,24 @@ func wordBlocksForState(state *documentSessionState) []document.WordBlock {
 	if state == nil {
 		return nil
 	}
+	state.wordBlocksMu.RLock()
 	if state.wordBlocks != nil {
-		return state.wordBlocks
+		blocks := cloneWordBlockSnapshot(state.wordBlocks)
+		state.wordBlocksMu.RUnlock()
+		return blocks
 	}
+	state.wordBlocksMu.RUnlock()
 	if state.word != nil {
-		state.wordBlocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		return state.wordBlocks
+		unlock := lockSessionAdapterRead(state)
+		blocks := cloneWordBlockSnapshot(state.word.WordBlocks())
+		unlock()
+		state.wordBlocksMu.Lock()
+		if state.wordBlocks == nil {
+			state.wordBlocks = blocks
+		}
+		blocks = cloneWordBlockSnapshot(state.wordBlocks)
+		state.wordBlocksMu.Unlock()
+		return blocks
 	}
 	return nil
 }
@@ -295,7 +307,7 @@ func (a *App) layoutWordFlow(gtx layout.Context) layout.Dimensions {
 		state.wordFocusedRunID = ""
 	}
 	state.wordForceDraftFlush = false
-	if state.wordFlushRequested && !state.formatRunning {
+	if state.wordFlushRequested && !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
 	return dimensions
@@ -748,7 +760,7 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	focusTargetPending := state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != run.ID
 	paragraphSplitPending := state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID
 	paragraphJoinPending := state.wordParagraphJoinIntent != nil
-	editor.ReadOnly = state.wordReadingMode || !run.Editable || a.saving || paragraphSplitPending || paragraphJoinPending || focusTargetPending
+	editor.ReadOnly = state.wordReadingMode || !run.Editable || a.isSaving() || paragraphSplitPending || paragraphJoinPending || focusTargetPending
 	selectionStartBeforeUpdate, selectionEndBeforeUpdate := editor.Selection()
 	if !editor.ReadOnly {
 		if a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {
@@ -827,7 +839,7 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 
 func (a *App) handleWordParagraphJoinKey(gtx layout.Context, paragraph document.WordParagraph, run document.WordTextRun, editor *widget.Editor) bool {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || !run.Editable || !gtx.Focused(editor) || state.formatRunning || state.wordParagraphJoinIntent != nil || state.wordParagraphSplitIntent != nil || a.saving {
+	if state == nil || state.word == nil || !run.Editable || !gtx.Focused(editor) || state.formatRunning.Load() || state.wordParagraphJoinIntent != nil || state.wordParagraphSplitIntent != nil || a.isSaving() {
 		return false
 	}
 	start, end := editor.Selection()
@@ -835,10 +847,11 @@ func (a *App) handleWordParagraphJoinKey(gtx layout.Context, paragraph document.
 		return false
 	}
 	var filters []key.Filter
-	if start == 0 && wordTextRunAtBoundary(paragraph, run.ID, true) && wordHasAdjacentParagraph(state.wordBlocks, paragraph.ID, document.WordJoinPrevious) {
+	blocks := wordBlocksForState(state)
+	if start == 0 && wordTextRunAtBoundary(paragraph, run.ID, true) && wordHasAdjacentParagraph(blocks, paragraph.ID, document.WordJoinPrevious) {
 		filters = append(filters, key.Filter{Focus: editor, Name: key.NameDeleteBackward})
 	}
-	if start == editor.Len() && wordTextRunAtBoundary(paragraph, run.ID, false) && wordHasAdjacentParagraph(state.wordBlocks, paragraph.ID, document.WordJoinNext) {
+	if start == editor.Len() && wordTextRunAtBoundary(paragraph, run.ID, false) && wordHasAdjacentParagraph(blocks, paragraph.ID, document.WordJoinNext) {
 		filters = append(filters, key.Filter{Focus: editor, Name: key.NameDeleteForward})
 	}
 	for _, filter := range filters {
@@ -871,7 +884,7 @@ func (a *App) handleWordParagraphJoinKey(gtx layout.Context, paragraph document.
 		}
 		joinBoundary := (direction == document.WordJoinPrevious && atBoundary && start == 0 && wordTextRunAtBoundary(paragraph, run.ID, true)) ||
 			(direction == document.WordJoinNext && atBoundary && start == editor.Len() && wordTextRunAtBoundary(paragraph, run.ID, false))
-		if joinBoundary && wordHasAdjacentParagraph(state.wordBlocks, paragraph.ID, direction) {
+		if joinBoundary && wordHasAdjacentParagraph(wordBlocksForState(state), paragraph.ID, direction) {
 			a.queueWordParagraphJoin(run.ID, editor.Text(), direction)
 			return true
 		}
@@ -1279,7 +1292,9 @@ func (a *App) requestWordImageDecode(state *documentSessionState, imageID string
 	results := a.wordImageResults
 	window := a.window
 	go func() {
+		unlock := lockSessionAdapterRead(state)
 		data, err := state.word.WordImageBytes(imageID)
+		unlock()
 		var decoded image.Image
 		if err == nil {
 			decoded, err = decodeWordPreview(data)

@@ -136,13 +136,13 @@ func TestWordShareRejectsSourceOverwriteAndStalePickerChoice(t *testing.T) {
 	if app.status != "共享副本不能覆盖当前 DOCX" {
 		t.Fatalf("same-source protection status = %q", app.status)
 	}
-	if state.formatRunning {
+	if state.formatRunning.Load() {
 		t.Fatal("same-source selection started an export")
 	}
 
 	stalePath := filepath.Join(t.TempDir(), "stale.docx")
 	app.startWordShareCopyFile(&wordShareCopyPickerRequest{state: state, revision: 3}, stalePath)
-	if state.formatRunning {
+	if state.formatRunning.Load() {
 		t.Fatal("stale revision started an export")
 	}
 	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
@@ -169,8 +169,8 @@ func TestWordShareWriteFailureKeepsSourceDirtyAndClearsBusyState(t *testing.T) {
 	app := newWordShareTestApp(state)
 	app.startWordShareCopyFile(&wordShareCopyPickerRequest{state: state, revision: 2}, filepath.Join(t.TempDir(), "missing", "copy.docx"))
 	waitWordShareResult(t, app)
-	if !word.Dirty() || state.path != sourcePath || !state.wordAutoSave || state.formatRunning {
-		t.Fatalf("failed export changed source state: path=%q dirty=%v autosave=%v busy=%v", state.path, word.Dirty(), state.wordAutoSave, state.formatRunning)
+	if !word.Dirty() || state.path != sourcePath || !state.wordAutoSave || state.formatRunning.Load() {
+		t.Fatalf("failed export changed source state: path=%q dirty=%v autosave=%v busy=%v", state.path, word.Dirty(), state.wordAutoSave, state.formatRunning.Load())
 	}
 	if !strings.Contains(app.status, "导出共享副本失败：") {
 		t.Fatalf("write failure status = %q", app.status)

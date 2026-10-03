@@ -309,7 +309,7 @@ func TestWordFontSizeToolbarActionsChangeSelectedRunByOnePoint(t *testing.T) {
 		{action: "font-size-decrease", want: 11},
 	} {
 		app.executeWordToolbarAction(step.action)
-		if !state.formatRunning {
+		if !state.formatRunning.Load() {
 			t.Fatalf("%s did not start a Word formatting command", step.action)
 		}
 		select {
@@ -354,7 +354,7 @@ func TestWordListToolbarActionsApplyAndToggleOffLists(t *testing.T) {
 			t.Fatalf("Word list action %q should be enabled for a selected paragraph", step.action)
 		}
 		app.executeWordToolbarAction(step.action)
-		if !state.formatRunning {
+		if !state.formatRunning.Load() {
 			t.Fatalf("%s did not start a Word list command", step.action)
 		}
 		select {
@@ -756,7 +756,7 @@ func TestWordFontFamilyToolbarActionOpensDialogAndChangesSelectedRun(t *testing.
 	if app.modal.Visible {
 		t.Fatal("font-family dialog remained open after confirm")
 	}
-	if !state.formatRunning {
+	if !state.formatRunning.Load() {
 		t.Fatal("confirm did not start a Word formatting command")
 	}
 	select {
@@ -829,7 +829,7 @@ func TestWordFormatPainterAppliesSourceFormattingToNextFocusedRun(t *testing.T) 
 		t.Fatal("Word editor does not route the next focused run to the active format painter")
 	}
 	targetSelector.queueWordFormatPainterTarget(targetParagraph.ID, targetRunID)
-	if !state.formatRunning {
+	if !state.formatRunning.Load() {
 		t.Fatal("selecting a target run did not start the formatting operation")
 	}
 	select {

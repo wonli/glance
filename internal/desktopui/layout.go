@@ -105,7 +105,9 @@ func (a *App) processAsyncResults() {
 	}
 	select {
 	case result := <-a.formatResults:
-		result.state.formatRunning = false
+		if result.state == nil || !result.state.acceptsResult(result.token) || result.state.wordRevisionAtomic.Load() != result.revision {
+			return
+		}
 		if result.err == nil && result.filter != nil {
 			if result.state.valueFilter != nil {
 				a.clearValueFilter(result.state)
@@ -242,8 +244,8 @@ func (a *App) processAsyncResults() {
 	}
 	select {
 	case result := <-a.wordDocumentInfoResults:
-		if result.state != nil {
-			result.state.formatRunning = false
+		if result.state == nil || !result.state.acceptsResult(result.token) {
+			return
 		}
 		if result.generation == a.documentGeneration && result.state == a.documentSessionState {
 			if result.err != nil {
@@ -259,8 +261,10 @@ func (a *App) processAsyncResults() {
 	}
 	select {
 	case result := <-a.wordCommandResults:
+		if result.state == nil || !result.state.acceptsResult(result.operationToken) || result.state.wordRevisionAtomic.Load() != result.revision {
+			return
+		}
 		if result.state != nil {
-			result.state.formatRunning = false
 			if result.operation == "调整段落缩进" {
 				result.state.wordRulerIndentIntent = nil
 			}
@@ -302,8 +306,9 @@ func (a *App) processAsyncResults() {
 					if result.state.wordRunDrafts[result.runID] == result.runText {
 						delete(result.state.wordRunDrafts, result.runID)
 					}
-					if result.blocks != nil {
+					if result.blocks != nil && result.revision == 0 {
 						result.state.setWordBlocks(result.blocks)
+						a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, result.state.wordRevisionAtomic.Load())
 					}
 					reconcileWordSelection(result.state, false)
 					a.status = "正在编辑 Word 正文"
@@ -317,8 +322,9 @@ func (a *App) processAsyncResults() {
 			} else if result.err != nil {
 				a.status = wordCommandError(result.operation, result.err)
 			} else if !result.history || result.applied {
-				if result.blocks != nil {
+				if result.blocks != nil && result.revision == 0 {
 					result.state.setWordBlocks(result.blocks)
+					a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, result.state.wordRevisionAtomic.Load())
 				}
 				if result.history {
 					invalidateAllWordImagePreviews(result.state)
@@ -346,7 +352,7 @@ func (a *App) processAsyncResults() {
 					result.state.selectedBlock = -1
 					result.state.selectedBlockEditable = false
 					result.state.wordToolbarTab = wordTabPicture
-					for _, paragraph := range allWordParagraphs(result.state.wordBlocks) {
+					for _, paragraph := range allWordParagraphs(wordBlocksForState(result.state)) {
 						for _, inline := range paragraph.Inlines {
 							if inline.Image != nil && inline.Image.ID == result.imageID {
 								result.state.selectedWordParagraphID = paragraph.ID
@@ -362,10 +368,10 @@ func (a *App) processAsyncResults() {
 			if result.imageID != "" && (result.operation == "调整图片" || result.operation == "旋转图片") {
 				finishWordImagePreviewCommand(result.state, result.imageID)
 			}
-			if result.state.wordFlushRequested && !result.state.formatRunning {
+			if result.state.wordFlushRequested && !result.state.formatRunning.Load() {
 				a.startNextWordTextCommit()
 			}
-			if activeResult && result.err == nil && !result.state.formatRunning && !result.state.wordFlushRequested {
+			if activeResult && result.err == nil && !result.state.formatRunning.Load() && !result.state.wordFlushRequested {
 				a.maybeAutoSaveWord(result.state)
 			}
 			if a.window != nil {
@@ -433,6 +439,7 @@ func (a *App) processAsyncResults() {
 			if result.saveAs {
 				if state := a.sessions[result.tabID]; state != nil {
 					a.updateSessionPath(state.sharedDocumentSession, result.path)
+					unlock := lockSessionAdapterWrite(state)
 					if state.book != nil {
 						if saver, ok := state.book.(interface{ SetSourcePath(string) }); ok {
 							saver.SetSourcePath(result.path)
@@ -444,6 +451,7 @@ func (a *App) processAsyncResults() {
 					if state.jsonDoc != nil {
 						state.jsonDoc.SetSourcePath(result.path)
 					}
+					unlock()
 				}
 				if meta, ok := a.tabMeta[result.tabID]; ok {
 					meta.SourcePath = result.path
@@ -453,6 +461,15 @@ func (a *App) processAsyncResults() {
 				if result.tabID == a.activeTabID {
 					a.path = result.path
 				}
+			}
+			if state := a.sessions[result.tabID]; state != nil && result.token.documentID != "" && state.wordRevisionAtomic.Load() != result.token.revision {
+				a.status = "保存已完成，但保存后文档又有修改"
+				a.updatePersistedTab(a.tabMeta[result.tabID])
+				a.maybeAutoSaveWord(a.documentSessionState)
+				if a.window != nil {
+					a.window.Invalidate()
+				}
+				return
 			}
 			a.status = "已保存 " + result.path
 			if state := a.sessions[result.tabID]; state != nil {
@@ -472,8 +489,10 @@ func (a *App) processAsyncResults() {
 }
 
 func (a *App) refreshAfterStructure(state *documentSessionState, edit document.StructureEdit) {
+	unlock := lockSessionAdapterRead(state)
 	oldSheet := state.sheet
 	state.sheets = state.book.SheetNames()
+	unlock()
 	switch edit.Kind {
 	case document.StructureCreateSheet:
 		if len(state.sheets) > 0 {

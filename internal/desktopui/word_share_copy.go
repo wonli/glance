@@ -23,7 +23,7 @@ type wordShareCopyResult struct {
 
 func (a *App) requestWordShareCopy() {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.closed.Load() || state.formatRunning || a.saving || a.fileCommandRunning {
+	if state == nil || state.word == nil || state.closed.Load() || state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning {
 		return
 	}
 	if state.wordFlushRequested || state.wordDeferredToolbarAction != "" {
@@ -43,7 +43,7 @@ func (a *App) requestWordShareCopy() {
 }
 
 func (a *App) beginWordShareCopy(state *documentSessionState) {
-	if state == nil || state.word == nil || state.closed.Load() || state.formatRunning || a.saving || a.fileCommandRunning {
+	if state == nil || state.word == nil || state.closed.Load() || state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning {
 		return
 	}
 	if a.documentSessionState != state {
@@ -56,7 +56,7 @@ func (a *App) beginWordShareCopy(state *documentSessionState) {
 	}
 	request := &wordShareCopyPickerRequest{
 		state:      state,
-		revision:   state.wordRevision,
+		revision:   state.wordRevisionAtomic.Load(),
 		draftEpoch: state.wordDraftEpoch.Load(),
 	}
 	a.wordShareCopyRequest = request
@@ -73,7 +73,7 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 		a.status = "Word 文档已切换，共享副本导出已取消"
 		return
 	}
-	if state.formatRunning || state.wordRevisionAtomic.Load() != request.revision || state.wordDraftEpoch.Load() != request.draftEpoch || state.wordFlushRequested || wordHasPendingTextDrafts(state) {
+	if state.formatRunning.Load() || state.wordRevisionAtomic.Load() != request.revision || state.wordDraftEpoch.Load() != request.draftEpoch || state.wordFlushRequested || wordHasPendingTextDrafts(state) {
 		a.status = "文档在选择位置期间已更改，未导出共享副本；请重试"
 		return
 	}
@@ -87,16 +87,23 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 
 	word := state.word
 	revision, draftEpoch := request.revision, request.draftEpoch
-	state.formatRunning = true
+	token, ok := state.beginOperation(sessionOperationSnapshot)
+	if !ok {
+		a.status = "文档正在处理其他操作，请稍后重试"
+		return
+	}
 	results, shutdown, window := a.wordShareCopyResults, a.shutdown, a.window
 	if results == nil {
-		state.formatRunning = false
+		state.finishOperation(token)
 		a.status = "共享副本导出不可用"
 		return
 	}
 	go func() {
+		defer state.finishOperation(token)
 		result := wordShareCopyResult{state: state, path: path}
+		unlock := lockSessionAdapterRead(state)
 		snapshot, err := word.Snapshot()
+		unlock()
 		if err == nil && (state.closed.Load() || state.wordRevisionAtomic.Load() != revision || state.wordDraftEpoch.Load() != draftEpoch) {
 			err = errors.New("Word 文档在准备共享副本时已更改")
 		}
@@ -136,7 +143,6 @@ func (a *App) applyWordShareCopyResult(result wordShareCopyResult) {
 	if state == nil {
 		return
 	}
-	state.formatRunning = false
 	if state.closed.Load() {
 		return
 	}

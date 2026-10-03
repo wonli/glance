@@ -7,6 +7,8 @@ import (
 
 type spreadsheetFormatResult struct {
 	state       *documentSessionState
+	token       sessionOperationToken
+	revision    uint64
 	generation  uint64
 	sheet       string
 	window      *gridViewport
@@ -23,7 +25,7 @@ type spreadsheetFormatResult struct {
 
 func (a *App) applyHistory(undo bool) {
 	state := a.documentSessionState
-	if state == nil || state.book == nil || state.formatRunning {
+	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
 	}
 	history, ok := state.book.(document.SpreadsheetHistory)
@@ -33,9 +35,13 @@ func (a *App) applyHistory(undo bool) {
 	if state.valueFilter != nil {
 		a.clearValueFilter(state)
 	}
-	state.formatRunning = true
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
 	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
 	go func() {
+		unlock := lockSessionAdapterWrite(state)
 		var applied bool
 		var err error
 		if undo {
@@ -43,8 +49,10 @@ func (a *App) applyHistory(undo bool) {
 		} else {
 			applied, err = history.Redo()
 		}
+		unlock()
+		a.completeSessionOperation(state, token, err, applied)
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, generation: generation, sheet: sheet, window: window, err: err, history: true, applied: applied, undo: undo}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, history: true, applied: applied, undo: undo}:
 		case <-a.shutdown:
 		}
 	}()
@@ -52,7 +60,7 @@ func (a *App) applyHistory(undo bool) {
 
 func (a *App) applyCellFormat(patch document.CellFormatPatch) {
 	state := a.documentSessionState
-	if state == nil || state.book == nil || !state.selectionSet || state.formatRunning {
+	if state == nil || state.book == nil || !state.selectionSet || state.formatRunning.Load() {
 		return
 	}
 	formatter, ok := state.book.(document.SpreadsheetFormatter)
@@ -64,11 +72,17 @@ func (a *App) applyCellFormat(patch document.CellFormatPatch) {
 	}
 	selection := state.selection.Bounds()
 	sheet, generation, window := state.sheet, a.documentGeneration, state.virtualGrid
-	state.formatRunning = true
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
 	go func() {
+		unlock := lockSessionAdapterWrite(state)
 		err := formatter.SetCellFormats(sheet, selection, patch)
+		unlock()
+		a.completeSessionOperation(state, token, err, true)
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, generation: generation, sheet: sheet, window: window, err: err}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err}:
 		case <-a.shutdown:
 		}
 	}()
@@ -76,7 +90,7 @@ func (a *App) applyCellFormat(patch document.CellFormatPatch) {
 
 func (a *App) applyBatchEdits(edits []document.CellEdit, operation string) error {
 	state := a.documentSessionState
-	if state == nil || state.book == nil || state.formatRunning {
+	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return fmt.Errorf("表格正在处理其他操作")
 	}
 	editor, ok := state.book.(document.SpreadsheetBatchEditor)
@@ -86,12 +100,18 @@ func (a *App) applyBatchEdits(edits []document.CellEdit, operation string) error
 	if state.valueFilter != nil {
 		a.clearValueFilter(state)
 	}
-	state.formatRunning = true
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return fmt.Errorf("表格正在处理其他操作")
+	}
 	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
 	go func() {
+		unlock := lockSessionAdapterWrite(state)
 		err := editor.SetCells(sheet, edits)
+		unlock()
+		a.completeSessionOperation(state, token, err, true)
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
 		case <-a.shutdown:
 		}
 	}()
@@ -100,7 +120,7 @@ func (a *App) applyBatchEdits(edits []document.CellEdit, operation string) error
 
 func (a *App) applyStructure(edit document.StructureEdit) {
 	state := a.documentSessionState
-	if state == nil || state.book == nil || state.formatRunning {
+	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
 	}
 	editor, ok := state.book.(document.SpreadsheetStructureEditor)
@@ -110,12 +130,18 @@ func (a *App) applyStructure(edit document.StructureEdit) {
 	if state.valueFilter != nil {
 		a.clearValueFilter(state)
 	}
-	state.formatRunning = true
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
 	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
 	go func() {
+		unlock := lockSessionAdapterWrite(state)
 		err := editor.EditStructure(edit)
+		unlock()
+		a.completeSessionOperation(state, token, err, true)
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, generation: generation, sheet: sheet, window: window, err: err, operation: "结构操作", structure: &edit}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "结构操作", structure: &edit}:
 		case <-a.shutdown:
 		}
 	}()
@@ -123,7 +149,7 @@ func (a *App) applyStructure(edit document.StructureEdit) {
 
 func (a *App) applySort(request document.SortRequest) {
 	state := a.documentSessionState
-	if state == nil || state.book == nil || state.formatRunning {
+	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
 	}
 	sorter, ok := state.book.(document.SpreadsheetSorter)
@@ -133,12 +159,18 @@ func (a *App) applySort(request document.SortRequest) {
 	if state.valueFilter != nil {
 		a.clearValueFilter(state)
 	}
-	state.formatRunning = true
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
 	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
 	go func() {
+		unlock := lockSessionAdapterWrite(state)
 		err := sorter.SortRange(request)
+		unlock()
+		a.completeSessionOperation(state, token, err, true)
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, generation: generation, sheet: sheet, window: window, err: err, operation: "排序", sort: &request}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "排序", sort: &request}:
 		case <-a.shutdown:
 		}
 	}()
@@ -146,7 +178,7 @@ func (a *App) applySort(request document.SortRequest) {
 
 func (a *App) toggleValueFilter() {
 	state := a.documentSessionState
-	if state == nil || state.formatRunning || state.book == nil {
+	if state == nil || state.formatRunning.Load() || state.book == nil {
 		return
 	}
 	if state.valueFilter != nil {
@@ -162,10 +194,14 @@ func (a *App) toggleValueFilter() {
 	if !ok || pos.Row+1 <= bounds.StartRow {
 		return
 	}
-	state.formatRunning = true
+	token, ok := state.beginOperation(sessionOperationRead)
+	if !ok {
+		return
+	}
 	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
 	column := pos.Column + 1
 	go func() {
+		unlock := lockSessionAdapterRead(state)
 		cells, err := reader.ReadRange(sheet, bounds)
 		var filter *ValueFilter
 		if err == nil {
@@ -184,8 +220,10 @@ func (a *App) toggleValueFilter() {
 				}
 			}
 		}
+		unlock()
+		a.completeSessionOperation(state, token, err, false)
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, generation: generation, sheet: sheet, window: window, err: err, operation: "筛选", filter: filter}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "筛选", filter: filter}:
 		case <-a.shutdown:
 		}
 	}()

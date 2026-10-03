@@ -258,7 +258,7 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 		a.closeWorkspaceTab(id)
 	}
 	label := meta.Title
-	if state := a.sessions[id]; state != nil && state.book != nil && state.book.Dirty() || state != nil && state.word != nil && state.word.Dirty() || state != nil && state.jsonDoc != nil && state.jsonDoc.Dirty() {
+	if state := a.sessions[id]; state != nil && sessionDirty(state) {
 		label += " •"
 	}
 	// Keep this frame's widgets alive even if the close click removed the
@@ -399,6 +399,7 @@ func (a *App) activateRecent() {
 		a.sessions[a.activeTabID] = a.documentSessionState
 	}
 	a.activeTabID = workspace.RecentTabID
+	a.setActiveSessionID("")
 	if a.collection != nil {
 		_ = a.collection.Activate(workspace.RecentTabID)
 	}
@@ -415,9 +416,9 @@ func (a *App) closeWorkspaceTab(id string) {
 	if state == nil {
 		return
 	}
-	if state.path == "" || (state.book != nil && state.book.Dirty()) || (state.word != nil && state.word.Dirty()) || (state.jsonDoc != nil && state.jsonDoc.Dirty()) {
+	if sessionPath(state) == "" || sessionDirty(state) {
 		title, message := "保存更改？", "此文档有尚未保存的修改。关闭前要保存吗？"
-		if state.path == "" {
+		if sessionPath(state) == "" {
 			title, message = "保存新文档？", "此新建文档尚未保存到本地目录。关闭后将丢弃草稿；要先保存吗？"
 		}
 		a.showCloseConfirmation(id, title, message)
@@ -478,13 +479,7 @@ func (a *App) closeWorkspaceTabNow(id string) {
 			a.activateRecent()
 		}
 	}
-	otherViews := 0
-	for _, view := range runtime.viewsForSession(state.documentID) {
-		if view != a {
-			otherViews++
-		}
-	}
-	if otherViews == 0 {
+	if runtime.windowCount() <= 1 {
 		runtime.removeSession(state.documentID)
 	}
 	// The current frame's tab list was built before this close removed its ID.
@@ -496,7 +491,7 @@ func (a *App) closeWorkspaceTabNow(id string) {
 
 func (a *App) handleCloseConfirmation(action string) {
 	id := a.pendingCloseTabID
-	if a.saving && action != "cancel" {
+	if a.isSaving() && action != "cancel" {
 		return
 	}
 	switch action {
@@ -584,7 +579,7 @@ func (a *App) layoutCreateActions(gtx layout.Context) layout.Dimensions {
 		a.showNewMenu = false
 		a.startFolderPicker()
 	}
-	if a.actionSave.Clicked(gtx) && !a.saving && a.isDirty() {
+	if a.actionSave.Clicked(gtx) && !a.isSaving() && a.isDirty() {
 		a.showNewMenu = false
 		if a.path != "" {
 			a.startSave()
@@ -592,7 +587,7 @@ func (a *App) layoutCreateActions(gtx layout.Context) layout.Dimensions {
 			a.saveAsFromMenu()
 		}
 	}
-	if a.actionSaveAs.Clicked(gtx) && !a.saving && a.hasActiveDocument() {
+	if a.actionSaveAs.Clicked(gtx) && !a.isSaving() && a.hasActiveDocument() {
 		a.showNewMenu = false
 		a.saveAsFromMenu()
 	}

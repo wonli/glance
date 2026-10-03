@@ -126,7 +126,7 @@ func TestWordPrintRequiresWarningAndPreviewConfirmationsAndPrintsSamePageScene(t
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for native print completion")
 	}
-	if state.formatRunning || state.wordPrintRunning {
+	if state.formatRunning.Load() || state.wordPrintRunning {
 		t.Fatal("print completion left the Word session busy")
 	}
 	if !word.Dirty() || state.path != "source.docx" {

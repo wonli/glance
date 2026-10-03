@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"glance/internal/document"
 	"glance/internal/wordlayout"
@@ -45,11 +46,18 @@ func (state *documentSessionState) setWordBlocks(blocks []document.WordBlock) {
 	if state == nil {
 		return
 	}
-	state.wordExportCommitMu.Lock()
-	state.wordBlocks = blocks
-	state.wordRevision++
-	state.wordRevisionAtomic.Store(state.wordRevision)
-	state.wordExportCommitMu.Unlock()
+	state.wordBlocksMu.Lock()
+	if reflect.DeepEqual(state.wordBlocks, blocks) {
+		state.wordBlocksMu.Unlock()
+		return
+	}
+	state.wordBlocks = cloneWordBlockSnapshot(blocks)
+	state.operationMu.Lock()
+	revision := state.wordRevisionAtomic.Load() + 1
+	state.wordRevision = revision
+	state.wordRevisionAtomic.Store(revision)
+	state.operationMu.Unlock()
+	state.wordBlocksMu.Unlock()
 	if state.wordPDFExportCancel != nil {
 		state.wordPDFExportCancel()
 	}
@@ -68,6 +76,20 @@ func (state *documentSessionState) setWordBlocks(blocks []document.WordBlock) {
 	}
 }
 
+func wordLayoutDataForState(state *documentSessionState) (document.WordLayoutData, bool) {
+	if state == nil || state.word == nil {
+		return document.WordLayoutData{}, false
+	}
+	reader, ok := any(state.word).(document.WordLayoutReader)
+	if !ok {
+		return document.WordLayoutData{}, false
+	}
+	unlock := lockSessionAdapterRead(state)
+	data := reader.WordLayoutData()
+	unlock()
+	return data, true
+}
+
 func wordLayoutPageSetupKey(data document.WordLayoutData, fallback document.WordPageSetup) string {
 	value := struct {
 		Sections []document.WordSection
@@ -82,29 +104,30 @@ func (a *App) startWordPagination(state *documentSessionState) {
 	if state == nil || state.word == nil || state.closed.Load() {
 		return
 	}
-	if wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning {
+	if wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning.Load() {
 		return
 	}
 	// Supported mutations bump wordRevision through setWordBlocks. Avoid cloning
 	// and hashing the adapter's layout projection on every Gio frame.
-	if state.wordLayoutPendingKey != nil && state.wordLayoutPendingKey.DocumentID == state.documentID && state.wordLayoutPendingKey.Revision == state.wordRevision {
+	revision := state.wordRevisionAtomic.Load()
+	if state.wordLayoutPendingKey != nil && state.wordLayoutPendingKey.DocumentID == state.documentID && state.wordLayoutPendingKey.Revision == revision {
 		return
 	}
-	if state.wordLayoutResult != nil && state.wordLayoutAcceptedKey != nil && state.wordLayoutAcceptedKey.DocumentID == state.documentID && state.wordLayoutAcceptedKey.Revision == state.wordRevision {
+	if state.wordLayoutResult != nil && state.wordLayoutAcceptedKey != nil && state.wordLayoutAcceptedKey.DocumentID == state.documentID && state.wordLayoutAcceptedKey.Revision == revision {
 		return
 	}
-	if state.wordLayoutErrorKey != nil && state.wordLayoutErrorKey.DocumentID == state.documentID && state.wordLayoutErrorKey.Revision == state.wordRevision {
+	if state.wordLayoutErrorKey != nil && state.wordLayoutErrorKey.DocumentID == state.documentID && state.wordLayoutErrorKey.Revision == revision {
 		return
 	}
-	reader, ok := any(state.word).(document.WordLayoutReader)
+	_, ok := any(state.word).(document.WordLayoutReader)
 	if !ok {
 		state.wordLayoutError = "DOCX 适配器未提供分页元数据"
-		state.wordLayoutErrorKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision}
+		state.wordLayoutErrorKey = &wordLayoutKey{DocumentID: state.documentID, Revision: revision}
 		return
 	}
-	data := reader.WordLayoutData()
+	data, _ := wordLayoutDataForState(state)
 	key := wordLayoutKey{
-		DocumentID: state.documentID, Revision: state.wordRevision,
+		DocumentID: state.documentID, Revision: revision,
 		PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup),
 	}
 	if state.wordLayoutResult != nil && state.wordLayoutAcceptedKey != nil && *state.wordLayoutAcceptedKey == key {
@@ -164,11 +187,11 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 	if state == nil || state.closed.Load() || state.word == nil || state.wordLayoutPendingKey == nil || *state.wordLayoutPendingKey != result.key {
 		return
 	}
-	if state.documentID != result.key.DocumentID || state.wordRevision != result.key.Revision {
+	if state.documentID != result.key.DocumentID || state.wordRevisionAtomic.Load() != result.key.Revision {
 		return
 	}
-	reader, ok := any(state.word).(document.WordLayoutReader)
-	if !ok || wordLayoutPageSetupKey(reader.WordLayoutData(), defaultWordPageSetup) != result.key.PageSetupKey {
+	data, ok := wordLayoutDataForState(state)
+	if !ok || wordLayoutPageSetupKey(data, defaultWordPageSetup) != result.key.PageSetupKey {
 		return
 	}
 	state.wordLayoutPendingKey = nil
@@ -218,7 +241,7 @@ func wordPaginationStatusText(state *documentSessionState) string {
 	if state == nil {
 		return ""
 	}
-	if wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning {
+	if wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning.Load() {
 		return "正在更新页数…"
 	}
 	if state.wordLayoutError != "" {

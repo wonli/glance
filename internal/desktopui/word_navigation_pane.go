@@ -171,21 +171,21 @@ func wordNavigationCachedEntries(state *documentSessionState, blocks []document.
 	if state != nil {
 		cache := state.wordNavigationEntryCache
 		draftEpoch := state.wordDraftEpoch.Load()
-		if cache.valid && cache.revision == state.wordRevision && cache.draftEpoch == draftEpoch && cache.query == query {
+		if cache.valid && cache.revision == state.wordRevisionAtomic.Load() && cache.draftEpoch == draftEpoch && cache.query == query {
 			return cache.entries, cache.headingCount, cache.resultCount
 		}
 	}
 	drafts := wordNavigationDrafts(state)
 	styles := []document.WordStyle(nil)
 	if state != nil && state.word != nil {
-		if reader, ok := any(state.word).(document.WordLayoutReader); ok {
-			styles = reader.WordLayoutData().Styles
+		if data, ok := wordLayoutDataForState(state); ok {
+			styles = data.Styles
 		}
 	}
 	entries, headingCount, resultCount := wordNavigationEntries(blocks, styles, query, drafts)
 	if state != nil {
 		state.wordNavigationEntryCache = wordNavigationEntryCache{
-			valid: true, revision: state.wordRevision, draftEpoch: state.wordDraftEpoch.Load(), query: query,
+			valid: true, revision: state.wordRevisionAtomic.Load(), draftEpoch: state.wordDraftEpoch.Load(), query: query,
 			entries: entries, headingCount: headingCount, resultCount: resultCount,
 		}
 	}

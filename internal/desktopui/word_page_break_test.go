@@ -49,11 +49,11 @@ func TestWordInsertPageBreakToolbarCommitsDraftAndReturnsCaret(t *testing.T) {
 	}
 	app.executeWordToolbarAction("page-break")
 	deadline := time.Now().Add(3 * time.Second)
-	for (state.formatRunning || state.wordPageBreakIntent != nil) && time.Now().Before(deadline) {
+	for (state.formatRunning.Load() || state.wordPageBreakIntent != nil) && time.Now().Before(deadline) {
 		app.processAsyncResults()
 		time.Sleep(5 * time.Millisecond)
 	}
-	if state.formatRunning || state.wordPageBreakIntent != nil {
+	if state.formatRunning.Load() || state.wordPageBreakIntent != nil {
 		t.Fatal("timed out waiting for the asynchronous page-break command")
 	}
 	if strings.Contains(app.status, "失败") {

@@ -212,7 +212,7 @@ func TestWordNavigationEntryCacheTracksRevisionAndLiveDrafts(t *testing.T) {
 	if &third[0] == &first[0] || !strings.Contains(third[1].label, "New title") {
 		t.Fatal("a live heading draft did not refresh the navigation index")
 	}
-	state.wordRevision++
+	state.wordRevision = state.wordRevisionAtomic.Add(1)
 	fourth, _, _ := wordNavigationCachedEntries(state, blocks, "")
 	if &fourth[0] == &third[0] {
 		t.Fatal("document revision did not refresh the navigation index")

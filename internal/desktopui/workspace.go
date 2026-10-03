@@ -230,6 +230,7 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 	}
 	a.documentSessionState = state
 	a.activeTabID = id
+	a.setActiveSessionID(id)
 	state.documentID = id
 	if a.collection != nil {
 		if err := a.collection.Activate(id); err != nil {
@@ -422,6 +423,8 @@ func (a *App) persistRecentsAsync() {
 }
 
 func snapshotState(state *documentSessionState) ([]byte, error) {
+	unlock := lockSessionAdapterRead(state)
+	defer unlock()
 	switch {
 	case state.book != nil:
 		if snap, ok := state.book.(interface{ Snapshot() ([]byte, error) }); ok {
@@ -439,7 +442,18 @@ func snapshotState(state *documentSessionState) ([]byte, error) {
 }
 
 func sessionDirty(state *documentSessionState) bool {
+	unlock := lockSessionAdapterRead(state)
+	defer unlock()
 	return state.book != nil && state.book.Dirty() || state.word != nil && state.word.Dirty() || state.jsonDoc != nil && state.jsonDoc.Dirty()
+}
+
+func sessionPath(state *documentSessionState) string {
+	unlock := lockSessionAdapterRead(state)
+	defer unlock()
+	if state == nil {
+		return ""
+	}
+	return state.path
 }
 
 func (a *App) viewStateBytes() []byte {
@@ -559,7 +573,7 @@ type wordImagePickerResult struct {
 
 func (a *App) startWordImagePicker(operation wordImagePickerOperation) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving || a.wordImagePickerRunning {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || a.wordImagePickerRunning {
 		return
 	}
 	if _, ok := any(state.word).(document.WordImageEditor); !ok {
@@ -666,7 +680,7 @@ func (a *App) handleWordImagePickerResult(result wordImagePickerResult) {
 		a.status = "已取消选择图片"
 		return
 	}
-	if result.state.formatRunning || a.saving {
+	if result.state.formatRunning.Load() || a.isSaving() {
 		a.status = "文档正在处理其他操作，请稍后重试"
 		return
 	}
@@ -685,21 +699,24 @@ func (a *App) handleWordImagePickerResult(result wordImagePickerResult) {
 
 func (a *App) runWordImageInsertCommand(paragraphID, afterInlineID, mediaType string, data []byte) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	editor, ok := any(state.word).(document.WordImageEditor)
 	if !ok {
 		return
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
-		imageID, err := editor.InsertInlineImage(paragraphID, afterInlineID, mediaType, data)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		var imageID string
+		blocks, err := runWordMutation(state, func() error {
+			var insertErr error
+			imageID, insertErr = editor.InsertInlineImage(paragraphID, afterInlineID, mediaType, data)
+			return insertErr
+		})
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "插入图片", err: err, imageID: imageID, selectInsertedImage: err == nil, blocks: blocks})
 	}()
 }

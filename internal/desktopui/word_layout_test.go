@@ -308,7 +308,7 @@ func TestWordRunEditCommitsThroughAsyncCommandWithoutLosingSelection(t *testing.
 			}
 			app.wordCommandResults <- result
 			app.processAsyncResults()
-			if state.formatRunning {
+			if state.formatRunning.Load() {
 				t.Fatal("Word format operation remained marked as running")
 			}
 			updated, ok := selectedWordRun(word.WordBlocks(), run.ID)

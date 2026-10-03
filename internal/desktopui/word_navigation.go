@@ -74,7 +74,7 @@ func wordNavigationRuns(blocks []document.WordBlock) []wordNavigationRun {
 
 func (a *App) handleWordArrowNavigation(gtx layout.Context, paragraph document.WordParagraph, run document.WordTextRun, editor *widget.Editor) bool {
 	state := a.documentSessionState
-	if state == nil || editor == nil || !gtx.Focused(editor) || editor.ReadOnly || state.formatRunning || a.saving {
+	if state == nil || editor == nil || !gtx.Focused(editor) || editor.ReadOnly || state.formatRunning.Load() || a.isSaving() {
 		return false
 	}
 	start, end := editor.Selection()
