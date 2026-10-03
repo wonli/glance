@@ -27,6 +27,16 @@ Sources: [Excelize documentation](https://xuri.me/excelize/en/index.html), [sour
 
 `internal/format/docx` uses Go ZIP/XML libraries for neutral ordered body projection and targeted text, formatting, alignment, paragraph-indentation, and inline-image operations. The adapter now also projects common section page geometry, style/default inheritance inputs, paragraph spacing/line rules/indents/keep flags, and table grid/cell widths as read-only neutral data. Focused fixtures verify twips/EMU/point conversion, explicit-off formatting masks, unsupported section/table diagnostics, and unchanged DOCX snapshot bytes. This is projection evidence only: it does not establish page layout, pagination, floating-image layout, or broad Word fidelity. The Gio renderer still handles body paragraphs, tables, and inline raster previews in continuous flow.
 
+#### Password-to-open encryption: no dependency selected
+
+Inspected the exact pinned `github.com/xuri/excelize/v2 v2.11.0` implementation on 2026-10-03. `Encrypt` calls `standardKeyEncryption` and encrypts package blocks with AES-ECB; Standard encryption has no package-integrity HMAC. `Decrypt` recognizes Agile encryption, but its Agile path decrypts the package key and package without validating the encrypted password verifier or `dataIntegrity` HMAC. Do not route DOCX reads or writes through these APIs as a security feature.
+
+`github.com/mgilbir/spine v0.3.0` is a candidate for a pure-Go implementation: its documented `common/crypto.Encrypt` writes Agile AES-256-CBC/SHA-512 with an integrity HMAC, and its strict decrypt path rejects absent or invalid HMAC. This project is pre-1.0 and has not yet been independently audited or checked against this application's Office-generated DOCX corpus; it is not selected. Its `opc` layer advertises encrypted OOXML containers, so no LibreOffice/Office process would be required at runtime if a future evaluation approves it.
+
+The integration boundary is broader than the file codec: `snapshotState` stores the full DOCX ZIP snapshot in the local SQLite workspace. A complete implementation must keep that recovery payload encrypted, re-prompt for the password on restore, and preserve encryption across Save, Save As, AutoSave, and Share. Do not enable File > Protect Document until the candidate/dependency passes a source review, strict tamper and wrong-password tests, and Office-compatible save/open checks across those persistence paths.
+
+Sources: [Microsoft Agile data encryption](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/9e61da63-8ddb-4c0a-b25d-f85d990f44c8), [Microsoft Agile integrity generation](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/63d9c262-82b9-4fa3-a06d-d087b93e3b00), [Excelize v2.11.0 source](https://github.com/qax-os/excelize/blob/v2.11.0/crypt.go), [Spine crypto API](https://pkg.go.dev/github.com/mgilbir/spine@v0.3.0/common/crypto).
+
 ### Deferred third-party DOCX candidates
 
 - **UniOffice** advertises existing DOCX read/edit operations, formatting, images, tables, and conversion features. Its project states that it is commercial and requires a license code. Consider it only if its license/price model is acceptable and corpus tests justify it.
