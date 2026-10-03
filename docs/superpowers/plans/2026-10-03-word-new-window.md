@@ -165,32 +165,32 @@ Commit as `refactor: serialize document session operations`.
 **Interfaces:**
 - Produces `type windowViewSnapshot struct { activeTabID string; wordViewMode wordViewMode; wordPageFitMode, wordMultiplePagesMode bool; wordLayoutZoom float64; wordRulerHidden, wordGridlinesVisible, wordNavigationVisible bool; wordNavigationQuery string; wordToolbarTab wordToolbarTab; selectedWordRunID, selectedWordParagraphID, selectedWordImageID string; selectedWordSelectionStart, selectedWordSelectionEnd, wordListFirst, wordPageFirst int }`, `func captureWindowView(app *App) windowViewSnapshot`, and `func newDocumentViewFromSnapshot(shared *sharedDocumentSession, windowID uint64, snapshot windowViewSnapshot) *documentSessionState`.
 - `newDocumentViewFromSnapshot` constructs all Gio widgets afresh, initializes editor text from the latest shared draft/committed snapshot, then restores selection and clamps selection/list indexes to valid content. `func syncWindowViewFromSharedSession(gtx layout.Context, state *documentSessionState)` updates non-focused, non-composing editors from a new shared draft while preserving/clamping each view's local caret/selection; focused editor and IME composition remain under that window's control.
-- Workspace tab metadata is shared; `App.activeTabID` is per-window. Only the runtime's primary window calls `Collection.Activate` and persists the existing active-tab/view-state slot. If primary detaches, promote the oldest remaining window and persist its state.
+- Workspace tab metadata is shared; `App.activeTabID` is per-window. Only the runtime's primary window calls `Collection.Activate` and persists the existing active-tab/view-state slot. Task 7 owns primary promotion when windows detach.
 - Plan decision for close semantics: closing a workspace document tab closes that logical session for every window after the existing save/discard confirmation; switching tabs remains per-window.
 
-- [ ] **Step 1: Add view-copy and independent-tab tests**
+- [x] **Step 1: Add view-copy and independent-tab tests**
 
 Add `TestWindowViewSnapshotCopiesPresentationIntoFreshWidgets`, `TestWorkspaceTabsAreSharedButActiveTabIsPerWindow`, `TestClosingDocumentTabDetachesEveryView`, `TestWindowEditorsRebaseFromSharedDraftWithoutMovingCaret`, and `TestWordNewWindowAttachesToLiveSessionDuringPendingWork`. Assert two views start from the selected page/caret and presentation settings, own separate editors/lists/clickables, retain independent active tabs after switching, closing the logical tab removes its session from all views, a sibling editor refreshes without moving its caret, and a new view attaches to the current shared revision/drafts without adding a workspace tab or adapter.
 
-- [ ] **Step 2: Run tests to verify views and workspace activation are currently single-window**
+- [x] **Step 2: Run tests to verify views and workspace activation are currently single-window**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run '^Test(WindowViewSnapshot|WorkspaceTabsAreSharedButActiveTabIsPerWindow|ClosingDocumentTab|WindowEditorsRebaseFromSharedDraftWithoutMovingCaret|WordNewWindowAttachesToLiveSessionDuringPendingWork)' -count=1`
 Expected: FAIL because `activateSession` and widgets are currently bound to one `App`/`documentSessionState`.
 
-- [ ] **Step 3: Implement per-window view construction and tab activation**
+- [x] **Step 3: Implement per-window view construction and tab activation**
 
-Create view widgets from `windowViewSnapshot`, copy the source view values once, and keep later selections/scroll/zoom per view. Share the tab catalog/session cores while storing active tab on each App. Persist active tab/view data only for the primary window; on promotion, use the promoted window's current view for subsequent persistence.
+Create view widgets from `windowViewSnapshot`, copy the source view values once, and keep later selections/scroll/zoom per view. Share the tab catalog/session cores while storing active tab on each App. Persist active tab/view data only for the primary window. Task 7 promotes the oldest remaining window and uses its current view for subsequent persistence.
 
-- [ ] **Step 4: Implement shared document-tab close behavior**
+- [x] **Step 4: Implement shared document-tab close behavior**
 
 When a tab is closed, use one existing save/discard decision for the logical session, detach every view from that session, move affected Apps to Recent, remove the workspace tab once, and close the adapter only after no live operation references it.
 
-- [ ] **Step 5: Run new view, workspace, and tab-close regressions**
+- [x] **Step 5: Run new view, workspace, and tab-close regressions**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run 'Test(WindowView|Workspace.*(Tab|Session)|ClosingDocumentTab|WordNewWindowAttaches)' -count=1`
 Expected: PASS; switching tabs in one window leaves sibling active tabs unchanged, and a shared tab close leaves no App pointing at a closed session.
 
-- [ ] **Step 6: Commit shared tabs and per-window views**
+- [x] **Step 6: Commit shared tabs and per-window views**
 
 Commit as `feat: attach window-local views to shared sessions`.
 

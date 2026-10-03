@@ -134,14 +134,12 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	if intent != nil {
 		if result.pageBreakSourcePrefix == "" {
 			delete(state.wordRunEditors, intent.runID)
-			delete(state.wordRunCommitted, intent.runID)
-			delete(state.wordRunDrafts, intent.runID)
+			state.removeWordTextState(intent.runID)
 		} else {
 			if editor := state.wordRunEditors[intent.runID]; editor != nil {
 				editor.SetText(result.pageBreakSourcePrefix)
 			}
-			state.wordRunCommitted[intent.runID] = result.pageBreakSourcePrefix
-			delete(state.wordRunDrafts, intent.runID)
+			state.setCommittedWordTextAndClearDraft(intent.runID, result.pageBreakSourcePrefix)
 		}
 	}
 	if !active {

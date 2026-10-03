@@ -254,7 +254,7 @@ func wordTextStatisticsForState(state *documentSessionState) wordTextStatistics 
 			}
 			value := inline.Text.Text
 			if state != nil {
-				if draft, ok := state.wordRunDrafts[inline.Text.ID]; ok {
+				if draft, ok := state.wordDraft(inline.Text.ID); ok {
 					value = draft
 				} else if editor := state.wordRunEditors[inline.Text.ID]; editor != nil {
 					value = editor.Text()

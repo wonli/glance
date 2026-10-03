@@ -133,9 +133,14 @@ func selectWordRun(state *documentSessionState, paragraphID, runID string) bool 
 	state.selectedBlockEditable = true
 	state.wordEditor.SetText(run.Text)
 	editor := wordRunEditor(state, run)
-	if _, draft := state.wordRunDrafts[run.ID]; !draft {
+	if draft, exists := state.wordDraft(run.ID); exists {
+		editor.SetText(draft)
+	} else {
+		committed, exists := state.committedWordText(run.ID)
+		if !exists || committed != run.Text {
+			state.setCommittedWordText(run.ID, run.Text)
+		}
 		editor.SetText(run.Text)
-		state.wordRunCommitted[run.ID] = run.Text
 	}
 	return true
 }
@@ -144,21 +149,16 @@ func wordRunEditor(state *documentSessionState, run document.WordTextRun) *widge
 	if state.wordRunEditors == nil {
 		state.wordRunEditors = make(map[string]*widget.Editor)
 	}
-	if state.wordRunCommitted == nil {
-		state.wordRunCommitted = make(map[string]string)
-	}
-	if state.wordRunDrafts == nil {
-		state.wordRunDrafts = make(map[string]string)
-	}
 	editor := state.wordRunEditors[run.ID]
 	if editor == nil {
 		editor = new(widget.Editor)
 		state.wordRunEditors[run.ID] = editor
-		editor.SetText(run.Text)
-		state.wordRunCommitted[run.ID] = run.Text
-	} else if _, draft := state.wordRunDrafts[run.ID]; !draft && state.wordRunCommitted[run.ID] != run.Text {
-		editor.SetText(run.Text)
-		state.wordRunCommitted[run.ID] = run.Text
+		if draft, exists := state.wordDraft(run.ID); exists {
+			editor.SetText(draft)
+		} else {
+			editor.SetText(run.Text)
+			state.setCommittedWordText(run.ID, run.Text)
+		}
 	}
 	editor.SingleLine = false
 	editor.Submit = true
@@ -683,7 +683,7 @@ func (a *App) layoutWordParagraph(gtx layout.Context, paragraph document.WordPar
 				widthRun := run
 				if editor := a.documentSessionState.wordRunEditors[run.ID]; editor != nil {
 					widthRun.Text = editor.Text()
-				} else if draft, exists := a.documentSessionState.wordRunDrafts[run.ID]; exists {
+				} else if draft, exists := a.documentSessionState.wordDraft(run.ID); exists {
 					widthRun.Text = draft
 				}
 				width = wordRunPreferredWidth(gtx, a.theme, paragraph, widthRun)
@@ -821,7 +821,8 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	if run.Editable {
 		current := editor.Text()
 		captureWordTextDraft(state, run.ID, current)
-		if current != state.wordRunCommitted[run.ID] && state.selectedWordImageID == "" {
+		committed, _ := state.committedWordText(run.ID)
+		if current != committed && state.selectedWordImageID == "" {
 			state.selectedWordRunID = run.ID
 			state.selectedWordParagraphID = paragraph.ID
 		}
@@ -1380,11 +1381,11 @@ func reconcileWordSelection(state *documentSessionState, syncDraft bool) {
 	if state.selectedWordRunID != "" {
 		if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok {
 			if editor := state.wordRunEditors[run.ID]; editor != nil {
-				if _, draft := state.wordRunDrafts[run.ID]; !draft {
+				if _, draft := state.wordDraft(run.ID); !draft {
 					if editor.Text() != run.Text {
 						editor.SetText(run.Text)
 					}
-					state.wordRunCommitted[run.ID] = run.Text
+					state.setCommittedWordText(run.ID, run.Text)
 				}
 			}
 			if syncDraft {

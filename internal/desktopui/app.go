@@ -300,6 +300,7 @@ func loadDocument(path string) (loadedDocument, error) {
 
 func (a *App) installDocument(loaded loadedDocument) error {
 	runtime := a.ensureDesktopRuntime()
+	a.reconcileWorkspaceTabs()
 	a.documentGeneration++
 	// Blank adapter constructors mark their drafts dirty so standalone callers
 	// know they have no saved path. In the workspace, a newly created empty
@@ -324,8 +325,8 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	loaded = loadedDocumentFromSharedSession(shared)
 	for id, meta := range a.tabMeta {
 		if meta.DocumentID == shared.documentID || sameDocumentPath(meta.SourcePath, shared.path) {
-			state := a.sessions[id]
-			if state == nil || state.sharedDocumentSession != shared {
+			state := a.viewForTab(id)
+			if state == nil {
 				state = newDocumentSessionView(shared, a.windowID)
 				a.sessions[id] = state
 			}
@@ -384,8 +385,16 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	a.sessions[id] = state
 	if a.collection != nil {
 		if format != "xls" {
-			if err := a.collection.AddTab(meta, format); err != nil {
-				return err
+			if _, exists := a.collection.Get(meta.ID); !exists {
+				var err error
+				if runtime.isPrimaryWindow(a.windowID) {
+					err = a.collection.AddTab(meta, format)
+				} else {
+					err = a.collection.AddTabInactive(meta, format)
+				}
+				if err != nil {
+					return err
+				}
 			}
 			a.reindexTabMetadata()
 			if loaded.path != "" {

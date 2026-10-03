@@ -79,11 +79,12 @@ func wordHasPendingTextDraftsExcept(state *documentSessionState, exceptRunID str
 	if state == nil {
 		return false
 	}
-	for runID, value := range state.wordRunDrafts {
+	committed, drafts := state.wordTextStateSnapshot()
+	for runID, value := range drafts {
 		if runID == exceptRunID {
 			continue
 		}
-		if value != state.wordRunCommitted[runID] {
+		if value != committed[runID] {
 			return true
 		}
 	}
@@ -143,21 +144,7 @@ func (a *App) queueWordParagraphJoin(runID string, value string, direction docum
 func captureWordTextDraft(state *documentSessionState, runID, value string) {
 	state.wordExportCommitMu.Lock()
 	defer state.wordExportCommitMu.Unlock()
-	if state.wordRunDrafts == nil {
-		state.wordRunDrafts = make(map[string]string)
-	}
-	if value == state.wordRunCommitted[runID] {
-		if _, exists := state.wordRunDrafts[runID]; exists {
-			delete(state.wordRunDrafts, runID)
-			state.wordDraftEpoch.Add(1)
-		}
-		return
-	}
-	if previous, exists := state.wordRunDrafts[runID]; exists && previous == value {
-		return
-	}
-	state.wordRunDrafts[runID] = value
-	state.wordDraftEpoch.Add(1)
+	state.captureWordTextDraft(runID, value)
 }
 
 func (a *App) requestWordTextFlush(all bool) {
@@ -177,10 +164,11 @@ func (a *App) startNextWordTextCommit() {
 	if state == nil || state.word == nil || state.formatRunning.Load() || !state.wordFlushRequested {
 		return
 	}
+	committed, drafts := state.wordTextStateSnapshot()
 	var runIDs []string
-	for runID, value := range state.wordRunDrafts {
-		if value == state.wordRunCommitted[runID] {
-			delete(state.wordRunDrafts, runID)
+	for runID, value := range drafts {
+		if value == committed[runID] {
+			state.discardWordDraftIfCommitted(runID, value)
 			continue
 		}
 		if state.wordParagraphSplitIntent != nil && runID == state.wordParagraphSplitIntent.runID {
@@ -227,7 +215,7 @@ func (a *App) startNextWordTextCommit() {
 	}
 	sort.Strings(runIDs)
 	runID := runIDs[0]
-	value := state.wordRunDrafts[runID]
+	value, _ := state.wordDraft(runID)
 	editor, ok := any(state.word).(document.WordTextEditor)
 	if !ok {
 		state.wordFlushRequested = false
@@ -361,8 +349,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 		}
 		return
 	}
-	delete(state.wordRunDrafts, run.ID)
-	state.wordRunCommitted[run.ID] = run.Text
+	state.setCommittedWordTextAndClearDraft(run.ID, run.Text)
 	editor := wordRunEditor(state, run)
 	editor.SetText(run.Text)
 	caret := max(0, min(result.joinCaret, len([]rune(run.Text))))
@@ -465,8 +452,7 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 	if sourceEditor := state.wordRunEditors[result.splitSourceRunID]; sourceEditor != nil {
 		sourceEditor.SetText(result.splitPrefix)
 	}
-	state.wordRunCommitted[result.splitSourceRunID] = result.splitPrefix
-	delete(state.wordRunDrafts, result.splitSourceRunID)
+	state.setCommittedWordTextAndClearDraft(result.splitSourceRunID, result.splitPrefix)
 	reconcileWordSelection(state, false)
 
 	newRun, ok := selectedWordRun(wordBlocksForState(state), result.splitRunID)
@@ -476,8 +462,7 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 		a.finishWordTextFlush(state)
 		return
 	}
-	delete(state.wordRunDrafts, result.splitRunID)
-	state.wordRunCommitted[result.splitRunID] = result.splitRunText
+	state.setCommittedWordTextAndClearDraft(result.splitRunID, result.splitRunText)
 	newEditor := wordRunEditor(state, newRun)
 	newEditor.SetText(result.splitRunText)
 	newEditor.SetCaret(0, 0)

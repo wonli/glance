@@ -34,6 +34,8 @@ var (
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	a.ensureDesktopRuntime()
 	a.processAsyncResults()
+	a.reconcileWorkspaceTabs()
+	syncWindowViewFromSharedSession(gtx, a.documentSessionState)
 	gtx.Constraints.Min = gtx.Constraints.Max
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions { return fill(gtx, pageBackground) },
@@ -302,10 +304,7 @@ func (a *App) processAsyncResults() {
 						result.state.wordFormatPainterTargetParagraphID = ""
 					}
 				} else {
-					result.state.wordRunCommitted[result.runID] = result.runText
-					if result.state.wordRunDrafts[result.runID] == result.runText {
-						delete(result.state.wordRunDrafts, result.runID)
-					}
+					result.state.setCommittedWordTextAndClearDraft(result.runID, result.runText)
 					if result.blocks != nil && result.revision == 0 {
 						result.state.setWordBlocks(result.blocks)
 						a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, result.state.wordRevisionAtomic.Load())

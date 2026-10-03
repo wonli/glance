@@ -1081,10 +1081,7 @@ func (a *App) showWordFindDialog() {
 		}
 		state.wordFindQuery = query
 		blocks := wordBlocksForState(state)
-		drafts := make(map[string]string, len(state.wordRunDrafts)+len(state.wordRunEditors))
-		for runID, value := range state.wordRunDrafts {
-			drafts[runID] = value
-		}
+		drafts := state.wordDraftSnapshot()
 		for runID, editor := range state.wordRunEditors {
 			drafts[runID] = editor.Text()
 		}
@@ -1154,10 +1151,7 @@ func (a *App) findNextWordText(query string) {
 		return
 	}
 	blocks := wordBlocksForState(state)
-	drafts := make(map[string]string, len(state.wordRunDrafts)+len(state.wordRunEditors))
-	for runID, value := range state.wordRunDrafts {
-		drafts[runID] = value
-	}
+	drafts := state.wordDraftSnapshot()
 	for runID, editor := range state.wordRunEditors {
 		drafts[runID] = editor.Text()
 	}
@@ -1258,8 +1252,7 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 		a.status = "文字已替换，但无法定位编辑位置"
 		return
 	}
-	delete(state.wordRunDrafts, run.ID)
-	state.wordRunCommitted[run.ID] = run.Text
+	state.setCommittedWordTextAndClearDraft(run.ID, run.Text)
 	editor := wordRunEditor(state, run)
 	editor.SetText(run.Text)
 	state.selectedWordRunID = run.ID

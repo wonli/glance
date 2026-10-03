@@ -220,7 +220,10 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 }
 
 func (a *App) activateSession(id string, state *documentSessionState) {
-	a.ensureDesktopRuntime()
+	runtime := a.ensureDesktopRuntime()
+	if state == nil || state.closed.Load() {
+		return
+	}
 	a.documentGeneration++
 	if a.activeTabID != "" && a.documentSessionState != nil {
 		if a.documentSessionState.valueFilter != nil {
@@ -229,10 +232,12 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 		a.sessions[a.activeTabID] = a.documentSessionState
 	}
 	a.documentSessionState = state
+	state.windowID = a.windowID
+	state.sharedDocumentSession.attachView(a.windowID, state)
 	a.activeTabID = id
 	a.setActiveSessionID(id)
 	state.documentID = id
-	if a.collection != nil {
+	if a.collection != nil && runtime.isPrimaryWindow(a.windowID) {
 		if err := a.collection.Activate(id); err != nil {
 			a.status = err.Error()
 		}
@@ -265,7 +270,10 @@ func (a *App) snapshotActive() ([]byte, error) {
 }
 
 func (a *App) persistActiveSession() {
-	a.ensureDesktopRuntime()
+	runtime := a.ensureDesktopRuntime()
+	if !runtime.isPrimaryWindow(a.windowID) {
+		return
+	}
 	if a.collection == nil || a.activeTabID == "" || a.activeTabID == workspace.RecentTabID {
 		return
 	}
@@ -467,7 +475,10 @@ func (a *App) viewStateBytes() []byte {
 }
 
 func (a *App) persistViewState() {
-	a.ensureDesktopRuntime()
+	runtime := a.ensureDesktopRuntime()
+	if !runtime.isPrimaryWindow(a.windowID) {
+		return
+	}
 	if a.collection == nil || a.activeTabID == "" || a.activeTabID == workspace.RecentTabID {
 		return
 	}
@@ -477,7 +488,10 @@ func (a *App) persistViewState() {
 }
 
 func (a *App) updatePersistedTab(meta workspace.Tab) {
-	a.ensureDesktopRuntime()
+	runtime := a.ensureDesktopRuntime()
+	if !runtime.isPrimaryWindow(a.windowID) {
+		return
+	}
 	if a.collection == nil {
 		return
 	}

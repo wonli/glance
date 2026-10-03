@@ -136,12 +136,36 @@ func (s *sharedDocumentSession) currentOperationToken() (sessionOperationToken, 
 	return token, ok
 }
 
+func (s *sharedDocumentSession) finalizeIfIdle() bool {
+	if s == nil {
+		return false
+	}
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
+	if s.operationActive || s.finalized.Load() {
+		return false
+	}
+	s.finalized.Store(true)
+	return true
+}
+
+func (s *sharedDocumentSession) reopenAfterFailedClose() {
+	if s == nil {
+		return
+	}
+	s.operationMu.Lock()
+	if !s.adaptersClosed.Load() {
+		s.finalized.Store(false)
+	}
+	s.operationMu.Unlock()
+}
+
 func (s *sharedDocumentSession) acceptsResult(token sessionOperationToken) bool {
 	if s == nil || token.documentID != s.documentID || s.finalized.Load() {
 		return false
 	}
 	s.operationMu.Lock()
-	accepted := token.generation != 0 && token.generation == s.operationGeneration
+	accepted := !s.finalized.Load() && token.generation != 0 && token.generation == s.operationGeneration
 	s.operationMu.Unlock()
 	return accepted
 }
@@ -152,7 +176,7 @@ func (s *sharedDocumentSession) advanceRevision(revision uint64) bool {
 	}
 	s.operationMu.Lock()
 	defer s.operationMu.Unlock()
-	if revision <= s.publishedRevision.Load() {
+	if s.finalized.Load() || revision <= s.publishedRevision.Load() {
 		return false
 	}
 	if revision > s.wordRevisionAtomic.Load() {

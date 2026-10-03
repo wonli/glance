@@ -303,11 +303,7 @@ func wordNavigationDrafts(state *documentSessionState) map[string]string {
 	if state == nil {
 		return nil
 	}
-	drafts := make(map[string]string, len(state.wordRunDrafts))
-	for runID, text := range state.wordRunDrafts {
-		drafts[runID] = text
-	}
-	return drafts
+	return state.wordDraftSnapshot()
 }
 
 func wordNavigationEntries(blocks []document.WordBlock, styles []document.WordStyle, query string, drafts map[string]string) ([]wordNavigationEntry, int, int) {

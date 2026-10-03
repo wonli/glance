@@ -47,6 +47,30 @@ func TestCollectionSwitchAndCloseKeepSessionsIndependent(t *testing.T) {
 	}
 }
 
+func TestCollectionAddTabInactivePreservesActiveTab(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	collection, err := OpenCollection(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := collection.AddTab(Tab{ID: "primary", Title: "primary.docx"}, "docx"); err != nil {
+		t.Fatal(err)
+	}
+	if err := collection.AddTabInactive(Tab{ID: "secondary", Title: "secondary.docx"}, "docx"); err != nil {
+		t.Fatal(err)
+	}
+	if got := collection.ActiveTabID(); got != "primary" {
+		t.Fatalf("active tab after inactive add = %q, want primary", got)
+	}
+	if _, ok := collection.Get("secondary"); !ok {
+		t.Fatal("inactive tab was not added to the shared catalog")
+	}
+}
+
 func TestCollectionConcurrentWindowReadsAndActivation(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "workspace.db"))
 	if err != nil {

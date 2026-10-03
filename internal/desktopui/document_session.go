@@ -20,14 +20,18 @@ type sharedDocumentSession struct {
 	adapterMu                  sync.RWMutex
 	operationMu                sync.Mutex
 	wordBlocksMu               sync.RWMutex
+	wordDraftMu                sync.RWMutex
+	viewsMu                    sync.RWMutex
 	operationGeneration        uint64
 	activeOperation            sessionOperationToken
 	operationActive            bool
 	operationChanged           chan struct{}
 	finalized                  atomic.Bool
+	adaptersClosed             atomic.Bool
 	wordRevisionAtomic         atomic.Uint64
 	publishedRevision          atomic.Uint64
 	wordDraftEpoch             atomic.Uint64
+	wordLayoutPageCount        atomic.Int64
 	wordExportCommitMu         sync.Mutex
 	documentID                 string
 	wordRevision               uint64
@@ -39,6 +43,8 @@ type sharedDocumentSession struct {
 	sheets                     []string
 	wordRunCommitted           map[string]string
 	wordRunDrafts              map[string]string
+	views                      map[uint64]*documentSessionState
+	ownerRuntime               *desktopRuntime
 	wordLayoutPendingKey       *wordLayoutKey
 	wordLayoutAcceptedKey      *wordLayoutKey
 	wordLayoutErrorKey         *wordLayoutKey
@@ -74,6 +80,7 @@ func newSharedDocumentSession(path string) *sharedDocumentSession {
 		operationChanged: idle,
 		wordRunCommitted: make(map[string]string),
 		wordRunDrafts:    make(map[string]string),
+		views:            make(map[uint64]*documentSessionState),
 	}
 	session.wordRevisionAtomic.Store(session.wordRevision)
 	session.publishedRevision.Store(session.wordRevision)
@@ -84,13 +91,6 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 	if shared == nil {
 		shared = newSharedDocumentSession("")
 	}
-	if shared.wordRunCommitted == nil {
-		shared.wordRunCommitted = make(map[string]string)
-	}
-	if shared.wordRunDrafts == nil {
-		shared.wordRunDrafts = make(map[string]string)
-	}
-
 	state := &documentSessionState{
 		sharedDocumentSession:    shared,
 		windowID:                 windowID,
@@ -123,6 +123,7 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 		blockButtons:             make(map[int]*widget.Clickable),
 		selectedBlock:            -1,
 	}
+	shared.attachView(windowID, state)
 	state.cellEditor.SingleLine = true
 	state.cellEditor.Submit = true
 	state.formulaEditor.SingleLine = true
@@ -135,9 +136,33 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 	state.wordEditor.SingleLine = false
 	state.jsonEditor.SingleLine = false
 	state.observedSessionRevision.Store(shared.wordRevisionAtomic.Load())
+	state.appliedSessionRevision.Store(shared.wordRevisionAtomic.Load())
+	state.appliedWordDraftEpoch.Store(shared.wordDraftEpoch.Load())
 	return state
 }
 
 func newDocumentSessionState(path string) *documentSessionState {
 	return newDocumentSessionView(newSharedDocumentSession(path), 0)
+}
+
+func (s *sharedDocumentSession) attachView(windowID uint64, state *documentSessionState) {
+	if s == nil || windowID == 0 || state == nil {
+		return
+	}
+	s.viewsMu.Lock()
+	if s.views == nil {
+		s.views = make(map[uint64]*documentSessionState)
+	}
+	s.views[windowID] = state
+	s.viewsMu.Unlock()
+}
+
+func (s *sharedDocumentSession) bumpWordDraftEpoch() {
+	if s == nil {
+		return
+	}
+	s.wordDraftEpoch.Add(1)
+	if s.ownerRuntime != nil {
+		s.ownerRuntime.invalidateSessionViews(s.documentID)
+	}
 }

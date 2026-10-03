@@ -231,6 +231,7 @@ func (a *App) plusMenuOffset(gtx layout.Context) int {
 
 func (a *App) workspaceTabIDs() []string {
 	a.ensureDesktopRuntime()
+	a.reconcileWorkspaceTabs()
 	ids := make([]string, 0, len(a.tabMeta))
 	for id := range a.tabMeta {
 		ids = append(ids, id)
@@ -250,7 +251,7 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 	tabButton, closeButton := a.documentTabWidgets(id)
 	if tabButton.Clicked(gtx) {
 		a.persistActiveSession()
-		if state := a.sessions[id]; state != nil {
+		if state := a.viewForTab(id); state != nil {
 			a.activateSession(id, state)
 		}
 	}
@@ -400,7 +401,7 @@ func (a *App) activateRecent() {
 	}
 	a.activeTabID = workspace.RecentTabID
 	a.setActiveSessionID("")
-	if a.collection != nil {
+	if a.collection != nil && a.ensureDesktopRuntime().isPrimaryWindow(a.windowID) {
 		_ = a.collection.Activate(workspace.RecentTabID)
 	}
 	a.documentSessionState = newDocumentSessionState("")
@@ -412,7 +413,7 @@ func (a *App) closeWorkspaceTab(id string) {
 	if a.modal.Visible {
 		return
 	}
-	state := a.sessions[id]
+	state := a.viewForTab(id)
 	if state == nil {
 		return
 	}
@@ -438,11 +439,14 @@ func (a *App) showCloseConfirmation(id, title, message string) {
 
 func (a *App) closeWorkspaceTabNow(id string) {
 	runtime := a.ensureDesktopRuntime()
-	state := a.sessions[id]
+	state := a.viewForTab(id)
 	if state == nil {
 		return
 	}
-	wasActive := a.activeTabID == id
+	if !state.finalizeIfIdle() {
+		a.status = "文档正在处理中，请稍后关闭"
+		return
+	}
 	state.wordExportCommitMu.Lock()
 	state.closed.Store(true)
 	state.wordExportCommitMu.Unlock()
@@ -451,6 +455,7 @@ func (a *App) closeWorkspaceTabNow(id string) {
 			a.workspaceDBMu.Lock()
 			if err := a.collection.CloseTab(id); err != nil {
 				a.workspaceDBMu.Unlock()
+				state.reopenAfterFailedClose()
 				state.wordExportCommitMu.Lock()
 				state.closed.Store(false)
 				state.wordExportCommitMu.Unlock()
@@ -460,28 +465,12 @@ func (a *App) closeWorkspaceTabNow(id string) {
 			a.workspaceDBMu.Unlock()
 		}
 	}
+	runtime.removeSession(state.documentID)
 	delete(a.sessions, id)
 	delete(a.tabMeta, id)
 	delete(a.tabButtons, id)
 	delete(a.tabCloseButtons, id)
-	a.reindexTabMetadata()
-	if wasActive {
-		next := workspace.RecentTabID
-		if a.collection != nil {
-			next = a.collection.ActiveTabID()
-		}
-		// The active session has already been removed above. Clear its identity
-		// before activation so activateSession cannot reinsert the closed state.
-		a.activeTabID = ""
-		if s := a.sessions[next]; s != nil {
-			a.activateSession(next, s)
-		} else {
-			a.activateRecent()
-		}
-	}
-	if runtime.windowCount() <= 1 {
-		runtime.removeSession(state.documentID)
-	}
+	a.reconcileWorkspaceTabs()
 	// The current frame's tab list was built before this close removed its ID.
 	// Schedule a fresh frame so the stale list snapshot is replaced immediately.
 	if a.window != nil {
@@ -530,9 +519,11 @@ func (a *App) handleCloseConfirmation(action string) {
 func (a *App) reindexTabMetadata() {
 	a.ensureDesktopRuntime()
 	if a.collection != nil {
+		next := make(map[string]workspace.Tab)
 		for _, session := range a.collection.Tabs() {
-			a.tabMeta[session.Tab.ID] = session.Tab
+			next[session.Tab.ID] = session.Tab
 		}
+		a.tabMeta = next
 		return
 	}
 	for position, id := range a.workspaceTabIDs() {

@@ -65,6 +65,7 @@ func (state *documentSessionState) setWordBlocks(blocks []document.WordBlock) {
 		state.wordPrintCancel()
 	}
 	state.wordLayoutResult = nil
+	state.wordLayoutPageCount.Store(0)
 	state.wordLayoutAcceptedKey = nil
 	state.wordLayoutErrorKey = nil
 	state.wordLayoutError = ""
@@ -138,6 +139,7 @@ func (a *App) startWordPagination(state *documentSessionState) {
 	}
 	if state.wordLayoutAcceptedKey != nil && *state.wordLayoutAcceptedKey != key {
 		state.wordLayoutResult = nil
+		state.wordLayoutPageCount.Store(0)
 		state.wordLayoutAcceptedKey = nil
 	}
 	if state.wordLayoutCancel != nil {
@@ -202,9 +204,11 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 		state.wordLayoutErrorKey = &result.key
 		state.wordLayoutResult = nil
 		state.wordLayoutAcceptedKey = nil
+		state.wordLayoutPageCount.Store(0)
 	} else {
 		accepted := result.result
 		state.wordLayoutResult = &accepted
+		state.wordLayoutPageCount.Store(int64(len(accepted.Pages)))
 		acceptedKey := result.key
 		state.wordLayoutAcceptedKey = &acceptedKey
 		state.wordLayoutErrorKey = nil

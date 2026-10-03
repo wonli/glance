@@ -91,6 +91,7 @@ func (r *desktopRuntime) registerSession(session *sharedDocumentSession) *shared
 	}
 	if existing == nil {
 		r.sessions[session.documentID] = session
+		session.ownerRuntime = r
 		if key := canonicalSessionPath(session.path); key != "" {
 			r.sessionsByCanonicalPath[key] = session.documentID
 		}
@@ -279,10 +280,30 @@ func (r *desktopRuntime) registerSessionLocked(session *sharedDocumentSession) *
 		return existing
 	}
 	r.sessions[session.documentID] = session
+	session.ownerRuntime = r
 	if key := canonicalSessionPath(session.path); key != "" {
 		r.sessionsByCanonicalPath[key] = session.documentID
 	}
 	return session
+}
+
+func (r *desktopRuntime) invalidateSessionViews(documentID string) {
+	if r == nil || documentID == "" {
+		return
+	}
+	r.mu.Lock()
+	apps := make([]*App, 0, len(r.windows))
+	for _, app := range r.windows {
+		if app != nil && app.activeSessionID() == documentID {
+			apps = append(apps, app)
+		}
+	}
+	r.mu.Unlock()
+	for _, app := range apps {
+		if app.window != nil {
+			app.window.Invalidate()
+		}
+	}
 }
 
 func (r *desktopRuntime) updateSessionPath(session *sharedDocumentSession, path string) {
@@ -317,11 +338,50 @@ func (r *desktopRuntime) removeSession(documentID string) {
 		}
 	}
 	r.mu.Unlock()
+	if session != nil {
+		session.viewsMu.RLock()
+		views := make([]*documentSessionState, 0, len(session.views))
+		for _, view := range session.views {
+			views = append(views, view)
+		}
+		session.viewsMu.RUnlock()
+		for _, view := range views {
+			if view != nil {
+				view.closed.Store(true)
+			}
+		}
+		r.mu.Lock()
+		apps := make([]*App, 0, len(r.windows))
+		for _, app := range r.windows {
+			apps = append(apps, app)
+		}
+		r.mu.Unlock()
+		for _, app := range apps {
+			if app != nil && app.activeSessionID() == documentID {
+				app.setActiveSessionID("")
+			}
+		}
+	}
 	closeSharedDocumentSession(session)
+	r.invalidateWindows()
 }
 
 func closeSharedDocumentSession(session *sharedDocumentSession) {
-	if session == nil || !session.finalized.CompareAndSwap(false, true) {
+	if session == nil {
+		return
+	}
+	for {
+		session.operationMu.Lock()
+		session.finalized.Store(true)
+		if !session.operationActive {
+			session.operationMu.Unlock()
+			break
+		}
+		changed := session.operationChanged
+		session.operationMu.Unlock()
+		<-changed
+	}
+	if !session.adaptersClosed.CompareAndSwap(false, true) {
 		return
 	}
 	session.adapterMu.Lock()
@@ -361,6 +421,7 @@ func (r *desktopRuntime) attachWindow(windowID uint64, app *App) {
 	if app.documentSessionState != nil {
 		app.documentSessionState.windowID = windowID
 		app.setActiveSessionID(app.documentSessionState.documentID)
+		app.documentSessionState.sharedDocumentSession.attachView(windowID, app.documentSessionState)
 	}
 }
 
@@ -369,11 +430,34 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 		return
 	}
 	r.mu.Lock()
+	app := r.windows[windowID]
 	delete(r.windows, windowID)
 	if r.primaryWindowID == windowID {
 		r.primaryWindowID = 0
 	}
+	sessions := make([]*sharedDocumentSession, 0, len(r.sessions))
+	for _, session := range r.sessions {
+		sessions = append(sessions, session)
+	}
 	r.mu.Unlock()
+	for _, session := range sessions {
+		session.viewsMu.Lock()
+		delete(session.views, windowID)
+		session.viewsMu.Unlock()
+	}
+	if app != nil && app.documentSessionState != nil {
+		app.documentSessionState.closed.Store(true)
+	}
+}
+
+func (r *desktopRuntime) isPrimaryWindow(windowID uint64) bool {
+	if r == nil {
+		return false
+	}
+	r.mu.Lock()
+	primary := r.primaryWindowID == windowID && (windowID != 0 || len(r.windows) == 0)
+	r.mu.Unlock()
+	return primary
 }
 
 func (r *desktopRuntime) hasWindows() bool {
