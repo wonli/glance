@@ -13,7 +13,6 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/text"
-	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
@@ -66,6 +65,8 @@ type App struct {
 	createActionsList       widget.List
 	createMenuList          widget.List
 	windowCloseButton       widget.Clickable
+	windowOpenResults       chan error
+	windowOpenSource        *App
 	windowMinimizeButton    widget.Clickable
 	windowMaximizeButton    widget.Clickable
 	windowMode              app.WindowMode
@@ -131,8 +132,19 @@ type App struct {
 }
 
 func New(window *app.Window, initialPath string) *App {
+	return newAppWithRuntimeAndWindowID(window, initialPath, newDesktopRuntime(), 0)
+}
+
+func newAppWithRuntime(window *app.Window, runtime *desktopRuntime) *App {
+	return newAppWithRuntimeAndWindowID(window, "", runtime, 0)
+}
+
+func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtime *desktopRuntime, windowID uint64) *App {
+	if runtime == nil {
+		runtime = newDesktopRuntime()
+	}
 	a := &App{
-		desktopRuntime:         newDesktopRuntime(),
+		desktopRuntime:         runtime,
 		window:                 window,
 		theme:                  material.NewTheme(),
 		documentSessionState:   newDocumentSessionState(initialPath),
@@ -179,9 +191,10 @@ func New(window *app.Window, initialPath string) *App {
 
 		wordDocumentInfoResults: make(chan wordDocumentInfoResult, 1),
 		wordLayoutResults:       make(chan wordLayoutResult, 8),
+		windowOpenResults:       make(chan error, 1),
 	}
 	if window != nil {
-		a.attachWindow(0, a)
+		a.attachWindow(windowID, a)
 		a.initializeWorkspace()
 		a.startWorkspaceWriter()
 	}
@@ -195,36 +208,19 @@ func New(window *app.Window, initialPath string) *App {
 	return a
 }
 
-func Run(initialPath string) {
+func Run(initialPath string) <-chan struct{} {
+	runtime := newDesktopRuntime()
+	runtime.completion = make(chan struct{})
 	w := new(app.Window)
-	w.Option(
-		app.Title("desktop"),
-		app.Decorated(false),
-		app.Size(unit.Dp(1280), unit.Dp(820)),
-		app.MinSize(unit.Dp(900), unit.Dp(600)),
-	)
-	a := New(w, initialPath)
+	configureDesktopWindow(w)
+	a := newAppWithRuntime(w, runtime)
 	if initialPath != "" {
 		if err := a.open(initialPath); err != nil {
 			a.status = err.Error()
 		}
 	}
-	for {
-		e := w.Event()
-		switch e := e.(type) {
-		case app.DestroyEvent:
-			a.shutdownOnce.Do(func() { close(a.shutdown) })
-			a.closeWorkspace()
-			return
-		case app.ConfigEvent:
-			a.applyWindowConfig(e.Config)
-			a.window.Invalidate()
-		case app.FrameEvent:
-			gtx := app.NewContext(&a.ops, e)
-			a.layout(gtx)
-			e.Frame(gtx.Ops)
-		}
-	}
+	go runtime.runAppWindow(a)
+	return runtime.completion
 }
 
 func (a *App) open(path string) error {

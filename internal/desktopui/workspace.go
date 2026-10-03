@@ -132,8 +132,10 @@ func (a *App) initializeWorkspace() {
 	// Restore all document sessions, but start on Glance's home tab.
 	a.activeTabID = workspace.RecentTabID
 	a.documentSessionState = newDocumentSessionState("")
-	if err := collection.Activate(workspace.RecentTabID); err != nil {
-		a.status = err.Error()
+	if runtime.isPrimaryWindow(a.windowID) {
+		if err := collection.Activate(workspace.RecentTabID); err != nil {
+			a.status = err.Error()
+		}
 	}
 	a.refreshHomeMetadata()
 }

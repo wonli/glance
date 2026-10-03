@@ -74,6 +74,13 @@ func (a *App) layoutWorkspaceBody(gtx layout.Context) layout.Dimensions {
 
 func (a *App) processAsyncResults() {
 	a.ensureDesktopRuntime()
+	select {
+	case err := <-a.windowOpenResults:
+		if err != nil {
+			a.status = "创建新窗口失败：" + err.Error()
+		}
+	default:
+	}
 	a.pollGridPictureResults()
 	select {
 	case result := <-a.wordLayoutResults:

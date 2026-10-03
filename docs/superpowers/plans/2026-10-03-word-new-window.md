@@ -209,25 +209,25 @@ Commit as `feat: attach window-local views to shared sessions`.
 - Production creates one `desktopRuntime`, launches the initial window and any later windows on their own `App`/event loop, and calls `app.Main()` once from the process entry point. `Run` returns a channel closed only after final persistence and cleanup; the process entry point waits for it in a watcher and exits after cleanup because Gio's desktop `app.Main()` blocks even after the last window is destroyed.
 - Tests inject `type windowLauncher func(documentID string, snapshot windowViewSnapshot) error` so creation failure can be verified without constructing a native window.
 
-- [ ] **Step 1: Add window lifecycle/failure and platform capability tests**
+- [x] **Step 1: Add window lifecycle/failure and platform capability tests**
 
 Add `TestRuntimeRegistersAndRunsIndependentWindowApps`, `TestNewWindowFailureKeepsSourceWindow`, and `TestNewWindowCapabilityMatchesPlatform`. Assert unique window IDs, separate Apps/widgets, shared session attachment, recoverable failure status, and disabled reason on unsupported targets.
 
-- [ ] **Step 2: Run tests to verify only one Gio window can be registered by the app**
+- [x] **Step 2: Run tests to verify only one Gio window can be registered by the app**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run '^Test(RuntimeRegistersAndRunsIndependentWindowApps|NewWindowFailureKeepsSourceWindow|NewWindowCapabilityMatchesPlatform)$' -count=1`
 Expected: FAIL because `desktopui.Run` currently creates and owns exactly one `app.Window` and no window registry exists.
 
-- [ ] **Step 3: Implement the runtime window registry and `openDocumentWindow`**
+- [x] **Step 3: Implement the runtime window registry and `openDocumentWindow`**
 
 Register the new App before its `Window.Event()` loop first shows the native window. Give it a copied `windowViewSnapshot`, a fresh per-window session-view map, and the process runtime. Report early `DestroyEvent.Err` back to the source App. Keep `cmd/desktop/main.go` calling `app.Main()` once and add a completion watcher that terminates the process only after `Run` signals fully completed cleanup.
 
-- [ ] **Step 4: Run window manager and current single-window startup regressions**
+- [x] **Step 4: Run window manager and current single-window startup regressions**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run 'Test(RuntimeRegisters|NewWindow|WindowChrome|Workspace)' -count=1`
 Expected: PASS; existing `New(nil, "")` tests remain headless and one-window startup remains available.
 
-- [ ] **Step 5: Commit Gio window lifecycle**
+- [x] **Step 5: Commit Gio window lifecycle**
 
 Commit as `feat: manage multiple desktop windows`.
 

@@ -26,6 +26,9 @@ type desktopRuntime struct {
 	workspaceWriterStopOnce sync.Once
 	workspaceWriterStopped  bool
 	shutdownOnce            sync.Once
+	completion              chan struct{}
+	completionOnce          sync.Once
+	windowLauncher          windowLauncher
 	sessions                map[string]*sharedDocumentSession
 	sessionsByCanonicalPath map[string]string
 	openingPaths            map[string]chan struct{}
@@ -658,6 +661,11 @@ func (r *desktopRuntime) shutdown() {
 		if store != nil {
 			_ = store.Close()
 		}
+		r.completionOnce.Do(func() {
+			if r.completion != nil {
+				close(r.completion)
+			}
+		})
 	})
 }
 
