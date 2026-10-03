@@ -289,11 +289,11 @@ Expected: PASS/compile for the implemented native adapter; unsupported platform 
 
 - [x] **Step 1: Run all targeted Word pagination/PDF/print regressions**
 
-Ran the focused print-service and Word print-flow suites, platform compile checks, `go test ./... -count=1`, and `go build ./cmd/desktop`. Focused checks and build pass. The full suite has five previously recorded desktop UI failures: four Grid/typeface/geometry cases and `TestWordUpDownCrossesParagraphsAtPreferredVisualColumn`; other packages pass.
+Ran focused pagination, PDF, print-service, and Word print-flow suites, platform compile checks, `go test ./... -count=1`, and build checks. Focused checks pass. Full-suite execution reports five known `internal/desktopui` failures: `TestCellTypefaceKeepsWorkbookFamilyAndAddsCJKFallbacks`, `TestGridResizeHandleUsesFixedHeaderCoordinates`, `TestSelectionRectUsesVisibleGridGeometry`, `TestGridViewportScalesGeometryToDevicePixels`, and `TestWordUpDownCrossesParagraphsAtPreferredVisualColumn`; other packages pass. `go build ./cmd/desktop` could not write its default `./desktop` output into the read-only managed worktree; `go build -o /private/tmp/glance-desktop-build ./cmd/desktop` passed. The print-service focused regex used in Task 6 matched no tests in that package; the full print-service package tests and Darwin/host cross-compiles passed. See the SDD ledger for the exact verification commands and rulings.
 
-- [x] **Step 2: Launch the product through the required command and capture the app**
+- [ ] **Step 2: Launch the product through the required command and capture the app**
 
-`go run ./cmd/desktop` launched from the worktree. Computer Use did not bind that unbundled process, so the same source build was opened through a temporary macOS app wrapper to inspect the real Word print flow. The temporary blank DOCX remained unchanged and was not saved. Pen was reachable, but its Word artboard could not be brought into the canvas viewport, so the matched-size comparison remains incomplete.
+`go run ./cmd/desktop` started from the worktree, but Computer Use could not bind that unbundled process. To inspect the same source build, a temporary macOS app wrapper was created under `/private/tmp`; CUA bound its `desktop` window and captured the Word ribbon, page, and status bar. Pencil MCP also returned screenshots and node geometry for `Clpgm`, `kiBim`, and `FsQrk`. At the available 1280×820 dp viewport, the top bars, ruler, centered 900 dp page width, and bottom bar positions align with the Pen geometry; the page height contracts to about 570 dp because the available height is shorter than the 1440×900 reference. The current blank DOCX is 1 page/0 words; the open manual is 461 words and produces an unsupported-orientation diagnostic, while Pen shows 3 pages/582 words. No same-document, same-1440×900 paired screenshot exists, so 1:1 acceptance remains incomplete.
 
 - [ ] **Step 3: Compare Pen references at matched dimensions**
 
@@ -303,9 +303,9 @@ Compare `Clpgm` primary page, `kiBim` ribbon, and `FsQrk` bottom bar. Verify gro
 
 Export and reopen a PDF; check page count, extracted CJK/Latin boundary text, font mapping, and picture rectangles. Exercise warning confirmation, unsupported-layout blocking, print preview, system print cancellation/confirmation, and platform gating. Verify source DOCX bytes and dirty state are unchanged by preview/export/print.
 
-- [ ] **Step 5: Record evidence and update support matrix**
+- [x] **Step 5: Record evidence and update support matrix**
 
-Add actual launch command, OS/build target, document fixture, computed page/word counts, fonts/fallbacks, diagnostics, screenshot locations, PDF checks, print target, and remaining differences to the docs. Leave any unverified item unchecked; do not treat startup as 1:1 visual acceptance.
+Updated the Chinese TODO, support page, library evaluation, compatibility matrix, and this plan with the command/build result, macOS/arm64 context, Pen expected count (3 pages/582 words), bound QA-window result (blank document, 1 page/0 words), viewport mismatch, font/cache note, PDF/print scope, and remaining differences. No matched screenshots were available, so visual acceptance and the corresponding steps remain unchecked.
 
 ## Self-Review
 

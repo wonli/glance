@@ -24,6 +24,19 @@ type documentSessionState struct {
 	documentID                          string
 	wordRevision                        uint64
 	wordViewMode                        wordViewMode
+	wordPageFitMode                     bool
+	wordMultiplePagesMode               bool
+	wordReadingMode                     bool
+	wordReadingExitButton               widget.Clickable
+	wordNavigationVisible               bool
+	wordNavigationSearchEditor          widget.Editor
+	wordNavigationSearchQuery           string
+	wordNavigationList                  widget.List
+	wordNavigationCloseButton           widget.Clickable
+	wordNavigationButtons               map[string]*widget.Clickable
+	wordNavigationEntryCache            wordNavigationEntryCache
+	wordRulerHidden                     bool
+	wordGridlinesVisible                bool
 	wordLayoutPendingKey                *wordLayoutKey
 	wordLayoutAcceptedKey               *wordLayoutKey
 	wordLayoutErrorKey                  *wordLayoutKey
@@ -35,8 +48,10 @@ type documentSessionState struct {
 	wordLayoutWarningConfirmed          bool
 	wordPageListState                   widget.List
 	wordStatusPrintLayoutButton         widget.Clickable
+	wordStatusWebLayoutButton           widget.Clickable
 	wordStatusZoomOutButton             widget.Clickable
 	wordStatusZoomInButton              widget.Clickable
+	wordStatusZoomDrag                  gesture.Drag
 	path                                string
 	book                                document.Spreadsheet
 	word                                *docx.Document
@@ -187,7 +202,7 @@ type ValueFilter struct {
 }
 
 func newDocumentSessionState(path string) *documentSessionState {
-	s := &documentSessionState{path: path, wordRevision: 1, wordViewMode: wordViewContinuous, wordLayoutZoom: 1, gridList: widget.List{List: layout.List{Axis: layout.Vertical}}, wordListState: widget.List{List: layout.List{Axis: layout.Vertical}}, wordPageListState: widget.List{List: layout.List{Axis: layout.Vertical}}, toolbarTab: toolbarTabHome, wordToolbarTab: wordTabHome, toolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarTabList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionButtons: make(map[string]*widget.Clickable), wordRunEditors: make(map[string]*widget.Editor), wordRunCommitted: make(map[string]string), wordRunDrafts: make(map[string]string), wordObjectButtons: make(map[string]*widget.Clickable), wordImageInteractions: make(map[string]*wordImageInteraction), wordImageCache: newWordImageCache(wordImageCacheLimit), wordImagePending: make(map[string]uint64), wordImageVersions: make(map[string]uint64), wordImageErrors: make(map[string]string), gridPictureCache: newWordImageCache(wordImageCacheLimit), gridPicturePending: make(map[string]uint64), gridPictureVersions: make(map[string]uint64), gridPictureErrors: make(map[string]string), cellButtons: make(map[string]*widget.Clickable), sheetButtons: make(map[string]*widget.Clickable), blockButtons: make(map[int]*widget.Clickable), selectedBlock: -1}
+	s := &documentSessionState{path: path, wordRevision: 1, wordViewMode: wordViewContinuous, wordLayoutZoom: 1, gridList: widget.List{List: layout.List{Axis: layout.Vertical}}, wordListState: widget.List{List: layout.List{Axis: layout.Vertical}}, wordPageListState: widget.List{List: layout.List{Axis: layout.Vertical}}, wordNavigationList: widget.List{List: layout.List{Axis: layout.Vertical}}, toolbarTab: toolbarTabHome, wordToolbarTab: wordTabHome, toolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarTabList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionButtons: make(map[string]*widget.Clickable), wordNavigationButtons: make(map[string]*widget.Clickable), wordRunEditors: make(map[string]*widget.Editor), wordRunCommitted: make(map[string]string), wordRunDrafts: make(map[string]string), wordObjectButtons: make(map[string]*widget.Clickable), wordImageInteractions: make(map[string]*wordImageInteraction), wordImageCache: newWordImageCache(wordImageCacheLimit), wordImagePending: make(map[string]uint64), wordImageVersions: make(map[string]uint64), wordImageErrors: make(map[string]string), gridPictureCache: newWordImageCache(wordImageCacheLimit), gridPicturePending: make(map[string]uint64), gridPictureVersions: make(map[string]uint64), gridPictureErrors: make(map[string]string), cellButtons: make(map[string]*widget.Clickable), sheetButtons: make(map[string]*widget.Clickable), blockButtons: make(map[int]*widget.Clickable), selectedBlock: -1}
 	s.wordRevisionAtomic.Store(s.wordRevision)
 	s.cellEditor.SingleLine = true
 	s.cellEditor.Submit = true
@@ -197,6 +212,7 @@ func newDocumentSessionState(path string) *documentSessionState {
 	s.nameBox.Submit = true
 	s.sheetNameEditor.SingleLine = true
 	s.sheetNameEditor.Submit = true
+	s.wordNavigationSearchEditor.SingleLine = true
 	s.wordEditor.SingleLine = false
 	s.jsonEditor.SingleLine = false
 	return s

@@ -240,7 +240,7 @@ func (d *Document) Save() error {
 	if d.path == "" {
 		return errors.New("document has no save path")
 	}
-	if err := d.saveAs(d.path); err != nil {
+	if err := d.saveAs(d.path, nil); err != nil {
 		return err
 	}
 	d.savedHistoryState = d.historyState
@@ -254,7 +254,20 @@ func (d *Document) SaveAs(path string) error {
 	if err := d.checkOpen(); err != nil {
 		return err
 	}
-	return d.saveAs(path)
+	return d.saveAs(path, nil)
+}
+
+// SaveAsWithCommitGuard writes a copy and checks guard after the temporary
+// package has been fully written but immediately before it replaces path.
+// A successful guard may return a release function that is called after the
+// atomic replacement attempt completes.
+func (d *Document) SaveAsWithCommitGuard(path string, guard func() (func(), error)) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	return d.saveAs(path, guard)
 }
 
 // SaveAsDocument writes and adopts a new source path for subsequent Save calls.
@@ -264,7 +277,7 @@ func (d *Document) SaveAsDocument(path string) error {
 	if err := d.checkOpen(); err != nil {
 		return err
 	}
-	if err := d.saveAs(path); err != nil {
+	if err := d.saveAs(path, nil); err != nil {
 		return err
 	}
 	d.path, d.dirty = path, false
@@ -272,7 +285,7 @@ func (d *Document) SaveAsDocument(path string) error {
 	return nil
 }
 
-func (d *Document) saveAs(path string) error {
+func (d *Document) saveAs(path string, guard func() (func(), error)) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".glance-*.docx")
 	if err != nil {
 		return err
@@ -302,6 +315,16 @@ func (d *Document) saveAs(path string) error {
 	}
 	if err := file.Close(); err != nil {
 		return err
+	}
+	var release func()
+	if guard != nil {
+		release, err = guard()
+		if err != nil {
+			return err
+		}
+	}
+	if release != nil {
+		defer release()
 	}
 	if err := fileutil.ReplaceFile(tmpPath, path); err != nil {
 		return fmt.Errorf("replace DOCX file: %w", err)

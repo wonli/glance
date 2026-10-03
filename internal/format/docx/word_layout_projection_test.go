@@ -144,6 +144,34 @@ func TestWordLayoutProjectionReadsSectionPageSetupAndStyleDefaults(t *testing.T)
 	}
 }
 
+func TestWordLayoutProjectionDoesNotRejectOmittedPageOrientation(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>content</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="13500" w:h="9000"/><w:pgMar w:top="1000" w:right="1350" w:bottom="1000" w:left="1350"/></w:sectPr></w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+
+	section := requireWordLayoutReader(t, doc).WordLayoutData().Sections[0]
+	if section.PageSetup.Orientation != "" || section.PageSetup.Set&document.WordPageOrientationSet != 0 {
+		t.Fatalf("omitted orientation was projected as explicit: %+v", section.PageSetup)
+	}
+	if section.PageSetup.WidthPT != 675 || section.PageSetup.HeightPT != 450 {
+		t.Fatalf("page size = %.2f×%.2fpt; want 675×450pt", section.PageSetup.WidthPT, section.PageSetup.HeightPT)
+	}
+	if data := requireWordLayoutReader(t, doc).WordLayoutData(); len(data.Unsupported) != 0 {
+		t.Fatalf("valid page size with omitted orientation produced unsupported diagnostics: %+v", data.Unsupported)
+	}
+}
+
+func TestWordLayoutProjectionRejectsExplicitEmptyPageOrientation(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>content</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840" w:orient=""/></w:sectPr></w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+
+	for _, item := range requireWordLayoutReader(t, doc).WordLayoutData().Unsupported {
+		if item.Code == "unknown-orientation" && item.SourceID == "section-0" {
+			return
+		}
+	}
+	t.Fatal("explicit empty orientation was not reported as unsupported")
+}
+
 func TestWordLayoutProjectionReportsUnsupportedSectionsAndTableStructures(t *testing.T) {
 	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
 	<w:p><w:r><w:t>section one</w:t></w:r><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:pPr></w:p>

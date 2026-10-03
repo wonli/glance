@@ -3,6 +3,7 @@ package docx
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -110,6 +111,38 @@ func TestReplaceSingleRunTextAndSaveCopy(t *testing.T) {
 	defer reopened.Close()
 	if got := reopened.Blocks()[0].Text; got != "你好 & welcome" {
 		t.Fatalf("saved paragraph = %q", got)
+	}
+}
+
+func TestSaveAsWithCommitGuardPreservesExistingTargetWhenGuardRejects(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	target := filepath.Join(t.TempDir(), "existing.docx")
+	previous := []byte("existing target")
+	if err := os.WriteFile(target, previous, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	guardErr := errors.New("stale document revision")
+	err = doc.SaveAsWithCommitGuard(target, func() (func(), error) { return nil, guardErr })
+	if !errors.Is(err, guardErr) {
+		t.Fatalf("guard error = %v, want %v", err, guardErr)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, previous) {
+		t.Fatalf("rejected save changed existing target: %q", got)
+	}
+	entries, err := os.ReadDir(filepath.Dir(target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != filepath.Base(target) {
+		t.Fatalf("temporary DOCX was not cleaned after rejected save: %#v", entries)
 	}
 }
 

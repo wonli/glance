@@ -82,6 +82,11 @@ func (a *App) processAsyncResults() {
 	default:
 	}
 	select {
+	case result := <-a.wordShareCopyResults:
+		a.applyWordShareCopyResult(result)
+	default:
+	}
+	select {
 	case result := <-a.wordPrintResults:
 		a.applyWordPrintResult(result)
 	default:
@@ -157,6 +162,9 @@ func (a *App) processAsyncResults() {
 			if result.kind == commandExportPDF {
 				a.wordPDFPickerRequest = nil
 			}
+			if result.kind == commandShareCopy {
+				a.wordShareCopyRequest = nil
+			}
 			if result.kind == commandSaveAs && a.pendingCloseTabID != "" {
 				a.showCloseConfirmation(a.pendingCloseTabID, "保存失败", "无法选择另存为位置。可以重试保存、不保存并关闭，或取消关闭。")
 			}
@@ -199,6 +207,16 @@ func (a *App) processAsyncResults() {
 					a.status = "PDF 导出状态已过期，请重新导出"
 				} else {
 					a.startWordPDFFileExport(request.state, request.key, result.path)
+				}
+			case commandShareCopy:
+				request := a.wordShareCopyRequest
+				a.wordShareCopyRequest = nil
+				if result.path == "" {
+					a.status = "已取消共享副本导出"
+				} else if request == nil {
+					a.status = "共享副本状态已过期，请重新导出"
+				} else {
+					a.startWordShareCopyFile(request, result.path)
 				}
 			}
 		}
@@ -269,7 +287,7 @@ func (a *App) processAsyncResults() {
 					if result.state.wordDeferredToolbarAction == "ruler-indents" {
 						result.state.wordDeferredToolbarAction = ""
 						result.state.wordRulerIndentIntent = nil
-					} else if result.state.wordDeferredToolbarAction == "export-pdf" {
+					} else if result.state.wordDeferredToolbarAction == "export-pdf" || result.state.wordDeferredToolbarAction == "share" {
 						result.state.wordDeferredToolbarAction = ""
 					} else if result.state.wordDeferredToolbarAction == "apply-format-painter" {
 						result.state.wordDeferredToolbarAction = ""

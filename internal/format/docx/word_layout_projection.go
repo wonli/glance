@@ -98,14 +98,14 @@ func projectWordSection(startBlock int, node *wordXMLNode, sourceID string, unsu
 			section.PageSetup.HeightPT = wordTwipsToPoints(value)
 			section.PageSetup.Set |= document.WordPageHeightSet
 		}
-		if value := attrValue(pageSize, "orient"); value != "" {
+		if value, present := attrValuePresent(pageSize, "orient"); present {
 			section.PageSetup.Orientation = strings.ToLower(value)
 			section.PageSetup.Set |= document.WordPageOrientationSet
 		}
 		if section.PageSetup.WidthPT <= 0 || section.PageSetup.HeightPT <= 0 {
 			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: sourceID, Code: "invalid-page-size", Description: "The section has an invalid or incomplete page size."})
 		}
-		if section.PageSetup.Orientation != "portrait" && section.PageSetup.Orientation != "landscape" {
+		if section.PageSetup.Set&document.WordPageOrientationSet != 0 && section.PageSetup.Orientation != "portrait" && section.PageSetup.Orientation != "landscape" {
 			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: sourceID, Code: "unknown-orientation", Description: "The section uses an unsupported page orientation: " + section.PageSetup.Orientation})
 		}
 	}

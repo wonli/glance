@@ -280,6 +280,7 @@ const (
 	commandOpenFolder
 	commandSaveAs
 	commandExportPDF
+	commandShareCopy
 )
 
 type fileCommandResult struct {
@@ -329,6 +330,8 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 		a.status = "选择另存为位置…"
 	case commandExportPDF:
 		a.status = "选择 PDF 保存位置…"
+	case commandShareCopy:
+		a.status = "选择共享 DOCX 副本保存位置…"
 	}
 	runner := a.fileCommandRunner
 	go func() {
@@ -345,7 +348,7 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 				if result.err == nil && result.path != "" {
 					result.recents, result.err = scanOfficeFolder(result.path)
 				}
-			case commandSaveAs:
+			case commandSaveAs, commandShareCopy:
 				result.path, result.err = chooseSavePath(format)
 			}
 		}

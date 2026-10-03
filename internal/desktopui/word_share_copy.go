@@ -1,0 +1,152 @@
+package desktopui
+
+import (
+	"errors"
+	"fmt"
+	"path/filepath"
+	"strings"
+
+	"glance/internal/format/docx"
+)
+
+type wordShareCopyPickerRequest struct {
+	state      *documentSessionState
+	revision   uint64
+	draftEpoch uint64
+}
+
+type wordShareCopyResult struct {
+	state *documentSessionState
+	path  string
+	err   error
+}
+
+func (a *App) requestWordShareCopy() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.closed.Load() || state.formatRunning || a.saving || a.fileCommandRunning {
+		return
+	}
+	if state.wordFlushRequested || state.wordDeferredToolbarAction != "" {
+		a.status = "正文正在提交，请稍后再导出共享副本"
+		return
+	}
+	if wordHasPendingTextDrafts(state) {
+		state.wordForceDraftFlush = true
+		state.wordFlushRequested = true
+		state.wordFlushAllDrafts = true
+		state.wordDeferredToolbarAction = "share"
+		a.status = "正在提交正文编辑，然后准备共享 DOCX 副本…"
+		a.startNextWordTextCommit()
+		return
+	}
+	a.beginWordShareCopy(state)
+}
+
+func (a *App) beginWordShareCopy(state *documentSessionState) {
+	if state == nil || state.word == nil || state.closed.Load() || state.formatRunning || a.saving || a.fileCommandRunning {
+		return
+	}
+	if a.documentSessionState != state {
+		a.status = "Word 文档已切换，共享副本导出已取消"
+		return
+	}
+	if state.wordFlushRequested || wordHasPendingTextDrafts(state) {
+		a.status = "正文编辑尚未提交，未导出共享副本"
+		return
+	}
+	request := &wordShareCopyPickerRequest{
+		state:      state,
+		revision:   state.wordRevision,
+		draftEpoch: state.wordDraftEpoch.Load(),
+	}
+	a.wordShareCopyRequest = request
+	a.startFileCommand(commandShareCopy, "docx")
+}
+
+func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path string) {
+	if request == nil || request.state == nil || request.state.word == nil || request.state.closed.Load() {
+		a.status = "共享副本状态已过期，请重新导出"
+		return
+	}
+	state := request.state
+	if a.documentSessionState != state {
+		a.status = "Word 文档已切换，共享副本导出已取消"
+		return
+	}
+	if state.formatRunning || state.wordRevisionAtomic.Load() != request.revision || state.wordDraftEpoch.Load() != request.draftEpoch || state.wordFlushRequested || wordHasPendingTextDrafts(state) {
+		a.status = "文档在选择位置期间已更改，未导出共享副本；请重试"
+		return
+	}
+	if sameDocumentPath(path, state.path) {
+		a.status = "共享副本不能覆盖当前 DOCX"
+		return
+	}
+	if !strings.EqualFold(filepath.Ext(path), ".docx") {
+		path += ".docx"
+	}
+
+	word := state.word
+	revision, draftEpoch := request.revision, request.draftEpoch
+	state.formatRunning = true
+	results, shutdown, window := a.wordShareCopyResults, a.shutdown, a.window
+	if results == nil {
+		state.formatRunning = false
+		a.status = "共享副本导出不可用"
+		return
+	}
+	go func() {
+		result := wordShareCopyResult{state: state, path: path}
+		snapshot, err := word.Snapshot()
+		if err == nil && (state.closed.Load() || state.wordRevisionAtomic.Load() != revision || state.wordDraftEpoch.Load() != draftEpoch) {
+			err = errors.New("Word 文档在准备共享副本时已更改")
+		}
+		if err == nil {
+			copyDocument, openErr := docx.OpenSnapshot(snapshot)
+			if openErr != nil {
+				err = fmt.Errorf("校验 DOCX 副本：%w", openErr)
+			} else {
+				err = copyDocument.SaveAsWithCommitGuard(path, func() (func(), error) {
+					state.wordExportCommitMu.Lock()
+					release := state.wordExportCommitMu.Unlock
+					if state.closed.Load() || state.wordRevisionAtomic.Load() != revision || state.wordDraftEpoch.Load() != draftEpoch {
+						release()
+						return nil, errors.New("Word 文档在导出期间已更改，未覆盖目标文件")
+					}
+					return release, nil
+				})
+				if closeErr := copyDocument.Close(); err == nil && closeErr != nil {
+					err = closeErr
+				}
+			}
+		}
+		result.err = err
+		select {
+		case results <- result:
+			if window != nil {
+				window.Invalidate()
+			}
+		case <-shutdown:
+		}
+	}()
+	a.status = "正在导出共享 DOCX 副本…"
+}
+
+func (a *App) applyWordShareCopyResult(result wordShareCopyResult) {
+	state := result.state
+	if state == nil {
+		return
+	}
+	state.formatRunning = false
+	if state.closed.Load() {
+		return
+	}
+	if result.err != nil {
+		if state == a.documentSessionState {
+			a.status = "导出共享副本失败：" + result.err.Error()
+		}
+		return
+	}
+	if state == a.documentSessionState {
+		a.status = "共享 DOCX 副本已导出：" + filepath.Base(result.path)
+	}
+}

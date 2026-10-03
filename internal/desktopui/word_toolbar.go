@@ -200,7 +200,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		return false
 	}
 	switch action.id {
-	case "new", "open", "recent", "save-as", "export-pdf":
+	case "new", "open", "recent", "save-as", "export-pdf", "share":
 		return true
 	case "print":
 		return a.wordPrinter != nil && a.wordPrinter.Available()
@@ -209,7 +209,9 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "doc-info":
 		_, supported := any(state.word).(document.WordDocumentPropertiesEditor)
 		return supported
-	case "view-print-layout":
+	case "view-reading", "view-print-layout", "view-web-layout", "view-navigation", "view-zoom", "view-gridlines", "view-single-page", "view-multiple-pages":
+		return true
+	case "view-ruler":
 		return true
 	case "undo", "redo":
 		history, ok := any(state.word).(document.WordHistory)
@@ -334,6 +336,30 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 	}
 	if action.id == "autosave" {
 		return state.wordAutoSave
+	}
+	if action.id == "view-ruler" {
+		return !state.wordRulerHidden
+	}
+	if action.id == "view-gridlines" {
+		return state.wordGridlinesVisible
+	}
+	if action.id == "view-reading" {
+		return state.wordReadingMode
+	}
+	if action.id == "view-print-layout" {
+		return state.wordViewMode == wordViewPrintLayout
+	}
+	if action.id == "view-web-layout" {
+		return state.wordViewMode == wordViewWebLayout
+	}
+	if action.id == "view-navigation" {
+		return state.wordNavigationVisible
+	}
+	if action.id == "view-single-page" {
+		return !state.wordMultiplePagesMode && state.wordPageFitMode && state.wordViewMode == wordViewPrintLayout
+	}
+	if action.id == "view-multiple-pages" {
+		return state.wordMultiplePagesMode && state.wordViewMode == wordViewPrintLayout
 	}
 	blocks := wordBlocksForState(state)
 	if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok {
@@ -528,6 +554,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.startSaveAsPicker("docx")
 	case "export-pdf":
 		a.requestWordPDFExport()
+	case "share":
+		a.requestWordShareCopy()
 	case "print":
 		a.requestWordPrint()
 	case "doc-info":
@@ -549,6 +577,32 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.toggleWordFormatPainter()
 	case "view-print-layout":
 		a.toggleWordPrintLayout()
+	case "view-web-layout":
+		a.toggleWordWebLayout()
+	case "view-navigation":
+		a.toggleWordNavigationPane()
+	case "view-single-page":
+		a.selectWordSinglePageView()
+	case "view-multiple-pages":
+		a.selectWordMultiplePagesView()
+	case "view-reading":
+		a.toggleWordReadingMode()
+	case "view-zoom":
+		a.showWordZoomDialog()
+	case "view-ruler":
+		state.wordRulerHidden = !state.wordRulerHidden
+		if state.wordRulerHidden {
+			a.status = "已隐藏标尺"
+		} else {
+			a.status = "已显示标尺"
+		}
+	case "view-gridlines":
+		state.wordGridlinesVisible = !state.wordGridlinesVisible
+		if state.wordGridlinesVisible {
+			a.status = "已显示网格线"
+		} else {
+			a.status = "已隐藏网格线"
+		}
 	case "apply-format-painter":
 		a.startWordFormatPainter()
 	case "undo":

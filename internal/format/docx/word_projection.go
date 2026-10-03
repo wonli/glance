@@ -902,15 +902,20 @@ func findDescendant(node *wordXMLNode, local string) *wordXMLNode {
 func containsNode(node *wordXMLNode, local string) bool { return findDescendant(node, local) != nil }
 
 func attrValue(node *wordXMLNode, local string) string {
+	value, _ := attrValuePresent(node, local)
+	return value
+}
+
+func attrValuePresent(node *wordXMLNode, local string) (string, bool) {
 	if node == nil {
-		return ""
+		return "", false
 	}
 	for _, attr := range node.attrs {
 		if attr.Name.Local == local {
-			return attr.Value
+			return attr.Value, true
 		}
 	}
-	return ""
+	return "", false
 }
 
 func rawElementName(rawOpen []byte) string {

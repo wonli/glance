@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -125,6 +126,8 @@ type App struct {
 	wordLayoutEngine        wordLayoutEngine
 	wordPDFExportResults    chan wordPDFExportResult
 	wordPDFPickerRequest    *wordPDFPickerRequest
+	wordShareCopyResults    chan wordShareCopyResult
+	wordShareCopyRequest    *wordShareCopyPickerRequest
 	wordPDFFontSource       wordpdf.FontSource
 	wordPrinter             printservice.Printer
 	wordPrintResults        chan wordPrintResult
@@ -150,6 +153,7 @@ func New(window *app.Window, initialPath string) *App {
 		openResults:            make(chan openResult, 1),
 		fileCommandResults:     make(chan fileCommandResult, 1),
 		wordPDFExportResults:   make(chan wordPDFExportResult, 1),
+		wordShareCopyResults:   make(chan wordShareCopyResult, 1),
 		wordPrinter:            printservice.New(),
 		wordPrintResults:       make(chan wordPrintResult, 1),
 		shutdown:               make(chan struct{}),
@@ -185,6 +189,9 @@ func New(window *app.Window, initialPath string) *App {
 		}
 	}
 	a.homeSearch.SingleLine = true
+	if err := prepareWordFontScanner(); err != nil {
+		log.Printf("prepare Word/system font scanner: %v", err)
+	}
 	a.theme.Shaper = text.NewShaper()
 	a.theme.Face = preferredSystemTypeface
 	return a
