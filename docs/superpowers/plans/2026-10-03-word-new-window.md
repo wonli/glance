@@ -280,25 +280,25 @@ Commit as `feat: add Word new-window command`.
 - Detaching a non-final window marks only that view closed, releases its widgets, and removes its invalidation targets. The shared session/core, adapters, workspace store, and writer remain open while another window or accepted worker references them. Final shutdown marks the shared session finalized after all views and operations drain.
 - Final shutdown persists once, cancels or drains shared jobs, joins the single workspace writer, closes each adapter once, then closes the one workspace store. The runtime closes the `Run` completion channel only after cleanup; the process entry point reacts to that signal so Gio's blocking `app.Main()` cannot keep a fully shut down process alive.
 
-- [ ] **Step 1: Add close/promotion/final-shutdown tests**
+- [x] **Step 1: Add close/promotion/final-shutdown tests**
 
 Add the Review Focus test `TestPrimaryWindowPromotionAndFinalShutdown` and `TestSessionResultFansOutAfterOriginWindowCloses`. Assert closing the primary promotes the oldest remaining view without closing a shared adapter, secondary view state becomes the primary persisted view, final shutdown persists and closes each shared resource exactly once, and late results do not touch detached widgets.
 
-- [ ] **Step 2: Run the lifecycle tests to verify current per-App teardown is unsafe**
+- [x] **Step 2: Run the lifecycle tests to verify current per-App teardown is unsafe**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run '^Test(PrimaryWindowPromotionAndFinalShutdown|SessionResultFansOutAfterOriginWindowCloses)$' -count=1`
 Expected: FAIL because each `DestroyEvent` currently calls `App.closeWorkspace` and closes all adapters/store owned by that App.
 
-- [ ] **Step 3: Implement idempotent detach, promotion, and runtime shutdown**
+- [x] **Step 3: Implement idempotent detach, promotion, and runtime shutdown**
 
 Route `DestroyEvent` through `desktopRuntime.detachWindow`; remove a window and mark its local view closed before release, persist the old primary view, promote the oldest remaining view if needed, and invoke `shutdown` only when the registry has no remaining windows. Ensure shutdown waits for operations and the sole writer before marking shared sessions finalized and closing adapters/store.
 
-- [ ] **Step 4: Run workspace, async command, save, and close regressions**
+- [x] **Step 4: Run workspace, async command, save, and close regressions**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run 'Test(PrimaryWindow|SessionResultFansOut|Workspace|Word.*(Save|Close|Draft|Pagination|Print|PDF))' -count=1`
 Expected: PASS; no adapter/store is closed early or more than once.
 
-- [ ] **Step 5: Commit window lifecycle and shutdown**
+- [x] **Step 5: Commit window lifecycle and shutdown**
 
 Commit as `feat: preserve shared sessions across window close`.
 

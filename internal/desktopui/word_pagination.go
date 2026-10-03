@@ -209,6 +209,11 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 		accepted := result.result
 		state.wordLayoutResult = &accepted
 		state.wordLayoutPageCount.Store(int64(len(accepted.Pages)))
+		pageListLast := max(0, len(accepted.Pages)-1)
+		if state.wordMultiplePagesMode {
+			pageListLast /= 2
+		}
+		state.wordPageListState.Position.First = min(max(0, state.wordPageListState.Position.First), pageListLast)
 		acceptedKey := result.key
 		state.wordLayoutAcceptedKey = &acceptedKey
 		state.wordLayoutErrorKey = nil

@@ -21,17 +21,32 @@ import (
 )
 
 type sessionViewSnapshot struct {
-	Sheet          string  `json:"sheet"`
-	SelectedCell   string  `json:"selected_cell"`
-	SelectedBlock  int     `json:"selected_block"`
-	GridFirst      int     `json:"grid_first"`
-	WordFirst      int     `json:"word_first"`
-	WordAutoSave   bool    `json:"word_auto_save"`
-	GridX          float64 `json:"grid_x"`
-	GridY          float64 `json:"grid_y"`
-	GridScale      float64 `json:"grid_scale"`
-	SelectedRow    int     `json:"selected_row"`
-	SelectedColumn int     `json:"selected_column"`
+	Sheet                      string         `json:"sheet"`
+	SelectedCell               string         `json:"selected_cell"`
+	SelectedBlock              int            `json:"selected_block"`
+	GridFirst                  int            `json:"grid_first"`
+	WordFirst                  int            `json:"word_first"`
+	WordAutoSave               bool           `json:"word_auto_save"`
+	GridX                      float64        `json:"grid_x"`
+	GridY                      float64        `json:"grid_y"`
+	GridScale                  float64        `json:"grid_scale"`
+	SelectedRow                int            `json:"selected_row"`
+	SelectedColumn             int            `json:"selected_column"`
+	WordViewMode               wordViewMode   `json:"word_view_mode"`
+	WordPageFitMode            bool           `json:"word_page_fit_mode"`
+	WordMultiplePagesMode      bool           `json:"word_multiple_pages_mode"`
+	WordLayoutZoom             float64        `json:"word_layout_zoom"`
+	WordRulerHidden            bool           `json:"word_ruler_hidden"`
+	WordGridlinesVisible       bool           `json:"word_gridlines_visible"`
+	WordNavigationVisible      bool           `json:"word_navigation_visible"`
+	WordNavigationQuery        string         `json:"word_navigation_query"`
+	WordToolbarTab             wordToolbarTab `json:"word_toolbar_tab"`
+	SelectedWordRunID          string         `json:"selected_word_run_id"`
+	SelectedWordParagraphID    string         `json:"selected_word_paragraph_id"`
+	SelectedWordImageID        string         `json:"selected_word_image_id"`
+	SelectedWordSelectionStart int            `json:"selected_word_selection_start"`
+	SelectedWordSelectionEnd   int            `json:"selected_word_selection_end"`
+	WordPageFirst              int            `json:"word_page_first"`
 }
 
 func workspaceSessionID(path string) string {
@@ -202,6 +217,22 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 	state.gridList.Position.First = view.GridFirst
 	state.wordListState.Position.First = view.WordFirst
 	state.wordAutoSave = view.WordAutoSave
+	if state.word != nil {
+		state.wordViewMode = clampWordViewMode(view.WordViewMode)
+		state.wordPageFitMode = view.WordPageFitMode
+		state.wordMultiplePagesMode = view.WordMultiplePagesMode
+		if view.WordLayoutZoom > 0 {
+			state.wordLayoutZoom = wordStatusZoomClamp(view.WordLayoutZoom)
+		}
+		state.wordRulerHidden = view.WordRulerHidden
+		state.wordGridlinesVisible = view.WordGridlinesVisible
+		state.wordNavigationVisible = view.WordNavigationVisible
+		state.wordNavigationSearchQuery = view.WordNavigationQuery
+		state.wordNavigationSearchEditor.SetText(view.WordNavigationQuery)
+		state.wordToolbarTab = clampWordToolbarTab(view.WordToolbarTab)
+		state.wordPageListState.Position.First = max(0, view.WordPageFirst)
+		restorePersistedWordSelection(state, view)
+	}
 	if state.virtualGrid != nil {
 		state.virtualGrid.X, state.virtualGrid.Y = view.GridX, view.GridY
 		if view.GridScale > 0 {
@@ -219,6 +250,51 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 	}
 	state.nameBox.SetText(state.selectedCell)
 	return state, nil
+}
+
+func clampWordViewMode(mode wordViewMode) wordViewMode {
+	if mode > wordViewWebLayout {
+		return wordViewContinuous
+	}
+	return mode
+}
+
+func clampWordToolbarTab(tab wordToolbarTab) wordToolbarTab {
+	if tab > wordTabPicture {
+		return wordTabHome
+	}
+	return tab
+}
+
+func restorePersistedWordSelection(state *documentSessionState, view sessionViewSnapshot) {
+	if state == nil || state.word == nil {
+		return
+	}
+	blocks := wordBlocksForState(state)
+	state.selectedWordRunID = ""
+	state.selectedWordParagraphID = ""
+	state.selectedWordImageID = ""
+	if run, paragraph, ok := findEditableWordRun(blocks, view.SelectedWordRunID); ok {
+		state.selectedWordRunID = run.ID
+		state.selectedWordParagraphID = paragraph.ID
+		state.selectedBlock = -1
+		state.selectedBlockEditable = true
+		if editor := wordRunEditor(state, run); editor != nil {
+			start, end := clampEditorSelection(view.SelectedWordSelectionStart, view.SelectedWordSelectionEnd, editor.Text())
+			editor.SetCaret(start, end)
+		}
+		return
+	}
+	if view.SelectedWordImageID != "" && findWordImage(blocks, view.SelectedWordImageID) != nil {
+		state.selectedWordImageID = view.SelectedWordImageID
+		if paragraph, ok := selectedWordParagraph(blocks, view.SelectedWordParagraphID); ok {
+			state.selectedWordParagraphID = paragraph.ID
+		}
+		return
+	}
+	if paragraph, ok := selectedWordParagraph(blocks, view.SelectedWordParagraphID); ok {
+		state.selectedWordParagraphID = paragraph.ID
+	}
 }
 
 func (a *App) activateSession(id string, state *documentSessionState) {
@@ -468,12 +544,59 @@ func sessionPath(state *documentSessionState) string {
 
 func (a *App) viewStateBytes() []byte {
 	view := sessionViewSnapshot{Sheet: a.sheet, SelectedCell: a.selectedCell, SelectedBlock: a.selectedBlock, GridFirst: a.gridList.Position.First, WordFirst: a.wordListState.Position.First, WordAutoSave: a.wordAutoSave}
+	if state := a.documentSessionState; state != nil && state.word != nil {
+		view.WordViewMode = state.wordViewMode
+		view.WordPageFitMode = state.wordPageFitMode
+		view.WordMultiplePagesMode = state.wordMultiplePagesMode
+		view.WordLayoutZoom = state.wordLayoutZoom
+		view.WordRulerHidden = state.wordRulerHidden
+		view.WordGridlinesVisible = state.wordGridlinesVisible
+		view.WordNavigationVisible = state.wordNavigationVisible
+		view.WordNavigationQuery = state.wordNavigationSearchQuery
+		view.WordToolbarTab = state.wordToolbarTab
+		view.SelectedWordRunID = state.selectedWordRunID
+		view.SelectedWordParagraphID = state.selectedWordParagraphID
+		view.SelectedWordImageID = state.selectedWordImageID
+		view.WordPageFirst = state.wordPageListState.Position.First
+		if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
+			view.SelectedWordSelectionStart, view.SelectedWordSelectionEnd = editor.Selection()
+		}
+	}
 	if a.virtualGrid != nil {
 		view.GridX, view.GridY, view.GridScale = a.virtualGrid.X, a.virtualGrid.Y, a.virtualGrid.Scale
 		view.SelectedRow, view.SelectedColumn = a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn
 	}
 	data, _ := json.Marshal(view)
 	return data
+}
+
+func (a *App) processPrimaryPromotion() {
+	if a == nil || !a.primaryPromotionPending.Swap(false) {
+		return
+	}
+	runtime := a.ensureDesktopRuntime()
+	if !runtime.isPrimaryWindow(a.windowID) {
+		return
+	}
+	if a.collection != nil {
+		activeTabID := a.activeTabID
+		if activeTabID == "" {
+			activeTabID = workspace.RecentTabID
+		}
+		if activeTabID != workspace.RecentTabID {
+			if _, exists := a.collection.Get(activeTabID); !exists {
+				activeTabID = workspace.RecentTabID
+			}
+		}
+		a.activeTabID = activeTabID
+		if activeTabID == workspace.RecentTabID {
+			a.setActiveSessionID("")
+		}
+		if err := a.collection.Activate(activeTabID); err != nil {
+			a.status = "活动文档恢复失败：" + err.Error()
+		}
+	}
+	a.persistActiveSession()
 }
 
 func (a *App) persistViewState() {

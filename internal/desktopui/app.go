@@ -67,6 +67,7 @@ type App struct {
 	windowCloseButton       widget.Clickable
 	windowOpenResults       chan error
 	windowOpenSource        *App
+	primaryPromotionPending atomic.Bool
 	windowMinimizeButton    widget.Clickable
 	windowMaximizeButton    widget.Clickable
 	windowMode              app.WindowMode

@@ -74,6 +74,7 @@ func (a *App) layoutWorkspaceBody(gtx layout.Context) layout.Dimensions {
 
 func (a *App) processAsyncResults() {
 	a.ensureDesktopRuntime()
+	a.processPrimaryPromotion()
 	select {
 	case err := <-a.windowOpenResults:
 		if err != nil {

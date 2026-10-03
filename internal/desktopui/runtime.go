@@ -33,8 +33,10 @@ type desktopRuntime struct {
 	sessionsByCanonicalPath map[string]string
 	openingPaths            map[string]chan struct{}
 	windows                 map[uint64]*App
+	windowAttachmentOrder   map[uint64]uint64
 	primaryWindowID         uint64
 	nextWindowID            uint64
+	nextWindowAttachment    uint64
 }
 
 func newDesktopRuntime() *desktopRuntime {
@@ -43,6 +45,7 @@ func newDesktopRuntime() *desktopRuntime {
 		sessionsByCanonicalPath: make(map[string]string),
 		openingPaths:            make(map[string]chan struct{}),
 		windows:                 make(map[uint64]*App),
+		windowAttachmentOrder:   make(map[uint64]uint64),
 	}
 }
 
@@ -408,6 +411,9 @@ func (r *desktopRuntime) attachWindow(windowID uint64, app *App) {
 	if r.windows == nil {
 		r.windows = make(map[uint64]*App)
 	}
+	if r.windowAttachmentOrder == nil {
+		r.windowAttachmentOrder = make(map[uint64]uint64)
+	}
 	if windowID == 0 {
 		r.nextWindowID++
 		windowID = r.nextWindowID
@@ -415,6 +421,10 @@ func (r *desktopRuntime) attachWindow(windowID uint64, app *App) {
 		r.nextWindowID = windowID
 	}
 	r.windows[windowID] = app
+	if _, attached := r.windowAttachmentOrder[windowID]; !attached {
+		r.nextWindowAttachment++
+		r.windowAttachmentOrder[windowID] = r.nextWindowAttachment
+	}
 	if r.primaryWindowID == 0 {
 		r.primaryWindowID = windowID
 	}
@@ -429,13 +439,19 @@ func (r *desktopRuntime) attachWindow(windowID uint64, app *App) {
 }
 
 func (r *desktopRuntime) detachWindow(windowID uint64) {
-	if r == nil {
+	if r == nil || windowID == 0 {
 		return
 	}
 	r.mu.Lock()
 	app := r.windows[windowID]
+	if app == nil {
+		r.mu.Unlock()
+		return
+	}
 	delete(r.windows, windowID)
-	if r.primaryWindowID == windowID {
+	delete(r.windowAttachmentOrder, windowID)
+	wasPrimary := r.primaryWindowID == windowID
+	if wasPrimary {
 		r.primaryWindowID = 0
 	}
 	sessions := make([]*sharedDocumentSession, 0, len(r.sessions))
@@ -445,11 +461,53 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 	r.mu.Unlock()
 	for _, session := range sessions {
 		session.viewsMu.Lock()
+		view := session.views[windowID]
 		delete(session.views, windowID)
 		session.viewsMu.Unlock()
+		if view != nil {
+			view.closed.Store(true)
+		}
 	}
-	if app != nil && app.documentSessionState != nil {
+	for _, view := range app.sessions {
+		if view != nil {
+			view.closed.Store(true)
+		}
+	}
+	if app.documentSessionState != nil {
 		app.documentSessionState.closed.Store(true)
+	}
+	if wasPrimary {
+		r.promotePrimaryWindow()
+	}
+}
+
+// promotePrimaryWindow assigns the oldest attached window and asks that
+// window's own Gio loop to persist its independent workspace view state.
+func (r *desktopRuntime) promotePrimaryWindow() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	if r.primaryWindowID != 0 && r.windows[r.primaryWindowID] != nil {
+		r.mu.Unlock()
+		return
+	}
+	var promotedID, oldestOrder uint64
+	var promoted *App
+	for windowID, app := range r.windows {
+		order := r.windowAttachmentOrder[windowID]
+		if app == nil || (promotedID != 0 && order >= oldestOrder) {
+			continue
+		}
+		promotedID, promoted, oldestOrder = windowID, app, order
+	}
+	r.primaryWindowID = promotedID
+	r.mu.Unlock()
+	if promoted != nil {
+		promoted.primaryPromotionPending.Store(true)
+		if promoted.window != nil {
+			promoted.window.Invalidate()
+		}
 	}
 }
 

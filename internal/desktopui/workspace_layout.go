@@ -541,20 +541,24 @@ func closeSessionState(s *documentSessionState) {
 
 func (a *App) closeWorkspace() {
 	runtime := a.ensureDesktopRuntime()
+	// A promoted window can be destroyed before its next frame. Apply the
+	// promotion on this App's own event loop before persisting its final state.
+	a.processPrimaryPromotion()
 	a.persistActiveSession()
 	runtime.drainWorkspaceWriter()
-	seen := map[*documentSessionState]bool{}
-	for _, state := range a.sessions {
-		if state != nil && !seen[state] {
-			closeSessionState(state)
-			seen[state] = true
-		}
-	}
-	if a.documentSessionState != nil && !seen[a.documentSessionState] {
-		closeSessionState(a.documentSessionState)
-	}
 	if a.windowID != 0 {
 		runtime.detachWindow(a.windowID)
+	} else {
+		seen := map[*documentSessionState]bool{}
+		for _, state := range a.sessions {
+			if state != nil && !seen[state] {
+				closeSessionState(state)
+				seen[state] = true
+			}
+		}
+		if a.documentSessionState != nil && !seen[a.documentSessionState] {
+			closeSessionState(a.documentSessionState)
+		}
 	}
 	if !runtime.hasWindows() {
 		runtime.shutdown()
