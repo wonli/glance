@@ -196,6 +196,10 @@ func wordToolbarActions(tab wordToolbarTab) []ribbonAction {
 
 func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	state := a.documentSessionState
+	if action.id == "view-new-window" {
+		enabled, _ := wordNewWindowAvailability(state, a.desktopRuntime)
+		return enabled
+	}
 	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning || a.wordImagePickerRunning {
 		return false
 	}
@@ -409,6 +413,10 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 		if button == nil || !button.Clicked(gtx) || !a.wordToolbarActionEnabled(action) {
 			continue
 		}
+		if action.id == "view-new-window" {
+			a.requestWordNewWindow()
+			continue
+		}
 		if wordHasPendingTextDrafts(state) && action.id == "paste" {
 			state.wordClipboardRunID = state.selectedWordRunID
 			state.wordForceDraftFlush = true
@@ -560,6 +568,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.requestWordPrint()
 	case "doc-info":
 		a.startWordDocumentInfoLoad()
+	case "view-new-window":
+		a.requestWordNewWindow()
 	case "autosave":
 		state.wordAutoSave = !state.wordAutoSave
 		if state.wordAutoSave {

@@ -244,25 +244,25 @@ Commit as `feat: manage multiple desktop windows`.
 - `view-new-window` is enabled only for an active Word document with an attached runtime on a supported multiple-window desktop target. Unsupported platforms and test Apps without a runtime expose a clear disabled reason.
 - The handler captures the current `windowViewSnapshot` and asks the runtime to attach a new App to the same document ID; it never reloads a source path or changes active tabs in the source App.
 
-- [ ] **Step 1: Add action behavior tests**
+- [x] **Step 1: Add action behavior tests**
 
 Add `TestWordNewWindowActionOpensSharedDocumentView` and `TestWordNewWindowActionDisabledWithoutWordRuntime`. Assert a new window request carries the same document ID and current view snapshot, creates no duplicate workspace tab/session, and does not dirty or change the source view.
 
-- [ ] **Step 2: Run tests to verify the Ribbon action is disabled**
+- [x] **Step 2: Run tests to verify the Ribbon action is disabled**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run '^TestWordNewWindowAction' -count=1`
 Expected: FAIL because `view-new-window` currently has no enabled handler.
 
-- [ ] **Step 3: Connect availability and action dispatch**
+- [x] **Step 3: Connect availability and action dispatch**
 
 Enable the action through `wordNewWindowAvailability`; route it to `requestWordNewWindow`, report asynchronous creation failure in the source window, and leave unrelated View commands unchanged.
 
-- [ ] **Step 4: Run Word Ribbon and action regressions**
+- [x] **Step 4: Run Word Ribbon and action regressions**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run 'TestWord(NewWindow|View|Toolbar)' -count=1`
 Expected: PASS; action state, shared session ID, copied initial view, and per-view divergence are verified.
 
-- [ ] **Step 5: Commit the New Window command**
+- [x] **Step 5: Commit the New Window command**
 
 Commit as `feat: add Word new-window command`.
 

@@ -504,6 +504,16 @@ func (r *desktopRuntime) windowCount() int {
 	return count
 }
 
+func (r *desktopRuntime) hasWindow(windowID uint64) bool {
+	if r == nil || windowID == 0 {
+		return false
+	}
+	r.mu.Lock()
+	_, exists := r.windows[windowID]
+	r.mu.Unlock()
+	return exists
+}
+
 func (r *desktopRuntime) startWorkspaceWriter() {
 	if r == nil {
 		return
