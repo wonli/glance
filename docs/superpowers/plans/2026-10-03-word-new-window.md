@@ -314,17 +314,19 @@ Commit as `feat: preserve shared sessions across window close`.
 - The View TODO marks `view-new-window` complete only on desktop targets whose multi-window path passed runtime verification. Keep `view-side-by-side` and `view-macros` pending.
 - Compatibility/support records say one logical document/tab and shared edits are supported, secondary view state is runtime-only, and platform gaps remain explicit.
 
-- [ ] **Step 1: Run the focused New Window and multi-window regressions**
+- [x] **Step 1: Run the focused New Window and multi-window regressions**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run 'Test(Runtime|DocumentViews|WindowView|WorkspaceTabsAreShared|WordNewWindow|PrimaryWindow|SessionOperationGate|SessionPublication|SessionResultFansOut|ClosingDocumentTab)' -count=1`
 Expected: PASS.
 
-- [ ] **Step 2: Run DOCX/workspace and full repository regressions**
+- [x] **Step 2: Run DOCX/workspace and full repository regressions**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/format/docx ./internal/workspace ./internal/desktopui -count=1` and `GOCACHE=/private/tmp/glance-go-build-cache go test ./... -count=1`.
 Expected: no new failures. At plan creation, the full suite already had five `internal/desktopui` failures: `TestCellTypefaceKeepsWorkbookFamilyAndAddsCJKFallbacks`, `TestGridResizeHandleUsesFixedHeaderCoordinates`, `TestSelectionRectUsesVisibleGridGeometry`, `TestGridViewportScalesGeometryToDevicePixels`, and `TestWordUpDownCrossesParagraphsAtPreferredVisualColumn`; record these if they remain and fix any newly introduced failures.
 
-- [ ] **Step 3: Build the standalone desktop binary**
+Result 2026-10-03: `internal/format/docx` and `internal/workspace` passed. `internal/desktopui` and `go test ./...` stop with four existing Grid/typeface geometry failures and the existing `TestHomeFilterBarMatchesPenDimensions` nil-fixture panic. A separate run confirms the previously recorded `TestWordUpDownCrossesParagraphsAtPreferredVisualColumn` failure as well. All focused New Window, workspace, operation, pagination, print, PDF, lifecycle, race, and desktop-build checks passed.
+
+- [x] **Step 3: Build the standalone desktop binary**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go build -o /private/tmp/desktop ./cmd/desktop`
 Expected: PASS; app entry remains `go run ./cmd/desktop` and does not launch an external Office process.
@@ -333,6 +335,8 @@ Expected: PASS; app entry remains `go run ./cmd/desktop` and does not launch an 
 
 Launch `go run ./cmd/desktop`, open one DOCX, use View > New Window, verify shared edits/dirty state/save and independent caret/scroll/zoom/view mode, close one window and keep editing in the other, then close the final window and verify one workspace persistence/teardown. Capture the tested OS and whether the live Computer Use approval gate allowed the interaction; do not mark unverified platforms supported.
 
-- [ ] **Step 5: Update TODO, support matrix, plan ledger, and commit the verified feature**
+Result 2026-10-03: macOS native app started and opened `/private/tmp/glance-multi-window.docx`; CUA reached the View ribbon and invoked the New Window location, then returned `noWindowsAvailable` on subsequent window interaction. It did not expose enough state to verify the second view, shared edits, or single-window close. No desktop platform is marked runtime-verified; retry this step with a CUA setup that can enumerate and select multiple windows.
 
-Update the View count from 9/12 to 10/12 and the overall Ribbon count from 44/99 to 45/99 only after implementation and its required platform evidence pass. Keep side-by-side and macros pending. Commit as `docs: record Word new-window support and evidence`.
+- [x] **Step 5: Update TODO, support matrix, plan ledger, and commit the implementation and verification boundary**
+
+Record implementation and automated-test evidence separately from native platform support. Keep the View count at 9/12 and the overall Ribbon count at 44/99 until an interactive platform pass verifies the second window, shared edits, and close lifecycle. Keep side-by-side and macros pending. Commit as `docs: record Word new-window support and evidence`.

@@ -10,6 +10,7 @@
 | Recent paths and shallow folders | Supported, basic | `internal/workspace/collection_test.go`; local paths only, direct children only, unavailable recent entries are removable. |
 | SQLite restart recovery | Supported, basic | `internal/workspace/store_test.go` and `collection_test.go`; versioned schema stores adapter bytes, dirty state, tab order/active tab, recents and view state. Gio's current native API does not permit cancelling window close before `DestroyEvent`. |
 | Draft Save As | Supported, basic | JSON save tests and desktop extension guard tests; cancel does not call a writer. `.xlsx`, `.docx`, and `.json` extensions are validated. |
+| Word View > New Window (shared document session) | Implemented; native runtime unverified | `TestWordNewWindowActionOpensSharedDocumentView`, `TestPrimaryWindowPromotionAndFinalShutdown`, and `TestSessionResultFansOutAfterOriginWindowCloses`; one shared Word adapter/session with fresh per-window Gio view state, primary promotion and final close drain. Only the primary view is persisted. The 2026-10-03 macOS CUA pass opened a local DOCX and View ribbon, but CUA returned `noWindowsAvailable` after invoking New Window, before the second window and cross-window edits/close could be verified. Do not claim macOS, Windows, or Linux runtime support until an interactive pass succeeds. |
 
 ## XLSX
 
