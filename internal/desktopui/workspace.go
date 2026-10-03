@@ -76,39 +76,59 @@ func newDraftSessionID(format string) string {
 }
 
 func (a *App) initializeWorkspace() {
-	path, err := workspace.DefaultDatabasePath()
-	if err != nil {
-		a.workspaceError = err.Error()
-		a.status = "工作区数据库不可用：" + err.Error()
-		return
+	runtime := a.ensureDesktopRuntime()
+	runtime.workspaceInitMu.Lock()
+	defer runtime.workspaceInitMu.Unlock()
+	if runtime.workspaceStore == nil {
+		path, err := workspace.DefaultDatabasePath()
+		if err != nil {
+			a.workspaceError = err.Error()
+			a.status = "工作区数据库不可用：" + err.Error()
+			return
+		}
+		store, err := workspace.Open(path)
+		if err != nil {
+			a.workspaceError = err.Error()
+			a.status = "工作区数据库不可用：" + err.Error()
+			return
+		}
+		runtime.workspaceStore = store
 	}
-	store, err := workspace.Open(path)
-	if err != nil {
-		a.workspaceError = err.Error()
-		a.status = "工作区数据库不可用：" + err.Error()
-		return
+	if runtime.collection == nil {
+		collection, err := workspace.OpenCollection(runtime.workspaceStore)
+		if err != nil {
+			a.workspaceError = err.Error()
+			a.status = "恢复工作区失败：" + err.Error()
+			return
+		}
+		runtime.collection = collection
 	}
-	a.workspaceStore = store
-	collection, err := workspace.OpenCollection(store)
-	if err != nil {
-		a.workspaceError = err.Error()
-		a.status = "恢复工作区失败：" + err.Error()
-		return
-	}
-	a.collection = collection
+	collection := runtime.collection
 	a.loadHomeFavorites()
 	for _, record := range collection.Tabs() {
 		a.tabMeta[record.Tab.ID] = record.Tab
 		if !hasRestorableSnapshot(record) {
 			continue
 		}
-		state, err := a.restoreSessionState(record)
-		if err != nil {
-			a.status = "恢复 " + record.Tab.Title + " 失败：" + err.Error()
-			continue
+		var state *documentSessionState
+		if shared, ok := runtime.session(record.Tab.DocumentID); ok {
+			state = newDocumentSessionView(shared, a.windowID)
+		} else {
+			var err error
+			state, err = a.restoreSessionState(record)
+			if err != nil {
+				a.status = "恢复 " + record.Tab.Title + " 失败：" + err.Error()
+				continue
+			}
+			state.documentID = record.Tab.DocumentID
+			shared := runtime.registerSession(state.sharedDocumentSession)
+			if state.sharedDocumentSession != shared {
+				state = newDocumentSessionView(shared, a.windowID)
+			}
 		}
 		a.sessions[record.Tab.ID] = state
 	}
+	runtime.workspaceInitialized = true
 	// Restore all document sessions, but start on Glance's home tab.
 	a.activeTabID = workspace.RecentTabID
 	a.documentSessionState = newDocumentSessionState("")
@@ -124,6 +144,7 @@ func hasRestorableSnapshot(record workspace.Session) bool {
 
 func (a *App) restoreSessionState(record workspace.Session) (*documentSessionState, error) {
 	state := newDocumentSessionState(record.Tab.SourcePath)
+	state.documentID = record.Tab.DocumentID
 	switch strings.ToLower(record.Format) {
 	case "xlsx":
 		book, err := xlsx.OpenSnapshot(record.Payload)
@@ -151,7 +172,6 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		}
 		state.word = word
 		state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
-		state.documentID = record.Tab.DocumentID
 		word.SetSourcePath(record.Tab.SourcePath)
 		word.SetDirty(record.Dirty)
 	case "json":
@@ -200,6 +220,7 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 }
 
 func (a *App) activateSession(id string, state *documentSessionState) {
+	a.ensureDesktopRuntime()
 	a.documentGeneration++
 	if a.activeTabID != "" && a.documentSessionState != nil {
 		if a.documentSessionState.valueFilter != nil {
@@ -243,6 +264,7 @@ func (a *App) snapshotActive() ([]byte, error) {
 }
 
 func (a *App) persistActiveSession() {
+	a.ensureDesktopRuntime()
 	if a.collection == nil || a.activeTabID == "" || a.activeTabID == workspace.RecentTabID {
 		return
 	}
@@ -267,6 +289,7 @@ type workspaceWriteJob struct {
 	documentID, format string
 	state              *documentSessionState
 	viewState          []byte
+	barrier            chan struct{}
 	recents            []workspace.Recent
 	favoritePath       string
 	favoriteValue      bool
@@ -382,6 +405,7 @@ func scanOfficeFolder(path string) ([]workspace.Recent, error) {
 }
 
 func (a *App) persistRecentsAsync() {
+	a.ensureDesktopRuntime()
 	if a.collection == nil {
 		return
 	}
@@ -395,68 +419,6 @@ func (a *App) persistRecentsAsync() {
 			a.status = "工作区保存失败：" + err.Error()
 		}
 	}
-}
-
-func (a *App) startWorkspaceWriter() {
-	a.workspaceWriteJobs = make(chan workspaceWriteJob, 128)
-	a.workspaceWriteResults = make(chan error, 1)
-	a.workspaceWriterDone = make(chan struct{})
-	go func() {
-		defer close(a.workspaceWriterDone)
-		for job := range a.workspaceWriteJobs {
-			var err error
-			if job.recents != nil {
-				err = a.workspaceStore.SaveRecents(job.recents)
-			} else if job.saveFavorite {
-				err = a.workspaceStore.SaveFavorite(job.favoritePath, job.favoriteValue)
-			} else {
-				err = a.writeWorkspaceSnapshot(job)
-			}
-			a.publishWorkspaceWriteResult(err)
-			if a.window != nil {
-				a.window.Invalidate()
-			}
-		}
-	}()
-}
-
-func (a *App) publishWorkspaceWriteResult(err error) {
-	if a.workspaceWriteResults == nil {
-		return
-	}
-	select {
-	case a.workspaceWriteResults <- err:
-		return
-	default:
-	}
-	select {
-	case <-a.workspaceWriteResults:
-	default:
-	}
-	select {
-	case a.workspaceWriteResults <- err:
-	default:
-	}
-}
-
-func (a *App) writeWorkspaceSnapshot(job workspaceWriteJob) error {
-	state := job.state
-	if state.closed.Load() {
-		return nil
-	}
-	payload, err := snapshotState(state)
-	if err != nil {
-		return err
-	}
-	if a.workspaceStore == nil {
-		return fmt.Errorf("工作区数据库不可用")
-	}
-	a.workspaceDBMu.Lock()
-	defer a.workspaceDBMu.Unlock()
-	if state.closed.Load() {
-		return nil
-	}
-	return a.workspaceStore.SaveDocument(workspace.Document{ID: job.documentID, Format: job.format, Payload: payload, ViewState: job.viewState, Dirty: sessionDirty(state), UpdatedAt: time.Now().UTC()})
 }
 
 func snapshotState(state *documentSessionState) ([]byte, error) {
@@ -491,6 +453,7 @@ func (a *App) viewStateBytes() []byte {
 }
 
 func (a *App) persistViewState() {
+	a.ensureDesktopRuntime()
 	if a.collection == nil || a.activeTabID == "" || a.activeTabID == workspace.RecentTabID {
 		return
 	}
@@ -500,6 +463,7 @@ func (a *App) persistViewState() {
 }
 
 func (a *App) updatePersistedTab(meta workspace.Tab) {
+	a.ensureDesktopRuntime()
 	if a.collection == nil {
 		return
 	}

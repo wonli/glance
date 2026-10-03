@@ -271,7 +271,7 @@ func TestHomeRecentsSortMatchesModifiedTimeHeader(t *testing.T) {
 		{Path: "/tmp/newer.xlsx", Kind: "xlsx", OpenedAt: olderOpened},
 	})
 	app := &App{
-		collection: collection,
+		desktopRuntime: &desktopRuntime{collection: collection},
 		homeMetadata: map[string]homeFileMetadata{
 			"/tmp/older.xlsx": {modified: olderOpened, size: 999},
 			"/tmp/newer.xlsx": {modified: newerOpened, size: 1},
@@ -309,13 +309,13 @@ func TestHomeFavoriteTogglePersistsAcrossAppReload(t *testing.T) {
 	}
 	defer store.Close()
 
-	first := &App{workspaceStore: store, homeFavorites: make(map[string]bool)}
+	first := &App{desktopRuntime: &desktopRuntime{workspaceStore: store}, homeFavorites: make(map[string]bool)}
 	first.toggleHomeFavorite("/tmp/budget.xlsx")
 	if !first.homeFavorites["/tmp/budget.xlsx"] {
 		t.Fatal("favorite was not enabled in the current home view")
 	}
 
-	reloaded := &App{workspaceStore: store, homeFavorites: make(map[string]bool)}
+	reloaded := &App{desktopRuntime: &desktopRuntime{workspaceStore: store}, homeFavorites: make(map[string]bool)}
 	reloaded.loadHomeFavorites()
 	if !reloaded.homeFavorites["/tmp/budget.xlsx"] {
 		t.Fatal("favorite was not restored from the workspace store")
@@ -324,7 +324,7 @@ func TestHomeFavoriteTogglePersistsAcrossAppReload(t *testing.T) {
 	if reloaded.homeFavorites["/tmp/budget.xlsx"] {
 		t.Fatal("favorite was not removed in the current home view")
 	}
-	final := &App{workspaceStore: store, homeFavorites: make(map[string]bool)}
+	final := &App{desktopRuntime: &desktopRuntime{workspaceStore: store}, homeFavorites: make(map[string]bool)}
 	final.loadHomeFavorites()
 	if final.homeFavorites["/tmp/budget.xlsx"] {
 		t.Fatal("removed favorite was restored from the workspace store")

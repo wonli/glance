@@ -32,6 +32,7 @@ var (
 )
 
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
+	a.ensureDesktopRuntime()
 	a.processAsyncResults()
 	gtx.Constraints.Min = gtx.Constraints.Max
 	return layout.Background{}.Layout(gtx,
@@ -70,6 +71,7 @@ func (a *App) layoutWorkspaceBody(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) processAsyncResults() {
+	a.ensureDesktopRuntime()
 	a.pollGridPictureResults()
 	select {
 	case result := <-a.wordLayoutResults:
@@ -430,7 +432,7 @@ func (a *App) processAsyncResults() {
 		} else {
 			if result.saveAs {
 				if state := a.sessions[result.tabID]; state != nil {
-					state.path = result.path
+					a.updateSessionPath(state.sharedDocumentSession, result.path)
 					if state.book != nil {
 						if saver, ok := state.book.(interface{ SetSourcePath(string) }); ok {
 							saver.SetSourcePath(result.path)
@@ -450,7 +452,6 @@ func (a *App) processAsyncResults() {
 				}
 				if result.tabID == a.activeTabID {
 					a.path = result.path
-					a.documentSessionState.path = result.path
 				}
 			}
 			a.status = "已保存 " + result.path

@@ -47,25 +47,25 @@
 - Produces `func newSharedDocumentSession(path string) *sharedDocumentSession`, `func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *documentSessionState`, and keeps `func newDocumentSessionState(path string) *documentSessionState` as the single-window constructor used by existing callers/tests.
 - Widgets, editor caret/selection, active tab, list positions, zoom, view modes, and hit/drag state stay per view. Adapters, neutral committed blocks, sheet names, drafts, document revision, dirty state, and in-flight mutation/save state are shared. Grid viewport data, render caches, image decode tasks, and interaction caches that contain window geometry stay per view.
 
-- [ ] **Step 1: Add `TestDocumentViewsShareSessionButOwnGioState`**
+- [x] **Step 1: Add `TestDocumentViewsShareSessionButOwnGioState`**
 
 Create two views over one `sharedDocumentSession`. Assert they share the adapter, draft, and revision, while each view has distinct Word editors, list widgets, toolbar clickables, selection, zoom, and view mode. Mutating one view's caret/zoom must not affect the other; updating the shared draft/revision must be visible through both.
 
-- [ ] **Step 2: Run the regression and verify the missing split**
+- [x] **Step 2: Run the regression and verify the missing split**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run '^TestDocumentViewsShareSessionButOwnGioState$' -count=1`
 Expected: FAIL because `documentSessionState` currently combines adapter data and Gio state and has no way to create two independent views over one session.
 
-- [ ] **Step 3: Extract `sharedDocumentSession` and implement the view constructor**
+- [x] **Step 3: Extract `sharedDocumentSession` and implement the view constructor**
 
 Move only the shared fields listed above into `sharedDocumentSession`; keep field promotion through embedding so existing `state.word`, `state.wordBlocks`, and equivalent access remains direct. Initialize every `widget.List` axis and every map in `newDocumentSessionView`. Make `newDocumentSessionState` create a fresh shared session and one view.
 
-- [ ] **Step 4: Run Word, workspace, and state construction regressions**
+- [x] **Step 4: Run Word, workspace, and state construction regressions**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run 'Test(DocumentViews|Word|Workspace)' -skip '^TestWordUpDownCrossesParagraphsAtPreferredVisualColumn$' -count=1`
 Expected: PASS for all matching regressions other than the named pre-existing vertical-navigation failure, which must remain recorded separately.
 
-- [ ] **Step 5: Commit the session/view split**
+- [x] **Step 5: Commit the session/view split**
 
 Commit the implementation and its tests as `refactor: split document session from window view state`.
 
@@ -76,35 +76,38 @@ Commit the implementation and its tests as `refactor: split document session fro
 - Create: `internal/desktopui/runtime_test.go`
 - Modify: `internal/desktopui/app.go`
 - Modify: `internal/desktopui/workspace.go`
-- Modify: `internal/desktopui/session_state.go`
+- Modify: `internal/desktopui/layout.go`, `internal/desktopui/workspace_layout.go`, and home workspace accessors
+- Modify: `internal/workspace/collection.go` and `internal/workspace/collection_test.go`
 
 **Interfaces:**
 - Produces `type desktopRuntime struct { mu sync.Mutex; collection *workspace.Collection; workspaceStore *workspace.Store; sessions map[string]*sharedDocumentSession; sessionsByCanonicalPath map[string]string; windows map[uint64]*App; primaryWindowID uint64; ... }`.
-- Produces `func (r *desktopRuntime) session(documentID string) (*sharedDocumentSession, bool)`, `func (r *desktopRuntime) openDocumentSession(path string) (*sharedDocumentSession, error)`, `func (r *desktopRuntime) attachWindow(windowID uint64, app *App)`, `func (r *desktopRuntime) detachWindow(windowID uint64)`, and `func (r *desktopRuntime) viewsForSession(documentID string) []*App`.
+- Produces `func (r *desktopRuntime) session(documentID string) (*sharedDocumentSession, bool)`, `func (r *desktopRuntime) registerSession(session *sharedDocumentSession) *sharedDocumentSession`, `func (r *desktopRuntime) openDocumentSession(path string) (*sharedDocumentSession, error)`, `func (r *desktopRuntime) attachWindow(windowID uint64, app *App)`, `func (r *desktopRuntime) detachWindow(windowID uint64)`, and `func (r *desktopRuntime) viewsForSession(documentID string) []*App`.
 - Keeps `App.sessions map[string]*documentSessionState` as window-local views. Multiple Apps resolve a document ID through the same runtime session and create independent views around that shared session.
 - The runtime is the only owner of `workspace.Store`, `workspace.Collection`, workspace writer, and logical-session registry. Preserve `New(nil, "")` as an isolated single-window test constructor.
 
-- [ ] **Step 1: Add runtime registry and single-owner tests**
+- [x] **Step 1: Add runtime registry and single-owner tests**
 
 Add `TestRuntimeReusesLogicalSessionAcrossWindows`, asserting same ID returns the same shared core, each App receives a different view, and one logical tab/session is registered. Add `TestRuntimeReusesLogicalSessionForOpenPath`, asserting opening the same canonical path twice reuses the existing adapter/session. Add `TestRuntimeOwnsOneWorkspaceWriter`, asserting two windows route persistence through one writer/store owner.
 
-- [ ] **Step 2: Run the tests to verify current ownership is per App**
+- [x] **Step 2: Run the tests to verify current ownership is per App**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run '^TestRuntime(ReusesLogicalSessionAcrossWindows|ReusesLogicalSessionForOpenPath|OwnsOneWorkspaceWriter)$' -count=1`
 Expected: FAIL because every `App` currently opens/owns its own workspace store, collection, and session map.
 
-- [ ] **Step 3: Implement `desktopRuntime` and route workspace ownership through it**
+- [x] **Step 3: Implement `desktopRuntime` and route workspace ownership through it**
 
-Move store/collection initialization, writer lifecycle, shared session creation, and final adapter cleanup to the runtime. Route `App.open(path)` through `openDocumentSession`; key the path index with the existing `canonicalDocumentPath` helper. Keep one-window construction behavior for tests by constructing an isolated runtime only when a windowed app is created; direct `New(nil, "")` tests must not open a database.
+Move store/collection initialization, writer lifecycle, restored/new shared-session registration, and final adapter cleanup to the runtime. Route synchronous and background opens through `openDocumentSession`; key the path index with the existing `canonicalDocumentPath` helper. Keep one-window construction behavior for tests by constructing an isolated runtime only when a windowed app is created; direct `New(nil, "")` tests must not open a database. Protect the mutable workspace collection internally because Gio windows process events concurrently; public read methods return snapshots so one window cannot mutate another window's collection view.
 
-- [ ] **Step 4: Run runtime and existing workspace regressions**
+- [x] **Step 4: Run runtime and existing workspace regressions**
 
 Run: `GOCACHE=/private/tmp/glance-go-build-cache go test ./internal/desktopui -run 'Test(Runtime|Workspace)' -count=1`
 Expected: PASS; the runtime has one store/writer while existing single-window workspace behavior remains unchanged.
 
-- [ ] **Step 5: Commit runtime/session registry**
+- [x] **Step 5: Commit runtime/session registry**
 
 Commit as `feat: centralize workspace and document sessions`.
+
+**Task 2 ruling:** Protect `workspace.Collection`'s mutable tabs and recents with an internal RWMutex and return snapshots from public reads. Separate Gio window loops can read and activate shared workspace state concurrently; without this guard, the shared runtime would introduce races into the formerly single-window collection. If this is wrong, the cost is extra locking/copying on small workspace metadata reads and writes.
 
 ### Task 3: Serialize shared adapter work and publish revisions to attached views
 

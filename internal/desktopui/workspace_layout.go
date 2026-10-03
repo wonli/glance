@@ -230,6 +230,7 @@ func (a *App) plusMenuOffset(gtx layout.Context) int {
 }
 
 func (a *App) workspaceTabIDs() []string {
+	a.ensureDesktopRuntime()
 	ids := make([]string, 0, len(a.tabMeta))
 	for id := range a.tabMeta {
 		ids = append(ids, id)
@@ -389,6 +390,7 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 }
 
 func (a *App) activateRecent() {
+	a.ensureDesktopRuntime()
 	a.persistActiveSession()
 	if a.activeTabID != "" && a.activeTabID != workspace.RecentTabID && a.documentSessionState != nil {
 		if a.sessions == nil {
@@ -405,6 +407,7 @@ func (a *App) activateRecent() {
 }
 
 func (a *App) closeWorkspaceTab(id string) {
+	a.ensureDesktopRuntime()
 	if a.modal.Visible {
 		return
 	}
@@ -433,6 +436,7 @@ func (a *App) showCloseConfirmation(id, title, message string) {
 }
 
 func (a *App) closeWorkspaceTabNow(id string) {
+	runtime := a.ensureDesktopRuntime()
 	state := a.sessions[id]
 	if state == nil {
 		return
@@ -455,7 +459,6 @@ func (a *App) closeWorkspaceTabNow(id string) {
 			a.workspaceDBMu.Unlock()
 		}
 	}
-	closeSessionState(state)
 	delete(a.sessions, id)
 	delete(a.tabMeta, id)
 	delete(a.tabButtons, id)
@@ -474,6 +477,15 @@ func (a *App) closeWorkspaceTabNow(id string) {
 		} else {
 			a.activateRecent()
 		}
+	}
+	otherViews := 0
+	for _, view := range runtime.viewsForSession(state.documentID) {
+		if view != a {
+			otherViews++
+		}
+	}
+	if otherViews == 0 {
+		runtime.removeSession(state.documentID)
 	}
 	// The current frame's tab list was built before this close removed its ID.
 	// Schedule a fresh frame so the stale list snapshot is replaced immediately.
@@ -521,6 +533,7 @@ func (a *App) handleCloseConfirmation(action string) {
 }
 
 func (a *App) reindexTabMetadata() {
+	a.ensureDesktopRuntime()
 	if a.collection != nil {
 		for _, session := range a.collection.Tabs() {
 			a.tabMeta[session.Tab.ID] = session.Tab
@@ -535,23 +548,15 @@ func (a *App) reindexTabMetadata() {
 }
 
 func closeSessionState(s *documentSessionState) {
-	if s.book != nil {
-		_ = s.book.Close()
-	}
-	if s.word != nil {
-		_ = s.word.Close()
-	}
-	if s.jsonDoc != nil {
-		_ = s.jsonDoc.Close()
+	if s != nil {
+		s.closed.Store(true)
 	}
 }
 
 func (a *App) closeWorkspace() {
+	runtime := a.ensureDesktopRuntime()
 	a.persistActiveSession()
-	if a.workspaceWriteJobs != nil {
-		close(a.workspaceWriteJobs)
-		<-a.workspaceWriterDone
-	}
+	runtime.drainWorkspaceWriter()
 	seen := map[*documentSessionState]bool{}
 	for _, state := range a.sessions {
 		if state != nil && !seen[state] {
@@ -562,8 +567,11 @@ func (a *App) closeWorkspace() {
 	if a.documentSessionState != nil && !seen[a.documentSessionState] {
 		closeSessionState(a.documentSessionState)
 	}
-	if a.workspaceStore != nil {
-		_ = a.workspaceStore.Close()
+	if a.windowID != 0 {
+		runtime.detachWindow(a.windowID)
+	}
+	if !runtime.hasWindows() {
+		runtime.shutdown()
 	}
 }
 

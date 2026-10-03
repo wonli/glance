@@ -35,6 +35,7 @@ const preferredSystemTypeface = font.Typeface("Inter, PingFang SC, Hiragino Sans
 
 type App struct {
 	*documentSessionState
+	*desktopRuntime
 	window *app.Window
 	ops    op.Ops
 	theme  *material.Theme
@@ -50,14 +51,11 @@ type App struct {
 	goToCellButton   widget.Clickable
 
 	status                 string
-	collection             *workspace.Collection
-	workspaceStore         *workspace.Store
 	sessions               map[string]*documentSessionState
 	tabMeta                map[string]workspace.Tab
 	activeTabID            string
 	workspaceError         string
 	workspaceWriteError    string
-	workspaceDBMu          sync.Mutex
 	tabButtons             map[string]*widget.Clickable
 	tabCloseButtons        map[string]*widget.Clickable
 	newButton              widget.Clickable
@@ -94,9 +92,6 @@ type App struct {
 	homeMetadata           map[string]homeFileMetadata
 	homeMetadataResults    chan homeMetadataResult
 	homeMetadataGeneration uint64
-	workspaceWriteJobs     chan workspaceWriteJob
-	workspaceWriteResults  chan error
-	workspaceWriterDone    chan struct{}
 	fileCommandResults     chan fileCommandResult
 	fileCommandRunner      func(fileCommandKind, string) fileCommandResult
 	gridLoadResults        chan gridLoadResult
@@ -135,6 +130,7 @@ type App struct {
 
 func New(window *app.Window, initialPath string) *App {
 	a := &App{
+		desktopRuntime:         newDesktopRuntime(),
 		window:                 window,
 		theme:                  material.NewTheme(),
 		documentSessionState:   newDocumentSessionState(initialPath),
@@ -183,10 +179,9 @@ func New(window *app.Window, initialPath string) *App {
 		wordLayoutResults:       make(chan wordLayoutResult, 8),
 	}
 	if window != nil {
+		a.attachWindow(0, a)
 		a.initializeWorkspace()
-		if a.workspaceStore != nil {
-			a.startWorkspaceWriter()
-		}
+		a.startWorkspaceWriter()
 	}
 	a.homeSearch.SingleLine = true
 	if err := prepareWordFontScanner(); err != nil {
@@ -233,14 +228,15 @@ func (a *App) open(path string) error {
 	if a.saving {
 		return fmt.Errorf("正在保存当前文件，请稍后再打开")
 	}
-	loaded, err := loadDocument(path)
+	shared, err := a.ensureDesktopRuntime().openDocumentSession(path)
 	if err != nil {
 		return err
 	}
-	return a.installDocument(loaded)
+	return a.installDocument(loadedDocumentFromSharedSession(shared))
 }
 
 type loadedDocument struct {
+	shared     *sharedDocumentSession
 	path       string
 	book       document.Spreadsheet
 	word       *docx.Document
@@ -300,6 +296,7 @@ func loadDocument(path string) (loadedDocument, error) {
 }
 
 func (a *App) installDocument(loaded loadedDocument) error {
+	runtime := a.ensureDesktopRuntime()
 	a.documentGeneration++
 	// Blank adapter constructors mark their drafts dirty so standalone callers
 	// know they have no saved path. In the workspace, a newly created empty
@@ -315,26 +312,28 @@ func (a *App) installDocument(loaded loadedDocument) error {
 			loaded.jsonDoc.SetDirty(false)
 		}
 	}
+	shared := loaded.shared
+	if shared == nil {
+		shared = runtime.registerSession(sharedSessionFromLoadedDocument(loaded))
+	} else {
+		shared = runtime.registerSession(shared)
+	}
+	loaded = loadedDocumentFromSharedSession(shared)
 	for id, meta := range a.tabMeta {
-		if sameDocumentPath(meta.SourcePath, loaded.path) {
-			if state := a.sessions[id]; state != nil {
-				closeLoadedDocument(loaded)
-				a.activateSession(id, state)
-				return nil
+		if meta.DocumentID == shared.documentID || sameDocumentPath(meta.SourcePath, shared.path) {
+			state := a.sessions[id]
+			if state == nil || state.sharedDocumentSession != shared {
+				state = newDocumentSessionView(shared, a.windowID)
+				a.sessions[id] = state
 			}
+			a.activateSession(id, state)
+			return nil
 		}
 	}
 	if a.activeTabID != "" && a.documentSessionState != nil {
 		a.sessions[a.activeTabID] = a.documentSessionState
 	}
-	state := newDocumentSessionState(loaded.path)
-	state.book, state.word = loaded.book, loaded.word
-	if loaded.word != nil {
-		state.wordBlocks = cloneWordBlockSnapshot(loaded.wordBlocks)
-		if loaded.wordBlocks == nil {
-			state.wordBlocks = cloneWordBlockSnapshot(loaded.word.WordBlocks())
-		}
-	}
+	state := newDocumentSessionView(shared, a.windowID)
 	a.documentSessionState = state
 	a.book, a.word, a.sheets = loaded.book, loaded.word, loaded.sheets
 	a.jsonDoc = loaded.jsonDoc
@@ -351,7 +350,10 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		a.blockButtons = make(map[int]*widget.Clickable)
 		a.selectedBlock = -1
 	}
-	id := workspaceSessionID(loaded.path)
+	id := shared.documentID
+	if id == "" {
+		id = workspaceSessionID(loaded.path)
+	}
 	kind := "document"
 	if loaded.path == "" {
 		kind = "draft"
@@ -366,9 +368,6 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		case loaded.jsonDoc != nil:
 			format = "json"
 		}
-	}
-	if loaded.path == "" {
-		id = newDraftSessionID(format)
 	}
 	title := filepath.Base(loaded.path)
 	if loaded.path == "" {
@@ -426,6 +425,9 @@ func (a *App) installDocument(loaded loadedDocument) error {
 }
 
 func closeLoadedDocument(loaded loadedDocument) {
+	if loaded.shared != nil {
+		return
+	}
 	if loaded.book != nil {
 		_ = loaded.book.Close()
 	}
@@ -444,15 +446,10 @@ func (a *App) startOpen(path string) {
 	a.opening = true
 	a.status = "正在打开 " + strings.TrimSpace(path)
 	go func() {
-		loaded, err := loadDocument(path)
+		shared, err := a.ensureDesktopRuntime().openDocumentSession(path)
+		loaded := loadedDocumentFromSharedSession(shared)
 		select {
 		case <-a.shutdown:
-			if loaded.book != nil {
-				_ = loaded.book.Close()
-			}
-			if loaded.word != nil {
-				_ = loaded.word.Close()
-			}
 			return
 		default:
 		}
@@ -460,12 +457,6 @@ func (a *App) startOpen(path string) {
 		case a.openResults <- openResult{loaded: loaded, err: err}:
 			a.window.Invalidate()
 		case <-a.shutdown:
-			if loaded.book != nil {
-				_ = loaded.book.Close()
-			}
-			if loaded.word != nil {
-				_ = loaded.word.Close()
-			}
 		}
 	}()
 }
