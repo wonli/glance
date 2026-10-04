@@ -141,6 +141,15 @@ func (a *App) initializeWorkspace() {
 				state = newDocumentSessionView(shared, a.windowID)
 			}
 		}
+		if isEmptyDraftWithoutSnapshot(record) {
+			payload, err := snapshotState(state)
+			if err == nil {
+				err = collection.Update(record.Tab.ID, payload, record.ViewState, sessionDirty(state))
+			}
+			if err != nil {
+				a.status = "恢复 " + record.Tab.Title + " 后重建快照失败：" + err.Error()
+			}
+		}
 		a.sessions[record.Tab.ID] = state
 	}
 	runtime.workspaceInitialized = true
@@ -156,7 +165,19 @@ func (a *App) initializeWorkspace() {
 }
 
 func hasRestorableSnapshot(record workspace.Session) bool {
-	return record.Format != "" && (len(record.Payload) > 0 || strings.EqualFold(record.Format, "json"))
+	return record.Format != "" && (len(record.Payload) > 0 || strings.EqualFold(record.Format, "json") || isEmptyDraftWithoutSnapshot(record))
+}
+
+func isEmptyDraftWithoutSnapshot(record workspace.Session) bool {
+	if record.Tab.Kind != "draft" || record.Tab.SourcePath != "" || len(record.Payload) != 0 {
+		return false
+	}
+	switch strings.ToLower(record.Format) {
+	case "docx", "xlsx", "json":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) restoreSessionState(record workspace.Session) (*documentSessionState, error) {
@@ -164,9 +185,15 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 	state.documentID = record.Tab.DocumentID
 	switch strings.ToLower(record.Format) {
 	case "xlsx":
-		book, err := xlsx.OpenSnapshot(record.Payload)
-		if err != nil {
-			return nil, err
+		var book *xlsx.Workbook
+		if isEmptyDraftWithoutSnapshot(record) {
+			book = xlsx.NewBlank()
+		} else {
+			var err error
+			book, err = xlsx.OpenSnapshot(record.Payload)
+			if err != nil {
+				return nil, err
+			}
 		}
 		state.book = book
 		book.SetSourcePath(record.Tab.SourcePath)
@@ -183,18 +210,34 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 			state.cellEdit.selectCell("A1", "")
 		}
 	case "docx":
-		word, err := docx.OpenSnapshot(record.Payload)
-		if err != nil {
-			return nil, err
+		var word *docx.Document
+		if isEmptyDraftWithoutSnapshot(record) {
+			var err error
+			word, err = docx.NewBlank()
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			var err error
+			word, err = docx.OpenSnapshot(record.Payload)
+			if err != nil {
+				return nil, err
+			}
 		}
 		state.word = word
 		state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
 		word.SetSourcePath(record.Tab.SourcePath)
 		word.SetDirty(record.Dirty)
 	case "json":
-		jsonDocument, err := jsondoc.OpenSnapshot(record.Payload)
-		if err != nil {
-			return nil, err
+		var jsonDocument *jsondoc.Document
+		if isEmptyDraftWithoutSnapshot(record) {
+			jsonDocument = jsondoc.NewBlank()
+		} else {
+			var err error
+			jsonDocument, err = jsondoc.OpenSnapshot(record.Payload)
+			if err != nil {
+				return nil, err
+			}
 		}
 		state.jsonDoc = jsonDocument
 		jsonDocument.SetSourcePath(record.Tab.SourcePath)

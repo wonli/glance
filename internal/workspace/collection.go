@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -51,6 +52,8 @@ func OpenCollection(store *Store) (*Collection, error) {
 		session := &Session{Tab: tab, Available: found || tab.SourcePath == ""}
 		if found {
 			session.Format, session.Payload, session.ViewState, session.Dirty, session.UpdatedAt = doc.Format, doc.Payload, doc.ViewState, doc.Dirty, doc.UpdatedAt
+		} else {
+			session.Format = inferDraftFormat(tab)
 		}
 		if tab.SourcePath != "" {
 			if _, err := os.Stat(tab.SourcePath); err != nil {
@@ -72,6 +75,22 @@ func OpenCollection(store *Store) (*Collection, error) {
 		}
 	}
 	return c, nil
+}
+
+func inferDraftFormat(tab Tab) string {
+	if tab.Kind != "draft" || tab.SourcePath != "" {
+		return ""
+	}
+	id := tab.DocumentID
+	if id == "" {
+		id = tab.ID
+	}
+	for _, format := range []string{"docx", "xlsx", "json"} {
+		if strings.HasPrefix(id, "draft-"+format+"-") {
+			return format
+		}
+	}
+	return ""
 }
 
 func (c *Collection) ActiveTabID() string {
@@ -153,6 +172,18 @@ func (c *Collection) AddTabInactive(tab Tab, format string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.putLocked(Session{Tab: tab, Format: format, Available: true}, false)
+}
+
+// AddDocument adds a tab together with its initial durable snapshot. New
+// workspace drafts must use this instead of AddTab so a restart can always
+// restore the document even if the asynchronous editor snapshot has not run.
+func (c *Collection) AddDocument(session Session, activate bool) error {
+	if len(session.Payload) == 0 {
+		return errors.New("workspace document snapshot is required")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.putLocked(session, activate)
 }
 
 func (c *Collection) UpdateTabMeta(tab Tab) error {

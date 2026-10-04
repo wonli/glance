@@ -424,12 +424,24 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		if format != "xls" {
 			if _, exists := a.collection.Get(meta.ID); !exists {
 				var err error
-				if runtime.isPrimaryWindow(a.windowID) {
-					err = a.collection.AddTab(meta, format)
+				if loaded.path == "" {
+					var payload []byte
+					payload, err = snapshotState(state)
+					if err == nil {
+						err = a.collection.AddDocument(workspace.Session{
+							Tab: meta, Format: format, Payload: payload,
+							Dirty: sessionDirty(state),
+						}, runtime.isPrimaryWindow(a.windowID))
+					}
 				} else {
-					err = a.collection.AddTabInactive(meta, format)
+					if runtime.isPrimaryWindow(a.windowID) {
+						err = a.collection.AddTab(meta, format)
+					} else {
+						err = a.collection.AddTabInactive(meta, format)
+					}
 				}
 				if err != nil {
+					a.status = "新建文档的恢复快照保存失败：" + err.Error()
 					return err
 				}
 			}
