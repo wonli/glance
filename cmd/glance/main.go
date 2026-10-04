@@ -3,8 +3,9 @@ package main
 import (
 	"os"
 
-	"gioui.org/app"
 	"glance/internal/desktopui"
+
+	"gioui.org/app"
 )
 
 func main() {
