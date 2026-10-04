@@ -100,7 +100,7 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 		return
 	}
 	message := fmt.Sprintf("当前分页有 %d 项提示：\n%s\n\n确认后将按照此分页结果导出 PDF。", len(warnings), strings.Join(warnings, "\n"))
-	a.showModalDialog("导出 PDF 前确认版式提示", message, func(action string) {
+	a.showConfirmDialog("导出 PDF 前确认版式提示", message, modalDialogWarningConfirmStyle, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			a.status = "已取消导出 PDF"
@@ -111,7 +111,7 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 			return
 		}
 		a.startWordPDFSavePicker(state, key)
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消"}, modalDialogActionSpec{ID: "confirm", Label: "继续"})
+	}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", Label: "继续", Style: modalDialogActionPrimary})
 	a.status = "等待确认分页提示"
 }
 

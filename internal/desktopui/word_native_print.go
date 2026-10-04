@@ -95,7 +95,7 @@ func (a *App) beginWordPrint(state *documentSessionState) {
 		return
 	}
 	message := fmt.Sprintf("当前分页有 %d 项提示：\n%s\n\n确认后将按照此分页结果准备打印。", len(warnings), strings.Join(warnings, "\n"))
-	a.showModalDialog("打印前确认版式提示", message, func(action string) {
+	a.showConfirmDialog("打印前确认版式提示", message, modalDialogWarningConfirmStyle, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			a.status = "已取消打印"
@@ -106,7 +106,7 @@ func (a *App) beginWordPrint(state *documentSessionState) {
 			return
 		}
 		a.startWordPrintPreparation(state, key)
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消"}, modalDialogActionSpec{ID: "confirm", Label: "继续"})
+	}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", Label: "继续", Style: modalDialogActionPrimary})
 	a.status = "等待确认分页提示"
 }
 
@@ -284,7 +284,7 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 		pageCount := len(state.wordLayoutResult.Pages)
 		message := fmt.Sprintf("共 %d 页。将使用当前打印布局生成的同一份页面内容。继续后打开系统打印面板，可在面板中选择打印机和份数。", pageCount)
 		printData := append([]byte(nil), result.data...)
-		a.showModalDialog("打印预览已准备", message, func(action string) {
+		a.showConfirmDialog("打印预览已准备", message, modalDialogPrintConfirmStyle, func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
 				a.status = "已取消打印"
@@ -295,7 +295,7 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 				return
 			}
 			a.beginWordNativePrint(state, result.key, printData)
-		}, modalDialogActionSpec{ID: "cancel", Label: "取消"}, modalDialogActionSpec{ID: "confirm", Label: "打开打印面板"})
+		}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", Label: "打开打印面板", Style: modalDialogActionPrimary})
 		a.status = "等待确认打印页面"
 		return
 	}

@@ -44,17 +44,25 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 			if !a.clientTitlebar {
 				return a.layoutWorkspaceTabList(gtx, ids)
 			}
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if runtime.GOOS == "darwin" {
-						return a.layoutMacWindowControls(gtx)
-					}
-					return a.layoutStandardWindowControls(gtx)
+			return layout.Stack{Alignment: layout.NW}.Layout(gtx,
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+					return layoutWindowMoveArea(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Dimensions{Size: gtx.Constraints.Max}
+					})
 				}),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return a.layoutWorkspaceTabList(gtx, ids)
+				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if runtime.GOOS == "darwin" {
+								return a.layoutMacWindowControls(gtx)
+							}
+							return a.layoutStandardWindowControls(gtx)
+						}),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							return a.layoutWorkspaceTabList(gtx, ids)
+						}),
+					)
 				}),
-				layout.Rigid(a.layoutWindowDragHandle),
 			)
 		},
 	)
@@ -62,30 +70,52 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 
 func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Dimensions {
 	return layout.Inset{Top: workspaceTabTopGap, Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		// A horizontal list reports the width of its laid-out tabs. Keep its
-		// viewport as wide as the tab strip so Background doesn't center that
-		// shorter natural width (which shifts the selected tab away from the
-		// ribbon seam).
-		gtx.Constraints.Min.X = gtx.Constraints.Max.X
-		return a.workspaceTabsList.Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
-			return a.layoutWorkspaceTabListItem(gtx, ids, index)
-		})
+		list := func(gtx layout.Context) layout.Dimensions {
+			return a.workspaceTabsList.Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
+				return a.layoutWorkspaceTabListItem(gtx, ids, index)
+			})
+		}
+		if !a.clientTitlebar {
+			// Keep the viewport as wide as the tab strip so Background doesn't
+			// center a shorter natural width and shift the selected tab.
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			return list(gtx)
+		}
+
+		contentWidth := gtx.Dp(unit.Dp(112)) +
+			len(ids)*gtx.Dp(workspaceDocumentTabWidth+workspaceDocumentTabGap) +
+			gtx.Dp(workspaceDocumentTabGap+workspacePlusTabWidth)
+		listWidth := min(contentWidth, gtx.Constraints.Max.X)
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X, gtx.Constraints.Max.X = listWidth, listWidth
+				return list(gtx)
+			}),
+			layout.Flexed(1, a.layoutWindowDragHandle),
+		)
 	})
 }
 
 func (a *App) layoutWorkspaceTabListItem(gtx layout.Context, ids []string, index int) layout.Dimensions {
+	var item layout.Widget
 	if index == 0 {
-		return a.layoutRecentTab(gtx)
+		item = a.layoutRecentTab
+	} else if index == len(ids)+1 {
+		item = a.layoutPlusTab
+	} else if index > 0 && index <= len(ids) {
+		item = func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: workspaceDocumentTabGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return a.layoutDocumentTab(gtx, ids[index-1])
+			})
+		}
 	}
-	if index == len(ids)+1 {
-		return a.layoutPlusTab(gtx)
-	}
-	if index < 1 || index > len(ids) {
+	if item == nil {
 		return layout.Dimensions{}
 	}
-	return layout.Inset{Left: workspaceDocumentTabGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return a.layoutDocumentTab(gtx, ids[index-1])
-	})
+	if a.clientTitlebar {
+		return layoutWindowMoveArea(gtx, item)
+	}
+	return item(gtx)
 }
 
 func (a *App) processWindowControlClicks(gtx layout.Context) {
@@ -165,11 +195,31 @@ func (a *App) layoutStandardWindowButton(gtx layout.Context, click *widget.Click
 }
 
 func (a *App) layoutWindowDragHandle(gtx layout.Context) layout.Dimensions {
-	gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(48)), gtx.Dp(unit.Dp(40)))
-	gtx.Constraints.Max = gtx.Constraints.Min
 	return a.windowDecorations.LayoutMove(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Dimensions{Size: gtx.Constraints.Min}
+		return layout.Dimensions{Size: gtx.Constraints.Max}
 	})
+}
+
+func layoutWindowMoveArea(gtx layout.Context, w layout.Widget) layout.Dimensions {
+	child := op.Record(gtx.Ops)
+	dims := w(gtx)
+	call := child.Stop()
+	area := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
+	system.ActionInputOp(system.ActionMove).Add(gtx.Ops)
+	area.Pop()
+	call.Add(gtx.Ops)
+	return dims
+}
+
+func layoutWindowMoveAreaAfter(gtx layout.Context, w layout.Widget) layout.Dimensions {
+	child := op.Record(gtx.Ops)
+	dims := w(gtx)
+	call := child.Stop()
+	call.Add(gtx.Ops)
+	area := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
+	system.ActionInputOp(system.ActionMove).Add(gtx.Ops)
+	area.Pop()
+	return dims
 }
 
 func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
@@ -177,7 +227,14 @@ func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
 		a.persistActiveSession()
 		a.activateRecent()
 	}
-	return a.paintTab(gtx, &a.recentTabButton, "⌂  Glance", a.activeTabID == workspace.RecentTabID)
+	active := a.activeTabID == workspace.RecentTabID
+	tab := func(gtx layout.Context) layout.Dimensions {
+		return a.paintTab(gtx, &a.recentTabButton, "⌂  Glance", active)
+	}
+	if active && a.clientTitlebar {
+		return layoutWindowMoveAreaAfter(gtx, tab)
+	}
+	return tab(gtx)
 }
 
 func (a *App) layoutPlusTab(gtx layout.Context) layout.Dimensions {
@@ -244,18 +301,24 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 	child := op.Record(gtx.Ops)
 	dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return tab.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					style := material.Body2(a.theme, label)
-					style.TextSize = unit.Sp(12)
-					style.MaxLines = 1
-					style.Color = color.NRGBA{R: 93, G: 102, B: 113, A: 255}
-					if active {
-						style.Color = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
-					}
-					return layout.Center.Layout(gtx, style.Layout)
+			tabContent := func(gtx layout.Context) layout.Dimensions {
+				return tab.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						style := material.Body2(a.theme, label)
+						style.TextSize = unit.Sp(12)
+						style.MaxLines = 1
+						style.Color = color.NRGBA{R: 93, G: 102, B: 113, A: 255}
+						if active {
+							style.Color = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
+						}
+						return layout.Center.Layout(gtx, style.Layout)
+					})
 				})
-			})
+			}
+			if active && a.clientTitlebar {
+				return layoutWindowMoveAreaAfter(gtx, tabContent)
+			}
+			return tabContent(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return close.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -391,10 +454,10 @@ func (a *App) closeWorkspaceTab(id string) {
 
 func (a *App) showCloseConfirmation(id, title, message string) {
 	a.pendingCloseTabID = id
-	a.showModalDialog(title, message, a.handleCloseConfirmation,
-		modalDialogActionSpec{ID: "save", Label: "保存"},
-		modalDialogActionSpec{ID: "discard", Label: "不保存"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	a.showConfirmDialog(title, message, modalDialogSaveConfirmStyle, a.handleCloseConfirmation,
+		modalDialogActionSpec{ID: "save", Label: "保存", Style: modalDialogActionPrimary},
+		modalDialogActionSpec{ID: "discard", Label: "不保存", Style: modalDialogActionDanger},
+		modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary},
 	)
 }
 
@@ -498,7 +561,7 @@ func (a *App) closeWorkspaceTabWithoutSession(id string, cause error) {
 	}
 	if snapshotCleanupErr != nil {
 		message := "标签已从工作区删除，但损坏快照未能清理。\n\n" + snapshotCleanupErr.Error()
-		a.showModalDialog("损坏快照未能清理", message, func(string) {
+		a.showConfirmDialog("损坏快照未能清理", message, modalDialogWarningConfirmStyle, func(string) {
 			a.modal.Hide()
 		}, modalDialogActionSpec{ID: "ok", Label: "知道了"})
 	}
@@ -521,7 +584,7 @@ func workspaceSessionOperationName(kind sessionOperationKind) string {
 
 func (a *App) showWorkspaceTabCloseFailure(message string) {
 	a.status = message
-	a.showModalDialog("无法关闭文档标签", message, func(string) {
+	a.showConfirmDialog("无法关闭文档标签", message, modalDialogWarningConfirmStyle, func(string) {
 		a.modal.Hide()
 	}, modalDialogActionSpec{ID: "ok", Label: "知道了"})
 }

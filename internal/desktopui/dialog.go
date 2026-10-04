@@ -15,11 +15,27 @@ import (
 
 type modalDialogActionSpec struct {
 	ID, Label string
+	Style     modalDialogActionStyle
 }
 
 type modalDialogAction struct {
 	ID, Label string
+	Style     modalDialogActionStyle
 	button    widget.Clickable
+}
+
+type modalDialogActionStyle uint8
+
+const (
+	modalDialogActionPrimary modalDialogActionStyle = iota
+	modalDialogActionSecondary
+	modalDialogActionDanger
+)
+
+type modalDialogConfirmStyle struct {
+	Icon           string
+	IconBackground color.NRGBA
+	IconForeground color.NRGBA
 }
 
 // modalDialog is a reusable, stateful modal surface for app-level prompts.
@@ -39,6 +55,8 @@ type modalDialog struct {
 	HasInput        bool
 	HasSecondInput  bool
 	HasForm         bool
+	HasConfirmStyle bool
+	ConfirmStyle    modalDialogConfirmStyle
 	scrim           widget.Clickable
 	OnAction        func(string)
 }
@@ -48,6 +66,8 @@ func (d *modalDialog) Show(title, message string, onAction func(string), actions
 	d.HasInput = false
 	d.HasSecondInput = false
 	d.HasForm = false
+	d.HasConfirmStyle = false
+	d.ConfirmStyle = modalDialogConfirmStyle{}
 	d.FormInputCount = 0
 	d.InputHint = ""
 	d.SecondInputHint = ""
@@ -61,8 +81,14 @@ func (d *modalDialog) Show(title, message string, onAction func(string), actions
 	d.OnAction = onAction
 	d.Actions = make([]modalDialogAction, len(actions))
 	for i, action := range actions {
-		d.Actions[i] = modalDialogAction{ID: action.ID, Label: action.Label}
+		d.Actions[i] = modalDialogAction{ID: action.ID, Label: action.Label, Style: action.Style}
 	}
+}
+
+func (d *modalDialog) ShowConfirm(title, message string, style modalDialogConfirmStyle, onAction func(string), actions ...modalDialogActionSpec) {
+	d.Show(title, message, onAction, actions...)
+	d.HasConfirmStyle = true
+	d.ConfirmStyle = style
 }
 
 func (d *modalDialog) ShowForm(title, message string, labels, hints, initial []string, onAction func(string), actions ...modalDialogActionSpec) {
@@ -106,8 +132,8 @@ func (d *modalDialog) ShowDualInput(title, message, initial, hint, secondInitial
 
 func (d *modalDialog) Hide() { d.Visible = false }
 
-func (a *App) showModalDialog(title, message string, onAction func(string), actions ...modalDialogActionSpec) {
-	a.modal.Show(title, message, onAction, actions...)
+func (a *App) showConfirmDialog(title, message string, style modalDialogConfirmStyle, onAction func(string), actions ...modalDialogActionSpec) {
+	a.modal.ShowConfirm(title, message, style, onAction, actions...)
 }
 
 func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
@@ -146,6 +172,9 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			if a.modal.HasConfirmStyle {
+				return a.layoutConfirmDialogCard(gtx)
+			}
 			maxWidth := gtx.Dp(unit.Dp(440))
 			if gtx.Constraints.Max.X < maxWidth {
 				maxWidth = gtx.Constraints.Max.X
