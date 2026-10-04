@@ -58,6 +58,50 @@ func (state *documentSessionState) setWordBlocks(blocks []document.WordBlock) {
 	state.wordRevisionAtomic.Store(revision)
 	state.operationMu.Unlock()
 	state.wordBlocksMu.Unlock()
+	state.invalidateWordLayoutAfterBlocksChange()
+}
+
+func (state *documentSessionState) setWordBlocksAndTextState(blocks []document.WordBlock, clearDrafts bool) {
+	if state == nil {
+		return
+	}
+	committed := wordCommittedTextMap(blocks)
+	state.wordBlocksMu.Lock()
+	state.wordDraftMu.Lock()
+	blocksChanged := !reflect.DeepEqual(state.wordBlocks, blocks)
+	if blocksChanged {
+		state.wordBlocks = cloneWordBlockSnapshot(blocks)
+	}
+	drafts := make(map[string]string)
+	if !clearDrafts {
+		for runID, value := range state.wordRunDrafts {
+			if committedValue, exists := committed[runID]; exists && value != committedValue {
+				drafts[runID] = value
+			}
+		}
+	}
+	textChanged := !sameWordTextMap(state.wordRunCommitted, committed) || !sameWordTextMap(state.wordRunDrafts, drafts)
+	state.wordRunCommitted = committed
+	state.wordRunDrafts = drafts
+	state.wordTextResetEpoch.Add(1)
+	if textChanged || clearDrafts {
+		state.bumpWordDraftEpoch()
+	}
+	if blocksChanged {
+		state.operationMu.Lock()
+		revision := state.wordRevisionAtomic.Load() + 1
+		state.wordRevision = revision
+		state.wordRevisionAtomic.Store(revision)
+		state.operationMu.Unlock()
+	}
+	state.wordDraftMu.Unlock()
+	state.wordBlocksMu.Unlock()
+	if blocksChanged {
+		state.invalidateWordLayoutAfterBlocksChange()
+	}
+}
+
+func (state *documentSessionState) invalidateWordLayoutAfterBlocksChange() {
 	if state.wordPDFExportCancel != nil {
 		state.wordPDFExportCancel()
 	}
@@ -75,6 +119,29 @@ func (state *documentSessionState) setWordBlocks(blocks []document.WordBlock) {
 		state.wordLayoutCancel()
 		state.wordLayoutCancel = nil
 	}
+}
+
+func (state *documentSessionState) wordProjectionSnapshot() ([]document.WordBlock, map[string]string, map[string]string, uint64, uint64, uint64) {
+	if state == nil {
+		return nil, map[string]string{}, map[string]string{}, 0, 0, 0
+	}
+	state.wordBlocksMu.RLock()
+	state.wordDraftMu.RLock()
+	blocks := cloneWordBlockSnapshot(state.wordBlocks)
+	committed := make(map[string]string, len(state.wordRunCommitted))
+	for runID, value := range state.wordRunCommitted {
+		committed[runID] = value
+	}
+	drafts := make(map[string]string, len(state.wordRunDrafts))
+	for runID, value := range state.wordRunDrafts {
+		drafts[runID] = value
+	}
+	revision := state.wordRevisionAtomic.Load()
+	draftEpoch := state.wordDraftEpoch.Load()
+	resetEpoch := state.wordTextResetEpoch.Load()
+	state.wordDraftMu.RUnlock()
+	state.wordBlocksMu.RUnlock()
+	return blocks, committed, drafts, revision, draftEpoch, resetEpoch
 }
 
 func wordLayoutDataForState(state *documentSessionState) (document.WordLayoutData, bool) {
@@ -105,7 +172,7 @@ func (a *App) startWordPagination(state *documentSessionState) {
 	if state == nil || state.word == nil || state.closed.Load() {
 		return
 	}
-	if wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning.Load() {
+	if wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
 		return
 	}
 	// Supported mutations bump wordRevision through setWordBlocks. Avoid cloning
@@ -149,6 +216,7 @@ func (a *App) startWordPagination(state *documentSessionState) {
 	input := wordlayout.Input{
 		DocumentID: key.DocumentID, Revision: key.Revision,
 		Blocks: blocks, Layout: data, DefaultPageSetup: defaultWordPageSetup,
+		EditorParagraphInsets: true,
 	}
 	engine := a.wordLayoutEngine
 	if engine == nil {
@@ -250,7 +318,7 @@ func wordPaginationStatusText(state *documentSessionState) string {
 	if state == nil {
 		return ""
 	}
-	if wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning.Load() {
+	if wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
 		return "正在更新页数…"
 	}
 	if state.wordLayoutError != "" {

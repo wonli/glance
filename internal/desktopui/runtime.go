@@ -136,6 +136,68 @@ func canonicalSessionPath(path string) string {
 	return canonicalDocumentPath(path)
 }
 
+func (r *desktopRuntime) addWordSnapshot(path string, source workspace.WordVersionSource, snapshot []byte) error {
+	if r == nil {
+		return fmt.Errorf("工作区数据库不可用")
+	}
+	pathKey := canonicalSessionPath(path)
+	if pathKey == "" {
+		return fmt.Errorf("Word 文档没有可用于版本历史的路径")
+	}
+	r.workspaceDBMu.Lock()
+	defer r.workspaceDBMu.Unlock()
+	if r.workspaceStore == nil {
+		return fmt.Errorf("工作区数据库不可用")
+	}
+	_, _, err := r.workspaceStore.AddWordVersion(workspace.WordVersionInput{
+		PathKey: pathKey, DisplayPath: path, Source: source,
+		CapturedAt: time.Now().UTC(), Snapshot: snapshot,
+	})
+	return err
+}
+
+func (r *desktopRuntime) loadWordVersion(pathKey string, versionID int64) (workspace.WordVersion, []byte, error) {
+	if r == nil {
+		return workspace.WordVersion{}, nil, fmt.Errorf("工作区数据库不可用")
+	}
+	r.workspaceDBMu.Lock()
+	defer r.workspaceDBMu.Unlock()
+	if r.workspaceStore == nil {
+		return workspace.WordVersion{}, nil, fmt.Errorf("工作区数据库不可用")
+	}
+	return r.workspaceStore.LoadWordVersion(pathKey, versionID)
+}
+
+func (r *desktopRuntime) listWordVersions(pathKey string) ([]workspace.WordVersion, error) {
+	if r == nil {
+		return nil, fmt.Errorf("工作区数据库不可用")
+	}
+	r.workspaceDBMu.Lock()
+	defer r.workspaceDBMu.Unlock()
+	if r.workspaceStore == nil {
+		return nil, fmt.Errorf("工作区数据库不可用")
+	}
+	return r.workspaceStore.ListWordVersions(pathKey)
+}
+
+func (r *desktopRuntime) recordOpenedWord(shared *sharedDocumentSession) error {
+	if shared == nil || shared.word == nil {
+		return nil
+	}
+	shared.adapterMu.RLock()
+	path := shared.path
+	if path == "" {
+		shared.adapterMu.RUnlock()
+		return nil
+	}
+	snapshot, err := shared.word.Snapshot()
+	shared.adapterMu.RUnlock()
+	if err != nil {
+		return err
+	}
+	return r.addWordSnapshot(path, workspace.WordVersionOpened, snapshot)
+}
+
 func closeUnregisteredSessionAdapters(candidate, existing *sharedDocumentSession) {
 	if candidate == nil || existing == nil {
 		return
@@ -170,8 +232,13 @@ func sameAdapterInstance(left, right any) bool {
 }
 
 func (r *desktopRuntime) openDocumentSession(path string) (*sharedDocumentSession, error) {
+	session, _, err := r.openDocumentSessionWithStatus(path)
+	return session, err
+}
+
+func (r *desktopRuntime) openDocumentSessionWithStatus(path string) (*sharedDocumentSession, bool, error) {
 	if r == nil {
-		return nil, fmt.Errorf("文档运行时不可用")
+		return nil, false, fmt.Errorf("文档运行时不可用")
 	}
 	path = stringsTrimSpace(path)
 	key := canonicalSessionPath(path)
@@ -188,7 +255,7 @@ func (r *desktopRuntime) openDocumentSession(path string) (*sharedDocumentSessio
 		}
 		if existing := r.findSessionByPathLocked(path); existing != nil {
 			r.mu.Unlock()
-			return existing, nil
+			return existing, false, nil
 		}
 		if wait := r.openingPaths[key]; wait != nil {
 			r.mu.Unlock()
@@ -211,12 +278,14 @@ func (r *desktopRuntime) openDocumentSession(path string) (*sharedDocumentSessio
 		r.mu.Lock()
 		existing := r.findSessionByPathLocked(path)
 		var result *sharedDocumentSession
+		openedFromDisk := false
 		if err != nil {
 			result = nil
 		} else if existing != nil {
 			result = existing
 		} else {
 			result = r.registerSessionLocked(candidate)
+			openedFromDisk = result == candidate
 		}
 		delete(r.openingPaths, key)
 		close(opened)
@@ -224,7 +293,7 @@ func (r *desktopRuntime) openDocumentSession(path string) (*sharedDocumentSessio
 		if candidate != nil && result != candidate {
 			closeUnregisteredSessionAdapters(candidate, result)
 		}
-		return result, err
+		return result, openedFromDisk, err
 	}
 }
 

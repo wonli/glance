@@ -26,14 +26,14 @@ func (a *App) requestWordShareCopy() {
 	if state == nil || state.word == nil || state.closed.Load() || state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning {
 		return
 	}
-	if state.wordFlushRequested || state.wordDeferredToolbarAction != "" {
+	if state.wordFlushRequested.Load() || state.wordDeferredToolbarAction != "" {
 		a.status = "正文正在提交，请稍后再导出共享副本"
 		return
 	}
 	if wordHasPendingTextDrafts(state) {
-		state.wordForceDraftFlush = true
-		state.wordFlushRequested = true
-		state.wordFlushAllDrafts = true
+		state.wordForceDraftFlush.Store(true)
+		state.wordFlushRequested.Store(true)
+		state.wordFlushAllDrafts.Store(true)
 		state.wordDeferredToolbarAction = "share"
 		a.status = "正在提交正文编辑，然后准备共享 DOCX 副本…"
 		a.startNextWordTextCommit()
@@ -50,7 +50,7 @@ func (a *App) beginWordShareCopy(state *documentSessionState) {
 		a.status = "Word 文档已切换，共享副本导出已取消"
 		return
 	}
-	if state.wordFlushRequested || wordHasPendingTextDrafts(state) {
+	if state.wordFlushRequested.Load() || wordHasPendingTextDrafts(state) {
 		a.status = "正文编辑尚未提交，未导出共享副本"
 		return
 	}
@@ -73,7 +73,7 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 		a.status = "Word 文档已切换，共享副本导出已取消"
 		return
 	}
-	if state.formatRunning.Load() || state.wordRevisionAtomic.Load() != request.revision || state.wordDraftEpoch.Load() != request.draftEpoch || state.wordFlushRequested || wordHasPendingTextDrafts(state) {
+	if state.formatRunning.Load() || state.wordRevisionAtomic.Load() != request.revision || state.wordDraftEpoch.Load() != request.draftEpoch || state.wordFlushRequested.Load() || wordHasPendingTextDrafts(state) {
 		a.status = "文档在选择位置期间已更改，未导出共享副本；请重试"
 		return
 	}

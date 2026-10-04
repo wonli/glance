@@ -227,7 +227,7 @@ func (a *App) drawWordStatusRect(gtx layout.Context, xDP, yDP, widthDP, heightDP
 }
 
 func wordStatusWordCount(state *documentSessionState) string {
-	return fmt.Sprintf("%d 个字", wordTextStatisticsForState(state).charactersWithoutWhitespace)
+	return fmt.Sprintf("%d 个字", wordTextStatisticsForState(state).charactersWithWhitespace)
 }
 
 type wordTextStatistics struct {

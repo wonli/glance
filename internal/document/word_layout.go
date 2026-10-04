@@ -50,7 +50,17 @@ const (
 	WordParagraphKeepWithNextSet
 	WordParagraphKeepTogetherSet
 	WordParagraphPageBreakBeforeSet
+	WordParagraphBottomBorderSet
 )
+
+// WordParagraphBorder describes a neutral Word paragraph border. Size is in
+// points, while SpacePT is the gap between the text line and the border.
+type WordParagraphBorder struct {
+	Style   string
+	SizePT  float64
+	SpacePT float64
+	Color   string
+}
 
 // WordParagraphLayout contains the neutral paragraph metrics used by page
 // layout. Lengths are points except indentation values preserved in EMU.
@@ -68,6 +78,7 @@ type WordParagraphLayout struct {
 	KeepWithNext        bool
 	KeepTogether        bool
 	PageBreakBefore     bool
+	BottomBorder        WordParagraphBorder
 	Set                 WordParagraphLayoutMask
 }
 

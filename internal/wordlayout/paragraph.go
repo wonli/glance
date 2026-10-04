@@ -51,21 +51,38 @@ type paragraphLine struct {
 }
 
 type preparedParagraph struct {
-	sourceID string
-	style    resolvedParagraphStyle
-	lines    []paragraphLine
+	sourceID       string
+	borderSourceID string
+	uiBeforePT     float64
+	uiAfterPT      float64
+	style          resolvedParagraphStyle
+	lines          []paragraphLine
 }
 
 func (p preparedParagraph) totalHeight() float64 {
-	height := p.style.paragraph.BeforePT + p.style.paragraph.AfterPT
+	height := p.uiBeforePT + p.uiAfterPT + p.style.paragraph.BeforePT + p.style.paragraph.AfterPT + paragraphBottomBorderExtent(p.style.paragraph)
 	for _, line := range p.lines {
 		height += line.height
 	}
 	return height
 }
 
-func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResolver, paragraph document.WordParagraph, sourceID string, availableWidth float64) (preparedParagraph, error) {
-	prepared := preparedParagraph{sourceID: sourceID, style: styles.paragraphStyle(paragraph, sourceID)}
+func paragraphBottomBorderExtent(paragraph document.WordParagraphLayout) float64 {
+	border := paragraph.BottomBorder
+	if border.Style == "none" || border.Style == "nil" || border.SizePT <= 0 {
+		return 0
+	}
+	return border.SpacePT + border.SizePT
+}
+
+func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResolver, paragraph document.WordParagraph, sourceID string, availableWidth float64, inCell, editorInsets bool) (preparedParagraph, error) {
+	prepared := preparedParagraph{sourceID: sourceID, borderSourceID: sourceID, style: styles.paragraphStyle(paragraph, sourceID)}
+	if editorInsets {
+		prepared.uiBeforePT, prepared.uiAfterPT = 3.75, 4.5
+		if inCell {
+			prepared.uiAfterPT = 2.25
+		}
+	}
 	leftIndent := emuToPoints(prepared.style.paragraph.LeftIndentEMU)
 	rightIndent := emuToPoints(prepared.style.paragraph.RightIndentEMU)
 	firstOffset := emuToPoints(prepared.style.paragraph.FirstLineIndentEMU - prepared.style.paragraph.HangingIndentEMU)
@@ -392,7 +409,10 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 	if prepared.style.paragraph.PageBreakBefore {
 		c.pendingBreak = true
 	}
-	firstHeight := prepared.style.paragraph.BeforePT + prepared.lines[0].height
+	firstHeight := prepared.style.paragraph.BeforePT + prepared.uiBeforePT + prepared.lines[0].height
+	if len(prepared.lines) == 1 {
+		firstHeight += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
+	}
 	totalHeight := prepared.totalHeight()
 	keepTogether := prepared.style.paragraph.KeepTogether || prepared.style.paragraph.KeepWithNext
 	if allowPageFlow && keepTogether && totalHeight <= c.content.HeightPT+epsilonPT && c.used && c.y+totalHeight > c.content.YPT+c.content.HeightPT+epsilonPT {
@@ -402,11 +422,11 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 		if !c.ensureSpace(firstHeight, prepared.sourceID) {
 			return nil
 		}
-		c.y += prepared.style.paragraph.BeforePT
+		c.y += prepared.style.paragraph.BeforePT + prepared.uiBeforePT
 		fixedY = c.y
 		fixedPageIndex = c.pageIndex
 	} else {
-		fixedY += prepared.style.paragraph.BeforePT
+		fixedY += prepared.style.paragraph.BeforePT + prepared.uiBeforePT
 	}
 	y := fixedY
 	for lineIndex, line := range prepared.lines {
@@ -417,12 +437,20 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 			c.pendingBreak = true
 		}
 		if allowPageFlow {
-			if !c.ensureSpace(line.height, prepared.sourceID) {
+			lineHeightWithBorder := line.height
+			if lineIndex == len(prepared.lines)-1 {
+				lineHeightWithBorder += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
+			}
+			if !c.ensureSpace(lineHeightWithBorder, prepared.sourceID) {
 				return nil
 			}
 			y, fixedPageIndex = c.y, c.pageIndex
 		}
-		placeParagraphLine(c, prepared.sourceID, fixedPageIndex, y, area, prepared.style.paragraph, line, lineIndex == 0, lineIndex == len(prepared.lines)-1)
+		borderSourceID := prepared.borderSourceID
+		if borderSourceID == "" {
+			borderSourceID = prepared.sourceID
+		}
+		placeParagraphLine(c, prepared.sourceID, borderSourceID, fixedPageIndex, y, area, prepared.style.paragraph, line, lineIndex == 0, lineIndex == len(prepared.lines)-1, prepared.uiAfterPT)
 		y += line.height
 		if allowPageFlow {
 			c.y = y
@@ -433,6 +461,11 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 		}
 	}
 	if allowPageFlow {
+		c.y += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
+	} else {
+		y += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
+	}
+	if allowPageFlow {
 		c.y += prepared.style.paragraph.AfterPT
 	} else {
 		y += prepared.style.paragraph.AfterPT
@@ -440,7 +473,7 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 	return nil
 }
 
-func placeParagraphLine(cursor *layoutCursor, sourceID string, pageIndex int, y float64, area Rect, paragraph document.WordParagraphLayout, line paragraphLine, firstLine, lastLine bool) {
+func placeParagraphLine(cursor *layoutCursor, sourceID, borderSourceID string, pageIndex int, y float64, area Rect, paragraph document.WordParagraphLayout, line paragraphLine, firstLine, lastLine bool, uiAfterPT float64) {
 	if pageIndex < 0 || pageIndex >= len(cursor.result.Pages) {
 		return
 	}
@@ -506,6 +539,26 @@ func placeParagraphLine(cursor *layoutCursor, sourceID string, pageIndex int, y 
 		x += atom.advance
 		if atom.breakAfter {
 			x += extraPerSpace
+		}
+	}
+	if lastLine {
+		border := paragraph.BottomBorder
+		style := border.Style
+		if style == "" {
+			style = "single"
+		}
+		if border.SizePT > 0 && style != "none" && style != "nil" {
+			cursor.result.Pages[pageIndex].ParagraphBorders = append(cursor.result.Pages[pageIndex].ParagraphBorders, ParagraphBorderPlacement{
+				SourceID: borderSourceID,
+				Style:    style,
+				Color:    border.Color,
+				Bounds: Rect{
+					XPT:      area.XPT + left,
+					YPT:      y + line.height + uiAfterPT + border.SpacePT,
+					WidthPT:  math.Max(0, area.WidthPT-left-right),
+					HeightPT: border.SizePT,
+				},
+			})
 		}
 	}
 }

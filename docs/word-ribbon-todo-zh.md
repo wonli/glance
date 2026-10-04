@@ -1,6 +1,6 @@
 # Word 主页面与功能区 TODO（中文）
 
-更新日期：2026-10-03
+更新日期：2026-10-04
 状态依据：当前仓库实现与 Pen 参考节点 `Clpgm`、`kiBim`、`FsQrk` 对照。
 
 ## 目标与已确认方向
@@ -8,23 +8,25 @@
 - 以 Pen `Clpgm` 的 Word 主页面和 `kiBim` 的功能区分组、文字标签、控件位置为布局参考。
 - 以 Pen `FsQrk` 为底栏视觉参考。
 - **Word 功能区图标采用 Excel 现有图标集与着色方案**，与 Excel 的图标语言统一。该决定优先于“功能区图标逐像素使用 Pen 原始图形”；布局、分组和图标语义仍按 Pen 对照。
-- 所有功能只有在 UI 入口、文档模型/DOCX 适配器路径和保存重开证据具备后，才标记为“已完成”并启用。仅绘制了图标或定义了 action 不算功能完成。
+- `已接通`要求图标有实际可用的 UI 操作路径。会修改 DOCX 的命令还必须具备中立文档模型/DOCX 适配器路径，以及保存重开和未修改内容保留证据；只改变视图、工作区或剪贴板状态的命令，以对应交互/状态回归作为证据，不要求伪造 DOCX 写入路径。仅绘制图标或定义 action 不算接通。
 
 ## 统计口径与总览
 
-统计单位是功能区中的一个可点击命令图标。七个常驻 Pen 功能区共有 99 个命令图标；不把标签页文字、分隔线、输入框、样式库、标尺及底栏图标计入这个数字。
+统计单位是功能区中的一个可点击命令图标。七个常驻 Pen 功能区共有 99 个命令图标；不把标签页文字、分隔线、输入框、样式库、标尺及底栏图标计入这个数字。会修改 DOCX 的命令必须同时有 UI 入口、文档模型/DOCX 适配器路径和保存重开证据，才计为“已接通”；只改变视图、工作区或剪贴板状态的命令，则要求实际 UI 操作及对应交互/状态回归。仅有适配器实现和保存重开证据、但没有 Ribbon 操作入口的命令，单列为“适配器已具备，UI 未接通”，不并入已接通数。
 
-| 功能区 | 命令图标数 | 已接通 | 待实现 |
-|---|---:|---:|---:|
-| 文件 | 12 | 10 | 2 |
-| 开始 | 27 | 22 | 5 |
-| 插入 | 16 | 2 | 14 |
-| 设计 | 9 | 0 | 9 |
-| 布局 | 12 | 0 | 12 |
-| 审阅 | 11 | 1 | 10 |
-| 视图 | 12 | 9 | 3 |
-| **常驻功能区合计** | **99** | **44** | **55** |
-| 图片上下文功能区（额外项，不在 Pen 的 99 项内） | 5 | 5 | 0 |
+| 功能区 | 命令图标数 | 已接通 | 适配器已具备，UI 未接通 | 尚无可用实现 |
+|---|---:|---:|---:|---:|
+| 文件 | 12 | 11 | 0 | 1 |
+| 开始 | 27 | 22 | 0 | 5 |
+| 插入 | 16 | 3 | 0 | 13 |
+| 设计 | 9 | 0 | 0 | 9 |
+| 布局 | 12 | 0 | 2 | 10 |
+| 审阅 | 11 | 1 | 0 | 10 |
+| 视图 | 12 | 9 | 0 | 3 |
+| **常驻功能区合计** | **99** | **46** | **2** | **51** |
+| 图片上下文功能区（额外项，不在 Pen 的 99 项内） | 5 | 5 | 0 | 0 |
+
+统计复核（2026-10-04）：逐项核对七个功能区的状态后，已接通数量为 **46**，适配器已具备但 UI 未接通为 **2**，尚无可用实现为 **51**（46 + 2 + 51 = 99）。本次新增的段前/段后 DOCX 间距写入与保存重开覆盖只补齐后端能力；两项仍没有 Ribbon 操作入口，因此计入“适配器已具备，UI 未接通”，已接通数保持 **46**。
 
 另有撤销/重做的 DOCX 历史能力和调用代码，但 `wordHistoryActions` 未进入当前可见的七个常驻标签的 action 列表。它们不计入上表；需要对照 `Clpgm` 最终确认目标入口，如果设计要求显示图标，再加入功能区并补视觉验收。
 
@@ -40,11 +42,11 @@
 - [x] 当前底栏字数由正文内容动态计算。
 - [x] 标尺、纸张画布和底栏在当前实现中已有对应布局。
 
-### 已接通的 44 个常驻功能区图标
+### 已接通的 46 个常驻功能区图标
 
-- [x] 文件：新建、打开、最近使用、保存、另存为、自动保存、打印、导出 PDF、共享副本导出、文档信息。
+- [x] 文件：新建、打开、最近使用、保存、另存为、自动保存、打印、导出 PDF、共享副本导出、文档信息、版本历史。
 - [x] 开始：粘贴、剪切、复制、格式刷、字体族、减小字号、增大字号、加粗、斜体、下划线、高亮、字体颜色、项目符号、编号、左对齐、居中、右对齐、两端对齐、减少缩进、增加缩进、查找、替换。
-- [x] 插入：图片、分页符。
+- [x] 插入：图片、分页符、符号。
 - [x] 审阅：字数统计。
 - [x] 视图：阅读模式、打印布局、Web 版式、缩放、标尺、网格线、导航窗格、单页、多页。
 
@@ -60,9 +62,9 @@
 
 ## 按图标逐项 TODO
 
-状态说明：`[x]` 表示该功能区图标已有用户可触发的操作路径；`[ ]` 表示图标虽已定义或绘制，但当前没有对应的 Word ribbon 行为。若现有其他位置提供了相近操作，会在条目中说明；这仍不算该图标已接通。
+状态说明：`[x]` 表示该功能区图标已有实际操作路径，并具备与操作类型相符的回归证据；会修改 DOCX 的条目还须有保存重开及未修改内容保留证据。`[ ]` 表示图标虽已定义或绘制，但该 Ribbon 命令尚未达到上述接通口径。若现有其他位置提供了相近操作，会在条目中说明；这仍不算该图标已接通。
 
-### 文件（12 项：已完成 10，待实现 2）
+### 文件（12 项：已完成 11，待实现 1）
 
 - [x] 新建 `new`：创建空白 DOCX 草稿并切换到新文档标签；保留已有文档会话。
 - [x] 打开 `open`：接入工作区异步 DOCX/XLSX/JSON 文件选择器和现有打开流程；取消不改变当前文档。
@@ -74,8 +76,8 @@
 - [x] 导出 PDF `export-pdf`：Word File ribbon 可触发原生保存对话框；后台重放共享分页场景并原子写入 PDF，页面内矢量字形和图片沿用同一坐标，隐藏 Unicode 层供搜索/复制。
 - [x] 共享 `share`：提交所有正文草稿后打开 DOCX 保存位置选择器，将当前一致版本导出为本地副本；同源路径拒绝覆盖，临时文件完整写入并在替换目标前复核文档版本。保留活动文档路径、脏状态、自动保存开关和未识别 DOCX 包部件。保存失败或选择期间文档过期时不替换目标。此实现不调用云端或平台分享服务。
 - [x] 文档信息 `doc-info`：异步读取并编辑标题、主题、作者、关键词、说明五个 DOCX 核心属性；保存重开、XML 特殊字符、未知元数据保留、撤销/重做均有适配器回归。缺失核心属性时补齐部件、包根关系和内容类型；重复、嵌套或含非文本标记的目标属性拒绝写入，避免破坏无法安全解释的元数据。
-- [ ] 保护文档 `protect-document`（已确认范围：打开密码/文件级加密；本轮暂缓）：当前 DOCX 适配器和会话只处理普通 ZIP OOXML。Excelize v2.11.0 的 `Encrypt` 写 Standard encryption（AES-ECB、SHA-1 派生、无包级完整性 HMAC）；其 Agile `Decrypt` 路径没有校验 Agile 密码 verifier 或 `dataIntegrity` HMAC，不能用于安全的打开/保存链路。另发现纯 Go 候选 `github.com/mgilbir/spine` v0.3.0，声称写 AES-256-CBC/SHA-512 Agile 并严格验证 HMAC；它仍为 pre-1.0，尚未完成独立代码审查和 Office 互操作验证，暂不引入。更关键的是，当前工作区恢复快照把 DOCX 明文包存入 SQLite；只给磁盘文件加密会把明文留在恢复数据库。完整实现需让打开、保存/另存为、自动保存、共享副本和工作区快照统一保留加密，工作区重启恢复时重新要求口令，并以 tamper/wrong-password/save-reopen/恢复测试验证。在加密适配器与恢复生命周期方案完成评估前保持命令不可用。`w:documentProtection` 是另一项“审阅 > 限制编辑”能力，只用于防误改，不构成保密边界。依据：[MS-OFFCRYPTO 概览](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/2d1c4f2c-7a2a-4133-998f-f3373f00d542)、[Agile 加密](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/9e61da63-8ddb-4c0a-b25d-f85d990f44c8)、[Agile HMAC 完整性](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/63d9c262-82b9-4fa3-a06d-d087b93e3b00)、[Excelize v2.11.0 加密实现](https://github.com/qax-os/excelize/blob/v2.11.0/crypt.go)、[Spine 加密接口](https://pkg.go.dev/github.com/mgilbir/spine@v0.3.0/common/crypto)。
-- [ ] 版本历史 `version-history`：定义持久化版本快照、恢复及与当前会话撤销栈的关系。
+- [ ] 保护文档 `protect-document`（已确认范围：打开密码/文件级加密；本轮暂缓）：当前 DOCX 适配器和会话只处理普通 ZIP OOXML。Excelize v2.11.0 的 `Encrypt` 写 Standard encryption（AES-ECB、SHA-1 派生、无包级完整性 HMAC）；其 Agile `Decrypt` 路径没有校验 Agile 密码 verifier 或 `dataIntegrity` HMAC，不能用于安全的打开/保存链路。已对纯 Go 候选 Spine v0.3.1（pre-1.0、MIT、要求 Go 1.25）做初步源码审查；直接 `common/crypto` strict API 会验证 HMAC、回报 scheme/integrity，隔离运行 `common/crypto` 和 `opc` 包测试通过。但 `opc.OpenReader` 会丢弃验证结果并接受 Standard/RC4，安全解密必须使用直接 crypto API，先经受审查且有输入上限的 CFB 流提取；mscfb v1.0.9 是一个 Apache-2.0 候选，仍需检查资源上限和畸形输入。上游可选 `msoffcrypto-tool` 交叉验证未运行，Office 生成的 DOCX corpus 也未验证；目前不选依赖。更关键的是，当前工作区恢复快照把 DOCX 明文包存入 SQLite；只给磁盘文件加密会把明文留在恢复数据库。完整实现需让打开、保存/另存为、自动保存、共享副本和工作区快照统一保留加密，工作区重启恢复时重新要求口令，并以 tamper/wrong-password/save-reopen/恢复测试验证。在加密适配器、CFB 安全边界与恢复生命周期方案完成评估前保持命令不可用。`w:documentProtection` 是另一项“审阅 > 限制编辑”能力，只用于防误改，不构成保密边界。依据：[MS-OFFCRYPTO 概览](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/2d1c4f2c-7a2a-4133-998f-f3373f00d542)、[Agile 加密](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/9e61da63-8ddb-4c0a-b25d-f85d990f44c8)、[Agile HMAC 完整性](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/63d9c262-82b9-4fa3-a06d-d087b93e3b00)、[Excelize v2.11.0 加密实现](https://github.com/qax-os/excelize/blob/v2.11.0/crypt.go)、[Spine v0.3.1 加密接口](https://pkg.go.dev/github.com/mgilbir/spine@v0.3.1/common/crypto)、[mscfb v1.0.9](https://pkg.go.dev/github.com/richardlehane/mscfb@v1.0.9)。
+- [x] 版本历史 `version-history`：已完成本机 DOCX 历史时间线。打开文档建立基线；手动保存、另存为和自动保存以本次实际写盘的完整 DOCX 包生成快照；相同路径和 SHA-256 去重，自动保存历史最短间隔 5 分钟。File > 版本历史异步列出时间、来源和大小，列表只读取元数据；选择版本后经确认恢复，恢复前先保存当前完整包，恢复作为一次可撤销/重做的 Word 编辑。每个路径最多保留 50 个版本或 512 MiB，超限清理最旧记录。磁盘保存失败不建版本；历史入库失败会单独提示而不误报磁盘保存失败；历史查询/快照损坏/保护写入失败均有错误状态。数据存于本地 SQLite、关闭标签和重启后保留；数据库中的完整 DOCX 快照未加密，不提供云同步，也不能用于密码加密文档。功能定向回归通过；此前 CUA 曾核对手动/基线来源、恢复、撤销/重做以及退出重启后的三条历史快照，历史面板不改变 ribbon、标尺和底栏几何。2026-10-04 CUA 对当前构建复验了版本列表、旧基线选择、恢复确认，以及恢复前完整快照；SQLite 中恢复前快照包含尚未提交的测试草稿，基线快照 XML 也保留原文字。恢复后画布截图只显示空白插入区/占位提示，状态栏显示 26 字，和应显示的基线正文不一致；因此最终 UI 同步验收仍未通过。用户切换了桌面文档，打断了后续复验；撤销/重做与重启持久化本轮未确认。2026-10-04 审查补出的“存在未提交正文草稿时恢复”现已先提交全部草稿，提交失败则取消恢复；恢复、撤销/重做后在同一同步边界重建共享文字缓存，并用 reset epoch 强制同步聚焦编辑器。失败提示有互斥保护，会唤醒所有正在显示该文档的窗口；恢复 worker 在投递仅发起窗口可读的结果前就写入共享错误，发起窗口先关闭时其他窗口仍能显示失败，并由 `TestWordRestoreFailureNoticeSurvivesOriginWindowShutdown` 覆盖。草稿刷新结束后仅一个窗口可领取恢复请求，flush 标志使用原子值；worker 完成即释放 claim，即使原窗口不再处理私有结果，其他窗口也可继续操作。相关回归覆盖保护快照保留草稿、失败时不恢复、跨窗口撤销后聚焦编辑器同步及切标签/跨窗口失败提示；本轮重跑 `TestWordVersionRestoreFlushesPendingTextDraftBeforeProtectionSnapshot` 和 `TestWordVersionRestoreIsSingleUndoRedoOperation` 通过。此项功能验收不等同于 Pen 整页 1:1 验收；视口尺寸和样稿布局差异仍待解决。详见 `docs/superpowers/specs/2026-10-03-word-version-history-design.md` 和 `docs/superpowers/plans/2026-10-03-word-version-history.md`。
 
 ### 开始（27 项：已完成 22，待实现 5）
 
@@ -107,7 +109,7 @@
 - [ ] 加载项 `add-ins`：当前无 Office Add-ins 运行时或插件宿主；需单独设计安全扩展接口。
 - [ ] 设计器 `designer`：没有相应布局建议服务或本地规则引擎；明确产品范围后再接入。
 
-### 插入（16 项：已完成 2，待实现 14）
+### 插入（16 项：已完成 3，待实现 13）
 
 - [ ] 封面 `cover`：提供受支持的本地封面模板，并按 DOCX 正文结构插入。
 - [ ] 空白页 `blank-page`：实现明确的分页/分节语义；不能只插入空白段落后声称创建了新页。
@@ -124,7 +126,7 @@
 - [ ] 文本框 `insert-textbox`：增加 DrawingML 文本框结构和位置/环绕显示支持。
 - [ ] 艺术字 `insert-wordart`：依赖 DrawingML 形状/文本框支持及字体效果渲染。
 - [ ] 公式 `insert-equation`：增加 OMML 投影/插入能力或明确先保持只读。
-- [ ] 符号 `insert-symbol`：提供字符面板并按当前 caret 插入 Unicode 字符；不得以替换整个 run 的方式实现。
+- [x] 符号 `insert-symbol`：提供 24 个常用标点、货币、数学和箭头符号的字符面板；在当前 caret 插入或替换当前选区，只对该 run 的 Unicode rune 范围调用 `WordTextRangeEditor`，不替换整个 run。插入后 caret 位于符号之后；保留 run 格式。补充平面字符光标位置、失败不改文档和取消不改文档均有 desktop UI 回归；DOCX 适配器区间写入的保存重开与格式保留由 `TestReplaceWordTextRangeUsesRuneOffsetsAndPreservesRunFormatting` 覆盖。当前符号集固定，没有任意字符搜索或用户自定义收藏。
 
 ### 设计（9 项：已完成 0，待实现 9）
 
@@ -138,7 +140,7 @@
 - [ ] 页面颜色 `design-page-color`：增加 section 页面属性写入并验证其他页面属性不丢失。
 - [ ] 页面边框 `design-page-border`：增加 section page-border 属性写入及 Word 重开验证。
 
-### 布局（12 项：已完成 0，待实现 12）
+### 布局（12 项：已接通 0，适配器已具备 2，尚无可用实现 10）
 
 - [ ] 页边距 `layout-margins`：增加 section 页面设置读取/写入；当前纸张画布宽度调整不等同 DOCX 页边距编辑。
 - [ ] 方向 `layout-orientation`：写入 section 方向和对应纸张尺寸，测试不同 section。
@@ -147,8 +149,8 @@
 - [ ] 分隔符 `layout-breaks`：区分页、栏、节分隔符并实现 DOCX 写入与显示。
 - [ ] 行号 `layout-line-numbers`：需分页/行布局结果或明确只实现近似连续视图的行号。
 - [ ] 缩进 `layout-indent`：已有 ruler 的左右缩进能力；需接通 ribbon 命令并说明它调整左缩进、右缩进还是特殊缩进。
-- [ ] 段前 `layout-before`：增加段落 spacing patch，保留其他 `pPr` 属性。
-- [ ] 段后 `layout-after`：同上。
+- [ ] 段前 `layout-before`：DOCX 适配器已具备按 twips 写入直接段前间距的能力，显式零值会覆盖继承；功能区命令与取值 UI 尚未接通。
+- [ ] 段后 `layout-after`：DOCX 适配器已具备按 twips 写入直接段后间距的能力；行距与其他 `pPr` 属性保留，冲突的相对行数/自动间距属性会清除。功能区命令与取值 UI 尚未接通。
 - [ ] 位置 `layout-position`：当前主要支持行内图片；浮动对象位置需要 DrawingML anchor 能力。
 - [ ] 环绕文字 `layout-wrap`：当前没有 Word 文本环绕引擎；浮动图文环绕无法通过行内图片模型实现。
 - [ ] 对齐 `layout-align`：明确这是对象对齐还是段落对齐；目前段落对齐已有 Home 命令，浮动对象对齐未实现。
@@ -178,7 +180,7 @@
 - [x] 单页 `view-single-page`：切入共享 `PageScene` 打印布局，按当前页尺寸和扣除标尺/面板后的可用视口动态缩放，尽量完整显示一页；窗口尺寸或当前页改变时重新适配。手动调整底栏缩放会退出适配模式并沿用 50%–150% 控件范围。仅影响视图状态，不修改 DOCX；如果视口要求低于 50%，页面仍可滚动。
 - [x] 多页 `view-multiple-pages`：切入共享 `PageScene` 打印布局，将页面按两页一行并排显示并纵向滚动；自动缩放时同时考虑两页宽度与视口高度，奇数页末尾保留单页居中。切换到手动缩放时返回普通单页滚动。仅影响视图状态，不修改 DOCX；缩放下限为 50%。
 - [x] 缩放 `view-zoom`：打开百分比对话框，接受 50–150 的整数百分比，并更新打印布局页面场景共用的会话缩放值；拒绝越界/非整数输入并允许在对话框内修正。底栏缩小/放大按 10% 调整，滑块可拖动，三种入口共同使用 50%–150% 范围。
-- [ ] 新建窗口 `view-new-window`：代码与自动化回归已实现。多个窗口共享同一 Word 文档会话、编辑和脏状态；每窗独立维护光标、滚动、缩放和视图，主窗口退出后由最早创建的存活窗口接管工作区持久化。单元/生命周期/`-race` 回归通过。2026-10-03 macOS CUA 打开本地 DOCX 并切到“视图”功能区后，点击“新建窗口”后的窗口枚举/后续交互返回 `noWindowsAvailable`，未能确认第二窗口内容、跨窗编辑和关窗行为；macOS/Windows/Linux 原生路径均暂不标记已验收，所以视图仍按 9/12、常驻功能区仍按 44/99 统计。规格见 `docs/superpowers/specs/2026-10-03-word-new-window-design.md`，计划见 `docs/superpowers/plans/2026-10-03-word-new-window.md`。
+- [ ] 新建窗口 `view-new-window`：代码与自动化回归已实现。多个窗口共享同一 Word 文档会话、编辑和脏状态；每窗独立维护光标、滚动、缩放和视图，主窗口退出后由最早创建的存活窗口接管工作区持久化。单元/生命周期/`-race` 回归通过。2026-10-03 macOS CUA 打开本地 DOCX 并切到“视图”功能区后，点击“新建窗口”后的窗口枚举/后续交互返回 `noWindowsAvailable`，未能确认第二窗口内容、跨窗编辑和关窗行为；macOS/Windows/Linux 原生路径均暂不标记已验收，所以视图仍按 9/12、常驻功能区按 46/99 统计。规格见 `docs/superpowers/specs/2026-10-03-word-new-window-design.md`，计划见 `docs/superpowers/plans/2026-10-03-word-new-window.md`。
 - [ ] 并排查看 `view-side-by-side`：需要双视口、独立滚动/选择状态和窗口宽度策略。
 - [ ] 宏 `view-macros`：当前无 VBA 宏读取/编辑/执行能力；禁止在应用内不受控执行宏。
 
@@ -205,10 +207,14 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 - [x] 沿用 Excel 的正常态和禁用态着色；保留原有 hover/active 命中与背景行为，图标替换没有改变 action 可用性。
 - [x] 检查 Pen PNG 引用后保留状态栏仍使用的资源；移除了 ribbon 专用的 Pen action 图标映射。
 - [x] 用 Computer Use 绑定当前分支的 Go 构建并查看 Word ribbon、纸张画布及 `FsQrk` 底栏。原始 `go run ./cmd/desktop` 进程启动成功但 CUA 无法按进程名绑定；将同一源码构建包装为临时 macOS app 后，CUA 绑定到窗口标题 `desktop`。另外用 Pencil MCP 截取 `Clpgm`、`kiBim`、`FsQrk` 节点。截图和节点树已在本轮对话中检查，没有写入仓库图片文件。
-- [x] 已对照响应式几何：Pen `Clpgm` 为 1440×900 dp，顶栏/标签/功能区/标尺分别为 42/34/56/33 dp，纸张为 x=270、y=181、900×600 dp，底栏 y=866、高 34 dp。CUA 实际屏幕逻辑视口为 1280×820 dp，页面仍居中且宽 900 dp（x≈190），顶部固定高度与底栏锚点一致；垂直空间不足时页面缩至约 570 dp。对应 1440×900 坐标已有 `TestWordCanvasAndRulersMatchPenClpgmGeometry`。
-- [ ] 最终 1:1 视觉验收仍未完成：从 Pen `Clpgm` 节点读取的可见正文已重建为临时 DOCX，并通过同分支 desktop 二进制的文件参数载入 CUA。修复省略 `w:orient` 被误报后，打印布局实际显示第 1 页/共 3 页、573 个字；Pen 参考是 3 页/582 个字。临时文件还含有补页文字，不能当作原始或等价 DOCX。CUA 视口为 1280×820 dp，Pen 画板为 1440×900 dp；尚无匹配视口配对截图。当前样稿第一屏的标题下蓝线、段间距、表头文字样式也未对齐，窄窗口滚动/缩放仍未逐标签检查。
+- [x] 已对照响应式几何：Pen `Clpgm` 为 1440×900 dp，顶栏/标签/功能区/标尺分别为 42/34/56/33 dp，打印页面为 x=270、y=181、900×600 dp，底栏 y=866、高 34 dp。当前 CUA 逻辑视口 1280×820 dp 中，打印页为 x≈190、y≈181、900×600 dp；横向位置随可用视口居中，顶部固定高度一致。连续画布在可用高度不足时缩短，不能据此判断打印页尺寸。对应 1440×900 几何已有 `TestWordCanvasAndRulersMatchPenClpgmGeometry`。
+- [ ] 最终 1:1 视觉验收仍未完成：Pen Clpgm 为 1440×900 dp，当前 CUA 视口为 1280×820 dp，暂无同尺寸并排截图；本轮隔离启动的 QA 只打开一个测试 DOCX 标签，Pen 标签栏仍需按 Clpgm 对照。2026-10-04 CUA 实际点击“视图 → 打印布局”进入 `PageScene`；第一页只显示前三节和表格，第四/五节留在后续页。屏幕截图确认标题段落的蓝色 `w:pBdr` 已绘制在副标题下方，边框也进入 PDF 重放。当前 Print Layout 为只读场景且没有页内选区，Home 的剪切/复制/粘贴和文字格式命令呈禁用色；Pen 截图里的相应图标呈启用色，差异需在同一编辑状态比较，或实现页内 caret/editor overlay 后复验。当前样稿的标题区纵向间距、正文换行和表格外观也与 Pen 可见稿不同；`kiBim` 图标、窄窗口滚动和缩放待查，全部完成前不能判定 1:1。字号图标使用 Excel type glyph。此前 CUA 的文件页截图和 Pen 缩放交互失败记录保留为历史。
+- [x] 状态栏字数已按 Pen 口径修正：样稿含空白字符为 582、不含空白为 573；wordStatusWordCount 改为使用含空白统计。TestWordStatusCountIncludesWhitespace 先失败于旧值 3、再通过；最新同源码 CUA 截图实际显示“582 个字”，数字与单位完整可见。字数详情面板仍同时显示含/不含空白两种统计。
+- [x] 用当前源码构建的临时 macOS QA app 和 Computer Use 打开 `pen-word-sample.docx`，核对 Ribbon 与 `FsQrk`。截图显示第 1 页/共 3 页、582 个字，状态栏字数与 Pen 一致。View ribbon 真实点击可进入分页页面：第 1 页仅有前三节和表格，第四/五节移至后续页；分页引擎 source location 标为第 2/3 页。标题蓝色段落下边框已贯通 DOCX 投影、分页场景和 PDF/画布渲染；2026-10-04 CUA 已确认实际截图中的蓝线位于副标题下方。打印页面为 900×600 dp，在 1280×820 dp 视口中居中于 x≈190、y≈181 dp；Pen 1440×900 dp 参考页坐标为 x=270、y=181 dp。视口不同，标题区纵向间距、正文换行和表格样式仍未证明 1:1。
 
-代码侧已完成图集迁移。Pencil MCP 已读取并截图 `Clpgm`、`kiBim`、`FsQrk`，CUA 已实际载入重建的 DOCX 并显示三页分页结果。最终验收仍需等价样稿、匹配逻辑视口的配对截图，以及正文位置、样式和窄窗口 ribbon 滚动/缩放检查。
+- [x] 2026-10-03 使用 Pen MCP `TakeScreenshot` 直接读取 `Clpgm`、`kiBim`，并从节点树读取 `FsQrk`；不再依赖 Pen 编辑器的 9% 画布缩放控件。随后用 Computer Use 打开当前 desktop 中的 `大猫OA软件使用说明` DOCX 标签检查页面：Word ribbon、标尺、页面区和底栏结构可见，状态栏显示“版式不支持”和 461 个字。该文件不是 Pen 等价样稿，这次只记录应用 chrome/底栏的现状，不作为 1:1 验收。
+
+代码侧已完成图集迁移。Pencil MCP 已读取并截图 `Clpgm`、`kiBim`、`FsQrk`，CUA 已实际载入重建的 DOCX 并显示三页分页结果；打印布局按钮也已由 CUA 验证可以切换到真实分页页面。最终验收仍需 1440×900 dp 配对截图，以及正文位置、字体/样式、表格和窄窗口 ribbon 滚动/缩放检查。
 
 此项在当前栈内可完成：Excel 已有 96×96 图集裁切、图标着色和缓存函数。风险主要是图标语义映射、Home 位图拆分后的命中区域和小尺寸下的视觉差异，不需要更换 UI 框架。
 
@@ -221,10 +227,10 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 | 1. DOCX 分页输入投影 | ✅ 完成 | 以中立 DTO 读取页面尺寸/方向/边距、样式继承输入、段落间距/行高/缩进/分页控制、表格网格和列宽；只读投影不改 DOCX 包；已覆盖多节、分栏、特殊缩进、合并/嵌套表格等定位诊断。 | 后续只在具体布局规则开始支持时补保存重开与 Word 样例证据；投影本身不等于算页数。 |
 | 2. 字形 shaping 与字体 | ✅ 完成（接口、探针和 PDF 集成） | 接入 Go-text HarfBuzz shaping 和系统字体 fallback，输出实际 glyph ID、字体键、Unicode cluster 与点单位 advance/offset；应用创建 Gio shaper 前先用可写缓存初始化进程级字体扫描器，避免默认缓存不可写时扫描器被过早失败锁定；混合简中/拉丁缺字和不可写缓存启动回归通过。纯 Go `gopdf` 后端已集成；PDF 可见字形使用页面场景中的矢量轮廓，隐藏 Unicode 层只负责搜索/复制；检查 `OS/2.fsType`、字形 cmap 和字体面索引。PDF reader 用例验证 CJK/Latin 文本提取（宿主有 Arial Unicode 时）与页面渲染。 | 当前系统字体许可不允许或缺失 `OS/2` 时会拒绝导出；TrueType 禁止子集、位图专用以及非首个 TTC 字体面也拒绝。未实现不嵌字字体的 `ActualText` 提取替代路径；其他操作系统字体 fallback 仍需各自验证。 |
 | 3. 共享分页引擎 | ✅ 完成（引擎） | 新增纯 Go `internal/wordlayout`；以点为单位输出页框、正文框和页面 clip、定位文字片段/glyph 矢量轮廓、行内图片矩形、表格单元格和 run/Unicode 字符偏移→页面坐标映射。支持首个 section 几何、默认 A4、段落和字符样式继承、基础 run/段落格式、常见换行/列表/图片/分页符、段落分页控制和普通表格按行跨页。超宽行、超高表格行、未支持内容会产生定位错误并阻止输出；默认纸张/边距和估算列宽等 warning 要求后续预览确认。回归覆盖精确页边界、取消、source map、轮廓缓存、缺失表格列宽和 keep-with-next。 | 保守边界：只布局单 section；RTL、分栏、多节、合并/嵌套表格、表格内分页符会阻止输出；keep-with-next 只对连续段落分组，目标不是段落时给 warning；缺失列宽按已知列均值补齐并归一到正文宽度，同时给 warning，避免无提示地猜列宽。 |
-| 4. 打印布局界面 | 🟨 已接通，视觉验收未完成 | 后台按文档 ID/版本/页面设置键启动分页；取消旧版本任务，仅接受同文档、同版本、同页面设置结果。虚拟化 Gio 页面列表重放原始 PageScene 的字形矢量轮廓、图片位置/旋转和表格边线；打印布局可从 Ribbon 或 `FsQrk` 切换；单页适配视口，多页按双页一行并支持纵向滚动；导航结果映射到实际页面，状态栏跟随当前可见页。页缩放 50%–150% 可通过 Ribbon 百分比对话框、± 按钮（每次 10%）及拖动滑块调整，三者和页面场景共用会话值。 | 页面视图里的正文目前只读，编辑请切回连续视图；页内 caret/editor overlay 与打印页内选区绘制尚未实现。图片解码完成前显示占位框。已核对 Pencil 几何并做过一次有限的 CUA 检查，但当前阶段临时 QA 应用的使用请求被 Computer Use 审批门拒绝；尚无同 DOCX、同 1440×900 视口的配对截图验收。阶段测试：分页状态/取消失效结果/模式切换、单页与多页视图、导航页定位、缩放对话框/滑块范围和坐标及 FsQrk 几何用例通过；完整 UI 包仍有 5 个桌面 UI 失败需另行处理。 |
+| 4. 打印布局界面 | 🟨 已接通，视觉验收未完成 | 后台按文档 ID/版本/页面设置键启动分页；取消旧版本任务，仅接受同文档、同版本、同页面设置结果。虚拟化 Gio 页面列表重放原始 PageScene 的字形矢量轮廓、图片位置/旋转、表格边线及段落底边框；DOCX `w:pBdr/w:bottom` 的单线颜色、宽度和间距进入共享场景，PDF 使用同一边框坐标。打印布局可从 Ribbon 或 `FsQrk` 切换；单页适配视口，多页按双页一行并支持纵向滚动；导航结果映射到实际页面，状态栏跟随当前可见页。页缩放 50%–150% 可通过 Ribbon 百分比对话框、± 按钮（每次 10%）及拖动滑块调整，三者和页面场景共用会话值。2026-10-04 CUA 确认“视图 → 打印布局”可进入分页纸张，第一页含前三节及计划表；DOCX 标题蓝色单线在屏幕上绘制于副标题下方。 | 页面视图里的正文目前只读，编辑请切回连续视图；页内 caret/editor overlay 与打印页内选区绘制尚未实现。图片解码完成前显示占位框。仍无同 DOCX、同 1440×900 视口的 Pen 配对截图验收。段落边框目前仅支持 bottom `single`；double/dashed/theme color 等类型需先加入兼容投影和对应描画。阶段测试：分页状态/取消失效结果/模式切换、单页与多页视图、导航页定位、缩放对话框/滑块范围和坐标、FsQrk 几何及本轮 ribbon 打印布局真实点击回归通过；完整 UI 包仍有 5 个桌面 UI 失败需另行处理。 |
 | 5. PDF 导出 | ✅ 已接通（有限版；视觉验收未完成） | File ribbon 触发 PDF 保存框；先 flush 正文草稿、分页未就绪时后台等待对应 revision；warning 需要用户确认，blocking diagnostic 禁止输出。`internal/format/pdf` 重放页尺寸、glyph outlines、字体颜色/高亮/下划线、表格边线和 PNG/JPEG 图片矩形/旋转；隐藏文字层只供提取。字体按 OS/2 嵌入许可与 cmap 覆盖校验。导出用同目录临时文件，reopen 校验页数/页面尺寸后原子替换；revision 与草稿 epoch 在替换前再检查。回归覆盖页面/矢量可见性、CJK/Latin 提取、图片矩形、阻断诊断、取消/失败/旧版本保护，以及源 DOCX snapshot/dirty state 不变。 | `gopdf.Reader` 用于 reopen、页数/尺寸、渲染与文本提取验证；尚无独立 Poppler/PDFKit 文本提取交叉验证。macOS 原生打印面板现已接通并通过取消/页数显示检查，但本机无打印机，未提交物理输出。Pen 与 PDF 的 Computer Use 像素对照未做；字体许可拒绝、超出支持的 DOCX 结构、透明/复杂图片细节及平台 fallback 差异可能阻止输出或需要继续验证。 |
 | 6. 原生打印 | 🟨 macOS 已接通；物理输出验收待完成 | `internal/printservice` 的 `Printer` 接口使用内存 PDF；macOS PDFKit/AppKit 通过 Cocoa 主队列显示原生打印面板，按原页面尺寸（不缩放、不自动旋转）输出；Word File > 打印先 flush 正文草稿、复用同 revision/page setup 的分页场景，提示布局 warning，生成与打印布局相同的 PDF 页并要求第二次确认。macOS 面板已用 Computer Use 打开，显示 1 页/1 份；取消后回到文档，DOCX dirty state 保留。Windows/Linux 与无 cgo 平台的打印入口禁用。 | 当前主机没有选中的打印机，实际 spool/纸面结果、多份和页码范围尚未验证；跨平台 adapter 未实现；Pen 节点 `Clpgm`/`kiBim`/`FsQrk` 的整体视觉 1:1 对照仍待阶段 7。禁止启动 LibreOffice、PDF 阅读器或打印 CLI。 |
-| 7. 统一验收 | 🟨 CUA 已载入重建样稿；1:1 视觉验收未完成 | 通过 Pencil MCP 核对 `Clpgm`、`kiBim`、`FsQrk`，并让 CUA 载入按节点可见正文重建的临时 DOCX。发现 DOCX 合法省略 `w:orient` 时适配器曾错误阻断分页；修复后同分支构建显示第 1 页/共 3 页、573 个字。Pen 显示 3 页/582 个字。 | 重建文件含补页文字且 word count 与 Pen 相差 9，不能视作原稿。CUA 视口为 1280×820 dp，Pen 为 1440×900 dp；两边尚无等价文档和同尺寸配对截图。第一屏标题蓝线、段间距和表头样式仍有差异；需要等价样稿后再核正文/页边距、`kiBim` 图标语义、窄窗口滚动/缩放及多页滚动。 |
+| 7. 统一验收 | 🟨 CUA 已载入重建样稿；1:1 视觉验收未完成 | Pencil 核对了 Clpgm、kiBim、FsQrk；2026-10-04 CUA 在 1280×820 dp 逻辑视口看到第 1 页/3 页、582 个字，状态栏值与 Pen 一致。打印布局页面为 900×600 dp，位置 x≈190、y≈181；随视口水平居中，与 Pen 1440×900 中 x=270、y=181 的规律一致。第一页显示标题、副标题、蓝色下边框、前三节及计划表；CUA 已确认蓝线位于副标题下方。 | 无同尺寸并排截图；当前样稿标题区与正文的纵向间距、正文换行点和表格外观仍可见不同，字体细节、`kiBim` 图标、窄窗口滚动/缩放和多页滚动也未完成检查。当前结果只能确认主要页面结构和部分几何，不是 1:1 验收。样稿由 Pen 可见内容重建，仍需以等价原始 DOCX 和 1440×900 视口复核。 |
 
 ### 当前技术栈边界与解决方案
 
@@ -274,9 +280,9 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 - [x] 高亮：支持 Word 标准命名色，连续流预览根据每行文字宽度绘制背景；不支持主题色和任意 RGB 高亮。
 - [x] 增加/减少缩进：普通段落左缩进按 0.5 英寸步进；列表段落通过安全的 `ilvl` 层级增减，层级 0–8。
 - [x] 查找：在单个可编辑 run 内不区分大小写地查找，滚动并选中命中项；不跨 run 和只读字段。
-- [ ] 选择；字数详情已接通。其他编号格式、自定义 restart/override、段前段后仍待实现。
+- [ ] 选择；字数详情已接通。其他编号格式、自定义 restart/override、段前段后仍待实现；段前/段后已有 DOCX 适配器写入能力，但 Ribbon 操作尚未接通。
 - [x] 分页符：在当前正文 caret 插入原生 DOCX 分页符；连续流视图仅显示标记，分页布局仍依赖分页引擎。
-- [ ] 表格、链接、书签、空白页、符号。
+- [ ] 封面、空白页、表格、链接、书签。
 - [x] 新建/打开/最近/另存为接入现有 workspace 流程；自动保存按文档开关并在提交编辑后异步写源文件；另存为取消及最近页切换均保留当前会话。
 
 ### P2：DOCX 页面属性与设计
@@ -293,7 +299,7 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 
 ## 验收标准
 
-- [ ] 99 个 Pen 常驻功能区命令逐项有明确状态：当前 44 项已接通，55 项待实现；已接通项须经过验证，未实现项保持不可操作，不留“看起来可点、实际无效”的按钮。
+- [ ] 99 个 Pen 常驻功能区命令逐项有明确状态：当前 46 项已接通，2 项已有 DOCX 适配器能力但 UI 未接通，51 项尚无可用实现；已接通项须经过验证，其他项保持不可操作，不留“看起来可点、实际无效”的按钮。
 - [ ] Word ribbon icon 使用 Excel 的共享图集和着色方式；正常、禁用、hover/active 状态与 Excel 一致。
 - [ ] Pen 的功能区标签、组名、分组顺序、图标语义和控件位置在 1440×900 对照尺寸保持；窄窗口可滚动且控件命中位置正确。
 - [ ] 保存类编辑先在临时 DOCX 上验证保存/重开；失败不丢 dirty 状态，未支持的 OOXML 内容不得静默丢弃。
@@ -318,4 +324,4 @@ Pen `Clpgm` 的底栏内容已核对：左侧依次显示“第 1 页，共 3 �
 - `internal/desktopui/word_status_bar.go`：`FsQrk` 状态栏；页码/总页数接真实结果，打印布局切换、缩小/放大和滑块拖动共用真实会话缩放状态。
 - `docs/office-support.md`：DOCX 当前支持范围、连续流边界和保存验证状态。
 
-静态尺寸验收记录：Pen `Word Document Editor` 参考画板为 1440×900，显示“第 1 页，共 3 页”、582 个字、中文(中国)、辅助功能状态，以及 42/34 dp 标签条、90 dp ribbon、33 dp 标尺、900×600 dp 纸张和 34 dp 底栏。文档标签 190×37 dp、6 dp 间距和加号菜单 x=526 dp 有几何用例；七个常驻标签的命令图标横坐标与组分割线由 `TestWordRibbonActionSlotsMatchPenNodeClpgm` 锁定。2026-10-03 用 Pencil MCP 实际读取并截图 `Clpgm`/`kiBim`/`FsQrk`，并用 CUA 检查同分支 Go 构建的 desktop 窗口。1280×820 dp 下顶栏和标尺高度匹配，900 dp 纸张居中于视口，底栏 34 dp 并右锚；按可见节点文字重建的临时样稿在修复省略 `w:orient` 误报后显示 3 页/573 字。Pen 是 3 页/582 字。重建 DOCX 含额外补页文字，第一屏标题线、段间距和表头样式不等价；页面坐标目前 x≈190 dp，而 Pen 为 x=270 dp。故尚无等价文档、匹配 1440×900 dp 视口配对截图，不能判定 1:1。截图只作为本轮 CUA/Pencil 内联结果，没有存放成可复用 PNG。macOS 打印面板曾通过 CUA 打开并取消，面板显示 1 页/1 份；这不代表 Pen 样稿或实际打印输出。DOCX、Word 编辑、分页/PDF/打印定向测试通过；最近的 `go test ./internal/desktopui -count=1` 暴露四个 Grid/typeface/geometry 失败和 `TestHomeFilterBarMatchesPenDimensions` 空夹具 panic；单独复跑还确认 `TestWordUpDownCrossesParagraphsAtPreferredVisualColumn` 仍失败。全量 UI 问题共 6 项，详情见 SDD ledger。
+静态尺寸验收记录：Pen Word Document Editor 参考画板为 1440×900，显示“第 1 页，共 3 页”、582 个字、中文(中国)、辅助功能状态，以及 42/34 dp 标签条、90 dp ribbon、33 dp 标尺、900×600 dp 纸张和 34 dp 底栏。文档标签 190×37 dp、6 dp 间距和加号菜单 x=526 dp 有几何用例；七个常驻标签的命令图标横坐标与组分割线由 TestWordRibbonActionSlotsMatchPenNodeClpgm 锁定。2026-10-04 CUA 使用当前源码 QA build，在 1280×820 dp 逻辑视口确认底栏显示 582 个字；点击“视图 → 打印布局”后，分页纸张为 900×600 dp，位置 x≈190 dp、y≈181 dp，当前截图已确认标题蓝色单线绘制在副标题下方。页面随视口水平居中，与 Pen 1440×900 下 x=270 dp、y=181 dp 的中心位置规律相符；第一页止于第三节表格，第四/五节由分页结果置于第 2/3 页。当前样稿与 Pen 仍有标题区纵向间距、正文换行和表格外观差异；无同尺寸并排截图，故不能判定 1:1。Pencil/Computer Use 截图只以内联形式检查，没有保存为可复用 PNG。macOS 打印面板曾通过 CUA 打开并取消，显示 1 页/1 份；不代表实际打印输出。Word 状态栏字数和 Ribbon 打印布局回归、当前源码 build 通过；最近的 go test ./internal/desktopui -count=1 仍暴露四个 Grid/typeface/geometry 失败和 TestHomeFilterBarMatchesPenDimensions 空夹具 panic；单独复跑还确认 TestWordUpDownCrossesParagraphsAtPreferredVisualColumn 失败。

@@ -114,9 +114,9 @@ func (a *App) queueWordParagraphSplit(runID, value string, selectionStart, selec
 		selectionEnd:   selectionEnd,
 	}
 	captureWordTextDraft(state, runID, value)
-	state.wordForceDraftFlush = true
-	state.wordFlushRequested = true
-	state.wordFlushAllDrafts = true
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
 	if !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
@@ -133,9 +133,9 @@ func (a *App) queueWordParagraphJoin(runID string, value string, direction docum
 	}
 	state.wordParagraphJoinIntent = &wordParagraphJoinIntent{runID: runID, direction: direction}
 	captureWordTextDraft(state, runID, value)
-	state.wordForceDraftFlush = true
-	state.wordFlushRequested = true
-	state.wordFlushAllDrafts = true
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
 	if !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
@@ -152,16 +152,19 @@ func (a *App) requestWordTextFlush(all bool) {
 	if state == nil || state.word == nil {
 		return
 	}
-	state.wordFlushRequested = true
-	state.wordFlushAllDrafts = state.wordFlushAllDrafts || all
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(state.wordFlushAllDrafts.Load() || all)
 	if !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
 }
 
 func (a *App) startNextWordTextCommit() {
-	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning.Load() || !state.wordFlushRequested {
+	a.startNextWordTextCommitFor(a.documentSessionState)
+}
+
+func (a *App) startNextWordTextCommitFor(state *documentSessionState) {
+	if state == nil || state.word == nil || state.formatRunning.Load() || !state.wordFlushRequested.Load() {
 		return
 	}
 	committed, drafts := state.wordTextStateSnapshot()
@@ -177,7 +180,7 @@ func (a *App) startNextWordTextCommit() {
 		if state.wordPageBreakIntent != nil && runID == state.wordPageBreakIntent.runID {
 			continue
 		}
-		if !state.wordFlushAllDrafts && runID == state.wordFocusedRunID {
+		if !state.wordFlushAllDrafts.Load() && runID == state.wordFocusedRunID {
 			continue
 		}
 		runIDs = append(runIDs, runID)
@@ -204,7 +207,7 @@ func (a *App) startNextWordTextCommit() {
 			a.finishWordTextFlush(state)
 			return
 		}
-		if state.wordFlushAllDrafts && wordHasPendingTextDrafts(state) {
+		if state.wordFlushAllDrafts.Load() && wordHasPendingTextDrafts(state) {
 			return
 		}
 		if wordHasPendingTextDrafts(state) {
@@ -218,7 +221,9 @@ func (a *App) startNextWordTextCommit() {
 	value, _ := state.wordDraft(runID)
 	editor, ok := any(state.word).(document.WordTextEditor)
 	if !ok {
-		state.wordFlushRequested = false
+		state.wordFlushRequested.Store(false)
+		state.wordFlushAllDrafts.Store(false)
+		state.clearPendingWordRestore()
 		state.wordParagraphJoinIntent = nil
 		a.status = "当前 DOCX 适配器不支持原位文字编辑"
 		return
@@ -237,8 +242,20 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 	if state == nil {
 		return
 	}
-	state.wordFlushRequested = false
-	state.wordFlushAllDrafts = false
+	state.wordFlushRequested.Store(false)
+	state.wordFlushAllDrafts.Store(false)
+	state.wordForceDraftFlush.Store(false)
+	if versionID, handled := state.claimWordRestoreAfterDrafts(); handled {
+		if versionID == 0 {
+			return
+		}
+		if !a.startRestoreWordVersionAfterDrafts(state, versionID) {
+			state.releaseWordRestoreClaim()
+			message := "恢复历史版本已取消，无法开始恢复，请重试"
+			a.publishWordRestoreNotice(state, message)
+		}
+		return
+	}
 	if state.wordParagraphSplitIntent != nil {
 		a.startWordParagraphSplit(state)
 		return
@@ -263,7 +280,9 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 	}
 	if state.wordSaveAfterDrafts {
 		state.wordSaveAfterDrafts = false
-		a.startSave()
+		reason := state.wordSaveAfterDraftsReason
+		state.wordSaveAfterDraftsReason = wordSaveManual
+		a.startSaveForReason(reason)
 		return
 	}
 	if state.wordInsertAfterDraftFlush {
@@ -290,8 +309,8 @@ func (a *App) startWordParagraphJoin(state *documentSessionState) {
 	joiner, ok := any(state.word).(document.WordParagraphJoiner)
 	if !ok {
 		state.wordParagraphJoinIntent = nil
-		state.wordFlushRequested = false
-		state.wordFlushAllDrafts = false
+		state.wordFlushRequested.Store(false)
+		state.wordFlushAllDrafts.Store(false)
 		a.status = "当前 DOCX 适配器不支持合并段落"
 		return
 	}
@@ -327,8 +346,8 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 		return
 	}
 	state.wordParagraphJoinIntent = nil
-	state.wordFlushRequested = false
-	state.wordFlushAllDrafts = false
+	state.wordFlushRequested.Store(false)
+	state.wordFlushAllDrafts.Store(false)
 	if result.err != nil {
 		if active {
 			a.status = wordCommandError(result.operation, result.err)
@@ -429,8 +448,8 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 	intent := state.wordParagraphSplitIntent
 	state.wordParagraphSplitIntent = nil
 	if result.err != nil {
-		state.wordFlushRequested = false
-		state.wordFlushAllDrafts = false
+		state.wordFlushRequested.Store(false)
+		state.wordFlushAllDrafts.Store(false)
 		if intent != nil {
 			captureWordTextDraft(state, intent.runID, intent.value)
 			if editor := state.wordRunEditors[intent.runID]; editor != nil {

@@ -17,6 +17,8 @@ type documentSessionState struct {
 	observedSessionRevision             atomic.Uint64
 	appliedSessionRevision              atomic.Uint64
 	appliedWordDraftEpoch               atomic.Uint64
+	appliedWordTextResetEpoch           atomic.Uint64
+	appliedWordRestoreErrorEpoch        atomic.Uint64
 	wordViewMode                        wordViewMode
 	wordPageFitMode                     bool
 	wordMultiplePagesMode               bool

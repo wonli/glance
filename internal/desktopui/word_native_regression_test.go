@@ -409,8 +409,8 @@ func TestWordRulerIndentMarkersPersistParagraphWidthChanges(t *testing.T) {
 		// Model the Word text flush that can start when the ruler takes focus while
 		// retaining the active pointer capture for this drag.
 		state.formatRunning.Store(true)
-		state.wordFlushRequested = true
-		state.wordFlushAllDrafts = true
+		state.wordFlushRequested.Store(true)
+		state.wordFlushAllDrafts.Store(true)
 		router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, PointerID: pointerID, Buttons: pointer.ButtonPrimary, Position: end})
 		frame()
 		if state.wordRulerIndentDragPreviewEMU == state.wordRulerIndentDragStartEMU {
@@ -664,7 +664,9 @@ func TestWordBlankEndClickInsertsAndFocusesEditableParagraph(t *testing.T) {
 	if state.wordRunDrafts[runID] != "typed at blank body" {
 		t.Fatalf("in-place run draft = %q", state.wordRunDrafts[runID])
 	}
-	state.wordForceDraftFlush, state.wordFlushRequested, state.wordFlushAllDrafts = true, true, true
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
 	frame()
 	select {
 	case result := <-app.wordCommandResults:
@@ -1234,8 +1236,8 @@ func TestWordParagraphJoinCompletionUpdatesInactiveSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.wordParagraphJoinIntent = &wordParagraphJoinIntent{runID: run.ID, direction: document.WordJoinPrevious}
-	state.wordFlushRequested = true
-	state.wordFlushAllDrafts = true
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
 	state.formatRunning.Store(true)
 	blocks := cloneWordBlockSnapshot(word.WordBlocks())
 	otherState := newDocumentSessionState("other.docx")
@@ -1255,8 +1257,8 @@ func TestWordParagraphJoinCompletionUpdatesInactiveSession(t *testing.T) {
 		joinCaret:       joined.Caret,
 	}
 	app.processAsyncResults()
-	if state.formatRunning.Load() || state.wordParagraphJoinIntent != nil || state.wordFlushRequested || state.wordFlushAllDrafts {
-		t.Fatalf("inactive session join remained pending: running=%v intent=%#v flush=%v/%v", state.formatRunning.Load(), state.wordParagraphJoinIntent, state.wordFlushRequested, state.wordFlushAllDrafts)
+	if state.formatRunning.Load() || state.wordParagraphJoinIntent != nil || state.wordFlushRequested.Load() || state.wordFlushAllDrafts.Load() {
+		t.Fatalf("inactive session join remained pending: running=%v intent=%#v flush=%v/%v", state.formatRunning.Load(), state.wordParagraphJoinIntent, state.wordFlushRequested.Load(), state.wordFlushAllDrafts.Load())
 	}
 	if len(state.wordBlocks) != 1 || state.wordBlocks[0].Paragraph == nil || state.wordBlocks[0].Paragraph.ID != joined.ParagraphID {
 		t.Fatalf("inactive session projection was not refreshed: %#v", state.wordBlocks)

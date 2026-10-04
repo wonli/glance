@@ -21,7 +21,7 @@ type preparedTableRow struct {
 	height float64
 }
 
-func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, styles *styleResolver, tableID string, table document.WordTable, area Rect) error {
+func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, styles *styleResolver, tableID string, table document.WordTable, area Rect, editorInsets bool) error {
 	if len(table.Rows) == 0 {
 		return nil
 	}
@@ -42,7 +42,7 @@ func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, style
 			preparedCell := preparedTableCell{cell: cell}
 			innerWidth := math.Max(1, cellWidth-tableCellPaddingPT*2)
 			for _, paragraph := range cell.Paragraphs {
-				prepared, err := prepareParagraph(ctx, shaper, styles, paragraph, paragraph.ID, innerWidth)
+				prepared, err := prepareParagraph(ctx, shaper, styles, paragraph, paragraph.ID, innerWidth, true, editorInsets)
 				if err != nil {
 					return err
 				}

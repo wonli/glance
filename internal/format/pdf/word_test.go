@@ -91,6 +91,32 @@ func TestWriteWordPDFReplaysPageGeometryAndSearchableText(t *testing.T) {
 	}
 }
 
+func TestWriteWordPDFReplaysParagraphBottomBorder(t *testing.T) {
+	result := wordlayout.Result{CanPreview: true, Pages: []wordlayout.PageScene{{
+		Clip: wordlayout.Rect{WidthPT: 100, HeightPT: 80},
+		ParagraphBorders: []wordlayout.ParagraphBorderPlacement{{
+			SourceID: "title", Style: "single", Color: "4F81BD",
+			Bounds: wordlayout.Rect{XPT: 20, YPT: 40, WidthPT: 60, HeightPT: 1},
+		}},
+	}}}
+	var output bytes.Buffer
+	if err := WriteWordPDF(context.Background(), &output, result, testResources{}, testResources{}); err != nil {
+		t.Fatalf("WriteWordPDF: %v", err)
+	}
+	reader, err := gopdf.NewReader(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, _, err := reader.RenderPageDetail(0, gopdf.RenderOpts{DPI: 72, IncludeVector: true})
+	if err != nil {
+		t.Fatalf("render generated PDF: %v", err)
+	}
+	got := color.NRGBAModel.Convert(rendered.At(40, 40)).(color.NRGBA)
+	if got.B < 150 || got.R < 40 || got.R > 140 || got.G < 80 || got.G > 180 {
+		t.Fatalf("paragraph border pixel = %v; want visible #4F81BD line", got)
+	}
+}
+
 func TestWriteWordPDFReplaysImageRectangle(t *testing.T) {
 	var encoded bytes.Buffer
 	fixture := image.NewRGBA(image.Rect(0, 0, 2, 1))

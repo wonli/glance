@@ -155,6 +155,12 @@ type WordTextEditor interface {
 	SetParagraphIndents(paragraphID string, leftEMU, rightEMU int64) error
 }
 
+// WordParagraphSpacingEditor patches direct before/after spacing in DOCX
+// twips. A nil value leaves that side and its inherited spacing untouched.
+type WordParagraphSpacingEditor interface {
+	SetParagraphSpacing(paragraphID string, beforeTwips, afterTwips *int64) error
+}
+
 // WordTextRangeEditor exposes safe replacement within one editable text run.
 // Offsets are Unicode rune indices, matching WordTextRun text selection.
 type WordTextRangeEditor interface {
@@ -255,4 +261,20 @@ type WordHistory interface {
 	Redo() (bool, error)
 	CanUndo() bool
 	CanRedo() bool
+}
+
+// WordPackageSnapshotter serializes the complete editable document package.
+type WordPackageSnapshotter interface {
+	Snapshot() ([]byte, error)
+}
+
+// WordPackageSnapshotSaver writes a package and returns the exact bytes committed.
+type WordPackageSnapshotSaver interface {
+	SaveWithSnapshot() ([]byte, error)
+	SaveAsDocumentWithSnapshot(path string) ([]byte, error)
+}
+
+// WordPackageSnapshotRestorer applies a complete package as one undoable edit.
+type WordPackageSnapshotRestorer interface {
+	RestoreSnapshot(snapshot []byte) error
 }

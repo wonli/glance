@@ -266,7 +266,32 @@ func parseWordParagraphLayout(properties *wordXMLNode) document.WordParagraphLay
 		layout.PageBreakBefore = toggleProperty(node)
 		layout.Set |= document.WordParagraphPageBreakBeforeSet
 	}
+	if borders := firstChild(properties, "pBdr"); borders != nil {
+		if bottom := firstChild(borders, "bottom"); bottom != nil {
+			layout.BottomBorder = parseWordParagraphBorder(bottom)
+			layout.Set |= document.WordParagraphBottomBorderSet
+		}
+	}
 	return layout
+}
+
+func parseWordParagraphBorder(node *wordXMLNode) document.WordParagraphBorder {
+	border := document.WordParagraphBorder{Style: strings.ToLower(attrValue(node, "val")), SizePT: 0.5}
+	if border.Style == "" {
+		border.Style = "single"
+	}
+	if value := attrValue(node, "sz"); value != "" {
+		if eighths, err := strconv.ParseFloat(value, 64); err == nil && eighths >= 0 {
+			border.SizePT = eighths / 8
+		}
+	}
+	if value := attrValue(node, "space"); value != "" {
+		if space, err := strconv.ParseFloat(value, 64); err == nil && space >= 0 {
+			border.SpacePT = space
+		}
+	}
+	border.Color = strings.ToUpper(attrValue(node, "color"))
+	return border
 }
 
 func wordCellWidthEMU(width *wordXMLNode) int64 {

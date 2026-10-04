@@ -3,6 +3,7 @@ package desktopui
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"gioui.org/layout"
 	"gioui.org/widget"
@@ -179,6 +180,67 @@ func TestWorkspaceTabsAreSharedButActiveTabIsPerWindow(t *testing.T) {
 	}
 }
 
+func TestWordHistoryPublishesSharedTextBeforeRevisionToOtherWindows(t *testing.T) {
+	fixture := newWindowViewFixture(t)
+	firstApp, firstView := fixture.apps[0], fixture.states[0]
+	secondView := fixture.states[1]
+	shared := fixture.shared[0]
+	run := firstEditableRunForWindowTest(t, firstView)
+	textEditor, ok := any(shared.word).(document.WordTextEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not support text edits")
+	}
+	if err := textEditor.ReplaceTextRun(run.ID, "old revision"); err != nil {
+		t.Fatal(err)
+	}
+	bold := true
+	if err := textEditor.SetTextRunStyle(run.ID, document.WordTextFormatPatch{Bold: &bold}); err != nil {
+		t.Fatal(err)
+	}
+	if err := textEditor.ReplaceTextRun(run.ID, "new revision"); err != nil {
+		t.Fatal(err)
+	}
+	blocks := shared.word.WordBlocks()
+	firstView.setWordBlocks(blocks)
+	shared.replaceWordTextState(blocks)
+	resetEpoch := shared.wordTextResetEpoch.Load()
+	revision := shared.wordRevisionAtomic.Load()
+	for _, view := range []*documentSessionState{firstView, secondView} {
+		view.appliedWordTextResetEpoch.Store(resetEpoch)
+		view.appliedSessionRevision.Store(revision)
+	}
+	secondView.selectedWordRunID = run.ID
+	secondEditor := wordRunEditor(secondView, run)
+	secondEditor.SetText("new revision")
+
+	firstApp.applyWordHistory(true)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && secondView.observedSessionRevision.Load() <= revision {
+		time.Sleep(time.Millisecond)
+	}
+	if secondView.observedSessionRevision.Load() <= revision {
+		t.Fatal("other window did not receive the history revision")
+	}
+	committed, drafts := secondView.wordTextStateSnapshot()
+	if committed[run.ID] != "old revision" {
+		t.Fatalf("shared committed text at revision broadcast = %q; want old revision (run=%q committed=%v drafts=%v blocks=%#v)", committed[run.ID], run.ID, committed, drafts, wordBlocksForState(secondView))
+	}
+	currentBlocks := wordBlocksForState(secondView)
+	runs := make(map[string]document.WordTextRun)
+	for _, paragraph := range allWordParagraphs(currentBlocks) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text != nil && inline.Text.Editable {
+				runs[inline.Text.ID] = *inline.Text
+			}
+		}
+	}
+	forceTextSync := secondView.appliedWordTextResetEpoch.Load() != shared.wordTextResetEpoch.Load()
+	syncWordRunEditors(secondView, runs, committed, drafts, func(editor *widget.Editor) bool { return editor == secondEditor }, forceTextSync)
+	if secondEditor.Text() != "old revision" {
+		t.Fatalf("focused editor in other window after history revision = %q; want old revision", secondEditor.Text())
+	}
+}
+
 func TestClosingDocumentTabDetachesEveryView(t *testing.T) {
 	fixture := newWindowViewFixture(t)
 	fixture.apps[0].closeWorkspaceTabNow(fixture.ids[0])
@@ -240,5 +302,27 @@ func TestWordNewWindowAttachesToLiveSessionDuringPendingWork(t *testing.T) {
 	}
 	if len(fixture.runtime.collection.Tabs()) != beforeTabs || len(fixture.runtime.sessions) != beforeSessions {
 		t.Fatalf("attaching a view changed workspace/session counts: tabs %d/%d sessions %d/%d", len(fixture.runtime.collection.Tabs()), beforeTabs, len(fixture.runtime.sessions), beforeSessions)
+	}
+}
+
+func TestWordTextResetForcesFocusedEditorsToSync(t *testing.T) {
+	fixture := newWindowViewFixture(t)
+	state := fixture.states[0]
+	run := firstEditableRunForWindowTest(t, state)
+	editor := wordRunEditor(state, run)
+	editor.SetText("stale draft")
+	restoredRun := run
+	restoredRun.Text = "restored text"
+	runs := map[string]document.WordTextRun{run.ID: restoredRun}
+	committed := map[string]string{run.ID: restoredRun.Text}
+	focused := func(*widget.Editor) bool { return true }
+
+	syncWordRunEditors(state, runs, committed, nil, focused, false)
+	if editor.Text() != "stale draft" {
+		t.Fatalf("ordinary focused sync replaced in-progress text with %q", editor.Text())
+	}
+	syncWordRunEditors(state, runs, committed, nil, focused, true)
+	if editor.Text() != restoredRun.Text {
+		t.Fatalf("forced focused sync left stale text %q; want %q", editor.Text(), restoredRun.Text)
 	}
 }

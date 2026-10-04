@@ -202,6 +202,51 @@ func TestLayoutAppliesCharacterStyleInheritanceToRun(t *testing.T) {
 	}
 }
 
+func TestLayoutPlacesInheritedParagraphBottomBorder(t *testing.T) {
+	paragraph := document.WordParagraph{ID: "p0", Style: "Title", Alignment: document.WordAlignDefault, Inlines: []document.WordInline{{
+		Kind: document.WordTextInline,
+		Text: &document.WordTextRun{ID: "r0", Text: "Title", Editable: true},
+	}}}
+	next := paragraphBlock("p1", "Next", document.WordTextStyle{FontSize: 10})
+	following := paragraphBlock("p2", "Following", document.WordTextStyle{FontSize: 10})
+	input := layoutTestInput(160, 120, 10,
+		document.WordBlock{ID: "p0", Kind: document.WordParagraphBlock, Paragraph: &paragraph},
+		next,
+		following,
+	)
+	input.EditorParagraphInsets = true
+	input.Layout.Defaults.Text = document.WordTextStyle{FontFamily: "Test Sans", FontSize: 10}
+	input.Layout.Defaults.TextSet = document.WordTextFontFamilySet | document.WordTextFontSizeSet
+	input.Layout.Styles = []document.WordStyle{{
+		ID: "Title",
+		Paragraph: document.WordParagraphLayout{
+			BottomBorder: document.WordParagraphBorder{Style: "single", SizePT: 1, SpacePT: 5, Color: "4F81BD"},
+			Set:          document.WordParagraphBottomBorderSet,
+		},
+	}}
+	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Pages) != 1 || len(result.Pages[0].ParagraphBorders) != 1 {
+		t.Fatalf("paragraph borders = %+v; want one border on one page", result.Pages)
+	}
+	border := result.Pages[0].ParagraphBorders[0]
+	if border.SourceID != "p0" || border.Style != "single" || border.Color != "4F81BD" || border.Bounds != (Rect{XPT: 10, YPT: 51.5, WidthPT: 140, HeightPT: 1}) {
+		t.Fatalf("paragraph border placement = %+v; want inherited blue 1pt bottom line after the padded next paragraph at x=10 y=51.5", border)
+	}
+	var followingText *TextFragment
+	for index := range result.Pages[0].Text {
+		if result.Pages[0].Text[index].RunID == "p2.run" {
+			followingText = &result.Pages[0].Text[index]
+			break
+		}
+	}
+	if followingText == nil || followingText.BaselineYPT <= border.Bounds.YPT+border.Bounds.HeightPT {
+		t.Fatalf("following paragraph baseline = %+v; it must follow the bottom border", followingText)
+	}
+}
+
 func TestLayoutListsInlineImagesAndPageBreaks(t *testing.T) {
 	paragraph := document.WordParagraph{ID: "p0", ListKind: document.WordListBullet, ListMarker: "•", Alignment: document.WordAlignDefault}
 	paragraph.Inlines = []document.WordInline{

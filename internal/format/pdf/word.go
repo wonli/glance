@@ -87,6 +87,17 @@ func WriteWordPDF(ctx context.Context, dst io.Writer, result wordlayout.Result, 
 			}
 			drawCellBorder(page, cell.Bounds)
 		}
+		for _, border := range scene.ParagraphBorders {
+			if err := validateParagraphBorder(border); err != nil {
+				return fmt.Errorf("Word page %d paragraph %q border: %w", pageIndex+1, border.SourceID, err)
+			}
+			page.Push()
+			page.SetStrokeColor(textColor(border.Color))
+			page.SetLineWidth(border.Bounds.HeightPT)
+			y := border.Bounds.YPT + border.Bounds.HeightPT/2
+			page.Line(border.Bounds.XPT, y, border.Bounds.XPT+border.Bounds.WidthPT, y)
+			page.Pop()
+		}
 		for _, fragment := range scene.Text {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -313,6 +324,16 @@ func validatePage(scene wordlayout.PageScene) error {
 func validateRect(rect wordlayout.Rect) error {
 	if !finite(rect.XPT) || !finite(rect.YPT) || !finite(rect.WidthPT) || !finite(rect.HeightPT) || rect.WidthPT < 0 || rect.HeightPT < 0 {
 		return errors.New("invalid point geometry")
+	}
+	return nil
+}
+
+func validateParagraphBorder(border wordlayout.ParagraphBorderPlacement) error {
+	if err := validateRect(border.Bounds); err != nil {
+		return err
+	}
+	if border.Style != "single" || border.Bounds.WidthPT <= 0 || border.Bounds.HeightPT <= 0 {
+		return errors.New("unsupported or empty paragraph border")
 	}
 	return nil
 }

@@ -49,9 +49,9 @@ func (a *App) queueWordPageBreak() {
 	}
 	state.wordPageBreakIntent = &wordPageBreakIntent{runID: run.ID, value: value, selectionStart: start, selectionEnd: end}
 	captureWordTextDraft(state, run.ID, value)
-	state.wordForceDraftFlush = true
-	state.wordFlushRequested = true
-	state.wordFlushAllDrafts = true
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
 	if !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
@@ -64,8 +64,8 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 	editor, ok := any(state.word).(document.WordPageBreakEditor)
 	if !ok {
 		state.wordPageBreakIntent = nil
-		state.wordFlushRequested = false
-		state.wordFlushAllDrafts = false
+		state.wordFlushRequested.Store(false)
+		state.wordFlushAllDrafts.Store(false)
 		a.status = "当前 DOCX 适配器不支持插入分页符"
 		return
 	}
@@ -73,8 +73,8 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 	prefix, _, valid := wordTextAroundSelection(intent.value, intent.selectionStart, intent.selectionEnd)
 	if !valid {
 		state.wordPageBreakIntent = nil
-		state.wordFlushRequested = false
-		state.wordFlushAllDrafts = false
+		state.wordFlushRequested.Store(false)
+		state.wordFlushAllDrafts.Store(false)
 		a.status = "无法按当前光标位置插入分页符，请重试"
 		return
 	}
@@ -110,8 +110,8 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	}
 	intent := state.wordPageBreakIntent
 	state.wordPageBreakIntent = nil
-	state.wordFlushRequested = false
-	state.wordFlushAllDrafts = false
+	state.wordFlushRequested.Store(false)
+	state.wordFlushAllDrafts.Store(false)
 	if result.err != nil {
 		if intent != nil {
 			captureWordTextDraft(state, intent.runID, intent.value)

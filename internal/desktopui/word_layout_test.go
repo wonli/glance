@@ -17,6 +17,7 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
+	"glance/internal/wordlayout"
 )
 
 func TestWordListMarkerGutterFitsLongAndNestedMarkers(t *testing.T) {
@@ -28,6 +29,34 @@ func TestWordListMarkerGutterFitsLongAndNestedMarkers(t *testing.T) {
 	}
 	if got := wordListMarkerWidthDP(document.WordParagraph{ListMarker: "1.1.", ListLevel: 1}); got != 66 {
 		t.Fatalf("nested numbering marker gutter = %d dp; want 66", got)
+	}
+}
+
+func TestWordContinuousBottomBorderFollowsTheSubtitleParagraph(t *testing.T) {
+	border := document.WordParagraphBorder{Style: "single", SizePT: 1, SpacePT: 5, Color: "4F81BD"}
+	title := document.WordParagraph{ID: "title", Layout: document.WordParagraphLayout{BottomBorder: border, Set: document.WordParagraphBottomBorderSet}}
+	subtitle := document.WordParagraph{ID: "subtitle"}
+	blocks := []document.WordBlock{
+		{ID: "b0", Kind: document.WordParagraphBlock, Paragraph: &title},
+		{ID: "b1", Kind: document.WordParagraphBlock, Paragraph: &subtitle},
+	}
+	if _, hasBorder := wordContinuousParagraphBottomBorder(blocks, 0); hasBorder {
+		t.Fatal("border rendered under the title; Pen places it after the subtitle")
+	}
+	got, hasBorder := wordContinuousParagraphBottomBorder(blocks, 1)
+	if !hasBorder || got != border {
+		t.Fatalf("subtitle bottom border = %+v, present=%t; want title's blue line", got, hasBorder)
+	}
+}
+
+func TestWordCanvasUsesDocumentPageMargins(t *testing.T) {
+	state := newDocumentSessionState("sample.docx")
+	state.wordLayoutResult = &wordlayout.Result{Pages: []wordlayout.PageScene{{
+		PageSetup: document.WordPageSetup{MarginLeftPT: 67.5, MarginRightPT: 67.5, MarginTopPT: 50},
+	}}}
+	left, right, top := wordCanvasPageMarginsDP(layout.Context{}, state)
+	if left != 90 || right != 90 || top != 67 {
+		t.Fatalf("canvas margins = left %d, right %d, top %d dp; want 90, 90, 67", left, right, top)
 	}
 }
 

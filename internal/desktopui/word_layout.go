@@ -174,8 +174,8 @@ func selectWordImage(state *documentSessionState, imageID string) bool {
 		return false
 	}
 	if wordHasPendingTextDrafts(state) {
-		state.wordForceDraftFlush = true
-		state.wordFlushAllDrafts = true
+		state.wordForceDraftFlush.Store(true)
+		state.wordFlushAllDrafts.Store(true)
 	}
 	state.selectedWordRunID = ""
 	state.selectedWordImageID = imageID
@@ -294,20 +294,20 @@ func (a *App) layoutWordFlow(gtx layout.Context) layout.Dimensions {
 	state.wordNavLayouts = state.wordNavLayoutsNext
 	state.wordNavLayoutsNext = nil
 	if focused := state.wordLayoutFocusedRunID; focused != "" {
-		if wordHasPendingTextDrafts(state) && (focused != state.wordFocusedRunID || state.wordForceDraftFlush) {
-			state.wordFlushRequested = true
-			state.wordFlushAllDrafts = state.wordFlushAllDrafts || state.wordForceDraftFlush
+		if wordHasPendingTextDrafts(state) && (focused != state.wordFocusedRunID || state.wordForceDraftFlush.Load()) {
+			state.wordFlushRequested.Store(true)
+			state.wordFlushAllDrafts.Store(state.wordFlushAllDrafts.Load() || state.wordForceDraftFlush.Load())
 		}
 		state.wordFocusedRunID = focused
 	} else {
 		if wordHasPendingTextDrafts(state) {
-			state.wordFlushRequested = true
-			state.wordFlushAllDrafts = true
+			state.wordFlushRequested.Store(true)
+			state.wordFlushAllDrafts.Store(true)
 		}
 		state.wordFocusedRunID = ""
 	}
-	state.wordForceDraftFlush = false
-	if state.wordFlushRequested && !state.formatRunning.Load() {
+	state.wordForceDraftFlush.Store(false)
+	if state.wordFlushRequested.Load() && !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
 	return dimensions
@@ -353,6 +353,7 @@ func (a *App) layoutWordCanvas(gtx layout.Context, state *documentSessionState, 
 	} else {
 		a.updateWordCanvasResize(gtx, state, canvasLeftPx, canvasLeftPx+canvasWidthPx)
 	}
+	pageMarginLeftDP, pageMarginRightDP, pageMarginTopDP := wordCanvasPageMarginsDP(gtx, state)
 	paperTop, paperBottom := 0, 0
 	pageHeight := gtx.Constraints.Max.Y
 	if !webMode {
@@ -388,10 +389,13 @@ func (a *App) layoutWordCanvas(gtx layout.Context, state *documentSessionState, 
 							layoutWidthPx = max(0, layoutWidthPx)
 							gtx.Constraints.Min.X, gtx.Constraints.Max.X = layoutWidthPx, layoutWidthPx
 							gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = pageHeight, pageHeight
-							margin := wordPageHorizontalMargin(layoutWidthPx, gtx.Dp(unit.Dp(72)))
+							marginLeft, marginRight := gtx.Dp(unit.Dp(pageMarginLeftDP)), gtx.Dp(unit.Dp(pageMarginRightDP))
+							marginTopDP := pageMarginTopDP
 							if webMode {
 								canvasWidthDP := int(float32(layoutWidthPx) / max32(0.1, gtx.Metric.PxPerDp))
-								margin = gtx.Dp(unit.Dp(wordWebContentInset(canvasWidthDP)))
+								webMargin := gtx.Dp(unit.Dp(wordWebContentInset(canvasWidthDP)))
+								marginLeft, marginRight = webMargin, webMargin
+								marginTopDP = 0
 							}
 							return layout.Background{}.Layout(gtx,
 								func(gtx layout.Context) layout.Dimensions {
@@ -409,7 +413,7 @@ func (a *App) layoutWordCanvas(gtx layout.Context, state *documentSessionState, 
 									return layout.Dimensions{Size: gtx.Constraints.Max}
 								},
 								func(gtx layout.Context) layout.Dimensions {
-									return layout.Inset{Top: unit.Dp(28), Bottom: unit.Dp(28), Left: unit.Dp(margin), Right: unit.Dp(margin)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Top: unit.Dp(float32(marginTopDP)), Bottom: unit.Dp(28), Left: unit.Dp(float32(marginLeft) / max32(0.1, gtx.Metric.PxPerDp)), Right: unit.Dp(float32(marginRight) / max32(0.1, gtx.Metric.PxPerDp))}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										return a.layoutWordList(gtx, state, blocks)
 									})
 								},
@@ -484,6 +488,17 @@ func (a *App) layoutWordCanvas(gtx layout.Context, state *documentSessionState, 
 	return dimensions
 }
 
+func wordCanvasPageMarginsDP(gtx layout.Context, state *documentSessionState) (left, right, top int) {
+	setup := defaultWordPageSetup
+	if state != nil && state.wordLayoutResult != nil && len(state.wordLayoutResult.Pages) > 0 {
+		setup = state.wordLayoutResult.Pages[0].PageSetup
+	}
+	pointsToDP := func(points float64) int {
+		return int(math.Round(points * (4.0 / 3.0)))
+	}
+	return pointsToDP(setup.MarginLeftPT), pointsToDP(setup.MarginRightPT), pointsToDP(setup.MarginTopPT)
+}
+
 func (a *App) updateWordCanvasResize(gtx layout.Context, state *documentSessionState, left, right int) {
 	for event, ok := state.wordCanvasResizeDrag.Update(gtx.Metric, gtx.Source, gesture.Both); ok; event, ok = state.wordCanvasResizeDrag.Update(gtx.Metric, gtx.Source, gesture.Both) {
 		state.wordCanvasContentClickHandled = true
@@ -525,8 +540,37 @@ func (a *App) layoutWordList(gtx layout.Context, state *documentSessionState, bl
 		if index == len(blocks) {
 			return a.layoutWordAppendTarget(gtx, state)
 		}
+		if blocks[index].Kind == document.WordParagraphBlock && blocks[index].Paragraph != nil {
+			border, hasBorder := wordContinuousParagraphBottomBorder(blocks, index)
+			return a.layoutWordParagraphWithBottomBorder(gtx, *blocks[index].Paragraph, false, border, hasBorder)
+		}
 		return a.layoutWordBlock(gtx, blocks[index])
 	})
+}
+
+func wordContinuousParagraphBottomBorder(blocks []document.WordBlock, index int) (document.WordParagraphBorder, bool) {
+	if index < 0 || index >= len(blocks) || blocks[index].Paragraph == nil {
+		return document.WordParagraphBorder{}, false
+	}
+	paragraph := blocks[index].Paragraph
+	currentSet := paragraph.Layout.Set&document.WordParagraphBottomBorderSet != 0
+	if currentSet && paragraphBottomBorderVisible(paragraph.Layout.BottomBorder) {
+		if index+1 < len(blocks) && blocks[index+1].Kind == document.WordParagraphBlock && blocks[index+1].Paragraph != nil && blocks[index+1].Paragraph.Layout.Set&document.WordParagraphBottomBorderSet == 0 {
+			return document.WordParagraphBorder{}, false
+		}
+		return paragraph.Layout.BottomBorder, true
+	}
+	if !currentSet && index > 0 && blocks[index-1].Kind == document.WordParagraphBlock && blocks[index-1].Paragraph != nil {
+		previous := blocks[index-1].Paragraph
+		if previous.Layout.Set&document.WordParagraphBottomBorderSet != 0 && paragraphBottomBorderVisible(previous.Layout.BottomBorder) {
+			return previous.Layout.BottomBorder, true
+		}
+	}
+	return document.WordParagraphBorder{}, false
+}
+
+func paragraphBottomBorderVisible(border document.WordParagraphBorder) bool {
+	return border.Style != "none" && border.Style != "nil" && border.SizePT > 0
 }
 
 func wordListViewportRange(position layout.Position, elements, viewportSize int) (start, end float32) {
@@ -565,10 +609,10 @@ func (a *App) layoutWordAppendTarget(gtx layout.Context, state *documentSessionS
 			clearWordImageSelection(state)
 			gtx.Execute(key.FocusCmd{Tag: &state.wordAppendTarget})
 		} else if !state.wordInsertionRunning {
-			state.wordForceDraftFlush = true
+			state.wordForceDraftFlush.Store(true)
 			state.wordInsertAfterDraftFlush = true
-			state.wordFlushRequested = true
-			state.wordFlushAllDrafts = true
+			state.wordFlushRequested.Store(true)
+			state.wordFlushAllDrafts.Store(true)
 		}
 	}
 	return state.wordAppendTarget.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -665,6 +709,10 @@ func wordMeasuredBackground(gtx layout.Context, fill color.NRGBA, child func(lay
 }
 
 func (a *App) layoutWordParagraph(gtx layout.Context, paragraph document.WordParagraph, inCell bool) layout.Dimensions {
+	return a.layoutWordParagraphWithBottomBorder(gtx, paragraph, inCell, paragraph.Layout.BottomBorder, paragraph.Layout.Set&document.WordParagraphBottomBorderSet != 0)
+}
+
+func (a *App) layoutWordParagraphWithBottomBorder(gtx layout.Context, paragraph document.WordParagraph, inCell bool, border document.WordParagraphBorder, hasBorder bool) layout.Dimensions {
 	children := make([]wordInlineLayoutChild, 0, len(paragraph.Inlines))
 	leftIndentEMU, rightIndentEMU := wordRulerParagraphIndents(a.documentSessionState, paragraph)
 	leftIndentDP := max(0, int(math.Round(float64(leftIndentEMU)/float64(wordEMUPerDP))))
@@ -712,7 +760,7 @@ func (a *App) layoutWordParagraph(gtx layout.Context, paragraph document.WordPar
 	if inCell {
 		spacing = unit.Dp(3)
 	}
-	return layout.Inset{Top: unit.Dp(5), Bottom: spacing, Left: unit.Dp(leftIndentDP), Right: unit.Dp(rightIndentDP)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	dimensions := layout.Inset{Top: unit.Dp(5), Bottom: spacing, Left: unit.Dp(leftIndentDP), Right: unit.Dp(rightIndentDP)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		flow := func(gtx layout.Context) layout.Dimensions {
 			return layoutWordInlineFlow(gtx, a.documentSessionState, paragraph.Alignment, children)
 		}
@@ -732,6 +780,21 @@ func (a *App) layoutWordParagraph(gtx layout.Context, paragraph document.WordPar
 			layout.Flexed(1, flow),
 		)
 	})
+	if hasBorder && paragraphBottomBorderVisible(border) {
+		pixelsPerPoint := float64(gtx.Metric.PxPerDp) * (4.0 / 3.0)
+		space := int(math.Round(border.SpacePT * pixelsPerPoint))
+		thickness := max(1, int(math.Ceil(border.SizePT*pixelsPerPoint)))
+		y := dimensions.Size.Y - gtx.Dp(spacing) - space
+		width := max(0, gtx.Constraints.Max.X-leftIndentPX-rightIndentPX)
+		if width > 0 && y >= 0 {
+			ink, ok := parseWordRunColor(border.Color)
+			if !ok {
+				ink = color.NRGBA{A: 255}
+			}
+			paint.FillShape(gtx.Ops, ink, clip.Rect{Min: image.Pt(leftIndentPX, y), Max: image.Pt(leftIndentPX+width, y+thickness)}.Op())
+		}
+	}
+	return dimensions
 }
 
 func layoutWordPageBreak(gtx layout.Context, theme *material.Theme, pageBreak document.WordPageBreak) layout.Dimensions {
@@ -760,7 +823,7 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	focusTargetPending := state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != run.ID
 	paragraphSplitPending := state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID
 	paragraphJoinPending := state.wordParagraphJoinIntent != nil
-	editor.ReadOnly = state.wordReadingMode || !run.Editable || a.isSaving() || paragraphSplitPending || paragraphJoinPending || focusTargetPending
+	editor.ReadOnly = state.wordReadingMode || !run.Editable || state.formatRunning.Load() || a.isSaving() || paragraphSplitPending || paragraphJoinPending || focusTargetPending
 	selectionStartBeforeUpdate, selectionEndBeforeUpdate := editor.Selection()
 	if !editor.ReadOnly {
 		if a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {

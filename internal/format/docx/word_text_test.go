@@ -1116,6 +1116,97 @@ func TestWordParagraphIndentsRoundTripAndPreserveOtherParagraphProperties(t *tes
 	}
 }
 
+func TestWordParagraphSpacingRoundTripsAndPreservesOtherProperties(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:keepNext/><w:contextualSpacing/><w:spacing w:before="120" w:after="360" w:beforeLines="20" w:afterAutospacing="1" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:t>spaced</w:t></w:r></w:p></w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	paragraph := doc.WordBlocks()[0].Paragraph
+	editor, ok := any(doc).(document.WordParagraphSpacingEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose paragraph spacing edits")
+	}
+	before, after := int64(480), int64(0)
+	if err := editor.SetParagraphSpacing(paragraph.ID, &before, &after); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "spaced.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	got := reopened.WordBlocks()[0].Paragraph.Layout
+	if got.BeforePT != 24 || got.AfterPT != 0 {
+		t.Fatalf("reopened paragraph spacing = %g/%g pt; want 24/0 pt", got.BeforePT, got.AfterPT)
+	}
+	if got.Set&document.WordParagraphBeforeSet == 0 || got.Set&document.WordParagraphAfterSet == 0 {
+		t.Fatalf("reopened spacing mask = %b; both direct values should be explicit", got.Set)
+	}
+	snapshot, err := reopened.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedXML := readZipPart(t, snapshot, "word/document.xml")
+	for _, preserved := range [][]byte{[]byte(`<w:keepNext/>`), []byte(`<w:contextualSpacing/>`), []byte(`w:line="240"`), []byte(`w:lineRule="auto"`), []byte(`w:before="480"`), []byte(`w:after="0"`)} {
+		if !bytes.Contains(savedXML, preserved) {
+			t.Errorf("spacing edit did not preserve or write %s in document.xml: %s", preserved, savedXML)
+		}
+	}
+	for _, removed := range [][]byte{[]byte(`w:beforeLines=`), []byte(`w:afterAutospacing=`)} {
+		if bytes.Contains(savedXML, removed) {
+			t.Errorf("spacing edit kept conflicting attribute %s: %s", removed, savedXML)
+		}
+	}
+}
+
+type wordParagraphSpacingPatcher interface {
+	SetParagraphSpacing(paragraphID string, beforeTwips, afterTwips *int64) error
+}
+
+func TestWordParagraphSpacingPatchLeavesUnchangedSideAlone(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:spacing w:beforeLines="20" w:after="360" w:afterAutospacing="1" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:t>spaced</w:t></w:r></w:p></w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	paragraph := doc.WordBlocks()[0].Paragraph
+	editor, ok := any(doc).(wordParagraphSpacingPatcher)
+	if !ok {
+		t.Fatal("DOCX adapter cannot patch only one paragraph spacing value")
+	}
+	before := int64(480)
+	if err := editor.SetParagraphSpacing(paragraph.ID, &before, nil); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "partial-spacing.docx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	got := reopened.WordBlocks()[0].Paragraph.Layout
+	if got.BeforePT != 24 || got.AfterPT != 18 {
+		t.Fatalf("reopened spacing = %g/%g pt; want 24/18 pt", got.BeforePT, got.AfterPT)
+	}
+	snapshot, err := reopened.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedXML := readZipPart(t, snapshot, "word/document.xml")
+	for _, preserved := range [][]byte{[]byte(`w:before="480"`), []byte(`w:after="360"`), []byte(`w:afterAutospacing="1"`), []byte(`w:line="240"`), []byte(`w:lineRule="auto"`)} {
+		if !bytes.Contains(savedXML, preserved) {
+			t.Errorf("one-sided spacing edit did not preserve or write %s: %s", preserved, savedXML)
+		}
+	}
+	if bytes.Contains(savedXML, []byte(`w:beforeLines=`)) {
+		t.Errorf("one-sided spacing edit retained the overridden before-lines value: %s", savedXML)
+	}
+}
+
 func TestWordParagraphListsRoundTripContinuityAndPreserveOtherPackageParts(t *testing.T) {
 	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>first</w:t></w:r></w:p><w:p><w:r><w:t>second</w:t></w:r></w:p><w:p><w:r><w:t>between</w:t></w:r></w:p><w:p><w:r><w:t>bullet</w:t></w:r></w:p><w:p><w:r><w:t>restart</w:t></w:r></w:p></w:body></w:document>`
 	preservedPart := []byte("keep me byte-for-byte")

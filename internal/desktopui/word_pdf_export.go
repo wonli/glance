@@ -39,9 +39,9 @@ func (a *App) requestWordPDFExport() {
 	}
 	if wordHasPendingTextDrafts(state) {
 		state.wordPDFExportAfterDrafts = true
-		state.wordForceDraftFlush = true
-		state.wordFlushRequested = true
-		state.wordFlushAllDrafts = true
+		state.wordForceDraftFlush.Store(true)
+		state.wordFlushRequested.Store(true)
+		state.wordFlushAllDrafts.Store(true)
 		a.status = "正在提交正文编辑，然后准备 PDF…"
 		a.startNextWordTextCommit()
 		return
@@ -53,11 +53,11 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 	if state == nil || state.word == nil || state.closed.Load() || state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning || state.wordPDFExportRunning {
 		return
 	}
-	if wordHasPendingTextDrafts(state) || state.wordFlushRequested {
+	if wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
 		state.wordPDFExportAfterDrafts = true
-		state.wordForceDraftFlush = true
-		state.wordFlushRequested = true
-		state.wordFlushAllDrafts = true
+		state.wordForceDraftFlush.Store(true)
+		state.wordFlushRequested.Store(true)
+		state.wordFlushAllDrafts.Store(true)
 		a.startNextWordTextCommit()
 		return
 	}
@@ -120,7 +120,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		a.status = "PDF 导出状态已过期，请重新导出"
 		return
 	}
-	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested || state.formatRunning.Load() {
+	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
 		a.status = "文档在选择保存位置期间已更改，未导出 PDF；请重新导出"
 		return
 	}
@@ -314,6 +314,7 @@ func cloneWordLayoutResult(result wordlayout.Result) wordlayout.Result {
 		}
 		pageClone.Images = append([]wordlayout.ImagePlacement(nil), page.Images...)
 		pageClone.TableCells = append([]wordlayout.TableCellPlacement(nil), page.TableCells...)
+		pageClone.ParagraphBorders = append([]wordlayout.ParagraphBorderPlacement(nil), page.ParagraphBorders...)
 		clone.Pages[pageIndex] = pageClone
 	}
 	if result.Locations != nil {

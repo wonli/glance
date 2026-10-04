@@ -149,6 +149,78 @@ func (d *Document) Snapshot() ([]byte, error) {
 	return d.packageBytes()
 }
 
+// RestoreSnapshot atomically applies a complete DOCX package as one history edit.
+// Parsing is completed before current document state is touched. Failed parsing
+// or projection leaves package data, UI projections, dirty state, and history intact.
+func (d *Document) RestoreSnapshot(snapshot []byte) error {
+	target, err := OpenSnapshot(snapshot)
+	if err != nil {
+		return err
+	}
+	defer target.Close()
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+
+	names := append(packagePartNames(d.parts), packagePartNames(target.parts)...)
+	before := d.captureWordHistoryLocked(names...)
+	before.force = true
+
+	previous := d.snapshotProjectionLocked()
+	previousParts, previousDocumentIdx := d.parts, d.documentIdx
+	d.parts = clonePackageParts(target.parts)
+	d.documentIdx = packagePartIndex(d.parts, "word/document.xml")
+	if err := d.reparse(); err != nil {
+		d.parts, d.documentIdx = previousParts, previousDocumentIdx
+		d.restoreProjectionLocked(previous)
+		return fmt.Errorf("restore DOCX snapshot: %w", err)
+	}
+	d.recordWordHistoryLocked(before)
+	return nil
+}
+
+type wordProjectionState struct {
+	blocks               []Block
+	spans                [][]textSpan
+	wordBlocks           []document.WordBlock
+	wordLayoutData       document.WordLayoutData
+	wordImages           map[string]int
+	wordImageTargets     map[string]wordImageTarget
+	wordInlineTargets    map[string]wordInlineTarget
+	wordParagraphInlines map[string][]string
+	wordTextTargets      map[string]wordTextTarget
+	wordParagraphTargets map[string]*wordXMLNode
+}
+
+func (d *Document) snapshotProjectionLocked() wordProjectionState {
+	return wordProjectionState{
+		blocks: d.blocks, spans: d.spans, wordBlocks: d.wordBlocks,
+		wordLayoutData: d.wordLayoutData, wordImages: d.wordImages,
+		wordImageTargets: d.wordImageTargets, wordInlineTargets: d.wordInlineTargets,
+		wordParagraphInlines: d.wordParagraphInlines, wordTextTargets: d.wordTextTargets,
+		wordParagraphTargets: d.wordParagraphTargets,
+	}
+}
+
+func (d *Document) restoreProjectionLocked(state wordProjectionState) {
+	d.blocks, d.spans, d.wordBlocks = state.blocks, state.spans, state.wordBlocks
+	d.wordLayoutData = state.wordLayoutData
+	d.wordImages, d.wordImageTargets = state.wordImages, state.wordImageTargets
+	d.wordInlineTargets, d.wordParagraphInlines = state.wordInlineTargets, state.wordParagraphInlines
+	d.wordTextTargets, d.wordParagraphTargets = state.wordTextTargets, state.wordParagraphTargets
+}
+
+func clonePackageParts(parts []part) []part {
+	cloned := make([]part, len(parts))
+	for i, item := range parts {
+		cloned[i] = clonePackagePart(item)
+	}
+	return cloned
+}
+
 func (d *Document) SetSourcePath(path string) { d.mu.Lock(); defer d.mu.Unlock(); d.path = path }
 func (d *Document) SetDirty(dirty bool) {
 	d.mu.Lock()
@@ -240,12 +312,32 @@ func (d *Document) Save() error {
 	if d.path == "" {
 		return errors.New("document has no save path")
 	}
-	if err := d.saveAs(d.path, nil); err != nil {
+	if _, err := d.saveAsSnapshot(d.path, nil); err != nil {
 		return err
 	}
 	d.savedHistoryState = d.historyState
 	d.dirty = false
 	return nil
+}
+
+// SaveWithSnapshot atomically saves the active package and returns the exact
+// serialized bytes written to the document path.
+func (d *Document) SaveWithSnapshot() ([]byte, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return nil, err
+	}
+	if d.path == "" {
+		return nil, errors.New("document has no save path")
+	}
+	snapshot, err := d.saveAsSnapshot(d.path, nil)
+	if err != nil {
+		return nil, err
+	}
+	d.savedHistoryState = d.historyState
+	d.dirty = false
+	return snapshot, nil
 }
 
 func (d *Document) SaveAs(path string) error {
@@ -254,7 +346,8 @@ func (d *Document) SaveAs(path string) error {
 	if err := d.checkOpen(); err != nil {
 		return err
 	}
-	return d.saveAs(path, nil)
+	_, err := d.saveAsSnapshot(path, nil)
+	return err
 }
 
 // SaveAsWithCommitGuard writes a copy and checks guard after the temporary
@@ -267,7 +360,8 @@ func (d *Document) SaveAsWithCommitGuard(path string, guard func() (func(), erro
 	if err := d.checkOpen(); err != nil {
 		return err
 	}
-	return d.saveAs(path, guard)
+	_, err := d.saveAsSnapshot(path, guard)
+	return err
 }
 
 // SaveAsDocument writes and adopts a new source path for subsequent Save calls.
@@ -277,7 +371,7 @@ func (d *Document) SaveAsDocument(path string) error {
 	if err := d.checkOpen(); err != nil {
 		return err
 	}
-	if err := d.saveAs(path, nil); err != nil {
+	if _, err := d.saveAsSnapshot(path, nil); err != nil {
 		return err
 	}
 	d.path, d.dirty = path, false
@@ -285,51 +379,68 @@ func (d *Document) SaveAsDocument(path string) error {
 	return nil
 }
 
-func (d *Document) saveAs(path string, guard func() (func(), error)) error {
+// SaveAsDocumentWithSnapshot adopts path only after successfully writing the
+// package, and returns the exact bytes written there.
+func (d *Document) SaveAsDocumentWithSnapshot(path string) ([]byte, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return nil, err
+	}
+	snapshot, err := d.saveAsSnapshot(path, nil)
+	if err != nil {
+		return nil, err
+	}
+	d.path, d.dirty = path, false
+	d.savedHistoryState = d.historyState
+	return snapshot, nil
+}
+
+func (d *Document) saveAsSnapshot(path string, guard func() (func(), error)) ([]byte, error) {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".glance-*.docx")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tmpPath := tmp.Name()
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpPath)
-		return err
+		return nil, err
 	}
 	defer os.Remove(tmpPath)
 	file, err := os.Create(tmpPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	data, err := d.packageBytes()
 	if err != nil {
 		_ = file.Close()
-		return err
+		return nil, err
 	}
 	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
-		return err
+		return nil, err
 	}
 	if err := file.Sync(); err != nil {
 		_ = file.Close()
-		return err
+		return nil, err
 	}
 	if err := file.Close(); err != nil {
-		return err
+		return nil, err
 	}
 	var release func()
 	if guard != nil {
 		release, err = guard()
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if release != nil {
 		defer release()
 	}
 	if err := fileutil.ReplaceFile(tmpPath, path); err != nil {
-		return fmt.Errorf("replace DOCX file: %w", err)
+		return nil, fmt.Errorf("replace DOCX file: %w", err)
 	}
-	return nil
+	return data, nil
 }
 
 func (d *Document) Close() error {

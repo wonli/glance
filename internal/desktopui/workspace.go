@@ -303,6 +303,7 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 		return
 	}
 	a.documentGeneration++
+	a.closeWordVersionHistory()
 	if a.activeTabID != "" && a.documentSessionState != nil {
 		if a.documentSessionState.valueFilter != nil {
 			a.clearValueFilter(a.documentSessionState)
@@ -329,6 +330,7 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 		a.startWordPagination(state)
 	}
 	a.maybeAutoSaveWord(state)
+	a.surfacePendingWordRestoreError(state)
 }
 
 func (a *App) snapshotActive() ([]byte, error) {

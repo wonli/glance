@@ -203,9 +203,9 @@ func (a *App) updateWordRulerIndentDrag(gtx layout.Context, state *documentSessi
 				intent := &wordParagraphIndentIntent{paragraphID: paragraph.ID, leftEMU: left, rightEMU: right}
 				state.wordRulerIndentIntent = intent
 				if wordHasPendingTextDrafts(state) {
-					state.wordForceDraftFlush = true
-					state.wordFlushRequested = true
-					state.wordFlushAllDrafts = true
+					state.wordForceDraftFlush.Store(true)
+					state.wordFlushRequested.Store(true)
+					state.wordFlushAllDrafts.Store(true)
 					state.wordDeferredToolbarAction = "ruler-indents"
 				} else {
 					a.executeWordToolbarAction("ruler-indents")

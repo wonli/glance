@@ -31,6 +31,12 @@ type sharedDocumentSession struct {
 	wordRevisionAtomic         atomic.Uint64
 	publishedRevision          atomic.Uint64
 	wordDraftEpoch             atomic.Uint64
+	wordTextResetEpoch         atomic.Uint64
+	wordRestoreNoticeMu        sync.Mutex
+	wordRestoreError           string
+	wordRestoreErrorEpoch      uint64
+	wordRestoreLaunchMu        sync.Mutex
+	wordRestoreLaunchClaimed   bool
 	wordLayoutPageCount        atomic.Int64
 	wordExportCommitMu         sync.Mutex
 	documentID                 string
@@ -53,10 +59,12 @@ type sharedDocumentSession struct {
 	wordLayoutCancel           context.CancelFunc
 	wordLayoutWarningConfirmed bool
 	wordInsertionRunning       bool
-	wordFlushRequested         bool
-	wordFlushAllDrafts         bool
-	wordForceDraftFlush        bool
+	wordFlushRequested         atomic.Bool
+	wordFlushAllDrafts         atomic.Bool
+	wordForceDraftFlush        atomic.Bool
+	wordRestoreAfterDraftsID   int64
 	wordSaveAfterDrafts        bool
+	wordSaveAfterDraftsReason  wordSaveReason
 	wordPDFExportAfterDrafts   bool
 	wordPDFExportAfterLayout   bool
 	wordPDFExportRunning       bool
@@ -138,6 +146,8 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 	state.observedSessionRevision.Store(shared.wordRevisionAtomic.Load())
 	state.appliedSessionRevision.Store(shared.wordRevisionAtomic.Load())
 	state.appliedWordDraftEpoch.Store(shared.wordDraftEpoch.Load())
+	state.appliedWordTextResetEpoch.Store(shared.wordTextResetEpoch.Load())
+	state.appliedWordRestoreErrorEpoch.Store(shared.wordRestoreNoticeEpoch())
 	return state
 }
 

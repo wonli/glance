@@ -45,6 +45,21 @@ func TestReviewWordCountShowsDetailsForDraftsAndTables(t *testing.T) {
 	}
 }
 
+func TestWordStatusCountIncludesWhitespace(t *testing.T) {
+	state := newDocumentSessionState("sample.docx")
+	state.wordBlocks = []document.WordBlock{{
+		Kind: document.WordParagraphBlock,
+		Paragraph: &document.WordParagraph{ID: "p1", Inlines: []document.WordInline{{
+			Kind: document.WordTextInline,
+			Text: &document.WordTextRun{ID: "r1", Text: "甲 乙\n丙"},
+		}}},
+	}}
+
+	if got := wordStatusWordCount(state); got != "5 个字" {
+		t.Fatalf("Word status count = %q; want the 5 characters including spaces and line breaks", got)
+	}
+}
+
 func wordActionByID(id string) ribbonAction {
 	for _, action := range wordReviewActions {
 		if action.id == id {

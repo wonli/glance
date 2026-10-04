@@ -160,6 +160,19 @@ func TestWordLayoutProjectionDoesNotRejectOmittedPageOrientation(t *testing.T) {
 	}
 }
 
+func TestWordLayoutProjectionReadsParagraphBottomBorder(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="8" w:space="5" w:color="4F81BD"/></w:pBdr></w:pPr><w:r><w:t>Title</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+	blocks := doc.WordBlocks()
+	if len(blocks) != 1 || blocks[0].Paragraph == nil {
+		t.Fatalf("projected blocks = %#v; want one paragraph", blocks)
+	}
+	layout := blocks[0].Paragraph.Layout
+	if layout.Set&document.WordParagraphBottomBorderSet == 0 || layout.BottomBorder != (document.WordParagraphBorder{Style: "single", SizePT: 1, SpacePT: 5, Color: "4F81BD"}) {
+		t.Fatalf("paragraph bottom border = %+v mask=%b; want single 1pt blue line with 5pt spacing", layout.BottomBorder, layout.Set)
+	}
+}
+
 func TestWordLayoutProjectionRejectsExplicitEmptyPageOrientation(t *testing.T) {
 	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>content</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840" w:orient=""/></w:sectPr></w:body></w:document>`
 	doc := wordLayoutProjectionFixture(t, documentXML, "")

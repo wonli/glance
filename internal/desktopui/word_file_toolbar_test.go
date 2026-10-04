@@ -166,9 +166,12 @@ func TestWordFileAutosavePersistsToggleAndSavesCommittedEdits(t *testing.T) {
 	state := newDocumentSessionState(path)
 	state.word = word
 	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	runtime := newDesktopRuntime()
+	runtime.workspaceStore = openWordHistoryTestStore(t)
 	state.selectedWordParagraphID = paragraph.ID
 	state.selectedWordRunID = runID
 	app := &App{
+		desktopRuntime:       runtime,
 		documentSessionState: state,
 		activeTabID:          "current",
 		sessions:             map[string]*documentSessionState{"current": state},

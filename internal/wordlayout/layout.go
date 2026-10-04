@@ -21,6 +21,9 @@ type Input struct {
 	Blocks           []document.WordBlock
 	Layout           document.WordLayoutData
 	DefaultPageSetup document.WordPageSetup
+	// EditorParagraphInsets makes page scenes reserve the same small paragraph
+	// padding used by the editable Gio canvas, so screen and print share geometry.
+	EditorParagraphInsets bool
 }
 
 type SourcePosition struct {
@@ -56,13 +59,23 @@ type Rect struct {
 }
 
 type PageScene struct {
-	Index      int
-	PageSetup  document.WordPageSetup
-	Clip       Rect
-	Content    Rect
-	Text       []TextFragment
-	Images     []ImagePlacement
-	TableCells []TableCellPlacement
+	Index            int
+	PageSetup        document.WordPageSetup
+	Clip             Rect
+	Content          Rect
+	Text             []TextFragment
+	Images           []ImagePlacement
+	TableCells       []TableCellPlacement
+	ParagraphBorders []ParagraphBorderPlacement
+}
+
+// ParagraphBorderPlacement is a paragraph decoration shared by screen and
+// print renderers. Bounds.HeightPT stores the border thickness.
+type ParagraphBorderPlacement struct {
+	SourceID string
+	Style    string
+	Color    string
+	Bounds   Rect
 }
 
 type TextFragment struct {
@@ -167,9 +180,31 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 			prepared, ok := preparedParagraphs[blockIndex]
 			if !ok {
 				var err error
-				prepared, err = prepareParagraph(ctx, e.shaper, styles, *block.Paragraph, block.ID, content.WidthPT)
+				prepared, err = prepareParagraph(ctx, e.shaper, styles, *block.Paragraph, block.ID, content.WidthPT, false, input.EditorParagraphInsets)
 				if err != nil {
 					return Result{}, err
+				}
+			}
+			if prepared.borderSourceID == block.ID && paragraphBottomBorderExtent(prepared.style.paragraph) > 0 && blockIndex+1 < len(input.Blocks) {
+				nextBlock := input.Blocks[blockIndex+1]
+				if nextBlock.Kind == document.WordParagraphBlock && nextBlock.Paragraph != nil {
+					nextPrepared, exists := preparedParagraphs[blockIndex+1]
+					if !exists {
+						var err error
+						nextPrepared, err = prepareParagraph(ctx, e.shaper, styles, *nextBlock.Paragraph, nextBlock.ID, content.WidthPT, false, input.EditorParagraphInsets)
+						if err != nil {
+							return Result{}, err
+						}
+					}
+					if nextPrepared.style.paragraph.Set&document.WordParagraphBottomBorderSet == 0 {
+						nextPrepared.style.paragraph.BottomBorder = prepared.style.paragraph.BottomBorder
+						nextPrepared.style.paragraph.Set |= document.WordParagraphBottomBorderSet
+						nextPrepared.borderSourceID = block.ID
+						preparedParagraphs[blockIndex+1] = nextPrepared
+						prepared.style.paragraph.BottomBorder = document.WordParagraphBorder{}
+						prepared.style.paragraph.Set |= document.WordParagraphBottomBorderSet
+						prepared.borderSourceID = ""
+					}
 				}
 			}
 			if prepared.style.paragraph.KeepWithNext && !preparedHasPageBreak(prepared) {
@@ -181,7 +216,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 						cursor.diagnostic(DiagnosticWarning, block.ID, "keep-with-next-target-unsupported", "Keep-with-next is applied to consecutive paragraphs only; the following block cannot be kept with this paragraph.")
 						break
 					}
-					nextPrepared, err := prepareParagraph(ctx, e.shaper, styles, *nextBlock.Paragraph, nextBlock.ID, content.WidthPT)
+					nextPrepared, err := prepareParagraph(ctx, e.shaper, styles, *nextBlock.Paragraph, nextBlock.ID, content.WidthPT, false, input.EditorParagraphInsets)
 					if err != nil {
 						return Result{}, err
 					}
@@ -204,7 +239,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 				cursor.diagnostic(DiagnosticError, block.ID, "invalid-table", "The table block has no table data.")
 				continue
 			}
-			if err := cursor.layoutTable(ctx, e.shaper, styles, block.ID, *block.Table, content); err != nil {
+			if err := cursor.layoutTable(ctx, e.shaper, styles, block.ID, *block.Table, content, input.EditorParagraphInsets); err != nil {
 				return Result{}, err
 			}
 		case document.WordUnsupportedBlock:
@@ -450,6 +485,9 @@ func (r *styleResolver) paragraphStyle(paragraph document.WordParagraph, sourceI
 	if out.text.FontColor == "" {
 		out.text.FontColor = "000000"
 	}
+	if borderStyle := out.paragraph.BottomBorder.Style; borderStyle != "" && borderStyle != "single" && borderStyle != "none" && borderStyle != "nil" {
+		r.cursor.diagnostic(DiagnosticError, sourceID, "paragraph-border-style", "The paragraph uses an unsupported bottom border style: "+borderStyle)
+	}
 	return out
 }
 
@@ -562,6 +600,9 @@ func mergeParagraphLayout(target *document.WordParagraphLayout, source document.
 		if source.PageBreakBefore {
 			mask |= document.WordParagraphPageBreakBeforeSet
 		}
+		if source.BottomBorder != (document.WordParagraphBorder{}) {
+			mask |= document.WordParagraphBottomBorderSet
+		}
 	}
 	if mask&document.WordParagraphBeforeSet != 0 {
 		target.BeforePT = source.BeforePT
@@ -597,6 +638,9 @@ func mergeParagraphLayout(target *document.WordParagraphLayout, source document.
 	}
 	if mask&document.WordParagraphPageBreakBeforeSet != 0 {
 		target.PageBreakBefore = source.PageBreakBefore
+	}
+	if mask&document.WordParagraphBottomBorderSet != 0 {
+		target.BottomBorder = source.BottomBorder
 	}
 	target.Set |= mask
 }

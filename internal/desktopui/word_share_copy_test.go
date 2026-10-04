@@ -202,8 +202,8 @@ func TestWordShareFlushesPendingTextDraftBeforeOpeningPicker(t *testing.T) {
 	})
 
 	app.requestWordShareCopy()
-	if !state.wordFlushRequested || state.wordDeferredToolbarAction != "share" {
-		t.Fatalf("share did not defer for pending text: flush=%v deferred=%q", state.wordFlushRequested, state.wordDeferredToolbarAction)
+	if !state.wordFlushRequested.Load() || state.wordDeferredToolbarAction != "share" {
+		t.Fatalf("share did not defer for pending text: flush=%v deferred=%q", state.wordFlushRequested.Load(), state.wordDeferredToolbarAction)
 	}
 	select {
 	case <-pickerCalls:

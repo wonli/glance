@@ -4,6 +4,7 @@ import (
 	"unicode/utf8"
 
 	"gioui.org/layout"
+	"gioui.org/widget"
 	"glance/internal/document"
 )
 
@@ -121,13 +122,11 @@ func syncWindowViewFromSharedSession(gtx layout.Context, view *documentSessionSt
 	if view == nil || view.sharedDocumentSession == nil || view.word == nil {
 		return
 	}
-	revision := view.wordRevisionAtomic.Load()
-	draftEpoch := view.wordDraftEpoch.Load()
-	if view.appliedSessionRevision.Load() == revision && view.appliedWordDraftEpoch.Load() == draftEpoch {
+	blocks, committed, drafts, revision, draftEpoch, resetEpoch := view.wordProjectionSnapshot()
+	forceTextSync := view.appliedWordTextResetEpoch.Load() != resetEpoch
+	if view.appliedSessionRevision.Load() == revision && view.appliedWordDraftEpoch.Load() == draftEpoch && !forceTextSync {
 		return
 	}
-	blocks := wordBlocksForState(view)
-	committed, drafts := view.wordTextStateSnapshot()
 	runs := make(map[string]document.WordTextRun)
 	for _, paragraph := range allWordParagraphs(blocks) {
 		for _, inline := range paragraph.Inlines {
@@ -135,6 +134,16 @@ func syncWindowViewFromSharedSession(gtx layout.Context, view *documentSessionSt
 				runs[inline.Text.ID] = *inline.Text
 			}
 		}
+	}
+	syncWordRunEditors(view, runs, committed, drafts, func(editor *widget.Editor) bool { return gtx.Focused(editor) }, forceTextSync)
+	view.appliedSessionRevision.Store(revision)
+	view.appliedWordDraftEpoch.Store(draftEpoch)
+	view.appliedWordTextResetEpoch.Store(resetEpoch)
+}
+
+func syncWordRunEditors(view *documentSessionState, runs map[string]document.WordTextRun, committed, drafts map[string]string, focused func(*widget.Editor) bool, forceTextSync bool) {
+	if view == nil {
+		return
 	}
 	for runID, editor := range view.wordRunEditors {
 		run, exists := runs[runID]
@@ -148,7 +157,7 @@ func syncWindowViewFromSharedSession(gtx layout.Context, view *documentSessionSt
 		if draft, ok := drafts[runID]; ok {
 			value = draft
 		}
-		if editor.Text() == value || gtx.Focused(editor) {
+		if editor.Text() == value || (focused != nil && focused(editor) && !forceTextSync) {
 			continue
 		}
 		start, end := editor.Selection()
@@ -156,8 +165,6 @@ func syncWindowViewFromSharedSession(gtx layout.Context, view *documentSessionSt
 		start, end = clampEditorSelection(start, end, value)
 		editor.SetCaret(start, end)
 	}
-	view.appliedSessionRevision.Store(revision)
-	view.appliedWordDraftEpoch.Store(draftEpoch)
 }
 
 func findEditableWordRun(blocks []document.WordBlock, runID string) (document.WordTextRun, document.WordParagraph, bool) {

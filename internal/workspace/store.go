@@ -14,7 +14,10 @@ import (
 
 const RecentTabID = "recent"
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db                *sql.DB
+	wordVersionPolicy wordVersionPolicy
+}
 
 type Tab struct {
 	ID         string
@@ -68,7 +71,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("initialize workspace database: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, wordVersionPolicy: defaultWordVersionPolicy()}, nil
 }
 
 // DefaultDatabasePath returns the per-user location used for durable workspace state.
@@ -85,8 +88,8 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version > 3 {
-		return fmt.Errorf("workspace database version %d is newer than supported version 3", version)
+	if version > 4 {
+		return fmt.Errorf("workspace database version %d is newer than supported version 4", version)
 	}
 	if version == 0 {
 		tx, err := db.Begin()
@@ -139,6 +142,36 @@ func migrate(db *sql.DB) error {
 		}
 		if _, err := tx.Exec(`PRAGMA user_version = 3`); err != nil {
 			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		version = 3
+	}
+	if version == 3 {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for _, query := range []string{
+			`CREATE TABLE word_versions (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				path_key TEXT NOT NULL,
+				display_path TEXT NOT NULL,
+				source TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
+				sha256 TEXT NOT NULL,
+				size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+				payload BLOB NOT NULL,
+				UNIQUE(path_key, sha256)
+			)`,
+			`CREATE INDEX word_versions_path_created ON word_versions(path_key, created_at DESC, id DESC)`,
+			`PRAGMA user_version = 4`,
+		} {
+			if _, err := tx.Exec(query); err != nil {
+				return err
+			}
 		}
 		if err := tx.Commit(); err != nil {
 			return err
