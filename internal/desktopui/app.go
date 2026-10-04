@@ -521,7 +521,9 @@ func (a *App) startOpen(path string) {
 		}
 		select {
 		case a.openResults <- openResult{loaded: loaded, err: err, historyErr: historyErr}:
-			a.window.Invalidate()
+			if a.window != nil {
+				a.window.Invalidate()
+			}
 		case <-a.shutdown:
 		}
 	}()

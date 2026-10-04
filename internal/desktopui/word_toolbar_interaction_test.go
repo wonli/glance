@@ -49,7 +49,22 @@ func TestWordRibbonPrintLayoutButtonChangesViewMode(t *testing.T) {
 	}
 
 	frame()
-	position := f32.Pt(188, 124) // center of View > Print Layout at 2× density
+	var position f32.Point
+	var findPrintLayout func([]input.SemanticNode)
+	findPrintLayout = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if node.Desc.Description == "打印布局" {
+				b := node.Desc.Bounds
+				position = f32.Pt(float32(b.Min.X+b.Dx()/2), float32(b.Min.Y+b.Dy()/2))
+				return
+			}
+			findPrintLayout(node.Children)
+		}
+	}
+	findPrintLayout(router.AppendSemantics(nil))
+	if position == (f32.Point{}) {
+		position = f32.Pt(188, 124)
+	}
 	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: position})
 	frame()
 	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: position})
@@ -93,10 +108,25 @@ func TestWordRibbonSymbolButtonOpensCharacterPanel(t *testing.T) {
 	}
 
 	frame()
-	position := f32.Pt(1592, 124) // center of Insert > Symbol at 2× density
-	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: position})
+	var symbolPos f32.Point
+	var findSymbol func([]input.SemanticNode)
+	findSymbol = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if node.Desc.Description == "符号" {
+				b := node.Desc.Bounds
+				symbolPos = f32.Pt(float32(b.Min.X+b.Dx()/2), float32(b.Min.Y+b.Dy()/2))
+				return
+			}
+			findSymbol(node.Children)
+		}
+	}
+	findSymbol(router.AppendSemantics(nil))
+	if symbolPos == (f32.Point{}) {
+		symbolPos = f32.Pt(1592, 124)
+	}
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: symbolPos})
 	frame()
-	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: position})
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: symbolPos})
 	frame()
 	if !app.wordSymbolPickerVisible {
 		t.Fatal("clicking Insert > Symbol did not open the character panel")

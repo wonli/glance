@@ -969,11 +969,10 @@ func (a *App) handleWordParagraphJoinKey(gtx layout.Context, paragraph document.
 		return false
 	}
 	var filters []key.Filter
-	blocks := wordBlocksForState(state)
-	if start == 0 && wordTextRunAtBoundary(paragraph, run.ID, true) && wordHasAdjacentParagraph(blocks, paragraph.ID, document.WordJoinPrevious) {
+	if start == 0 && wordTextRunAtBoundary(paragraph, run.ID, true) && wordHasAdjacentParagraphInState(state, paragraph.ID, document.WordJoinPrevious) {
 		filters = append(filters, key.Filter{Focus: editor, Name: key.NameDeleteBackward})
 	}
-	if start == editor.Len() && wordTextRunAtBoundary(paragraph, run.ID, false) && wordHasAdjacentParagraph(blocks, paragraph.ID, document.WordJoinNext) {
+	if start == editor.Len() && wordTextRunAtBoundary(paragraph, run.ID, false) && wordHasAdjacentParagraphInState(state, paragraph.ID, document.WordJoinNext) {
 		filters = append(filters, key.Filter{Focus: editor, Name: key.NameDeleteForward})
 	}
 	for _, filter := range filters {
@@ -1006,7 +1005,7 @@ func (a *App) handleWordParagraphJoinKey(gtx layout.Context, paragraph document.
 		}
 		joinBoundary := (direction == document.WordJoinPrevious && atBoundary && start == 0 && wordTextRunAtBoundary(paragraph, run.ID, true)) ||
 			(direction == document.WordJoinNext && atBoundary && start == editor.Len() && wordTextRunAtBoundary(paragraph, run.ID, false))
-		if joinBoundary && wordHasAdjacentParagraph(wordBlocksForState(state), paragraph.ID, direction) {
+		if joinBoundary && wordHasAdjacentParagraphInState(state, paragraph.ID, direction) {
 			a.queueWordParagraphJoin(run.ID, editor.Text(), direction)
 			return true
 		}
@@ -1018,6 +1017,20 @@ func (a *App) handleWordParagraphJoinKey(gtx layout.Context, paragraph document.
 		return true
 	}
 	return false
+}
+
+func wordHasAdjacentParagraphInState(state *documentSessionState, paragraphID string, direction document.WordParagraphJoinDirection) bool {
+	if state == nil {
+		return false
+	}
+	state.wordBlocksMu.RLock()
+	if state.wordBlocks != nil {
+		found := wordHasAdjacentParagraph(state.wordBlocks, paragraphID, direction)
+		state.wordBlocksMu.RUnlock()
+		return found
+	}
+	state.wordBlocksMu.RUnlock()
+	return wordHasAdjacentParagraph(wordBlocksForState(state), paragraphID, direction)
 }
 
 func wordTextRunAtBoundary(paragraph document.WordParagraph, runID string, first bool) bool {
@@ -1422,6 +1435,10 @@ func (a *App) requestWordImageDecode(state *documentSessionState, imageID string
 	if pendingVersion, pending := state.wordImagePending[imageID]; pending && pendingVersion == version {
 		return
 	}
+	if state.wordImageDecodeActive.Add(1) > wordImageDecodeConcurrency {
+		state.wordImageDecodeActive.Add(-1)
+		return
+	}
 	if a.wordImageResults == nil {
 		a.wordImageResults = make(chan wordImageDecodeResult, 64)
 	}
@@ -1430,8 +1447,21 @@ func (a *App) requestWordImageDecode(state *documentSessionState, imageID string
 	results := a.wordImageResults
 	window := a.window
 	go func() {
+		resultSent := false
+		defer func() {
+			if !resultSent {
+				state.wordImageDecodeActive.Add(-1)
+			}
+		}()
 		unlock := lockSessionAdapterRead(state)
-		data, err := state.word.WordImageBytes(imageID)
+		word := state.word
+		var data []byte
+		var err error
+		if word == nil {
+			err = fmt.Errorf("Word 文档已关闭")
+		} else {
+			data, err = word.WordImageBytes(imageID)
+		}
 		unlock()
 		var decoded image.Image
 		if err == nil {
@@ -1440,9 +1470,10 @@ func (a *App) requestWordImageDecode(state *documentSessionState, imageID string
 		if err == nil {
 			decoded = compactWordPreview(decoded)
 		}
-		result := wordImageDecodeResult{state: state, id: imageID, version: version, image: decoded, err: err}
+		result := wordImageDecodeResult{state: state, id: imageID, version: version, image: decoded, err: err, decodeSlot: true}
 		select {
 		case results <- result:
+			resultSent = true
 			if window != nil {
 				window.Invalidate()
 			}

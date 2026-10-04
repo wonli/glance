@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"bytes"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -67,5 +68,55 @@ func TestWordTextShaperMixedCJKLatinMissingGlyphUsesReportedFallback(t *testing.
 	}
 	if !foundChineseOutline {
 		t.Fatal("CJK fallback glyph did not resolve to a vector outline")
+	}
+}
+
+func TestWordTextShaperBoundsGlyphOutlineCacheAndRebuildsEvictedGlyph(t *testing.T) {
+	shaper, err := newWordTextShaperWithCacheDir(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const glyphCount = 256
+	runes := make([]rune, glyphCount)
+	for index := range runes {
+		runes[index] = rune(0x4e00 + index)
+	}
+	shaped, err := shaper.Shape(string(runes), document.WordTextStyle{
+		FontFamily: "font-family-that-does-not-exist",
+		FontSize:   12,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shaped.Glyphs) <= 128 {
+		t.Fatalf("shaped %d unique CJK runes into %d glyphs; test needs enough glyphs to overflow the cache", glyphCount, len(shaped.Glyphs))
+	}
+	first := shaped.Glyphs[0]
+	firstOutline, err := shaper.GlyphOutline(first.FontKey, first.GlyphID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, glyph := range shaped.Glyphs[1:] {
+		if _, err := shaper.GlyphOutline(glyph.FontKey, glyph.GlyphID); err != nil {
+			t.Fatalf("resolve glyph %d: %v", glyph.GlyphID, err)
+		}
+	}
+	if len(shaper.paths) > 128 {
+		t.Fatalf("glyph outline cache holds %d entries after %d unique glyphs; want a bounded cache of at most 128 entries", len(shaper.paths), len(shaped.Glyphs))
+	}
+	cacheKey := first.FontKey + "#glyph=" + strconv.FormatUint(uint64(first.GlyphID), 10)
+	if shaper.paths[cacheKey] != nil {
+		t.Fatal("least-recently used first outline was not evicted")
+	}
+	if shaper.pathBytes > wordGlyphOutlineCacheLimit {
+		t.Fatalf("glyph outline cache weighs %d bytes; limit is %d", shaper.pathBytes, wordGlyphOutlineCacheLimit)
+	}
+	rebuilt, err := shaper.GlyphOutline(first.FontKey, first.GlyphID)
+	if err != nil {
+		t.Fatalf("rebuild evicted glyph: %v", err)
+	}
+	if !reflect.DeepEqual(rebuilt, firstOutline) {
+		t.Fatalf("rebuilding an evicted outline changed the glyph: got %+v, want %+v", rebuilt, firstOutline)
 	}
 }

@@ -149,6 +149,23 @@ func (s *sharedDocumentSession) finalizeIfIdle() bool {
 	return true
 }
 
+// finalizeIfIdleOrSnapshot allows a workspace snapshot to finish harmlessly
+// after a user discards its draft. The writer checks closed before committing,
+// and workspace DB serialization ensures a commit already in progress is
+// deleted before the close operation returns.
+func (s *sharedDocumentSession) finalizeIfIdleOrSnapshot() bool {
+	if s == nil {
+		return false
+	}
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
+	if s.finalized.Load() || (s.operationActive && s.activeOperation.kind != sessionOperationSnapshot) {
+		return false
+	}
+	s.finalized.Store(true)
+	return true
+}
+
 func (s *sharedDocumentSession) reopenAfterFailedClose() {
 	if s == nil {
 		return
@@ -187,13 +204,13 @@ func (s *sharedDocumentSession) advanceRevision(revision uint64) bool {
 	return true
 }
 
-func (r *desktopRuntime) publishSessionRevision(documentID string, revision uint64) {
+func (r *desktopRuntime) publishSessionRevision(documentID string, revision uint64) bool {
 	if r == nil {
-		return
+		return false
 	}
 	session, ok := r.session(documentID)
 	if !ok || !session.advanceRevision(revision) {
-		return
+		return false
 	}
 	for _, app := range r.viewsForSession(documentID) {
 		if state := app.documentSessionState; state != nil && state.sharedDocumentSession == session {
@@ -203,6 +220,7 @@ func (r *desktopRuntime) publishSessionRevision(documentID string, revision uint
 			app.window.Invalidate()
 		}
 	}
+	return true
 }
 
 func (a *App) activeSessionID() string {

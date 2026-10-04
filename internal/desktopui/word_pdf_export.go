@@ -252,7 +252,10 @@ func currentWordLayoutKey(state *documentSessionState) (wordLayoutKey, document.
 	if !ok {
 		return wordLayoutKey{}, document.WordLayoutData{}, false
 	}
-	return wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevisionAtomic.Load(), PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup)}, data, true
+	return wordLayoutKey{
+		DocumentID: state.documentID, Revision: state.wordRevisionAtomic.Load(),
+		DraftEpoch: state.wordDraftEpoch.Load(), PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup),
+	}, data, true
 }
 
 func wordPDFLayoutStillCurrent(state *documentSessionState, key wordLayoutKey) bool {

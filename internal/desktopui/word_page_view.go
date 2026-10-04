@@ -1,13 +1,11 @@
 package desktopui
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 	"math"
 
 	"gioui.org/f32"
-	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -28,76 +26,42 @@ var (
 	wordPageErrorSurface   = color.NRGBA{R: 255, G: 237, B: 235, A: 255}
 )
 
-const (
-	wordPageBottomGapDP   = 24
-	wordPageTopGapDP      = 16
-	wordMultiplePageGapDP = 24
-)
-
-// layoutWordPageView replays the accepted point-based display list. It does not
-// shape, measure, wrap, or paginate content; those operations happen in the
-// background wordlayout engine and are shared with PDF/print adapters.
+// layoutWordPageView presents the same accepted page scenes in continuous and
+// print layouts. The presentation changes page surfaces and gaps only.
 func (a *App) layoutWordPageView(gtx layout.Context, state *documentSessionState) layout.Dimensions {
-	state.wordPageListState.List.Axis = layout.Vertical
-	paint.FillShape(gtx.Ops, wordWorkspaceBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
-	result := state.wordLayoutResult
-	if state.wordLayoutError != "" {
-		return layoutWordPageMessage(gtx, a.theme, "分页失败："+state.wordLayoutError, wordPageErrorSurface)
+	presentation := wordPageContinuous
+	if state.wordViewMode == wordViewPrintLayout {
+		presentation = wordPagePrint
 	}
-	if result == nil {
-		message := "正在计算页面布局…"
-		if state.wordLayoutPendingKey == nil {
-			message = "页面数尚未计算"
-		}
-		return layoutWordPageMessage(gtx, a.theme, message, wordPageWarningSurface)
+	if state.wordRulerHidden || state.wordReadingMode {
+		return a.layoutWordPages(gtx, state, presentation)
 	}
-	if !result.CanPreview {
-		message := "此文档包含暂不支持的版式，无法保证页面与打印结果一致。"
-		for _, diagnostic := range result.Diagnostics {
-			if diagnostic.Severity == wordlayout.DiagnosticError {
-				message = diagnostic.Detail
-				break
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return a.layoutWordPages(gtx, state, presentation)
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			rulerWidth := gtx.Dp(unit.Dp(wordRulerWidthDP))
+			totalWidth := gtx.Dp(unit.Dp(state.wordCanvasWidthDP))
+			if totalWidth <= 0 {
+				totalWidth = gtx.Dp(unit.Dp(wordPaperMaxWidthDP))
 			}
-		}
-		return layoutWordPageMessage(gtx, a.theme, message, wordPageErrorSurface)
-	}
-	if len(result.Pages) == 0 {
-		return layoutWordPageMessage(gtx, a.theme, "文档没有可显示的页面。", wordPageWarningSurface)
-	}
-	columns, columnGap := 1, 0
-	if state.wordMultiplePagesMode {
-		columns = 2
-		columnGap = gtx.Dp(unit.Dp(wordMultiplePageGapDP))
-	}
-	if state.wordPageFitMode {
-		pageIndex := max(0, min(state.wordPageListState.Position.First*columns, len(result.Pages)-1))
-		availableWidth := float64(max(1, gtx.Constraints.Max.X-gtx.Dp(unit.Dp(48))-columnGap))
-		availableHeight := float64(max(1, gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(wordPageTopGapDP+wordPageBottomGapDP))))
-		state.wordLayoutZoom = wordPageFitZoomForColumns(result.Pages[pageIndex], availableWidth, availableHeight, float64(gtx.Metric.PxPerDp), columns)
-	}
-	if columns == 2 {
-		return a.layoutWordMultiplePageRows(gtx, state, result, columnGap)
-	}
-	dimensions := state.wordPageListState.Layout(gtx, len(result.Pages), func(gtx layout.Context, index int) layout.Dimensions {
-		page := result.Pages[index]
-		pageScale := wordScenePixelsPerPoint(gtx, page, state.wordLayoutZoom)
-		pageWidth := max(1, int(math.Ceil(page.Clip.WidthPT*pageScale)))
-		pageHeight := max(1, int(math.Ceil(page.Clip.HeightPT*pageScale)))
-		gapTop := gtx.Dp(unit.Dp(wordPageTopGapDP))
-		gapBottom := gtx.Dp(unit.Dp(wordPageBottomGapDP))
-		itemHeight := gapTop + pageHeight + gapBottom
-		itemGtx := gtx
-		itemGtx.Constraints.Min = image.Pt(gtx.Constraints.Max.X, itemHeight)
-		itemGtx.Constraints.Max = itemGtx.Constraints.Min
-		paint.FillShape(gtx.Ops, wordWorkspaceBackground, clip.Rect{Max: itemGtx.Constraints.Max}.Op())
-		left := max(0, (itemGtx.Constraints.Max.X-pageWidth)/2)
-		top := gapTop
-		pageRect := image.Rectangle{Min: image.Pt(left, top), Max: image.Pt(left+pageWidth, top+pageHeight)}
-		a.drawWordPageSurface(gtx, state, page, index, len(result.Pages), pageRect, pageScale)
-		return layout.Dimensions{Size: itemGtx.Constraints.Max}
-	})
-	state.wordLayoutActivePage = state.wordPageListState.Position.First
-	return dimensions
+			if state.wordLayoutResult != nil && len(state.wordLayoutResult.Pages) > 0 {
+				first := state.wordLayoutResult.Pages[0]
+				scale := wordScenePixelsPerPoint(gtx, first, state.wordLayoutZoom)
+				firstWidth := max(1, int(math.Ceil(first.Clip.WidthPT*scale)))
+				totalWidth = firstWidth
+			}
+			canvasLeft := max(0, (gtx.Constraints.Max.X-totalWidth)/2) - int(math.Round(state.wordPageScrollX))
+			left := max(0, canvasLeft-rulerWidth-gtx.Dp(unit.Dp(wordRulerGapDP)))
+			leftDP := float32(left) / max32(0.1, gtx.Metric.PxPerDp)
+			topDP := float32(min(gtx.Dp(unit.Dp(wordVerticalRulerTopDP)), gtx.Constraints.Max.Y)) / max32(0.1, gtx.Metric.PxPerDp)
+			bottomDP := float32(min(gtx.Dp(unit.Dp(wordVerticalRulerBottomDP)), max(0, gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(wordVerticalRulerTopDP))))) / max32(0.1, gtx.Metric.PxPerDp)
+			return layout.Inset{Top: unit.Dp(topDP), Bottom: unit.Dp(bottomDP), Left: unit.Dp(leftDP)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layoutWordVerticalRuler(gtx, a.theme)
+			})
+		}),
+	)
 }
 
 func wordPageFitZoom(page wordlayout.PageScene, availableWidthPX, availableHeightPX, pixelsPerDP float64) float64 {
@@ -114,61 +78,6 @@ func wordPageFitZoomForColumns(page wordlayout.PageScene, availableWidthPX, avai
 	fitWidth := availableWidthPX / (float64(columns) * widthPT * pixelsPerPoint)
 	fitHeight := availableHeightPX / (heightPT * pixelsPerPoint)
 	return wordStatusZoomClamp(math.Min(fitWidth, fitHeight))
-}
-
-func (a *App) layoutWordMultiplePageRows(gtx layout.Context, state *documentSessionState, result *wordlayout.Result, columnGap int) layout.Dimensions {
-	rowCount := (len(result.Pages) + 1) / 2
-	dimensions := state.wordPageListState.Layout(gtx, rowCount, func(gtx layout.Context, rowIndex int) layout.Dimensions {
-		firstPageIndex := rowIndex * 2
-		firstPage := result.Pages[firstPageIndex]
-		firstScale := wordScenePixelsPerPoint(gtx, firstPage, state.wordLayoutZoom)
-		firstWidth := max(1, int(math.Ceil(firstPage.Clip.WidthPT*firstScale)))
-		firstHeight := max(1, int(math.Ceil(firstPage.Clip.HeightPT*firstScale)))
-		secondPageIndex := firstPageIndex + 1
-		hasSecond := secondPageIndex < len(result.Pages)
-		secondWidth, secondHeight := 0, 0
-		secondScale := firstScale
-		if hasSecond {
-			secondPage := result.Pages[secondPageIndex]
-			secondScale = wordScenePixelsPerPoint(gtx, secondPage, state.wordLayoutZoom)
-			secondWidth = max(1, int(math.Ceil(secondPage.Clip.WidthPT*secondScale)))
-			secondHeight = max(1, int(math.Ceil(secondPage.Clip.HeightPT*secondScale)))
-		}
-		gapTop := gtx.Dp(unit.Dp(wordPageTopGapDP))
-		gapBottom := gtx.Dp(unit.Dp(wordPageBottomGapDP))
-		rowHeight := gapTop + max(firstHeight, secondHeight) + gapBottom
-		rowGtx := gtx
-		rowGtx.Constraints.Min = image.Pt(gtx.Constraints.Max.X, rowHeight)
-		rowGtx.Constraints.Max = rowGtx.Constraints.Min
-		paint.FillShape(gtx.Ops, wordWorkspaceBackground, clip.Rect{Max: rowGtx.Constraints.Max}.Op())
-		totalWidth := firstWidth
-		if hasSecond {
-			totalWidth += columnGap + secondWidth
-		}
-		left := max(0, (rowGtx.Constraints.Max.X-totalWidth)/2)
-		firstRect := image.Rect(left, gapTop, left+firstWidth, gapTop+firstHeight)
-		a.drawWordPageSurface(gtx, state, firstPage, firstPageIndex, len(result.Pages), firstRect, firstScale)
-		if hasSecond {
-			secondRect := image.Rect(firstRect.Max.X+columnGap, gapTop, firstRect.Max.X+columnGap+secondWidth, gapTop+secondHeight)
-			a.drawWordPageSurface(gtx, state, result.Pages[secondPageIndex], secondPageIndex, len(result.Pages), secondRect, secondScale)
-		}
-		return layout.Dimensions{Size: rowGtx.Constraints.Max}
-	})
-	state.wordLayoutActivePage = state.wordPageListState.Position.First * 2
-	return dimensions
-}
-
-func (a *App) drawWordPageSurface(gtx layout.Context, state *documentSessionState, page wordlayout.PageScene, index, total int, pageRect image.Rectangle, pageScale float64) {
-	shadowRect := pageRect.Add(image.Pt(gtx.Dp(unit.Dp(2)), gtx.Dp(unit.Dp(3))))
-	paint.FillShape(gtx.Ops, wordPageShadow, clip.Rect{Min: shadowRect.Min, Max: shadowRect.Max}.Op())
-	paint.FillShape(gtx.Ops, wordPageSurface, clip.Rect{Min: pageRect.Min, Max: pageRect.Max}.Op())
-	if state.wordGridlinesVisible && !state.wordReadingMode {
-		drawWordGridlines(gtx, pageRect)
-	}
-	pageClip := clip.Rect{Min: pageRect.Min, Max: pageRect.Max}.Push(gtx.Ops)
-	semantic.DescriptionOp(fmt.Sprintf("Word 第 %d 页，共 %d 页", index+1, total)).Add(gtx.Ops)
-	a.drawWordPageScene(gtx, state, page, pageRect.Min, pageScale)
-	pageClip.Pop()
 }
 
 func wordScenePixelsPerPoint(gtx layout.Context, _ wordlayout.PageScene, zoom float64) float64 {
@@ -197,6 +106,7 @@ func (a *App) drawWordPageScene(gtx layout.Context, state *documentSessionState,
 	for _, cell := range page.TableCells {
 		drawWordPageCellBorder(gtx, origin, cell.Bounds, pixelsPerPoint)
 	}
+	drawWordPageSelection(gtx, state, page, origin, pixelsPerPoint)
 	for _, fragment := range page.Text {
 		drawWordPageTextFragment(gtx, origin, fragment, pixelsPerPoint)
 	}
@@ -204,16 +114,67 @@ func (a *App) drawWordPageScene(gtx layout.Context, state *documentSessionState,
 		drawWordPageParagraphBorder(gtx, origin, border, pixelsPerPoint)
 	}
 	for _, placement := range page.Images {
+		placement = wordPageImagePreviewPlacement(state, placement)
 		decoded, ok := state.wordImageCache.Get(placement.ImageID)
 		if !ok {
 			if state.wordImageErrors[placement.ImageID] == "" {
 				a.requestWordImageDecode(state, placement.ImageID)
 			}
 			drawWordPageImagePlaceholder(gtx, origin, placement.Bounds, pixelsPerPoint)
+			a.drawWordPageImageSelection(gtx, state, placement, origin, pixelsPerPoint)
 			continue
 		}
 		drawWordPageImage(gtx, origin, decoded, placement, pixelsPerPoint)
+		a.drawWordPageImageSelection(gtx, state, placement, origin, pixelsPerPoint)
 	}
+	result := state.wordLayoutResult
+	if result != nil {
+		drawWordPageCaret(gtx, state, result, page.Index, origin, pixelsPerPoint)
+	}
+}
+
+func wordPageImagePreviewPlacement(state *documentSessionState, placement wordlayout.ImagePlacement) wordlayout.ImagePlacement {
+	if state == nil || state.selectedWordImageID != placement.ImageID {
+		return placement
+	}
+	interaction := wordImageInteractionFor(state, placement.ImageID)
+	preview, mode := wordImageLayoutPreview(interaction)
+	if !preview.Active {
+		return placement
+	}
+	switch mode {
+	case wordImageGestureResize:
+		if preview.OriginalWidthEMU > 0 && preview.OriginalHeightEMU > 0 {
+			widthRatio := float64(preview.WidthEMU) / float64(preview.OriginalWidthEMU)
+			heightRatio := float64(preview.HeightEMU) / float64(preview.OriginalHeightEMU)
+			oldHeight := placement.Bounds.HeightPT
+			placement.Bounds.WidthPT *= widthRatio
+			placement.Bounds.HeightPT *= heightRatio
+			placement.Bounds.YPT += oldHeight - placement.Bounds.HeightPT
+		}
+	case wordImageGestureRotate:
+		placement.RotationDegrees = preview.RotationDegrees
+	}
+	return placement
+}
+
+func (a *App) drawWordPageImageSelection(gtx layout.Context, state *documentSessionState, placement wordlayout.ImagePlacement, origin image.Point, pixelsPerPoint float64) {
+	if state.wordReadingMode || state.selectedWordImageID != placement.ImageID {
+		return
+	}
+	x := origin.X + int(math.Round(placement.Bounds.XPT*pixelsPerPoint))
+	y := origin.Y + int(math.Round(placement.Bounds.YPT*pixelsPerPoint))
+	width := max(1, int(math.Ceil(placement.Bounds.WidthPT*pixelsPerPoint)))
+	height := max(1, int(math.Ceil(placement.Bounds.HeightPT*pixelsPerPoint)))
+	imageRect := image.Rect(x, y, x+width, y+height)
+	a.drawWordImageSelection(gtx, imageRect)
+	item := findWordImage(wordBlocksForState(state), placement.ImageID)
+	if item == nil {
+		return
+	}
+	interaction := wordImageInteractionFor(state, placement.ImageID)
+	a.layoutWordImageResizeHandles(gtx, interaction, *item, imageRect.Size(), imageRect)
+	a.layoutWordImageRotationHandle(gtx, interaction, *item, imageRect)
 }
 
 func drawWordPageCellBackground(gtx layout.Context, origin image.Point, cell wordlayout.TableCellPlacement, pixelsPerPoint float64) {

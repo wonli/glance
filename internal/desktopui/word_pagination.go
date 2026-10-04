@@ -23,6 +23,7 @@ const (
 type wordLayoutKey struct {
 	DocumentID   string
 	Revision     uint64
+	DraftEpoch   uint64
 	PageSetupKey string
 }
 
@@ -108,17 +109,10 @@ func (state *documentSessionState) invalidateWordLayoutAfterBlocksChange() {
 	if state.wordPrintCancel != nil {
 		state.wordPrintCancel()
 	}
-	state.wordLayoutResult = nil
-	state.wordLayoutPageCount.Store(0)
-	state.wordLayoutAcceptedKey = nil
 	state.wordLayoutErrorKey = nil
 	state.wordLayoutError = ""
 	state.wordLayoutWarningConfirmed = false
-	state.wordLayoutPendingKey = nil
-	if state.wordLayoutCancel != nil {
-		state.wordLayoutCancel()
-		state.wordLayoutCancel = nil
-	}
+	state.cancelWordLayout()
 }
 
 func (state *documentSessionState) wordProjectionSnapshot() ([]document.WordBlock, map[string]string, map[string]string, uint64, uint64, uint64) {
@@ -142,6 +136,104 @@ func (state *documentSessionState) wordProjectionSnapshot() ([]document.WordBloc
 	state.wordDraftMu.RUnlock()
 	state.wordBlocksMu.RUnlock()
 	return blocks, committed, drafts, revision, draftEpoch, resetEpoch
+}
+
+func (state *documentSessionState) wordLayoutProjectionSnapshot() ([]document.WordBlock, map[string]string, uint64, uint64) {
+	if state == nil {
+		return nil, map[string]string{}, 0, 0
+	}
+	state.wordBlocksMu.RLock()
+	state.wordDraftMu.RLock()
+	blocks := state.wordBlocks
+	drafts := make(map[string]string, len(state.wordRunDrafts))
+	for runID, value := range state.wordRunDrafts {
+		drafts[runID] = value
+	}
+	revision := state.wordRevisionAtomic.Load()
+	draftEpoch := state.wordDraftEpoch.Load()
+	state.wordDraftMu.RUnlock()
+	state.wordBlocksMu.RUnlock()
+	return blocks, drafts, revision, draftEpoch
+}
+
+// wordBlocksWithDrafts returns a private layout snapshot with editor drafts
+// projected into editable text runs. It clones the nested paragraph/table
+// structures it writes so the session's committed neutral blocks stay intact.
+func wordBlocksWithDrafts(blocks []document.WordBlock, drafts map[string]string) []document.WordBlock {
+	projected := append([]document.WordBlock(nil), blocks...)
+	projectParagraph := func(source document.WordParagraph) (document.WordParagraph, bool) {
+		changed := false
+		for _, inline := range source.Inlines {
+			if inline.Text == nil || !inline.Text.Editable {
+				continue
+			}
+			if draft, exists := drafts[inline.Text.ID]; exists && draft != inline.Text.Text {
+				changed = true
+				break
+			}
+		}
+		if !changed {
+			return source, false
+		}
+		paragraph := source
+		paragraph.Inlines = append([]document.WordInline(nil), source.Inlines...)
+		for index := range paragraph.Inlines {
+			run := paragraph.Inlines[index].Text
+			if run == nil || !run.Editable {
+				continue
+			}
+			if draft, exists := drafts[run.ID]; exists && draft != run.Text {
+				updated := *run
+				updated.Text = draft
+				paragraph.Inlines[index].Text = &updated
+			}
+		}
+		return paragraph, true
+	}
+	for blockIndex := range projected {
+		block := &projected[blockIndex]
+		if block.Paragraph != nil {
+			if paragraph, changed := projectParagraph(*block.Paragraph); changed {
+				block.Paragraph = &paragraph
+			}
+		}
+		if block.Table == nil {
+			continue
+		}
+		var table *document.WordTable
+		for rowIndex, sourceRow := range block.Table.Rows {
+			var row *document.WordTableRow
+			for cellIndex, sourceCell := range sourceRow.Cells {
+				var cell *document.WordTableCell
+				for paragraphIndex, sourceParagraph := range sourceCell.Paragraphs {
+					paragraph, changed := projectParagraph(sourceParagraph)
+					if !changed {
+						continue
+					}
+					if table == nil {
+						copyTable := *block.Table
+						copyTable.Rows = append([]document.WordTableRow(nil), block.Table.Rows...)
+						block.Table = &copyTable
+						table = block.Table
+					}
+					if row == nil {
+						copyRow := table.Rows[rowIndex]
+						copyRow.Cells = append([]document.WordTableCell(nil), copyRow.Cells...)
+						table.Rows[rowIndex] = copyRow
+						row = &table.Rows[rowIndex]
+					}
+					if cell == nil {
+						copyCell := row.Cells[cellIndex]
+						copyCell.Paragraphs = append([]document.WordParagraph(nil), copyCell.Paragraphs...)
+						row.Cells[cellIndex] = copyCell
+						cell = &row.Cells[cellIndex]
+					}
+					cell.Paragraphs[paragraphIndex] = paragraph
+				}
+			}
+		}
+	}
+	return projected
 }
 
 func wordLayoutDataForState(state *documentSessionState) (document.WordLayoutData, bool) {
@@ -169,61 +261,74 @@ func wordLayoutPageSetupKey(data document.WordLayoutData, fallback document.Word
 }
 
 func (a *App) startWordPagination(state *documentSessionState) {
-	if state == nil || state.word == nil || state.closed.Load() {
+	if state == nil || state.word == nil || state.closed.Load() || state.finalized.Load() || state.wordLayoutReleased.Load() {
 		return
 	}
-	if wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
-		return
-	}
-	// Supported mutations bump wordRevision through setWordBlocks. Avoid cloning
-	// and hashing the adapter's layout projection on every Gio frame.
-	revision := state.wordRevisionAtomic.Load()
-	if state.wordLayoutPendingKey != nil && state.wordLayoutPendingKey.DocumentID == state.documentID && state.wordLayoutPendingKey.Revision == revision {
-		return
-	}
-	if state.wordLayoutResult != nil && state.wordLayoutAcceptedKey != nil && state.wordLayoutAcceptedKey.DocumentID == state.documentID && state.wordLayoutAcceptedKey.Revision == revision {
-		return
-	}
-	if state.wordLayoutErrorKey != nil && state.wordLayoutErrorKey.DocumentID == state.documentID && state.wordLayoutErrorKey.Revision == revision {
+	if state.wordFlushRequested.Load() || state.formatRunning.Load() {
 		return
 	}
 	_, ok := any(state.word).(document.WordLayoutReader)
 	if !ok {
-		state.wordLayoutError = "DOCX 适配器未提供分页元数据"
-		state.wordLayoutErrorKey = &wordLayoutKey{DocumentID: state.documentID, Revision: revision}
+		state.cancelWordLayout()
+		key := wordLayoutKey{
+			DocumentID: state.documentID, Revision: state.wordRevisionAtomic.Load(),
+			DraftEpoch: state.wordDraftEpoch.Load(),
+		}
+		if state.wordLayoutErrorKey == nil || *state.wordLayoutErrorKey != key {
+			state.wordLayoutError = "DOCX 适配器未提供分页元数据"
+			state.wordLayoutErrorKey = &key
+		}
 		return
 	}
-	data, _ := wordLayoutDataForState(state)
+	data, ok := wordLayoutDataForState(state)
+	if !ok {
+		return
+	}
+	// Text edits bump the draft epoch; committed structural edits bump the
+	// revision. The page-setup digest completes the identity without cloning the
+	// document blocks on every Gio frame.
+	revision := state.wordRevisionAtomic.Load()
+	draftEpoch := state.wordDraftEpoch.Load()
 	key := wordLayoutKey{
-		DocumentID: state.documentID, Revision: revision,
+		DocumentID:   state.documentID,
+		Revision:     revision,
+		DraftEpoch:   draftEpoch,
 		PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup),
 	}
-	if state.wordLayoutResult != nil && state.wordLayoutAcceptedKey != nil && *state.wordLayoutAcceptedKey == key {
+	sameKey := func(existing *wordLayoutKey) bool {
+		if existing == nil {
+			return false
+		}
+		if existing.PageSetupKey == "" {
+			return existing.DocumentID == key.DocumentID && existing.Revision == key.Revision && existing.DraftEpoch == key.DraftEpoch
+		}
+		return *existing == key
+	}
+	if sameKey(state.wordLayoutPendingKey) {
 		return
 	}
-	if state.wordLayoutPendingKey != nil && *state.wordLayoutPendingKey == key {
+	if state.wordLayoutResult != nil && sameKey(state.wordLayoutAcceptedKey) {
 		return
 	}
-	if state.wordLayoutAcceptedKey != nil && *state.wordLayoutAcceptedKey != key {
-		state.wordLayoutResult = nil
-		state.wordLayoutPageCount.Store(0)
-		state.wordLayoutAcceptedKey = nil
+	if sameKey(state.wordLayoutErrorKey) {
+		return
 	}
-	if state.wordLayoutCancel != nil {
-		state.wordLayoutCancel()
+	blocks, drafts, snapshotRevision, snapshotDraftEpoch := state.wordLayoutProjectionSnapshot()
+	if snapshotRevision != revision || snapshotDraftEpoch != draftEpoch {
+		return
 	}
-	blocks := cloneWordBlockSnapshot(wordBlocksForState(state))
 	input := wordlayout.Input{
 		DocumentID: key.DocumentID, Revision: key.Revision,
-		Blocks: blocks, Layout: data, DefaultPageSetup: defaultWordPageSetup,
+		Blocks: wordBlocksWithDrafts(blocks, drafts), Layout: data, DefaultPageSetup: defaultWordPageSetup,
+		Previous: state.wordLayoutResult,
 	}
 	engine := a.wordLayoutEngine
 	if engine == nil {
 		shaper, err := newWordTextShaper()
 		if err != nil {
+			state.cancelWordLayout()
 			state.wordLayoutError = err.Error()
 			state.wordLayoutErrorKey = &key
-			state.wordLayoutPendingKey = nil
 			return
 		}
 		engine = wordlayout.NewEngine(shaper)
@@ -231,14 +336,40 @@ func (a *App) startWordPagination(state *documentSessionState) {
 		a.wordPDFFontSource = shaper
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	session := state.sharedDocumentSession
+	if session == nil {
+		cancel()
+		return
+	}
+	session.wordLayoutCancelMu.Lock()
+	if session.finalized.Load() || session.wordLayoutReleased.Load() {
+		session.wordLayoutCancelMu.Unlock()
+		cancel()
+		return
+	}
+	if state.wordLayoutPendingKey != nil && *state.wordLayoutPendingKey == key {
+		session.wordLayoutCancelMu.Unlock()
+		cancel()
+		return
+	}
+	if state.wordLayoutResult != nil && state.wordLayoutAcceptedKey != nil && *state.wordLayoutAcceptedKey == key {
+		session.wordLayoutCancelMu.Unlock()
+		cancel()
+		return
+	}
+	if state.wordLayoutCancel != nil {
+		state.wordLayoutCancel()
+	}
 	state.wordLayoutCancel = cancel
 	state.wordLayoutPendingKey = &key
+	state.wordLayoutPendingView = state
 	state.wordLayoutError = ""
 	state.wordLayoutWarningConfirmed = false
+	session.wordLayoutCancelMu.Unlock()
 	results, shutdown, window := a.wordLayoutResults, a.shutdown, a.window
 	go func() {
 		result, err := engine.Layout(ctx, input)
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || session.finalized.Load() || session.wordLayoutReleased.Load() {
 			return
 		}
 		select {
@@ -246,6 +377,7 @@ func (a *App) startWordPagination(state *documentSessionState) {
 			if window != nil {
 				window.Invalidate()
 			}
+		case <-ctx.Done():
 		case <-shutdown:
 		}
 	}()
@@ -253,39 +385,50 @@ func (a *App) startWordPagination(state *documentSessionState) {
 
 func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 	state := result.state
-	if state == nil || state.closed.Load() || state.word == nil || state.wordLayoutPendingKey == nil || *state.wordLayoutPendingKey != result.key {
+	if state == nil || state.closed.Load() || state.finalized.Load() || state.wordLayoutReleased.Load() || state.word == nil || state.wordLayoutPendingKey == nil || *state.wordLayoutPendingKey != result.key {
 		return
 	}
-	if state.documentID != result.key.DocumentID || state.wordRevisionAtomic.Load() != result.key.Revision {
+	if state.documentID != result.key.DocumentID || state.wordRevisionAtomic.Load() != result.key.Revision || state.wordDraftEpoch.Load() != result.key.DraftEpoch {
 		return
 	}
 	data, ok := wordLayoutDataForState(state)
 	if !ok || wordLayoutPageSetupKey(data, defaultWordPageSetup) != result.key.PageSetupKey {
 		return
 	}
+	state.wordLayoutCancelMu.Lock()
+	if state.finalized.Load() || state.wordLayoutReleased.Load() || state.documentID != result.key.DocumentID || state.wordRevisionAtomic.Load() != result.key.Revision || state.wordDraftEpoch.Load() != result.key.DraftEpoch || state.wordLayoutPendingKey == nil || *state.wordLayoutPendingKey != result.key {
+		state.wordLayoutCancelMu.Unlock()
+		return
+	}
+	if state.wordLayoutCancel != nil {
+		state.wordLayoutCancel()
+		state.wordLayoutCancel = nil
+	}
 	state.wordLayoutPendingKey = nil
-	state.wordLayoutCancel = nil
-	state.wordLayoutActivePage = 0
+	state.wordLayoutPendingView = nil
 	if result.err != nil {
 		state.wordLayoutError = result.err.Error()
 		state.wordLayoutErrorKey = &result.key
-		state.wordLayoutResult = nil
-		state.wordLayoutAcceptedKey = nil
-		state.wordLayoutPageCount.Store(0)
 	} else {
 		accepted := result.result
 		state.wordLayoutResult = &accepted
 		state.wordLayoutPageCount.Store(int64(len(accepted.Pages)))
 		pageListLast := max(0, len(accepted.Pages)-1)
-		if state.wordMultiplePagesMode {
+		if state.wordViewMode == wordViewPrintLayout && state.wordMultiplePagesMode {
 			pageListLast /= 2
 		}
 		state.wordPageListState.Position.First = min(max(0, state.wordPageListState.Position.First), pageListLast)
+		state.wordLayoutActivePage = state.wordPageListState.Position.First
+		if state.wordViewMode == wordViewPrintLayout && state.wordMultiplePagesMode {
+			state.wordLayoutActivePage *= 2
+		}
+		state.wordLayoutActivePage = min(state.wordLayoutActivePage, max(0, len(accepted.Pages)-1))
 		acceptedKey := result.key
 		state.wordLayoutAcceptedKey = &acceptedKey
 		state.wordLayoutErrorKey = nil
 		state.wordLayoutError = ""
 	}
+	state.wordLayoutCancelMu.Unlock()
 	if state.wordPDFExportAfterLayout {
 		state.wordPDFExportAfterLayout = false
 		if result.err != nil {
@@ -362,17 +505,26 @@ func (a *App) toggleWordPrintLayout() {
 	if state == nil || state.word == nil {
 		return
 	}
+	currentPage := wordCurrentPageIndex(state)
 	if state.wordViewMode == wordViewPrintLayout {
 		state.wordViewMode = wordViewContinuous
+		setWordPageListFirst(state, currentPage)
 		a.status = "已切换到连续视图"
-		return
+	} else {
+		state.wordViewMode = wordViewPrintLayout
+		if state.wordMultiplePagesMode {
+			currentPage /= 2
+		}
+		setWordPageListFirst(state, currentPage)
+		a.startWordPagination(state)
+		if state.wordLayoutPendingKey != nil {
+			a.status = "正在生成打印布局"
+		} else if state.wordLayoutError != "" {
+			a.status = "分页失败：" + state.wordLayoutError
+		}
 	}
-	state.wordViewMode = wordViewPrintLayout
-	a.startWordPagination(state)
-	if state.wordLayoutPendingKey != nil {
-		a.status = "正在生成打印布局"
-	} else if state.wordLayoutError != "" {
-		a.status = "分页失败：" + state.wordLayoutError
+	if a.window != nil {
+		a.window.Invalidate()
 	}
 }
 
@@ -386,6 +538,7 @@ func (a *App) selectWordSinglePageView() {
 	state.wordViewMode = wordViewPrintLayout
 	state.wordMultiplePagesMode = false
 	state.wordPageFitMode = true
+	state.wordPageFitPageSetupKey = ""
 	a.startWordPagination(state)
 	a.status = "已切换到单页视图"
 	if a.window != nil {
@@ -403,6 +556,7 @@ func (a *App) selectWordMultiplePagesView() {
 	state.wordViewMode = wordViewPrintLayout
 	state.wordMultiplePagesMode = true
 	state.wordPageFitMode = true
+	state.wordPageFitPageSetupKey = ""
 	a.startWordPagination(state)
 	a.status = "已切换到多页视图"
 	if a.window != nil {
@@ -434,14 +588,14 @@ func wordCurrentPageIndex(state *documentSessionState) int {
 }
 
 func (a *App) navigateWordPageToRun(state *documentSessionState, runID string, runeOffset int) {
-	if state == nil || state.wordViewMode != wordViewPrintLayout || state.wordLayoutResult == nil {
+	if state == nil || state.wordViewMode == wordViewWebLayout || state.wordLayoutResult == nil {
 		return
 	}
 	page, ok := wordPageForCaret(*state.wordLayoutResult, runID, runeOffset)
 	if !ok {
 		return
 	}
-	if state.wordMultiplePagesMode {
+	if state.wordViewMode == wordViewPrintLayout && state.wordMultiplePagesMode {
 		page /= 2
 	}
 	setWordPageListFirst(state, page)

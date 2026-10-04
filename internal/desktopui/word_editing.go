@@ -348,6 +348,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 	state.wordParagraphJoinIntent = nil
 	state.wordFlushRequested.Store(false)
 	state.wordFlushAllDrafts.Store(false)
+	state.formatRunning.Store(false)
 	if result.err != nil {
 		if active {
 			a.status = wordCommandError(result.operation, result.err)
@@ -382,10 +383,10 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 		state.wordPendingFocusRunID = run.ID
 		a.status = "正在编辑 Word 正文"
 		a.persistActiveSession()
-		a.finishWordTextFlush(state)
 	} else {
 		state.wordPendingFocusRunID = ""
 	}
+	a.finishWordTextFlush(state)
 }
 
 func (a *App) startWordParagraphSplit(state *documentSessionState) {

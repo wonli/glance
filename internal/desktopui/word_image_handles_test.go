@@ -52,7 +52,11 @@ func TestSelectingWordImageKeepsDocumentGeometryAndShowsAllResizeHandles(t *test
 	}
 	state.wordImageCache = newWordImageCache(wordImageCacheLimit)
 	state.wordImageCache.Put(imageID, decoded)
-	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	app := &App{
+		documentSessionState: state,
+		theme:                material.NewTheme(),
+		wordCommandResults:   make(chan wordCommandResult, 4),
+	}
 	router := new(input.Router)
 	var ops op.Ops
 	metric := unit.Metric{PxPerDp: 1, PxPerSp: 1}
@@ -218,20 +222,15 @@ func TestWordImageResizeAndRotationHandlesCommitPointerDrags(t *testing.T) {
 	}
 	waitForCommand := func() {
 		t.Helper()
-		deadline := time.After(3 * time.Second)
-		for state.formatRunning.Load() {
-			select {
-			case result := <-app.wordCommandResults:
-				if result.err != nil {
-					t.Fatalf("Word image handle command failed: %v", result.err)
-				}
-				app.wordCommandResults <- result
-				app.processAsyncResults()
-			case <-deadline:
-				t.Fatal("Word image handle command did not finish")
-			default:
-				time.Sleep(time.Millisecond)
+		select {
+		case result := <-app.wordCommandResults:
+			if result.err != nil {
+				t.Fatalf("Word image handle command failed: %v", result.err)
 			}
+			app.wordCommandResults <- result
+			app.processAsyncResults()
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for asynchronous Word image handle command")
 		}
 	}
 	frame()

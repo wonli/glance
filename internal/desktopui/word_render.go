@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	wordPreviewPixelLimit = 32_000_000
-	wordImageCacheLimit   = int64(64 << 20)
+	wordPreviewPixelLimit      = 32_000_000
+	wordImageCacheLimit        = int64(64 << 20)
+	wordImageDecodeConcurrency = 2
 )
 
 func fitWordImageSize(sourceWidth, sourceHeight, maxWidth, maxHeight int) image.Point {
@@ -438,11 +439,12 @@ func proportionalWordImageHeightForUI(width, originalWidth, originalHeight int64
 }
 
 type wordImageDecodeResult struct {
-	state   *documentSessionState
-	id      string
-	version uint64
-	image   image.Image
-	err     error
+	state      *documentSessionState
+	id         string
+	version    uint64
+	image      image.Image
+	err        error
+	decodeSlot bool
 }
 
 func compactWordPreview(source image.Image) image.Image {

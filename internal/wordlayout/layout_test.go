@@ -3,6 +3,7 @@ package wordlayout
 import (
 	"context"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -172,6 +173,130 @@ func TestLayoutParagraphRunFormattingAndMixedScripts(t *testing.T) {
 	}
 	if len(result.Pages[0].Text) < 2 {
 		t.Fatalf("text fragments = %+v; want formatting split by run", result.Pages[0].Text)
+	}
+}
+
+func TestLayoutPositionedGlyphRuneOffsetsStayRelativeToTheirRun(t *testing.T) {
+	input := layoutTestInput(240, 120, 10, paragraphBlock("offset", "abcdef", document.WordTextStyle{FontSize: 10}))
+	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Pages) != 1 {
+		t.Fatalf("layout page count = %d; want one text page", len(result.Pages))
+	}
+	if len(result.Pages[0].Text) == 0 {
+		t.Fatal("layout page has no text fragments")
+	}
+	var glyphs []PositionedGlyph
+	for _, fragment := range result.Pages[0].Text {
+		glyphs = append(glyphs, fragment.Glyphs...)
+	}
+	if len(glyphs) != 6 {
+		t.Fatalf("positioned glyph count = %d; want 6", len(glyphs))
+	}
+	for index, glyph := range glyphs {
+		if glyph.RuneStart != index || glyph.RuneEnd != index+1 {
+			t.Errorf("glyph %d rune range = [%d,%d); want [%d,%d)", index, glyph.RuneStart, glyph.RuneEnd, index, index+1)
+		}
+	}
+}
+
+type countingShapeCalls struct{ calls int }
+
+func (s *countingShapeCalls) Shape(value string, style document.WordTextStyle) (ShapedText, error) {
+	s.calls++
+	return layoutFakeShaper{}.Shape(value, style)
+}
+
+func (s *countingShapeCalls) FontData(fontKey string) ([]byte, error) {
+	return layoutFakeShaper{}.FontData(fontKey)
+}
+
+func (s *countingShapeCalls) GlyphOutline(fontKey string, glyphID uint32) (GlyphOutline, error) {
+	return layoutFakeShaper{}.GlyphOutline(fontKey, glyphID)
+}
+
+func TestLayoutReflowsChangedParagraphAndReusesAlignedSuffix(t *testing.T) {
+	blocks := make([]document.WordBlock, 700)
+	for index := range blocks {
+		blocks[index] = paragraphBlock("p"+itoa(index), "x", document.WordTextStyle{FontSize: 10})
+	}
+	baseInput := layoutTestInput(100, 70, 5, blocks...)
+	baseInput.DocumentID = "incremental"
+	baseInput.Revision = 1
+	engine := NewEngine(layoutFakeShaper{})
+	previous, err := engine.Layout(context.Background(), baseInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(previous.Pages) < 100 {
+		t.Fatalf("baseline page count = %d; need at least 100 pages to exercise the visible-page window", len(previous.Pages))
+	}
+	dirtyBlock := -1
+	for index, checkpoint := range previous.blockCheckpoints[:len(blocks)] {
+		if checkpoint.PageIndex == 4 {
+			dirtyBlock = index
+			break
+		}
+	}
+	if dirtyBlock < 0 {
+		t.Fatal("baseline layout has no paragraph starting on page 5")
+	}
+
+	updatedInput := baseInput
+	updatedInput.Blocks = append([]document.WordBlock(nil), baseInput.Blocks...)
+	updatedParagraph := *updatedInput.Blocks[dirtyBlock].Paragraph
+	updatedParagraph.Inlines = append([]document.WordInline(nil), updatedParagraph.Inlines...)
+	updatedRun := *updatedParagraph.Inlines[0].Text
+	updatedRun.Text = strings.Repeat("x", 100)
+	updatedParagraph.Inlines[0].Text = &updatedRun
+	updatedInput.Blocks[dirtyBlock].Paragraph = &updatedParagraph
+	updatedInput.Revision = 2
+	updatedInput.Previous = &previous
+
+	incrementalShaper := &countingShapeCalls{}
+	incremental, err := NewEngine(incrementalShaper).Layout(context.Background(), updatedInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fullInput := updatedInput
+	fullInput.Previous = nil
+	fullShaper := &countingShapeCalls{}
+	full, err := NewEngine(fullShaper).Layout(context.Background(), fullInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(incremental.Pages, full.Pages) {
+		for index := 0; index < max(len(incremental.Pages), len(full.Pages)); index++ {
+			incrementalText, fullText := "", ""
+			if index < len(incremental.Pages) {
+				incrementalText = joinPageText(incremental.Pages[index])
+			}
+			if index < len(full.Pages) {
+				fullText = joinPageText(full.Pages[index])
+			}
+			t.Logf("page %d incremental=%q full=%q", index, incrementalText, fullText)
+		}
+		t.Fatalf("incremental page scenes differ from a full layout (%d vs %d pages)", len(incremental.Pages), len(full.Pages))
+	}
+	if !reflect.DeepEqual(incremental.Locations, full.Locations) {
+		t.Fatal("incremental caret locations differ from a full layout")
+	}
+	if !reflect.DeepEqual(incremental.Diagnostics, full.Diagnostics) {
+		t.Fatalf("incremental diagnostics = %+v; full layout diagnostics = %+v", incremental.Diagnostics, full.Diagnostics)
+	}
+	changedPage := previous.blockCheckpoints[dirtyBlock].PageIndex
+	if changedPage != 4 {
+		t.Fatalf("changed paragraph starts on page %d; want page 5", changedPage+1)
+	}
+	for pageIndex := 0; pageIndex < changedPage; pageIndex++ {
+		if len(previous.Pages[pageIndex].Text) == 0 || len(incremental.Pages[pageIndex].Text) == 0 || &incremental.Pages[pageIndex].Text[0] != &previous.Pages[pageIndex].Text[0] {
+			t.Fatalf("page %d before the edited page was not reused unchanged", pageIndex+1)
+		}
+	}
+	if incrementalShaper.calls >= fullShaper.calls {
+		t.Fatalf("incremental shaping calls = %d; full layout calls = %d; want the aligned suffix reused", incrementalShaper.calls, fullShaper.calls)
 	}
 }
 

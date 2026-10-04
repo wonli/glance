@@ -266,7 +266,7 @@ func homeTableColumns(gtx layout.Context, theme *material.Theme, header bool, ro
 
 func (a *App) homeVisibleRecents(applyFilter bool) []workspace.Recent {
 	var recents []workspace.Recent
-	if a.collection != nil {
+	if a != nil && a.desktopRuntime != nil && a.collection != nil {
 		recents = a.collection.Recents()
 	}
 	filtered := make([]workspace.Recent, 0, len(recents))

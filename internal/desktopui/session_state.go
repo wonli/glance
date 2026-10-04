@@ -14,6 +14,7 @@ type documentSessionState struct {
 	*sharedDocumentSession
 	windowID                            uint64
 	closed                              atomic.Bool
+	wordViewResourcesReleased           atomic.Bool
 	observedSessionRevision             atomic.Uint64
 	appliedSessionRevision              atomic.Uint64
 	appliedWordDraftEpoch               atomic.Uint64
@@ -36,6 +37,23 @@ type documentSessionState struct {
 	wordLayoutActivePage                int
 	wordLayoutZoom                      float64
 	wordPageListState                   widget.List
+	wordPageVisibleInteractions         []wordVisiblePageInteraction
+	wordPageVisibleInteractionsNext     []wordVisiblePageInteraction
+	wordPageInteractionTags             map[int]*wordPageInteractionTag
+	wordPageInteractionTagsNext         map[int]*wordPageInteractionTag
+	wordPageSelectionDrag               *wordPageSelectionDrag
+	wordPageTextSelection               *wordPageTextSelection
+	wordPagePendingScrollRunID          string
+	wordPageFocusedMetaRunID            string
+	wordPageFocusedMetaRevision         uint64
+	wordPageFocusedParagraph            document.WordParagraph
+	wordPagePreferredVerticalX          float64
+	wordPagePreferredVerticalXSet       bool
+	wordPageScrollX                     float64
+	wordPageFitWidth                    int
+	wordPageFitHeight                   int
+	wordPageFitPageSetupKey             string
+	wordPageFitColumns                  int
 	wordStatusPrintLayoutButton         widget.Clickable
 	wordStatusWebLayoutButton           widget.Clickable
 	wordStatusZoomOutButton             widget.Clickable
@@ -123,6 +141,7 @@ type documentSessionState struct {
 	wordImageInteractions               map[string]*wordImageInteraction
 	wordImageFocusRequestID             string
 	wordImageCache                      *wordImageCache
+	wordImageDecodeActive               atomic.Int32
 	wordImagePending                    map[string]uint64
 	wordImageVersions                   map[string]uint64
 	wordImageErrors                     map[string]string

@@ -2,6 +2,9 @@ package wordlayout
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -21,6 +24,7 @@ type Input struct {
 	Blocks           []document.WordBlock
 	Layout           document.WordLayoutData
 	DefaultPageSetup document.WordPageSetup
+	Previous         *Result
 	// EditorParagraphInsets makes page scenes reserve the same small paragraph
 	// padding used by the editable Gio canvas, so screen and print share geometry.
 	EditorParagraphInsets bool
@@ -83,6 +87,7 @@ type TextFragment struct {
 	Text        string
 	RuneStart   int
 	RuneEnd     int
+	Editable    bool
 	Style       document.WordTextStyle
 	XPT         float64
 	BaselineYPT float64
@@ -116,12 +121,30 @@ type TableCellPlacement struct {
 }
 
 type Result struct {
-	DocumentID  string
-	Revision    uint64
-	Pages       []PageScene
-	Diagnostics []Diagnostic
-	Locations   map[SourcePosition]Position
-	CanPreview  bool
+	DocumentID        string
+	Revision          uint64
+	Pages             []PageScene
+	Diagnostics       []Diagnostic
+	Locations         map[SourcePosition]Position
+	CanPreview        bool
+	blockFingerprints [][32]byte
+	blockKinds        []document.WordBlockKind
+	blockHazards      []bool
+	layoutFingerprint string
+	blockCheckpoints  []layoutCheckpoint
+	runBlocks         map[string]int
+	diagnosticBlocks  []int
+}
+
+type layoutCheckpoint struct {
+	PageIndex            int
+	YPT                  float64
+	Used                 bool
+	PendingBreak         bool
+	TextCount            int
+	ImageCount           int
+	TableCellCount       int
+	ParagraphBorderCount int
 }
 
 type Engine struct {
@@ -145,13 +168,31 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 
 	setup := resolvePageSetup(input.Layout, input.DefaultPageSetup)
 	content := pageContentRect(setup)
+	fingerprints, err := fingerprintBlocks(ctx, input.Blocks)
+	if err != nil {
+		return Result{}, err
+	}
+	layoutFingerprint := fingerprintLayout(input)
 	result := Result{
-		DocumentID: input.DocumentID,
-		Revision:   input.Revision,
-		Locations:  make(map[SourcePosition]Position),
-		CanPreview: true,
+		DocumentID:        input.DocumentID,
+		Revision:          input.Revision,
+		Locations:         make(map[SourcePosition]Position),
+		CanPreview:        true,
+		blockFingerprints: fingerprints,
+		blockKinds:        wordBlockKinds(input.Blocks),
+		blockHazards:      wordBlockHazards(input.Blocks),
+		layoutFingerprint: layoutFingerprint,
+		blockCheckpoints:  make([]layoutCheckpoint, len(input.Blocks)+1),
 	}
 	cursor := newLayoutCursor(&result, setup, content)
+	cursor.sourceBlockIndexes, err = wordSourceBlockIndexes(ctx, input.Blocks)
+	if err != nil {
+		return Result{}, err
+	}
+	result.runBlocks, err = wordRunBlockIndexes(ctx, input.Blocks)
+	if err != nil {
+		return Result{}, err
+	}
 	if usesDefaultPageSetup(input.Layout, input.DefaultPageSetup) {
 		cursor.diagnostic(DiagnosticWarning, "section-0", "page-setup-defaulted", "The document does not define complete page geometry; product page defaults were used.")
 	}
@@ -168,10 +209,58 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 
 	styles := newStyleResolver(input.Layout, cursor)
 	preparedParagraphs := make(map[int]preparedParagraph)
-	for blockIndex, block := range input.Blocks {
+	startBlock := 0
+	previous := input.Previous
+	incrementalStarted := false
+	if previous != nil && previous.DocumentID == input.DocumentID && previous.layoutFingerprint == layoutFingerprint && len(previous.blockCheckpoints) == len(previous.blockFingerprints)+1 {
+		if dirtyBlock := firstChangedBlock(fingerprints, previous.blockFingerprints); dirtyBlock < 0 {
+			unchanged := cloneLayoutResult(*previous)
+			unchanged.Revision = input.Revision
+			return unchanged, nil
+		} else if incrementalLayoutSafe(input, previous, dirtyBlock) {
+			checkpoint := previous.blockCheckpoints[dirtyBlock]
+			if checkpoint.PageIndex >= 0 && checkpoint.PageIndex < len(previous.Pages) {
+				startBlock = dirtyBlock
+				incrementalStarted = true
+				result.Pages = nil
+				result.Pages = append(result.Pages, previous.Pages[:checkpoint.PageIndex]...)
+				current := clonePagePrefix(previous.Pages[checkpoint.PageIndex], checkpoint)
+				result.Pages = append(result.Pages, current)
+				for position, value := range previous.Locations {
+					if previous.runBlocks[position.RunID] < dirtyBlock {
+						result.Locations[position] = value
+					}
+				}
+				for index, diagnostic := range previous.Diagnostics {
+					if index < len(previous.diagnosticBlocks) && previous.diagnosticBlocks[index] >= dirtyBlock {
+						continue
+					}
+					appendUniqueDiagnostic(&result, diagnostic, -1)
+				}
+				copy(result.blockCheckpoints[:dirtyBlock], previous.blockCheckpoints[:dirtyBlock])
+				cursor.pageIndex = checkpoint.PageIndex
+				cursor.y = checkpoint.YPT
+				cursor.used = checkpoint.Used
+				cursor.pendingBreak = checkpoint.PendingBreak
+			}
+		}
+	}
+	converged := false
+	for blockIndex := startBlock; blockIndex < len(input.Blocks); blockIndex++ {
 		if err := ctx.Err(); err != nil {
 			return Result{}, err
 		}
+		cursor.currentBlockIndex = blockIndex
+		result.blockCheckpoints[blockIndex] = cursor.checkpoint()
+		if previous != nil && incrementalStarted && blockIndex > startBlock && suffixFingerprintsEqual(fingerprints, previous.blockFingerprints, blockIndex) {
+			old := previous.blockCheckpoints[blockIndex]
+			if layoutFlowMatches(cursor, old) {
+				appendReusedLayoutSuffix(&result, cursor, *previous, blockIndex)
+				converged = true
+				break
+			}
+		}
+		block := input.Blocks[blockIndex]
 		switch block.Kind {
 		case document.WordParagraphBlock:
 			if block.Paragraph == nil {
@@ -257,6 +346,10 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 			cursor.diagnostic(DiagnosticError, block.ID, "unknown-block-kind", fmt.Sprintf("Unsupported Word body block kind %d at index %d.", block.Kind, blockIndex))
 		}
 	}
+	if !converged {
+		cursor.currentBlockIndex = len(input.Blocks)
+		result.blockCheckpoints[len(input.Blocks)] = cursor.checkpoint()
+	}
 	if len(result.Pages) == 0 {
 		cursor.startPage()
 	}
@@ -339,14 +432,16 @@ func pageContentRect(setup document.WordPageSetup) Rect {
 }
 
 type layoutCursor struct {
-	result       *Result
-	setup        document.WordPageSetup
-	content      Rect
-	pageIndex    int
-	y            float64
-	used         bool
-	pendingBreak bool
-	glyphPaths   map[glyphPathCacheKey][]GlyphPathCommand
+	result             *Result
+	setup              document.WordPageSetup
+	content            Rect
+	pageIndex          int
+	y                  float64
+	used               bool
+	pendingBreak       bool
+	glyphPaths         map[glyphPathCacheKey][]GlyphPathCommand
+	currentBlockIndex  int
+	sourceBlockIndexes map[string]int
 }
 
 type glyphPathCacheKey struct {
@@ -356,9 +451,263 @@ type glyphPathCacheKey struct {
 }
 
 func newLayoutCursor(result *Result, setup document.WordPageSetup, content Rect) *layoutCursor {
-	cursor := &layoutCursor{result: result, setup: setup, content: content, glyphPaths: make(map[glyphPathCacheKey][]GlyphPathCommand)}
+	cursor := &layoutCursor{result: result, setup: setup, content: content, glyphPaths: make(map[glyphPathCacheKey][]GlyphPathCommand), currentBlockIndex: -1}
 	cursor.startPage()
 	return cursor
+}
+
+func fingerprintBlocks(ctx context.Context, blocks []document.WordBlock) ([][32]byte, error) {
+	fingerprints := make([][32]byte, len(blocks))
+	for index, block := range blocks {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		encoded, _ := json.Marshal(block)
+		fingerprints[index] = sha256.Sum256(encoded)
+	}
+	return fingerprints, nil
+}
+
+func fingerprintLayout(input Input) string {
+	value := struct {
+		Layout                document.WordLayoutData
+		DefaultPageSetup      document.WordPageSetup
+		EditorParagraphInsets bool
+	}{input.Layout, input.DefaultPageSetup, input.EditorParagraphInsets}
+	encoded, _ := json.Marshal(value)
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
+}
+
+func firstChangedBlock(current, previous [][32]byte) int {
+	limit := min(len(current), len(previous))
+	for index := 0; index < limit; index++ {
+		if current[index] != previous[index] {
+			return index
+		}
+	}
+	if len(current) != len(previous) {
+		return limit
+	}
+	return -1
+}
+
+func suffixFingerprintsEqual(current, previous [][32]byte, start int) bool {
+	if len(current) != len(previous) || start < 0 || start > len(current) {
+		return false
+	}
+	for index := start; index < len(current); index++ {
+		if current[index] != previous[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func wordBlockKinds(blocks []document.WordBlock) []document.WordBlockKind {
+	kinds := make([]document.WordBlockKind, len(blocks))
+	for index := range blocks {
+		kinds[index] = blocks[index].Kind
+	}
+	return kinds
+}
+
+func wordBlockHazards(blocks []document.WordBlock) []bool {
+	hazards := make([]bool, len(blocks))
+	for index, block := range blocks {
+		hazards[index] = blockHasFlowHazard(block)
+	}
+	return hazards
+}
+
+func blockHasFlowHazard(block document.WordBlock) bool {
+	return block.Paragraph != nil && (block.Paragraph.Layout.KeepWithNext || block.Paragraph.Layout.BottomBorder.SizePT > 0)
+}
+
+func wordRunBlockIndexes(ctx context.Context, blocks []document.WordBlock) (map[string]int, error) {
+	indexes := make(map[string]int)
+	addParagraph := func(paragraph document.WordParagraph, blockIndex int) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text != nil && inline.Text.ID != "" {
+				indexes[inline.Text.ID] = blockIndex
+			}
+		}
+	}
+	for blockIndex, block := range blocks {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if block.Paragraph != nil {
+			addParagraph(*block.Paragraph, blockIndex)
+		}
+		if block.Table != nil {
+			for _, row := range block.Table.Rows {
+				for _, cell := range row.Cells {
+					for _, paragraph := range cell.Paragraphs {
+						addParagraph(paragraph, blockIndex)
+					}
+				}
+			}
+		}
+	}
+	return indexes, nil
+}
+
+func incrementalLayoutSafe(input Input, previous *Result, dirtyBlock int) bool {
+	if previous == nil || dirtyBlock < 0 || dirtyBlock >= len(input.Blocks) || len(input.Blocks) != len(previous.blockFingerprints) {
+		return false
+	}
+	if input.Blocks[dirtyBlock].Kind != document.WordParagraphBlock || dirtyBlock >= len(previous.blockKinds) || previous.blockKinds[dirtyBlock] != document.WordParagraphBlock {
+		return false
+	}
+	for _, style := range input.Layout.Styles {
+		if style.Paragraph.KeepWithNext || style.Paragraph.BottomBorder.SizePT > 0 {
+			return false
+		}
+	}
+	if input.Layout.Defaults.Paragraph.KeepWithNext || input.Layout.Defaults.Paragraph.BottomBorder.SizePT > 0 {
+		return false
+	}
+	for index := max(0, dirtyBlock-1); index <= min(len(input.Blocks)-1, dirtyBlock+1); index++ {
+		if (index < len(previous.blockHazards) && previous.blockHazards[index]) || wordBlockHazards(input.Blocks[index : index+1])[0] {
+			return false
+		}
+	}
+	return dirtyBlock < len(previous.blockCheckpoints)
+}
+
+func cloneLayoutResult(source Result) Result {
+	clone := source
+	clone.Pages = append([]PageScene(nil), source.Pages...)
+	clone.Diagnostics = append([]Diagnostic(nil), source.Diagnostics...)
+	clone.blockFingerprints = append([][32]byte(nil), source.blockFingerprints...)
+	clone.blockKinds = append([]document.WordBlockKind(nil), source.blockKinds...)
+	clone.blockHazards = append([]bool(nil), source.blockHazards...)
+	clone.blockCheckpoints = append([]layoutCheckpoint(nil), source.blockCheckpoints...)
+	clone.diagnosticBlocks = append([]int(nil), source.diagnosticBlocks...)
+	clone.runBlocks = make(map[string]int, len(source.runBlocks))
+	for runID, blockIndex := range source.runBlocks {
+		clone.runBlocks[runID] = blockIndex
+	}
+	clone.Locations = make(map[SourcePosition]Position, len(source.Locations))
+	for position, value := range source.Locations {
+		clone.Locations[position] = value
+	}
+	return clone
+}
+
+func clonePagePrefix(source PageScene, checkpoint layoutCheckpoint) PageScene {
+	clone := source
+	clone.Text = append([]TextFragment(nil), source.Text[:min(len(source.Text), checkpoint.TextCount)]...)
+	clone.Images = append([]ImagePlacement(nil), source.Images[:min(len(source.Images), checkpoint.ImageCount)]...)
+	clone.TableCells = append([]TableCellPlacement(nil), source.TableCells[:min(len(source.TableCells), checkpoint.TableCellCount)]...)
+	clone.ParagraphBorders = append([]ParagraphBorderPlacement(nil), source.ParagraphBorders[:min(len(source.ParagraphBorders), checkpoint.ParagraphBorderCount)]...)
+	return clone
+}
+
+func layoutFlowMatches(cursor *layoutCursor, old layoutCheckpoint) bool {
+	return old.PageIndex >= 0 && cursor.used == old.Used && cursor.pendingBreak == old.PendingBreak && math.Abs(cursor.y-old.YPT) <= 1e-4
+}
+
+func appendUniqueDiagnostic(result *Result, diagnostic Diagnostic, blockIndex int) {
+	for _, existing := range result.Diagnostics {
+		if existing.SourceID == diagnostic.SourceID && existing.Code == diagnostic.Code {
+			return
+		}
+	}
+	result.Diagnostics = append(result.Diagnostics, diagnostic)
+	result.diagnosticBlocks = append(result.diagnosticBlocks, blockIndex)
+}
+
+func appendReusedLayoutSuffix(result *Result, cursor *layoutCursor, previous Result, blockIndex int) {
+	oldCheckpoint := previous.blockCheckpoints[blockIndex]
+	newCheckpoint := cursor.checkpoint()
+	pageDelta := cursor.pageIndex - oldCheckpoint.PageIndex
+	oldPage := previous.Pages[oldCheckpoint.PageIndex]
+	currentPage := &result.Pages[cursor.pageIndex]
+	currentPage.Text = append(currentPage.Text, oldPage.Text[min(len(oldPage.Text), oldCheckpoint.TextCount):]...)
+	currentPage.Images = append(currentPage.Images, oldPage.Images[min(len(oldPage.Images), oldCheckpoint.ImageCount):]...)
+	currentPage.TableCells = append(currentPage.TableCells, oldPage.TableCells[min(len(oldPage.TableCells), oldCheckpoint.TableCellCount):]...)
+	currentPage.ParagraphBorders = append(currentPage.ParagraphBorders, oldPage.ParagraphBorders[min(len(oldPage.ParagraphBorders), oldCheckpoint.ParagraphBorderCount):]...)
+	for pageIndex := oldCheckpoint.PageIndex + 1; pageIndex < len(previous.Pages); pageIndex++ {
+		page := previous.Pages[pageIndex]
+		page.Index += pageDelta
+		result.Pages = append(result.Pages, page)
+	}
+	for position, value := range previous.Locations {
+		if previous.runBlocks[position.RunID] < blockIndex {
+			continue
+		}
+		value.PageIndex += pageDelta
+		result.Locations[position] = value
+	}
+	for index, diagnostic := range previous.Diagnostics {
+		if index >= len(previous.diagnosticBlocks) || previous.diagnosticBlocks[index] < blockIndex {
+			continue
+		}
+		appendUniqueDiagnostic(result, diagnostic, previous.diagnosticBlocks[index])
+	}
+	for index := blockIndex + 1; index < len(result.blockCheckpoints) && index < len(previous.blockCheckpoints); index++ {
+		checkpoint := previous.blockCheckpoints[index]
+		if checkpoint.PageIndex < oldCheckpoint.PageIndex {
+			continue
+		}
+		checkpoint.PageIndex += pageDelta
+		if previous.blockCheckpoints[index].PageIndex == oldCheckpoint.PageIndex {
+			checkpoint.TextCount += newCheckpoint.TextCount - oldCheckpoint.TextCount
+			checkpoint.ImageCount += newCheckpoint.ImageCount - oldCheckpoint.ImageCount
+			checkpoint.TableCellCount += newCheckpoint.TableCellCount - oldCheckpoint.TableCellCount
+			checkpoint.ParagraphBorderCount += newCheckpoint.ParagraphBorderCount - oldCheckpoint.ParagraphBorderCount
+		}
+		result.blockCheckpoints[index] = checkpoint
+	}
+}
+
+func wordSourceBlockIndexes(ctx context.Context, blocks []document.WordBlock) (map[string]int, error) {
+	indexes := make(map[string]int)
+	addParagraph := func(paragraph document.WordParagraph, blockIndex int) {
+		if paragraph.ID != "" {
+			indexes[paragraph.ID] = blockIndex
+		}
+		for _, inline := range paragraph.Inlines {
+			if inline.Text != nil && inline.Text.ID != "" {
+				indexes[inline.Text.ID] = blockIndex
+			}
+			if inline.Image != nil && inline.Image.ID != "" {
+				indexes[inline.Image.ID] = blockIndex
+			}
+			if inline.Unsupported != nil && inline.Unsupported.ID != "" {
+				indexes[inline.Unsupported.ID] = blockIndex
+			}
+		}
+	}
+	for blockIndex, block := range blocks {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if block.ID != "" {
+			indexes[block.ID] = blockIndex
+		}
+		if block.Paragraph != nil {
+			addParagraph(*block.Paragraph, blockIndex)
+		}
+		if block.Unsupported != nil && block.Unsupported.ID != "" {
+			indexes[block.Unsupported.ID] = blockIndex
+		}
+		if block.Table != nil {
+			for _, row := range block.Table.Rows {
+				for _, cell := range row.Cells {
+					if cell.ID != "" {
+						indexes[cell.ID] = blockIndex
+					}
+					for _, paragraph := range cell.Paragraphs {
+						addParagraph(paragraph, blockIndex)
+					}
+				}
+			}
+		}
+	}
+	return indexes, nil
 }
 
 func (c *layoutCursor) startPage() {
@@ -382,6 +731,23 @@ func (c *layoutCursor) diagnostic(severity DiagnosticSeverity, sourceID, code, d
 		}
 	}
 	c.result.Diagnostics = append(c.result.Diagnostics, Diagnostic{Severity: severity, SourceID: sourceID, Code: code, Detail: detail})
+	blockIndex, known := c.sourceBlockIndexes[sourceID]
+	if !known {
+		blockIndex = c.currentBlockIndex
+	}
+	c.result.diagnosticBlocks = append(c.result.diagnosticBlocks, blockIndex)
+}
+
+func (c *layoutCursor) checkpoint() layoutCheckpoint {
+	if c.pageIndex < 0 || c.pageIndex >= len(c.result.Pages) {
+		return layoutCheckpoint{PageIndex: -1, YPT: c.y, Used: c.used, PendingBreak: c.pendingBreak}
+	}
+	page := c.result.Pages[c.pageIndex]
+	return layoutCheckpoint{
+		PageIndex: c.pageIndex, YPT: c.y, Used: c.used, PendingBreak: c.pendingBreak,
+		TextCount: len(page.Text), ImageCount: len(page.Images),
+		TableCellCount: len(page.TableCells), ParagraphBorderCount: len(page.ParagraphBorders),
+	}
 }
 
 func (c *layoutCursor) ensureSpace(height float64, sourceID string) bool {
@@ -411,9 +777,10 @@ func (c *layoutCursor) ensureSpace(height float64, sourceID string) bool {
 }
 
 type styleResolver struct {
-	defaults document.WordStyleDefaults
-	styles   map[string]document.WordStyle
-	cursor   *layoutCursor
+	defaults                document.WordStyleDefaults
+	styles                  map[string]document.WordStyle
+	defaultParagraphStyleID string
+	cursor                  *layoutCursor
 }
 
 func newStyleResolver(layout document.WordLayoutData, cursor *layoutCursor) *styleResolver {
@@ -427,6 +794,9 @@ func newStyleResolver(layout document.WordLayoutData, cursor *layoutCursor) *sty
 			continue
 		}
 		resolver.styles[style.ID] = style
+		if style.DefaultParagraph && resolver.defaultParagraphStyleID == "" {
+			resolver.defaultParagraphStyleID = style.ID
+		}
 	}
 	return resolver
 }
@@ -440,10 +810,14 @@ func (r *styleResolver) paragraphStyle(paragraph document.WordParagraph, sourceI
 	out := resolvedParagraphStyle{}
 	mergeTextStyle(&out.text, r.defaults.Text, r.defaults.TextSet)
 	mergeParagraphLayout(&out.paragraph, r.defaults.Paragraph)
-	if paragraph.Style != "" {
+	paragraphStyleID := paragraph.Style
+	if paragraphStyleID == "" {
+		paragraphStyleID = r.defaultParagraphStyleID
+	}
+	if paragraphStyleID != "" {
 		chain := make([]document.WordStyle, 0, 4)
 		seen := map[string]bool{}
-		current := paragraph.Style
+		current := paragraphStyleID
 		for current != "" {
 			if seen[current] {
 				r.cursor.diagnostic(DiagnosticError, sourceID, "style-cycle", "A paragraph style inheritance cycle prevents deterministic layout.")

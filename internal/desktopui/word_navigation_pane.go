@@ -97,10 +97,13 @@ func (a *App) layoutWordBodyArea(gtx layout.Context, state *documentSessionState
 					return a.layoutWordHorizontalRuler(gtx, state)
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					if state.wordViewMode == wordViewPrintLayout {
-						return a.layoutWordPageView(gtx, state)
+					if state.wordViewMode == wordViewWebLayout {
+						return a.layoutWordCanvas(gtx, state, blocks)
 					}
-					return a.layoutWordCanvas(gtx, state, blocks)
+					if state.wordLayoutResult == nil && state.wordLayoutError == "" && len(blocks) > 0 {
+						return a.layoutWordCanvas(gtx, state, blocks)
+					}
+					return a.layoutWordPageView(gtx, state)
 				}),
 			)
 		}),

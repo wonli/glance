@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"bytes"
+	"container/list"
 	"errors"
 	"fmt"
 	"math"
@@ -22,6 +23,11 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/wordlayout"
+)
+
+const (
+	wordGlyphOutlineCacheLimit = int64(16 << 20)
+	wordGlyphOutlineCacheItems = 128
 )
 
 var wordFontFallbackFamilies = []string{
@@ -47,7 +53,15 @@ type wordTextShaper struct {
 	facesByID map[fontscan.Location]*font.Face
 	idsByFace map[*font.Face]fontscan.Location
 	dataByID  map[fontscan.Location][]byte
-	paths     map[string]wordlayout.GlyphOutline
+	paths     map[string]*list.Element
+	pathLRU   *list.List
+	pathBytes int64
+}
+
+type cachedWordGlyphOutline struct {
+	key     string
+	outline wordlayout.GlyphOutline
+	weight  int64
 }
 
 func newWordTextShaper() (*wordTextShaper, error) {
@@ -97,7 +111,8 @@ func newWordTextShaperWithCacheDir(cacheDir string) (*wordTextShaper, error) {
 		facesByID: make(map[fontscan.Location]*font.Face),
 		idsByFace: make(map[*font.Face]fontscan.Location),
 		dataByID:  make(map[fontscan.Location][]byte),
-		paths:     make(map[string]wordlayout.GlyphOutline),
+		paths:     make(map[string]*list.Element),
+		pathLRU:   list.New(),
 	}, nil
 }
 
@@ -229,8 +244,8 @@ func (s *wordTextShaper) GlyphOutline(fontKey string, glyphID uint32) (wordlayou
 		return wordlayout.GlyphOutline{}, err
 	}
 	cacheKey := fontKey + "#glyph=" + strconv.FormatUint(uint64(glyphID), 10)
-	if outline, ok := s.paths[cacheKey]; ok {
-		return cloneGlyphOutline(outline), nil
+	if outline, ok := s.cachedGlyphOutline(cacheKey); ok {
+		return outline, nil
 	}
 	var face *font.Face
 	for location, candidate := range s.facesByID {
@@ -261,7 +276,7 @@ func (s *wordTextShaper) GlyphOutline(fontKey string, glyphID uint32) (wordlayou
 	case nil:
 		if extents, ok := face.GlyphExtents(font.GID(glyphID)); ok && extents.Width == 0 && extents.Height == 0 {
 			outline := wordlayout.GlyphOutline{UnitsPerEm: unitsPerEm}
-			s.paths[cacheKey] = outline
+			s.cacheGlyphOutline(cacheKey, outline)
 			return cloneGlyphOutline(outline), nil
 		}
 		return wordlayout.GlyphOutline{}, fmt.Errorf("glyph %d in %q has no vector outline", glyphID, fontKey)
@@ -269,8 +284,59 @@ func (s *wordTextShaper) GlyphOutline(fontKey string, glyphID uint32) (wordlayou
 		return wordlayout.GlyphOutline{}, fmt.Errorf("glyph %d in %q uses an unsupported color or bitmap outline", glyphID, fontKey)
 	}
 	outline := wordlayout.GlyphOutline{UnitsPerEm: unitsPerEm, Commands: fontOutlineCommands(source.Segments)}
-	s.paths[cacheKey] = outline
+	s.cacheGlyphOutline(cacheKey, outline)
 	return cloneGlyphOutline(outline), nil
+}
+
+func (s *wordTextShaper) cachedGlyphOutline(cacheKey string) (wordlayout.GlyphOutline, bool) {
+	if s == nil {
+		return wordlayout.GlyphOutline{}, false
+	}
+	item := s.paths[cacheKey]
+	if item == nil {
+		return wordlayout.GlyphOutline{}, false
+	}
+	s.pathLRU.MoveToFront(item)
+	entry := item.Value.(cachedWordGlyphOutline)
+	return cloneGlyphOutline(entry.outline), true
+}
+
+func (s *wordTextShaper) cacheGlyphOutline(cacheKey string, outline wordlayout.GlyphOutline) {
+	if s == nil {
+		return
+	}
+	if s.paths == nil {
+		s.paths = make(map[string]*list.Element)
+	}
+	if s.pathLRU == nil {
+		s.pathLRU = list.New()
+	}
+	if current := s.paths[cacheKey]; current != nil {
+		entry := current.Value.(cachedWordGlyphOutline)
+		s.pathBytes -= entry.weight
+		delete(s.paths, cacheKey)
+		s.pathLRU.Remove(current)
+	}
+	// Path commands dominate the retained size. The fixed per-command weight
+	// also accounts for slice and map/list overhead without keeping an
+	// unbounded number of outlines from documents opened earlier in the process.
+	weight := int64(len(cacheKey)) + int64(len(outline.Commands))*64
+	if weight > wordGlyphOutlineCacheLimit {
+		return
+	}
+	for len(s.paths) >= wordGlyphOutlineCacheItems || s.pathBytes+weight > wordGlyphOutlineCacheLimit {
+		oldest := s.pathLRU.Back()
+		if oldest == nil {
+			break
+		}
+		entry := oldest.Value.(cachedWordGlyphOutline)
+		delete(s.paths, entry.key)
+		s.pathBytes -= entry.weight
+		s.pathLRU.Remove(oldest)
+	}
+	entry := cachedWordGlyphOutline{key: cacheKey, outline: cloneGlyphOutline(outline), weight: weight}
+	s.paths[cacheKey] = s.pathLRU.PushFront(entry)
+	s.pathBytes += weight
 }
 
 func fontOutlineCommands(segments []font.Segment) []wordlayout.GlyphOutlineCommand {

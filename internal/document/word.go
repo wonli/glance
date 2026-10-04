@@ -129,8 +129,9 @@ type WordPageBreak struct {
 
 // WordUnsupported describes retained content that cannot be projected safely.
 type WordUnsupported struct {
-	ID          string
-	Description string
+	ID           string
+	Description  string
+	ImagePreview *WordImage
 }
 
 // WordContentReader is an optional capability for ordered DOCX content.

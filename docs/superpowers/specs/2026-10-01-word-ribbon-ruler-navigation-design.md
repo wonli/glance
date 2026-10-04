@@ -1,57 +1,40 @@
-# Word Ribbon, Rulers, and Caret Navigation Design
+# Word 编辑区当前实现记录
 
-## Goal
+本文记录仓库当前 Word 编辑区的实现，不是待实现方案。以 `internal/desktopui` 和 `internal/wordlayout` 当前代码为准；页面预览只在布局引擎明确支持时显示，不代表完整兼容 Microsoft Word 的版式。
 
-Align Glance's DOCX workspace with the Word editor layout in Pen node `Clpgm`, add horizontal and vertical canvas rulers, and let the caret move naturally across independently editable Word text runs and paragraphs with the arrow keys.
+## 当前界面接线
 
-The reference is a 1440 × 900 editor with the existing document tabs at the top, a Word category row and grouped ribbon, a horizontal ruler, a gray workspace with a centered paper column and vertical ruler, and a bottom status bar. The implementation remains responsive when the window is resized.
+- `layoutWordFlow` 组织顶部功能区（阅读模式下换成阅读栏）、正文区域和底部状态栏；Word 导航窗格可按需显示，宽 300 dp，阅读模式下隐藏。
+- 正文按视图模式分流：Web 版式调用流式编辑画布；连续和打印版式调用分页页面视图。连续/打印视图显示水平标尺；Web 版式和阅读模式隐藏标尺。
+- 连续/打印视图使用 `wordlayout` 生成的页面场景。连续视图采用紧凑页间分隔；打印视图支持页边距、阴影和双页排列。页面缩放由状态栏控制，布局结果正在计算、失败或含不支持版式时，界面显示对应提示，不伪报页数或预览结果。
+- Web 版式保留流式文本编辑器和响应式内容区域，内容最大宽度 1200 dp。画布宽度状态默认 900 dp，画布拖动逻辑将宽度限制在至少 480 dp；但当前 Web 路径按可用视口铺画布并跳过边缘拖动，分页视图则按页面尺寸与缩放绘制，所以该状态不等同于当前可见的 Web 画布宽度或分页纸张宽度。
 
-## User-visible behavior
+## Ribbon 当前实现
 
-- Keep the existing document tab strip. Below it, render the Word category row and 96 dp command surface at a fixed 138 dp total ribbon height. Match `Clpgm`'s Home group geometry: a large paste action with stacked clipboard actions, a top row of font fields above one horizontal formatting row, one horizontal paragraph icon row, the style gallery, stacked Find/Replace/Select actions, and one horizontal Editor/Dictate/Add-ins/Designer row. Keep contextual Picture actions in one horizontal row and the group strip horizontally scrollable at narrow widths. Preserve the current Home, Insert, and contextual Picture commands. Only operations already supported by the DOCX adapter are enabled; unsupported controls are visibly disabled.
-- Keep the reference's 900 × 600 dp white paper on a neutral gray workspace, centered horizontally with the Clpgm top and bottom offsets. Resize the paper width by dragging either paper edge or either visible outer-edge handle on the horizontal ruler.
-- Place a 33 dp horizontal ruler below the ribbon and a 25 dp vertical ruler 14 dp left of the paper, inset 20 dp from its top and 33 dp from the workspace bottom. Match the reference's 15 horizontal labels and 60 dp vertical tick rhythm, scaling the horizontal ruler with the canvas width. Drag the left and right horizontal-ruler indent markers to adjust the selected paragraph and preserve those indents through the DOCX adapter. The vertical scale remains visual-only while the document is in continuous-flow mode.
-- Add a bottom status strip in the reference's position and visual style. It may show truthful document information and the continuous-view state, but must not report page counts or pagination modes: Word pagination is not implemented. Controls for unsupported views or zoom remain disabled.
-- Arrow navigation keeps the caret in editable text and does not mutate document content. With a collapsed caret, Left/Right move within the current run normally and transfer to the adjacent editable run at a run boundary, then across paragraph boundaries in document reading order. Table paragraphs participate in row-major order.
-- Up/Down keep the preferred horizontal caret coordinate. The focused editor handles movement while a caret remains on another visual line within that editor. At its visual edge, navigation moves to the closest editable caret on the adjacent visual line, including another run or paragraph. If a target editor is offscreen, scroll it into view and focus it before applying the caret position.
-- Navigation skips read-only text, images, and unsupported content as caret destinations. At the first or last editable position, movement stays at the document boundary. A non-collapsed selection and modified arrow shortcuts retain the editor's existing behavior.
-- Moving the caret updates the selected run and paragraph so ribbon commands continue to target the text under the caret. Existing text drafts remain intact. Enter, Backspace, Delete, IME composition, save, undo, and redo keep their current semantics.
+- Ribbon 总高 90 dp：分类标签区 34 dp，命令区 56 dp。分类标签按固定位置绘制，当前包含文件、开始、插入、设计、布局、审阅、视图；选中图片时加入图片上下文标签。
+- 命令区使用 36 dp 图标按钮和按标签配置的位置/分隔线；图片上下文命令排成一行。当前命令区没有横向滚动布局，窄窗口可能无法显示超出可视宽度的按钮。
+- 是否可用、是否选中以及具体命令由 Word 工具栏业务逻辑决定，并根据选择状态和文档能力禁用不适用操作。撤销/重做、格式、查找替换、插入、视图和图片等操作仍由现有 Word 命令处理路径执行。
+- 当前实现属于 `desktopui` 产品界面：绘制和事件处理依赖 `App`、`documentSessionState` 及 Word 命令。尚未形成独立组件库，也没有通用的“按钮回调 + 上下文”组件 API。若后续抽取组件库，边界应落在按钮、标签、菜单、弹出层、滑块等小控件；Word 命令、能力判断和文档上下文继续由产品层组合与提供回调/意图，不抽出整个 Ribbon 业务。
 
-## Architecture and data flow
+## 标尺当前实现与接线限制
 
-- Keep the implementation in `internal/desktopui`; caret movement is transient UI state and requires no adapter or OOXML mutation.
-- Keep persistent `widget.Editor` instances per text run. Build one stable run order from `WordBlock` values, walking body paragraphs and table cells in source order. Use existing neutral IDs; never retain DOCX library types in view state.
-- Record visible run editor bounds and caret geometry during layout. Intercept only eligible unmodified arrow events when the local caret reaches the relevant visual edge. Route focus through `wordPendingFocusRunID`, preserve the preferred vertical coordinate until horizontal movement or pointer selection resets it, and request a fresh frame after scrolling/focus changes.
-- Compose `layoutWordFlow` from focused components: ribbon, horizontal ruler, vertical-ruler/canvas row, and status strip. Keep the scrollable document list responsive and outside document parsing or save operations.
-- Put new ribbon rendering, ruler geometry/rendering, status rendering, and caret routing in focused Word UI files. Keep command capability checks and adapter calls in the existing Word command/controller path. Reuse `ribbon_chrome.go` icon assets and shared tab/button drawing where their layout matches the reference; avoid changing spreadsheet behavior.
-- Preserve only the left/right paragraph indents represented by the current ruler handles. Tab stops, first-line/hanging-indent editing, page layout, and vertical-ruler page-margin editing remain unsupported.
+- 水平标尺高度 33 dp；垂直标尺宽 25 dp，与画布间距 14 dp；垂直标尺预留顶部 20 dp、底部 33 dp。刻度绘制使用 60 dp 主刻度间隔。
+- 水平标尺实现段落左右缩进标记及拖动预览，释放后通过缩进意图更新选中段落；它也包含画布左右边缘的宽度拖动处理。垂直标尺只有刻度显示，没有页面边距编辑交互。
+- 需要按当前视图接线理解这些能力：水平标尺在连续/打印视图显示，但其刻度几何基于 `wordCanvasWidthDP`；分页页面则按页面场景和缩放绘制，标尺当前不是严格跟随实际页面场景缩放的坐标映射。画布边缘宽度拖动代码位于 `layoutWordCanvas`，而该画布当前由 Web 版式分支调用；该分支会隐藏标尺并跳过画布边缘拖动处理。因此不能把“拖水平标尺边缘改变当前可见分页纸张宽度”描述为已接通能力。
+- 垂直标尺的绘制位于画布路径，并在 Web 版式下隐藏；按当前正文分流，它没有出现在连续/打印分页页面中。也就是说，目前存在绘制代码，但当前正常视图接线没有向用户展示垂直标尺。
 
-## Visual details
+## 分页与编辑行为
 
-- Use the Pen frame as the 1440 × 900 baseline: 42 px document tabs, a 2 px seam, 42 px ribbon categories, 96 px command panel, 33 px horizontal ruler, gray document workspace with a 900 × 600 px paper at x=270/y=231, and a 34 px status strip.
-- Use the reference's white ribbon and ruler surfaces, thin gray separators, understated blue active state, compact Lucide/Material icons, and centered paper with a subtle shadow.
-- Keep the workspace and paper widths responsive. Do not hard-code the 1440 px screenshot width into layout logic.
-- Include all reference ribbon groups and labels for fidelity, but do not make unsupported controls look active or claim functionality the editor lacks.
+- 分页在布局/帧代码之外异步执行。布局结果按文档 ID、修订、草稿版本和页面设置关联；旧结果不会覆盖较新的文档状态。适配器没有布局读取能力，或布局结果不支持预览时，界面给出限制信息。
+- 页面场景由连续、打印两种呈现共享。状态栏显示页码状态、字数、语言/辅助功能信息、视图切换和缩放；页数尚未计算、计算中、失败等状态按实际情况显示。
+- 分页视图支持当前布局引擎输出的可预览子集，单页/双页打印视图及适合页面/手动缩放。Web 版式仍使用流式编辑画布。不要把这些能力等同于完整 Word 分页、打印一致性或 DOCX 中所有版式特性的支持。
+- 页面交互把点击位置映射到页面场景中的可编辑文本位置，支持页面内文本选择、图片选择和拖动页面视口；稳定的 `widget.Editor` 仍按文本 run 保存。Web 流式编辑沿用其 run 编辑器与列表布局。
+- 左右方向键在当前 run 内移动；到 run 边界时交接至文档顺序中的相邻可编辑 run，段落及表格单元格按文档顺序参与。上下方向键保持首选水平位置，选择相邻视觉行/段落中最近的可编辑位置。图片、只读文本和不支持内容不是 caret 目标；带修饰键的方向键交由编辑器处理，选择范围仍限于当前 run，不提供跨 run 的范围选择模型。
+- 光标移动只改变焦点/选择状态，不应更改文档内容。文本草稿、提交以及保存仍由现有会话状态和命令流程管理；布局或适配器操作不放在 Gio 的绘制路径中。
 
-## Scope limits
+## 已知限制及验证依据
 
-- No Word-compatible pagination, page count, headers/footers, print layout, or web layout claim.
-- No paragraph-indent editing, tab-stop editing, zoom engine, font-family/size editing, list editing, Find/Replace, or format painter implementation.
-- No changes to DOCX save safety or overwrite rules.
-- No cross-run selection model; navigation transfers a collapsed caret. Selection remains local to the focused editor.
-
-## Acceptance
-
-- At the reference window size, the Word editor has the same top-to-bottom structure, Home ribbon group positions, and control-row geometry as `Clpgm`; resizing preserves the centered paper and keeps both rulers aligned with the canvas.
-- Home, Insert, and Picture controls render with icons and retain their existing capability checks. Unsupported ribbon controls are visibly disabled; selecting or navigating the UI does not change the document.
-- The horizontal and vertical ruler scales remain legible and aligned. Horizontal indent markers change the selected paragraph's text width and survive save/reopen; ruler edge handles resize the centered canvas. The vertical scale is explicitly visual-only in continuous-flow mode.
-- Ribbon total height remains 138 dp; Home groups match `Clpgm`'s individual control-row geometry, contextual Picture actions remain on one horizontal row, and narrow layouts keep the group strip horizontally scrollable.
-- Left/Right move through styled runs and adjacent paragraphs, including table-cell paragraphs, with stable focus and caret placement. Up/Down cross run and paragraph boundaries at visual line edges while preserving the preferred horizontal coordinate.
-- Document-start/end movement is bounded. Read-only content is skipped. Typing after a handoff edits the target run; caret movement alone does not mark the document dirty or clear drafts.
-- Existing text editing, paragraph split/join, image operations, saving, and spreadsheet ribbon behavior remain unchanged.
-
-## Verification plan
-
-- Add focused regression coverage for arrow handoff within paragraphs, across paragraphs and table cells, vertical preferred-column movement, read-only content, document boundaries, pending drafts, and non-interference with Enter/Backspace/Delete.
-- Capture a Word UI layout at the 1440 × 900 reference size and a narrow window size; compare ribbon grouping, icon placement, rulers, paper centering, and status bar against Pen node `Clpgm`.
-- Run the relevant DOCX and desktop UI regression suites and a build. Verify ruler indent and canvas-width drags, including DOCX save/reopen on fixture documents. Use temporary copies only; do not modify the external sample DOCX.
+- Ribbon 的 90 dp 几何与旧设计稿中要求的 138 dp 不一致；当前值来自 `word_ribbon_layout.go` 的实现常量。本文以 90 dp 记载现状。
+- 标尺代码、分页页面和 Web 流式画布各自存在，但当前视图接线有上述坐标/可见性限制。尤其垂直标尺与画布宽度拖动，不应被描述成当前主视图已经可用的交互。
+- 现有回归用例包括 Ribbon/画布几何、标尺拖动、段落缩进、分页模式及缩放、run/段落/表格单元格方向键导航等。`TestWordCanvasAndRulersMatchPenClpgmGeometry` 保留了 900 × 600 画布及双标尺的几何期望；应将其与当前视图路由一并理解，不能单凭用例名称推断这些元素当前都在正常主视图显示。
+- 本次只校正文档，没有运行测试；文中列出的用例是仓库中已有的回归依据，不代表本次执行或确认其通过。

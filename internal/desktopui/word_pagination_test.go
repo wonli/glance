@@ -123,6 +123,60 @@ func TestWordPaginationIgnoresResultForSupersededRevision(t *testing.T) {
 	}
 }
 
+func TestWordPaginationPreservesVisiblePageWhenAcceptingReflow(t *testing.T) {
+	tests := []struct {
+		name          string
+		pageCount     int
+		firstRow      int
+		multiplePages bool
+		wantRow       int
+		wantPage      int
+	}{
+		{name: "single-page row", pageCount: 8, firstRow: 3, wantRow: 3, wantPage: 3},
+		{name: "two-page spread", pageCount: 8, firstRow: 2, multiplePages: true, wantRow: 2, wantPage: 4},
+		{name: "clamp after page count shrinks", pageCount: 3, firstRow: 4, multiplePages: true, wantRow: 1, wantPage: 2},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			word, err := docx.NewBlank()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer word.Close()
+			state := newDocumentSessionState("visible-page.docx")
+			state.word = word
+			state.wordViewMode = wordViewPrintLayout
+			state.wordMultiplePagesMode = test.multiplePages
+			state.wordPageListState.Position.First = test.firstRow
+			data, ok := wordLayoutDataForState(state)
+			if !ok {
+				t.Fatal("blank DOCX does not expose layout data")
+			}
+			key := wordLayoutKey{
+				DocumentID:   state.documentID,
+				Revision:     state.wordRevisionAtomic.Load(),
+				DraftEpoch:   state.wordDraftEpoch.Load(),
+				PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup),
+			}
+			state.wordLayoutPendingKey = &key
+			app := &App{documentSessionState: state}
+
+			app.applyWordLayoutResult(wordLayoutResult{
+				state: state,
+				key:   key,
+				result: wordlayout.Result{
+					DocumentID: state.documentID, Revision: key.Revision,
+					Pages: make([]wordlayout.PageScene, test.pageCount), CanPreview: true,
+				},
+			})
+
+			if state.wordPageListState.Position.First != test.wantRow || state.wordLayoutActivePage != test.wantPage {
+				t.Fatalf("accepted layout reset visible position: row=%d active page=%d; want row=%d page=%d", state.wordPageListState.Position.First, state.wordLayoutActivePage, test.wantRow, test.wantPage)
+			}
+		})
+	}
+}
+
 func TestWordPrintLayoutToggle(t *testing.T) {
 	state := newDocumentSessionState("")
 	word, err := docx.NewBlank()

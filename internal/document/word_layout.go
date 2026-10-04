@@ -105,11 +105,12 @@ const (
 // parent. Masks preserve Word's distinction between absent and explicitly
 // disabled formatting.
 type WordStyle struct {
-	ID        string
-	BasedOn   string
-	Text      WordTextStyle
-	TextSet   WordTextStyleMask
-	Paragraph WordParagraphLayout
+	ID               string
+	BasedOn          string
+	DefaultParagraph bool
+	Text             WordTextStyle
+	TextSet          WordTextStyleMask
+	Paragraph        WordParagraphLayout
 }
 
 // WordStyleDefaults holds the package-level w:docDefaults values.

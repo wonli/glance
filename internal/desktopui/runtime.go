@@ -422,6 +422,7 @@ func (r *desktopRuntime) removeSession(documentID string) {
 		session.viewsMu.RUnlock()
 		for _, view := range views {
 			if view != nil {
+				view.releaseWordViewResources()
 				view.closed.Store(true)
 			}
 		}
@@ -448,28 +449,50 @@ func closeSharedDocumentSession(session *sharedDocumentSession) {
 	for {
 		session.operationMu.Lock()
 		session.finalized.Store(true)
-		if !session.operationActive {
-			session.operationMu.Unlock()
-			break
-		}
+		operationActive := session.operationActive
 		changed := session.operationChanged
 		session.operationMu.Unlock()
+		session.cancelWordLayout()
+		if !operationActive {
+			break
+		}
 		<-changed
 	}
-	if !session.adaptersClosed.CompareAndSwap(false, true) {
-		return
+	session.releaseWordLayout()
+	if session.adaptersClosed.CompareAndSwap(false, true) {
+		session.adapterMu.Lock()
+		if session.book != nil {
+			_ = session.book.Close()
+		}
+		if session.word != nil {
+			_ = session.word.Close()
+		}
+		if session.jsonDoc != nil {
+			_ = session.jsonDoc.Close()
+		}
+		session.book, session.word, session.jsonDoc = nil, nil, nil
+		session.adapterMu.Unlock()
 	}
-	session.adapterMu.Lock()
-	defer session.adapterMu.Unlock()
-	if session.book != nil {
-		_ = session.book.Close()
+	session.viewsMu.Lock()
+	views := make([]*documentSessionState, 0, len(session.views))
+	for _, view := range session.views {
+		views = append(views, view)
 	}
-	if session.word != nil {
-		_ = session.word.Close()
+	session.views = nil
+	session.viewsMu.Unlock()
+	for _, view := range views {
+		if view != nil {
+			view.releaseWordViewResources()
+			view.closed.Store(true)
+		}
 	}
-	if session.jsonDoc != nil {
-		_ = session.jsonDoc.Close()
-	}
+	session.wordBlocksMu.Lock()
+	session.wordDraftMu.Lock()
+	session.wordBlocks = nil
+	session.wordRunCommitted = nil
+	session.wordRunDrafts = nil
+	session.wordDraftMu.Unlock()
+	session.wordBlocksMu.Unlock()
 }
 
 func (r *desktopRuntime) attachWindow(windowID uint64, app *App) {
@@ -534,15 +557,18 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 		delete(session.views, windowID)
 		session.viewsMu.Unlock()
 		if view != nil {
+			view.releaseWordViewResources()
 			view.closed.Store(true)
 		}
 	}
 	for _, view := range app.sessions {
 		if view != nil {
+			view.releaseWordViewResources()
 			view.closed.Store(true)
 		}
 	}
 	if app.documentSessionState != nil {
+		app.documentSessionState.releaseWordViewResources()
 		app.documentSessionState.closed.Store(true)
 	}
 	if wasPrimary {

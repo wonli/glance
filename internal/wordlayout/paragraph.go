@@ -19,25 +19,27 @@ const (
 )
 
 type paragraphAtom struct {
-	kind          paragraphAtomKind
-	sourceID      string
-	runID         string
-	text          string
-	runeStart     int
-	runeEnd       int
-	style         document.WordTextStyle
-	glyphs        []ShapedGlyph
-	outlines      [][]GlyphPathCommand
-	advance       float64
-	ascent        float64
-	descent       float64
-	imageID       string
-	imageRotation float64
-	imageWidth    float64
-	imageHeight   float64
-	synthetic     bool
-	breakBefore   bool
-	breakAfter    bool
+	kind            paragraphAtomKind
+	sourceID        string
+	runID           string
+	text            string
+	runeStart       int
+	runeEnd         int
+	glyphRuneOffset int
+	style           document.WordTextStyle
+	editable        bool
+	glyphs          []ShapedGlyph
+	outlines        [][]GlyphPathCommand
+	advance         float64
+	ascent          float64
+	descent         float64
+	imageID         string
+	imageRotation   float64
+	imageWidth      float64
+	imageHeight     float64
+	synthetic       bool
+	breakBefore     bool
+	breakAfter      bool
 }
 
 type paragraphLine struct {
@@ -123,6 +125,9 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 				styles.cursor.diagnostic(DiagnosticError, run.ID, "text-shaping", err.Error())
 				continue
 			}
+			for atomIndex := range textAtoms {
+				textAtoms[atomIndex].editable = run.Editable
+			}
 			atoms = append(atoms, textAtoms...)
 		case document.WordImageInline:
 			if inline.Image == nil {
@@ -162,6 +167,22 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 				}
 				if inline.Unsupported.Description != "" {
 					detail = inline.Unsupported.Description
+				}
+				if preview := inline.Unsupported.ImagePreview; preview != nil {
+					width := emuToPoints(preview.WidthEMU)
+					height := emuToPoints(preview.HeightEMU)
+					if width > 0 && height > 0 && finite(width) && finite(height) {
+						styles.cursor.diagnostic(DiagnosticWarning, source, "missing-image-media", detail+"; a placeholder is shown.")
+						if width > imageWidth && imageWidth > 0 {
+							ratio := imageWidth / width
+							width *= ratio
+							height *= ratio
+						}
+						atoms = append(atoms, paragraphAtom{kind: atomImage, sourceID: source, imageID: source, imageWidth: width, imageHeight: height, advance: width, ascent: height, breakBefore: true, breakAfter: true})
+					} else {
+						styles.cursor.diagnostic(DiagnosticWarning, source, "missing-image-media", detail+"; it has no usable extent and is omitted from the preview.")
+					}
+					continue
 				}
 			}
 			styles.cursor.diagnostic(DiagnosticError, source, "unsupported-inline", detail)
@@ -286,7 +307,8 @@ func shapeTextAtoms(ctx context.Context, shaper TextShaper, pathCache map[glyphP
 		atoms = append(atoms, paragraphAtom{
 			kind: atomText, sourceID: sourceID, runID: runID, text: clusterText,
 			runeStart: runeOffset + current.start, runeEnd: runeOffset + current.end,
-			style: style, glyphs: append([]ShapedGlyph(nil), current.glyphs...), outlines: outlines, advance: advance,
+			glyphRuneOffset: runeOffset,
+			style:           style, glyphs: append([]ShapedGlyph(nil), current.glyphs...), outlines: outlines, advance: advance,
 			ascent: ascent, descent: descent, synthetic: synthetic,
 			breakBefore: isCJK(first), breakAfter: unicode.IsSpace(last),
 		})
@@ -513,13 +535,13 @@ func placeParagraphLine(cursor *layoutCursor, sourceID, borderSourceID string, p
 		case atomText:
 			fragment := TextFragment{
 				RunID: atom.runID, Text: atom.text, RuneStart: atom.runeStart, RuneEnd: atom.runeEnd,
-				Style: atom.style, XPT: x, BaselineYPT: baseline, Synthetic: atom.synthetic,
+				Editable: atom.editable, Style: atom.style, XPT: x, BaselineYPT: baseline, Synthetic: atom.synthetic,
 			}
 			glyphPen := 0.0
 			for glyphIndex, glyph := range atom.glyphs {
 				fragment.Glyphs = append(fragment.Glyphs, PositionedGlyph{
-					FontKey: glyph.FontKey, GlyphID: glyph.GlyphID, RuneStart: glyph.RuneStart + atom.runeStart,
-					RuneEnd: glyph.RuneEnd + atom.runeStart, XPT: x + glyphPen + glyph.OffsetXPT,
+					FontKey: glyph.FontKey, GlyphID: glyph.GlyphID, RuneStart: glyph.RuneStart + atom.glyphRuneOffset,
+					RuneEnd: glyph.RuneEnd + atom.glyphRuneOffset, XPT: x + glyphPen + glyph.OffsetXPT,
 					YPT: baseline - glyph.OffsetYPT, AdvanceXPT: glyph.AdvanceXPT,
 					Outline: atom.outlines[glyphIndex],
 				})
@@ -528,9 +550,11 @@ func placeParagraphLine(cursor *layoutCursor, sourceID, borderSourceID string, p
 			cursor.result.Pages[pageIndex].Text = append(cursor.result.Pages[pageIndex].Text, fragment)
 			if !atom.synthetic && atom.runID != "" {
 				for offset := atom.runeStart; offset < atom.runeEnd; offset++ {
-					cursor.result.Locations[SourcePosition{RunID: atom.runID, RuneOffset: offset}] = Position{PageIndex: pageIndex, XPT: x, YPT: baseline}
+					position := SourcePosition{RunID: atom.runID, RuneOffset: offset}
+					cursor.result.Locations[position] = Position{PageIndex: pageIndex, XPT: x, YPT: baseline}
 				}
-				cursor.result.Locations[SourcePosition{RunID: atom.runID, RuneOffset: atom.runeEnd}] = Position{PageIndex: pageIndex, XPT: x + atom.advance, YPT: baseline}
+				position := SourcePosition{RunID: atom.runID, RuneOffset: atom.runeEnd}
+				cursor.result.Locations[position] = Position{PageIndex: pageIndex, XPT: x + atom.advance, YPT: baseline}
 			}
 		case atomImage:
 			bounds := Rect{XPT: x, YPT: baseline - atom.imageHeight, WidthPT: atom.imageWidth, HeightPT: atom.imageHeight}

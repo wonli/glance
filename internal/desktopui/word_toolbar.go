@@ -476,6 +476,12 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 		case "redo":
 			a.applyWordHistory(false)
 		case "cut", "copy":
+			if action.id == "copy" {
+				if selected, ok := wordPageSelectedText(state); ok {
+					gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(selected))})
+					continue
+				}
+			}
 			if run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID); ok {
 				value := run.Text
 				if editor := state.wordRunEditors[run.ID]; editor != nil {
@@ -1571,7 +1577,9 @@ func (a *App) publishWordCommand(result wordCommandResult) {
 				}
 			}
 			result.revision = result.operationToken.revision + 1
-			a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, max(result.revision, result.state.wordRevisionAtomic.Load()))
+			if !a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, max(result.revision, result.state.wordRevisionAtomic.Load())) {
+				result.state.advanceRevision(result.revision)
+			}
 		}
 		if result.revision == 0 {
 			result.revision = result.state.wordRevisionAtomic.Load()

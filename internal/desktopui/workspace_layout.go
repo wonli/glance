@@ -267,10 +267,7 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 	meta := a.tabMeta[id]
 	tabButton, closeButton := a.documentTabWidgets(id)
 	if tabButton.Clicked(gtx) {
-		a.persistActiveSession()
-		if state := a.viewForTab(id); state != nil {
-			a.activateSession(id, state)
-		}
+		a.activateWorkspaceTab(id)
 	}
 	if closeButton.Clicked(gtx) {
 		a.closeWorkspaceTab(id)
@@ -282,6 +279,21 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 	// Keep this frame's widgets alive even if the close click removed the
 	// tab and its widget map entries above.
 	return a.paintDocumentTab(gtx, tabButton, closeButton, label, id == a.activeTabID)
+}
+
+func (a *App) activateWorkspaceTab(id string) {
+	a.persistActiveSession()
+	state, err := a.viewForTabWithError(id)
+	if err == nil {
+		a.activateSession(id, state)
+		return
+	}
+	if meta, ok := a.tabMeta[id]; ok && meta.SourcePath != "" {
+		a.status = "工作区快照不可用，正在从源文件恢复：" + meta.SourcePath
+		a.startOpen(meta.SourcePath)
+		return
+	}
+	a.status = "恢复文档标签失败：" + err.Error()
 }
 
 func (a *App) documentTabWidgets(id string) (*widget.Clickable, *widget.Clickable) {
@@ -472,7 +484,7 @@ func (a *App) closeWorkspaceTabNow(id string) {
 		a.closeWorkspaceTabWithoutSession(id, err)
 		return
 	}
-	if !state.finalizeIfIdle() {
+	if !state.finalizeIfIdleOrSnapshot() {
 		state.operationMu.Lock()
 		operationActive := state.operationActive
 		operationKind := state.activeOperation.kind
@@ -508,6 +520,11 @@ func (a *App) closeWorkspaceTabNow(id string) {
 	delete(a.tabMeta, id)
 	delete(a.tabButtons, id)
 	delete(a.tabCloseButtons, id)
+	if a.activeTabID == id {
+		a.activeTabID = ""
+		a.setActiveSessionID("")
+		a.activateRecent()
+	}
 	a.reconcileWorkspaceTabs()
 	// The current frame's tab list was built before this close removed its ID.
 	// Schedule a fresh frame so the stale list snapshot is replaced immediately.
@@ -652,6 +669,7 @@ func (a *App) reindexTabMetadata() {
 
 func closeSessionState(s *documentSessionState) {
 	if s != nil {
+		s.releaseWordViewResources()
 		s.closed.Store(true)
 	}
 }

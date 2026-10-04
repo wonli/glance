@@ -168,14 +168,67 @@ func syncWordRunEditors(view *documentSessionState, runs map[string]document.Wor
 }
 
 func findEditableWordRun(blocks []document.WordBlock, runID string) (document.WordTextRun, document.WordParagraph, bool) {
-	for _, paragraph := range allWordParagraphs(blocks) {
+	if runID == "" {
+		return document.WordTextRun{}, document.WordParagraph{}, false
+	}
+	findInParagraph := func(paragraph document.WordParagraph) (document.WordTextRun, document.WordParagraph, bool) {
 		for _, inline := range paragraph.Inlines {
-			if inline.Text != nil && inline.Text.ID == runID && inline.Text.Editable {
-				return *inline.Text, paragraph, true
+			if inline.Text == nil || inline.Text.ID != runID || !inline.Text.Editable {
+				continue
+			}
+			return *inline.Text, wordParagraphBoundarySnapshot(paragraph), true
+		}
+		return document.WordTextRun{}, document.WordParagraph{}, false
+	}
+	for _, block := range blocks {
+		if block.Paragraph != nil {
+			if run, paragraph, ok := findInParagraph(*block.Paragraph); ok {
+				return run, paragraph, true
+			}
+		}
+		if block.Table == nil {
+			continue
+		}
+		for _, row := range block.Table.Rows {
+			for _, cell := range row.Cells {
+				for _, source := range cell.Paragraphs {
+					if run, paragraph, ok := findInParagraph(source); ok {
+						return run, paragraph, true
+					}
+				}
 			}
 		}
 	}
 	return document.WordTextRun{}, document.WordParagraph{}, false
+}
+
+func findEditableWordRunInState(state *documentSessionState, runID string) (document.WordTextRun, document.WordParagraph, bool) {
+	if state == nil {
+		return document.WordTextRun{}, document.WordParagraph{}, false
+	}
+	state.wordBlocksMu.RLock()
+	if state.wordBlocks != nil {
+		run, paragraph, ok := findEditableWordRun(state.wordBlocks, runID)
+		state.wordBlocksMu.RUnlock()
+		return run, paragraph, ok
+	}
+	state.wordBlocksMu.RUnlock()
+	return findEditableWordRun(wordBlocksForState(state), runID)
+}
+
+// wordParagraphBoundarySnapshot retains only the paragraph identity and
+// editable text-run IDs needed for page-editor boundary handling. It avoids
+// retaining image payloads or full run text in view state.
+func wordParagraphBoundarySnapshot(source document.WordParagraph) document.WordParagraph {
+	paragraph := document.WordParagraph{ID: source.ID}
+	for _, inline := range source.Inlines {
+		if inline.Text == nil {
+			continue
+		}
+		text := &document.WordTextRun{ID: inline.Text.ID, Editable: inline.Text.Editable}
+		paragraph.Inlines = append(paragraph.Inlines, document.WordInline{Text: text})
+	}
+	return paragraph
 }
 
 func clampEditorSelection(start, end int, value string) (int, int) {

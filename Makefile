@@ -1,5 +1,5 @@
 APP_NAME = glance
-APP_PATH = .
+APP_PATH = ./cmd/glance
 
 # 编译路径
 BUILD_PATH := ./dist
@@ -47,10 +47,10 @@ endif
 
 desktop:
 	mkdir -p $(BUILD_PATH)
-	go build $(DESKTOP_LINK_FLAGS) -o $(BUILD_PATH)/glance-office ./cmd/desktop
+	go build $(DESKTOP_LINK_FLAGS) -o $(BUILD_PATH)/glance-office ${APP_PATH}
 
 run-desktop:
-	go run $(DESKTOP_LINK_FLAGS) ./cmd/desktop $(ARGS)
+	go run $(DESKTOP_LINK_FLAGS) ${APP_PATH} $(ARGS)
 
 darwin:
 	$(call go/build,darwin,arm64)

@@ -305,7 +305,10 @@ func (a *App) processAsyncResults() {
 	}
 	select {
 	case result := <-a.wordCommandResults:
-		if result.state == nil || !result.state.acceptsResult(result.operationToken) || result.state.wordRevisionAtomic.Load() != result.revision {
+		if result.state == nil {
+			return
+		}
+		if result.operationToken.generation != 0 && (!result.state.acceptsResult(result.operationToken) || result.state.wordRevisionAtomic.Load() != result.revision) {
 			return
 		}
 		if result.state != nil {
@@ -450,6 +453,11 @@ func (a *App) processAsyncResults() {
 	case result := <-a.wordImageResults:
 		state := result.state
 		if state != nil {
+			if result.decodeSlot {
+				if active := state.wordImageDecodeActive.Add(-1); active < 0 {
+					state.wordImageDecodeActive.Store(0)
+				}
+			}
 			if pendingVersion, pending := state.wordImagePending[result.id]; pending && pendingVersion == result.version {
 				delete(state.wordImagePending, result.id)
 			}

@@ -153,7 +153,11 @@ func readWordLayoutStyles(data []byte) (document.WordStyleDefaults, []document.W
 		if id == "" {
 			continue
 		}
-		style := document.WordStyle{ID: id, BasedOn: attrValue(firstChild(node, "basedOn"), "val")}
+		style := document.WordStyle{
+			ID:               id,
+			BasedOn:          attrValue(firstChild(node, "basedOn"), "val"),
+			DefaultParagraph: strings.EqualFold(attrValue(node, "type"), "paragraph") && isWordTrue(attrValue(node, "default")),
+		}
 		textProperties := firstChild(node, "rPr")
 		style.Text = parseWordTextStyle(textProperties)
 		style.TextSet = parseWordTextStyleSet(textProperties)
@@ -161,6 +165,15 @@ func readWordLayoutStyles(data []byte) (document.WordStyleDefaults, []document.W
 		styles = append(styles, style)
 	}
 	return defaults, styles, nil
+}
+
+func isWordTrue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseWordTextStyleSet(properties *wordXMLNode) document.WordTextStyleMask {

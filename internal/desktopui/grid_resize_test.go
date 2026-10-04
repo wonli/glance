@@ -147,11 +147,11 @@ func TestGridResizeCancelAndFailureRestoreGeometry(t *testing.T) {
 
 func TestGridResizeHandleUsesFixedHeaderCoordinates(t *testing.T) {
 	v := newGridViewport()
-	axis, index, _, _, ok := gridResizeHandleAt(v, 48+64, 10, 48, 28)
+	axis, index, _, _, ok := gridResizeHandleAt(v, 48+int(gridDefaultColumn), 10, 48, 28)
 	if !ok || axis != resizeColumns || index != 0 {
 		t.Fatalf("column handle: %v %d %v", axis, index, ok)
 	}
-	axis, index, _, _, ok = gridResizeHandleAt(v, 10, 28+20, 48, 28)
+	axis, index, _, _, ok = gridResizeHandleAt(v, 10, 28+int(gridDefaultRow), 48, 28)
 	if !ok || axis != resizeRows || index != 0 {
 		t.Fatalf("row handle: %v %d %v", axis, index, ok)
 	}

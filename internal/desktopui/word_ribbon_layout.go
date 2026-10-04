@@ -17,7 +17,7 @@ import (
 
 const (
 	wordRibbonCategoryHeightDP    = 34
-	wordRibbonCategoryTabWidthDP  = 30
+	wordRibbonCategoryTabWidthDP  = 31
 	wordRibbonCategoryTabHeightDP = 30
 	wordRibbonCommandHeightDP     = 56
 	wordRibbonHeightDP            = wordRibbonCategoryHeightDP + wordRibbonCommandHeightDP
@@ -155,9 +155,8 @@ func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSession
 	if len(positions) == 0 {
 		return layout.Dimensions{Size: image.Pt(width, height)}
 	}
-	leftOffsetDP := spreadsheetRibbonLeftInsetDP - positions[0]
 	for _, x := range wordPenGroupDividers[tab] {
-		px := gtx.Dp(unit.Dp(x + leftOffsetDP))
+		px := gtx.Dp(unit.Dp(x))
 		dividerTop := gtx.Dp(unit.Dp(10))
 		dividerHeight := gtx.Dp(unit.Dp(32))
 		paint.FillShape(gtx.Ops, wordStatusTopRule, clip.Rect{Min: image.Pt(px, dividerTop), Max: image.Pt(px+gtx.Dp(unit.Dp(1)), dividerTop+dividerHeight)}.Op())
@@ -167,14 +166,14 @@ func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSession
 		if index >= len(positions) {
 			break
 		}
-		a.layoutWordRibbonIconButtonAt(gtx, state, action, positions[index]+leftOffsetDP)
+		a.layoutWordRibbonIconButtonAt(gtx, state, action, positions[index])
 	}
 	return layout.Dimensions{Size: image.Pt(width, height)}
 }
 
 func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP int) {
 	width, height := gtx.Dp(unit.Dp(36)), gtx.Dp(unit.Dp(36))
-	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(6))
+	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(10))
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
 	buttonGtx := gtx
 	buttonGtx.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}

@@ -103,14 +103,14 @@ func TestGridViewRetainsPreviousWindowOnReadError(t *testing.T) {
 func TestGridViewportScalesGeometryToDevicePixels(t *testing.T) {
 	v := newGridViewport()
 	v.setScale(2)
-	if got, _ := v.Rows.Boundary(1); got != 40 {
-		t.Fatalf("first row boundary=%v; want 40 device pixels", got)
+	if got, _ := v.Rows.Boundary(1); got != gridDefaultRow*2 {
+		t.Fatalf("first row boundary=%v; want %v device pixels", got, gridDefaultRow*2)
 	}
-	if got, _ := v.Columns.Boundary(1); got != 128 {
-		t.Fatalf("first column boundary=%v; want 128 device pixels", got)
+	if got, _ := v.Columns.Boundary(1); got != gridDefaultColumn*2 {
+		t.Fatalf("first column boundary=%v; want %v device pixels", got, gridDefaultColumn*2)
 	}
 	v.setScale(2)
-	if got, _ := v.Rows.Boundary(2); got != 80 {
+	if got, _ := v.Rows.Boundary(2); got != gridDefaultRow*4 {
 		t.Fatalf("repeated scale changed row geometry: boundary=%v", got)
 	}
 }

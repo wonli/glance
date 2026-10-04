@@ -370,11 +370,12 @@ func TestWordRulerIndentMarkersPersistParagraphWidthChanges(t *testing.T) {
 	waitForIndentCommit := func() {
 		t.Helper()
 		deadline := time.After(3 * time.Second)
-		for state.formatRunning.Load() {
+		for {
+			app.processAsyncResults()
+			if !state.formatRunning.Load() && state.wordDeferredToolbarAction == "" && len(app.wordCommandResults) == 0 {
+				break
+			}
 			select {
-			case result := <-app.wordCommandResults:
-				app.wordCommandResults <- result
-				app.processAsyncResults()
 			case <-deadline:
 				t.Fatal("ruler indentation edit did not complete")
 			default:
@@ -931,18 +932,7 @@ func TestWordEnterSplitsAtCaretAndFocusesFollowingParagraph(t *testing.T) {
 		t.Fatalf("input after Enter modified the old paragraph while its split was pending: %q", editor.Text())
 	}
 
-	deadline := time.After(3 * time.Second)
-	for len(state.wordBlocks) < 2 {
-		select {
-		case result := <-app.wordCommandResults:
-			app.wordCommandResults <- result
-			app.processAsyncResults()
-		case <-deadline:
-			t.Fatalf("Enter did not split the paragraph before timeout (blocks=%d, running=%v)", len(state.wordBlocks), state.formatRunning.Load())
-		default:
-			time.Sleep(time.Millisecond)
-		}
-	}
+	waitWordInteraction(t, app, func() bool { return len(state.wordBlocks) >= 2 && state.selectedWordRunID != run.ID })
 	blocks := word.WordBlocks()
 	if len(blocks) != 2 || blocks[0].Paragraph == nil || blocks[1].Paragraph == nil || blocks[0].Paragraph.Inlines[0].Text.Text != "Hello" || blocks[1].Paragraph.Inlines[0].Text.Text != "World" {
 		t.Fatalf("Enter at character five produced body blocks %#v; want paragraphs Hello / World", blocks)
@@ -1188,7 +1178,7 @@ func TestWordUpDownCrossesParagraphsAtPreferredVisualColumn(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer word.Close()
-	text := strings.Repeat("0123456789", 40)
+	text := strings.Repeat("0123456789", 10)
 	first := document.WordParagraph{ID: "p0", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "run-a", Text: text, Editable: true}}}}
 	second := document.WordParagraph{ID: "p1", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "run-b", Text: text, Editable: true}}}}
 	state := newDocumentSessionState("navigation.docx")
@@ -1432,8 +1422,11 @@ func focusWordRunForInteraction(t *testing.T, state *documentSessionState, route
 func waitWordInteraction(t *testing.T, app *App, done func() bool) {
 	t.Helper()
 	deadline := time.After(3 * time.Second)
-	for !done() {
+	for {
 		app.processAsyncResults()
+		if done() && len(app.wordCommandResults) == 0 {
+			break
+		}
 		select {
 		case <-deadline:
 			t.Fatal("Word paragraph join did not complete before timeout")

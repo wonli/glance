@@ -20,7 +20,15 @@ func (s *sharedDocumentSession) wordTextStateSnapshot() (committed, drafts map[s
 }
 
 func (s *sharedDocumentSession) wordDraftSnapshot() map[string]string {
-	_, drafts := s.wordTextStateSnapshot()
+	drafts := make(map[string]string)
+	if s == nil {
+		return drafts
+	}
+	s.wordDraftMu.RLock()
+	for runID, value := range s.wordRunDrafts {
+		drafts[runID] = value
+	}
+	s.wordDraftMu.RUnlock()
 	return drafts
 }
 

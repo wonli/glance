@@ -104,7 +104,7 @@ func TestGridFontWeightsDistinguishBoldFromRegular(t *testing.T) {
 
 func TestCellTypefaceKeepsWorkbookFamilyAndAddsCJKFallbacks(t *testing.T) {
 	got := cellTypeface(gridPaintStyle{FontFamily: "微软雅黑"})
-	want := font.Typeface("微软雅黑, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif")
+	want := font.Typeface("微软雅黑, " + string(preferredSystemTypeface))
 	if got != want {
 		t.Fatalf("cell typeface=%q; want workbook family followed by CJK fallbacks %q", got, want)
 	}

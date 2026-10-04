@@ -19,6 +19,7 @@ import (
 type sharedDocumentSession struct {
 	adapterMu                  sync.RWMutex
 	operationMu                sync.Mutex
+	wordLayoutCancelMu         sync.Mutex
 	wordBlocksMu               sync.RWMutex
 	wordDraftMu                sync.RWMutex
 	viewsMu                    sync.RWMutex
@@ -28,6 +29,7 @@ type sharedDocumentSession struct {
 	operationChanged           chan struct{}
 	finalized                  atomic.Bool
 	adaptersClosed             atomic.Bool
+	wordLayoutReleased         atomic.Bool
 	wordRevisionAtomic         atomic.Uint64
 	publishedRevision          atomic.Uint64
 	wordDraftEpoch             atomic.Uint64
@@ -57,6 +59,7 @@ type sharedDocumentSession struct {
 	wordLayoutResult           *wordlayout.Result
 	wordLayoutError            string
 	wordLayoutCancel           context.CancelFunc
+	wordLayoutPendingView      *documentSessionState
 	wordLayoutWarningConfirmed bool
 	wordInsertionRunning       bool
 	wordFlushRequested         atomic.Bool
@@ -153,6 +156,90 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 
 func newDocumentSessionState(path string) *documentSessionState {
 	return newDocumentSessionView(newSharedDocumentSession(path), 0)
+}
+
+// releaseWordViewResources drops view-local widgets and clears bounded image
+// caches when a window no longer owns this view.
+func (state *documentSessionState) releaseWordViewResources() {
+	if state == nil || !state.wordViewResourcesReleased.CompareAndSwap(false, true) {
+		return
+	}
+	if state.sharedDocumentSession != nil && state.sharedDocumentSession.cancelWordLayoutForView(state) && state.ownerRuntime != nil {
+		state.ownerRuntime.invalidateSessionViews(state.documentID)
+	}
+	state.wordImageDecodeActive.Store(0)
+	state.wordRunEditors = nil
+	state.wordNavLayouts = nil
+	state.wordNavLayoutsNext = nil
+	state.wordPageVisibleInteractions = nil
+	state.wordPageVisibleInteractionsNext = nil
+	state.wordPageInteractionTags = nil
+	state.wordPageInteractionTagsNext = nil
+	state.wordPageSelectionDrag = nil
+	state.wordPageTextSelection = nil
+	state.wordImageInteractions = nil
+	state.wordObjectButtons = nil
+	state.wordNavigationEntryCache = wordNavigationEntryCache{}
+	if state.wordImageCache != nil {
+		state.wordImageCache.Clear()
+		state.wordImageCache = nil
+	}
+	if state.gridPictureCache != nil {
+		state.gridPictureCache.Clear()
+		state.gridPictureCache = nil
+	}
+	state.wordImagePending = nil
+	state.wordImageVersions = nil
+	state.wordImageErrors = nil
+	state.gridPicturePending = nil
+	state.gridPictureVersions = nil
+	state.gridPictureErrors = nil
+}
+func (state *sharedDocumentSession) cancelWordLayout() {
+	if state == nil {
+		return
+	}
+	state.wordLayoutCancelMu.Lock()
+	if state.wordLayoutCancel != nil {
+		state.wordLayoutCancel()
+		state.wordLayoutCancel = nil
+	}
+	state.wordLayoutPendingKey = nil
+	state.wordLayoutPendingView = nil
+	state.wordLayoutCancelMu.Unlock()
+}
+
+func (state *sharedDocumentSession) cancelWordLayoutForView(view *documentSessionState) bool {
+	if state == nil || view == nil {
+		return false
+	}
+	state.wordLayoutCancelMu.Lock()
+	defer state.wordLayoutCancelMu.Unlock()
+	if state.wordLayoutPendingView != view {
+		return false
+	}
+	if state.wordLayoutCancel != nil {
+		state.wordLayoutCancel()
+		state.wordLayoutCancel = nil
+	}
+	state.wordLayoutPendingKey = nil
+	state.wordLayoutPendingView = nil
+	return true
+}
+
+func (state *sharedDocumentSession) releaseWordLayout() {
+	if state == nil || !state.wordLayoutReleased.CompareAndSwap(false, true) {
+		return
+	}
+	state.cancelWordLayout()
+	state.wordLayoutCancelMu.Lock()
+	state.wordLayoutResult = nil
+	state.wordLayoutAcceptedKey = nil
+	state.wordLayoutErrorKey = nil
+	state.wordLayoutError = ""
+	state.wordLayoutWarningConfirmed = false
+	state.wordLayoutPageCount.Store(0)
+	state.wordLayoutCancelMu.Unlock()
 }
 
 func (s *sharedDocumentSession) attachView(windowID uint64, state *documentSessionState) {

@@ -210,6 +210,10 @@ func projectWordDocument(parts []part, documentIdx int) (wordProjection, error) 
 			blocks = append(blocks, document.WordBlock{ID: blockID, Kind: document.WordTableBlock, Table: &table})
 		case "sectPr":
 			// Section properties affect layout metadata, not body content.
+		case "bookmarkStart", "bookmarkEnd", "proofErr", "commentRangeStart", "commentRangeEnd", "permStart", "permEnd":
+			// Range markers are zero-width annotations. Word permits them
+			// between body blocks; they do not represent unsupported content.
+			continue
 		default:
 			unsupported := &document.WordUnsupported{ID: blockID + ".unsupported", Description: "Unsupported body content: " + child.name.Local}
 			blocks = append(blocks, document.WordBlock{ID: blockID, Kind: document.WordUnsupportedBlock, Unsupported: unsupported})
@@ -521,7 +525,9 @@ func (p *wordProjector) drawingInline(drawing *wordXMLNode, fallbackID, paragrap
 	}
 	partIndex, exists := p.partIndexes[relationship.target]
 	if !exists {
-		return unsupportedInline(id, "Image media part is missing: "+relationship.target), id
+		missing := unsupportedInline(id, "Image media part is missing: "+relationship.target)
+		missing.Unsupported.ImagePreview = &document.WordImage{ID: id, WidthEMU: width, HeightEMU: height}
+		return missing, id
 	}
 	mediaType := p.contentTypes.mediaType(relationship.target)
 	if !supportedWordImageMedia(mediaType) {
@@ -974,6 +980,7 @@ func cloneWordBlocks(blocks []document.WordBlock) []document.WordBlock {
 		clone[i] = block
 		if block.Unsupported != nil {
 			unsupported := *block.Unsupported
+			unsupported.ImagePreview = cloneWordImage(unsupported.ImagePreview)
 			clone[i].Unsupported = &unsupported
 		}
 		if block.Paragraph != nil {
@@ -1013,6 +1020,7 @@ func cloneWordParagraph(paragraph document.WordParagraph) document.WordParagraph
 		}
 		if inline.Unsupported != nil {
 			unsupported := *inline.Unsupported
+			unsupported.ImagePreview = cloneWordImage(unsupported.ImagePreview)
 			clone.Inlines[i].Unsupported = &unsupported
 		}
 		if inline.PageBreak != nil {
@@ -1021,4 +1029,12 @@ func cloneWordParagraph(paragraph document.WordParagraph) document.WordParagraph
 		}
 	}
 	return clone
+}
+
+func cloneWordImage(source *document.WordImage) *document.WordImage {
+	if source == nil {
+		return nil
+	}
+	clone := *source
+	return &clone
 }
