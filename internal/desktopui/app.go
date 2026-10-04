@@ -40,15 +40,16 @@ type App struct {
 	ops    op.Ops
 	theme  *material.Theme
 
-	actionOpenFile   widget.Clickable
-	actionOpenFolder widget.Clickable
-	actionSave       widget.Clickable
-	actionSaveAs     widget.Clickable
-	actionNewXLSX    widget.Clickable
-	actionNewDOCX    widget.Clickable
-	actionNewJSON    widget.Clickable
-	applyButton      widget.Clickable
-	goToCellButton   widget.Clickable
+	actionOpenFile        widget.Clickable
+	actionOpenFolder      widget.Clickable
+	actionSave            widget.Clickable
+	actionSaveAs          widget.Clickable
+	actionNewXLSX         widget.Clickable
+	actionNewDOCX         widget.Clickable
+	actionNewJSON         widget.Clickable
+	actionCloseCreateMenu widget.Clickable
+	applyButton           widget.Clickable
+	goToCellButton        widget.Clickable
 
 	status                  string
 	activeSessionDocumentID atomic.Value
@@ -63,7 +64,6 @@ type App struct {
 	recentTabButton         widget.Clickable
 	workspaceTabsList       widget.List
 	createActionsList       widget.List
-	createMenuList          widget.List
 	windowCloseButton       widget.Clickable
 	windowOpenResults       chan error
 	windowOpenSource        *App
@@ -214,7 +214,6 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		homeMetadataResults:          make(chan homeMetadataResult, 8),
 		workspaceTabsList:            widget.List{List: layout.List{Axis: layout.Horizontal}},
 		createActionsList:            widget.List{List: layout.List{Axis: layout.Horizontal}},
-		createMenuList:               widget.List{List: layout.List{Axis: layout.Vertical}},
 		homeContentList:              widget.List{List: layout.List{Axis: layout.Vertical}},
 		recentList:                   widget.List{List: layout.List{Axis: layout.Vertical}},
 

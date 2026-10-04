@@ -319,22 +319,23 @@ func TestDiscardRemovesDraftAfterQueuedWorkspaceSnapshots(t *testing.T) {
 	}
 }
 
-func TestSaveActionsLiveInPlusMenuForActiveDocument(t *testing.T) {
+func TestPlusMenuDoesNotExposeSaveActions(t *testing.T) {
 	a := New(nil, "")
-	if got := a.createActionLabels(); containsLabel(got, "保存") || containsLabel(got, "另存为…") {
-		t.Fatalf("save actions visible without a document: %v", got)
-	}
-	a.documentSessionState = newDocumentSessionState("")
-	a.book = xlsx.NewBlank()
-	a.book.(*xlsx.Workbook).SetDirty(true)
-	got := a.createActionLabels()
-	if !containsLabel(got, "保存…") || !containsLabel(got, "另存为…") {
-		t.Fatalf("draft save actions missing from plus menu: %v", got)
-	}
-	a.path = "/tmp/book.xlsx"
-	got = a.createActionLabels()
-	if !containsLabel(got, "保存") || !containsLabel(got, "另存为…") {
-		t.Fatalf("document save actions missing from plus menu: %v", got)
+	for _, state := range []string{"empty", "draft", "saved"} {
+		if state == "draft" {
+			a.documentSessionState = newDocumentSessionState("")
+			a.book = xlsx.NewBlank()
+			a.book.(*xlsx.Workbook).SetDirty(true)
+		} else if state == "saved" {
+			a.path = "/tmp/book.xlsx"
+		}
+		got := a.createActionLabels()
+		if containsLabel(got, "保存") || containsLabel(got, "保存…") || containsLabel(got, "另存为…") {
+			t.Fatalf("save actions visible for %s document: %v", state, got)
+		}
+		if !containsLabel(got, "打开本地文件") || !containsLabel(got, "打开文件夹") {
+			t.Fatalf("open actions missing for %s document: %v", state, got)
+		}
 	}
 }
 

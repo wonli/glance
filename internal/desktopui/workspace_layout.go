@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	"gioui.org/app"
-	"gioui.org/font"
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -17,9 +16,6 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
-	"glance/internal/format/docx"
-	"glance/internal/format/jsondoc"
-	"glance/internal/format/xlsx"
 	"glance/internal/workspace"
 )
 
@@ -28,6 +24,7 @@ const (
 	workspaceTabHeight        unit.Dp = 37
 	workspaceDocumentTabGap   unit.Dp = 6
 	workspaceDocumentTabWidth unit.Dp = 190
+	workspacePlusTabWidth     unit.Dp = 32
 	workspaceTabStripSize     unit.Dp = workspaceTabTopGap + workspaceTabHeight
 )
 
@@ -188,45 +185,8 @@ func (a *App) layoutPlusTab(gtx layout.Context) layout.Dimensions {
 		a.showNewMenu = !a.showNewMenu
 	}
 	return layout.Inset{Left: workspaceDocumentTabGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return a.paintTab(gtx, &a.newButton, "+", false)
+		return a.paintTab(gtx, &a.newButton, "+", a.showNewMenu)
 	})
-}
-
-func (a *App) layoutCreateMenuPopover(gtx layout.Context) layout.Dimensions {
-	left := a.plusMenuOffset(gtx)
-	shift := op.Offset(image.Pt(left, gtx.Dp(unit.Dp(7)))).Push(gtx.Ops)
-	dims := a.layoutCreateActions(gtx)
-	shift.Pop()
-	return dims
-}
-
-func (a *App) plusMenuOffset(gtx layout.Context) int {
-	ids := a.workspaceTabIDs()
-	plusIndex := len(ids) + 1
-	x := -a.workspaceTabsList.Position.Offset
-	for index := a.workspaceTabsList.Position.First; index < plusIndex; index++ {
-		if index == 0 {
-			x += gtx.Dp(unit.Dp(112))
-		} else {
-			x += gtx.Dp(workspaceDocumentTabWidth + workspaceDocumentTabGap)
-		}
-	}
-	x += gtx.Dp(unit.Dp(16)) + gtx.Dp(workspaceDocumentTabGap)
-	if a.clientTitlebar {
-		if runtime.GOOS == "darwin" {
-			x += gtx.Dp(unit.Dp(84))
-		} else {
-			x += gtx.Dp(unit.Dp(114))
-		}
-	}
-	maxX := gtx.Constraints.Max.X - gtx.Dp(unit.Dp(260)) - gtx.Dp(unit.Dp(8))
-	if x > maxX {
-		x = maxX
-	}
-	if x < gtx.Dp(unit.Dp(8)) {
-		x = gtx.Dp(unit.Dp(8))
-	}
-	return x
 }
 
 func (a *App) workspaceTabIDs() []string {
@@ -322,7 +282,7 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 
 func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label string, active bool) layout.Dimensions {
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		width := unit.Dp(32)
+		width := workspacePlusTabWidth
 		if label != "+" {
 			width = unit.Dp(112)
 		}
@@ -381,10 +341,10 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 		bg := tabSurface
 		if active {
 			bg = contentSurface
-		} else if label == "+" {
-			bg = color.NRGBA{R: 231, G: 234, B: 237, A: 255}
 		}
-		paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(6)), NE: gtx.Dp(unit.Dp(6))}.Op(gtx.Ops))
+		if label != "+" || active {
+			paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(6)), NE: gtx.Dp(unit.Dp(6))}.Op(gtx.Ops))
+		}
 		call.Add(gtx.Ops)
 		return dims
 	})
@@ -655,175 +615,6 @@ func (a *App) closeWorkspace() {
 	}
 }
 
-func (a *App) layoutCreateActions(gtx layout.Context) layout.Dimensions {
-	if a.actionOpenFile.Clicked(gtx) {
-		a.showNewMenu = false
-		a.startOpenFilePicker()
-	}
-	if a.actionOpenFolder.Clicked(gtx) {
-		a.showNewMenu = false
-		a.startFolderPicker()
-	}
-	if a.actionSave.Clicked(gtx) && !a.isSaving() && a.isDirty() {
-		a.showNewMenu = false
-		if a.path != "" {
-			a.startSave()
-		} else {
-			a.saveAsFromMenu()
-		}
-	}
-	if a.actionSaveAs.Clicked(gtx) && !a.isSaving() && a.hasActiveDocument() {
-		a.showNewMenu = false
-		a.saveAsFromMenu()
-	}
-	if a.actionNewXLSX.Clicked(gtx) {
-		a.showNewMenu = false
-		book := xlsx.NewBlank()
-		_ = a.installDocument(loadedDocument{book: book, sheets: book.SheetNames()})
-	}
-	if a.actionNewDOCX.Clicked(gtx) {
-		a.showNewMenu = false
-		word, err := docx.NewBlank()
-		if err != nil {
-			a.status = err.Error()
-		} else {
-			_ = a.installDocument(loadedDocument{word: word})
-		}
-	}
-	if a.actionNewJSON.Clicked(gtx) {
-		a.showNewMenu = false
-		_ = a.installDocument(loadedDocument{jsonDoc: jsondoc.NewBlank()})
-	}
-	buttons := a.createActionItems()
-	width := gtx.Dp(unit.Dp(252))
-	heightDp := unit.Dp(14)
-	for _, item := range buttons {
-		if item.separator {
-			heightDp += 9
-		} else {
-			heightDp += 34
-		}
-	}
-	height := gtx.Dp(heightDp)
-	gtx.Constraints.Min = image.Pt(width, height)
-	gtx.Constraints.Max = gtx.Constraints.Min
-	return layout.Stack{}.Layout(gtx,
-		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			bounds := image.Rectangle{Max: gtx.Constraints.Max}
-			shadow := clip.UniformRRect(bounds.Add(image.Pt(0, gtx.Dp(unit.Dp(3)))), gtx.Dp(unit.Dp(9)))
-			paint.FillShape(gtx.Ops, color.NRGBA{R: 36, G: 43, B: 52, A: 22}, shadow.Op(gtx.Ops))
-			panel := clip.UniformRRect(bounds, gtx.Dp(unit.Dp(8)))
-			paint.FillShape(gtx.Ops, contentSurface, panel.Op(gtx.Ops))
-			paint.FillShape(gtx.Ops, homeBorder, clip.Stroke{Path: panel.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
-			return layout.Dimensions{Size: bounds.Max}
-		}),
-		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(7), Bottom: unit.Dp(7), Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return material.List(a.theme, &a.createMenuList).Layout(gtx, len(buttons), func(gtx layout.Context, index int) layout.Dimensions {
-					item := buttons[index]
-					return createActionRow(gtx, a.theme, item)
-				})
-			})
-		}),
-	)
-}
-
-func createActionRow(gtx layout.Context, theme *material.Theme, item createActionItem) layout.Dimensions {
-	if item.separator {
-		height := gtx.Dp(unit.Dp(9))
-		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-		return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			lineHeight := gtx.Dp(unit.Dp(1))
-			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = lineHeight, lineHeight
-			paint.FillShape(gtx.Ops, homeRowBorder, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, lineHeight)}.Op())
-			return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, lineHeight)}
-		})
-	}
-	height := gtx.Dp(unit.Dp(34))
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-	return item.click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				bg := color.NRGBA{A: 0}
-				if item.click.Hovered() {
-					bg = homeHoverFill
-				}
-				shape := clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(5)))
-				paint.FillShape(gtx.Ops, bg, shape.Op(gtx.Ops))
-				return layout.Dimensions{Size: gtx.Constraints.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(9), Right: unit.Dp(9)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return homeIcon(gtx, item.icon, 16, color.NRGBA{R: 110, G: 119, B: 130, A: 255})
-							})
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return homeLabelStyle(theme, item.label, 13, homeText, font.Normal).Layout(gtx)
-						}),
-					)
-				})
-			},
-		)
-	})
-}
-
-type createActionItem struct {
-	click     *widget.Clickable
-	label     string
-	icon      string
-	separator bool
-}
-
-func (a *App) createActionItems() []createActionItem {
-	buttons := []createActionItem{
-		{click: &a.actionOpenFile, label: "打开文件…", icon: "file-text"},
-		{click: &a.actionOpenFolder, label: "打开文件夹…", icon: "folder-open"},
-	}
-	if a.hasActiveDocument() {
-		buttons = append(buttons, createActionItem{separator: true})
-		if a.isDirty() {
-			label := "保存"
-			if a.path == "" {
-				label = "保存…"
-			}
-			buttons = append(buttons, createActionItem{click: &a.actionSave, label: label, icon: "save"})
-		}
-		buttons = append(buttons, createActionItem{click: &a.actionSaveAs, label: "另存为…", icon: "sheet-edit"})
-	}
-	buttons = append(buttons,
-		createActionItem{separator: true},
-		createActionItem{click: &a.actionNewXLSX, label: "新建 Excel", icon: "file-spreadsheet"},
-		createActionItem{click: &a.actionNewDOCX, label: "新建 Word", icon: "file-text"},
-		createActionItem{click: &a.actionNewJSON, label: "新建 JSON", icon: "file-code"},
-	)
-	return buttons
-}
-
-func (a *App) createActionLabels() []string {
-	items := a.createActionItems()
-	labels := make([]string, 0, len(items))
-	for _, item := range items {
-		if !item.separator {
-			labels = append(labels, item.label)
-		}
-	}
-	return labels
-}
-
 func (a *App) hasActiveDocument() bool {
 	return a.book != nil || a.word != nil || a.jsonDoc != nil
-}
-
-func (a *App) saveAsFromMenu() {
-	ext := "xlsx"
-	if a.word != nil {
-		ext = "docx"
-	}
-	if a.jsonDoc != nil {
-		ext = "json"
-	}
-	a.startSaveAsPicker(ext)
 }
