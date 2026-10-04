@@ -34,16 +34,23 @@ define go/build
 	GOOS=$(1) GOARCH=$(2) CGO_ENABLED=0 go build $(GO_FLAGS) -o $(BUILD_PATH)/$(APP_NAME)-$(1)-$(2)-latest$(3) ${APP_PATH}
 endef
 
+# Apple ld warns because Gio and the native print adapter each link Objective-C.
+DESKTOP_GOOS ?= $(shell go env GOOS)
+DESKTOP_LINK_FLAGS =
+ifeq ($(DESKTOP_GOOS),darwin)
+DESKTOP_LINK_FLAGS = -ldflags=-extldflags=-Wl,-no_warn_duplicate_libraries
+endif
+
 # Generate binaries
 .PHONY: build darwin linux windows
 .PHONY: desktop run-desktop
 
 desktop:
 	mkdir -p $(BUILD_PATH)
-	go build -o $(BUILD_PATH)/glance-office ./cmd/desktop
+	go build $(DESKTOP_LINK_FLAGS) -o $(BUILD_PATH)/glance-office ./cmd/desktop
 
 run-desktop:
-	go run ./cmd/desktop $(ARGS)
+	go run $(DESKTOP_LINK_FLAGS) ./cmd/desktop $(ARGS)
 
 darwin:
 	$(call go/build,darwin,arm64)
