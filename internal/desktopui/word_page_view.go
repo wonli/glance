@@ -192,6 +192,9 @@ func layoutWordPageMessage(gtx layout.Context, theme *material.Theme, message st
 
 func (a *App) drawWordPageScene(gtx layout.Context, state *documentSessionState, page wordlayout.PageScene, origin image.Point, pixelsPerPoint float64) {
 	for _, cell := range page.TableCells {
+		drawWordPageCellBackground(gtx, origin, cell, pixelsPerPoint)
+	}
+	for _, cell := range page.TableCells {
 		drawWordPageCellBorder(gtx, origin, cell.Bounds, pixelsPerPoint)
 	}
 	for _, fragment := range page.Text {
@@ -211,6 +214,18 @@ func (a *App) drawWordPageScene(gtx layout.Context, state *documentSessionState,
 		}
 		drawWordPageImage(gtx, origin, decoded, placement, pixelsPerPoint)
 	}
+}
+
+func drawWordPageCellBackground(gtx layout.Context, origin image.Point, cell wordlayout.TableCellPlacement, pixelsPerPoint float64) {
+	fill, ok := parseWordRunColor(cell.FillColor)
+	if !ok || cell.Bounds.WidthPT <= 0 || cell.Bounds.HeightPT <= 0 {
+		return
+	}
+	x := origin.X + int(math.Round(cell.Bounds.XPT*pixelsPerPoint))
+	y := origin.Y + int(math.Round(cell.Bounds.YPT*pixelsPerPoint))
+	width := max(1, int(math.Ceil(cell.Bounds.WidthPT*pixelsPerPoint)))
+	height := max(1, int(math.Ceil(cell.Bounds.HeightPT*pixelsPerPoint)))
+	paint.FillShape(gtx.Ops, fill, clip.Rect{Min: image.Pt(x, y), Max: image.Pt(x+width, y+height)}.Op())
 }
 
 func drawWordPageParagraphBorder(gtx layout.Context, origin image.Point, border wordlayout.ParagraphBorderPlacement, pixelsPerPoint float64) {

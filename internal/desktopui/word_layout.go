@@ -656,13 +656,18 @@ func (a *App) layoutWordBlock(gtx layout.Context, block document.WordBlock) layo
 }
 
 func (a *App) layoutWordTable(gtx layout.Context, table document.WordTable) layout.Dimensions {
+	columnWidths := wordTableColumnWidths(table)
 	rows := make([]layout.FlexChild, 0, len(table.Rows))
 	for _, row := range table.Rows {
 		row := row
 		cells := make([]layout.FlexChild, 0, len(row.Cells))
-		for _, cell := range row.Cells {
+		for cellIndex, cell := range row.Cells {
 			cell := cell
-			cells = append(cells, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			weight := 1.0
+			if cellIndex < len(columnWidths) {
+				weight = columnWidths[cellIndex]
+			}
+			cells = append(cells, layout.Flexed(float32(weight), func(gtx layout.Context) layout.Dimensions {
 				return a.layoutWordTableCell(gtx, cell)
 			}))
 		}
@@ -689,11 +694,61 @@ func (a *App) layoutWordTableCell(gtx layout.Context, cell document.WordTableCel
 			return a.layoutWordParagraph(gtx, paragraph, true)
 		}))
 	}
-	return wordMeasuredBackground(gtx, contentSurface, func(gtx layout.Context) layout.Dimensions {
+	fill := contentSurface
+	if cellFill, ok := parseWordRunColor(cell.FillColor); ok {
+		fill = cellFill
+	}
+	return wordMeasuredBackground(gtx, fill, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5), Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 		})
 	})
+}
+
+func wordTableColumnWidths(table document.WordTable) []float64 {
+	columns := len(table.Layout.GridColumnsEMU)
+	for _, row := range table.Rows {
+		if len(row.Cells) > columns {
+			columns = len(row.Cells)
+		}
+	}
+	if columns == 0 {
+		return nil
+	}
+	widths := make([]float64, columns)
+	for index, emu := range table.Layout.GridColumnsEMU {
+		if emu > 0 {
+			widths[index] = float64(emu)
+		}
+	}
+	for _, row := range table.Rows {
+		for index, cell := range row.Cells {
+			if widths[index] <= 0 && cell.WidthEMU > 0 {
+				widths[index] = float64(cell.WidthEMU)
+			}
+		}
+	}
+	knownTotal := 0.0
+	knownCount := 0
+	for _, width := range widths {
+		if width > 0 {
+			knownTotal += width
+			knownCount++
+		}
+	}
+	if knownCount == 0 {
+		for index := range widths {
+			widths[index] = 1
+		}
+		return widths
+	}
+	average := knownTotal / float64(knownCount)
+	for index := range widths {
+		if widths[index] <= 0 {
+			widths[index] = average
+		}
+	}
+	return widths
 }
 
 // wordMeasuredBackground paints a list item's measured bounds without claiming
@@ -784,7 +839,10 @@ func (a *App) layoutWordParagraphWithBottomBorder(gtx layout.Context, paragraph 
 		pixelsPerPoint := float64(gtx.Metric.PxPerDp) * (4.0 / 3.0)
 		space := int(math.Round(border.SpacePT * pixelsPerPoint))
 		thickness := max(1, int(math.Ceil(border.SizePT*pixelsPerPoint)))
-		y := dimensions.Size.Y - gtx.Dp(spacing) - space
+		// Word's border space is measured from the end of the text line toward
+		// the border. Keep the editor's bottom inset outside that measurement so
+		// this matches the paginated scene's text-line geometry.
+		y := dimensions.Size.Y - gtx.Dp(spacing) + space
 		width := max(0, gtx.Constraints.Max.X-leftIndentPX-rightIndentPX)
 		if width > 0 && y >= 0 {
 			ink, ok := parseWordRunColor(border.Color)

@@ -108,10 +108,11 @@ type ImagePlacement struct {
 }
 
 type TableCellPlacement struct {
-	TableID  string
-	RowIndex int
-	CellID   string
-	Bounds   Rect
+	TableID   string
+	RowIndex  int
+	CellID    string
+	FillColor string
+	Bounds    Rect
 }
 
 type Result struct {

@@ -82,9 +82,10 @@ type WordParagraphLayout struct {
 	Set                 WordParagraphLayoutMask
 }
 
-// WordTableLayout contains source grid widths in EMU.
+// WordTableLayout contains source grid widths in EMU and table-level shading.
 type WordTableLayout struct {
 	GridColumnsEMU []int64
+	FillColor      string
 }
 
 // WordTextStyleMask records which Word text style values were explicitly set.

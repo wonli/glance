@@ -232,8 +232,8 @@ func TestLayoutPlacesInheritedParagraphBottomBorder(t *testing.T) {
 		t.Fatalf("paragraph borders = %+v; want one border on one page", result.Pages)
 	}
 	border := result.Pages[0].ParagraphBorders[0]
-	if border.SourceID != "p0" || border.Style != "single" || border.Color != "4F81BD" || border.Bounds != (Rect{XPT: 10, YPT: 51.5, WidthPT: 140, HeightPT: 1}) {
-		t.Fatalf("paragraph border placement = %+v; want inherited blue 1pt bottom line after the padded next paragraph at x=10 y=51.5", border)
+	if border.SourceID != "p0" || border.Style != "single" || border.Color != "4F81BD" || border.Bounds != (Rect{XPT: 10, YPT: 47, WidthPT: 140, HeightPT: 1}) {
+		t.Fatalf("paragraph border placement = %+v; want inherited blue 1pt bottom line after the text and Word border spacing at x=10 y=47", border)
 	}
 	var followingText *TextFragment
 	for index := range result.Pages[0].Text {

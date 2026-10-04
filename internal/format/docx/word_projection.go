@@ -569,6 +569,7 @@ func (p *wordProjector) wordImageID(drawing *wordXMLNode, fallback string) strin
 
 func (p *wordProjector) table(node *wordXMLNode, id string) document.WordTable {
 	table := document.WordTable{}
+	table.Layout.FillColor = wordShadingFill(firstChild(node, "tblPr"))
 	rowIndex := 0
 	for _, child := range node.children {
 		if child.name.Local == "tblGrid" {
@@ -589,7 +590,15 @@ func (p *wordProjector) table(node *wordXMLNode, id string) document.WordTable {
 				continue
 			}
 			cellID := fmt.Sprintf("%s.r%d.c%d", id, rowIndex, cellIndex)
-			cell := document.WordTableCell{ID: cellID, WidthEMU: wordCellWidthEMU(firstChild(firstChild(cellNode, "tcPr"), "tcW"))}
+			cellProperties := firstChild(cellNode, "tcPr")
+			cell := document.WordTableCell{
+				ID:        cellID,
+				WidthEMU:  wordCellWidthEMU(firstChild(cellProperties, "tcW")),
+				FillColor: wordShadingFill(cellProperties),
+			}
+			if cell.FillColor == "" {
+				cell.FillColor = table.Layout.FillColor
+			}
 			paragraphIndex := 0
 			for _, content := range cellNode.children {
 				switch content.name.Local {
@@ -617,6 +626,29 @@ func (p *wordProjector) table(node *wordXMLNode, id string) document.WordTable {
 		rowIndex++
 	}
 	return table
+}
+
+func wordShadingFill(properties *wordXMLNode) string {
+	shading := firstChild(properties, "shd")
+	if shading == nil {
+		return ""
+	}
+	if value := strings.ToLower(attrValue(shading, "val")); value == "nil" || value == "none" {
+		return ""
+	}
+	fill := strings.TrimSpace(attrValue(shading, "fill"))
+	if (fill == "" || strings.EqualFold(fill, "auto")) && strings.EqualFold(attrValue(shading, "val"), "solid") {
+		fill = strings.TrimSpace(attrValue(shading, "color"))
+	}
+	if len(fill) != 6 {
+		return ""
+	}
+	for _, digit := range fill {
+		if !((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f') || (digit >= 'A' && digit <= 'F')) {
+			return ""
+		}
+	}
+	return strings.ToUpper(fill)
 }
 
 func parseWordTextStyle(properties *wordXMLNode) document.WordTextStyle {
@@ -954,7 +986,7 @@ func cloneWordBlocks(blocks []document.WordBlock) []document.WordBlock {
 			for rowIndex, row := range block.Table.Rows {
 				table.Rows[rowIndex].Cells = make([]document.WordTableCell, len(row.Cells))
 				for cellIndex, cell := range row.Cells {
-					table.Rows[rowIndex].Cells[cellIndex] = document.WordTableCell{ID: cell.ID, WidthEMU: cell.WidthEMU, Paragraphs: make([]document.WordParagraph, len(cell.Paragraphs))}
+					table.Rows[rowIndex].Cells[cellIndex] = document.WordTableCell{ID: cell.ID, WidthEMU: cell.WidthEMU, FillColor: cell.FillColor, Paragraphs: make([]document.WordParagraph, len(cell.Paragraphs))}
 					for paragraphIndex, paragraph := range cell.Paragraphs {
 						table.Rows[rowIndex].Cells[cellIndex].Paragraphs[paragraphIndex] = cloneWordParagraph(paragraph)
 					}

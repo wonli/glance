@@ -74,8 +74,12 @@ func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, style
 				cellWidth = widths[cellIndex]
 			}
 			cellBounds := Rect{XPT: x, YPT: y, WidthPT: cellWidth, HeightPT: row.height}
+			fillColor := cell.cell.FillColor
+			if fillColor == "" {
+				fillColor = table.Layout.FillColor
+			}
 			c.result.Pages[c.pageIndex].TableCells = append(c.result.Pages[c.pageIndex].TableCells, TableCellPlacement{
-				TableID: tableID, RowIndex: row.index, CellID: cell.cell.ID, Bounds: cellBounds,
+				TableID: tableID, RowIndex: row.index, CellID: cell.cell.ID, FillColor: fillColor, Bounds: cellBounds,
 			})
 			inner := Rect{
 				XPT: x + tableCellPaddingPT, YPT: y + tableCellPaddingPT,

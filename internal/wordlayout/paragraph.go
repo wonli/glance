@@ -450,7 +450,7 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 		if borderSourceID == "" {
 			borderSourceID = prepared.sourceID
 		}
-		placeParagraphLine(c, prepared.sourceID, borderSourceID, fixedPageIndex, y, area, prepared.style.paragraph, line, lineIndex == 0, lineIndex == len(prepared.lines)-1, prepared.uiAfterPT)
+		placeParagraphLine(c, prepared.sourceID, borderSourceID, fixedPageIndex, y, area, prepared.style.paragraph, line, lineIndex == 0, lineIndex == len(prepared.lines)-1)
 		y += line.height
 		if allowPageFlow {
 			c.y = y
@@ -473,7 +473,7 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 	return nil
 }
 
-func placeParagraphLine(cursor *layoutCursor, sourceID, borderSourceID string, pageIndex int, y float64, area Rect, paragraph document.WordParagraphLayout, line paragraphLine, firstLine, lastLine bool, uiAfterPT float64) {
+func placeParagraphLine(cursor *layoutCursor, sourceID, borderSourceID string, pageIndex int, y float64, area Rect, paragraph document.WordParagraphLayout, line paragraphLine, firstLine, lastLine bool) {
 	if pageIndex < 0 || pageIndex >= len(cursor.result.Pages) {
 		return
 	}
@@ -554,7 +554,7 @@ func placeParagraphLine(cursor *layoutCursor, sourceID, borderSourceID string, p
 				Color:    border.Color,
 				Bounds: Rect{
 					XPT:      area.XPT + left,
-					YPT:      y + line.height + uiAfterPT + border.SpacePT,
+					YPT:      y + line.height + border.SpacePT,
 					WidthPT:  math.Max(0, area.WidthPT-left-right),
 					HeightPT: border.SizePT,
 				},

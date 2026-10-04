@@ -77,6 +77,7 @@ type WordTableRow struct {
 type WordTableCell struct {
 	ID         string
 	WidthEMU   int64
+	FillColor  string
 	Paragraphs []WordParagraph
 }
 
