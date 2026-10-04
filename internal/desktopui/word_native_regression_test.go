@@ -370,7 +370,7 @@ func TestWordRulerIndentMarkersPersistParagraphWidthChanges(t *testing.T) {
 	waitForIndentCommit := func() {
 		t.Helper()
 		deadline := time.After(3 * time.Second)
-		for state.formatRunning {
+		for state.formatRunning.Load() {
 			select {
 			case result := <-app.wordCommandResults:
 				app.wordCommandResults <- result
@@ -408,9 +408,9 @@ func TestWordRulerIndentMarkersPersistParagraphWidthChanges(t *testing.T) {
 		}
 		// Model the Word text flush that can start when the ruler takes focus while
 		// retaining the active pointer capture for this drag.
-		state.formatRunning = true
-		state.wordFlushRequested = true
-		state.wordFlushAllDrafts = true
+		state.formatRunning.Store(true)
+		state.wordFlushRequested.Store(true)
+		state.wordFlushAllDrafts.Store(true)
 		router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, PointerID: pointerID, Buttons: pointer.ButtonPrimary, Position: end})
 		frame()
 		if state.wordRulerIndentDragPreviewEMU == state.wordRulerIndentDragStartEMU {
@@ -421,7 +421,7 @@ func TestWordRulerIndentMarkersPersistParagraphWidthChanges(t *testing.T) {
 		if state.wordDeferredToolbarAction != "ruler-indents" {
 			t.Fatalf("ruler handle %q did not defer its commit behind the pending text draft: %q", description, state.wordDeferredToolbarAction)
 		}
-		state.formatRunning = false
+		state.formatRunning.Store(false)
 		app.startNextWordTextCommit()
 		waitForIndentCommit()
 		frame()
@@ -644,7 +644,7 @@ func TestWordBlankEndClickInsertsAndFocusesEditableParagraph(t *testing.T) {
 		app.processAsyncResults()
 	case <-time.After(3 * time.Second):
 		semanticID, semanticHit := router.SemanticAt(position)
-		t.Fatalf("blank body click did not queue paragraph insertion: point=%v semantic=%d/%v insert=%v format=%v flush=%v history=%#v position=%#v", clickAt, semanticID, semanticHit, state.wordInsertionRunning, state.formatRunning, state.wordInsertAfterDraftFlush, state.wordAppendTarget.History(), state.wordListState.Position)
+		t.Fatalf("blank body click did not queue paragraph insertion: point=%v semantic=%d/%v insert=%v format=%v flush=%v history=%#v position=%#v", clickAt, semanticID, semanticHit, state.wordInsertionRunning, state.formatRunning.Load(), state.wordInsertAfterDraftFlush, state.wordAppendTarget.History(), state.wordListState.Position)
 	}
 	if len(state.wordBlocks) != 2 {
 		t.Fatalf("body blocks after blank click = %d; want 2", len(state.wordBlocks))
@@ -664,7 +664,9 @@ func TestWordBlankEndClickInsertsAndFocusesEditableParagraph(t *testing.T) {
 	if state.wordRunDrafts[runID] != "typed at blank body" {
 		t.Fatalf("in-place run draft = %q", state.wordRunDrafts[runID])
 	}
-	state.wordForceDraftFlush, state.wordFlushRequested, state.wordFlushAllDrafts = true, true, true
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
 	frame()
 	select {
 	case result := <-app.wordCommandResults:
@@ -792,7 +794,7 @@ func TestWordClickTextFocusesRunAtCaretAndAcceptsTyping(t *testing.T) {
 		t.Fatal("clicking a second Word run did not move editor focus")
 	}
 	deadline := time.After(3 * time.Second)
-	for wordHasPendingTextDrafts(state) || state.formatRunning {
+	for wordHasPendingTextDrafts(state) || state.formatRunning.Load() {
 		select {
 		case result := <-app.wordCommandResults:
 			app.wordCommandResults <- result
@@ -936,7 +938,7 @@ func TestWordEnterSplitsAtCaretAndFocusesFollowingParagraph(t *testing.T) {
 			app.wordCommandResults <- result
 			app.processAsyncResults()
 		case <-deadline:
-			t.Fatalf("Enter did not split the paragraph before timeout (blocks=%d, running=%v)", len(state.wordBlocks), state.formatRunning)
+			t.Fatalf("Enter did not split the paragraph before timeout (blocks=%d, running=%v)", len(state.wordBlocks), state.formatRunning.Load())
 		default:
 			time.Sleep(time.Millisecond)
 		}
@@ -980,7 +982,7 @@ func TestWordBackspaceAtStartAndDeleteAtEndJoinParagraphs(t *testing.T) {
 			frame()
 			router.Queue(key.Event{Name: test.keyName, State: key.Press})
 			frame()
-			waitWordInteraction(t, app, func() bool { return len(state.wordBlocks) == 1 && !state.formatRunning })
+			waitWordInteraction(t, app, func() bool { return len(state.wordBlocks) == 1 && !state.formatRunning.Load() })
 			paragraph := state.wordBlocks[0].Paragraph
 			if paragraph == nil || len(paragraph.Inlines) != 2 || paragraph.Inlines[0].Text.Text != "left" || paragraph.Inlines[1].Text.Text != "right" {
 				t.Fatalf("joined paragraphs = %#v; want left/right in one paragraph", state.wordBlocks)
@@ -1234,9 +1236,9 @@ func TestWordParagraphJoinCompletionUpdatesInactiveSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.wordParagraphJoinIntent = &wordParagraphJoinIntent{runID: run.ID, direction: document.WordJoinPrevious}
-	state.wordFlushRequested = true
-	state.wordFlushAllDrafts = true
-	state.formatRunning = true
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
+	state.formatRunning.Store(true)
 	blocks := cloneWordBlockSnapshot(word.WordBlocks())
 	otherState := newDocumentSessionState("other.docx")
 	app := &App{
@@ -1255,8 +1257,8 @@ func TestWordParagraphJoinCompletionUpdatesInactiveSession(t *testing.T) {
 		joinCaret:       joined.Caret,
 	}
 	app.processAsyncResults()
-	if state.formatRunning || state.wordParagraphJoinIntent != nil || state.wordFlushRequested || state.wordFlushAllDrafts {
-		t.Fatalf("inactive session join remained pending: running=%v intent=%#v flush=%v/%v", state.formatRunning, state.wordParagraphJoinIntent, state.wordFlushRequested, state.wordFlushAllDrafts)
+	if state.formatRunning.Load() || state.wordParagraphJoinIntent != nil || state.wordFlushRequested.Load() || state.wordFlushAllDrafts.Load() {
+		t.Fatalf("inactive session join remained pending: running=%v intent=%#v flush=%v/%v", state.formatRunning.Load(), state.wordParagraphJoinIntent, state.wordFlushRequested.Load(), state.wordFlushAllDrafts.Load())
 	}
 	if len(state.wordBlocks) != 1 || state.wordBlocks[0].Paragraph == nil || state.wordBlocks[0].Paragraph.ID != joined.ParagraphID {
 		t.Fatalf("inactive session projection was not refreshed: %#v", state.wordBlocks)
@@ -1276,7 +1278,7 @@ func TestWordParagraphJoinFlushesFocusedDraftBeforeJoining(t *testing.T) {
 	}
 	router.Queue(key.Event{Name: key.NameDeleteBackward, State: key.Press})
 	frame()
-	waitWordInteraction(t, app, func() bool { return len(state.wordBlocks) == 1 && !state.formatRunning })
+	waitWordInteraction(t, app, func() bool { return len(state.wordBlocks) == 1 && !state.formatRunning.Load() })
 	blocks := word.WordBlocks()
 	if len(blocks) != 1 || len(blocks[0].Paragraph.Inlines) != 2 || blocks[0].Paragraph.Inlines[1].Text.Text != "draft right" {
 		t.Fatalf("join did not flush focused text draft first: %#v", blocks)

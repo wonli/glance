@@ -21,17 +21,32 @@ import (
 )
 
 type sessionViewSnapshot struct {
-	Sheet          string  `json:"sheet"`
-	SelectedCell   string  `json:"selected_cell"`
-	SelectedBlock  int     `json:"selected_block"`
-	GridFirst      int     `json:"grid_first"`
-	WordFirst      int     `json:"word_first"`
-	WordAutoSave   bool    `json:"word_auto_save"`
-	GridX          float64 `json:"grid_x"`
-	GridY          float64 `json:"grid_y"`
-	GridScale      float64 `json:"grid_scale"`
-	SelectedRow    int     `json:"selected_row"`
-	SelectedColumn int     `json:"selected_column"`
+	Sheet                      string         `json:"sheet"`
+	SelectedCell               string         `json:"selected_cell"`
+	SelectedBlock              int            `json:"selected_block"`
+	GridFirst                  int            `json:"grid_first"`
+	WordFirst                  int            `json:"word_first"`
+	WordAutoSave               bool           `json:"word_auto_save"`
+	GridX                      float64        `json:"grid_x"`
+	GridY                      float64        `json:"grid_y"`
+	GridScale                  float64        `json:"grid_scale"`
+	SelectedRow                int            `json:"selected_row"`
+	SelectedColumn             int            `json:"selected_column"`
+	WordViewMode               wordViewMode   `json:"word_view_mode"`
+	WordPageFitMode            bool           `json:"word_page_fit_mode"`
+	WordMultiplePagesMode      bool           `json:"word_multiple_pages_mode"`
+	WordLayoutZoom             float64        `json:"word_layout_zoom"`
+	WordRulerHidden            bool           `json:"word_ruler_hidden"`
+	WordGridlinesVisible       bool           `json:"word_gridlines_visible"`
+	WordNavigationVisible      bool           `json:"word_navigation_visible"`
+	WordNavigationQuery        string         `json:"word_navigation_query"`
+	WordToolbarTab             wordToolbarTab `json:"word_toolbar_tab"`
+	SelectedWordRunID          string         `json:"selected_word_run_id"`
+	SelectedWordParagraphID    string         `json:"selected_word_paragraph_id"`
+	SelectedWordImageID        string         `json:"selected_word_image_id"`
+	SelectedWordSelectionStart int            `json:"selected_word_selection_start"`
+	SelectedWordSelectionEnd   int            `json:"selected_word_selection_end"`
+	WordPageFirst              int            `json:"word_page_first"`
 }
 
 func workspaceSessionID(path string) string {
@@ -76,44 +91,66 @@ func newDraftSessionID(format string) string {
 }
 
 func (a *App) initializeWorkspace() {
-	path, err := workspace.DefaultDatabasePath()
-	if err != nil {
-		a.workspaceError = err.Error()
-		a.status = "工作区数据库不可用：" + err.Error()
-		return
+	runtime := a.ensureDesktopRuntime()
+	runtime.workspaceInitMu.Lock()
+	defer runtime.workspaceInitMu.Unlock()
+	if runtime.workspaceStore == nil {
+		path, err := workspace.DefaultDatabasePath()
+		if err != nil {
+			a.workspaceError = err.Error()
+			a.status = "工作区数据库不可用：" + err.Error()
+			return
+		}
+		store, err := workspace.Open(path)
+		if err != nil {
+			a.workspaceError = err.Error()
+			a.status = "工作区数据库不可用：" + err.Error()
+			return
+		}
+		runtime.workspaceStore = store
 	}
-	store, err := workspace.Open(path)
-	if err != nil {
-		a.workspaceError = err.Error()
-		a.status = "工作区数据库不可用：" + err.Error()
-		return
+	if runtime.collection == nil {
+		collection, err := workspace.OpenCollection(runtime.workspaceStore)
+		if err != nil {
+			a.workspaceError = err.Error()
+			a.status = "恢复工作区失败：" + err.Error()
+			return
+		}
+		runtime.collection = collection
 	}
-	a.workspaceStore = store
-	collection, err := workspace.OpenCollection(store)
-	if err != nil {
-		a.workspaceError = err.Error()
-		a.status = "恢复工作区失败：" + err.Error()
-		return
-	}
-	a.collection = collection
+	collection := runtime.collection
 	a.loadHomeFavorites()
 	for _, record := range collection.Tabs() {
 		a.tabMeta[record.Tab.ID] = record.Tab
 		if !hasRestorableSnapshot(record) {
 			continue
 		}
-		state, err := a.restoreSessionState(record)
-		if err != nil {
-			a.status = "恢复 " + record.Tab.Title + " 失败：" + err.Error()
-			continue
+		var state *documentSessionState
+		if shared, ok := runtime.session(record.Tab.DocumentID); ok {
+			state = newDocumentSessionView(shared, a.windowID)
+		} else {
+			var err error
+			state, err = a.restoreSessionState(record)
+			if err != nil {
+				a.status = "恢复 " + record.Tab.Title + " 失败：" + err.Error()
+				continue
+			}
+			state.documentID = record.Tab.DocumentID
+			shared := runtime.registerSession(state.sharedDocumentSession)
+			if state.sharedDocumentSession != shared {
+				state = newDocumentSessionView(shared, a.windowID)
+			}
 		}
 		a.sessions[record.Tab.ID] = state
 	}
+	runtime.workspaceInitialized = true
 	// Restore all document sessions, but start on Glance's home tab.
 	a.activeTabID = workspace.RecentTabID
 	a.documentSessionState = newDocumentSessionState("")
-	if err := collection.Activate(workspace.RecentTabID); err != nil {
-		a.status = err.Error()
+	if runtime.isPrimaryWindow(a.windowID) {
+		if err := collection.Activate(workspace.RecentTabID); err != nil {
+			a.status = err.Error()
+		}
 	}
 	a.refreshHomeMetadata()
 }
@@ -124,6 +161,7 @@ func hasRestorableSnapshot(record workspace.Session) bool {
 
 func (a *App) restoreSessionState(record workspace.Session) (*documentSessionState, error) {
 	state := newDocumentSessionState(record.Tab.SourcePath)
+	state.documentID = record.Tab.DocumentID
 	switch strings.ToLower(record.Format) {
 	case "xlsx":
 		book, err := xlsx.OpenSnapshot(record.Payload)
@@ -179,6 +217,22 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 	state.gridList.Position.First = view.GridFirst
 	state.wordListState.Position.First = view.WordFirst
 	state.wordAutoSave = view.WordAutoSave
+	if state.word != nil {
+		state.wordViewMode = clampWordViewMode(view.WordViewMode)
+		state.wordPageFitMode = view.WordPageFitMode
+		state.wordMultiplePagesMode = view.WordMultiplePagesMode
+		if view.WordLayoutZoom > 0 {
+			state.wordLayoutZoom = wordStatusZoomClamp(view.WordLayoutZoom)
+		}
+		state.wordRulerHidden = view.WordRulerHidden
+		state.wordGridlinesVisible = view.WordGridlinesVisible
+		state.wordNavigationVisible = view.WordNavigationVisible
+		state.wordNavigationSearchQuery = view.WordNavigationQuery
+		state.wordNavigationSearchEditor.SetText(view.WordNavigationQuery)
+		state.wordToolbarTab = clampWordToolbarTab(view.WordToolbarTab)
+		state.wordPageListState.Position.First = max(0, view.WordPageFirst)
+		restorePersistedWordSelection(state, view)
+	}
 	if state.virtualGrid != nil {
 		state.virtualGrid.X, state.virtualGrid.Y = view.GridX, view.GridY
 		if view.GridScale > 0 {
@@ -198,8 +252,58 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 	return state, nil
 }
 
+func clampWordViewMode(mode wordViewMode) wordViewMode {
+	if mode > wordViewWebLayout {
+		return wordViewContinuous
+	}
+	return mode
+}
+
+func clampWordToolbarTab(tab wordToolbarTab) wordToolbarTab {
+	if tab > wordTabPicture {
+		return wordTabHome
+	}
+	return tab
+}
+
+func restorePersistedWordSelection(state *documentSessionState, view sessionViewSnapshot) {
+	if state == nil || state.word == nil {
+		return
+	}
+	blocks := wordBlocksForState(state)
+	state.selectedWordRunID = ""
+	state.selectedWordParagraphID = ""
+	state.selectedWordImageID = ""
+	if run, paragraph, ok := findEditableWordRun(blocks, view.SelectedWordRunID); ok {
+		state.selectedWordRunID = run.ID
+		state.selectedWordParagraphID = paragraph.ID
+		state.selectedBlock = -1
+		state.selectedBlockEditable = true
+		if editor := wordRunEditor(state, run); editor != nil {
+			start, end := clampEditorSelection(view.SelectedWordSelectionStart, view.SelectedWordSelectionEnd, editor.Text())
+			editor.SetCaret(start, end)
+		}
+		return
+	}
+	if view.SelectedWordImageID != "" && findWordImage(blocks, view.SelectedWordImageID) != nil {
+		state.selectedWordImageID = view.SelectedWordImageID
+		if paragraph, ok := selectedWordParagraph(blocks, view.SelectedWordParagraphID); ok {
+			state.selectedWordParagraphID = paragraph.ID
+		}
+		return
+	}
+	if paragraph, ok := selectedWordParagraph(blocks, view.SelectedWordParagraphID); ok {
+		state.selectedWordParagraphID = paragraph.ID
+	}
+}
+
 func (a *App) activateSession(id string, state *documentSessionState) {
+	runtime := a.ensureDesktopRuntime()
+	if state == nil || state.closed.Load() {
+		return
+	}
 	a.documentGeneration++
+	a.closeWordVersionHistory()
 	if a.activeTabID != "" && a.documentSessionState != nil {
 		if a.documentSessionState.valueFilter != nil {
 			a.clearValueFilter(a.documentSessionState)
@@ -207,8 +311,12 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 		a.sessions[a.activeTabID] = a.documentSessionState
 	}
 	a.documentSessionState = state
+	state.windowID = a.windowID
+	state.sharedDocumentSession.attachView(a.windowID, state)
 	a.activeTabID = id
-	if a.collection != nil {
+	a.setActiveSessionID(id)
+	state.documentID = id
+	if a.collection != nil && runtime.isPrimaryWindow(a.windowID) {
 		if err := a.collection.Activate(id); err != nil {
 			a.status = err.Error()
 		}
@@ -218,7 +326,11 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 			a.status = "源文件不可用，正在显示本地恢复快照：" + meta.SourcePath
 		}
 	}
+	if state.word != nil {
+		a.startWordPagination(state)
+	}
 	a.maybeAutoSaveWord(state)
+	a.surfacePendingWordRestoreError(state)
 }
 
 func (a *App) snapshotActive() ([]byte, error) {
@@ -238,6 +350,10 @@ func (a *App) snapshotActive() ([]byte, error) {
 }
 
 func (a *App) persistActiveSession() {
+	runtime := a.ensureDesktopRuntime()
+	if !runtime.isPrimaryWindow(a.windowID) {
+		return
+	}
 	if a.collection == nil || a.activeTabID == "" || a.activeTabID == workspace.RecentTabID {
 		return
 	}
@@ -262,6 +378,7 @@ type workspaceWriteJob struct {
 	documentID, format string
 	state              *documentSessionState
 	viewState          []byte
+	barrier            chan struct{}
 	recents            []workspace.Recent
 	favoritePath       string
 	favoriteValue      bool
@@ -274,6 +391,8 @@ const (
 	commandOpenFile fileCommandKind = iota + 1
 	commandOpenFolder
 	commandSaveAs
+	commandExportPDF
+	commandShareCopy
 )
 
 type fileCommandResult struct {
@@ -295,6 +414,14 @@ func (a *App) startSaveAsPicker(format string) {
 	a.startFileCommand(commandSaveAs, format)
 }
 
+func (a *App) startWordPDFSavePicker(state *documentSessionState, key wordLayoutKey) {
+	if state == nil || state.word == nil || a.fileCommandRunning {
+		return
+	}
+	a.wordPDFPickerRequest = &wordPDFPickerRequest{state: state, key: key}
+	a.startFileCommand(commandExportPDF, "pdf")
+}
+
 // setWordFileCommandRunner is a narrow injection seam for exercising the Word
 // ribbon's file commands without opening a native platform picker.
 func (a *App) setWordFileCommandRunner(runner func(fileCommandKind, string) fileCommandResult) {
@@ -313,6 +440,10 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 		a.status = "选择要浏览的文件夹…"
 	case commandSaveAs:
 		a.status = "选择另存为位置…"
+	case commandExportPDF:
+		a.status = "选择 PDF 保存位置…"
+	case commandShareCopy:
+		a.status = "选择共享 DOCX 副本保存位置…"
 	}
 	runner := a.fileCommandRunner
 	go func() {
@@ -329,7 +460,7 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 				if result.err == nil && result.path != "" {
 					result.recents, result.err = scanOfficeFolder(result.path)
 				}
-			case commandSaveAs:
+			case commandSaveAs, commandShareCopy:
 				result.path, result.err = chooseSavePath(format)
 			}
 		}
@@ -363,6 +494,7 @@ func scanOfficeFolder(path string) ([]workspace.Recent, error) {
 }
 
 func (a *App) persistRecentsAsync() {
+	a.ensureDesktopRuntime()
 	if a.collection == nil {
 		return
 	}
@@ -378,69 +510,9 @@ func (a *App) persistRecentsAsync() {
 	}
 }
 
-func (a *App) startWorkspaceWriter() {
-	a.workspaceWriteJobs = make(chan workspaceWriteJob, 128)
-	a.workspaceWriteResults = make(chan error, 1)
-	a.workspaceWriterDone = make(chan struct{})
-	go func() {
-		defer close(a.workspaceWriterDone)
-		for job := range a.workspaceWriteJobs {
-			var err error
-			if job.recents != nil {
-				err = a.workspaceStore.SaveRecents(job.recents)
-			} else if job.saveFavorite {
-				err = a.workspaceStore.SaveFavorite(job.favoritePath, job.favoriteValue)
-			} else {
-				err = a.writeWorkspaceSnapshot(job)
-			}
-			a.publishWorkspaceWriteResult(err)
-			if a.window != nil {
-				a.window.Invalidate()
-			}
-		}
-	}()
-}
-
-func (a *App) publishWorkspaceWriteResult(err error) {
-	if a.workspaceWriteResults == nil {
-		return
-	}
-	select {
-	case a.workspaceWriteResults <- err:
-		return
-	default:
-	}
-	select {
-	case <-a.workspaceWriteResults:
-	default:
-	}
-	select {
-	case a.workspaceWriteResults <- err:
-	default:
-	}
-}
-
-func (a *App) writeWorkspaceSnapshot(job workspaceWriteJob) error {
-	state := job.state
-	if state.closed.Load() {
-		return nil
-	}
-	payload, err := snapshotState(state)
-	if err != nil {
-		return err
-	}
-	if a.workspaceStore == nil {
-		return fmt.Errorf("工作区数据库不可用")
-	}
-	a.workspaceDBMu.Lock()
-	defer a.workspaceDBMu.Unlock()
-	if state.closed.Load() {
-		return nil
-	}
-	return a.workspaceStore.SaveDocument(workspace.Document{ID: job.documentID, Format: job.format, Payload: payload, ViewState: job.viewState, Dirty: sessionDirty(state), UpdatedAt: time.Now().UTC()})
-}
-
 func snapshotState(state *documentSessionState) ([]byte, error) {
+	unlock := lockSessionAdapterRead(state)
+	defer unlock()
 	switch {
 	case state.book != nil:
 		if snap, ok := state.book.(interface{ Snapshot() ([]byte, error) }); ok {
@@ -458,11 +530,40 @@ func snapshotState(state *documentSessionState) ([]byte, error) {
 }
 
 func sessionDirty(state *documentSessionState) bool {
+	unlock := lockSessionAdapterRead(state)
+	defer unlock()
 	return state.book != nil && state.book.Dirty() || state.word != nil && state.word.Dirty() || state.jsonDoc != nil && state.jsonDoc.Dirty()
+}
+
+func sessionPath(state *documentSessionState) string {
+	unlock := lockSessionAdapterRead(state)
+	defer unlock()
+	if state == nil {
+		return ""
+	}
+	return state.path
 }
 
 func (a *App) viewStateBytes() []byte {
 	view := sessionViewSnapshot{Sheet: a.sheet, SelectedCell: a.selectedCell, SelectedBlock: a.selectedBlock, GridFirst: a.gridList.Position.First, WordFirst: a.wordListState.Position.First, WordAutoSave: a.wordAutoSave}
+	if state := a.documentSessionState; state != nil && state.word != nil {
+		view.WordViewMode = state.wordViewMode
+		view.WordPageFitMode = state.wordPageFitMode
+		view.WordMultiplePagesMode = state.wordMultiplePagesMode
+		view.WordLayoutZoom = state.wordLayoutZoom
+		view.WordRulerHidden = state.wordRulerHidden
+		view.WordGridlinesVisible = state.wordGridlinesVisible
+		view.WordNavigationVisible = state.wordNavigationVisible
+		view.WordNavigationQuery = state.wordNavigationSearchQuery
+		view.WordToolbarTab = state.wordToolbarTab
+		view.SelectedWordRunID = state.selectedWordRunID
+		view.SelectedWordParagraphID = state.selectedWordParagraphID
+		view.SelectedWordImageID = state.selectedWordImageID
+		view.WordPageFirst = state.wordPageListState.Position.First
+		if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
+			view.SelectedWordSelectionStart, view.SelectedWordSelectionEnd = editor.Selection()
+		}
+	}
 	if a.virtualGrid != nil {
 		view.GridX, view.GridY, view.GridScale = a.virtualGrid.X, a.virtualGrid.Y, a.virtualGrid.Scale
 		view.SelectedRow, view.SelectedColumn = a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn
@@ -471,7 +572,40 @@ func (a *App) viewStateBytes() []byte {
 	return data
 }
 
+func (a *App) processPrimaryPromotion() {
+	if a == nil || !a.primaryPromotionPending.Swap(false) {
+		return
+	}
+	runtime := a.ensureDesktopRuntime()
+	if !runtime.isPrimaryWindow(a.windowID) {
+		return
+	}
+	if a.collection != nil {
+		activeTabID := a.activeTabID
+		if activeTabID == "" {
+			activeTabID = workspace.RecentTabID
+		}
+		if activeTabID != workspace.RecentTabID {
+			if _, exists := a.collection.Get(activeTabID); !exists {
+				activeTabID = workspace.RecentTabID
+			}
+		}
+		a.activeTabID = activeTabID
+		if activeTabID == workspace.RecentTabID {
+			a.setActiveSessionID("")
+		}
+		if err := a.collection.Activate(activeTabID); err != nil {
+			a.status = "活动文档恢复失败：" + err.Error()
+		}
+	}
+	a.persistActiveSession()
+}
+
 func (a *App) persistViewState() {
+	runtime := a.ensureDesktopRuntime()
+	if !runtime.isPrimaryWindow(a.windowID) {
+		return
+	}
 	if a.collection == nil || a.activeTabID == "" || a.activeTabID == workspace.RecentTabID {
 		return
 	}
@@ -481,6 +615,10 @@ func (a *App) persistViewState() {
 }
 
 func (a *App) updatePersistedTab(meta workspace.Tab) {
+	runtime := a.ensureDesktopRuntime()
+	if !runtime.isPrimaryWindow(a.windowID) {
+		return
+	}
 	if a.collection == nil {
 		return
 	}
@@ -576,7 +714,7 @@ type wordImagePickerResult struct {
 
 func (a *App) startWordImagePicker(operation wordImagePickerOperation) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving || a.wordImagePickerRunning {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || a.wordImagePickerRunning {
 		return
 	}
 	if _, ok := any(state.word).(document.WordImageEditor); !ok {
@@ -683,7 +821,7 @@ func (a *App) handleWordImagePickerResult(result wordImagePickerResult) {
 		a.status = "已取消选择图片"
 		return
 	}
-	if result.state.formatRunning || a.saving {
+	if result.state.formatRunning.Load() || a.isSaving() {
 		a.status = "文档正在处理其他操作，请稍后重试"
 		return
 	}
@@ -702,21 +840,24 @@ func (a *App) handleWordImagePickerResult(result wordImagePickerResult) {
 
 func (a *App) runWordImageInsertCommand(paragraphID, afterInlineID, mediaType string, data []byte) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	editor, ok := any(state.word).(document.WordImageEditor)
 	if !ok {
 		return
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
-		imageID, err := editor.InsertInlineImage(paragraphID, afterInlineID, mediaType, data)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		var imageID string
+		blocks, err := runWordMutation(state, func() error {
+			var insertErr error
+			imageID, insertErr = editor.InsertInlineImage(paragraphID, afterInlineID, mediaType, data)
+			return insertErr
+		})
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "插入图片", err: err, imageID: imageID, selectInsertedImage: err == nil, blocks: blocks})
 	}()
 }

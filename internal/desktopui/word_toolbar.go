@@ -59,7 +59,7 @@ var (
 		{slot: -1, id: "cut", label: "剪切", group: "剪贴板", icon: "cut"},
 		{slot: -1, id: "copy", label: "复制", group: "剪贴板", icon: "copy"},
 		{slot: -1, id: "format-painter", label: "格式刷", group: "剪贴板", icon: "paintbrush"},
-		{slot: -1, id: "font-family", label: "字体", group: "字体", icon: "file-text"},
+		{slot: -1, id: "font-family", label: "字体", group: "字体", icon: "type"},
 		{slot: -1, id: "font-size-decrease", label: "减小字号", group: "字体", icon: "minus"},
 		{slot: -1, id: "font-size-increase", label: "增大字号", group: "字体", icon: "plus"},
 		{slot: -1, id: "bold", label: "加粗", group: "字体", icon: "bold"},
@@ -196,17 +196,29 @@ func wordToolbarActions(tab wordToolbarTab) []ribbonAction {
 
 func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving || a.fileCommandRunning || a.wordImagePickerRunning {
+	if action.id == "view-new-window" {
+		enabled, _ := wordNewWindowAvailability(state, a.desktopRuntime)
+		return enabled
+	}
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning || a.wordImagePickerRunning {
 		return false
 	}
 	switch action.id {
-	case "new", "open", "recent", "save-as":
+	case "new", "open", "recent", "save-as", "export-pdf", "share":
 		return true
+	case "version-history":
+		return canonicalSessionPath(sessionPath(state)) != ""
+	case "print":
+		return a.wordPrinter != nil && a.wordPrinter.Available()
 	case "autosave":
 		return true
 	case "doc-info":
 		_, supported := any(state.word).(document.WordDocumentPropertiesEditor)
 		return supported
+	case "view-reading", "view-print-layout", "view-web-layout", "view-navigation", "view-zoom", "view-gridlines", "view-single-page", "view-multiple-pages":
+		return true
+	case "view-ruler":
+		return true
 	case "undo", "redo":
 		history, ok := any(state.word).(document.WordHistory)
 		if !ok {
@@ -278,6 +290,10 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, content := any(state.word).(document.WordContentReader)
 		_, editor := any(state.word).(document.WordTextRangeEditor)
 		return content && editor
+	case "insert-symbol":
+		_, editable := any(state.word).(document.WordTextRangeEditor)
+		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		return editable && ok && run.Editable && wordBodyRunEditable(wordBlocksForState(state), run.ID)
 	case "page-break":
 		_, editor := any(state.word).(document.WordPageBreakEditor)
 		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
@@ -293,7 +309,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, content := any(state.word).(document.WordContentReader)
 		return content
 	case "save":
-		return (state.word.Dirty() || wordHasPendingTextDrafts(state) || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil) && state.path != ""
+		return (sessionDirty(state) || wordHasPendingTextDrafts(state) || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil) && sessionPath(state) != ""
 	case "insert-image":
 		_, editable := any(state.word).(document.WordImageEditor)
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
@@ -331,6 +347,30 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 	if action.id == "autosave" {
 		return state.wordAutoSave
 	}
+	if action.id == "view-ruler" {
+		return !state.wordRulerHidden
+	}
+	if action.id == "view-gridlines" {
+		return state.wordGridlinesVisible
+	}
+	if action.id == "view-reading" {
+		return state.wordReadingMode
+	}
+	if action.id == "view-print-layout" {
+		return state.wordViewMode == wordViewPrintLayout
+	}
+	if action.id == "view-web-layout" {
+		return state.wordViewMode == wordViewWebLayout
+	}
+	if action.id == "view-navigation" {
+		return state.wordNavigationVisible
+	}
+	if action.id == "view-single-page" {
+		return !state.wordMultiplePagesMode && state.wordPageFitMode && state.wordViewMode == wordViewPrintLayout
+	}
+	if action.id == "view-multiple-pages" {
+		return state.wordMultiplePagesMode && state.wordViewMode == wordViewPrintLayout
+	}
 	blocks := wordBlocksForState(state)
 	if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok {
 		switch action.id {
@@ -359,9 +399,16 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 	return false
 }
 
+func (a *App) wordToolbarActionDescription(action ribbonAction) string {
+	if action.id == "version-history" && canonicalSessionPath(sessionPath(a.documentSessionState)) == "" {
+		return action.label + "，不可用：请先保存文档"
+	}
+	return action.label
+}
+
 func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || a.modal.Visible {
+	if state == nil || state.word == nil || a.modal.Visible || a.wordVersionHistoryVisible || a.wordSymbolPickerVisible {
 		return
 	}
 	tabs := wordToolbarTabs(state)
@@ -379,11 +426,15 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 		if button == nil || !button.Clicked(gtx) || !a.wordToolbarActionEnabled(action) {
 			continue
 		}
+		if action.id == "view-new-window" {
+			a.requestWordNewWindow()
+			continue
+		}
 		if wordHasPendingTextDrafts(state) && action.id == "paste" {
 			state.wordClipboardRunID = state.selectedWordRunID
-			state.wordForceDraftFlush = true
-			state.wordFlushRequested = true
-			state.wordFlushAllDrafts = true
+			state.wordForceDraftFlush.Store(true)
+			state.wordFlushRequested.Store(true)
+			state.wordFlushAllDrafts.Store(true)
 			gtx.Execute(clipboard.ReadCmd{Tag: &state.wordClipboardTarget})
 			continue
 		}
@@ -395,21 +446,26 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 				}
 				gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(value))})
 			}
-			state.wordForceDraftFlush = true
-			state.wordFlushRequested = true
-			state.wordFlushAllDrafts = true
+			state.wordForceDraftFlush.Store(true)
+			state.wordFlushRequested.Store(true)
+			state.wordFlushAllDrafts.Store(true)
 			state.wordDeferredToolbarAction = action.id
 			continue
 		}
 		if wordHasPendingTextDrafts(state) && action.id != "copy" {
-			state.wordForceDraftFlush = true
-			state.wordFlushRequested = true
-			state.wordFlushAllDrafts = true
+			state.wordForceDraftFlush.Store(true)
+			state.wordFlushRequested.Store(true)
+			state.wordFlushAllDrafts.Store(true)
 			if action.id == "save" {
 				state.wordSaveAfterDrafts = true
+				state.wordSaveAfterDraftsReason = wordSaveManual
 			} else {
 				state.wordDeferredToolbarAction = action.id
 			}
+			continue
+		}
+		if state.wordToolbarTab == wordTabFile && action.id != "save" {
+			a.executeWordToolbarAction(action.id)
 			continue
 		}
 		switch action.id {
@@ -461,8 +517,12 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordFindDialog()
 		case "replace":
 			a.showWordReplaceDialog()
+		case "insert-symbol":
+			a.openWordSymbolPicker()
 		case "review-word-count":
 			a.showWordCountDetails()
+		case "view-print-layout", "view-web-layout", "view-navigation", "view-single-page", "view-multiple-pages", "view-reading", "view-zoom", "view-ruler", "view-gridlines":
+			a.executeWordToolbarAction(action.id)
 		case "save":
 			a.startSave()
 		case "insert-image":
@@ -518,8 +578,20 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.activateRecent()
 	case "save-as":
 		a.startSaveAsPicker("docx")
+	case "export-pdf":
+		a.requestWordPDFExport()
+	case "share":
+		a.requestWordShareCopy()
+	case "print":
+		a.requestWordPrint()
 	case "doc-info":
 		a.startWordDocumentInfoLoad()
+	case "insert-symbol":
+		a.openWordSymbolPicker()
+	case "version-history":
+		a.openWordVersionHistory()
+	case "view-new-window":
+		a.requestWordNewWindow()
 	case "autosave":
 		state.wordAutoSave = !state.wordAutoSave
 		if state.wordAutoSave {
@@ -535,6 +607,34 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.maybeAutoSaveWord(state)
 	case "format-painter":
 		a.toggleWordFormatPainter()
+	case "view-print-layout":
+		a.toggleWordPrintLayout()
+	case "view-web-layout":
+		a.toggleWordWebLayout()
+	case "view-navigation":
+		a.toggleWordNavigationPane()
+	case "view-single-page":
+		a.selectWordSinglePageView()
+	case "view-multiple-pages":
+		a.selectWordMultiplePagesView()
+	case "view-reading":
+		a.toggleWordReadingMode()
+	case "view-zoom":
+		a.showWordZoomDialog()
+	case "view-ruler":
+		state.wordRulerHidden = !state.wordRulerHidden
+		if state.wordRulerHidden {
+			a.status = "已隐藏标尺"
+		} else {
+			a.status = "已显示标尺"
+		}
+	case "view-gridlines":
+		state.wordGridlinesVisible = !state.wordGridlinesVisible
+		if state.wordGridlinesVisible {
+			a.status = "已显示网格线"
+		} else {
+			a.status = "已隐藏网格线"
+		}
 	case "apply-format-painter":
 		a.startWordFormatPainter()
 	case "undo":
@@ -602,10 +702,10 @@ func (a *App) executeWordToolbarAction(actionID string) {
 }
 
 func (a *App) maybeAutoSaveWord(state *documentSessionState) {
-	if state == nil || state != a.documentSessionState || state.word == nil || !state.wordAutoSave || state.path == "" || a.saving || state.formatRunning || state.wordFlushRequested || !state.word.Dirty() {
+	if state == nil || state != a.documentSessionState || state.word == nil || !state.wordAutoSave || sessionPath(state) == "" || a.isSaving() || state.formatRunning.Load() || state.wordFlushRequested.Load() || !sessionDirty(state) {
 		return
 	}
-	a.startSave()
+	a.startSaveForReason(wordSaveAuto)
 }
 
 func (a *App) handleWordClipboardEvents(gtx layout.Context) {
@@ -631,13 +731,13 @@ func (a *App) handleWordClipboardEvents(gtx layout.Context) {
 		}
 		runID := state.wordClipboardRunID
 		state.wordClipboardRunID = ""
-		if state.formatRunning || wordHasPendingTextDrafts(state) {
+		if state.formatRunning.Load() || wordHasPendingTextDrafts(state) {
 			state.wordPendingPasteRunID = runID
 			state.wordPendingPasteText = string(value)
 			if wordHasPendingTextDrafts(state) {
-				state.wordForceDraftFlush = true
-				state.wordFlushRequested = true
-				state.wordFlushAllDrafts = true
+				state.wordForceDraftFlush.Store(true)
+				state.wordFlushRequested.Store(true)
+				state.wordFlushAllDrafts.Store(true)
 			}
 			continue
 		}
@@ -808,9 +908,9 @@ func (a *App) queueWordFormatPainterTarget(paragraphID, runID string) {
 	state.wordFormatPainterTargetParagraphID = paragraphID
 	state.wordFormatPainterTargetRunID = runID
 	if wordHasPendingTextDrafts(state) {
-		state.wordForceDraftFlush = true
-		state.wordFlushRequested = true
-		state.wordFlushAllDrafts = true
+		state.wordForceDraftFlush.Store(true)
+		state.wordFlushRequested.Store(true)
+		state.wordFlushAllDrafts.Store(true)
 		state.wordDeferredToolbarAction = "apply-format-painter"
 		return
 	}
@@ -839,7 +939,7 @@ func wordParagraphContainsRun(paragraph document.WordParagraph, runID string) bo
 
 func (a *App) startWordFormatPainter() {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving || state.wordFormatPainterSourceRunID == "" || state.wordFormatPainterTargetRunID == "" {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || state.wordFormatPainterSourceRunID == "" || state.wordFormatPainterTargetRunID == "" {
 		return
 	}
 	painter, ok := any(state.word).(document.WordFormatPainter)
@@ -853,15 +953,13 @@ func (a *App) startWordFormatPainter() {
 	state.wordFormatPainterSourceRunID = ""
 	state.wordFormatPainterTargetRunID = ""
 	state.wordFormatPainterTargetParagraphID = ""
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	a.status = "正在应用格式刷"
 	generation := a.documentGeneration
 	go func() {
-		err := painter.ApplyWordFormatting(sourceRunID, targetRunID)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		blocks, err := runWordMutation(state, func() error { return painter.ApplyWordFormatting(sourceRunID, targetRunID) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "格式刷", err: err, blocks: blocks})
 	}()
 }
@@ -1015,10 +1113,7 @@ func (a *App) showWordFindDialog() {
 		}
 		state.wordFindQuery = query
 		blocks := wordBlocksForState(state)
-		drafts := make(map[string]string, len(state.wordRunDrafts)+len(state.wordRunEditors))
-		for runID, value := range state.wordRunDrafts {
-			drafts[runID] = value
-		}
+		drafts := state.wordDraftSnapshot()
 		for runID, editor := range state.wordRunEditors {
 			drafts[runID] = editor.Text()
 		}
@@ -1088,10 +1183,7 @@ func (a *App) findNextWordText(query string) {
 		return
 	}
 	blocks := wordBlocksForState(state)
-	drafts := make(map[string]string, len(state.wordRunDrafts)+len(state.wordRunEditors))
-	for runID, value := range state.wordRunDrafts {
-		drafts[runID] = value
-	}
+	drafts := state.wordDraftSnapshot()
 	for runID, editor := range state.wordRunEditors {
 		drafts[runID] = editor.Text()
 	}
@@ -1151,21 +1243,19 @@ func equalWordRunes(left, right []rune) bool {
 
 func (a *App) runWordRangeReplacement(match wordTextMatch, query, replacement string) bool {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
 		return false
 	}
 	editor, ok := any(state.word).(document.WordTextRangeEditor)
 	if !ok {
 		return false
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return false
+	}
 	generation := a.documentGeneration
 	go func() {
-		err := editor.ReplaceTextRange(match.RunID, match.Start, match.End, replacement)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		blocks, err := runWordMutation(state, func() error { return editor.ReplaceTextRange(match.RunID, match.Start, match.End, replacement) })
 		a.publishWordCommand(wordCommandResult{
 			state: state, generation: generation, operation: "替换文字", err: err, blocks: blocks,
 			wordRangeReplacement: true, replaceRunID: match.RunID, replaceParagraphID: match.ParagraphID, replaceStart: match.Start,
@@ -1185,21 +1275,22 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 		return
 	}
 	if result.blocks != nil {
-		state.wordBlocks = result.blocks
+		state.setWordBlocks(result.blocks)
+		a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 	}
-	run, ok := selectedWordRun(state.wordBlocks, result.replaceRunID)
+	blocks := wordBlocksForState(state)
+	run, ok := selectedWordRun(blocks, result.replaceRunID)
 	if !ok || !run.Editable {
 		a.status = "文字已替换，但无法定位编辑位置"
 		return
 	}
-	delete(state.wordRunDrafts, run.ID)
-	state.wordRunCommitted[run.ID] = run.Text
+	state.setCommittedWordTextAndClearDraft(run.ID, run.Text)
 	editor := wordRunEditor(state, run)
 	editor.SetText(run.Text)
 	state.selectedWordRunID = run.ID
 	state.selectedWordParagraphID = result.replaceParagraphID
 	if state.selectedWordParagraphID == "" {
-		for _, paragraph := range allWordParagraphs(state.wordBlocks) {
+		for _, paragraph := range allWordParagraphs(blocks) {
 			for _, inline := range paragraph.Inlines {
 				if inline.Text != nil && inline.Text.ID == run.ID {
 					state.selectedWordParagraphID = paragraph.ID
@@ -1212,9 +1303,9 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 	state.selectedBlock = -1
 	state.selectedBlockEditable = true
 	startAfter := result.replaceStart + len([]rune(result.replaceText))
-	match, found := findWordTextMatch(state.wordBlocks, result.replaceQuery, run.ID, startAfter, nil)
+	match, found := findWordTextMatch(blocks, result.replaceQuery, run.ID, startAfter, nil)
 	if found {
-		a.focusWordTextMatch(state, state.wordBlocks, match)
+		a.focusWordTextMatch(state, blocks, match)
 		a.status = "已替换，并已定位下一处"
 	} else {
 		startAfter = max(0, min(startAfter, len([]rune(run.Text))))
@@ -1354,63 +1445,57 @@ func (a *App) showWordCountDetails() {
 
 func (a *App) runWordCommand(operation string, edit func(document.WordTextEditor) error) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	editor, ok := any(state.word).(document.WordTextEditor)
 	if !ok {
 		return
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
-		err := edit(editor)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
 	}()
 }
 
 func (a *App) runWordListCommand(operation string, edit func(document.WordParagraphListEditor) error) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	editor, ok := any(state.word).(document.WordParagraphListEditor)
 	if !ok {
 		return
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
-		err := edit(editor)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
 	}()
 }
 
 func (a *App) runWordImageCommand(operation, imageID string, edit func(document.WordImageEditor) error, clearSelection bool) bool {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
 		return false
 	}
 	editor, ok := any(state.word).(document.WordImageEditor)
 	if !ok {
 		return false
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return false
+	}
 	generation := a.documentGeneration
 	go func() {
-		err := edit(editor)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, clearImageSelection: clearSelection && err == nil, imageID: imageID, blocks: blocks})
 	}()
 	return true
@@ -1431,6 +1516,8 @@ func (a *App) rotateSelectedWordImage(delta float64) {
 
 type wordCommandResult struct {
 	state                 *documentSessionState
+	operationToken        sessionOperationToken
+	revision              uint64
 	blocks                []document.WordBlock
 	selectInsertedImage   bool
 	generation            uint64
@@ -1457,18 +1544,40 @@ type wordCommandResult struct {
 	insertedParagraphID   string
 	bodyParagraphInsert   bool
 	wordRangeReplacement  bool
+	wordSymbolInsertion   bool
 	pageBreak             bool
 	replaceRunID          string
 	replaceParagraphID    string
 	replaceStart          int
 	replaceText           string
 	replaceQuery          string
+	insertedSymbol        string
 	pageBreakSourcePrefix string
 	pageBreakParagraphID  string
 	pageBreakCaretRunID   string
 }
 
 func (a *App) publishWordCommand(result wordCommandResult) {
+	if result.state != nil && result.operationToken.generation == 0 {
+		result.operationToken, _ = result.state.currentOperationToken()
+	}
+	if result.state != nil && result.operationToken.generation != 0 {
+		if result.err == nil && (!result.history || result.applied) {
+			if result.blocks != nil {
+				if result.history {
+					result.state.setWordBlocksAndTextState(result.blocks, false)
+				} else {
+					result.state.setWordBlocks(result.blocks)
+				}
+			}
+			result.revision = result.operationToken.revision + 1
+			a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, max(result.revision, result.state.wordRevisionAtomic.Load()))
+		}
+		if result.revision == 0 {
+			result.revision = result.state.wordRevisionAtomic.Load()
+		}
+		result.state.finishOperation(result.operationToken)
+	}
 	if a.wordCommandResults == nil {
 		return
 	}
@@ -1483,27 +1592,28 @@ func (a *App) publishWordCommand(result wordCommandResult) {
 
 func (a *App) applyWordHistory(undo bool) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	history, ok := any(state.word).(document.WordHistory)
 	if !ok {
 		return
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
 		var applied bool
-		var err error
-		if undo {
-			applied, err = history.Undo()
-		} else {
-			applied, err = history.Redo()
-		}
-		var blocks []document.WordBlock
-		if err == nil && applied {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		blocks, err := runWordMutation(state, func() error {
+			var operationErr error
+			if undo {
+				applied, operationErr = history.Undo()
+			} else {
+				applied, operationErr = history.Redo()
+			}
+			return operationErr
+		})
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "编辑", err: err, history: true, applied: applied, undo: undo, blocks: blocks})
 	}()
 }

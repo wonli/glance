@@ -7,7 +7,9 @@ import (
 )
 
 func (a *App) layoutJSON(gtx layout.Context) layout.Dimensions {
+	unlock := lockSessionAdapterRead(a.documentSessionState)
 	text := a.jsonDoc.Text()
+	unlock()
 	if a.jsonEditor.Text() != text {
 		a.jsonEditor.SetText(text)
 	}
@@ -16,7 +18,16 @@ func (a *App) layoutJSON(gtx layout.Context) layout.Dimensions {
 		dims := style.Layout(gtx)
 		updated := a.jsonEditor.Text()
 		if updated != text {
-			if err := a.jsonDoc.SetText(updated); err != nil {
+			token, ok := a.documentSessionState.beginOperation(sessionOperationMutation)
+			if !ok {
+				a.status = "JSON 文档正在处理其他操作"
+				return dims
+			}
+			unlock := lockSessionAdapterWrite(a.documentSessionState)
+			err := a.jsonDoc.SetText(updated)
+			unlock()
+			a.completeSessionOperation(a.documentSessionState, token, err, err == nil)
+			if err != nil {
 				a.status = err.Error()
 			} else {
 				a.persistActiveSession()

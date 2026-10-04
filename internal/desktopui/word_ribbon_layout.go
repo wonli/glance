@@ -173,7 +173,13 @@ func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSe
 	draw := func(gtx layout.Context) layout.Dimensions {
 		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
 		semantic.Button.Add(gtx.Ops)
-		semantic.DescriptionOp(action.label).Add(gtx.Ops)
+		description := a.wordToolbarActionDescription(action)
+		if action.id == "view-new-window" && !enabled {
+			if _, reason := wordNewWindowAvailability(state, a.desktopRuntime); reason != "" {
+				description += "，不可用：" + reason
+			}
+		}
+		semantic.DescriptionOp(description).Add(gtx.Ops)
 		semantic.EnabledOp(enabled).Add(gtx.Ops)
 		bounds.Pop()
 		if active := enabled && wordToolbarActionActive(state, action); active || (enabled && button.Hovered()) {

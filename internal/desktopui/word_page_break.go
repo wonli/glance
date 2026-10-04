@@ -25,7 +25,7 @@ func wordBodyRunEditable(blocks []document.WordBlock, runID string) bool {
 
 func (a *App) queueWordPageBreak() {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.wordPageBreakIntent != nil || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.wordPageBreakIntent != nil || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	_, ok := any(state.word).(document.WordPageBreakEditor)
@@ -49,23 +49,23 @@ func (a *App) queueWordPageBreak() {
 	}
 	state.wordPageBreakIntent = &wordPageBreakIntent{runID: run.ID, value: value, selectionStart: start, selectionEnd: end}
 	captureWordTextDraft(state, run.ID, value)
-	state.wordForceDraftFlush = true
-	state.wordFlushRequested = true
-	state.wordFlushAllDrafts = true
-	if !state.formatRunning {
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
+	if !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
 }
 
 func (a *App) startWordPageBreak(state *documentSessionState) {
-	if state == nil || state.word == nil || state.formatRunning || a.saving || state.wordPageBreakIntent == nil {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || state.wordPageBreakIntent == nil {
 		return
 	}
 	editor, ok := any(state.word).(document.WordPageBreakEditor)
 	if !ok {
 		state.wordPageBreakIntent = nil
-		state.wordFlushRequested = false
-		state.wordFlushAllDrafts = false
+		state.wordFlushRequested.Store(false)
+		state.wordFlushAllDrafts.Store(false)
 		a.status = "当前 DOCX 适配器不支持插入分页符"
 		return
 	}
@@ -73,19 +73,22 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 	prefix, _, valid := wordTextAroundSelection(intent.value, intent.selectionStart, intent.selectionEnd)
 	if !valid {
 		state.wordPageBreakIntent = nil
-		state.wordFlushRequested = false
-		state.wordFlushAllDrafts = false
+		state.wordFlushRequested.Store(false)
+		state.wordFlushAllDrafts.Store(false)
 		a.status = "无法按当前光标位置插入分页符，请重试"
 		return
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
-		paragraphID, caretRunID, err := editor.InsertPageBreakAtRange(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		var paragraphID, caretRunID string
+		blocks, err := runWordMutation(state, func() error {
+			var insertErr error
+			paragraphID, caretRunID, insertErr = editor.InsertPageBreakAtRange(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd)
+			return insertErr
+		})
 		a.publishWordCommand(wordCommandResult{
 			state:                 state,
 			generation:            generation,
@@ -107,8 +110,8 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	}
 	intent := state.wordPageBreakIntent
 	state.wordPageBreakIntent = nil
-	state.wordFlushRequested = false
-	state.wordFlushAllDrafts = false
+	state.wordFlushRequested.Store(false)
+	state.wordFlushAllDrafts.Store(false)
 	if result.err != nil {
 		if intent != nil {
 			captureWordTextDraft(state, intent.runID, intent.value)
@@ -125,25 +128,24 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 		return
 	}
 	if result.blocks != nil {
-		state.wordBlocks = result.blocks
+		state.setWordBlocks(result.blocks)
+		a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 	}
 	if intent != nil {
 		if result.pageBreakSourcePrefix == "" {
 			delete(state.wordRunEditors, intent.runID)
-			delete(state.wordRunCommitted, intent.runID)
-			delete(state.wordRunDrafts, intent.runID)
+			state.removeWordTextState(intent.runID)
 		} else {
 			if editor := state.wordRunEditors[intent.runID]; editor != nil {
 				editor.SetText(result.pageBreakSourcePrefix)
 			}
-			state.wordRunCommitted[intent.runID] = result.pageBreakSourcePrefix
-			delete(state.wordRunDrafts, intent.runID)
+			state.setCommittedWordTextAndClearDraft(intent.runID, result.pageBreakSourcePrefix)
 		}
 	}
 	if !active {
 		return
 	}
-	newRun, ok := selectedWordRun(state.wordBlocks, result.pageBreakCaretRunID)
+	newRun, ok := selectedWordRun(wordBlocksForState(state), result.pageBreakCaretRunID)
 	if !ok || result.pageBreakParagraphID == "" {
 		a.status = "分页符已插入，但无法定位插入点"
 		a.persistActiveSession()

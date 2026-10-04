@@ -56,6 +56,7 @@ type WordParagraph struct {
 	Alignment      WordAlignment
 	LeftIndentEMU  int64
 	RightIndentEMU int64
+	Layout         WordParagraphLayout
 	ListKind       WordListKind
 	ListLevel      int
 	ListMaxLevel   int
@@ -65,7 +66,8 @@ type WordParagraph struct {
 
 // WordTable contains rows and cells in their source order.
 type WordTable struct {
-	Rows []WordTableRow
+	Layout WordTableLayout
+	Rows   []WordTableRow
 }
 
 type WordTableRow struct {
@@ -74,6 +76,7 @@ type WordTableRow struct {
 
 type WordTableCell struct {
 	ID         string
+	WidthEMU   int64
 	Paragraphs []WordParagraph
 }
 
@@ -88,10 +91,12 @@ type WordInline struct {
 
 // WordTextRun exposes supported text and the formatting applied by its source run.
 type WordTextRun struct {
-	ID       string
-	Text     string
-	Style    WordTextStyle
-	Editable bool
+	ID             string
+	Text           string
+	Style          WordTextStyle
+	StyleSet       WordTextStyleMask
+	CharacterStyle string
+	Editable       bool
 }
 
 // WordTextStyle is the format-neutral text style subset rendered by the UI.
@@ -148,6 +153,12 @@ type WordTextEditor interface {
 	SetTextRunStyle(runID string, patch WordTextFormatPatch) error
 	SetParagraphAlignment(paragraphID string, alignment WordAlignment) error
 	SetParagraphIndents(paragraphID string, leftEMU, rightEMU int64) error
+}
+
+// WordParagraphSpacingEditor patches direct before/after spacing in DOCX
+// twips. A nil value leaves that side and its inherited spacing untouched.
+type WordParagraphSpacingEditor interface {
+	SetParagraphSpacing(paragraphID string, beforeTwips, afterTwips *int64) error
 }
 
 // WordTextRangeEditor exposes safe replacement within one editable text run.
@@ -250,4 +261,20 @@ type WordHistory interface {
 	Redo() (bool, error)
 	CanUndo() bool
 	CanRedo() bool
+}
+
+// WordPackageSnapshotter serializes the complete editable document package.
+type WordPackageSnapshotter interface {
+	Snapshot() ([]byte, error)
+}
+
+// WordPackageSnapshotSaver writes a package and returns the exact bytes committed.
+type WordPackageSnapshotSaver interface {
+	SaveWithSnapshot() ([]byte, error)
+	SaveAsDocumentWithSnapshot(path string) ([]byte, error)
+}
+
+// WordPackageSnapshotRestorer applies a complete package as one undoable edit.
+type WordPackageSnapshotRestorer interface {
+	RestoreSnapshot(snapshot []byte) error
 }

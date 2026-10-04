@@ -317,6 +317,7 @@ func (a *App) homeSortLabel() string {
 }
 
 func (a *App) toggleHomeFavorite(path string) {
+	a.ensureDesktopRuntime()
 	if a.homeFavorites == nil {
 		a.homeFavorites = make(map[string]bool)
 	}
@@ -340,6 +341,7 @@ func (a *App) toggleHomeFavorite(path string) {
 }
 
 func (a *App) loadHomeFavorites() {
+	a.ensureDesktopRuntime()
 	if a.workspaceStore == nil {
 		return
 	}

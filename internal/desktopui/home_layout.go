@@ -80,6 +80,7 @@ var (
 )
 
 func (a *App) refreshHomeMetadata() {
+	a.ensureDesktopRuntime()
 	if a.collection == nil {
 		return
 	}

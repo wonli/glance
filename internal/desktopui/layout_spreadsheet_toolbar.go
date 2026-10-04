@@ -308,39 +308,39 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	switch slot {
 	case 0, 1:
 		_, ok := state.book.(document.SpreadsheetHistory)
-		return ok && !state.formatRunning && !a.saving
+		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case 4, 5, 6, 7, 8, 9, 10, 11, 16:
 		_, ok := state.book.(document.SpreadsheetFormatter)
-		return ok && state.selectionSet && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.cellEdit.Editing && !state.formatRunning && !a.saving
+		return ok && state.selectionSet && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case 2, 3:
 		_, reader := state.book.(document.SpreadsheetRangeReader)
 		_, editor := state.book.(document.SpreadsheetBatchEditor)
-		return reader && editor && state.selectionSet && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.formatRunning
+		return reader && editor && state.selectionSet && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.formatRunning.Load()
 	case 21:
 		_, ok := state.book.(document.SpreadsheetBatchEditor)
-		return ok && state.selectionSet && !state.formatRunning
+		return ok && state.selectionSet && !state.formatRunning.Load()
 	case 18, 19:
 		_, ok := state.book.(document.SpreadsheetSorter)
 		bounds := state.selection.Bounds()
-		return ok && state.selectionSet && bounds.EndRow > bounds.StartRow && selectionCellCount(bounds) <= maxClipboardCellsUI && !state.formatRunning && !a.saving
+		return ok && state.selectionSet && bounds.EndRow > bounds.StartRow && selectionCellCount(bounds) <= maxClipboardCellsUI && !state.formatRunning.Load() && !a.isSaving()
 	case 20:
 		_, ok := state.book.(document.SpreadsheetRangeReader)
-		return state.valueFilter != nil || (ok && state.selectionSet && state.selection.Bounds().EndRow > state.selection.Bounds().StartRow && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.formatRunning)
+		return state.valueFilter != nil || (ok && state.selectionSet && state.selection.Bounds().EndRow > state.selection.Bounds().StartRow && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.formatRunning.Load())
 	case 12, 13, 14, 15, 22, 23, 24:
 		_, ok := state.book.(document.SpreadsheetStructureEditor)
 		if slot == 24 && len(state.sheets) <= 1 {
 			return false
 		}
-		return ok && !state.formatRunning && !a.saving && ((slot < 22) == state.selectionSet || slot >= 22)
+		return ok && !state.formatRunning.Load() && !a.isSaving() && ((slot < 22) == state.selectionSet || slot >= 22)
 	case 25:
 		_, ok := state.book.(document.SpreadsheetImageEditor)
-		return ok && !state.formatRunning && !a.saving && !a.xlsxImagePickerRunning
+		return ok && !state.formatRunning.Load() && !a.isSaving() && !a.xlsxImagePickerRunning
 	case 26, 27, 28:
 		editor, editorOK := state.book.(document.SpreadsheetImageEditor)
 		picture, selected := gridPictureByID(activeGridPictures(state, state.sheet), state.selectedGridPictureID)
-		return editorOK && editor != nil && selected && picture.Editable && !state.formatRunning && !a.saving && !a.xlsxImagePickerRunning
+		return editorOK && editor != nil && selected && picture.Editable && !state.formatRunning.Load() && !a.isSaving() && !a.xlsxImagePickerRunning
 	case 17:
-		return state.book != nil && state.book.Dirty() && !a.saving && state.path != ""
+		return state.book != nil && sessionDirty(state) && !a.isSaving() && sessionPath(state) != ""
 	default:
 		return false
 	}

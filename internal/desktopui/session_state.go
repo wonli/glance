@@ -4,23 +4,43 @@ import (
 	"sync/atomic"
 
 	"glance/internal/document"
-	"glance/internal/format/docx"
-	"glance/internal/format/jsondoc"
 
 	"gioui.org/gesture"
-	"gioui.org/layout"
 	"gioui.org/widget"
 )
 
-// documentSessionState holds persistent Gio widgets and view state for one document tab.
+// documentSessionState holds persistent Gio widgets and view state for one window's document view.
 type documentSessionState struct {
+	*sharedDocumentSession
+	windowID                            uint64
 	closed                              atomic.Bool
-	path                                string
-	book                                document.Spreadsheet
-	word                                *docx.Document
-	wordBlocks                          []document.WordBlock
-	jsonDoc                             *jsondoc.Document
-	sheets                              []string
+	observedSessionRevision             atomic.Uint64
+	appliedSessionRevision              atomic.Uint64
+	appliedWordDraftEpoch               atomic.Uint64
+	appliedWordTextResetEpoch           atomic.Uint64
+	appliedWordRestoreErrorEpoch        atomic.Uint64
+	wordViewMode                        wordViewMode
+	wordPageFitMode                     bool
+	wordMultiplePagesMode               bool
+	wordReadingMode                     bool
+	wordReadingExitButton               widget.Clickable
+	wordNavigationVisible               bool
+	wordNavigationSearchEditor          widget.Editor
+	wordNavigationSearchQuery           string
+	wordNavigationList                  widget.List
+	wordNavigationCloseButton           widget.Clickable
+	wordNavigationButtons               map[string]*widget.Clickable
+	wordNavigationEntryCache            wordNavigationEntryCache
+	wordRulerHidden                     bool
+	wordGridlinesVisible                bool
+	wordLayoutActivePage                int
+	wordLayoutZoom                      float64
+	wordPageListState                   widget.List
+	wordStatusPrintLayoutButton         widget.Clickable
+	wordStatusWebLayoutButton           widget.Clickable
+	wordStatusZoomOutButton             widget.Clickable
+	wordStatusZoomInButton              widget.Clickable
+	wordStatusZoomDrag                  gesture.Drag
 	sheet                               string
 	grid                                [][]document.Cell
 	gridList                            widget.List
@@ -49,8 +69,6 @@ type documentSessionState struct {
 	sheetDeleteButton                   widget.Clickable
 	wordEditor                          widget.Editor
 	wordRunEditors                      map[string]*widget.Editor
-	wordRunCommitted                    map[string]string
-	wordRunDrafts                       map[string]string
 	wordFocusedRunID                    string
 	wordLayoutFocusedRunID              string
 	wordPendingFocusRunID               string
@@ -67,12 +85,6 @@ type documentSessionState struct {
 	wordParagraphJoinIntent             *wordParagraphJoinIntent
 	wordPageBreakIntent                 *wordPageBreakIntent
 	wordAppendTarget                    widget.Clickable
-	wordInsertionRunning                bool
-	wordFlushRequested                  bool
-	wordFlushAllDrafts                  bool
-	wordForceDraftFlush                 bool
-	wordSaveAfterDrafts                 bool
-	wordAutoSave                        bool
 	wordDeferredToolbarAction           string
 	wordFindQuery                       string
 	wordFormatPainterActive             bool
@@ -118,7 +130,6 @@ type documentSessionState struct {
 	wordImageDropParagraphID            string
 	wordClipboardTarget                 struct{}
 	wordClipboardRunID                  string
-	formatRunning                       bool
 	valueFilter                         *ValueFilter
 	clipboardTarget                     struct{}
 	selectedBlock                       int
@@ -153,19 +164,4 @@ type ValueFilter struct {
 	VisibleRows      map[int]bool
 	OriginalHeights  map[int]float64
 	RowHeightsPoints []float64
-}
-
-func newDocumentSessionState(path string) *documentSessionState {
-	s := &documentSessionState{path: path, gridList: widget.List{List: layout.List{Axis: layout.Vertical}}, wordListState: widget.List{List: layout.List{Axis: layout.Vertical}}, toolbarTab: toolbarTabHome, wordToolbarTab: wordTabHome, toolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarTabList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionList: widget.List{List: layout.List{Axis: layout.Horizontal}}, wordToolbarActionButtons: make(map[string]*widget.Clickable), wordRunEditors: make(map[string]*widget.Editor), wordRunCommitted: make(map[string]string), wordRunDrafts: make(map[string]string), wordObjectButtons: make(map[string]*widget.Clickable), wordImageInteractions: make(map[string]*wordImageInteraction), wordImageCache: newWordImageCache(wordImageCacheLimit), wordImagePending: make(map[string]uint64), wordImageVersions: make(map[string]uint64), wordImageErrors: make(map[string]string), gridPictureCache: newWordImageCache(wordImageCacheLimit), gridPicturePending: make(map[string]uint64), gridPictureVersions: make(map[string]uint64), gridPictureErrors: make(map[string]string), cellButtons: make(map[string]*widget.Clickable), sheetButtons: make(map[string]*widget.Clickable), blockButtons: make(map[int]*widget.Clickable), selectedBlock: -1}
-	s.cellEditor.SingleLine = true
-	s.cellEditor.Submit = true
-	s.formulaEditor.SingleLine = true
-	s.formulaEditor.Submit = true
-	s.nameBox.SingleLine = true
-	s.nameBox.Submit = true
-	s.sheetNameEditor.SingleLine = true
-	s.sheetNameEditor.Submit = true
-	s.wordEditor.SingleLine = false
-	s.jsonEditor.SingleLine = false
-	return s
 }

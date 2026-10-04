@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,7 @@ type Session struct {
 
 // Collection owns the durable ordering and activation state for document sessions.
 type Collection struct {
+	mu      sync.RWMutex
 	store   *Store
 	tabs    []*Session
 	active  string
@@ -72,38 +74,49 @@ func OpenCollection(store *Store) (*Collection, error) {
 	return c, nil
 }
 
-func (c *Collection) ActiveTabID() string { return c.active }
+func (c *Collection) ActiveTabID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.active
+}
 
 func (c *Collection) Active() *Session {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if c.active == RecentTabID {
 		return nil
 	}
-	s, _ := c.Get(c.active)
-	return s
+	return cloneSession(c.getLocked(c.active))
 }
 
 func (c *Collection) Get(id string) (*Session, bool) {
-	for _, s := range c.tabs {
-		if s.Tab.ID == id {
-			return s, true
-		}
-	}
-	return nil, false
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	session := c.getLocked(id)
+	return cloneSession(session), session != nil
 }
 
 func (c *Collection) Tabs() []Session {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	out := make([]Session, len(c.tabs))
 	for i, s := range c.tabs {
-		out[i] = *s
+		out[i] = *cloneSession(s)
 	}
 	return out
 }
 
-func (c *Collection) Recents() []Recent { return append([]Recent(nil), c.recents...) }
+func (c *Collection) Recents() []Recent {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return append([]Recent(nil), c.recents...)
+}
 
 func (c *Collection) Activate(id string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if id != RecentTabID {
-		if _, ok := c.Get(id); !ok {
+		if c.getLocked(id) == nil {
 			return fmt.Errorf("workspace tab %q does not exist", id)
 		}
 	}
@@ -117,16 +130,34 @@ func (c *Collection) Activate(id string) error {
 }
 
 func (c *Collection) Put(session Session) error {
-	return c.put(session, true)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.putLocked(session, true)
 }
 
-func (c *Collection) Refresh(session Session) error { return c.put(session, false) }
+func (c *Collection) Refresh(session Session) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.putLocked(session, false)
+}
 
 func (c *Collection) AddTab(tab Tab, format string) error {
-	return c.put(Session{Tab: tab, Format: format, Available: true}, true)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.putLocked(Session{Tab: tab, Format: format, Available: true}, true)
+}
+
+// AddTabInactive adds a shared tab without changing the collection's durable
+// active tab. Secondary windows use it to keep activation local to each view.
+func (c *Collection) AddTabInactive(tab Tab, format string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.putLocked(Session{Tab: tab, Format: format, Available: true}, false)
 }
 
 func (c *Collection) UpdateTabMeta(tab Tab) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for _, s := range c.tabs {
 		if s.Tab.ID == tab.ID {
 			s.Tab = tab
@@ -136,7 +167,7 @@ func (c *Collection) UpdateTabMeta(tab Tab) error {
 	return fmt.Errorf("workspace tab %q does not exist", tab.ID)
 }
 
-func (c *Collection) put(session Session, activate bool) error {
+func (c *Collection) putLocked(session Session, activate bool) error {
 	if session.Tab.ID == "" {
 		return errors.New("workspace session tab id is required")
 	}
@@ -150,7 +181,7 @@ func (c *Collection) put(session Session, activate bool) error {
 		session.UpdatedAt = time.Now().UTC()
 	}
 	session.Available = true
-	if old, ok := c.Get(session.Tab.ID); ok {
+	if old := c.getLocked(session.Tab.ID); old != nil {
 		*old = session
 	} else {
 		session.Tab.Position = len(c.tabs)
@@ -173,8 +204,10 @@ func (c *Collection) put(session Session, activate bool) error {
 }
 
 func (c *Collection) Update(id string, payload, viewState []byte, dirty bool) error {
-	s, ok := c.Get(id)
-	if !ok {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.getLocked(id)
+	if s == nil {
 		return fmt.Errorf("workspace tab %q does not exist", id)
 	}
 	doc := Document{ID: s.Tab.DocumentID, Format: s.Format, Payload: append([]byte(nil), payload...), ViewState: append([]byte(nil), viewState...), Dirty: dirty, UpdatedAt: time.Now().UTC()}
@@ -189,8 +222,10 @@ func (c *Collection) Update(id string, payload, viewState []byte, dirty bool) er
 }
 
 func (c *Collection) SaveViewState(id string, viewState []byte) error {
-	s, ok := c.Get(id)
-	if !ok {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.getLocked(id)
+	if s == nil {
 		return fmt.Errorf("workspace tab %q does not exist", id)
 	}
 	if err := c.store.SaveViewState(s.Tab.DocumentID, viewState); err != nil {
@@ -201,6 +236,8 @@ func (c *Collection) SaveViewState(id string, viewState []byte) error {
 }
 
 func (c *Collection) AddRecent(recent Recent) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if recent.Path == "" {
 		return errors.New("recent path is required")
 	}
@@ -220,6 +257,8 @@ func (c *Collection) AddRecent(recent Recent) error {
 // StageRecents updates the in-memory recent list without touching SQLite.
 // Callers that need background persistence can enqueue the list to Store.SaveRecents.
 func (c *Collection) StageRecents(recents []Recent) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for _, recent := range recents {
 		if recent.Path == "" {
 			continue
@@ -242,6 +281,8 @@ func (c *Collection) StageRecents(recents []Recent) {
 }
 
 func (c *Collection) RemoveRecent(path string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for i, recent := range c.recents {
 		if recent.Path == path {
 			c.recents = append(c.recents[:i], c.recents[i+1:]...)
@@ -252,6 +293,8 @@ func (c *Collection) RemoveRecent(path string) error {
 }
 
 func (c *Collection) CloseTab(id string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	index := -1
 	for i, s := range c.tabs {
 		if s.Tab.ID == id {
@@ -294,4 +337,23 @@ func (c *Collection) persist() error {
 		w.Tabs[i] = s.Tab
 	}
 	return c.store.ReplaceWorkspace(w)
+}
+
+func (c *Collection) getLocked(id string) *Session {
+	for _, session := range c.tabs {
+		if session.Tab.ID == id {
+			return session
+		}
+	}
+	return nil
+}
+
+func cloneSession(session *Session) *Session {
+	if session == nil {
+		return nil
+	}
+	copy := *session
+	copy.Payload = append([]byte(nil), session.Payload...)
+	copy.ViewState = append([]byte(nil), session.ViewState...)
+	return &copy
 }

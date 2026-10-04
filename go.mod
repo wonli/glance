@@ -4,6 +4,8 @@ go 1.27.0
 
 require (
 	gioui.org v0.10.2
+	github.com/SalvioniDigitalSolutions/gopdf v0.0.0-20260922202729-55a8f5fed5f5
+	github.com/go-text/typesetting v0.3.4
 	github.com/extrame/xls v0.0.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/spf13/cobra v1.10.2
@@ -35,7 +37,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.2 // indirect
 	github.com/go-playground/validator/v10 v10.30.5 // indirect
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
-	github.com/go-text/typesetting v0.3.4 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect

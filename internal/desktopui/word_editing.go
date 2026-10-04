@@ -20,7 +20,7 @@ type wordParagraphJoinIntent struct {
 
 func (a *App) startWordBodyParagraphInsert() {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.wordInsertionRunning || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.wordInsertionRunning || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	editor, ok := any(state.word).(document.WordBodyEditor)
@@ -28,15 +28,18 @@ func (a *App) startWordBodyParagraphInsert() {
 		a.status = "当前 DOCX 适配器不支持新增正文段落"
 		return
 	}
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	state.wordInsertionRunning = true
-	state.formatRunning = true
 	generation := a.documentGeneration
 	go func() {
-		paragraphID, err := editor.InsertBodyParagraph()
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		var paragraphID string
+		blocks, err := runWordMutation(state, func() error {
+			var insertErr error
+			paragraphID, insertErr = editor.InsertBodyParagraph()
+			return insertErr
+		})
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "插入段落", err: err, blocks: blocks, insertedParagraphID: paragraphID, bodyParagraphInsert: true})
 	}()
 }
@@ -60,7 +63,7 @@ func (a *App) focusInsertedWordParagraph(state *documentSessionState, paragraphI
 			state.selectedBlockEditable = true
 			state.wordPendingFocusRunID = inline.Text.ID
 			wordRunEditor(state, *inline.Text)
-			state.wordListState.ScrollTo(max(0, len(state.wordBlocks)-1))
+			state.wordListState.ScrollTo(max(0, len(wordBlocksForState(state))-1))
 			a.status = "已插入正文段落，可直接输入"
 			return
 		}
@@ -76,11 +79,12 @@ func wordHasPendingTextDraftsExcept(state *documentSessionState, exceptRunID str
 	if state == nil {
 		return false
 	}
-	for runID, value := range state.wordRunDrafts {
+	committed, drafts := state.wordTextStateSnapshot()
+	for runID, value := range drafts {
 		if runID == exceptRunID {
 			continue
 		}
-		if value != state.wordRunCommitted[runID] {
+		if value != committed[runID] {
 			return true
 		}
 	}
@@ -110,17 +114,17 @@ func (a *App) queueWordParagraphSplit(runID, value string, selectionStart, selec
 		selectionEnd:   selectionEnd,
 	}
 	captureWordTextDraft(state, runID, value)
-	state.wordForceDraftFlush = true
-	state.wordFlushRequested = true
-	state.wordFlushAllDrafts = true
-	if !state.formatRunning {
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
+	if !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
 }
 
 func (a *App) queueWordParagraphJoin(runID string, value string, direction document.WordParagraphJoinDirection) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.wordParagraphJoinIntent != nil || state.wordParagraphSplitIntent != nil || state.formatRunning || a.saving {
+	if state == nil || state.word == nil || state.wordParagraphJoinIntent != nil || state.wordParagraphSplitIntent != nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	if _, ok := any(state.word).(document.WordParagraphJoiner); !ok {
@@ -129,23 +133,18 @@ func (a *App) queueWordParagraphJoin(runID string, value string, direction docum
 	}
 	state.wordParagraphJoinIntent = &wordParagraphJoinIntent{runID: runID, direction: direction}
 	captureWordTextDraft(state, runID, value)
-	state.wordForceDraftFlush = true
-	state.wordFlushRequested = true
-	state.wordFlushAllDrafts = true
-	if !state.formatRunning {
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
+	if !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
 }
 
 func captureWordTextDraft(state *documentSessionState, runID, value string) {
-	if state.wordRunDrafts == nil {
-		state.wordRunDrafts = make(map[string]string)
-	}
-	if value == state.wordRunCommitted[runID] {
-		delete(state.wordRunDrafts, runID)
-		return
-	}
-	state.wordRunDrafts[runID] = value
+	state.wordExportCommitMu.Lock()
+	defer state.wordExportCommitMu.Unlock()
+	state.captureWordTextDraft(runID, value)
 }
 
 func (a *App) requestWordTextFlush(all bool) {
@@ -153,22 +152,26 @@ func (a *App) requestWordTextFlush(all bool) {
 	if state == nil || state.word == nil {
 		return
 	}
-	state.wordFlushRequested = true
-	state.wordFlushAllDrafts = state.wordFlushAllDrafts || all
-	if !state.formatRunning {
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(state.wordFlushAllDrafts.Load() || all)
+	if !state.formatRunning.Load() {
 		a.startNextWordTextCommit()
 	}
 }
 
 func (a *App) startNextWordTextCommit() {
-	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning || !state.wordFlushRequested {
+	a.startNextWordTextCommitFor(a.documentSessionState)
+}
+
+func (a *App) startNextWordTextCommitFor(state *documentSessionState) {
+	if state == nil || state.word == nil || state.formatRunning.Load() || !state.wordFlushRequested.Load() {
 		return
 	}
+	committed, drafts := state.wordTextStateSnapshot()
 	var runIDs []string
-	for runID, value := range state.wordRunDrafts {
-		if value == state.wordRunCommitted[runID] {
-			delete(state.wordRunDrafts, runID)
+	for runID, value := range drafts {
+		if value == committed[runID] {
+			state.discardWordDraftIfCommitted(runID, value)
 			continue
 		}
 		if state.wordParagraphSplitIntent != nil && runID == state.wordParagraphSplitIntent.runID {
@@ -177,7 +180,7 @@ func (a *App) startNextWordTextCommit() {
 		if state.wordPageBreakIntent != nil && runID == state.wordPageBreakIntent.runID {
 			continue
 		}
-		if !state.wordFlushAllDrafts && runID == state.wordFocusedRunID {
+		if !state.wordFlushAllDrafts.Load() && runID == state.wordFocusedRunID {
 			continue
 		}
 		runIDs = append(runIDs, runID)
@@ -204,7 +207,7 @@ func (a *App) startNextWordTextCommit() {
 			a.finishWordTextFlush(state)
 			return
 		}
-		if state.wordFlushAllDrafts && wordHasPendingTextDrafts(state) {
+		if state.wordFlushAllDrafts.Load() && wordHasPendingTextDrafts(state) {
 			return
 		}
 		if wordHasPendingTextDrafts(state) {
@@ -215,22 +218,22 @@ func (a *App) startNextWordTextCommit() {
 	}
 	sort.Strings(runIDs)
 	runID := runIDs[0]
-	value := state.wordRunDrafts[runID]
+	value, _ := state.wordDraft(runID)
 	editor, ok := any(state.word).(document.WordTextEditor)
 	if !ok {
-		state.wordFlushRequested = false
+		state.wordFlushRequested.Store(false)
+		state.wordFlushAllDrafts.Store(false)
+		state.clearPendingWordRestore()
 		state.wordParagraphJoinIntent = nil
 		a.status = "当前 DOCX 适配器不支持原位文字编辑"
 		return
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
-		err := editor.ReplaceTextRun(runID, value)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		blocks, err := runWordMutation(state, func() error { return editor.ReplaceTextRun(runID, value) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "编辑文字", err: err, blocks: blocks, textDraft: true, runID: runID, runText: value})
 	}()
 }
@@ -239,8 +242,20 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 	if state == nil {
 		return
 	}
-	state.wordFlushRequested = false
-	state.wordFlushAllDrafts = false
+	state.wordFlushRequested.Store(false)
+	state.wordFlushAllDrafts.Store(false)
+	state.wordForceDraftFlush.Store(false)
+	if versionID, handled := state.claimWordRestoreAfterDrafts(); handled {
+		if versionID == 0 {
+			return
+		}
+		if !a.startRestoreWordVersionAfterDrafts(state, versionID) {
+			state.releaseWordRestoreClaim()
+			message := "恢复历史版本已取消，无法开始恢复，请重试"
+			a.publishWordRestoreNotice(state, message)
+		}
+		return
+	}
 	if state.wordParagraphSplitIntent != nil {
 		a.startWordParagraphSplit(state)
 		return
@@ -253,9 +268,21 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 		a.startWordPageBreak(state)
 		return
 	}
+	if state.wordPDFExportAfterDrafts {
+		state.wordPDFExportAfterDrafts = false
+		a.beginWordPDFExport(state)
+		return
+	}
+	if state.wordPrintAfterDrafts {
+		state.wordPrintAfterDrafts = false
+		a.beginWordPrint(state)
+		return
+	}
 	if state.wordSaveAfterDrafts {
 		state.wordSaveAfterDrafts = false
-		a.startSave()
+		reason := state.wordSaveAfterDraftsReason
+		state.wordSaveAfterDraftsReason = wordSaveManual
+		a.startSaveForReason(reason)
 		return
 	}
 	if state.wordInsertAfterDraftFlush {
@@ -276,26 +303,29 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 }
 
 func (a *App) startWordParagraphJoin(state *documentSessionState) {
-	if state == nil || state.word == nil || state.formatRunning || a.saving || state.wordParagraphJoinIntent == nil {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || state.wordParagraphJoinIntent == nil {
 		return
 	}
 	joiner, ok := any(state.word).(document.WordParagraphJoiner)
 	if !ok {
 		state.wordParagraphJoinIntent = nil
-		state.wordFlushRequested = false
-		state.wordFlushAllDrafts = false
+		state.wordFlushRequested.Store(false)
+		state.wordFlushAllDrafts.Store(false)
 		a.status = "当前 DOCX 适配器不支持合并段落"
 		return
 	}
 	intent := *state.wordParagraphJoinIntent
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
-		joined, err := joiner.JoinParagraphAtBoundary(intent.runID, intent.direction)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		var joined document.WordParagraphJoinResult
+		blocks, err := runWordMutation(state, func() error {
+			var joinErr error
+			joined, joinErr = joiner.JoinParagraphAtBoundary(intent.runID, intent.direction)
+			return joinErr
+		})
 		a.publishWordCommand(wordCommandResult{
 			state:           state,
 			generation:      generation,
@@ -316,8 +346,8 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 		return
 	}
 	state.wordParagraphJoinIntent = nil
-	state.wordFlushRequested = false
-	state.wordFlushAllDrafts = false
+	state.wordFlushRequested.Store(false)
+	state.wordFlushAllDrafts.Store(false)
 	if result.err != nil {
 		if active {
 			a.status = wordCommandError(result.operation, result.err)
@@ -326,10 +356,11 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 		return
 	}
 	if result.blocks != nil {
-		state.wordBlocks = result.blocks
+		state.setWordBlocks(result.blocks)
+		a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 	}
 	reconcileWordSelection(state, false)
-	run, ok := selectedWordRun(state.wordBlocks, result.joinRunID)
+	run, ok := selectedWordRun(wordBlocksForState(state), result.joinRunID)
 	if !ok || !run.Editable {
 		if active {
 			a.status = "段落已合并，但无法定位接缝文字"
@@ -337,8 +368,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 		}
 		return
 	}
-	delete(state.wordRunDrafts, run.ID)
-	state.wordRunCommitted[run.ID] = run.Text
+	state.setCommittedWordTextAndClearDraft(run.ID, run.Text)
 	editor := wordRunEditor(state, run)
 	editor.SetText(run.Text)
 	caret := max(0, min(result.joinCaret, len([]rune(run.Text))))
@@ -359,7 +389,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 }
 
 func (a *App) startWordParagraphSplit(state *documentSessionState) {
-	if state == nil || state.word == nil || state.formatRunning || a.saving || state.wordParagraphSplitIntent == nil {
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || state.wordParagraphSplitIntent == nil {
 		return
 	}
 	splitter, ok := any(state.word).(document.WordParagraphEditor)
@@ -375,14 +405,17 @@ func (a *App) startWordParagraphSplit(state *documentSessionState) {
 		a.status = "无法按当前光标位置拆分段落，请重试"
 		return
 	}
-	state.formatRunning = true
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
 	generation := a.documentGeneration
 	go func() {
-		paragraphID, runID, err := splitter.SplitParagraphAt(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd)
-		var blocks []document.WordBlock
-		if err == nil {
-			blocks = cloneWordBlockSnapshot(state.word.WordBlocks())
-		}
+		var paragraphID, runID string
+		blocks, err := runWordMutation(state, func() error {
+			var splitErr error
+			paragraphID, runID, splitErr = splitter.SplitParagraphAt(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd)
+			return splitErr
+		})
 		a.publishWordCommand(wordCommandResult{
 			state:            state,
 			generation:       generation,
@@ -415,8 +448,8 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 	intent := state.wordParagraphSplitIntent
 	state.wordParagraphSplitIntent = nil
 	if result.err != nil {
-		state.wordFlushRequested = false
-		state.wordFlushAllDrafts = false
+		state.wordFlushRequested.Store(false)
+		state.wordFlushAllDrafts.Store(false)
 		if intent != nil {
 			captureWordTextDraft(state, intent.runID, intent.value)
 			if editor := state.wordRunEditors[intent.runID]; editor != nil {
@@ -432,24 +465,23 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 		return
 	}
 	if result.blocks != nil {
-		state.wordBlocks = result.blocks
+		state.setWordBlocks(result.blocks)
+		a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 	}
 	if sourceEditor := state.wordRunEditors[result.splitSourceRunID]; sourceEditor != nil {
 		sourceEditor.SetText(result.splitPrefix)
 	}
-	state.wordRunCommitted[result.splitSourceRunID] = result.splitPrefix
-	delete(state.wordRunDrafts, result.splitSourceRunID)
+	state.setCommittedWordTextAndClearDraft(result.splitSourceRunID, result.splitPrefix)
 	reconcileWordSelection(state, false)
 
-	newRun, ok := selectedWordRun(state.wordBlocks, result.splitRunID)
+	newRun, ok := selectedWordRun(wordBlocksForState(state), result.splitRunID)
 	if !ok {
 		a.status = "段落已拆分，但无法定位后续文字"
 		a.persistActiveSession()
 		a.finishWordTextFlush(state)
 		return
 	}
-	delete(state.wordRunDrafts, result.splitRunID)
-	state.wordRunCommitted[result.splitRunID] = result.splitRunText
+	state.setCommittedWordTextAndClearDraft(result.splitRunID, result.splitRunText)
 	newEditor := wordRunEditor(state, newRun)
 	newEditor.SetText(result.splitRunText)
 	newEditor.SetCaret(0, 0)

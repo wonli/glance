@@ -3,6 +3,7 @@ package docx
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 )
 
 const wordHistoryLimit = 100
@@ -20,6 +21,7 @@ type wordHistoryChange struct {
 type wordHistorySnapshot struct {
 	parts map[string]wordHistoryPart
 	order []string
+	force bool
 }
 
 type wordHistoryEntry struct {
@@ -51,7 +53,7 @@ func (d *Document) recordWordHistoryLocked(before wordHistorySnapshot) bool {
 		changes[name] = wordHistoryChange{before: old, after: newValue}
 	}
 	afterOrder := packagePartNames(d.parts)
-	if len(changes) == 0 && equalStrings(before.order, afterOrder) {
+	if len(changes) == 0 && equalStrings(before.order, afterOrder) && !before.force {
 		return false
 	}
 	entry := wordHistoryEntry{changes: changes, beforeOrder: before.order, afterOrder: afterOrder, beforeState: d.historyState, afterState: d.nextHistoryState}
@@ -185,7 +187,7 @@ func clonePackagePart(value part) part {
 }
 
 func sameHistoryPart(a, b wordHistoryPart) bool {
-	return a.exists == b.exists && (!a.exists || (a.value.header.Name == b.value.header.Name && bytes.Equal(a.value.data, b.value.data)))
+	return a.exists == b.exists && (!a.exists || (reflect.DeepEqual(a.value.header, b.value.header) && bytes.Equal(a.value.data, b.value.data)))
 }
 
 func equalStrings(a, b []string) bool {

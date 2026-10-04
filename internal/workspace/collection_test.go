@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -44,6 +45,67 @@ func TestCollectionSwitchAndCloseKeepSessionsIndependent(t *testing.T) {
 	if string(doc.Payload) != "A" || string(doc.ViewState) != "cell=A1" || !doc.Dirty {
 		t.Fatalf("persisted a=%+v", doc)
 	}
+}
+
+func TestCollectionAddTabInactivePreservesActiveTab(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	collection, err := OpenCollection(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := collection.AddTab(Tab{ID: "primary", Title: "primary.docx"}, "docx"); err != nil {
+		t.Fatal(err)
+	}
+	if err := collection.AddTabInactive(Tab{ID: "secondary", Title: "secondary.docx"}, "docx"); err != nil {
+		t.Fatal(err)
+	}
+	if got := collection.ActiveTabID(); got != "primary" {
+		t.Fatalf("active tab after inactive add = %q, want primary", got)
+	}
+	if _, ok := collection.Get("secondary"); !ok {
+		t.Fatal("inactive tab was not added to the shared catalog")
+	}
+}
+
+func TestCollectionConcurrentWindowReadsAndActivation(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	collection, err := OpenCollection(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"first", "second"} {
+		if err := collection.AddTab(Tab{ID: id, Title: id}, "docx"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	for worker := 0; worker < 4; worker++ {
+		worker := worker
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for iteration := 0; iteration < 25; iteration++ {
+				if err := collection.Activate([]string{"first", "second"}[(worker+iteration)%2]); err != nil {
+					t.Errorf("activate workspace tab: %v", err)
+					return
+				}
+				_ = collection.ActiveTabID()
+				_ = collection.Tabs()
+				_ = collection.Recents()
+				collection.StageRecents([]Recent{{Path: "/tmp/concurrent.docx", Kind: "docx"}})
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestCollectionRestoreKeepsSnapshotWhenSourceIsMissing(t *testing.T) {

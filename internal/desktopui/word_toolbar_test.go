@@ -128,6 +128,33 @@ func TestWordToolbarExposesPenReferenceCategories(t *testing.T) {
 	}
 }
 
+func TestWordRibbonUsesSemanticallyClosestExcelGlyphs(t *testing.T) {
+	cases := []struct {
+		tab  wordToolbarTab
+		id   string
+		want string
+	}{
+		{tab: wordTabHome, id: "font-family", want: "type"},
+		{tab: wordTabFile, id: "share", want: "copy"},
+		{tab: wordTabFile, id: "doc-info", want: "file-text"},
+	}
+	for _, test := range cases {
+		action, found := ribbonAction{}, false
+		for _, candidate := range wordToolbarActions(test.tab) {
+			if candidate.id == test.id {
+				action, found = candidate, true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("Word action %q was not found in tab %q", test.id, wordToolbarTabLabels[test.tab])
+		}
+		if got := wordExcelIconName(action.icon); got != test.want {
+			t.Errorf("Word action %q uses Excel glyph %q; want semantic match %q", test.id, got, test.want)
+		}
+	}
+}
+
 func TestWordRibbonActionSlotsMatchPenNodeClpgm(t *testing.T) {
 	want := map[wordToolbarTab][]int{
 		wordTabFile:    {34, 76, 118, 179, 221, 263, 324, 366, 408, 469, 511, 553},
@@ -309,7 +336,7 @@ func TestWordFontSizeToolbarActionsChangeSelectedRunByOnePoint(t *testing.T) {
 		{action: "font-size-decrease", want: 11},
 	} {
 		app.executeWordToolbarAction(step.action)
-		if !state.formatRunning {
+		if !state.formatRunning.Load() {
 			t.Fatalf("%s did not start a Word formatting command", step.action)
 		}
 		select {
@@ -354,7 +381,7 @@ func TestWordListToolbarActionsApplyAndToggleOffLists(t *testing.T) {
 			t.Fatalf("Word list action %q should be enabled for a selected paragraph", step.action)
 		}
 		app.executeWordToolbarAction(step.action)
-		if !state.formatRunning {
+		if !state.formatRunning.Load() {
 			t.Fatalf("%s did not start a Word list command", step.action)
 		}
 		select {
@@ -756,7 +783,7 @@ func TestWordFontFamilyToolbarActionOpensDialogAndChangesSelectedRun(t *testing.
 	if app.modal.Visible {
 		t.Fatal("font-family dialog remained open after confirm")
 	}
-	if !state.formatRunning {
+	if !state.formatRunning.Load() {
 		t.Fatal("confirm did not start a Word formatting command")
 	}
 	select {
@@ -829,7 +856,7 @@ func TestWordFormatPainterAppliesSourceFormattingToNextFocusedRun(t *testing.T) 
 		t.Fatal("Word editor does not route the next focused run to the active format painter")
 	}
 	targetSelector.queueWordFormatPainterTarget(targetParagraph.ID, targetRunID)
-	if !state.formatRunning {
+	if !state.formatRunning.Load() {
 		t.Fatal("selecting a target run did not start the formatting operation")
 	}
 	select {

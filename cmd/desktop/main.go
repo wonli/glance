@@ -12,6 +12,10 @@ func main() {
 	if len(os.Args) > 1 {
 		path = os.Args[1]
 	}
-	go desktopui.Run(path)
+	done := desktopui.Run(path)
+	go func() {
+		<-done
+		os.Exit(0)
+	}()
 	app.Main()
 }
