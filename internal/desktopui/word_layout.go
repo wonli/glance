@@ -1191,14 +1191,12 @@ func (a *App) wordImagePreferredWidth(gtx layout.Context, item document.WordImag
 func wordRunLabel(theme *material.Theme, paragraph document.WordParagraph, run document.WordTextRun) material.LabelStyle {
 	label := material.Body1(theme, run.Text)
 	label.Alignment = wordParagraphAlignment(paragraph.Alignment)
+	label.Font.Typeface = wordRunTypeface(run.Style.FontFamily)
 	if run.Style.Bold {
 		label.Font.Weight = font.Bold
 	}
 	if run.Style.Italic {
 		label.Font.Style |= font.Italic
-	}
-	if run.Style.FontFamily != "" {
-		label.Font.Typeface = font.Typeface(run.Style.FontFamily)
 	}
 	if run.Style.FontSize > 0 {
 		label.TextSize = unit.Sp(run.Style.FontSize)
@@ -1218,6 +1216,24 @@ func wordRunLabel(theme *material.Theme, paragraph document.WordParagraph, run d
 		label.TextSize = unit.Sp(16)
 	}
 	return label
+}
+
+func wordRunTypeface(documentFamily string) font.Typeface {
+	families := append(splitWordFontFamilies(documentFamily), wordFontFallbackFamilies...)
+	seen := make(map[string]struct{}, len(families))
+	ordered := make([]string, 0, len(families))
+	for _, family := range families {
+		key := strings.ToLower(strings.TrimSpace(family))
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		ordered = append(ordered, family)
+	}
+	return font.Typeface(strings.Join(ordered, ", "))
 }
 
 func wordTextHighlightRects(gtx layout.Context, shaper *text.Shaper, label material.LabelStyle, value string) []image.Rectangle {

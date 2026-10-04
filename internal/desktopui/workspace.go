@@ -460,7 +460,7 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 				if result.err == nil && result.path != "" {
 					result.recents, result.err = scanOfficeFolder(result.path)
 				}
-			case commandSaveAs, commandShareCopy:
+			case commandSaveAs, commandExportPDF, commandShareCopy:
 				result.path, result.err = chooseSavePath(format)
 			}
 		}

@@ -60,6 +60,18 @@ func TestWordCanvasUsesDocumentPageMargins(t *testing.T) {
 	}
 }
 
+func TestWordRunLabelUsesPaginationFontFallbackOrder(t *testing.T) {
+	run := document.WordTextRun{Style: document.WordTextStyle{FontFamily: "PingFang SC", Bold: true}}
+	label := wordRunLabel(material.NewTheme(), document.WordParagraph{}, run)
+	wantTypeface := font.Typeface("PingFang SC, Noto Sans CJK SC, Hiragino Sans GB, Microsoft YaHei, WenQuanYi Micro Hei, Noto Sans, Arial, Helvetica, sans-serif")
+	if label.Font.Typeface != wantTypeface {
+		t.Fatalf("Word editor typeface = %q; want DOCX family followed by pagination fallbacks %q", label.Font.Typeface, wantTypeface)
+	}
+	if label.Font.Weight != font.Bold {
+		t.Fatalf("Word editor font weight = %v; want bold", label.Font.Weight)
+	}
+}
+
 func TestWordAdjacentParagraphAllowsEmptyAndImageOnlyNeighbors(t *testing.T) {
 	current := document.WordParagraph{ID: "current", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "current.run", Editable: true}}}}
 	empty := document.WordParagraph{ID: "empty"}
