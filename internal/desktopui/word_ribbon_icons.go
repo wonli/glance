@@ -2,8 +2,14 @@ package desktopui
 
 import "image"
 
-// Word keeps its command meanings while borrowing the shared Excel icon style.
-// Aliases cover Word commands that do not have a dedicated Excel atlas entry.
+const wordToolbarIconRasterSize = 192
+
+func wordToolbarIconScale(size int) float32 {
+	return float32(size) / float32(wordToolbarIconRasterSize)
+}
+
+// Word uses its Pen SVGs first and falls back to shared Excel SVGs for
+// contextual commands that have no dedicated Word asset.
 var wordExcelIconAliases = map[string]string{
 	"file-plus": "file-text", "refresh-cw": "save", "printer": "file-text", "file-down": "file-text",
 	"share-2": "copy", "info": "file-text", "shield-check": "settings-2", "history": "clock-3",
@@ -23,12 +29,19 @@ var wordExcelIconAliases = map[string]string{
 }
 
 func wordExcelIconName(name string) string {
-	if _, ok := toolbarIconCells[name]; ok {
+	if _, ok := toolbarIconNames[name]; ok {
 		return name
 	}
 	return wordExcelIconAliases[name]
 }
 
 func wordRibbonIcon(name string, enabled bool) (image.Image, bool) {
-	return tintedToolbarIcon(wordExcelIconName(name), toolbarIconColor(enabled))
+	return tintedToolbarIconAtSize(wordExcelIconName(name), toolbarIconColor(enabled), wordToolbarIconRasterSize)
+}
+
+func wordToolbarActionIcon(action wordToolbarAction, enabled bool) (image.Image, bool) {
+	if _, err := svgIconAssets.ReadFile("assets/icons/word/" + action.id + ".svg"); err == nil {
+		return svgIconTintAtSize("word", action.id, wordToolbarIconRasterSize, toolbarIconColor(enabled))
+	}
+	return wordRibbonIcon(action.icon, enabled)
 }

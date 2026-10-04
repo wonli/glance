@@ -36,8 +36,8 @@ func TestSpreadsheetPictureToolbarUsesContextGroupAndCapabilities(t *testing.T) 
 	state.book = book
 	app := &App{documentSessionState: state}
 
-	if got := toolbarCategoryLabelsForState(state); len(got) != 7 {
-		t.Fatalf("without selected picture, categories=%v; want seven base tabs", got)
+	if got := toolbarCategoryLabelsForState(state); len(got) != 8 {
+		t.Fatalf("without selected picture, categories=%v; want eight base tabs", got)
 	}
 	if !app.toolbarActionEnabled(25) {
 		t.Fatal("editable workbook should enable Insert Picture")
@@ -48,7 +48,7 @@ func TestSpreadsheetPictureToolbarUsesContextGroupAndCapabilities(t *testing.T) 
 
 	book.pictures = []document.SpreadsheetImage{{ID: "pic-1", Sheet: "Sheet1", Cell: "A1", Row: 1, Column: 1, WidthPx: 80, HeightPx: 40, Editable: true}}
 	state.gridPictures, state.gridPicturesSheet, state.selectedGridPictureID = book.pictures, "Sheet1", "pic-1"
-	if got := toolbarCategoryLabelsForState(state); len(got) != 8 || got[7] != "图片" {
+	if got := toolbarCategoryLabelsForState(state); len(got) != 9 || got[8] != "图片" {
 		t.Fatalf("selected picture categories=%v; want contextual Picture group", got)
 	}
 	for _, slot := range []int{26, 27, 28} {

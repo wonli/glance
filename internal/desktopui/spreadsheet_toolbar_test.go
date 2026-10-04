@@ -4,7 +4,11 @@ import (
 	"image"
 	"image/color"
 	"testing"
+	"time"
 
+	"gioui.org/f32"
+	"gioui.org/io/input"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -42,25 +46,51 @@ func TestSpreadsheetToolbarVisibilityRequiresEditableGridReader(t *testing.T) {
 }
 
 func TestSpreadsheetToolbarActionsCoverHomeAndDataGroups(t *testing.T) {
-	if len(homeToolbarActions) != 22 || len(dataToolbarActions) != 3 {
-		t.Fatalf("toolbar actions home=%d data=%d; want 22 and 3", len(homeToolbarActions), len(dataToolbarActions))
+	state := newDocumentSessionState("")
+	wantCategories := []string{"文件", "开始", "插入", "页面布局", "公式", "数据", "审阅", "视图"}
+	gotCategories := toolbarCategoryLabelsForState(state)
+	if !equalStrings(gotCategories, wantCategories) {
+		t.Fatalf("Excel categories = %v, want %v", gotCategories, wantCategories)
 	}
-	seen := map[int]bool{}
-	for _, action := range append(append([]spreadsheetToolbarAction(nil), homeToolbarActions...), dataToolbarActions...) {
-		if action.slot < 0 || action.slot >= 25 || seen[action.slot] {
-			t.Fatalf("invalid or duplicate toolbar action slot %d", action.slot)
+	wantActions := map[spreadsheetToolbarTab][]string{
+		toolbarTabFile:       {"打开", "保存", "另存为", "打印", "导出", "共享"},
+		toolbarTabHome:       {"剪切", "复制", "粘贴", "格式刷", "字体", "加粗", "斜体", "下划线", "左对齐", "居中", "右对齐", "自动换行", "百分比", "数字格式", "插入", "删除", "条件格式", "表格格式", "求和", "排序", "筛选", "查找", "撤销", "重做"},
+		toolbarTabInsert:     {"表格", "数据透视表", "图片", "形状", "柱状图", "折线图", "饼图", "链接", "文本框"},
+		toolbarTabPageLayout: {"页边距", "纸张方向", "纸张大小", "打印区域", "网格线", "标题行"},
+		toolbarTabFormula:    {"插入函数", "自动求和", "最近使用", "逻辑函数", "文本函数", "日期时间", "名称管理器", "重新计算"},
+		toolbarTabData:       {"刷新全部", "排序", "筛选", "分列", "快速填充", "删除重复项", "数据验证"},
+		toolbarTabReview:     {"拼写检查", "翻译", "新建批注", "删除批注", "保护工作表", "保护工作簿"},
+		toolbarTabView:       {"普通视图", "分页预览", "标尺", "网格线", "放大", "100%显示", "冻结窗格"},
+	}
+	for tab, want := range wantActions {
+		actions := toolbarActionsForTab(tab)
+		got := make([]string, len(actions))
+		for i, action := range actions {
+			got[i] = action.label
 		}
-		seen[action.slot] = true
-	}
-	for slot := 0; slot < 25; slot++ {
-		if !seen[slot] {
-			t.Fatalf("toolbar action slot %d is missing", slot)
+		if !equalStrings(got, want) {
+			t.Errorf("tab %q actions = %v, want %v", gotCategories[tab], got, want)
 		}
 	}
 }
 
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestSpreadsheetToolbarActionsHaveIconGlyphsAndAccessibleLabels(t *testing.T) {
-	actions := append(append(append([]spreadsheetToolbarAction(nil), homeToolbarActions...), dataToolbarActions...), insertToolbarActions...)
+	var actions []spreadsheetToolbarAction
+	for tab := toolbarTabFile; tab <= toolbarTabView; tab++ {
+		actions = append(actions, toolbarActionsForTab(tab)...)
+	}
 	actions = append(actions, pictureToolbarActions...)
 	for _, action := range actions {
 		if action.icon == "" {
@@ -71,6 +101,106 @@ func TestSpreadsheetToolbarActionsHaveIconGlyphsAndAccessibleLabels(t *testing.T
 		}
 		if _, ok := toolbarIconData(action.icon); !ok {
 			t.Errorf("toolbar action %q references missing icon %q", action.label, action.icon)
+		}
+	}
+}
+
+func TestPenExcelScreenIconsAreBundled(t *testing.T) {
+	for _, name := range []string{"minus", "plus", "menu", "list", "grip-horizontal", "settings-2", "eraser", "house"} {
+		if _, err := renderSVGIcon("excel", name, 24, nil); err != nil {
+			t.Errorf("Pen Excel icon %q is unavailable: %v", name, err)
+		}
+	}
+}
+
+func TestExcelRibbonActionsUseExcelIconAssets(t *testing.T) {
+	for tab := toolbarTabFile; tab <= toolbarTabView; tab++ {
+		for _, action := range toolbarActionsForTab(tab) {
+			if action.icon == "" {
+				t.Errorf("tab %d action %q has no Excel icon", tab, action.label)
+				continue
+			}
+			if _, ok := toolbarIconData(action.icon); !ok {
+				t.Errorf("tab %d action %q does not resolve through Excel icon assets: %q", tab, action.label, action.icon)
+			}
+		}
+	}
+}
+
+func TestUnimplementedExcelFormulaActionClickShowsNotice(t *testing.T) {
+	book := &toolbarTestBook{editable: true}
+	state := newDocumentSessionState("")
+	state.book = book
+	state.toolbarTab = toolbarTabFormula
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{
+		Source:      router.Source(),
+		Ops:         &ops,
+		Now:         time.Now(),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(800, 600)},
+	}
+	frame := func() {
+		t.Helper()
+		ops.Reset()
+		gtx.Source = router.Source()
+		app.handleSpreadsheetToolbarEvents(gtx)
+		app.layoutSpreadsheetToolbar(gtx)
+		router.Frame(&ops)
+	}
+
+	frame()
+	point := f32.Pt(34, 58) // The first Formula action, "插入函数".
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: point})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: point})
+	frame()
+	if want := "“插入函数”功能暂未实现"; app.status != want {
+		t.Fatalf("status after clicking an unavailable action = %q, want %q", app.status, want)
+	}
+}
+
+func TestExcelPageLayoutActionClickShowsMissingNotice(t *testing.T) {
+	book := &toolbarTestBook{editable: true}
+	state := newDocumentSessionState("")
+	state.book = book
+	state.toolbarTab = toolbarTabPageLayout
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{
+		Source:      router.Source(),
+		Ops:         &ops,
+		Now:         time.Now(),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(800, 600)},
+	}
+	frame := func() {
+		t.Helper()
+		ops.Reset()
+		gtx.Source = router.Source()
+		app.handleSpreadsheetToolbarEvents(gtx)
+		app.layoutSpreadsheetToolbar(gtx)
+		router.Frame(&ops)
+	}
+
+	frame()
+	point := f32.Pt(34, 58) // First Page Layout action, "页边距".
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: point})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: point})
+	frame()
+	if want := "“页边距”功能暂未实现"; app.status != want {
+		t.Fatalf("status after clicking Excel Page Layout action = %q, want %q", app.status, want)
+	}
+}
+
+func TestUnimplementedExcelTabsHaveMissingFeatureMessages(t *testing.T) {
+	for _, tab := range []spreadsheetToolbarTab{toolbarTabFile, toolbarTabHome, toolbarTabInsert, toolbarTabPageLayout, toolbarTabFormula, toolbarTabData, toolbarTabReview, toolbarTabView} {
+		if name, ok := unimplementedSpreadsheetToolbarTab(tab); ok {
+			t.Errorf("tab %d reports its category missing (%q) even though its buttons are listed", tab, name)
 		}
 	}
 }
@@ -137,11 +267,18 @@ func TestToolbarIconsUseOfficeStyleMonochromeColors(t *testing.T) {
 	}
 }
 func TestToolbarPickerPanelTracksItsScrolledActionAndStaysInViewport(t *testing.T) {
+	actions := make([]spreadsheetToolbarAction, 18)
+	for i := range actions {
+		actions[i] = spreadsheetToolbarAction{slot: i, group: "字体"}
+	}
+	for i := 8; i < len(actions); i++ {
+		actions[i].group = "格式"
+	}
 	position := layout.Position{First: 7, Offset: 8}
-	if got := toolbarPickerPanelX(10, homeToolbarActions, position, 40, 48, 800, 260); got != 120 {
+	if got := toolbarPickerPanelX(10, actions, position, 40, 48, 800, 260); got != 120 {
 		t.Fatalf("panel x=%d; want 120px under the scrolled action", got)
 	}
-	if got := toolbarPickerPanelX(17, homeToolbarActions, layout.Position{}, 40, 48, 300, 260); got != 40 {
+	if got := toolbarPickerPanelX(17, actions, layout.Position{}, 40, 48, 300, 260); got != 40 {
 		t.Fatalf("panel x=%d; want 40px after clamping to the viewport", got)
 	}
 }

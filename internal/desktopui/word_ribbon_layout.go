@@ -16,9 +16,12 @@ import (
 )
 
 const (
-	wordRibbonCategoryHeightDP = 34
-	wordRibbonCommandHeightDP  = 56
-	wordRibbonHeightDP         = wordRibbonCategoryHeightDP + wordRibbonCommandHeightDP
+	wordRibbonCategoryHeightDP    = 34
+	wordRibbonCategoryTabWidthDP  = 30
+	wordRibbonCategoryTabHeightDP = 30
+	wordRibbonCommandHeightDP     = 56
+	wordRibbonHeightDP            = wordRibbonCategoryHeightDP + wordRibbonCommandHeightDP
+	spreadsheetRibbonLeftInsetDP  = 16
 )
 
 type wordRibbonGroup struct {
@@ -64,16 +67,15 @@ func (a *App) layoutWordRibbonCategories(gtx layout.Context, state *documentSess
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	tabs := wordToolbarTabs(state)
 	paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
-	paint.FillShape(gtx.Ops, wordStatusTopRule, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
 	for index, tab := range tabs {
-		x := 22 + index*59
+		x := 22 + index*(wordRibbonCategoryTabWidthDP+28)
 		a.layoutWordRibbonCategoryTabAt(gtx, state, index, x, 2, wordToolbarTabLabels[tab], tab == state.wordToolbarTab)
 	}
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
 func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentSessionState, index int, xDP, yDP int, label string, selected bool) {
-	width, height := gtx.Dp(unit.Dp(31)), gtx.Dp(unit.Dp(30))
+	width, height := gtx.Dp(unit.Dp(wordRibbonCategoryTabWidthDP)), gtx.Dp(unit.Dp(wordRibbonCategoryTabHeightDP))
 	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(yDP))
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
 	buttonGtx := gtx
@@ -89,14 +91,16 @@ func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentS
 		if selected {
 			style.Color = color.NRGBA{R: 52, G: 91, B: 146, A: 255}
 		}
+		shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
 		layout.Center.Layout(gtx, style.Layout)
+		shift.Pop()
 		return layout.Dimensions{Size: image.Pt(width, height)}
 	})
 	transform.Pop()
 	if selected {
-		lineX, lineY := gtx.Dp(unit.Dp(xDP-5)), gtx.Dp(unit.Dp(wordRibbonCategoryHeightDP-2))
+		lineX, lineY := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(yDP+wordRibbonCategoryTabHeightDP-1))
 		line := op.Offset(image.Pt(lineX, lineY)).Push(gtx.Ops)
-		paint.FillShape(gtx.Ops, color.NRGBA{R: 52, G: 91, B: 146, A: 255}, clip.Rect{Max: image.Pt(gtx.Dp(unit.Dp(42)), gtx.Dp(unit.Dp(2)))}.Op())
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 52, G: 91, B: 146, A: 255}, clip.Rect{Max: image.Pt(width, gtx.Dp(unit.Dp(1)))}.Op())
 		line.Pop()
 	}
 }
@@ -147,24 +151,30 @@ var wordPenGroupDividers = map[wordToolbarTab][]int{
 
 func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSessionState, tab wordToolbarTab) layout.Dimensions {
 	width, height := gtx.Constraints.Max.X, gtx.Dp(unit.Dp(wordRibbonCommandHeightDP))
+	positions := wordPenActionPositions[tab]
+	if len(positions) == 0 {
+		return layout.Dimensions{Size: image.Pt(width, height)}
+	}
+	leftOffsetDP := spreadsheetRibbonLeftInsetDP - positions[0]
 	for _, x := range wordPenGroupDividers[tab] {
-		px := gtx.Dp(unit.Dp(x))
-		paint.FillShape(gtx.Ops, wordStatusTopRule, clip.Rect{Min: image.Pt(px, gtx.Dp(unit.Dp(6))), Max: image.Pt(px+gtx.Dp(unit.Dp(1)), gtx.Dp(unit.Dp(50)))}.Op())
+		px := gtx.Dp(unit.Dp(x + leftOffsetDP))
+		dividerTop := gtx.Dp(unit.Dp(10))
+		dividerHeight := gtx.Dp(unit.Dp(32))
+		paint.FillShape(gtx.Ops, wordStatusTopRule, clip.Rect{Min: image.Pt(px, dividerTop), Max: image.Pt(px+gtx.Dp(unit.Dp(1)), dividerTop+dividerHeight)}.Op())
 	}
 	actions := wordToolbarActions(tab)
-	positions := wordPenActionPositions[tab]
 	for index, action := range actions {
 		if index >= len(positions) {
 			break
 		}
-		a.layoutWordRibbonIconButtonAt(gtx, state, action, positions[index])
+		a.layoutWordRibbonIconButtonAt(gtx, state, action, positions[index]+leftOffsetDP)
 	}
 	return layout.Dimensions{Size: image.Pt(width, height)}
 }
 
 func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP int) {
 	width, height := gtx.Dp(unit.Dp(36)), gtx.Dp(unit.Dp(36))
-	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(10))
+	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(6))
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
 	buttonGtx := gtx
 	buttonGtx.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}
@@ -189,12 +199,12 @@ func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSe
 			}
 			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
 		}
-		if icon, ok := wordRibbonIcon(action.icon, enabled); ok {
+		if icon, ok := wordToolbarActionIcon(action, enabled); ok {
 			iconSize := gtx.Dp(unit.Dp(20))
 			iconGtx := gtx
 			iconGtx.Constraints = layout.Constraints{Min: image.Pt(iconSize, iconSize), Max: image.Pt(iconSize, iconSize)}
 			iconOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(8)), gtx.Dp(unit.Dp(8)))).Push(gtx.Ops)
-			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 20.0 / 96.0}.Layout(iconGtx)
+			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(20)}.Layout(iconGtx)
 			iconOffset.Pop()
 		}
 		return layout.Dimensions{Size: image.Pt(width, height)}
@@ -226,13 +236,13 @@ func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentS
 			background = toolbarHoverBackground
 		}
 		paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-		icon, _ := tintedToolbarIcon(action.icon, toolbarIconColor(enabled))
+		icon, _ := wordToolbarActionIcon(action, enabled)
 		iconSize := gtx.Dp(unit.Dp(16))
 		iconOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(10)), gtx.Dp(unit.Dp(31)))).Push(gtx.Ops)
 		iconGtx := gtx
 		iconGtx.Constraints = layout.Constraints{Min: image.Pt(iconSize, iconSize), Max: image.Pt(iconSize, iconSize)}
 		if icon != nil {
-			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 16.0 / 96.0}.Layout(iconGtx)
+			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(16)}.Layout(iconGtx)
 		}
 		iconOffset.Pop()
 		label := material.Caption(a.theme, action.label)
@@ -276,13 +286,13 @@ func (a *App) layoutWordRibbonIconLabelActionAt(gtx layout.Context, state *docum
 			background = toolbarHoverBackground
 		}
 		paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-		icon, _ := tintedToolbarIcon(action.icon, toolbarIconColor(enabled))
+		icon, _ := wordToolbarActionIcon(action, enabled)
 		iconSize := gtx.Dp(unit.Dp(22))
 		iconOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(4)), gtx.Dp(unit.Dp(6)))).Push(gtx.Ops)
 		iconGtx := gtx
 		iconGtx.Constraints = layout.Constraints{Min: image.Pt(iconSize, iconSize), Max: image.Pt(iconSize, iconSize)}
 		if icon != nil {
-			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 22.0 / 96.0}.Layout(iconGtx)
+			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(22)}.Layout(iconGtx)
 		}
 		iconOffset.Pop()
 		label := material.Caption(a.theme, action.label)
@@ -337,7 +347,7 @@ func (a *App) layoutWordRibbonInlineAction(gtx layout.Context, state *documentSe
 			background = toolbarHoverBackground
 		}
 		paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(2))).Op(gtx.Ops))
-		icon, _ := tintedToolbarIcon(action.icon, toolbarIconColor(enabled))
+		icon, _ := wordToolbarActionIcon(action, enabled)
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceStart}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				iconSize := gtx.Dp(unit.Dp(iconDP))
@@ -346,7 +356,7 @@ func (a *App) layoutWordRibbonInlineAction(gtx layout.Context, state *documentSe
 				if icon == nil {
 					return layout.Dimensions{Size: gtx.Constraints.Min}
 				}
-				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(iconDP) / 96}.Layout(gtx)
+				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(iconDP)}.Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(7)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -557,7 +567,7 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 			}
 			return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value)
 		}
-		icon, _ := tintedToolbarIcon(action.icon, toolbarIconColor(enabled))
+		icon, _ := wordToolbarActionIcon(action, enabled)
 		if showLabel {
 			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle, Spacing: layout.SpaceAround}.Layout(gtx,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -572,7 +582,7 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 					iconGtx.Constraints.Min = image.Pt(iconSize, iconSize)
 					iconGtx.Constraints.Max = iconGtx.Constraints.Min
 					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(iconSize) / 96.0}.Layout(iconGtx)
+						return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(iconSize)}.Layout(iconGtx)
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -594,7 +604,7 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 		iconGtx.Constraints.Min = image.Pt(iconSize, iconSize)
 		iconGtx.Constraints.Max = iconGtx.Constraints.Min
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(iconSize) / 96.0}.Layout(iconGtx)
+			return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(iconSize)}.Layout(iconGtx)
 		})
 	}
 	if enabled {

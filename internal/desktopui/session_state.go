@@ -105,9 +105,9 @@ type documentSessionState struct {
 	selectionSet                        bool
 	selectionDragging                   bool
 	toolbarTab                          spreadsheetToolbarTab
-	toolbarTabs                         [8]widget.Clickable
+	toolbarTabs                         [9]widget.Clickable
 	toolbarActionList                   widget.List
-	toolbarActionButtons                [29]widget.Clickable
+	toolbarActionButtons                [toolbarActionLast + 1]widget.Clickable
 	toolbarPickerButtons                [9]widget.Clickable
 	toolbarPicker                       spreadsheetToolbarPicker
 	toolbarPickerSlot                   int

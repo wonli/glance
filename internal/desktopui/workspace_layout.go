@@ -413,8 +413,9 @@ func (a *App) closeWorkspaceTab(id string) {
 	if a.modal.Visible {
 		return
 	}
-	state := a.viewForTab(id)
-	if state == nil {
+	state, err := a.viewForTabWithError(id)
+	if err != nil {
+		a.closeWorkspaceTabWithoutSession(id, err)
 		return
 	}
 	if sessionPath(state) == "" || sessionDirty(state) {
@@ -439,12 +440,22 @@ func (a *App) showCloseConfirmation(id, title, message string) {
 
 func (a *App) closeWorkspaceTabNow(id string) {
 	runtime := a.ensureDesktopRuntime()
-	state := a.viewForTab(id)
-	if state == nil {
+	state, err := a.viewForTabWithError(id)
+	if err != nil {
+		a.closeWorkspaceTabWithoutSession(id, err)
 		return
 	}
 	if !state.finalizeIfIdle() {
-		a.status = "文档正在处理中，请稍后关闭"
+		state.operationMu.Lock()
+		operationActive := state.operationActive
+		operationKind := state.activeOperation.kind
+		finalized := state.finalized.Load()
+		state.operationMu.Unlock()
+		if operationActive && !finalized {
+			a.showWorkspaceTabCloseFailure("当前" + workspaceSessionOperationName(operationKind) + "操作尚未完成，关闭没有执行。请等待操作结束后重试。")
+			return
+		}
+		a.showWorkspaceTabCloseFailure("文档会话正在关闭或已结束，当前标签未关闭。请重试；如果问题持续，请重新打开文档。")
 		return
 	}
 	state.wordExportCommitMu.Lock()
@@ -459,7 +470,7 @@ func (a *App) closeWorkspaceTabNow(id string) {
 				state.wordExportCommitMu.Lock()
 				state.closed.Store(false)
 				state.wordExportCommitMu.Unlock()
-				a.status = err.Error()
+				a.showWorkspaceTabCloseFailure("工作区未能移除此标签，文档仍保持打开。\n\n" + err.Error())
 				return
 			}
 			a.workspaceDBMu.Unlock()
@@ -478,9 +489,87 @@ func (a *App) closeWorkspaceTabNow(id string) {
 	}
 }
 
+// closeWorkspaceTabWithoutSession removes an unrestorable tab from the durable
+// workspace directly. A document view is not required to discard its corrupt
+// snapshot and close the tab.
+func (a *App) closeWorkspaceTabWithoutSession(id string, cause error) {
+	documentID := id
+	if meta, ok := a.tabMeta[id]; ok && meta.DocumentID != "" {
+		documentID = meta.DocumentID
+	}
+	var closeErr error
+	var snapshotCleanupErr error
+	if a.collection != nil {
+		if record, exists := a.collection.Get(id); exists {
+			if record.Tab.DocumentID != "" {
+				documentID = record.Tab.DocumentID
+			}
+			a.workspaceDBMu.Lock()
+			closeErr = a.collection.CloseTab(id)
+			a.workspaceDBMu.Unlock()
+			// CloseTab persists tab removal before deleting its snapshot. If the
+			// tab is gone, close succeeded even if snapshot cleanup needs attention.
+			if _, stillOpen := a.collection.Get(id); !stillOpen {
+				snapshotCleanupErr = closeErr
+				closeErr = nil
+			}
+		}
+	}
+	if closeErr != nil {
+		a.showWorkspaceTabCloseFailure("删除损坏文档的工作区记录失败，标签仍保持打开。\n\n" + closeErr.Error())
+		return
+	}
+	a.ensureDesktopRuntime().removeSession(documentID)
+	delete(a.sessions, id)
+	delete(a.tabMeta, id)
+	delete(a.tabButtons, id)
+	delete(a.tabCloseButtons, id)
+	if a.activeTabID == id {
+		a.activeTabID = ""
+		a.setActiveSessionID("")
+	}
+	a.reconcileWorkspaceTabs()
+	if a.activeTabID == "" {
+		a.activateRecent()
+	}
+	a.status = "已关闭无法恢复的文档标签：" + cause.Error()
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+	if snapshotCleanupErr != nil {
+		message := "标签已从工作区删除，但损坏快照未能清理。\n\n" + snapshotCleanupErr.Error()
+		a.showModalDialog("损坏快照未能清理", message, func(string) {
+			a.modal.Hide()
+		}, modalDialogActionSpec{ID: "ok", Label: "知道了"})
+	}
+}
+
+func workspaceSessionOperationName(kind sessionOperationKind) string {
+	switch kind {
+	case sessionOperationRead:
+		return "读取"
+	case sessionOperationMutation:
+		return "编辑"
+	case sessionOperationSave:
+		return "保存"
+	case sessionOperationSnapshot:
+		return "版本快照"
+	default:
+		return "文档处理"
+	}
+}
+
+func (a *App) showWorkspaceTabCloseFailure(message string) {
+	a.status = message
+	a.showModalDialog("无法关闭文档标签", message, func(string) {
+		a.modal.Hide()
+	}, modalDialogActionSpec{ID: "ok", Label: "知道了"})
+}
+
 func (a *App) handleCloseConfirmation(action string) {
 	id := a.pendingCloseTabID
 	if a.isSaving() && action != "cancel" {
+		a.showWorkspaceTabCloseFailure("关闭没有执行：工作区当前有文档正在保存。请等待保存结束后重新关闭。")
 		return
 	}
 	switch action {
@@ -496,6 +585,7 @@ func (a *App) handleCloseConfirmation(action string) {
 		if state == nil {
 			a.modal.Hide()
 			a.pendingCloseTabID = ""
+			a.showWorkspaceTabCloseFailure("无法找到此文档的会话，保存和关闭均未执行。请重新打开文档。")
 			return
 		}
 		if a.activeTabID != id {

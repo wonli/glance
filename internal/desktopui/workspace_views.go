@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -48,26 +49,40 @@ func (a *App) reconcileWorkspaceTabs() {
 // viewForTab attaches this window to the shared document session and creates
 // its own persistent Gio widgets on first use.
 func (a *App) viewForTab(id string) *documentSessionState {
+	state, err := a.viewForTabWithError(id)
+	if err != nil && a != nil {
+		title := id
+		if meta, ok := a.tabMeta[id]; ok && meta.Title != "" {
+			title = meta.Title
+		}
+		a.status = "恢复 " + title + " 失败：" + err.Error()
+	}
+	return state
+}
+
+func (a *App) viewForTabWithError(id string) (*documentSessionState, error) {
 	if a == nil {
-		return nil
+		return nil, fmt.Errorf("应用会话不可用")
 	}
 	if state := a.sessions[id]; state != nil && !state.closed.Load() {
-		return state
+		return state, nil
 	}
 	if a.collection == nil {
-		return nil
+		if a.workspaceError != "" {
+			return nil, fmt.Errorf("工作区不可用：%s", a.workspaceError)
+		}
+		return nil, fmt.Errorf("工作区尚未初始化")
 	}
 	record, ok := a.collection.Get(id)
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("工作区标签记录 %q 不存在", id)
 	}
 	runtime := a.ensureDesktopRuntime()
 	shared, found := runtime.session(record.Tab.DocumentID)
 	if !found {
 		state, err := a.restoreSessionState(*record)
 		if err != nil {
-			a.status = "恢复 " + record.Tab.Title + " 失败：" + err.Error()
-			return nil
+			return nil, fmt.Errorf("恢复快照失败：%w", err)
 		}
 		state.documentID = record.Tab.DocumentID
 		registered := runtime.registerSession(state.sharedDocumentSession)
@@ -75,7 +90,7 @@ func (a *App) viewForTab(id string) *documentSessionState {
 			state.windowID = a.windowID
 			state.sharedDocumentSession.attachView(a.windowID, state)
 			a.sessions[id] = state
-			return state
+			return state, nil
 		}
 		closeUnregisteredSessionAdapters(state.sharedDocumentSession, registered)
 		shared = registered
@@ -83,5 +98,5 @@ func (a *App) viewForTab(id string) *documentSessionState {
 	state := newDocumentSessionView(shared, a.windowID)
 	state.documentID = record.Tab.DocumentID
 	a.sessions[id] = state
-	return state
+	return state, nil
 }

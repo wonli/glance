@@ -216,7 +216,6 @@ func (a *App) startWordPagination(state *documentSessionState) {
 	input := wordlayout.Input{
 		DocumentID: key.DocumentID, Revision: key.Revision,
 		Blocks: blocks, Layout: data, DefaultPageSetup: defaultWordPageSetup,
-		EditorParagraphInsets: true,
 	}
 	engine := a.wordLayoutEngine
 	if engine == nil {

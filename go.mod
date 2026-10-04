@@ -5,13 +5,16 @@ go 1.27.0
 require (
 	gioui.org v0.10.2
 	github.com/SalvioniDigitalSolutions/gopdf v0.0.0-20260922202729-55a8f5fed5f5
-	github.com/go-text/typesetting v0.3.4
 	github.com/extrame/xls v0.0.1
 	github.com/gin-gonic/gin v1.12.0
+	github.com/go-text/typesetting v0.3.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
+	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
+	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
 	github.com/wonli/aqi v1.11.0
 	github.com/xuri/excelize/v2 v2.11.0
+	golang.org/x/image v0.38.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
 	gorm.io/gen v0.3.29
@@ -89,7 +92,6 @@ require (
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/exp/shiny v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
-	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
