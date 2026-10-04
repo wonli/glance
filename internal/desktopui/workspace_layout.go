@@ -408,6 +408,10 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 		if label != "+" || active {
 			paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(6)), NE: gtx.Dp(unit.Dp(6))}.Op(gtx.Ops))
 		}
+		if label == "+" && active {
+			shape := clip.RRect{Rect: image.Rectangle{Max: dims.Size}, NW: gtx.Dp(unit.Dp(6)), NE: gtx.Dp(unit.Dp(6))}
+			paint.FillShape(gtx.Ops, homeBorder, clip.Stroke{Path: shape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+		}
 		call.Add(gtx.Ops)
 		return dims
 	})
