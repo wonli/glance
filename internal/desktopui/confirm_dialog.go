@@ -98,6 +98,12 @@ func defaultConfirmStyleForTitle(title string) (modalDialogConfirmStyle, bool) {
 			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
 			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
 		}, true
+	case "导出 PDF 预览":
+		return modalDialogConfirmStyle{
+			Icon:           "file-down",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
 	default:
 		return modalDialogConfirmStyle{}, false
 	}
@@ -124,7 +130,11 @@ func findDialogIcon(family, name string, size int, tint color.NRGBA) (image.Imag
 }
 
 func (a *App) layoutConfirmDialogCard(gtx layout.Context) layout.Dimensions {
-	maxWidth := gtx.Dp(unit.Dp(440))
+	cardWidth := 440
+	if a.modal.CardWidthDp > 0 {
+		cardWidth = a.modal.CardWidthDp
+	}
+	maxWidth := gtx.Dp(unit.Dp(cardWidth))
 	availableWidth := gtx.Constraints.Max.X - gtx.Dp(unit.Dp(32))
 	if availableWidth < maxWidth {
 		maxWidth = availableWidth
@@ -147,7 +157,13 @@ func (a *App) layoutConfirmDialogCard(gtx layout.Context) layout.Dimensions {
 			}))
 		}
 
-		if len(a.modal.Actions) > 0 {
+		if a.modal.CustomLayout != nil {
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, a.modal.CustomLayout)
+			}))
+		}
+
+		if len(a.modal.Actions) > 0 && !a.modal.CustomActionsInLayout {
 			children = append(children,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(20), Bottom: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

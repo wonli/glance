@@ -295,6 +295,10 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.startSaveAsPicker("xlsx")
 			continue
 		}
+		if action.slot == toolbarActionExport {
+			a.requestSpreadsheetPDFExport()
+			continue
+		}
 		if action.slot >= 12 && action.slot <= 15 {
 			pos := state.selection.Active
 			kind := []document.StructureEditKind{document.StructureInsertRows, document.StructureDeleteRows, document.StructureInsertColumns, document.StructureDeleteColumns}[action.slot-12]
@@ -414,7 +418,7 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 	if slot < toolbarActionFormatPainter || slot > toolbarActionLast {
 		return false
 	}
-	return slot != toolbarActionOpenFile && slot != toolbarActionSaveAs
+	return slot != toolbarActionOpenFile && slot != toolbarActionSaveAs && slot != toolbarActionExport
 }
 
 func (a *App) showSpreadsheetFeatureMissing(name string) {
@@ -472,6 +476,8 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return !state.formatRunning.Load()
 	case toolbarActionSaveAs:
 		return state.book != nil && !a.isSaving()
+	case toolbarActionExport:
+		return state.book != nil && !state.formatRunning.Load() && !a.isSaving() && !state.spreadsheetPDFExportRunning
 	default:
 		return false
 	}

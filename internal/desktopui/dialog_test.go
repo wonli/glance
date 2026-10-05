@@ -108,3 +108,21 @@ func TestModalDialogUnifiedLayoutRenders(t *testing.T) {
 		t.Fatalf("expected non-empty dims for form modal, got %v", dims.Size)
 	}
 }
+
+func TestPDFPreviewDialogFitsWindow(t *testing.T) {
+	app := &App{theme: material.NewTheme()}
+	app.pdfExportPreview = pdfExportPreviewState{Active: true, Format: "spreadsheet", Orientation: "portrait", TotalPages: 1}
+	app.modal.ShowCustom("导出 PDF 预览", "设置页面方向并预览导出效果", 680, app.layoutPDFExportPreview, nil,
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", Label: "导出 PDF"},
+	)
+	app.modal.CustomActionsInLayout = true
+	gtx := layout.Context{
+		Ops: new(op.Ops), Constraints: layout.Constraints{Max: image.Pt(800, 600)},
+		Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+	}
+	dims := app.layoutConfirmDialogCard(gtx)
+	if dims.Size.X > 680 || dims.Size.Y > 500 || dims.Size.Y < 300 {
+		t.Fatalf("PDF preview card should fit the window, got %v", dims.Size)
+	}
+}

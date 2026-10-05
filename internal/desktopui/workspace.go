@@ -457,11 +457,11 @@ func (a *App) startSaveAsPicker(format string) {
 	a.startFileCommand(commandSaveAs, format)
 }
 
-func (a *App) startWordPDFSavePicker(state *documentSessionState, key wordLayoutKey) {
+func (a *App) startWordPDFSavePicker(state *documentSessionState, key wordLayoutKey, orientation string) {
 	if state == nil || state.word == nil || a.fileCommandRunning {
 		return
 	}
-	a.wordPDFPickerRequest = &wordPDFPickerRequest{state: state, key: key}
+	a.wordPDFPickerRequest = &wordPDFPickerRequest{state: state, key: key, orientation: orientation}
 	a.startFileCommand(commandExportPDF, "pdf")
 }
 

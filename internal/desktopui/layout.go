@@ -102,6 +102,15 @@ func (a *App) processAsyncResults() {
 	default:
 	}
 	select {
+	case result := <-a.spreadsheetPDFExportResults:
+		a.applySpreadsheetPDFExportResult(result)
+	case result := <-a.spreadsheetPDFPreviewResults:
+		a.applySpreadsheetPDFPreviewResult(result)
+	case result := <-a.wordPDFPreviewResults:
+		a.applyWordPDFPreviewResult(result)
+	default:
+	}
+	select {
 	case result := <-a.wordShareCopyResults:
 		a.applyWordShareCopyResult(result)
 	default:
@@ -183,6 +192,7 @@ func (a *App) processAsyncResults() {
 			a.status = result.err.Error()
 			if result.kind == commandExportPDF {
 				a.wordPDFPickerRequest = nil
+				a.spreadsheetPDFPickerRequest = nil
 			}
 			if result.kind == commandShareCopy {
 				a.wordShareCopyRequest = nil
@@ -221,14 +231,18 @@ func (a *App) processAsyncResults() {
 					}
 				}
 			case commandExportPDF:
-				request := a.wordPDFPickerRequest
+				wordReq := a.wordPDFPickerRequest
+				sheetReq := a.spreadsheetPDFPickerRequest
 				a.wordPDFPickerRequest = nil
+				a.spreadsheetPDFPickerRequest = nil
 				if result.path == "" {
 					a.status = "已取消导出 PDF"
-				} else if request == nil {
-					a.status = "PDF 导出状态已过期，请重新导出"
+				} else if wordReq != nil {
+					a.startWordPDFFileExport(wordReq.state, wordReq.key, result.path, wordReq.orientation)
+				} else if sheetReq != nil {
+					a.startSpreadsheetPDFFileExport(sheetReq.state, sheetReq.sheet, result.path, sheetReq.orientation)
 				} else {
-					a.startWordPDFFileExport(request.state, request.key, result.path)
+					a.status = "PDF 导出状态已过期，请重新导出"
 				}
 			case commandShareCopy:
 				request := a.wordShareCopyRequest

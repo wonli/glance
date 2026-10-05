@@ -115,6 +115,8 @@ type documentSessionState struct {
 	wordPendingPasteRunID               string
 	wordPendingPasteText                string
 	jsonEditor                          widget.Editor
+	jsonToolbarActionList               widget.List
+	jsonToolbarActionButtons            map[string]*widget.Clickable
 	cellButtons                         map[string]*widget.Clickable
 	sheetButtons                        map[string]*widget.Clickable
 	blockButtons                        map[int]*widget.Clickable

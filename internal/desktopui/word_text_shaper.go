@@ -244,10 +244,10 @@ func (s *wordTextShaper) ResolveSpreadsheetFont(style document.CellStyle, text s
 		return "", err
 	}
 	wordStyle := document.WordTextStyle{
-		FontFamilies: style.FontFamily,
-		Bold:         style.Bold,
-		Italic:       style.Italic,
-		FontSize:     style.FontSize,
+		FontFamily: style.FontFamily,
+		Bold:       style.Bold,
+		Italic:     style.Italic,
+		FontSize:   style.FontSize,
 	}
 	if text != "" {
 		fontMap := &wordTextFontMap{owner: s, candidates: s.orderedFonts(wordStyle)}

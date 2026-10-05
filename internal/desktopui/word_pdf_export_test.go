@@ -8,6 +8,7 @@ import (
 
 	"github.com/SalvioniDigitalSolutions/gopdf"
 
+	"glance/internal/document"
 	"glance/internal/format/docx"
 	"glance/internal/wordlayout"
 )
@@ -96,6 +97,10 @@ func TestWordPDFExportRibbonUsesPDFPickerAndCancelPreservesSource(t *testing.T) 
 		t.Fatal("Word File > Export PDF should be enabled for a DOCX")
 	}
 	app.executeWordToolbarAction("export-pdf")
+	if !app.modal.Visible || app.modal.Title != "导出 PDF 预览" {
+		t.Fatalf("expected PDF preview before picker, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("confirm")
 	select {
 	case call := <-pickerCalls:
 		if call.kind != commandExportPDF || call.format != "pdf" {
@@ -113,6 +118,49 @@ func TestWordPDFExportRibbonUsesPDFPickerAndCancelPreservesSource(t *testing.T) 
 	app.processAsyncResults()
 	if app.status != "已取消导出 PDF" || !word.Dirty() || state.path != "source.docx" {
 		t.Fatalf("cancel result: status=%q dirty=%v source path=%q", app.status, word.Dirty(), state.path)
+	}
+}
+
+func TestWordPDFPreviewReflowsLandscapeBeforeExport(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state := newDocumentSessionState("source.docx")
+	state.word = word
+	state.documentID = "word-preview-orientation"
+	state.setWordBlocks(word.WordBlocks())
+	key, _, ok := currentWordLayoutKey(state)
+	if !ok {
+		t.Fatal("could not build Word layout key")
+	}
+	state.wordLayoutAcceptedKey = &key
+	state.wordLayoutResult = &wordlayout.Result{CanPreview: true, Pages: []wordlayout.PageScene{{Index: 0, Clip: wordlayout.Rect{WidthPT: 595, HeightPT: 842}}}}
+	app := &App{documentSessionState: state, shutdown: make(chan struct{})}
+	app.openWordPDFExportPreview(state, key)
+	if err := app.updateWordPreviewOrientation("landscape"); err != nil {
+		t.Fatal(err)
+	}
+	if !app.pdfExportPreview.wordPreviewPending {
+		t.Fatal("orientation reflow should be pending")
+	}
+	app.modal.OnAction("confirm")
+	if !app.modal.Visible || app.fileCommandRunning {
+		t.Fatal("export proceeded before landscape preview was ready")
+	}
+	select {
+	case result := <-app.wordPDFPreviewResults:
+		app.applyWordPDFPreviewResult(result)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Word preview reflow")
+	}
+	if app.pdfExportPreview.wordPreviewPending || app.pdfExportPreview.Orientation != "landscape" {
+		t.Fatalf("preview orientation = %q, pending=%v, status=%q", app.pdfExportPreview.Orientation, app.pdfExportPreview.wordPreviewPending, app.status)
+	}
+	if app.pdfExportPreview.wordResult == nil || len(app.pdfExportPreview.wordResult.Pages) == 0 ||
+		app.pdfExportPreview.wordResult.Pages[0].Clip.WidthPT <= app.pdfExportPreview.wordResult.Pages[0].Clip.HeightPT {
+		t.Fatal("landscape preview did not produce a landscape page")
 	}
 }
 
@@ -148,7 +196,7 @@ func TestWordPDFExportWritesValidatedPDFWithoutChangingDOCX(t *testing.T) {
 		shutdown:             make(chan struct{}),
 		wordPDFFontSource:    nil,
 	}
-	app.startWordPDFFileExport(state, key, path)
+	app.startWordPDFFileExport(state, key, path, "portrait")
 	var result wordPDFExportResult
 	select {
 	case result = <-app.wordPDFExportResults:
@@ -216,5 +264,104 @@ func TestWordDraftEpochChangesOnlyWhenDraftValueChanges(t *testing.T) {
 	captureWordTextDraft(state, "run-1", "old")
 	if wordHasPendingTextDrafts(state) {
 		t.Fatal("committed text value left a pending draft")
+	}
+}
+
+func TestWordPDFExportWithTextAndCJK(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+
+	shaper, err := newWordTextShaper()
+	if err != nil {
+		t.Skipf("cannot init text shaper: %v", err)
+	}
+
+	state := newDocumentSessionState("source.docx")
+	state.word = word
+	state.documentID = "word-cjk-export"
+	state.setWordBlocks(word.WordBlocks())
+	key, _, ok := currentWordLayoutKey(state)
+	if !ok {
+		t.Fatal("could not build Word layout key")
+	}
+
+	shaped, err := shaper.Shape("Word测试内容", document.WordTextStyle{FontSize: 12})
+	if err != nil {
+		t.Skipf("shape error: %v", err)
+	}
+	if len(shaped.Glyphs) == 0 {
+		t.Skip("no glyphs shaped")
+	}
+
+	glyphs := make([]wordlayout.PositionedGlyph, len(shaped.Glyphs))
+	var advance float64
+	for i, g := range shaped.Glyphs {
+		glyphs[i] = wordlayout.PositionedGlyph{
+			FontKey:    g.FontKey,
+			GlyphID:    g.GlyphID,
+			RuneStart:  g.RuneStart,
+			RuneEnd:    g.RuneEnd,
+			XPT:        20 + advance,
+			YPT:        40,
+			AdvanceXPT: g.AdvanceXPT,
+		}
+		advance += g.AdvanceXPT
+	}
+
+	state.wordLayoutAcceptedKey = &key
+	state.wordLayoutResult = &wordlayout.Result{
+		DocumentID: key.DocumentID, Revision: key.Revision, CanPreview: true,
+		Pages: []wordlayout.PageScene{{
+			Index: 0,
+			Clip:  wordlayout.Rect{WidthPT: 595, HeightPT: 842},
+			Text: []wordlayout.TextFragment{{
+				RunID:       "run-1",
+				Text:        "Word测试内容",
+				RuneEnd:     len([]rune("Word测试内容")),
+				Style:       document.WordTextStyle{FontSize: 12},
+				XPT:         20,
+				BaselineYPT: 40,
+				Glyphs:      glyphs,
+			}},
+		}},
+	}
+
+	path := filepath.Join(t.TempDir(), "export-cjk.pdf")
+	app := &App{
+		documentSessionState: state,
+		activeTabID:          "word-cjk-export",
+		wordPDFExportResults: make(chan wordPDFExportResult, 1),
+		shutdown:             make(chan struct{}),
+		wordPDFFontSource:    shaper,
+	}
+
+	app.startWordPDFFileExport(state, key, path, "portrait")
+	var result wordPDFExportResult
+	select {
+	case result = <-app.wordPDFExportResults:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for PDF export")
+	}
+	app.applyWordPDFExportResult(result)
+	if result.err != nil {
+		t.Fatalf("PDF export error: %v", result.err)
+	}
+
+	reader, err := gopdf.Open(path)
+	if err != nil {
+		t.Fatalf("open generated PDF: %v", err)
+	}
+	if reader.NumPages() != 1 {
+		t.Fatalf("generated PDF pages = %d, want 1", reader.NumPages())
+	}
+	text, err := reader.PageText(0)
+	if err != nil {
+		t.Fatalf("extract text: %v", err)
+	}
+	if text != "Word测试内容" {
+		t.Fatalf("extracted text = %q, want 'Word测试内容'", text)
 	}
 }

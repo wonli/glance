@@ -15,8 +15,9 @@ import (
 )
 
 type wordPDFPickerRequest struct {
-	state *documentSessionState
-	key   wordLayoutKey
+	state       *documentSessionState
+	key         wordLayoutKey
+	orientation string
 }
 
 type wordPDFExportResult struct {
@@ -96,10 +97,10 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 	}
 	warnings := wordLayoutWarnings(*state.wordLayoutResult)
 	if len(warnings) == 0 {
-		a.startWordPDFSavePicker(state, key)
+		a.openWordPDFExportPreview(state, key)
 		return
 	}
-	message := fmt.Sprintf("当前分页有 %d 项提示：\n%s\n\n确认后将按照此分页结果导出 PDF。", len(warnings), strings.Join(warnings, "\n"))
+	message := fmt.Sprintf("当前分页有 %d 项提示：\n%s\n\n确认后将进入 PDF 导出预览。", len(warnings), strings.Join(warnings, "\n"))
 	a.showConfirmDialog("导出 PDF 前确认版式提示", message, modalDialogWarningConfirmStyle, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
@@ -110,12 +111,84 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 			a.status = "文档在确认期间已更改，请重新导出 PDF"
 			return
 		}
-		a.startWordPDFSavePicker(state, key)
+		a.openWordPDFExportPreview(state, key)
 	}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", Label: "继续", Style: modalDialogActionPrimary})
 	a.status = "等待确认分页提示"
 }
 
-func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayoutKey, path string) {
+func (a *App) layoutWordForExport(state *documentSessionState, key wordLayoutKey, blocks []document.WordBlock, layoutData document.WordLayoutData, orientation string) (wordlayout.Result, error) {
+	if state.wordLayoutResult == nil {
+		return wordlayout.Result{}, errors.New("当前分页结果不可用")
+	}
+	preview := &a.pdfExportPreview
+	if preview.wordState == state && preview.wordKey == key && preview.Orientation == orientation && preview.wordResult != nil && preview.wordResult.CanPreview {
+		return cloneWordLayoutResult(*preview.wordResult), nil
+	}
+	pageResult := cloneWordLayoutResult(*state.wordLayoutResult)
+	if orientation == "" {
+		return pageResult, nil
+	}
+	isLandscape := strings.ToLower(orientation) == "landscape"
+	currLandscape := false
+	if len(pageResult.Pages) > 0 && pageResult.Pages[0].Clip.WidthPT > pageResult.Pages[0].Clip.HeightPT {
+		currLandscape = true
+	}
+	if isLandscape == currLandscape {
+		return pageResult, nil
+	}
+
+	w, h := 595.28, 841.89
+	orient := "portrait"
+	if isLandscape {
+		w, h = 841.89, 595.28
+		orient = "landscape"
+	}
+	setup := document.WordPageSetup{
+		WidthPT: w, HeightPT: h, Orientation: orient,
+		MarginTopPT: 72, MarginRightPT: 72, MarginBottomPT: 72, MarginLeftPT: 72,
+		Set: document.WordPageWidthSet | document.WordPageHeightSet | document.WordPageOrientationSet,
+	}
+	targetLayoutData := layoutData
+	if len(targetLayoutData.Sections) > 0 {
+		sections := make([]document.WordSection, len(targetLayoutData.Sections))
+		copy(sections, targetLayoutData.Sections)
+		sections[0].PageSetup.Orientation = orient
+		sections[0].PageSetup.Set |= document.WordPageOrientationSet
+		if isLandscape && sections[0].PageSetup.WidthPT < sections[0].PageSetup.HeightPT {
+			sections[0].PageSetup.WidthPT, sections[0].PageSetup.HeightPT = sections[0].PageSetup.HeightPT, sections[0].PageSetup.WidthPT
+		} else if !isLandscape && sections[0].PageSetup.WidthPT > sections[0].PageSetup.HeightPT {
+			sections[0].PageSetup.WidthPT, sections[0].PageSetup.HeightPT = sections[0].PageSetup.HeightPT, sections[0].PageSetup.WidthPT
+		}
+		targetLayoutData.Sections = sections
+	}
+
+	engine := a.wordLayoutEngine
+	if engine == nil {
+		if ts, ok := a.wordPDFFontSource.(wordlayout.TextShaper); ok {
+			engine = wordlayout.NewEngine(ts)
+			a.wordLayoutEngine = engine
+		}
+	}
+	if engine != nil {
+		res, err := engine.Layout(context.Background(), wordlayout.Input{
+			DocumentID:       state.documentID,
+			Revision:         key.Revision,
+			Blocks:           blocks,
+			Layout:           targetLayoutData,
+			DefaultPageSetup: setup,
+		})
+		if err != nil {
+			return wordlayout.Result{}, err
+		}
+		if !res.CanPreview {
+			return wordlayout.Result{}, errors.New(blockingWordLayoutMessage(res))
+		}
+		return res, nil
+	}
+	return wordlayout.Result{}, errors.New("无法按所选方向重新排版")
+}
+
+func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayoutKey, path string, orientation string) {
 	if state == nil || state.word == nil || state.closed.Load() {
 		a.status = "PDF 导出状态已过期，请重新导出"
 		return
@@ -153,14 +226,19 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		a.status = "文档正在处理其他操作，请稍后重试"
 		return
 	}
-	pageResult := cloneWordLayoutResult(*state.wordLayoutResult)
 	blocks := cloneWordBlockSnapshot(wordBlocksForState(state))
 	unlock := lockSessionAdapterRead(state)
 	layoutData := reader.WordLayoutData()
 	unlock()
+	revision := state.wordRevisionAtomic.Load()
+	pageResult, layoutErr := a.layoutWordForExport(state, key, blocks, layoutData, orientation)
+	if layoutErr != nil {
+		state.finishOperation(token)
+		a.status = "PDF 导出前重新排版失败：" + layoutErr.Error()
+		return
+	}
 	doc := state.word
 	fontSource := a.wordPDFFontSource
-	revision := state.wordRevisionAtomic.Load()
 	draftEpoch := state.wordDraftEpoch.Load()
 	ctx, cancel := context.WithCancel(context.Background())
 	state.wordPDFExportCancel = cancel

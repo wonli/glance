@@ -120,6 +120,8 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 		wordToolbarTabList:       widget.List{List: layout.List{Axis: layout.Horizontal}},
 		wordToolbarActionList:    widget.List{List: layout.List{Axis: layout.Horizontal}},
 		wordToolbarActionButtons: make(map[string]*widget.Clickable),
+		jsonToolbarActionList:    widget.List{List: layout.List{Axis: layout.Horizontal}},
+		jsonToolbarActionButtons: make(map[string]*widget.Clickable),
 		wordNavigationButtons:    make(map[string]*widget.Clickable),
 		wordRunEditors:           make(map[string]*widget.Editor),
 		wordObjectButtons:        make(map[string]*widget.Clickable),

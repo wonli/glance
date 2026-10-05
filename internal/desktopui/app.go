@@ -130,20 +130,23 @@ type App struct {
 	shutdown                chan struct{}
 	shutdownOnce            sync.Once
 
-	wordDocumentInfoResults   chan wordDocumentInfoResult
-	wordLayoutResults         chan wordLayoutResult
-	wordLayoutEngine          wordLayoutEngine
+	wordDocumentInfoResults      chan wordDocumentInfoResult
+	wordLayoutResults            chan wordLayoutResult
+	wordLayoutEngine             wordLayoutEngine
 	wordPDFExportResults         chan wordPDFExportResult
 	wordPDFPickerRequest         *wordPDFPickerRequest
 	spreadsheetPDFExportResults  chan spreadsheetPDFExportResult
 	spreadsheetPDFPickerRequest  *spreadsheetPDFPickerRequest
-	wordShareCopyResults      chan wordShareCopyResult
-	wordShareCopyRequest      *wordShareCopyPickerRequest
-	wordPDFFontSource         wordpdf.FontSource
-	wordPrinter               printservice.Printer
-	wordPrintResults          chan wordPrintResult
-	wordVersionHistoryResults chan wordVersionHistoryResult
-	wordVersionRestoreResults chan wordVersionRestoreResult
+	pdfExportPreview             pdfExportPreviewState
+	spreadsheetPDFPreviewResults chan spreadsheetPDFPreviewResult
+	wordPDFPreviewResults        chan wordPDFPreviewResult
+	wordShareCopyResults         chan wordShareCopyResult
+	wordShareCopyRequest         *wordShareCopyPickerRequest
+	wordPDFFontSource            wordpdf.FontSource
+	wordPrinter                  printservice.Printer
+	wordPrintResults             chan wordPrintResult
+	wordVersionHistoryResults    chan wordVersionHistoryResult
+	wordVersionRestoreResults    chan wordVersionRestoreResult
 
 	wordVersionHistoryVisible     bool
 	wordVersionHistoryLoading     bool
@@ -191,6 +194,8 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		fileCommandResults:           make(chan fileCommandResult, 1),
 		wordPDFExportResults:         make(chan wordPDFExportResult, 1),
 		spreadsheetPDFExportResults:  make(chan spreadsheetPDFExportResult, 1),
+		spreadsheetPDFPreviewResults: make(chan spreadsheetPDFPreviewResult, 1),
+		wordPDFPreviewResults:        make(chan wordPDFPreviewResult, 1),
 		wordShareCopyResults:         make(chan wordShareCopyResult, 1),
 		wordPrinter:                  printservice.New(),
 		wordPrintResults:             make(chan wordPrintResult, 1),

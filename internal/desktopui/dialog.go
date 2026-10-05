@@ -39,25 +39,28 @@ type modalDialogConfirmStyle struct {
 
 // modalDialog is a reusable, stateful modal surface for app-level prompts.
 type modalDialog struct {
-	Visible         bool
-	Title           string
-	Message         string
-	Actions         []modalDialogAction
-	Input           widget.Editor
-	SecondInput     widget.Editor
-	FormInputs      [5]widget.Editor
-	FormLabels      [5]string
-	FormHints       [5]string
-	FormInputCount  int
-	InputHint       string
-	SecondInputHint string
-	HasInput        bool
-	HasSecondInput  bool
-	HasForm         bool
-	HasConfirmStyle bool
-	ConfirmStyle    modalDialogConfirmStyle
-	scrim           widget.Clickable
-	OnAction        func(string)
+	Visible               bool
+	Title                 string
+	Message               string
+	Actions               []modalDialogAction
+	Input                 widget.Editor
+	SecondInput           widget.Editor
+	FormInputs            [5]widget.Editor
+	FormLabels            [5]string
+	FormHints             [5]string
+	FormInputCount        int
+	InputHint             string
+	SecondInputHint       string
+	HasInput              bool
+	HasSecondInput        bool
+	HasForm               bool
+	HasConfirmStyle       bool
+	ConfirmStyle          modalDialogConfirmStyle
+	CardWidthDp           int
+	CustomLayout          func(gtx layout.Context) layout.Dimensions
+	CustomActionsInLayout bool
+	scrim                 widget.Clickable
+	OnAction              func(string)
 }
 
 func resolveDialogActionStyle(action modalDialogActionSpec) modalDialogActionStyle {
@@ -85,6 +88,9 @@ func (d *modalDialog) Show(title, message string, onAction func(string), actions
 	d.HasInput = false
 	d.HasSecondInput = false
 	d.HasForm = false
+	d.CardWidthDp = 0
+	d.CustomLayout = nil
+	d.CustomActionsInLayout = false
 	if style, ok := defaultConfirmStyleForTitle(title); ok {
 		d.HasConfirmStyle = true
 		d.ConfirmStyle = style
@@ -117,6 +123,12 @@ func (d *modalDialog) ShowConfirm(title, message string, style modalDialogConfir
 	d.Show(title, message, onAction, actions...)
 	d.HasConfirmStyle = true
 	d.ConfirmStyle = style
+}
+
+func (d *modalDialog) ShowCustom(title, message string, cardWidthDp int, customLayout func(gtx layout.Context) layout.Dimensions, onAction func(string), actions ...modalDialogActionSpec) {
+	d.Show(title, message, onAction, actions...)
+	d.CardWidthDp = cardWidthDp
+	d.CustomLayout = customLayout
 }
 
 func (d *modalDialog) ShowForm(title, message string, labels, hints, initial []string, onAction func(string), actions ...modalDialogActionSpec) {
