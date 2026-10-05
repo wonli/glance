@@ -212,15 +212,14 @@ func homeTableColumns(gtx layout.Context, theme *material.Theme, header bool, ro
 			if header {
 				return textStyle(sortLabel, false)(gtx)
 			}
-			meta := row.app.homeMetadata[row.item.Path]
-			modified := meta.modified
-			if modified.IsZero() {
-				modified = row.item.OpenedAt
+			opened := row.item.OpenedAt
+			if opened.IsZero() && row.app != nil && row.app.homeMetadata != nil {
+				opened = row.app.homeMetadata[row.item.Path].modified
 			}
-			if modified.IsZero() {
+			if opened.IsZero() {
 				return textStyle("—", false)(gtx)
 			}
-			return textStyle(formatHomeModified(modified), false)(gtx)
+			return textStyle(formatHomeModified(opened), false)(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.X, gtx.Constraints.Max.X = sizeWidth, sizeWidth
@@ -289,15 +288,18 @@ func (a *App) homeVisibleRecents(applyFilter bool) []workspace.Recent {
 	}
 	if applyFilter {
 		sort.SliceStable(filtered, func(i, j int) bool {
-			left := a.homeMetadata[filtered[i].Path].modified
-			if left.IsZero() {
-				left = filtered[i].OpenedAt
+			left := filtered[i].OpenedAt
+			if left.IsZero() && a != nil && a.homeMetadata != nil {
+				left = a.homeMetadata[filtered[i].Path].modified
 			}
-			right := a.homeMetadata[filtered[j].Path].modified
-			if right.IsZero() {
-				right = filtered[j].OpenedAt
+			right := filtered[j].OpenedAt
+			if right.IsZero() && a != nil && a.homeMetadata != nil {
+				right = a.homeMetadata[filtered[j].Path].modified
 			}
-			if a.homeSortModifiedDesc {
+			if left.Equal(right) {
+				return filtered[i].Path < filtered[j].Path
+			}
+			if a != nil && a.homeSortOpenedDesc {
 				return left.After(right)
 			}
 			return left.Before(right)
@@ -310,10 +312,10 @@ func (a *App) homeVisibleRecents(applyFilter bool) []workspace.Recent {
 }
 
 func (a *App) homeSortLabel() string {
-	if a.homeSortModifiedDesc {
-		return "修改时间 ↓"
+	if a != nil && a.homeSortOpenedDesc {
+		return "打开时间 ↓"
 	}
-	return "修改时间 ↑"
+	return "打开时间 ↑"
 }
 
 func (a *App) toggleHomeFavorite(path string) {

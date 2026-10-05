@@ -27,13 +27,15 @@ type modalDialogAction struct {
 type modalDialogActionStyle uint8
 
 const (
-	modalDialogActionPrimary modalDialogActionStyle = iota
+	modalDialogActionDefault modalDialogActionStyle = iota
+	modalDialogActionPrimary
 	modalDialogActionSecondary
 	modalDialogActionDanger
 )
 
 type modalDialogConfirmStyle struct {
 	Icon           string
+	IconFamily     string
 	IconBackground color.NRGBA
 	IconForeground color.NRGBA
 }

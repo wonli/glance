@@ -207,6 +207,9 @@ func homeSearchField(gtx layout.Context, theme *material.Theme, editor *widget.E
 	if scale > 1 {
 		scale = 1
 	}
+	if scale <= 0 {
+		scale = 1
+	}
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(searchWidth, searchHeight), image.Pt(searchWidth, searchHeight)
 	return homeRoundedPanel(gtx, homeSurface, color.NRGBA{R: 224, G: 228, B: 233, A: 255}, unit.Dp(10), func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,

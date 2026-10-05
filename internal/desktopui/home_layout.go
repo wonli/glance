@@ -502,7 +502,7 @@ func (a *App) layoutHomeFilters(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if a.homeSortButton.Clicked(gtx) {
-				a.homeSortModifiedDesc = !a.homeSortModifiedDesc
+				a.homeSortOpenedDesc = !a.homeSortOpenedDesc
 			}
 			return layout.Inset{Left: unit.Dp(18 * scale)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return homeSortButton(gtx, &a.homeSortButton, 20*scale, 44*scale)
@@ -525,7 +525,8 @@ func (a *App) layoutHomeFiltersCompact(gtx layout.Context, width int) layout.Dim
 	if scale <= 0 {
 		scale = 1
 	}
-	rowHeight := gtx.Dp(unit.Dp(44 * scale))
+	rowHeightDp := 44 * scale
+	rowHeight := gtx.Dp(unit.Dp(rowHeightDp))
 	rowGap := gtx.Dp(unit.Dp(8))
 	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = rowHeight*2+rowGap, rowHeight*2+rowGap
@@ -535,9 +536,11 @@ func (a *App) layoutHomeFiltersCompact(gtx layout.Context, width int) layout.Dim
 		countText = "收藏"
 	}
 	countText = fmt.Sprintf("%s  %d 个文件", countText, len(items))
-	searchWidth := gtx.Dp(unit.Dp(240 * scale))
-	if maxSearchWidth := int(float32(width) * 0.48); searchWidth > maxSearchWidth {
-		searchWidth = maxSearchWidth
+	searchWidthDp := 240 * scale
+	if gtx.Metric.PxPerDp > 0 {
+		if maxSearchWidthDp := (float32(width) / gtx.Metric.PxPerDp) * 0.48; searchWidthDp > maxSearchWidthDp {
+			searchWidthDp = maxSearchWidthDp
+		}
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -549,14 +552,14 @@ func (a *App) layoutHomeFiltersCompact(gtx layout.Context, width int) layout.Dim
 			return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return homeSearchField(gtx, a.theme, &a.homeSearch, float32(searchWidth), float32(rowHeight))
+						return homeSearchField(gtx, a.theme, &a.homeSearch, searchWidthDp, rowHeightDp)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(10 * scale)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							if a.homeSortButton.Clicked(gtx) {
-								a.homeSortModifiedDesc = !a.homeSortModifiedDesc
+								a.homeSortOpenedDesc = !a.homeSortOpenedDesc
 							}
-							return homeSortButton(gtx, &a.homeSortButton, 20*scale, float32(rowHeight))
+							return homeSortButton(gtx, &a.homeSortButton, 20*scale, rowHeightDp)
 						})
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),

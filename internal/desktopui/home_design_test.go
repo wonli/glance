@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"path/filepath"
@@ -248,13 +249,13 @@ func TestHomeRecentTableColumnsFitMinimumWindowWidth(t *testing.T) {
 	if metrics.nameWidth < 350 {
 		t.Fatalf("minimum-width name column=%dpx; want readable width of at least 350px", metrics.nameWidth)
 	}
-	dims := homeTableColumns(gtx, material.NewTheme(), true, nil, "修改时间 ↓")
+	dims := homeTableColumns(gtx, material.NewTheme(), true, nil, "打开时间 ↓")
 	if dims.Size.X > 506 {
 		t.Fatalf("minimum-width home table header=%dpx; want it to fit inside the 506px inner width", dims.Size.X)
 	}
 }
 
-func TestHomeRecentsSortMatchesModifiedTimeHeader(t *testing.T) {
+func TestHomeRecentsSortMatchesOpenedTimeHeader(t *testing.T) {
 	store, err := workspace.Open(filepath.Join(t.TempDir(), "workspace.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -276,20 +277,84 @@ func TestHomeRecentsSortMatchesModifiedTimeHeader(t *testing.T) {
 			"/tmp/older.xlsx": {modified: olderOpened, size: 999},
 			"/tmp/newer.xlsx": {modified: newerOpened, size: 1},
 		},
-		homeSortModifiedDesc: true,
+		homeSortOpenedDesc: true,
 	}
-	if got := app.homeSortLabel(); got != "修改时间 ↓" {
-		t.Fatalf("descending sort header=%q; want 修改时间 ↓", got)
-	}
-	if got := app.homeVisibleRecents(true)[0].Path; got != "/tmp/newer.xlsx" {
-		t.Fatalf("descending modified-time first result=%q; want /tmp/newer.xlsx", got)
-	}
-	app.homeSortModifiedDesc = false
-	if got := app.homeSortLabel(); got != "修改时间 ↑" {
-		t.Fatalf("ascending sort header=%q; want 修改时间 ↑", got)
+	if got := app.homeSortLabel(); got != "打开时间 ↓" {
+		t.Fatalf("descending sort header=%q; want 打开时间 ↓", got)
 	}
 	if got := app.homeVisibleRecents(true)[0].Path; got != "/tmp/older.xlsx" {
-		t.Fatalf("ascending modified-time first result=%q; want /tmp/older.xlsx", got)
+		t.Fatalf("descending opened-time first result=%q; want /tmp/older.xlsx", got)
+	}
+	app.homeSortOpenedDesc = false
+	if got := app.homeSortLabel(); got != "打开时间 ↑" {
+		t.Fatalf("ascending sort header=%q; want 打开时间 ↑", got)
+	}
+	if got := app.homeVisibleRecents(true)[0].Path; got != "/tmp/newer.xlsx" {
+		t.Fatalf("ascending opened-time first result=%q; want /tmp/newer.xlsx", got)
+	}
+}
+
+func TestHomeRecentsFallbackToModifiedWhenOpenedAtIsZero(t *testing.T) {
+	newerMod := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	olderMod := newerMod.Add(-time.Hour)
+	store, err := workspace.Open(filepath.Join(t.TempDir(), "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	collection, err := workspace.OpenCollection(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Zero OpenedAt items in collection
+	collection.StageRecents([]workspace.Recent{
+		{Path: "/tmp/mod_older.xlsx", Kind: "xlsx", OpenedAt: time.Time{}},
+		{Path: "/tmp/mod_newer.xlsx", Kind: "xlsx", OpenedAt: time.Time{}},
+	})
+	app := &App{
+		desktopRuntime: &desktopRuntime{collection: collection},
+		homeMetadata: map[string]homeFileMetadata{
+			"/tmp/mod_older.xlsx": {modified: olderMod, size: 100},
+			"/tmp/mod_newer.xlsx": {modified: newerMod, size: 200},
+		},
+		homeSortOpenedDesc: true,
+	}
+	results := app.homeVisibleRecents(true)
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 recents, got %d", len(results))
+	}
+}
+
+func TestHomeFiltersCompactSearchFieldDoesNotDistort(t *testing.T) {
+	for _, pxPerDp := range []float32{1, 2, 3} {
+		t.Run(fmt.Sprintf("PxPerDp_%v", pxPerDp), func(t *testing.T) {
+			app := New(nil, "")
+			var ops op.Ops
+			width := int(500 * pxPerDp)
+			scale := float32(width) / float32(int(650*pxPerDp))
+			if scale > 1 {
+				scale = 1
+			}
+			rowHeightDp := 44 * scale
+			gtx := layout.Context{
+				Ops:    &ops,
+				Metric: unit.Metric{PxPerDp: pxPerDp, PxPerSp: pxPerDp},
+			}
+			rowHeightPx := gtx.Dp(unit.Dp(rowHeightDp))
+			expectedTotalHeightPx := rowHeightPx*2 + gtx.Dp(unit.Dp(8))
+			gtx.Constraints = layout.Exact(image.Pt(width, expectedTotalHeightPx))
+
+			dims := app.layoutHomeFiltersCompact(gtx, width)
+			if dims.Size.Y != expectedTotalHeightPx {
+				t.Fatalf("compact filters height=%dpx; want %dpx for PxPerDp=%v", dims.Size.Y, expectedTotalHeightPx, pxPerDp)
+			}
+
+			// Directly verify search field height matches rowHeightPx, not rowHeightPx * pxPerDp
+			searchDims := homeSearchField(gtx, app.theme, &app.homeSearch, 240*scale, rowHeightDp)
+			if searchDims.Size.Y != rowHeightPx {
+				t.Fatalf("homeSearchField height=%dpx; want rowHeightPx=%dpx (PxPerDp=%v)", searchDims.Size.Y, rowHeightPx, pxPerDp)
+			}
+		})
 	}
 }
 

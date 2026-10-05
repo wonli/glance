@@ -90,7 +90,7 @@ type App struct {
 	homeSection             homeSection
 	homeTypeFilter          string
 	homeSearch              widget.Editor
-	homeSortModifiedDesc    bool
+	homeSortOpenedDesc      bool
 	homeContentList         widget.List
 	homeActionButtons       map[string]*widget.Clickable
 	homeNavButtons          map[string]*widget.Clickable
@@ -202,7 +202,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		tabCloseButtons:              make(map[string]*widget.Clickable),
 		homeSection:                  homeSectionRecent,
 		homeTypeFilter:               "全部",
-		homeSortModifiedDesc:         true,
+		homeSortOpenedDesc:           true,
 		homeActionButtons:            make(map[string]*widget.Clickable),
 		homeNavButtons:               make(map[string]*widget.Clickable),
 		homeFilterButtons:            make(map[string]*widget.Clickable),
