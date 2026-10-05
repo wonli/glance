@@ -536,23 +536,22 @@ func (a *App) layoutHomeFiltersCompact(gtx layout.Context, width int) layout.Dim
 		countText = "收藏"
 	}
 	countText = fmt.Sprintf("%s  %d 个文件", countText, len(items))
-	searchWidthDp := 240 * scale
-	if gtx.Metric.PxPerDp > 0 {
-		if maxSearchWidthDp := (float32(width) / gtx.Metric.PxPerDp) * 0.48; searchWidthDp > maxSearchWidthDp {
-			searchWidthDp = maxSearchWidthDp
-		}
-	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return homeFilterGroup(gtx, a.theme, a.homeFilterButtons, &a.homeTypeFilter, scale, func(filter string) {
-				a.homeTypeFilter = filter
-			})
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return homeFilterGroup(gtx, a.theme, a.homeFilterButtons, &a.homeTypeFilter, scale, func(filter string) {
+						a.homeTypeFilter = filter
+					})
+				}),
+			)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return homeSearchField(gtx, a.theme, &a.homeSearch, searchWidthDp, rowHeightDp)
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return homeSearchField(gtx, a.theme, &a.homeSearch, 0, rowHeightDp)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(10 * scale)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -562,10 +561,9 @@ func (a *App) layoutHomeFiltersCompact(gtx layout.Context, width int) layout.Dim
 							return homeSortButton(gtx, &a.homeSortButton, 20*scale, rowHeightDp)
 						})
 					}),
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						gtx.Constraints.Min.Y = 0
-						return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(10 * scale), Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return homeRecentCountStyle(a.theme, countText, scale).Layout(gtx)
 						})
 					}),

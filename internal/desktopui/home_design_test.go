@@ -358,6 +358,35 @@ func TestHomeFiltersCompactSearchFieldDoesNotDistort(t *testing.T) {
 	}
 }
 
+func TestHomeFiltersCompactLayoutPositions(t *testing.T) {
+	app := New(nil, "")
+	var ops op.Ops
+	width := 700
+	gtx := layout.Context{
+		Ops:         &ops,
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Exact(image.Pt(width, 96)),
+	}
+	dims := app.layoutHomeFiltersCompact(gtx, width)
+	if dims.Size.X != width {
+		t.Fatalf("compact filters width=%d; want %d", dims.Size.X, width)
+	}
+
+	// Verify homeSearchField with width=0 fills available constraint width
+	searchGtx := layout.Context{
+		Ops:         &ops,
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Exact(image.Pt(450, 44)),
+	}
+	searchDims := homeSearchField(searchGtx, app.theme, &app.homeSearch, 0, 44)
+	if searchDims.Size.X != 450 {
+		t.Fatalf("fill-width search box width=%d; want 450", searchDims.Size.X)
+	}
+	if searchDims.Size.Y != 44 {
+		t.Fatalf("fill-width search box height=%d; want 44", searchDims.Size.Y)
+	}
+}
+
 func TestHomeSearchCopyAndOpenCardOnlyAdvertiseImplementedActions(t *testing.T) {
 	if homeSearchPlaceholder != "搜索文件名..." {
 		t.Fatalf("home search placeholder=%q; want filename-only copy", homeSearchPlaceholder)

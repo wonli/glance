@@ -202,15 +202,22 @@ func homeFilterWidth(label string) unit.Dp {
 }
 
 func homeSearchField(gtx layout.Context, theme *material.Theme, editor *widget.Editor, width, height float32) layout.Dimensions {
-	searchWidth, searchHeight := gtx.Dp(unit.Dp(width)), gtx.Dp(unit.Dp(height))
+	searchHeight := gtx.Dp(unit.Dp(height))
+	searchWidth := gtx.Constraints.Max.X
 	scale := width / 240
+	if width > 0 {
+		searchWidth = gtx.Dp(unit.Dp(width))
+	} else {
+		scale = float32(searchWidth) / float32(gtx.Dp(unit.Dp(240)))
+	}
 	if scale > 1 {
 		scale = 1
 	}
 	if scale <= 0 {
 		scale = 1
 	}
-	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(searchWidth, searchHeight), image.Pt(searchWidth, searchHeight)
+	gtx.Constraints.Min = image.Pt(searchWidth, searchHeight)
+	gtx.Constraints.Max = image.Pt(searchWidth, searchHeight)
 	return homeRoundedPanel(gtx, homeSurface, color.NRGBA{R: 224, G: 228, B: 233, A: 255}, unit.Dp(10), func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
