@@ -41,6 +41,7 @@ type sharedDocumentSession struct {
 	wordRestoreLaunchClaimed   bool
 	wordLayoutPageCount        atomic.Int64
 	wordExportCommitMu         sync.Mutex
+	spreadsheetExportCommitMu  sync.Mutex
 	documentID                 string
 	wordRevision               uint64
 	path                       string
@@ -72,6 +73,8 @@ type sharedDocumentSession struct {
 	wordPDFExportAfterLayout   bool
 	wordPDFExportRunning       bool
 	wordPDFExportCancel        context.CancelFunc
+	spreadsheetPDFExportRunning bool
+	spreadsheetPDFExportCancel  context.CancelFunc
 	wordPrintAfterDrafts       bool
 	wordPrintAfterLayout       bool
 	wordPrintPreparing         bool

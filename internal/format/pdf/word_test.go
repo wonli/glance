@@ -347,3 +347,35 @@ func withFSType(t *testing.T, original []byte, flag uint16) []byte {
 	t.Fatal("font fixture has no OS/2 table")
 	return nil
 }
+
+func TestWriteWordPDFSupportsTTCFaceIndex(t *testing.T) {
+	ttcPath := "/System/Library/Fonts/Hiragino Sans GB.ttc"
+	fontData, err := os.ReadFile(ttcPath)
+	if err != nil {
+		t.Skip("Hiragino Sans GB TTC not available on this host")
+	}
+	fontKey := ttcPath + "#face=1#instance=0"
+	resources := testResources{fonts: map[string][]byte{fontKey: fontData}}
+	result := wordlayout.Result{CanPreview: true, Pages: []wordlayout.PageScene{{
+		Clip: wordlayout.Rect{WidthPT: 320, HeightPT: 180},
+		Text: []wordlayout.TextFragment{{
+			Text: "测试", RuneEnd: 2, Style: document.WordTextStyle{FontSize: 12}, XPT: 20, BaselineYPT: 40,
+			Glyphs: []wordlayout.PositionedGlyph{
+				{FontKey: fontKey, RuneStart: 0, RuneEnd: 1, XPT: 20, YPT: 40, AdvanceXPT: 12},
+				{FontKey: fontKey, RuneStart: 1, RuneEnd: 2, XPT: 32, YPT: 40, AdvanceXPT: 12},
+			},
+		}},
+	}}}
+	var output bytes.Buffer
+	if err := WriteWordPDF(context.Background(), &output, result, resources, resources); err != nil {
+		t.Fatalf("WriteWordPDF with TTC face 1 failed: %v", err)
+	}
+	reader, err := gopdf.NewReader(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := reader.PageText(0)
+	if err != nil || text != "测试" {
+		t.Fatalf("extracted text = %q, want 测试", text)
+	}
+}

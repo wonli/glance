@@ -237,6 +237,36 @@ func (s *wordTextShaper) FontData(fontKey string) ([]byte, error) {
 	return nil, fmt.Errorf("font key %q: %w", fontKey, wordlayout.ErrUnknownFont)
 }
 
+func (s *wordTextShaper) ResolveSpreadsheetFont(style document.CellStyle, text string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadSystemFonts(); err != nil {
+		return "", err
+	}
+	wordStyle := document.WordTextStyle{
+		FontFamilies: style.FontFamily,
+		Bold:         style.Bold,
+		Italic:       style.Italic,
+		FontSize:     style.FontSize,
+	}
+	if text != "" {
+		fontMap := &wordTextFontMap{owner: s, candidates: s.orderedFonts(wordStyle)}
+		for _, r := range text {
+			face := fontMap.ResolveFace(r)
+			if face != nil {
+				if location, ok := s.idsByFace[face]; ok {
+					return wordFontKey(location), nil
+				}
+			}
+		}
+	}
+	candidates := s.orderedFonts(wordStyle)
+	if len(candidates) > 0 {
+		return wordFontKey(candidates[0].Location), nil
+	}
+	return "", wordlayout.ErrUnknownFont
+}
+
 func (s *wordTextShaper) GlyphOutline(fontKey string, glyphID uint32) (wordlayout.GlyphOutline, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

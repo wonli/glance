@@ -133,8 +133,10 @@ type App struct {
 	wordDocumentInfoResults   chan wordDocumentInfoResult
 	wordLayoutResults         chan wordLayoutResult
 	wordLayoutEngine          wordLayoutEngine
-	wordPDFExportResults      chan wordPDFExportResult
-	wordPDFPickerRequest      *wordPDFPickerRequest
+	wordPDFExportResults         chan wordPDFExportResult
+	wordPDFPickerRequest         *wordPDFPickerRequest
+	spreadsheetPDFExportResults  chan spreadsheetPDFExportResult
+	spreadsheetPDFPickerRequest  *spreadsheetPDFPickerRequest
 	wordShareCopyResults      chan wordShareCopyResult
 	wordShareCopyRequest      *wordShareCopyPickerRequest
 	wordPDFFontSource         wordpdf.FontSource
@@ -188,6 +190,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		openResults:                  make(chan openResult, 1),
 		fileCommandResults:           make(chan fileCommandResult, 1),
 		wordPDFExportResults:         make(chan wordPDFExportResult, 1),
+		spreadsheetPDFExportResults:  make(chan spreadsheetPDFExportResult, 1),
 		wordShareCopyResults:         make(chan wordShareCopyResult, 1),
 		wordPrinter:                  printservice.New(),
 		wordPrintResults:             make(chan wordPrintResult, 1),

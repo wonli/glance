@@ -4,28 +4,21 @@ package pdf
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/SalvioniDigitalSolutions/gopdf"
-	"github.com/go-text/typesetting/font"
 
 	"glance/internal/fileutil"
 	"glance/internal/wordlayout"
 )
 
-// FontSource returns bytes for the exact font face selected by Word layout.
-type FontSource interface {
-	FontData(fontKey string) ([]byte, error)
-}
 
 // ImageSource returns the original image data referenced by a page scene.
 type ImageSource interface {
@@ -113,9 +106,17 @@ func WriteWordPDF(ctx context.Context, dst io.Writer, result wordlayout.Result, 
 			for _, chunk := range chunks {
 				pdfFont := fontCache[chunk.fontKey]
 				if pdfFont == nil {
-					data, err := fonts.FontData(chunk.fontKey)
+					raw, err := fonts.FontData(chunk.fontKey)
 					if err != nil {
 						return fmt.Errorf("load font %q for PDF: %w", chunk.fontKey, err)
+					}
+					faceIndex, err := fontFaceIndex(chunk.fontKey)
+					if err != nil {
+						return err
+					}
+					data, err := extractSFNT(raw, faceIndex)
+					if err != nil {
+						return fmt.Errorf("extract font face %d from %q for PDF: %w", faceIndex, chunk.fontKey, err)
 					}
 					if err := validateFontEmbedding(data, chunk.fontKey); err != nil {
 						return err
@@ -487,189 +488,3 @@ func fragmentTextChunks(fragment wordlayout.TextFragment) ([]textChunk, error) {
 	return chunks, nil
 }
 
-func validateFontCoverage(data []byte, fontKey, text string) error {
-	faceIndex, err := fontFaceIndex(fontKey)
-	if err != nil {
-		return err
-	}
-	faces, err := font.ParseTTC(bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("parse font %q for Unicode mapping: %w", fontKey, err)
-	}
-	if faceIndex >= len(faces) {
-		return fmt.Errorf("font %q requests face %d, but the file has %d faces", fontKey, faceIndex, len(faces))
-	}
-	if faceIndex != 0 {
-		return fmt.Errorf("font %q selects face %d; PDF backend can only embed collection face 0 safely", fontKey, faceIndex)
-	}
-	face := faces[faceIndex]
-	for _, value := range text {
-		if _, ok := face.NominalGlyph(value); !ok {
-			return fmt.Errorf("font %q does not map U+%04X for PDF text extraction", fontKey, value)
-		}
-	}
-	return nil
-}
-
-func fontFaceIndex(key string) (int, error) {
-	marker := "#face="
-	index := strings.Index(key, marker)
-	if index < 0 {
-		return 0, nil
-	}
-	value := key[index+len(marker):]
-	if end := strings.IndexByte(value, '#'); end >= 0 {
-		value = value[:end]
-	}
-	face, err := strconv.Atoi(value)
-	if err != nil || face < 0 {
-		return 0, fmt.Errorf("font key %q has an invalid collection face index", key)
-	}
-	return face, nil
-}
-
-func validateFontEmbedding(data []byte, key string) error {
-	faceIndex, err := fontFaceIndex(key)
-	if err != nil {
-		return err
-	}
-	if faceIndex != 0 {
-		return fmt.Errorf("font %q selects collection face %d; PDF embedding supports face 0 only", key, faceIndex)
-	}
-	if len(data) < 12 {
-		return fmt.Errorf("font %q is too small to inspect embedding permissions", key)
-	}
-	base, err := sfntFaceOffset(data, faceIndex)
-	if err != nil {
-		return fmt.Errorf("inspect font %q embedding permissions: %w", key, err)
-	}
-	count := int(binary.BigEndian.Uint16(data[base+4 : base+6]))
-	if base+12+count*16 > len(data) {
-		return fmt.Errorf("font %q has a truncated table directory", key)
-	}
-	var fsType uint16
-	var hasOS2, hasCFF bool
-	for index := 0; index < count; index++ {
-		record := base + 12 + index*16
-		tag := string(data[record : record+4])
-		offset := int(binary.BigEndian.Uint32(data[record+8 : record+12]))
-		length := int(binary.BigEndian.Uint32(data[record+12 : record+16]))
-		if offset < 0 || length < 0 || offset > len(data) || length > len(data)-offset {
-			return fmt.Errorf("font %q has an invalid %q table", key, tag)
-		}
-		switch tag {
-		case "OS/2":
-			if length < 10 {
-				return fmt.Errorf("font %q has a truncated OS/2 table", key)
-			}
-			fsType = binary.BigEndian.Uint16(data[offset+8 : offset+10])
-			hasOS2 = true
-		case "CFF ", "CFF2":
-			hasCFF = true
-		}
-	}
-	if !hasOS2 {
-		return fmt.Errorf("font %q has no OS/2 embedding permissions; PDF export is blocked", key)
-	}
-	if fsType&0x0002 != 0 {
-		return fmt.Errorf("font %q forbids embedding; PDF export is blocked", key)
-	}
-	if fsType&0x0200 != 0 {
-		return fmt.Errorf("font %q permits bitmap-only embedding; vector PDF text is blocked", key)
-	}
-	if fsType&0x0100 != 0 && !hasCFF {
-		return fmt.Errorf("font %q forbids subsetting, which the PDF backend requires for TrueType fonts", key)
-	}
-	return nil
-}
-
-func sfntFaceOffset(data []byte, faceIndex int) (int, error) {
-	if len(data) >= 12 && string(data[:4]) == "ttcf" {
-		count := int(binary.BigEndian.Uint32(data[8:12]))
-		if faceIndex < 0 || faceIndex >= count || 12+count*4 > len(data) {
-			return 0, errors.New("invalid TrueType collection directory")
-		}
-		offset := int(binary.BigEndian.Uint32(data[12+faceIndex*4 : 16+faceIndex*4]))
-		if offset < 0 || offset+12 > len(data) {
-			return 0, errors.New("invalid TrueType collection face offset")
-		}
-		return offset, nil
-	}
-	if faceIndex != 0 || len(data) < 12 {
-		return 0, errors.New("invalid SFNT face index or header")
-	}
-	return 0, nil
-}
-
-func textColor(value string) gopdf.Color {
-	value = strings.TrimPrefix(strings.TrimSpace(value), "#")
-	if len(value) == 6 {
-		var red, green, blue uint8
-		if _, err := fmt.Sscanf(value, "%02x%02x%02x", &red, &green, &blue); err == nil {
-			return gopdf.RGB(red, green, blue)
-		}
-	}
-	return gopdf.Black
-}
-
-func highlightColor(value string) (gopdf.Color, bool) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "black":
-		return gopdf.Black, true
-	case "blue":
-		return gopdf.RGB(0, 0, 255), true
-	case "cyan":
-		return gopdf.RGB(0, 255, 255), true
-	case "darkblue":
-		return gopdf.RGB(0, 0, 128), true
-	case "darkcyan":
-		return gopdf.RGB(0, 128, 128), true
-	case "darkgray":
-		return gopdf.RGB(128, 128, 128), true
-	case "darkgreen":
-		return gopdf.RGB(0, 128, 0), true
-	case "darkmagenta":
-		return gopdf.RGB(128, 0, 128), true
-	case "darkred":
-		return gopdf.RGB(128, 0, 0), true
-	case "darkyellow":
-		return gopdf.RGB(128, 128, 0), true
-	case "green":
-		return gopdf.RGB(0, 255, 0), true
-	case "lightgray":
-		return gopdf.RGB(192, 192, 192), true
-	case "magenta":
-		return gopdf.RGB(255, 0, 255), true
-	case "red":
-		return gopdf.RGB(255, 0, 0), true
-	case "white":
-		return gopdf.White, true
-	case "yellow":
-		return gopdf.RGB(255, 255, 0), true
-	default:
-		return gopdf.Color{}, false
-	}
-}
-
-func effectiveFontSize(size float64) float64 {
-	if size <= 0 || !finite(size) {
-		return 11
-	}
-	return size
-}
-
-func finite(value float64) bool {
-	return !math.IsNaN(value) && !math.IsInf(value, 0)
-}
-
-type contextWriter struct {
-	ctx context.Context
-	dst io.Writer
-}
-
-func (writer contextWriter) Write(data []byte) (int, error) {
-	if err := writer.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return writer.dst.Write(data)
-}
