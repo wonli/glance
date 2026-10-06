@@ -1341,6 +1341,77 @@ func (a *App) showSpreadsheetProtectSheetDialog() {
 	}
 }
 
+func (a *App) runSpreadsheetWorkbookProtectionCommand(operation string, edit func(document.SpreadsheetWorkbookProtectionEditor) error) {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || state.formatRunning.Load() {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetWorkbookProtectionEditor)
+	if !ok {
+		return
+	}
+	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
+	go func() {
+		unlock := lockSessionAdapterWrite(state)
+		err := edit(editor)
+		unlock()
+		a.completeSessionOperation(state, token, err, true)
+		select {
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case <-a.shutdown:
+		}
+	}()
+}
+
+func (a *App) showSpreadsheetProtectWorkbookDialog() {
+	state := a.documentSessionState
+	if state == nil || state.book == nil {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetWorkbookProtectionEditor)
+	if !ok {
+		return
+	}
+	isProtected, _ := editor.GetWorkbookProtection()
+
+	if isProtected {
+		a.modal.ShowInput("撤销保护工作簿", "当前工作簿已受保护。\n若设置了密码请输入密码（无密码直接确定）：", "", "密码（可选）", func(action string) {
+			pwd := a.modal.Input.Text()
+			a.modal.Hide()
+			if action != "confirm" {
+				return
+			}
+			a.runSpreadsheetWorkbookProtectionCommand("撤销保护工作簿", func(ed document.SpreadsheetWorkbookProtectionEditor) error {
+				return ed.UnprotectWorkbook(pwd)
+			})
+			a.setStatus("已撤销工作簿保护")
+		},
+			modalDialogActionSpec{ID: "confirm", Label: "撤销保护"},
+			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		)
+	} else {
+		a.modal.ShowInput("保护工作簿", "保护工作簿结构可防止其他用户查看隐藏的工作表、添加、移动、删除或重命名工作表。\n可设置保护密码（可选，留空无密码）：", "", "密码（可选）", func(action string) {
+			pwd := a.modal.Input.Text()
+			a.modal.Hide()
+			if action != "confirm" {
+				return
+			}
+			a.runSpreadsheetWorkbookProtectionCommand("保护工作簿", func(ed document.SpreadsheetWorkbookProtectionEditor) error {
+				return ed.ProtectWorkbook(pwd)
+			})
+			a.setStatus("已保护工作簿")
+		},
+			modalDialogActionSpec{ID: "confirm", Label: "保护工作簿"},
+			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		)
+	}
+}
+
+
 
 
 

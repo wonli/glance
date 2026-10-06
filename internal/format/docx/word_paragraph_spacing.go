@@ -35,6 +35,55 @@ func (d *Document) SetParagraphSpacing(paragraphID string, beforeTwips, afterTwi
 		return fmt.Errorf("Word paragraph %q is not editable", paragraphID)
 	}
 
+	data := d.parts[d.documentIdx].data
+	rep, changed, err := paragraphSpacingReplacement(data, paragraph, beforeTwips, afterTwips)
+	if err != nil {
+		return fmt.Errorf("Word paragraph %q: %w", paragraphID, err)
+	}
+	if !changed {
+		return nil
+	}
+	patched, err := applyXMLReplacements(data, []xmlReplacement{rep})
+	if err != nil {
+		return err
+	}
+	return d.applyWordDocumentXMLLocked(patched)
+}
+
+func (d *Document) SetAllParagraphsSpacing(beforeTwips, afterTwips int64) error {
+	if beforeTwips < 0 || afterTwips < 0 {
+		return fmt.Errorf("Word paragraph spacing must be non-negative twips")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	data := d.parts[d.documentIdx].data
+	var replacements []xmlReplacement
+	for _, paragraph := range d.wordParagraphTargets {
+		if paragraph == nil {
+			continue
+		}
+		rep, changed, err := paragraphSpacingReplacement(data, paragraph, &beforeTwips, &afterTwips)
+		if err != nil {
+			return err
+		}
+		if changed {
+			replacements = append(replacements, rep)
+		}
+	}
+	if len(replacements) == 0 {
+		return nil
+	}
+	patched, err := applyXMLReplacements(data, replacements)
+	if err != nil {
+		return fmt.Errorf("apply all paragraphs spacing: %w", err)
+	}
+	return d.applyWordDocumentXMLLocked(patched)
+}
+
+func paragraphSpacingReplacement(data []byte, paragraph *wordXMLNode, beforeTwips, afterTwips *int64) (xmlReplacement, bool, error) {
 	properties := firstChild(paragraph, "pPr")
 	var spacing *wordXMLNode
 	if properties != nil {
@@ -43,22 +92,21 @@ func (d *Document) SetParagraphSpacing(paragraphID string, beforeTwips, afterTwi
 				continue
 			}
 			if spacing != nil {
-				return fmt.Errorf("Word paragraph %q has duplicate spacing properties", paragraphID)
+				return xmlReplacement{}, false, fmt.Errorf("duplicate spacing properties")
 			}
 			spacing = child
 		}
 	}
 	if spacing != nil && len(spacing.children) != 0 {
-		return fmt.Errorf("Word paragraph %q has unsupported nested spacing content", paragraphID)
+		return xmlReplacement{}, false, fmt.Errorf("unsupported nested spacing content")
 	}
 
 	beforeUnchanged := beforeTwips == nil || wordSpacingAttributeEquals(spacing, "before", *beforeTwips) && !wordSpacingHasRelativeValues(spacing, conflictingWordParagraphBeforeSpacingAttributes)
 	afterUnchanged := afterTwips == nil || wordSpacingAttributeEquals(spacing, "after", *afterTwips) && !wordSpacingHasRelativeValues(spacing, conflictingWordParagraphAfterSpacingAttributes)
 	if beforeUnchanged && afterUnchanged {
-		return nil
+		return xmlReplacement{}, false, nil
 	}
 
-	data := d.parts[d.documentIdx].data
 	if spacing != nil {
 		prefix := elementPrefix(spacing.rawName)
 		opening := data[spacing.start:spacing.openEnd]
@@ -74,20 +122,16 @@ func (d *Document) SetParagraphSpacing(paragraphID string, beforeTwips, afterTwi
 			}
 			patchedOpening, err = setRawXMLAttribute(patchedOpening, prefix, value.attribute, strconv.FormatInt(*value.value, 10))
 			if err != nil {
-				return err
+				return xmlReplacement{}, false, err
 			}
 			for _, related := range value.related {
 				patchedOpening, err = removeRawXMLAttribute(patchedOpening, prefix, related)
 				if err != nil {
-					return err
+					return xmlReplacement{}, false, err
 				}
 			}
 		}
-		patched, err := applyXMLReplacements(data, []xmlReplacement{{start: spacing.start, end: spacing.openEnd, value: patchedOpening}})
-		if err != nil {
-			return err
-		}
-		return d.applyWordDocumentXMLLocked(patched)
+		return xmlReplacement{start: spacing.start, end: spacing.openEnd, value: patchedOpening}, true, nil
 	}
 
 	prefix := elementPrefix(paragraph.rawName)
@@ -102,22 +146,27 @@ func (d *Document) SetParagraphSpacing(paragraphID string, beforeTwips, afterTwi
 			var err error
 			spacingMarkup, err = setRawXMLAttribute(spacingMarkup, prefix, "after", strconv.FormatInt(*afterTwips, 10))
 			if err != nil {
-				return err
+				return xmlReplacement{}, false, err
 			}
 		}
 	}
 	if properties == nil {
-		patched, err := insertWordParagraphProperties(data, paragraph, prefix, spacingMarkup)
-		if err != nil {
-			return err
+		markup := wrapWordElement(prefix, "pPr", spacingMarkup)
+		return xmlReplacement{start: paragraph.openEnd, end: paragraph.openEnd, value: markup}, true, nil
+	}
+	ranks := make(map[string]int, len(wordParagraphPropertyOrder))
+	for index, name := range wordParagraphPropertyOrder {
+		ranks[name] = index
+	}
+	spacingRank := ranks["spacing"]
+	insertAt := properties.contentEnd
+	for _, child := range properties.children {
+		if rank, known := ranks[child.name.Local]; known && rank > spacingRank {
+			insertAt = child.start
+			break
 		}
-		return d.applyWordDocumentXMLLocked(patched)
 	}
-	patched, err := insertWordParagraphSpacing(data, properties, spacingMarkup)
-	if err != nil {
-		return err
-	}
-	return d.applyWordDocumentXMLLocked(patched)
+	return xmlReplacement{start: insertAt, end: insertAt, value: spacingMarkup}, true, nil
 }
 
 func wordSpacingAttributeEquals(node *wordXMLNode, name string, want int64) bool {

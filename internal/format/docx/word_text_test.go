@@ -1207,6 +1207,41 @@ func TestWordParagraphSpacingPatchLeavesUnchangedSideAlone(t *testing.T) {
 	}
 }
 
+func TestSetAllParagraphsSpacingAndUndo(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>p1</w:t></w:r></w:p><w:p><w:r><w:t>p2</w:t></w:r></w:p></w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	editor, ok := any(doc).(document.WordParagraphSpacingEditor)
+	if !ok {
+		t.Fatal("DOCX adapter does not expose paragraph spacing edits")
+	}
+
+	// Apply compact spacing (0 twips before, 80 twips after = 4 pt)
+	if err := editor.SetAllParagraphsSpacing(0, 80); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, block := range doc.WordBlocks() {
+		layout := block.Paragraph.Layout
+		if layout.BeforePT != 0 || layout.AfterPT != 4 {
+			t.Fatalf("p%d spacing after compact = %g/%g pt; want 0/4 pt", i+1, layout.BeforePT, layout.AfterPT)
+		}
+	}
+
+	// Verify Undo
+	history := requireWordHistory(t, doc)
+	if ok, err := history.Undo(); err != nil || !ok {
+		t.Fatalf("Undo failed: ok=%v, err=%v", ok, err)
+	}
+	for i, block := range doc.WordBlocks() {
+		layout := block.Paragraph.Layout
+		if layout.Set&(document.WordParagraphBeforeSet|document.WordParagraphAfterSet) != 0 {
+			t.Fatalf("p%d spacing after undo still set: %b", i+1, layout.Set)
+		}
+	}
+}
+
+
 func TestWordParagraphListsRoundTripContinuityAndPreserveOtherPackageParts(t *testing.T) {
 	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>first</w:t></w:r></w:p><w:p><w:r><w:t>second</w:t></w:r></w:p><w:p><w:r><w:t>between</w:t></w:r></w:p><w:p><w:r><w:t>bullet</w:t></w:r></w:p><w:p><w:r><w:t>restart</w:t></w:r></w:p></w:body></w:document>`
 	preservedPart := []byte("keep me byte-for-byte")

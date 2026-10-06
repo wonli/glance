@@ -290,6 +290,13 @@ type SpreadsheetProtectionEditor interface {
 	UnprotectSheet(sheet string, password string) error
 }
 
+// SpreadsheetWorkbookProtectionEditor is an optional capability for protecting workbooks.
+type SpreadsheetWorkbookProtectionEditor interface {
+	GetWorkbookProtection() (bool, error)
+	ProtectWorkbook(password string) error
+	UnprotectWorkbook(password string) error
+}
+
 
 
 

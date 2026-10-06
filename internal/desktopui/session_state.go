@@ -133,6 +133,8 @@ type documentSessionState struct {
 	spreadsheetGridlinesHidden          bool
 	spreadsheetViewMode                 string
 	spreadsheetRulerVisible             bool
+	spreadsheetSheetProtected           bool
+	spreadsheetWorkbookProtected        bool
 	toolbarTab                          spreadsheetToolbarTab
 	toolbarTabs                         [9]widget.Clickable
 	toolbarActionList                   widget.List

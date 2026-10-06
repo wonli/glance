@@ -305,7 +305,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, editable := any(state.word).(document.WordTextRangeEditor)
 		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
 		return editable && ok && run.Editable && wordBodyRunEditable(wordBlocksForState(state), run.ID)
-	case "page-break", "layout-breaks":
+	case "page-break", "layout-breaks", "blank-page":
 		_, editor := any(state.word).(document.WordPageBreakEditor)
 		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
 		return editor && ok && run.Editable && wordBodyRunEditable(wordBlocksForState(state), run.ID)
@@ -331,6 +331,9 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "rotate-left", "rotate-right":
 		_, rotatable := any(state.word).(document.WordImageRotator)
 		return rotatable && selectedWordImage(wordBlocksForState(state), state.selectedWordImageID)
+	case "design-compact", "design-spacious":
+		_, ok := any(state.word).(document.WordParagraphSpacingEditor)
+		return ok && len(state.wordBlocks) > 0 && !state.formatRunning.Load() && !a.isSaving()
 	default:
 		return false
 	}
@@ -715,6 +718,16 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.showWordReplaceDialog()
 	case "page-break":
 		a.queueWordPageBreak()
+	case "blank-page":
+		a.queueWordBlankPage()
+	case "design-compact":
+		a.runWordSpacingCommand("紧凑段落间距", func(editor document.WordParagraphSpacingEditor) error {
+			return editor.SetAllParagraphsSpacing(0, 80)
+		})
+	case "design-spacious":
+		a.runWordSpacingCommand("宽松段落间距", func(editor document.WordParagraphSpacingEditor) error {
+			return editor.SetAllParagraphsSpacing(0, 240)
+		})
 	case "review-word-count":
 		a.showWordCountDetails()
 	case "ruler-indents":

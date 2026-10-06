@@ -57,3 +57,61 @@ func TestWorkbookProtectionAndUndo(t *testing.T) {
 		t.Fatalf("expected sheet unprotected after second undo, got protected=%v (err=%v)", protected, err)
 	}
 }
+
+func TestWorkbookStructureProtectionAndUndo(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+
+	// 1. Initial unprotected
+	protected, err := wb.GetWorkbookProtection()
+	if err != nil {
+		t.Fatalf("GetWorkbookProtection failed: %v", err)
+	}
+	if protected {
+		t.Fatal("expected workbook initially unprotected")
+	}
+
+	// 2. Protect workbook with password
+	if err := wb.ProtectWorkbook("myPassword123"); err != nil {
+		t.Fatalf("ProtectWorkbook failed: %v", err)
+	}
+	protected, err = wb.GetWorkbookProtection()
+	if err != nil || !protected {
+		t.Fatalf("expected workbook protected, got protected=%v (err=%v)", protected, err)
+	}
+
+	// 3. Unprotect with wrong password should fail
+	if err := wb.UnprotectWorkbook("wrongPassword"); err == nil {
+		t.Fatal("expected error unprotecting with wrong password, got nil")
+	}
+
+	// 4. Unprotect with correct password
+	if err := wb.UnprotectWorkbook("myPassword123"); err != nil {
+		t.Fatalf("UnprotectWorkbook failed: %v", err)
+	}
+	protected, err = wb.GetWorkbookProtection()
+	if err != nil || protected {
+		t.Fatalf("expected workbook unprotected, got protected=%v (err=%v)", protected, err)
+	}
+
+	// 5. Test Undo unprotect -> restores protected
+	applied, err := wb.Undo()
+	if err != nil || !applied {
+		t.Fatalf("Undo failed: applied=%v, err=%v", applied, err)
+	}
+	protected, err = wb.GetWorkbookProtection()
+	if err != nil || !protected {
+		t.Fatalf("expected workbook protected after undo, got protected=%v (err=%v)", protected, err)
+	}
+
+	// 6. Test Undo protect -> restores unprotected
+	applied, err = wb.Undo()
+	if err != nil || !applied {
+		t.Fatalf("Undo failed: applied=%v, err=%v", applied, err)
+	}
+	protected, err = wb.GetWorkbookProtection()
+	if err != nil || protected {
+		t.Fatalf("expected workbook unprotected after second undo, got protected=%v (err=%v)", protected, err)
+	}
+}
+

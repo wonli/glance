@@ -427,7 +427,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetPrintAreaDialog()
 			continue
 		}
-		if action.slot == toolbarActionViewGridlines {
+		if action.slot == toolbarActionViewGridlines || action.slot == toolbarActionLayoutGridlines {
 			state.spreadsheetGridlinesHidden = !state.spreadsheetGridlinesHidden
 			if state.virtualGrid != nil {
 				state.virtualGrid.CellPaintCache = nil
@@ -476,6 +476,10 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 		}
 		if action.slot == toolbarActionProtectSheet {
 			a.showSpreadsheetProtectSheetDialog()
+			continue
+		}
+		if action.slot == toolbarActionProtectWorkbook {
+			a.showSpreadsheetProtectWorkbookDialog()
 			continue
 		}
 		style := a.selectedCellStyle()
@@ -537,11 +541,11 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionSum, toolbarActionFind,
 		toolbarActionZoomIn, toolbarActionZoom100,
 		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize,
-		toolbarActionPrintArea, toolbarActionViewGridlines,
+		toolbarActionPrintArea, toolbarActionViewGridlines, toolbarActionLayoutGridlines,
 		toolbarActionInsertLink, toolbarActionHeaderRow,
 		toolbarActionFreezePanes, toolbarActionRemoveDuplicates,
 		toolbarActionNormalView, toolbarActionPageBreakPreview, toolbarActionRuler,
-		toolbarActionProtectSheet:
+		toolbarActionProtectSheet, toolbarActionProtectWorkbook:
 		return false
 	default:
 		return true
@@ -564,13 +568,16 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return state.book != nil && !state.formatRunning.Load() && !a.isSaving()
 	}
 	switch slot {
-	case toolbarActionZoomIn, toolbarActionZoom100, toolbarActionViewGridlines:
+	case toolbarActionZoomIn, toolbarActionZoom100, toolbarActionViewGridlines, toolbarActionLayoutGridlines:
 		return state.book != nil && state.virtualGrid != nil && !state.formatRunning.Load()
 	case toolbarActionNormalView, toolbarActionPageBreakPreview, toolbarActionRuler:
 		_, ok := state.book.(document.SpreadsheetViewsEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionProtectSheet:
 		_, ok := state.book.(document.SpreadsheetProtectionEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionProtectWorkbook:
+		_, ok := state.book.(document.SpreadsheetWorkbookProtectionEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionFreezePanes:
 		_, ok := state.book.(document.SpreadsheetPanesEditor)
@@ -686,10 +693,12 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 							mixed := action.slot >= 0 && formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
 							formatActive := formatStyleActive(action.slot, style) ||
 								(action.slot == toolbarActionFormatPainter && state != nil && state.excelFormatPainterActive) ||
-								(action.slot == toolbarActionViewGridlines && (state == nil || !state.spreadsheetGridlinesHidden)) ||
+								((action.slot == toolbarActionViewGridlines || action.slot == toolbarActionLayoutGridlines) && (state == nil || !state.spreadsheetGridlinesHidden)) ||
 								(action.slot == toolbarActionNormalView && (state == nil || state.spreadsheetViewMode == "normal" || state.spreadsheetViewMode == "")) ||
 								(action.slot == toolbarActionPageBreakPreview && state != nil && state.spreadsheetViewMode == "pageBreakPreview") ||
-								(action.slot == toolbarActionRuler && state != nil && state.spreadsheetRulerVisible)
+								(action.slot == toolbarActionRuler && state != nil && state.spreadsheetRulerVisible) ||
+								(action.slot == toolbarActionProtectSheet && state != nil && state.spreadsheetSheetProtected) ||
+								(action.slot == toolbarActionProtectWorkbook && state != nil && state.spreadsheetWorkbookProtected)
 							active := action.slot >= 0 && !mixed && formatActive
 							enabled := action.slot >= 0 && a.toolbarActionEnabled(action.slot)
 							var button *widget.Clickable

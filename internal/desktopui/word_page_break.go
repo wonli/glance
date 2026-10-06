@@ -8,6 +8,7 @@ type wordPageBreakIntent struct {
 	selectionStart int
 	selectionEnd   int
 	breakType      document.WordBreakType
+	blankPage      bool
 }
 
 func wordBodyRunEditable(blocks []document.WordBlock, runID string) bool {
@@ -24,11 +25,19 @@ func wordBodyRunEditable(blocks []document.WordBlock, runID string) bool {
 	return false
 }
 
+func (a *App) queueWordBlankPage() {
+	a.queueWordBreakInternal(document.WordBreakPage, true)
+}
+
 func (a *App) queueWordPageBreak() {
 	a.queueWordBreak(document.WordBreakPage)
 }
 
 func (a *App) queueWordBreak(breakType document.WordBreakType) {
+	a.queueWordBreakInternal(breakType, false)
+}
+
+func (a *App) queueWordBreakInternal(breakType document.WordBreakType, blankPage bool) {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || state.wordPageBreakIntent != nil || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil || state.formatRunning.Load() || a.isSaving() {
 		return
@@ -52,7 +61,7 @@ func (a *App) queueWordBreak(breakType document.WordBreakType) {
 		a.setStatus("无法按当前光标位置插入分隔符，请重试")
 		return
 	}
-	state.wordPageBreakIntent = &wordPageBreakIntent{runID: run.ID, value: value, selectionStart: start, selectionEnd: end, breakType: breakType}
+	state.wordPageBreakIntent = &wordPageBreakIntent{runID: run.ID, value: value, selectionStart: start, selectionEnd: end, breakType: breakType, blankPage: blankPage}
 	captureWordTextDraft(state, run.ID, value)
 	state.wordForceDraftFlush.Store(true)
 	state.wordFlushRequested.Store(true)
@@ -88,14 +97,20 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 	}
 	generation := a.documentGeneration
 	operation := "插入分页符"
-	if intent.breakType == document.WordBreakColumn {
+	if intent.blankPage {
+		operation = "插入空白页"
+	} else if intent.breakType == document.WordBreakColumn {
 		operation = "插入分栏符"
 	}
 	go func() {
 		var paragraphID, caretRunID string
 		blocks, err := runWordMutation(state, func() error {
 			var insertErr error
-			paragraphID, caretRunID, insertErr = editor.InsertBreakAtRange(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd, intent.breakType)
+			if intent.blankPage {
+				paragraphID, caretRunID, insertErr = editor.InsertBlankPageAtRange(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd)
+			} else {
+				paragraphID, caretRunID, insertErr = editor.InsertBreakAtRange(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd, intent.breakType)
+			}
 			return insertErr
 		})
 		a.publishWordCommand(wordCommandResult{
@@ -173,7 +188,9 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	caretEditor.SetCaret(0, 0)
 	reconcileWordSelection(state, false)
 	msg := "已插入分页符"
-	if intent != nil && intent.breakType == document.WordBreakColumn {
+	if intent != nil && intent.blankPage {
+		msg = "已插入空白页"
+	} else if intent != nil && intent.breakType == document.WordBreakColumn {
 		msg = "已插入分栏符"
 	}
 	a.setStatus(msg)

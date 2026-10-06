@@ -170,3 +170,68 @@ func TestWordInsertBreaksDialogAndColumnBreak(t *testing.T) {
 		t.Fatalf("expected status '已插入分栏符', got %q", app.status)
 	}
 }
+
+func TestWordInsertBlankPageToolbar(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	paragraph := word.WordBlocks()[0].Paragraph
+	run := paragraph.Inlines[0].Text
+	if err := word.ReplaceTextRun(run.ID, "第一页第二页"); err != nil {
+		t.Fatal(err)
+	}
+	blocks := cloneWordBlockSnapshot(word.WordBlocks())
+	paragraph = blocks[0].Paragraph
+	run = paragraph.Inlines[0].Text
+	state := newDocumentSessionState("blank-page.docx")
+	state.word = word
+	state.wordBlocks = blocks
+	state.selectedWordParagraphID = paragraph.ID
+	state.selectedWordRunID = run.ID
+	editor := wordRunEditor(state, *run)
+	editor.SetText("第一页第二页")
+	editor.SetCaret(3, 3)
+	app := &App{
+		documentSessionState: state,
+		wordCommandResults:   make(chan wordCommandResult, 4),
+		shutdown:             make(chan struct{}),
+	}
+	var action ribbonAction
+	found := false
+	for _, candidate := range wordToolbarActions(wordTabInsert) {
+		if candidate.id == "blank-page" {
+			action, found = candidate, true
+			break
+		}
+	}
+	if !found || !app.wordToolbarActionEnabled(action) {
+		t.Fatal("Insert > Blank Page should be enabled for an editable body-text caret")
+	}
+
+	app.executeWordToolbarAction("blank-page")
+	deadline := time.Now().Add(3 * time.Second)
+	for (state.formatRunning.Load() || state.wordPageBreakIntent != nil) && time.Now().Before(deadline) {
+		app.processAsyncResults()
+		time.Sleep(5 * time.Millisecond)
+	}
+	if state.formatRunning.Load() || state.wordPageBreakIntent != nil {
+		t.Fatal("timed out waiting for the asynchronous blank-page command")
+	}
+
+	paragraph = state.wordBlocks[0].Paragraph
+	if len(paragraph.Inlines) != 5 {
+		t.Fatalf("expected 5 inlines after blank page, got %d: %#v", len(paragraph.Inlines), paragraph.Inlines)
+	}
+	if paragraph.Inlines[1].PageBreak == nil || paragraph.Inlines[3].PageBreak == nil {
+		t.Fatalf("expected two page breaks surrounding blank page run, got %#v", paragraph.Inlines)
+	}
+	if paragraph.Inlines[2].Text == nil || state.selectedWordRunID != paragraph.Inlines[2].Text.ID {
+		t.Fatalf("expected caret on middle run %v, got %q", paragraph.Inlines[2], state.selectedWordRunID)
+	}
+	if !strings.Contains(app.status, "已插入空白页") {
+		t.Fatalf("expected status '已插入空白页', got %q", app.status)
+	}
+}
+

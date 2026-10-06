@@ -176,11 +176,27 @@ func (a *App) processAsyncResults() {
 				if result.operation != "" {
 					a.setStatus("已完成" + result.operation)
 				}
+				switch result.operation {
+				case "保护工作表":
+					result.state.spreadsheetSheetProtected = true
+				case "撤销保护工作表":
+					result.state.spreadsheetSheetProtected = false
+				case "保护工作簿":
+					result.state.spreadsheetWorkbookProtected = true
+				case "撤销保护工作簿":
+					result.state.spreadsheetWorkbookProtected = false
+				}
 				if result.history {
 					if result.undo {
 						a.setStatus("已撤销")
 					} else {
 						a.setStatus("已重做")
+					}
+					if ed, ok := result.state.book.(document.SpreadsheetProtectionEditor); ok {
+						result.state.spreadsheetSheetProtected, _ = ed.GetSheetProtection(result.sheet)
+					}
+					if ed, ok := result.state.book.(document.SpreadsheetWorkbookProtectionEditor); ok {
+						result.state.spreadsheetWorkbookProtected, _ = ed.GetWorkbookProtection()
 					}
 				}
 				if result.window != nil {

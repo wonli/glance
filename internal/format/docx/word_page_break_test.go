@@ -227,3 +227,65 @@ func TestInsertWordColumnBreakAndUndo(t *testing.T) {
 		t.Fatalf("expected 2 inlines restored after Undo, got %d", len(undoBlocks[0].Paragraph.Inlines))
 	}
 }
+
+func TestInsertWordBlankPageAndUndo(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	runID := blocks[0].Paragraph.Inlines[0].Text.ID
+	paragraphID, caretRunID, err := doc.InsertBlankPageAtRange(runID, "bold", 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paragraphID != blocks[0].Paragraph.ID || caretRunID == "" {
+		t.Fatalf("blank page paragraph/run=%q/%q", paragraphID, caretRunID)
+	}
+	paragraph := doc.WordBlocks()[0].Paragraph
+	if len(paragraph.Inlines) != 6 {
+		t.Fatalf("inlines count = %d, want 6; got %#v", len(paragraph.Inlines), paragraph.Inlines)
+	}
+	if paragraph.Inlines[1].PageBreak == nil || paragraph.Inlines[1].PageBreak.Type != document.WordBreakPage {
+		t.Fatalf("expected first page break, got %#v", paragraph.Inlines[1])
+	}
+	if paragraph.Inlines[2].Text == nil || paragraph.Inlines[2].Text.ID != caretRunID {
+		t.Fatalf("expected middle text run to match caretRunID %q, got %#v", caretRunID, paragraph.Inlines[2])
+	}
+	if paragraph.Inlines[3].PageBreak == nil || paragraph.Inlines[3].PageBreak.Type != document.WordBreakPage {
+		t.Fatalf("expected second page break, got %#v", paragraph.Inlines[3])
+	}
+	if paragraph.Inlines[4].Text == nil || paragraph.Inlines[4].Text.Text != "ld" {
+		t.Fatalf("expected suffix 'ld', got %#v", paragraph.Inlines[4])
+	}
+
+	data, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	xmlDoc := string(readZipPart(t, data, "word/document.xml"))
+	if strings.Count(xmlDoc, `<w:br w:type="page"/>`) != 2 {
+		t.Fatalf("expected 2 page breaks in document.xml, got: %s", xmlDoc)
+	}
+
+	// Verify Reopen
+	reopened, err := OpenSnapshot(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if len(reopened.WordBlocks()[0].Paragraph.Inlines) != 6 {
+		t.Fatalf("reopened inlines count = %d, want 6", len(reopened.WordBlocks()[0].Paragraph.Inlines))
+	}
+
+	// Verify Undo
+	if ok, err := doc.Undo(); err != nil || !ok {
+		t.Fatalf("Undo failed: ok=%v, err=%v", ok, err)
+	}
+	undoBlocks := doc.WordBlocks()
+	if len(undoBlocks[0].Paragraph.Inlines) != 2 {
+		t.Fatalf("expected 2 inlines restored after Undo, got %d", len(undoBlocks[0].Paragraph.Inlines))
+	}
+	if undoBlocks[0].Paragraph.Inlines[0].Text.Text != "bold" {
+		t.Fatalf("expected text 'bold' restored, got %q", undoBlocks[0].Paragraph.Inlines[0].Text.Text)
+	}
+}
+

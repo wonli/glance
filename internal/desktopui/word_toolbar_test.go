@@ -1400,4 +1400,78 @@ func TestWordParagraphIndentDialogAndCommand(t *testing.T) {
 	}
 }
 
+func TestWordDesignSpacingPresets(t *testing.T) {
+	doc, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	state := newDocumentSessionState("design.docx")
+	state.word = doc
+	state.wordBlocks = cloneWordBlockSnapshot(doc.WordBlocks())
+	state.selectedWordParagraphID = doc.WordBlocks()[0].Paragraph.ID
+	app := &App{
+		documentSessionState: state,
+		wordCommandResults:   make(chan wordCommandResult, 4),
+		shutdown:             make(chan struct{}),
+	}
+
+	var compactAction, spaciousAction ribbonAction
+	for _, a := range wordToolbarActions(wordTabDesign) {
+		if a.id == "design-compact" {
+			compactAction = a
+		} else if a.id == "design-spacious" {
+			spaciousAction = a
+		}
+	}
+	if compactAction.id == "" || spaciousAction.id == "" {
+		t.Fatal("design actions not found in wordTabDesign")
+	}
+
+	if !app.wordToolbarActionEnabled(compactAction) {
+		t.Fatal("design-compact should be enabled")
+	}
+	if !app.wordToolbarActionEnabled(spaciousAction) {
+		t.Fatal("design-spacious should be enabled")
+	}
+
+	// 1. Apply compact spacing
+	app.executeWordToolbarAction("design-compact")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("design-compact failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for design-compact result")
+	}
+
+	p := doc.WordBlocks()[0].Paragraph
+	if p.Layout.BeforePT != 0 || p.Layout.AfterPT != 4 {
+		t.Fatalf("expected compact spacing 0/4 pt, got %g/%g pt", p.Layout.BeforePT, p.Layout.AfterPT)
+	}
+
+	// 2. Apply spacious spacing
+	app.executeWordToolbarAction("design-spacious")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("design-spacious failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for design-spacious result")
+	}
+
+	p = doc.WordBlocks()[0].Paragraph
+	if p.Layout.BeforePT != 0 || p.Layout.AfterPT != 12 {
+		t.Fatalf("expected spacious spacing 0/12 pt, got %g/%g pt", p.Layout.BeforePT, p.Layout.AfterPT)
+	}
+}
+
+
 

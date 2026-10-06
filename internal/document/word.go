@@ -171,6 +171,7 @@ type WordTextEditor interface {
 // twips. A nil value leaves that side and its inherited spacing untouched.
 type WordParagraphSpacingEditor interface {
 	SetParagraphSpacing(paragraphID string, beforeTwips, afterTwips *int64) error
+	SetAllParagraphsSpacing(beforeTwips, afterTwips int64) error
 }
 
 // WordTextRangeEditor exposes safe replacement within one editable text run.
@@ -206,11 +207,12 @@ type WordBodyEditor interface {
 	InsertBodyParagraph() (paragraphID string, err error)
 }
 
-// WordPageBreakEditor inserts a page or column break at a Unicode text range in an
+// WordPageBreakEditor inserts a page or column break, or a blank page, at a Unicode text range in an
 // editable run. The returned run is the caret location after the break.
 type WordPageBreakEditor interface {
 	InsertPageBreakAtRange(runID, value string, start, end int) (paragraphID, caretRunID string, err error)
 	InsertBreakAtRange(runID, value string, start, end int, breakType WordBreakType) (paragraphID, caretRunID string, err error)
+	InsertBlankPageAtRange(runID, value string, start, end int) (paragraphID, caretRunID string, err error)
 }
 
 // WordParagraphEditor exposes safe keyboard-driven paragraph structure edits.

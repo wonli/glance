@@ -163,11 +163,11 @@ func TestUnimplementedExcelFormulaActionClickShowsNotice(t *testing.T) {
 	}
 }
 
-func TestExcelPageLayoutActionClickShowsMissingNotice(t *testing.T) {
+func TestExcelReviewActionClickShowsMissingNotice(t *testing.T) {
 	book := &toolbarTestBook{editable: true}
 	state := newDocumentSessionState("")
 	state.book = book
-	state.toolbarTab = toolbarTabPageLayout
+	state.toolbarTab = toolbarTabReview
 	app := &App{documentSessionState: state, theme: material.NewTheme()}
 	router := new(input.Router)
 	var ops op.Ops
@@ -188,15 +188,16 @@ func TestExcelPageLayoutActionClickShowsMissingNotice(t *testing.T) {
 	}
 
 	frame()
-	point := f32.Pt(248, 58) // 5th Page Layout action, "网格线" (unimplemented).
+	point := f32.Pt(34, 58) // 1st Review action, "拼写检查" (unimplemented).
 	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: point})
 	frame()
 	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: point})
 	frame()
-	if want := "“网格线”功能暂未实现"; app.status != want {
-		t.Fatalf("status after clicking Excel Page Layout action = %q, want %q", app.status, want)
+	if want := "“拼写检查”功能暂未实现"; app.status != want {
+		t.Fatalf("status after clicking Excel Review action = %q, want %q", app.status, want)
 	}
 }
+
 
 func TestUnimplementedExcelTabsHaveMissingFeatureMessages(t *testing.T) {
 	for _, tab := range []spreadsheetToolbarTab{toolbarTabFile, toolbarTabHome, toolbarTabInsert, toolbarTabPageLayout, toolbarTabFormula, toolbarTabData, toolbarTabReview, toolbarTabView} {
@@ -755,6 +756,30 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 	if app.status != "已显示网格线" {
 		t.Fatalf("expected status '已显示网格线', got %q", app.status)
 	}
+
+	// 7. Layout Gridlines Toggle
+	if !app.toolbarActionEnabled(toolbarActionLayoutGridlines) {
+		t.Fatal("layout-gridlines should be enabled")
+	}
+	state.toolbarTab = toolbarTabPageLayout
+	state.toolbarActionButtons[toolbarActionLayoutGridlines].Click()
+	app.handleSpreadsheetToolbarEvents(gtx)
+	if !state.spreadsheetGridlinesHidden {
+		t.Fatal("expected gridlines to be hidden after layout gridlines toggle")
+	}
+	gridlines, err := wb.GetSheetGridlines(state.sheet)
+	if err != nil || gridlines {
+		t.Fatalf("expected workbook gridlines to be false, got %v (err=%v)", gridlines, err)
+	}
+	state.toolbarActionButtons[toolbarActionLayoutGridlines].Click()
+	app.handleSpreadsheetToolbarEvents(gtx)
+	if state.spreadsheetGridlinesHidden {
+		t.Fatal("expected gridlines to be visible after second layout toggle")
+	}
+	gridlines, err = wb.GetSheetGridlines(state.sheet)
+	if err != nil || !gridlines {
+		t.Fatalf("expected workbook gridlines to be true, got %v (err=%v)", gridlines, err)
+	}
 }
 
 func TestSpreadsheetLinkDialogAndCommand(t *testing.T) {
@@ -1104,6 +1129,75 @@ func TestSpreadsheetProtectSheetDialogAndCommand(t *testing.T) {
 		t.Fatalf("expected sheet protected after undo, got %v (err=%v)", protected, err)
 	}
 }
+
+func TestSpreadsheetProtectWorkbookDialogAndCommand(t *testing.T) {
+	wb := xlsx.NewBlank()
+	defer wb.Close()
+
+	state := newDocumentSessionState("")
+	state.book = wb
+	state.sheet = wb.SheetNames()[0]
+	v := newGridViewport()
+	state.virtualGrid = v
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionProtectWorkbook) {
+		t.Fatal("protect-workbook should be enabled")
+	}
+
+	// 1. Show protect workbook dialog (currently unprotected)
+	app.showSpreadsheetProtectWorkbookDialog()
+	if !app.modal.Visible || app.modal.Title != "保护工作簿" {
+		t.Fatalf("expected protect workbook modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("bookpass")
+	app.modal.OnAction("confirm")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("protect workbook failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for protect workbook formatResult")
+	}
+
+	protected, err := wb.GetWorkbookProtection()
+	if err != nil || !protected {
+		t.Fatalf("expected workbook protected, got %v (err=%v)", protected, err)
+	}
+
+	// 2. Show unprotect workbook dialog (currently protected)
+	app.showSpreadsheetProtectWorkbookDialog()
+	if !app.modal.Visible || app.modal.Title != "撤销保护工作簿" {
+		t.Fatalf("expected unprotect workbook modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("bookpass")
+	app.modal.OnAction("confirm")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("unprotect workbook failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for unprotect workbook formatResult")
+	}
+
+	protected, err = wb.GetWorkbookProtection()
+	if err != nil || protected {
+		t.Fatalf("expected workbook unprotected, got %v (err=%v)", protected, err)
+	}
+
+	// 3. Test Undo restores protection
+	applied, err := wb.Undo()
+	if err != nil || !applied {
+		t.Fatalf("undo failed: applied=%v, err=%v", applied, err)
+	}
+	protected, err = wb.GetWorkbookProtection()
+	if err != nil || !protected {
+		t.Fatalf("expected workbook protected after undo, got %v (err=%v)", protected, err)
+	}
+}
+
 
 
 
