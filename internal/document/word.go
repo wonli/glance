@@ -301,3 +301,10 @@ type WordPageSetupEditor interface {
 	SetPageSize(widthPT, heightPT float64) error
 	SetPageColumns(columns int) error
 }
+
+// WordDocumentProtectionEditor is an optional capability for inspecting and updating Word document protection.
+type WordDocumentProtectionEditor interface {
+	GetWordDocumentProtection() (bool, error)
+	SetWordDocumentProtection(readOnly bool) error
+}
+

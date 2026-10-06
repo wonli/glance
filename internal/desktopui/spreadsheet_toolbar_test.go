@@ -979,6 +979,61 @@ func TestSpreadsheetRemoveDuplicatesDialogAndCommand(t *testing.T) {
 	}
 }
 
+func TestSpreadsheetTextToColumnsDialogAndCommand(t *testing.T) {
+	wb := xlsx.NewBlank()
+	defer wb.Close()
+	sheet := wb.SheetNames()[0]
+
+	_ = wb.SetCellText(sheet, "A1", "Alpha,Beta,Gamma")
+	_ = wb.SetCellText(sheet, "A2", "One,Two,Three")
+
+	state := newDocumentSessionState("test.xlsx")
+	state.book = wb
+	state.sheets = wb.SheetNames()
+	state.sheet = sheet
+	state.selectionSet = true
+	state.selection = CellSelection{
+		Anchor: CellPosition{Row: 0, Column: 0},
+		Active: CellPosition{Row: 1, Column: 0}, // A1:A2
+	}
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionTextToColumns) {
+		t.Fatal("toolbarActionTextToColumns should be enabled")
+	}
+
+	app.showSpreadsheetTextToColumnsDialog()
+	if !app.modal.Visible || app.modal.Title != "文本分列" {
+		t.Fatalf("expected modal dialog for text to columns, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+
+	// Split by comma
+	app.modal.OnAction("comma")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("split text to columns failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for text to columns formatResult")
+	}
+
+	// Verify values in A1..C2
+	vA1, _ := wb.Value(sheet, "A1")
+	vB1, _ := wb.Value(sheet, "B1")
+	vC1, _ := wb.Value(sheet, "C1")
+	if vA1 != "Alpha" || vB1 != "Beta" || vC1 != "Gamma" {
+		t.Fatalf("unexpected row 1 split: %q, %q, %q", vA1, vB1, vC1)
+	}
+	vA2, _ := wb.Value(sheet, "A2")
+	vB2, _ := wb.Value(sheet, "B2")
+	vC2, _ := wb.Value(sheet, "C2")
+	if vA2 != "One" || vB2 != "Two" || vC2 != "Three" {
+		t.Fatalf("unexpected row 2 split: %q, %q, %q", vA2, vB2, vC2)
+	}
+}
+
+
 func TestSpreadsheetViewModesAndRuler(t *testing.T) {
 	wb := xlsx.NewBlank()
 	defer wb.Close()

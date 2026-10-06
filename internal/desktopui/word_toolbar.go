@@ -319,6 +319,9 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "review-word-count":
 		_, content := any(state.word).(document.WordContentReader)
 		return content
+	case "review-restrict":
+		_, ok := any(state.word).(document.WordDocumentProtectionEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case "save":
 		return (sessionDirty(state) || wordHasPendingTextDrafts(state) || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil) && sessionPath(state) != ""
 	case "insert-image":
@@ -384,6 +387,9 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 	}
 	if action.id == "view-multiple-pages" {
 		return state.wordMultiplePagesMode && state.wordViewMode == wordViewPrintLayout
+	}
+	if action.id == "review-restrict" {
+		return state.wordProtected
 	}
 	blocks := wordBlocksForState(state)
 	if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok {
@@ -553,6 +559,8 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.openWordSymbolPicker()
 		case "review-word-count":
 			a.showWordCountDetails()
+		case "review-restrict":
+			a.showWordDocumentProtectionDialog()
 		case "view-print-layout", "view-web-layout", "view-navigation", "view-single-page", "view-multiple-pages", "view-reading", "view-zoom", "view-ruler", "view-gridlines":
 			a.executeWordToolbarAction(action.id)
 		case "save":
@@ -730,6 +738,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		})
 	case "review-word-count":
 		a.showWordCountDetails()
+	case "review-restrict":
+		a.showWordDocumentProtectionDialog()
 	case "ruler-indents":
 		intent := state.wordRulerIndentIntent
 		if intent == nil {
@@ -1534,6 +1544,67 @@ func (a *App) runWordSpacingCommand(operation string, edit func(document.WordPar
 		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
 	}()
+}
+
+func (a *App) runWordProtectionCommand(operation string, edit func(document.WordDocumentProtectionEditor) error) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	editor, ok := any(state.word).(document.WordDocumentProtectionEditor)
+	if !ok {
+		return
+	}
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
+	generation := a.documentGeneration
+	go func() {
+		blocks, err := runWordMutation(state, func() error { return edit(editor) })
+		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
+	}()
+}
+
+func (a *App) showWordDocumentProtectionDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordDocumentProtectionEditor)
+	if !ok {
+		return
+	}
+	protected := state.wordProtected
+	if isProtected, err := editor.GetWordDocumentProtection(); err == nil {
+		protected = isProtected
+		state.wordProtected = isProtected
+	}
+
+	if protected {
+		a.modal.Show("限制编辑", "当前文档已开启编辑限制（只读保护）。\n是否解除编辑限制以允许修改？", func(action string) {
+			a.modal.Hide()
+			if action == "unprotect" {
+				a.runWordProtectionCommand("解除限制编辑", func(ed document.WordDocumentProtectionEditor) error {
+					return ed.SetWordDocumentProtection(false)
+				})
+			}
+		},
+			modalDialogActionSpec{ID: "unprotect", Label: "解除限制"},
+			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		)
+	} else {
+		a.modal.Show("限制编辑", "开启编辑限制后，文档将被标记为受保护（只读模式），防止误修改正文内容。\n是否开启限制编辑？", func(action string) {
+			a.modal.Hide()
+			if action == "protect" {
+				a.runWordProtectionCommand("开启限制编辑", func(ed document.WordDocumentProtectionEditor) error {
+					return ed.SetWordDocumentProtection(true)
+				})
+			}
+		},
+			modalDialogActionSpec{ID: "protect", Label: "开启限制"},
+			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		)
+	}
 }
 
 func (a *App) showWordParagraphIndentDialog() {

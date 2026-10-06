@@ -231,6 +231,9 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 			}
 		}
 		state.word = word
+		if protEditor, ok := any(word).(document.WordDocumentProtectionEditor); ok {
+			state.wordProtected, _ = protEditor.GetWordDocumentProtection()
+		}
 		state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
 		word.SetSourcePath(record.Tab.SourcePath)
 		word.SetDirty(record.Dirty)

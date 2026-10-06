@@ -297,8 +297,13 @@ type SpreadsheetWorkbookProtectionEditor interface {
 	UnprotectWorkbook(password string) error
 }
 
+// SpreadsheetTextToColumnsResult reports the outcome of a text-to-columns split operation.
+type SpreadsheetTextToColumnsResult struct {
+	RowsSplit int
+	MaxCols   int
+}
 
-
-
-
-
+// SpreadsheetTextToColumnsEditor is an optional capability for splitting text in a column into adjacent columns.
+type SpreadsheetTextToColumnsEditor interface {
+	SplitTextToColumns(sheet string, bounds CellRange, keyColumn int, delimiter string) (SpreadsheetTextToColumnsResult, error)
+}

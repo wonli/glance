@@ -34,6 +34,7 @@ type documentSessionState struct {
 	wordNavigationEntryCache            wordNavigationEntryCache
 	wordRulerHidden                     bool
 	wordGridlinesVisible                bool
+	wordProtected                       bool
 	wordLayoutActivePage                int
 	wordLayoutZoom                      float64
 	wordPageListState                   widget.List

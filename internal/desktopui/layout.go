@@ -445,11 +445,19 @@ func (a *App) processAsyncResults() {
 					invalidateWordImagePreview(result.state, result.imageID)
 				}
 				reconcileWordSelection(result.state, result.history)
+				if result.operation == "开启限制编辑" {
+					result.state.wordProtected = true
+				} else if result.operation == "解除限制编辑" {
+					result.state.wordProtected = false
+				}
 				if result.history {
 					if result.undo {
 						a.setStatus("已撤销 Word 编辑")
 					} else {
 						a.setStatus("已重做 Word 编辑")
+					}
+					if ed, ok := any(result.state.word).(document.WordDocumentProtectionEditor); ok {
+						result.state.wordProtected, _ = ed.GetWordDocumentProtection()
 					}
 				} else {
 					a.setStatus(wordCommandError(result.operation, nil))

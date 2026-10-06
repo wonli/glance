@@ -1473,5 +1473,101 @@ func TestWordDesignSpacingPresets(t *testing.T) {
 	}
 }
 
+func TestWordReviewRestrictProtection(t *testing.T) {
+	doc, err := docx.NewBlank()
+	if err != nil {
+		t.Fatalf("failed to create blank docx: %v", err)
+	}
+	defer doc.Close()
+
+	state := newDocumentSessionState("test.docx")
+	state.word = doc
+	state.wordBlocks = cloneWordBlockSnapshot(doc.WordBlocks())
+	state.wordToolbarTab = wordTabReview
+
+	app := &App{
+		documentSessionState: state,
+		wordCommandResults:   make(chan wordCommandResult, 4),
+	}
+
+	var restrictAction ribbonAction
+	for _, a := range wordToolbarActions(wordTabReview) {
+		if a.id == "review-restrict" {
+			restrictAction = a
+			break
+		}
+	}
+	if restrictAction.id == "" {
+		t.Fatal("review-restrict action not found in wordTabReview")
+	}
+
+	if !app.wordToolbarActionEnabled(restrictAction) {
+		t.Fatal("review-restrict should be enabled")
+	}
+	if wordToolbarActionActive(state, restrictAction) {
+		t.Fatal("review-restrict should initially be inactive")
+	}
+
+	// 1. Show protection dialog -> Click "protect"
+	app.showWordDocumentProtectionDialog()
+	if !app.modal.Visible || app.modal.Title != "限制编辑" {
+		t.Fatalf("expected modal dialog for review-restrict, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+
+	app.modal.OnAction("protect")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("protect command failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for protect command result")
+	}
+
+	// State should now be protected
+	if !state.wordProtected {
+		t.Fatal("expected state.wordProtected to be true")
+	}
+	if !wordToolbarActionActive(state, restrictAction) {
+		t.Fatal("review-restrict should now be active")
+	}
+	prot, err := doc.GetWordDocumentProtection()
+	if err != nil || !prot {
+		t.Fatalf("expected doc to be protected, got %v (err=%v)", prot, err)
+	}
+
+	// 2. Show unprotect dialog -> Click "unprotect"
+	app.showWordDocumentProtectionDialog()
+	if !app.modal.Visible || app.modal.Title != "限制编辑" {
+		t.Fatalf("expected modal dialog for unprotect, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+
+	app.modal.OnAction("unprotect")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("unprotect command failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for unprotect command result")
+	}
+
+	if state.wordProtected {
+		t.Fatal("expected state.wordProtected to be false after unprotect")
+	}
+	if wordToolbarActionActive(state, restrictAction) {
+		t.Fatal("review-restrict should be inactive after unprotect")
+	}
+	prot, err = doc.GetWordDocumentProtection()
+	if err != nil || prot {
+		t.Fatalf("expected doc to be unprotected, got %v (err=%v)", prot, err)
+	}
+}
+
+
 
 

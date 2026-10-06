@@ -458,6 +458,10 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetFreezePanesDialog()
 			continue
 		}
+		if action.slot == toolbarActionTextToColumns {
+			a.showSpreadsheetTextToColumnsDialog()
+			continue
+		}
 		if action.slot == toolbarActionRemoveDuplicates {
 			a.showSpreadsheetRemoveDuplicatesDialog()
 			continue
@@ -582,6 +586,9 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	case toolbarActionFreezePanes:
 		_, ok := state.book.(document.SpreadsheetPanesEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionTextToColumns:
+		_, ok := state.book.(document.SpreadsheetTextToColumnsEditor)
+		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionRemoveDuplicates:
 		_, ok := state.book.(document.SpreadsheetDuplicatesEditor)
 		return ok && state.selectionSet && state.selection.Bounds().EndRow > state.selection.Bounds().StartRow && !state.formatRunning.Load() && !a.isSaving()
