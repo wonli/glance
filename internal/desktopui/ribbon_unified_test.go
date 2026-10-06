@@ -19,14 +19,14 @@ func TestRibbonHeightAndCommandStripUnified(t *testing.T) {
 	// Verify height constants are unified across formats:
 	// Word: 34 dp categories + 68 dp command strip = 102 dp total
 	// Excel: 34 dp categories + 68 dp command strip = 102 dp total
-	// JSON: 54 dp compact toolbar (eswCo)
+	// JSON: the same 68 dp command strip as Excel, without category tabs
 	if wordRibbonCategoryHeightDP != 34 || wordRibbonCommandHeightDP != 68 || wordRibbonHeightDP != 102 {
 		t.Fatalf("Word ribbon heights mismatch: category=%d, command=%d, total=%d; want 34/68/102",
 			wordRibbonCategoryHeightDP, wordRibbonCommandHeightDP, wordRibbonHeightDP)
 	}
 
-	if jsonToolbarHeightDP != 54 {
-		t.Fatalf("JSON toolbar height = %d dp, want 54 dp (Pen eswCo)", jsonToolbarHeightDP)
+	if jsonToolbarHeightDP != 68 {
+		t.Fatalf("JSON toolbar height = %d dp, want 68 dp (Excel command strip)", jsonToolbarHeightDP)
 	}
 
 	if toolbarButtonWidth != 44 || toolbarButtonHeight != 48 {
@@ -73,8 +73,8 @@ func TestRibbonHeightAndCommandStripUnified(t *testing.T) {
 	app.documentSessionState = stateJSON
 	app.jsonDoc = jsonDoc
 	dimsJSON := app.layoutJSONToolbar(gtx)
-	if dimsJSON.Size.Y != 54 {
-		t.Fatalf("JSON ribbon toolbar height = %d px, want 54 px", dimsJSON.Size.Y)
+	if dimsJSON.Size.Y != 68 {
+		t.Fatalf("JSON ribbon toolbar height = %d px, want 68 px", dimsJSON.Size.Y)
 	}
 }
 
@@ -229,7 +229,7 @@ func TestWordAndExcelAndJSONRibbonButtonsRenderUnifiedLabels(t *testing.T) {
 	appJSON.layoutJSONToolbar(gtxJSON)
 	routerJSON.Frame(opsJSON)
 
-	wantedJSONLabels := []string{"格式化", "压缩", "排序", "校验"}
+	wantedJSONLabels := []string{"保存", "另存为", "导入", "格式化", "压缩", "排序", "校验"}
 	foundJSONLabels := make(map[string]bool)
 	var visitJSON func([]input.SemanticNode)
 	visitJSON = func(nodes []input.SemanticNode) {
@@ -237,6 +237,9 @@ func TestWordAndExcelAndJSONRibbonButtonsRenderUnifiedLabels(t *testing.T) {
 			for _, label := range wantedJSONLabels {
 				if node.Desc.Description == label {
 					foundJSONLabels[label] = true
+					if node.Desc.Bounds.Size() != image.Pt(48, 48) {
+						t.Errorf("JSON %s button bounds=%v, want Excel 48x48", label, node.Desc.Bounds)
+					}
 				}
 			}
 			visitJSON(node.Children)

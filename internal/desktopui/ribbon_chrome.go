@@ -9,6 +9,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -242,11 +243,11 @@ const (
 	excelToolbarItemGap       = unit.Dp(3)
 	excelToolbarDividerHeight = unit.Dp(24)
 
-	wordRibbonButtonWidth     = unit.Dp(44)
-	wordRibbonButtonHeight    = unit.Dp(48)
-	wordRibbonItemGap         = unit.Dp(6)
-	wordRibbonDividerHeight   = unit.Dp(32)
-	wordRibbonDividerMargin   = 12
+	wordRibbonButtonWidth   = unit.Dp(44)
+	wordRibbonButtonHeight  = unit.Dp(48)
+	wordRibbonItemGap       = unit.Dp(6)
+	wordRibbonDividerHeight = unit.Dp(32)
+	wordRibbonDividerMargin = 12
 )
 
 var (
@@ -357,7 +358,9 @@ func toolbarIconButton(gtx layout.Context, theme *material.Theme, button *widget
 					if !enabled {
 						textColor = disabledToolbarText
 					}
+					gtx.Constraints.Min = image.Point{}
 					caption := material.Caption(theme, label)
+					caption.Alignment = text.Middle
 					caption.TextSize = ribbonLabelTextSize(label)
 					caption.Color = textColor
 					caption.MaxLines = 1

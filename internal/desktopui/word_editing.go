@@ -25,7 +25,7 @@ func (a *App) startWordBodyParagraphInsert() {
 	}
 	editor, ok := any(state.word).(document.WordBodyEditor)
 	if !ok {
-		a.status = "当前 DOCX 适配器不支持新增正文段落"
+		a.setStatus("当前 DOCX 适配器不支持新增正文段落")
 		return
 	}
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
@@ -64,11 +64,11 @@ func (a *App) focusInsertedWordParagraph(state *documentSessionState, paragraphI
 			state.wordPendingFocusRunID = inline.Text.ID
 			wordRunEditor(state, *inline.Text)
 			state.wordListState.ScrollTo(max(0, len(wordBlocksForState(state))-1))
-			a.status = "已插入正文段落，可直接输入"
+			a.setStatus("已插入正文段落，可直接输入")
 			return
 		}
 	}
-	a.status = "新段落已插入，但没有可编辑的文字运行"
+	a.setStatus("新段落已插入，但没有可编辑的文字运行")
 }
 
 func wordHasPendingTextDrafts(state *documentSessionState) bool {
@@ -100,11 +100,11 @@ func (a *App) queueWordParagraphSplit(runID, value string, selectionStart, selec
 		selectionStart, selectionEnd = selectionEnd, selectionStart
 	}
 	if _, _, valid := wordTextAroundSelection(value, selectionStart, selectionEnd); !valid {
-		a.status = "无法按当前光标位置拆分段落，请重试"
+		a.setStatus("无法按当前光标位置拆分段落，请重试")
 		return
 	}
 	if _, ok := any(state.word).(document.WordParagraphEditor); !ok {
-		a.status = "当前 DOCX 适配器不支持按光标拆分段落"
+		a.setStatus("当前 DOCX 适配器不支持按光标拆分段落")
 		return
 	}
 	state.wordParagraphSplitIntent = &wordParagraphSplitIntent{
@@ -128,7 +128,7 @@ func (a *App) queueWordParagraphJoin(runID string, value string, direction docum
 		return
 	}
 	if _, ok := any(state.word).(document.WordParagraphJoiner); !ok {
-		a.status = "当前 DOCX 适配器不支持合并段落"
+		a.setStatus("当前 DOCX 适配器不支持合并段落")
 		return
 	}
 	state.wordParagraphJoinIntent = &wordParagraphJoinIntent{runID: runID, direction: direction}
@@ -225,7 +225,7 @@ func (a *App) startNextWordTextCommitFor(state *documentSessionState) {
 		state.wordFlushAllDrafts.Store(false)
 		state.clearPendingWordRestore()
 		state.wordParagraphJoinIntent = nil
-		a.status = "当前 DOCX 适配器不支持原位文字编辑"
+		a.setStatus("当前 DOCX 适配器不支持原位文字编辑")
 		return
 	}
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
@@ -311,7 +311,7 @@ func (a *App) startWordParagraphJoin(state *documentSessionState) {
 		state.wordParagraphJoinIntent = nil
 		state.wordFlushRequested.Store(false)
 		state.wordFlushAllDrafts.Store(false)
-		a.status = "当前 DOCX 适配器不支持合并段落"
+		a.setStatus("当前 DOCX 适配器不支持合并段落")
 		return
 	}
 	intent := *state.wordParagraphJoinIntent
@@ -351,7 +351,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 	state.formatRunning.Store(false)
 	if result.err != nil {
 		if active {
-			a.status = wordCommandError(result.operation, result.err)
+			a.setStatus(wordCommandError(result.operation, result.err))
 			a.finishWordTextFlush(state)
 		}
 		return
@@ -364,7 +364,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 	run, ok := selectedWordRun(wordBlocksForState(state), result.joinRunID)
 	if !ok || !run.Editable {
 		if active {
-			a.status = "段落已合并，但无法定位接缝文字"
+			a.setStatus("段落已合并，但无法定位接缝文字")
 			a.finishWordTextFlush(state)
 		}
 		return
@@ -381,7 +381,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 	state.selectedBlockEditable = true
 	if active {
 		state.wordPendingFocusRunID = run.ID
-		a.status = "正在编辑 Word 正文"
+		a.setStatus("正在编辑 Word 正文")
 		a.persistActiveSession()
 	} else {
 		state.wordPendingFocusRunID = ""
@@ -396,14 +396,14 @@ func (a *App) startWordParagraphSplit(state *documentSessionState) {
 	splitter, ok := any(state.word).(document.WordParagraphEditor)
 	if !ok {
 		state.wordParagraphSplitIntent = nil
-		a.status = "当前 DOCX 适配器不支持按光标拆分段落"
+		a.setStatus("当前 DOCX 适配器不支持按光标拆分段落")
 		return
 	}
 	intent := *state.wordParagraphSplitIntent
 	prefix, suffix, valid := wordTextAroundSelection(intent.value, intent.selectionStart, intent.selectionEnd)
 	if !valid {
 		state.wordParagraphSplitIntent = nil
-		a.status = "无法按当前光标位置拆分段落，请重试"
+		a.setStatus("无法按当前光标位置拆分段落，请重试")
 		return
 	}
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
@@ -462,7 +462,7 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 				}
 			}
 		}
-		a.status = wordCommandError(result.operation, result.err)
+		a.setStatus(wordCommandError(result.operation, result.err))
 		return
 	}
 	if result.blocks != nil {
@@ -477,7 +477,7 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 
 	newRun, ok := selectedWordRun(wordBlocksForState(state), result.splitRunID)
 	if !ok {
-		a.status = "段落已拆分，但无法定位后续文字"
+		a.setStatus("段落已拆分，但无法定位后续文字")
 		a.persistActiveSession()
 		a.finishWordTextFlush(state)
 		return
@@ -492,7 +492,7 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 	state.selectedBlock = -1
 	state.selectedBlockEditable = true
 	state.wordPendingFocusRunID = result.splitRunID
-	a.status = "正在编辑 Word 正文"
+	a.setStatus("正在编辑 Word 正文")
 	a.persistActiveSession()
 	a.finishWordTextFlush(state)
 }

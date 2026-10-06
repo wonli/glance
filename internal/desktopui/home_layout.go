@@ -173,11 +173,11 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 										})
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return homeSmallIconButton(gtx, &a.homeNewFolderButton, "folder-plus", 17, homeMuted, func() { a.status = "文件夹功能即将开放" })
+										return homeSmallIconButton(gtx, &a.homeNewFolderButton, "folder-plus", 17, homeMuted, func() { a.setStatus("文件夹功能即将开放") })
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Inset{Left: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											return homeSmallIconButton(gtx, &a.homeFolderAddButton, "plus", 17, homeMuted, func() { a.status = "文件夹功能即将开放" })
+											return homeSmallIconButton(gtx, &a.homeFolderAddButton, "plus", 17, homeMuted, func() { a.setStatus("文件夹功能即将开放") })
 										})
 									}),
 								)
@@ -263,7 +263,7 @@ func (a *App) layoutHomeNavRow(gtx layout.Context, id, glyph, label string, coun
 
 func (a *App) layoutHomeFolderRow(gtx layout.Context) layout.Dimensions {
 	if a.homeFolderButton.Clicked(gtx) {
-		a.status = "Glance 文件夹"
+		a.setStatus("Glance 文件夹")
 	}
 	return a.homeFolderButton.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		height := gtx.Dp(unit.Dp(36))
@@ -448,7 +448,7 @@ func (a *App) handleHomeAction(id string) {
 	case "docx":
 		word, err := docx.NewBlank()
 		if err != nil {
-			a.status = err.Error()
+			a.setStatus(err.Error())
 			return
 		}
 		_ = a.installDocument(loadedDocument{word: word})
@@ -460,13 +460,13 @@ func (a *App) handleHomeAction(id string) {
 	case "open":
 		a.startOpenFilePicker()
 	case "pptx":
-		a.status = "演示文稿创建功能尚未开放"
+		a.setStatus("演示文稿创建功能尚未开放")
 	case "md":
-		a.status = "Markdown 创建功能尚未开放"
+		a.setStatus("Markdown 创建功能尚未开放")
 	case "html":
-		a.status = "HTML 创建功能尚未开放"
+		a.setStatus("HTML 创建功能尚未开放")
 	case "pdf":
-		a.status = "PDF 创建功能尚未开放"
+		a.setStatus("PDF 创建功能尚未开放")
 	}
 }
 

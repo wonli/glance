@@ -280,3 +280,10 @@ type WordPackageSnapshotSaver interface {
 type WordPackageSnapshotRestorer interface {
 	RestoreSnapshot(snapshot []byte) error
 }
+
+// WordPageSetupEditor exposes safe page geometry and section layout edits.
+type WordPageSetupEditor interface {
+	SetPageOrientation(orientation string) error
+	SetPageMargins(topPT, rightPT, bottomPT, leftPT float64) error
+	SetPageSize(widthPT, heightPT float64) error
+}

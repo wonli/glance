@@ -43,7 +43,7 @@ func (a *App) requestWordPDFExport() {
 		state.wordForceDraftFlush.Store(true)
 		state.wordFlushRequested.Store(true)
 		state.wordFlushAllDrafts.Store(true)
-		a.status = "正在提交正文编辑，然后准备 PDF…"
+		a.setStatus("正在提交正文编辑，然后准备 PDF…")
 		a.startNextWordTextCommit()
 		return
 	}
@@ -64,35 +64,35 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 	}
 	key, _, ok := currentWordLayoutKey(state)
 	if !ok {
-		a.status = "当前 DOCX 适配器未提供分页信息，无法导出 PDF"
+		a.setStatus("当前 DOCX 适配器未提供分页信息，无法导出 PDF")
 		return
 	}
 	if state.wordLayoutAcceptedKey == nil || *state.wordLayoutAcceptedKey != key || state.wordLayoutResult == nil {
 		if state.wordLayoutErrorKey != nil && *state.wordLayoutErrorKey == key {
-			a.status = "PDF 导出前分页失败：" + state.wordLayoutError
+			a.setStatus("PDF 导出前分页失败：" + state.wordLayoutError)
 			return
 		}
 		state.wordPDFExportAfterLayout = true
-		a.status = "正在为 PDF 导出计算页面…"
+		a.setStatus("正在为 PDF 导出计算页面…")
 		a.startWordPagination(state)
 		if state.wordPDFExportAfterLayout && state.wordLayoutPendingKey == nil && state.wordLayoutErrorKey != nil && *state.wordLayoutErrorKey == key {
 			state.wordPDFExportAfterLayout = false
-			a.status = "PDF 导出前分页失败：" + state.wordLayoutError
+			a.setStatus("PDF 导出前分页失败：" + state.wordLayoutError)
 		}
 		return
 	}
 	if !state.wordLayoutResult.CanPreview {
-		a.status = blockingWordLayoutMessage(*state.wordLayoutResult)
+		a.setStatus(blockingWordLayoutMessage(*state.wordLayoutResult))
 		return
 	}
 	for _, diagnostic := range state.wordLayoutResult.Diagnostics {
 		if diagnostic.Severity == wordlayout.DiagnosticError {
-			a.status = "无法导出 PDF：" + diagnostic.Detail
+			a.setStatus("无法导出 PDF：" + diagnostic.Detail)
 			return
 		}
 	}
 	if a.documentSessionState != state {
-		a.status = "Word 文档已切换，PDF 导出已取消"
+		a.setStatus("Word 文档已切换，PDF 导出已取消")
 		return
 	}
 	warnings := wordLayoutWarnings(*state.wordLayoutResult)
@@ -104,16 +104,16 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 	a.showConfirmDialog("导出 PDF 前确认版式提示", message, modalDialogWarningConfirmStyle, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
-			a.status = "已取消导出 PDF"
+			a.setStatus("已取消导出 PDF")
 			return
 		}
 		if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) {
-			a.status = "文档在确认期间已更改，请重新导出 PDF"
+			a.setStatus("文档在确认期间已更改，请重新导出 PDF")
 			return
 		}
 		a.openWordPDFExportPreview(state, key)
 	}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", Label: "继续", Style: modalDialogActionPrimary})
-	a.status = "等待确认分页提示"
+	a.setStatus("等待确认分页提示")
 }
 
 func (a *App) layoutWordForExport(state *documentSessionState, key wordLayoutKey, blocks []document.WordBlock, layoutData document.WordLayoutData, orientation string) (wordlayout.Result, error) {
@@ -190,40 +190,40 @@ func (a *App) layoutWordForExport(state *documentSessionState, key wordLayoutKey
 
 func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayoutKey, path string, orientation string) {
 	if state == nil || state.word == nil || state.closed.Load() {
-		a.status = "PDF 导出状态已过期，请重新导出"
+		a.setStatus("PDF 导出状态已过期，请重新导出")
 		return
 	}
 	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
-		a.status = "文档在选择保存位置期间已更改，未导出 PDF；请重新导出"
+		a.setStatus("文档在选择保存位置期间已更改，未导出 PDF；请重新导出")
 		return
 	}
 	if pathsReferToSameFile(path, state.path) {
-		a.status = "PDF 保存路径不能覆盖源 DOCX"
+		a.setStatus("PDF 保存路径不能覆盖源 DOCX")
 		return
 	}
 	if strings.ToLower(filepath.Ext(path)) != ".pdf" {
 		path += ".pdf"
 	}
 	if a.documentSessionState != state {
-		a.status = "Word 文档已切换，PDF 导出已取消"
+		a.setStatus("Word 文档已切换，PDF 导出已取消")
 		return
 	}
 	if a.wordPDFFontSource == nil {
 		shaper, err := newWordTextShaper()
 		if err != nil {
-			a.status = "初始化 PDF 字体服务失败：" + err.Error()
+			a.setStatus("初始化 PDF 字体服务失败：" + err.Error())
 			return
 		}
 		a.wordPDFFontSource = shaper
 	}
 	reader, ok := any(state.word).(document.WordLayoutReader)
 	if !ok {
-		a.status = "DOCX 适配器未提供分页信息，无法导出 PDF"
+		a.setStatus("DOCX 适配器未提供分页信息，无法导出 PDF")
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
-		a.status = "文档正在处理其他操作，请稍后重试"
+		a.setStatus("文档正在处理其他操作，请稍后重试")
 		return
 	}
 	blocks := cloneWordBlockSnapshot(wordBlocksForState(state))
@@ -234,7 +234,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 	pageResult, layoutErr := a.layoutWordForExport(state, key, blocks, layoutData, orientation)
 	if layoutErr != nil {
 		state.finishOperation(token)
-		a.status = "PDF 导出前重新排版失败：" + layoutErr.Error()
+		a.setStatus("PDF 导出前重新排版失败：" + layoutErr.Error())
 		return
 	}
 	doc := state.word
@@ -249,7 +249,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		cancel()
 		state.wordPDFExportCancel = nil
 		state.wordPDFExportRunning = false
-		a.status = "PDF 导出不可用"
+		a.setStatus("PDF 导出不可用")
 		return
 	}
 	stateCopy := state
@@ -294,7 +294,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		case <-shutdown:
 		}
 	}()
-	a.status = "正在生成 PDF…"
+	a.setStatus("正在生成 PDF…")
 }
 
 func (a *App) applyWordPDFExportResult(result wordPDFExportResult) {
@@ -309,16 +309,16 @@ func (a *App) applyWordPDFExportResult(result wordPDFExportResult) {
 	}
 	if state.wordRevisionAtomic.Load() != result.key.Revision {
 		if state == a.documentSessionState {
-			a.status = "文档已更改，旧分页结果未用于当前文档"
+			a.setStatus("文档已更改，旧分页结果未用于当前文档")
 		}
 		return
 	}
 	if result.err != nil {
 		if state == a.documentSessionState {
-			a.status = "导出 PDF 失败：" + result.err.Error()
+			a.setStatus("导出 PDF 失败：" + result.err.Error())
 		}
 	} else if state == a.documentSessionState {
-		a.status = "PDF 已导出：" + filepath.Base(result.path)
+		a.setStatus("PDF 已导出：" + filepath.Base(result.path))
 	}
 }
 

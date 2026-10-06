@@ -32,7 +32,7 @@ func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 	for ev, ok := a.formulaEditor.Update(gtx); ok; ev, ok = a.formulaEditor.Update(gtx) {
 		if _, submit := ev.(widget.SubmitEvent); submit {
 			if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
-				a.status = "修改失败：" + err.Error()
+				a.setStatus("修改失败：" + err.Error())
 				a.window.Invalidate()
 			}
 		}
@@ -42,7 +42,7 @@ func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 	}
 	if a.applyButton.Clicked(gtx) {
 		if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
-			a.status = "修改失败：" + err.Error()
+			a.setStatus("修改失败：" + err.Error())
 			a.window.Invalidate()
 		}
 	}
@@ -120,7 +120,7 @@ func (a *App) layoutFormulaFunctionIcon(gtx layout.Context) layout.Dimensions {
 func (a *App) goToCell() {
 	r, c, ok := parseCellAddress(a.nameBox.Text())
 	if !ok || r > xlsxRows || c > xlsxColumns {
-		a.status = "单元格地址无效"
+		a.setStatus("单元格地址无效")
 		return
 	}
 	a.navigateToCell(r, c)
@@ -188,9 +188,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			raw, err := io.ReadAll(reader)
 			_ = reader.Close()
 			if err != nil {
-				a.status = "读取剪贴板失败：" + err.Error()
+				a.setStatus("读取剪贴板失败：" + err.Error())
 			} else if err := a.pasteClipboard(string(raw)); err != nil {
-				a.status = "粘贴失败：" + err.Error()
+				a.setStatus("粘贴失败：" + err.Error())
 			}
 		}
 	}
@@ -208,7 +208,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			for ev, ok := a.cellEditor.Update(gtx); ok; ev, ok = a.cellEditor.Update(gtx) {
 				if _, submit := ev.(widget.SubmitEvent); submit {
 					if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-						a.status = "修改失败：" + err.Error()
+						a.setStatus("修改失败：" + err.Error())
 						a.window.Invalidate()
 					}
 					gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
@@ -295,7 +295,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					continue
 				}
 				if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-					a.status = "修改失败：" + err.Error()
+					a.setStatus("修改失败：" + err.Error())
 					gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
 					a.window.Invalidate()
 					continue
@@ -390,7 +390,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				if a.isSaving() {
 					v.cancelResize()
 					v.ResizeCursor = 0
-					a.status = "正在保存，请稍后调整行列尺寸"
+					a.setStatus("正在保存，请稍后调整行列尺寸")
 					a.window.Invalidate()
 					break
 				}
@@ -402,7 +402,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				state := a.documentSessionState
 				token, ok := state.beginOperation(sessionOperationMutation)
 				if !ok {
-					a.status = "正在处理其他操作，请稍后重试"
+					a.setStatus("正在处理其他操作，请稍后重试")
 					v.cancelResize()
 					v.ResizeCursor = 0
 					a.window.Invalidate()
@@ -413,9 +413,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				unlock()
 				a.completeSessionOperation(state, token, err, err == nil)
 				if err != nil {
-					a.status = "尺寸调整失败：" + err.Error()
+					a.setStatus("尺寸调整失败：" + err.Error())
 				} else {
-					a.status = "行列尺寸已调整；点击保存写入原文件"
+					a.setStatus("行列尺寸已调整；点击保存写入原文件")
 					a.persistActiveSession()
 				}
 				v.ResizeCursor = 0
@@ -429,7 +429,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					if picture, found := gridPictureByID(state.gridPictures, id); found {
 						target, err := gridPicturePlacementAt(v, picture, preview)
 						if err != nil {
-							a.status = "图片位置无效：" + err.Error()
+							a.setStatus("图片位置无效：" + err.Error())
 						} else {
 							a.startGridPictureMoveResize(state, picture, mode, target, preview)
 						}
@@ -531,7 +531,7 @@ func (a *App) requestGridWindow(v *gridViewport, reader document.GridReader, she
 		case <-a.shutdown:
 		}
 	}()
-	a.status = fmt.Sprintf("正在读取工作表「%s」的可见单元格…", sheet)
+	a.setStatus(fmt.Sprintf("正在读取工作表「%s」的可见单元格…", sheet))
 	a.window.Invalidate()
 }
 
@@ -554,13 +554,13 @@ func (a *App) pollGridLoad(v *gridViewport) {
 				v.WindowError = result.err
 				v.FailedRange = result.rangeOf
 				v.FailedSheet = result.sheet
-				a.status = gridWindowError(result.sheet, result.err)
+				a.setStatus(gridWindowError(result.sheet, result.err))
 				a.window.Invalidate()
 				continue
 			}
 			_ = v.applyWindow(result.sheet, result.rangeOf, result.window)
 			a.applyValueFilterWindow(a.documentSessionState, v)
-			a.status = "就绪"
+			a.setStatus("就绪")
 			a.window.Invalidate()
 		default:
 			return

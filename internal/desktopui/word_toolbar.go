@@ -578,11 +578,11 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	case "new":
 		word, err := docx.NewBlank()
 		if err != nil {
-			a.status = "新建 Word 文档失败：" + err.Error()
+			a.setStatus("新建 Word 文档失败：" + err.Error())
 			return
 		}
 		if err := a.installDocument(loadedDocument{word: word}); err != nil {
-			a.status = "新建 Word 文档失败：" + err.Error()
+			a.setStatus("新建 Word 文档失败：" + err.Error())
 		}
 	case "open":
 		a.startOpenFilePicker()
@@ -608,12 +608,12 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		state.wordAutoSave = !state.wordAutoSave
 		if state.wordAutoSave {
 			if state.path == "" {
-				a.status = "自动保存将在文档另存为后启用"
+				a.setStatus("自动保存将在文档另存为后启用")
 			} else {
-				a.status = "已开启自动保存"
+				a.setStatus("已开启自动保存")
 			}
 		} else {
-			a.status = "已关闭自动保存"
+			a.setStatus("已关闭自动保存")
 		}
 		a.persistActiveSession()
 		a.maybeAutoSaveWord(state)
@@ -636,16 +636,16 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	case "view-ruler":
 		state.wordRulerHidden = !state.wordRulerHidden
 		if state.wordRulerHidden {
-			a.status = "已隐藏标尺"
+			a.setStatus("已隐藏标尺")
 		} else {
-			a.status = "已显示标尺"
+			a.setStatus("已显示标尺")
 		}
 	case "view-gridlines":
 		state.wordGridlinesVisible = !state.wordGridlinesVisible
 		if state.wordGridlinesVisible {
-			a.status = "已显示网格线"
+			a.setStatus("已显示网格线")
 		} else {
-			a.status = "已隐藏网格线"
+			a.setStatus("已隐藏网格线")
 		}
 	case "apply-format-painter":
 		a.startWordFormatPainter()
@@ -740,7 +740,7 @@ func (a *App) handleWordClipboardEvents(gtx layout.Context) {
 		value, err := io.ReadAll(reader)
 		_ = reader.Close()
 		if err != nil {
-			a.status = "读取剪贴板失败：" + err.Error()
+			a.setStatus("读取剪贴板失败：" + err.Error())
 			continue
 		}
 		runID := state.wordClipboardRunID
@@ -864,7 +864,7 @@ func (a *App) showWordFontFamilyDialog() {
 			return
 		}
 		if value == "" {
-			a.status = "字体名称不能为空"
+			a.setStatus("字体名称不能为空")
 			return
 		}
 		a.runWordCommand("字体", func(editor document.WordTextEditor) error {
@@ -887,7 +887,7 @@ func (a *App) toggleWordFormatPainter() {
 		state.wordFormatPainterSourceRunID = ""
 		state.wordFormatPainterTargetRunID = ""
 		state.wordFormatPainterTargetParagraphID = ""
-		a.status = "格式刷已取消"
+		a.setStatus("格式刷已取消")
 		return
 	}
 	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
@@ -899,7 +899,7 @@ func (a *App) toggleWordFormatPainter() {
 	}
 	state.wordFormatPainterSourceRunID = run.ID
 	state.wordFormatPainterActive = true
-	a.status = "已启动格式刷；单击目标文字应用，再点格式刷取消"
+	a.setStatus("已启动格式刷；单击目标文字应用，再点格式刷取消")
 }
 
 func (a *App) queueWordFormatPainterTarget(paragraphID, runID string) {
@@ -970,7 +970,7 @@ func (a *App) startWordFormatPainter() {
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
 		return
 	}
-	a.status = "正在应用格式刷"
+	a.setStatus("正在应用格式刷")
 	generation := a.documentGeneration
 	go func() {
 		blocks, err := runWordMutation(state, func() error { return painter.ApplyWordFormatting(sourceRunID, targetRunID) })
@@ -1122,7 +1122,7 @@ func (a *App) showWordFindDialog() {
 			return
 		}
 		if query == "" {
-			a.status = "请输入要查找的文字"
+			a.setStatus("请输入要查找的文字")
 			return
 		}
 		state.wordFindQuery = query
@@ -1137,11 +1137,11 @@ func (a *App) showWordFindDialog() {
 		}
 		match, found := findWordTextMatch(blocks, query, state.selectedWordRunID, currentEnd, drafts)
 		if !found {
-			a.status = "未找到：" + query
+			a.setStatus("未找到：" + query)
 			return
 		}
 		a.focusWordTextMatch(state, blocks, match)
-		a.status = "已定位：" + query
+		a.setStatus("已定位：" + query)
 	})
 }
 
@@ -1164,7 +1164,7 @@ func (a *App) showWordReplaceDialog() {
 		query := a.modal.Input.Text()
 		replacement := a.modal.SecondInput.Text()
 		if query == "" {
-			a.status = "请输入要查找的文字"
+			a.setStatus("请输入要查找的文字")
 			return
 		}
 		state.wordFindQuery = query
@@ -1182,7 +1182,7 @@ func (a *App) showWordReplaceDialog() {
 			return
 		}
 		if !a.runWordRangeReplacement(match, query, replacement) {
-			a.status = "当前 DOCX 暂时无法替换文字"
+			a.setStatus("当前 DOCX 暂时无法替换文字")
 		}
 	},
 		modalDialogActionSpec{ID: "find-next", Label: "查找下一个"},
@@ -1207,11 +1207,11 @@ func (a *App) findNextWordText(query string) {
 	}
 	match, found := findWordTextMatch(blocks, query, state.selectedWordRunID, currentEnd, drafts)
 	if !found {
-		a.status = "未找到：" + query
+		a.setStatus("未找到：" + query)
 		return
 	}
 	a.focusWordTextMatch(state, blocks, match)
-	a.status = "已定位：" + query
+	a.setStatus("已定位：" + query)
 }
 
 func selectedWordTextQueryMatch(state *documentSessionState, query string) (wordTextMatch, bool) {
@@ -1285,7 +1285,7 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 		return
 	}
 	if result.err != nil {
-		a.status = wordCommandError(result.operation, result.err)
+		a.setStatus(wordCommandError(result.operation, result.err))
 		return
 	}
 	if result.blocks != nil {
@@ -1295,7 +1295,7 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 	blocks := wordBlocksForState(state)
 	run, ok := selectedWordRun(blocks, result.replaceRunID)
 	if !ok || !run.Editable {
-		a.status = "文字已替换，但无法定位编辑位置"
+		a.setStatus("文字已替换，但无法定位编辑位置")
 		return
 	}
 	state.setCommittedWordTextAndClearDraft(run.ID, run.Text)
@@ -1320,12 +1320,12 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 	match, found := findWordTextMatch(blocks, result.replaceQuery, run.ID, startAfter, nil)
 	if found {
 		a.focusWordTextMatch(state, blocks, match)
-		a.status = "已替换，并已定位下一处"
+		a.setStatus("已替换，并已定位下一处")
 	} else {
 		startAfter = max(0, min(startAfter, len([]rune(run.Text))))
 		editor.SetCaret(startAfter, startAfter)
 		state.wordPendingFocusRunID = run.ID
-		a.status = "已替换；没有更多匹配项"
+		a.setStatus("已替换；没有更多匹配项")
 	}
 	a.persistActiveSession()
 	if a.window != nil {
@@ -1459,7 +1459,7 @@ func (a *App) showWordParagraphSpacingDialog(actionID string) {
 		}
 		pt, err := strconv.ParseFloat(draft, 64)
 		if err != nil || math.IsNaN(pt) || math.IsInf(pt, 0) || pt < 0 || pt > 1584 {
-			a.status = title + "必须在 0 到 1584 磅之间"
+			a.setStatus(title + "必须在 0 到 1584 磅之间")
 			if a.window != nil {
 				a.window.Invalidate()
 			}
@@ -1712,7 +1712,7 @@ func (a *App) showWordImageResizeDialog() {
 		}
 		widthInches, err := strconv.ParseFloat(strings.TrimSpace(a.modal.Input.Text()), 64)
 		if err != nil || math.IsNaN(widthInches) || math.IsInf(widthInches, 0) || widthInches <= 0 || widthInches > 100 {
-			a.status = "图片宽度必须大于 0 且不超过 100 英寸"
+			a.setStatus("图片宽度必须大于 0 且不超过 100 英寸")
 			return
 		}
 		widthEMU := int64(math.Round(widthInches * 914400))

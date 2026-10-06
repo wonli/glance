@@ -194,7 +194,7 @@ func (a *App) applyGridPictureMetadata(result gridPictureMetadataResult) {
 		state.gridPicturesSheet = result.sheet
 		state.gridPicturesError = result.err.Error()
 		if a.window != nil {
-			a.status = "读取工作表图片失败：" + result.err.Error()
+			a.setStatus("读取工作表图片失败：" + result.err.Error())
 		}
 	} else {
 		state.gridPictures = append([]document.SpreadsheetImage(nil), result.images...)
@@ -293,7 +293,7 @@ func (a *App) applyGridPicturePreview(result gridPicturePreviewResult) {
 	if result.err != nil {
 		state.gridPictureErrors[result.id] = result.err.Error()
 		if a.window != nil {
-			a.status = "图片预览失败：" + result.err.Error()
+			a.setStatus("图片预览失败：" + result.err.Error())
 		}
 	} else if !state.gridPictureCache.Put(result.id, result.preview) {
 		state.gridPictureErrors[result.id] = "图片无法放入工作簿预览缓存"
@@ -358,7 +358,7 @@ func (a *App) startGridPictureMoveResize(state *documentSessionState, picture do
 func (a *App) startGridPictureCommand(state *documentSessionState, request gridPictureCommandRequest) {
 	if state == nil || state.formatRunning.Load() || a.isSaving() {
 		if a.window != nil {
-			a.status = "正在处理其他操作，请稍后重试"
+			a.setStatus("正在处理其他操作，请稍后重试")
 			a.window.Invalidate()
 		}
 		return
@@ -366,7 +366,7 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 	editor, ok := any(state.book).(document.SpreadsheetImageEditor)
 	if !ok {
 		if a.window != nil {
-			a.status = "当前工作簿不支持编辑图片"
+			a.setStatus("当前工作簿不支持编辑图片")
 			a.window.Invalidate()
 		}
 		return
@@ -377,7 +377,7 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
 		if a.window != nil {
-			a.status = "正在处理其他操作，请稍后重试"
+			a.setStatus("正在处理其他操作，请稍后重试")
 			a.window.Invalidate()
 		}
 		return
@@ -527,7 +527,7 @@ func (a *App) applyGridPictureCommand(result gridPictureCommandResult) {
 		if result.mutated {
 			a.invalidateGridPictures(state)
 		}
-		a.status = result.operation + "失败：" + result.err.Error()
+		a.setStatus(result.operation + "失败：" + result.err.Error())
 	} else {
 		state.gridPictures = append([]document.SpreadsheetImage(nil), result.images...)
 		state.gridPicturesSheet = result.sheet
@@ -536,7 +536,7 @@ func (a *App) applyGridPictureCommand(result gridPictureCommandResult) {
 		state.gridPicturesError = ""
 		setSelectedGridPicture(state, result.selectedID)
 		invalidateGridPicturePreviews(state)
-		a.status = "已" + result.operation
+		a.setStatus("已" + result.operation)
 		a.persistActiveSession()
 	}
 	if a.window != nil {

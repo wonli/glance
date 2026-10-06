@@ -98,13 +98,13 @@ func (a *App) initializeWorkspace() {
 		path, err := workspace.DefaultDatabasePath()
 		if err != nil {
 			a.workspaceError = err.Error()
-			a.status = "工作区数据库不可用：" + err.Error()
+			a.setStatus("工作区数据库不可用：" + err.Error())
 			return
 		}
 		store, err := workspace.Open(path)
 		if err != nil {
 			a.workspaceError = err.Error()
-			a.status = "工作区数据库不可用：" + err.Error()
+			a.setStatus("工作区数据库不可用：" + err.Error())
 			return
 		}
 		runtime.workspaceStore = store
@@ -113,7 +113,7 @@ func (a *App) initializeWorkspace() {
 		collection, err := workspace.OpenCollection(runtime.workspaceStore)
 		if err != nil {
 			a.workspaceError = err.Error()
-			a.status = "恢复工作区失败：" + err.Error()
+			a.setStatus("恢复工作区失败：" + err.Error())
 			return
 		}
 		runtime.collection = collection
@@ -132,7 +132,7 @@ func (a *App) initializeWorkspace() {
 			var err error
 			state, err = a.restoreSessionState(record)
 			if err != nil {
-				a.status = "恢复 " + record.Tab.Title + " 失败：" + err.Error()
+				a.setStatus("恢复 " + record.Tab.Title + " 失败：" + err.Error())
 				continue
 			}
 			state.documentID = record.Tab.DocumentID
@@ -147,7 +147,7 @@ func (a *App) initializeWorkspace() {
 				err = collection.Update(record.Tab.ID, payload, record.ViewState, sessionDirty(state))
 			}
 			if err != nil {
-				a.status = "恢复 " + record.Tab.Title + " 后重建快照失败：" + err.Error()
+				a.setStatus("恢复 " + record.Tab.Title + " 后重建快照失败：" + err.Error())
 			}
 		}
 		a.sessions[record.Tab.ID] = state
@@ -158,7 +158,7 @@ func (a *App) initializeWorkspace() {
 	a.documentSessionState = newDocumentSessionState("")
 	if runtime.isPrimaryWindow(a.windowID) {
 		if err := collection.Activate(workspace.RecentTabID); err != nil {
-			a.status = err.Error()
+			a.setStatus(err.Error())
 		}
 	}
 	a.refreshHomeMetadata()
@@ -361,12 +361,12 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 	state.documentID = id
 	if a.collection != nil && runtime.isPrimaryWindow(a.windowID) {
 		if err := a.collection.Activate(id); err != nil {
-			a.status = err.Error()
+			a.setStatus(err.Error())
 		}
 	}
 	if meta, ok := a.tabMeta[id]; ok && meta.SourcePath != "" {
 		if _, err := os.Stat(meta.SourcePath); err != nil {
-			a.status = "源文件不可用，正在显示本地恢复快照：" + meta.SourcePath
+			a.setStatus("源文件不可用，正在显示本地恢复快照：" + meta.SourcePath)
 		}
 	}
 	if state.word != nil {
@@ -413,7 +413,7 @@ func (a *App) persistActiveSession() {
 		err = a.collection.Update(a.activeTabID, payload, job.viewState, sessionDirty(state))
 	}
 	if err != nil {
-		a.status = "工作区保存失败：" + err.Error()
+		a.setStatus("工作区保存失败：" + err.Error())
 	}
 }
 
@@ -478,15 +478,15 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 	a.fileCommandRunning = true
 	switch kind {
 	case commandOpenFile:
-		a.status = "选择要打开的文件…"
+		a.setStatus("选择要打开的文件…")
 	case commandOpenFolder:
-		a.status = "选择要浏览的文件夹…"
+		a.setStatus("选择要浏览的文件夹…")
 	case commandSaveAs:
-		a.status = "选择另存为位置…"
+		a.setStatus("选择另存为位置…")
 	case commandExportPDF:
-		a.status = "选择 PDF 保存位置…"
+		a.setStatus("选择 PDF 保存位置…")
 	case commandShareCopy:
-		a.status = "选择共享 DOCX 副本保存位置…"
+		a.setStatus("选择共享 DOCX 副本保存位置…")
 	}
 	runner := a.fileCommandRunner
 	go func() {
@@ -548,7 +548,7 @@ func (a *App) persistRecentsAsync() {
 	}
 	if a.workspaceStore != nil {
 		if err := a.workspaceStore.SaveRecents(recents); err != nil {
-			a.status = "工作区保存失败：" + err.Error()
+			a.setStatus("工作区保存失败：" + err.Error())
 		}
 	}
 }
@@ -638,7 +638,7 @@ func (a *App) processPrimaryPromotion() {
 			a.setActiveSessionID("")
 		}
 		if err := a.collection.Activate(activeTabID); err != nil {
-			a.status = "活动文档恢复失败：" + err.Error()
+			a.setStatus("活动文档恢复失败：" + err.Error())
 		}
 	}
 	a.persistActiveSession()
@@ -653,7 +653,7 @@ func (a *App) persistViewState() {
 		return
 	}
 	if err := a.collection.SaveViewState(a.activeTabID, a.viewStateBytes()); err != nil {
-		a.status = "视图状态保存失败：" + err.Error()
+		a.setStatus("视图状态保存失败：" + err.Error())
 	}
 }
 
@@ -671,7 +671,7 @@ func (a *App) updatePersistedTab(meta workspace.Tab) {
 	}
 	format := sessionFormat(meta, state)
 	if err := a.collection.UpdateTabMeta(meta); err != nil {
-		a.status = "工作区保存失败：" + err.Error()
+		a.setStatus("工作区保存失败：" + err.Error())
 		return
 	}
 	job := workspaceWriteJob{documentID: meta.DocumentID, format: format, state: state, viewState: a.viewStateBytesForState(state)}
@@ -683,7 +683,7 @@ func (a *App) updatePersistedTab(meta workspace.Tab) {
 			err = a.collection.Update(meta.ID, payload, job.viewState, sessionDirty(state))
 		}
 		if err != nil {
-			a.status = err.Error()
+			a.setStatus(err.Error())
 		}
 	}
 }
@@ -788,9 +788,9 @@ func (a *App) startWordImagePicker(operation wordImagePickerOperation) {
 	}
 	a.wordImagePickerRunning = true
 	if operation == wordImageInsert {
-		a.status = "选择要插入的 PNG/JPEG 图片…"
+		a.setStatus("选择要插入的 PNG/JPEG 图片…")
 	} else {
-		a.status = "选择用于替换的 PNG/JPEG 图片…"
+		a.setStatus("选择用于替换的 PNG/JPEG 图片…")
 	}
 	choose := a.wordImageFilePicker
 	if choose == nil {
@@ -857,15 +857,15 @@ func (a *App) handleWordImagePickerResult(result wordImagePickerResult) {
 		return
 	}
 	if result.err != nil {
-		a.status = "图片读取失败：" + result.err.Error()
+		a.setStatus("图片读取失败：" + result.err.Error())
 		return
 	}
 	if result.path == "" {
-		a.status = "已取消选择图片"
+		a.setStatus("已取消选择图片")
 		return
 	}
 	if result.state.formatRunning.Load() || a.isSaving() {
-		a.status = "文档正在处理其他操作，请稍后重试"
+		a.setStatus("文档正在处理其他操作，请稍后重试")
 		return
 	}
 	switch result.operation {
@@ -877,7 +877,7 @@ func (a *App) handleWordImagePickerResult(result wordImagePickerResult) {
 			return editor.ReplaceInlineImage(imageID, result.mediaType, result.data)
 		}, false)
 	default:
-		a.status = "无效的图片操作"
+		a.setStatus("无效的图片操作")
 	}
 }
 

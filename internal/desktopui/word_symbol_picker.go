@@ -52,11 +52,11 @@ func (a *App) openWordSymbolPicker() {
 	blocks := wordBlocksForState(state)
 	run, ok := selectedWordRun(blocks, state.selectedWordRunID)
 	if !ok || !run.Editable || !wordBodyRunEditable(blocks, run.ID) {
-		a.status = "请先将光标放在可编辑的正文文字中"
+		a.setStatus("请先将光标放在可编辑的正文文字中")
 		return
 	}
 	if _, ok := any(state.word).(document.WordTextRangeEditor); !ok {
-		a.status = "当前 DOCX 适配器不支持按文字范围插入符号"
+		a.setStatus("当前 DOCX 适配器不支持按文字范围插入符号")
 		return
 	}
 	paragraphID := state.selectedWordParagraphID
@@ -64,7 +64,7 @@ func (a *App) openWordSymbolPicker() {
 		paragraphID = wordParagraphIDForRun(blocks, run.ID)
 	}
 	if paragraphID == "" {
-		a.status = "无法定位插入符号的正文段落"
+		a.setStatus("无法定位插入符号的正文段落")
 		return
 	}
 	editor := wordRunEditor(state, run)
@@ -134,7 +134,7 @@ func (a *App) chooseWordSymbol(index int) {
 	a.closeWordSymbolPicker()
 	if !a.runWordSymbolInsertion(runID, paragraphID, start, end, revision, draftEpoch, choice) {
 		if a.status == "" {
-			a.status = "无法插入符号，请重试"
+			a.setStatus("无法插入符号，请重试")
 		}
 	}
 }
@@ -142,22 +142,22 @@ func (a *App) chooseWordSymbol(index int) {
 func (a *App) runWordSymbolInsertion(runID, paragraphID string, start, end int, revision, draftEpoch uint64, choice wordSymbolChoice) bool {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
-		a.status = "文档正在处理其他操作，请稍后重试插入符号"
+		a.setStatus("文档正在处理其他操作，请稍后重试插入符号")
 		return false
 	}
 	editor, ok := any(state.word).(document.WordTextRangeEditor)
 	if !ok {
-		a.status = "当前 DOCX 适配器不支持按文字范围插入符号"
+		a.setStatus("当前 DOCX 适配器不支持按文字范围插入符号")
 		return false
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.status = "文档正在处理其他操作，请稍后重试插入符号"
+		a.setStatus("文档正在处理其他操作，请稍后重试插入符号")
 		return false
 	}
 	if token.revision != revision || state.wordDraftEpoch.Load() != draftEpoch || wordHasPendingTextDrafts(state) {
 		state.finishOperation(token)
-		a.status = "文档内容或编辑草稿已变化，请提交后重新打开符号面板"
+		a.setStatus("文档内容或编辑草稿已变化，请提交后重新打开符号面板")
 		return false
 	}
 	generation := a.documentGeneration
@@ -180,7 +180,7 @@ func (a *App) completeWordSymbolInsertion(result wordCommandResult) {
 		return
 	}
 	if result.err != nil {
-		a.status = wordCommandError(result.operation, result.err)
+		a.setStatus(wordCommandError(result.operation, result.err))
 		return
 	}
 	if result.blocks != nil {
@@ -189,7 +189,7 @@ func (a *App) completeWordSymbolInsertion(result wordCommandResult) {
 	}
 	run, ok := selectedWordRun(wordBlocksForState(state), result.replaceRunID)
 	if !ok || !run.Editable {
-		a.status = "符号已插入，但无法定位编辑位置"
+		a.setStatus("符号已插入，但无法定位编辑位置")
 		return
 	}
 	state.setCommittedWordTextAndClearDraft(run.ID, run.Text)
@@ -206,7 +206,7 @@ func (a *App) completeWordSymbolInsertion(result wordCommandResult) {
 	state.wordPendingFocusRunID = run.ID
 	state.wordPendingCaretRunID = ""
 	state.wordPendingCaretByX = false
-	a.status = "已插入符号 " + result.insertedSymbol
+	a.setStatus("已插入符号 " + result.insertedSymbol)
 	a.persistActiveSession()
 	if a.window != nil {
 		a.window.Invalidate()

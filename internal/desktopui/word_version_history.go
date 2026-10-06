@@ -104,7 +104,7 @@ func (a *App) applyWordVersionHistoryResult(result wordVersionHistoryResult) {
 	a.wordVersionHistoryLoading = false
 	if result.err != nil {
 		a.wordVersionHistoryError = "读取版本历史失败：" + result.err.Error()
-		a.status = a.wordVersionHistoryError
+		a.setStatus(a.wordVersionHistoryError)
 	} else {
 		a.wordVersionHistoryError = ""
 		a.wordVersionHistoryVersions = append([]workspace.WordVersion(nil), result.versions...)
@@ -358,7 +358,7 @@ func (a *App) startRestoreWordVersionInternal(state *documentSessionState, versi
 		state.wordSaveAfterDrafts || state.wordPDFExportAfterDrafts || state.wordPrintAfterDrafts ||
 		state.wordInsertAfterDraftFlush || state.wordPendingPasteRunID != "" || state.wordDeferredToolbarAction != "" {
 		if state == a.documentSessionState {
-			a.status = "请先完成当前 Word 操作，再恢复历史版本"
+			a.setStatus("请先完成当前 Word 操作，再恢复历史版本")
 		}
 		return false
 	}
@@ -372,7 +372,7 @@ func (a *App) startRestoreWordVersionInternal(state *documentSessionState, versi
 		state.wordFlushRequested.Store(true)
 		state.wordFlushAllDrafts.Store(true)
 		if state == a.documentSessionState {
-			a.status = "正在提交正文修改并恢复历史版本"
+			a.setStatus("正在提交正文修改并恢复历史版本")
 		}
 		a.startNextWordTextCommit()
 		return true
@@ -386,7 +386,7 @@ func (a *App) startRestoreWordVersionInternal(state *documentSessionState, versi
 	pathKey := canonicalSessionPath(path)
 	runtime := a.ensureDesktopRuntime()
 	if state == a.documentSessionState {
-		a.status = "正在恢复历史版本"
+		a.setStatus("正在恢复历史版本")
 	}
 	go func() {
 		result := wordVersionRestoreResult{

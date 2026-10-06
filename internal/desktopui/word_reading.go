@@ -22,9 +22,9 @@ func (a *App) toggleWordReadingMode() {
 	state.wordToolbarColorPicker = false
 	state.wordToolbarHighlightPicker = false
 	if state.wordReadingMode {
-		a.status = "已进入阅读模式"
+		a.setStatus("已进入阅读模式")
 	} else {
-		a.status = "已退出阅读模式"
+		a.setStatus("已退出阅读模式")
 	}
 	if a.window != nil {
 		a.window.Invalidate()

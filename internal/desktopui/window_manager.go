@@ -76,7 +76,7 @@ func (r *desktopRuntime) runWindowFrom(windowID uint64, window *app.Window, init
 			a.sessions[initialDocumentID] = view
 			a.activateSession(initialDocumentID, view)
 		} else {
-			a.status = "文档会话已关闭，请重新打开文档"
+			a.setStatus("文档会话已关闭，请重新打开文档")
 		}
 	}
 	r.runAppWindow(a)

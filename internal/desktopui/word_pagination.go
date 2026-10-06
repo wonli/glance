@@ -433,7 +433,7 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 		state.wordPDFExportAfterLayout = false
 		if result.err != nil {
 			state.wordPDFExportAfterLayout = false
-			a.status = "PDF 导出前分页失败：" + result.err.Error()
+			a.setStatus("PDF 导出前分页失败：" + result.err.Error())
 		} else {
 			a.beginWordPDFExport(state)
 		}
@@ -441,7 +441,7 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 	if state.wordPrintAfterLayout {
 		state.wordPrintAfterLayout = false
 		if result.err != nil {
-			a.status = "打印前分页失败：" + result.err.Error()
+			a.setStatus("打印前分页失败：" + result.err.Error())
 		} else {
 			a.beginWordPrint(state)
 		}
@@ -509,7 +509,7 @@ func (a *App) toggleWordPrintLayout() {
 	if state.wordViewMode == wordViewPrintLayout {
 		state.wordViewMode = wordViewContinuous
 		setWordPageListFirst(state, currentPage)
-		a.status = "已切换到连续视图"
+		a.setStatus("已切换到连续视图")
 	} else {
 		state.wordViewMode = wordViewPrintLayout
 		if state.wordMultiplePagesMode {
@@ -518,9 +518,9 @@ func (a *App) toggleWordPrintLayout() {
 		setWordPageListFirst(state, currentPage)
 		a.startWordPagination(state)
 		if state.wordLayoutPendingKey != nil {
-			a.status = "正在生成打印布局"
+			a.setStatus("正在生成打印布局")
 		} else if state.wordLayoutError != "" {
-			a.status = "分页失败：" + state.wordLayoutError
+			a.setStatus("分页失败：" + state.wordLayoutError)
 		}
 	}
 	if a.window != nil {
@@ -540,7 +540,7 @@ func (a *App) selectWordSinglePageView() {
 	state.wordPageFitMode = true
 	state.wordPageFitPageSetupKey = ""
 	a.startWordPagination(state)
-	a.status = "已切换到单页视图"
+	a.setStatus("已切换到单页视图")
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -558,7 +558,7 @@ func (a *App) selectWordMultiplePagesView() {
 	state.wordPageFitMode = true
 	state.wordPageFitPageSetupKey = ""
 	a.startWordPagination(state)
-	a.status = "已切换到多页视图"
+	a.setStatus("已切换到多页视图")
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -621,10 +621,10 @@ func (a *App) toggleWordWebLayout() {
 	}
 	if state.wordViewMode == wordViewWebLayout {
 		state.wordViewMode = wordViewContinuous
-		a.status = "已切换到连续视图"
+		a.setStatus("已切换到连续视图")
 	} else {
 		state.wordViewMode = wordViewWebLayout
-		a.status = "已切换到 Web 版式"
+		a.setStatus("已切换到 Web 版式")
 	}
 	if a.window != nil {
 		a.window.Invalidate()

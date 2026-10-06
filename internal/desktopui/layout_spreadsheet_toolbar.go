@@ -265,7 +265,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 					a.clearSelectionAsync()
 				}
 			} else {
-				a.status = "剪贴板操作失败：" + err.Error()
+				a.setStatus("剪贴板操作失败：" + err.Error())
 			}
 			continue
 		}
@@ -320,7 +320,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 				}
 				name := strings.TrimSpace(a.modal.Input.Text())
 				if name == "" {
-					a.status = "工作表名称不能为空"
+					a.setStatus("工作表名称不能为空")
 					a.window.Invalidate()
 					return
 				}
@@ -354,7 +354,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 					}
 					width, err := strconv.Atoi(draft)
 					if err != nil || width < 1 || width > 10000 {
-						a.status = "图片宽度必须是 1 到 10000 之间的整数"
+						a.setStatus("图片宽度必须是 1 到 10000 之间的整数")
 						if a.window != nil {
 							a.window.Invalidate()
 						}
@@ -389,7 +389,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 					newScale = 2.5
 				}
 				v.setScale(newScale)
-				a.status = fmt.Sprintf("缩放比例：%.0f%%", newScale*100)
+				a.setStatus(fmt.Sprintf("缩放比例：%.0f%%", newScale*100))
 				if a.window != nil {
 					a.window.Invalidate()
 				}
@@ -400,7 +400,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			v := state.virtualGrid
 			if v != nil {
 				v.setScale(1.0)
-				a.status = "缩放比例：100%"
+				a.setStatus("缩放比例：100%")
 				if a.window != nil {
 					a.window.Invalidate()
 				}
@@ -472,7 +472,7 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 }
 
 func (a *App) showSpreadsheetFeatureMissing(name string) {
-	a.status = fmt.Sprintf("“%s”功能暂未实现", name)
+	a.setStatus(fmt.Sprintf("“%s”功能暂未实现", name))
 	if a.window != nil {
 		a.window.Invalidate()
 	}

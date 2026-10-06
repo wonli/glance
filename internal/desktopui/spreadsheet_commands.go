@@ -296,7 +296,7 @@ func (a *App) clearSelectionAsync() {
 	b := state.selection.Bounds()
 	count := (b.EndRow - b.StartRow + 1) * (b.EndColumn - b.StartColumn + 1)
 	if count > maxClipboardCellsUI {
-		a.status = fmt.Sprintf("剪切选区超过 %d 个单元格", maxClipboardCellsUI)
+		a.setStatus(fmt.Sprintf("剪切选区超过 %d 个单元格", maxClipboardCellsUI))
 		return
 	}
 	edits := make([]document.CellEdit, 0, count)
@@ -306,7 +306,7 @@ func (a *App) clearSelectionAsync() {
 		}
 	}
 	if err := a.applyBatchEdits(edits, "剪切"); err != nil {
-		a.status = "剪切失败：" + err.Error()
+		a.setStatus("剪切失败：" + err.Error())
 	}
 }
 
@@ -318,24 +318,24 @@ func (a *App) applySpreadsheetAutoSum() {
 	reader, hasReader := state.book.(document.SpreadsheetRangeReader)
 	_, hasEditor := state.book.(document.SpreadsheetBatchEditor)
 	if !hasReader || !hasEditor {
-		a.status = "当前表格不支持自动求和"
+		a.setStatus("当前表格不支持自动求和")
 		return
 	}
 	bounds := state.selection.Bounds()
 	edits := computeAutoSumEdits(reader, state.sheet, bounds)
 	if len(edits) == 0 {
-		a.status = "未在选区中找到可求和的连续数值"
+		a.setStatus("未在选区中找到可求和的连续数值")
 		return
 	}
 	if err := a.applyBatchEdits(edits, "求和"); err != nil {
-		a.status = "求和失败：" + err.Error()
+		a.setStatus("求和失败：" + err.Error())
 		return
 	}
 	a.navigateToCell(edits[0].Row, edits[0].Column)
 	if len(edits) == 1 {
-		a.status = fmt.Sprintf("求和完成：%s = %s", xlsx.CellName(edits[0].Column, edits[0].Row), edits[0].Value)
+		a.setStatus(fmt.Sprintf("求和完成：%s = %s", xlsx.CellName(edits[0].Column, edits[0].Row), edits[0].Value))
 	} else {
-		a.status = fmt.Sprintf("求和完成，已填入 %d 个单元格", len(edits))
+		a.setStatus(fmt.Sprintf("求和完成，已填入 %d 个单元格", len(edits)))
 	}
 }
 
@@ -500,7 +500,7 @@ func (a *App) showSpreadsheetFindDialog() {
 	}
 	searcher, ok := state.book.(document.SpreadsheetSearcher)
 	if !ok {
-		a.status = "当前表格不支持查找"
+		a.setStatus("当前表格不支持查找")
 		return
 	}
 	a.modal.ShowInput("查找", "在当前工作表中查找内容", state.excelFindQuery, "查找内容", func(action string) {
@@ -510,21 +510,21 @@ func (a *App) showSpreadsheetFindDialog() {
 			return
 		}
 		if query == "" {
-			a.status = "请输入要查找的内容"
+			a.setStatus("请输入要查找的内容")
 			return
 		}
 		state.excelFindQuery = query
 		matches, err := searcher.SearchSheet(state.sheet, query)
 		if err != nil {
-			a.status = "查找失败：" + err.Error()
+			a.setStatus("查找失败：" + err.Error())
 			return
 		}
 		if len(matches) == 0 {
-			a.status = "未找到：" + query
+			a.setStatus("未找到：" + query)
 			return
 		}
 		currentPos := state.selection.Active
-		curRow, curCol := currentPos.Row + 1, currentPos.Column + 1
+		curRow, curCol := currentPos.Row+1, currentPos.Column+1
 		target := matches[0]
 		for _, m := range matches {
 			if m.Row > curRow || (m.Row == curRow && m.Column > curCol) {
@@ -533,7 +533,7 @@ func (a *App) showSpreadsheetFindDialog() {
 			}
 		}
 		a.navigateToCell(target.Row, target.Column)
-		a.status = fmt.Sprintf("已定位至 %s（共 %d 处匹配）", xlsx.CellName(target.Column, target.Row), len(matches))
+		a.setStatus(fmt.Sprintf("已定位至 %s（共 %d 处匹配）", xlsx.CellName(target.Column, target.Row), len(matches)))
 	}, modalDialogActionSpec{ID: "confirm", Label: "查找下一个"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
 }
 
@@ -596,7 +596,7 @@ func (a *App) toggleSpreadsheetFormatPainter() {
 		return
 	}
 	if !state.selectionSet {
-		a.status = "请先选择要复制格式的单元格"
+		a.setStatus("请先选择要复制格式的单元格")
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -607,7 +607,7 @@ func (a *App) toggleSpreadsheetFormatPainter() {
 	state.excelFormatPainterActive = true
 	state.excelFormatPainterPatch = &patch
 	state.excelFormatPainterSourceCell = a.selectedCell
-	a.status = "已启动格式刷；选择目标单元格区域应用，再点格式刷或按 Esc 取消"
+	a.setStatus("已启动格式刷；选择目标单元格区域应用，再点格式刷或按 Esc 取消")
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -621,7 +621,7 @@ func (a *App) cancelSpreadsheetFormatPainter() {
 	state.excelFormatPainterActive = false
 	state.excelFormatPainterPatch = nil
 	state.excelFormatPainterSourceCell = ""
-	a.status = "已取消格式刷"
+	a.setStatus("已取消格式刷")
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -637,7 +637,7 @@ func (a *App) applySpreadsheetFormatPainter() {
 	state.excelFormatPainterPatch = nil
 	state.excelFormatPainterSourceCell = ""
 	a.applyCellFormat(patch)
-	a.status = "格式刷已应用至所选区域"
+	a.setStatus("格式刷已应用至所选区域")
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -660,7 +660,7 @@ func (a *App) showSpreadsheetFontFamilyDialog() {
 			return
 		}
 		if value == "" {
-			a.status = "字体名称不能为空"
+			a.setStatus("字体名称不能为空")
 			return
 		}
 		a.applyCellFormat(document.CellFormatPatch{FontFamily: &value})

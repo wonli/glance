@@ -55,7 +55,7 @@ func (a *App) viewForTab(id string) *documentSessionState {
 		if meta, ok := a.tabMeta[id]; ok && meta.Title != "" {
 			title = meta.Title
 		}
-		a.status = "恢复 " + title + " 失败：" + err.Error()
+		a.setStatus("恢复 " + title + " 失败：" + err.Error())
 	}
 	return state
 }

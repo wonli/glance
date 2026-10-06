@@ -25,7 +25,7 @@ func (a *App) startWordDocumentInfoLoad() {
 	if !ok {
 		return
 	}
-	a.status = "正在读取文档信息"
+	a.setStatus("正在读取文档信息")
 	generation := a.documentGeneration
 	go func() {
 		unlock := lockSessionAdapterRead(state)

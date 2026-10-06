@@ -21,11 +21,11 @@ func (a *App) showWordZoomDialog() {
 		value := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(a.modal.Input.Text()), "%"))
 		percent, err := strconv.Atoi(value)
 		if err != nil || percent < 50 || percent > 150 {
-			a.status = "缩放比例请输入 50–150 的整数百分比"
+			a.setStatus("缩放比例请输入 50–150 的整数百分比")
 			return
 		}
 		setWordManualZoom(state, float64(percent)/100)
-		a.status = fmt.Sprintf("缩放：%d%%", percent)
+		a.setStatus(fmt.Sprintf("缩放：%d%%", percent))
 		a.modal.Hide()
 	}, modalDialogActionSpec{ID: "confirm", Label: "应用"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
 }

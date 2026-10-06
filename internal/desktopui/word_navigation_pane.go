@@ -70,9 +70,9 @@ func (a *App) toggleWordNavigationPane() {
 	}
 	state.wordNavigationVisible = !state.wordNavigationVisible
 	if state.wordNavigationVisible {
-		a.status = "已打开导航窗格"
+		a.setStatus("已打开导航窗格")
 	} else {
-		a.status = "已关闭导航窗格"
+		a.setStatus("已关闭导航窗格")
 	}
 	if a.window != nil {
 		a.window.Invalidate()

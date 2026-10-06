@@ -39,6 +39,8 @@ type CellFormatPatch struct {
 	NumberFormat        *string
 	BorderPreset        *string
 	WrapText            *bool
+	FontSize            *float64
+	FontFamily          *string
 	ClearFormat         bool
 }
 

@@ -30,7 +30,7 @@ func (a *App) queueWordPageBreak() {
 	}
 	_, ok := any(state.word).(document.WordPageBreakEditor)
 	if !ok {
-		a.status = "当前 DOCX 适配器不支持插入分页符"
+		a.setStatus("当前 DOCX 适配器不支持插入分页符")
 		return
 	}
 	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
@@ -44,7 +44,7 @@ func (a *App) queueWordPageBreak() {
 		start, end = end, start
 	}
 	if _, _, valid := wordTextAroundSelection(value, start, end); !valid {
-		a.status = "无法按当前光标位置插入分页符，请重试"
+		a.setStatus("无法按当前光标位置插入分页符，请重试")
 		return
 	}
 	state.wordPageBreakIntent = &wordPageBreakIntent{runID: run.ID, value: value, selectionStart: start, selectionEnd: end}
@@ -66,7 +66,7 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 		state.wordPageBreakIntent = nil
 		state.wordFlushRequested.Store(false)
 		state.wordFlushAllDrafts.Store(false)
-		a.status = "当前 DOCX 适配器不支持插入分页符"
+		a.setStatus("当前 DOCX 适配器不支持插入分页符")
 		return
 	}
 	intent := *state.wordPageBreakIntent
@@ -75,7 +75,7 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 		state.wordPageBreakIntent = nil
 		state.wordFlushRequested.Store(false)
 		state.wordFlushAllDrafts.Store(false)
-		a.status = "无法按当前光标位置插入分页符，请重试"
+		a.setStatus("无法按当前光标位置插入分页符，请重试")
 		return
 	}
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
@@ -123,7 +123,7 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 			}
 		}
 		if active {
-			a.status = wordCommandError(result.operation, result.err)
+			a.setStatus(wordCommandError(result.operation, result.err))
 		}
 		return
 	}
@@ -147,7 +147,7 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	}
 	newRun, ok := selectedWordRun(wordBlocksForState(state), result.pageBreakCaretRunID)
 	if !ok || result.pageBreakParagraphID == "" {
-		a.status = "分页符已插入，但无法定位插入点"
+		a.setStatus("分页符已插入，但无法定位插入点")
 		a.persistActiveSession()
 		return
 	}
@@ -163,6 +163,6 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	caretEditor.SetText(newRun.Text)
 	caretEditor.SetCaret(0, 0)
 	reconcileWordSelection(state, false)
-	a.status = "已插入分页符"
+	a.setStatus("已插入分页符")
 	a.persistActiveSession()
 }

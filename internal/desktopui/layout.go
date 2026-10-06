@@ -49,6 +49,7 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Stacked(a.layoutModalDialog),
 				layout.Stacked(a.layoutWordSymbolPicker),
+				layout.Expanded(a.layoutFeedback),
 			)
 		},
 	)
@@ -86,7 +87,7 @@ func (a *App) processAsyncResults() {
 	select {
 	case err := <-a.windowOpenResults:
 		if err != nil {
-			a.status = "创建新窗口失败：" + err.Error()
+			a.setStatus("创建新窗口失败：" + err.Error())
 		}
 	default:
 	}
@@ -158,20 +159,20 @@ func (a *App) processAsyncResults() {
 		}
 		if result.generation == a.documentGeneration && result.state == a.documentSessionState && result.sheet == a.sheet {
 			if result.err != nil {
-				a.status = "格式应用失败：" + result.err.Error()
+				a.setStatus("格式应用失败：" + result.err.Error())
 				if result.operation != "" {
-					a.status = result.operation + "失败：" + result.err.Error()
+					a.setStatus(result.operation + "失败：" + result.err.Error())
 				}
 			} else if !result.history || result.applied {
-				a.status = "已应用单元格格式"
+				a.setStatus("已应用单元格格式")
 				if result.operation != "" {
-					a.status = "已完成" + result.operation
+					a.setStatus("已完成" + result.operation)
 				}
 				if result.history {
 					if result.undo {
-						a.status = "已撤销"
+						a.setStatus("已撤销")
 					} else {
-						a.status = "已重做"
+						a.setStatus("已重做")
 					}
 				}
 				if result.window != nil {
@@ -189,7 +190,7 @@ func (a *App) processAsyncResults() {
 	case result := <-a.fileCommandResults:
 		a.fileCommandRunning = false
 		if result.err != nil {
-			a.status = result.err.Error()
+			a.setStatus(result.err.Error())
 			if result.kind == commandExportPDF {
 				a.wordPDFPickerRequest = nil
 				a.spreadsheetPDFPickerRequest = nil
@@ -206,26 +207,26 @@ func (a *App) processAsyncResults() {
 				if result.path != "" {
 					a.startOpen(result.path)
 				} else {
-					a.status = "已取消打开文件"
+					a.setStatus("已取消打开文件")
 				}
 			case commandOpenFolder:
 				if result.path == "" {
-					a.status = "已取消打开文件夹"
+					a.setStatus("已取消打开文件夹")
 				} else if a.collection == nil {
-					a.status = "工作区数据库不可用，无法记录文件夹内容"
+					a.setStatus("工作区数据库不可用，无法记录文件夹内容")
 				} else if len(result.recents) == 0 {
-					a.status = "所选文件夹中没有支持的文档"
+					a.setStatus("所选文件夹中没有支持的文档")
 				} else {
 					a.collection.StageRecents(result.recents)
 					a.refreshHomeMetadata()
 					a.persistRecentsAsync()
-					a.status = fmt.Sprintf("已添加 %d 个文档到最近打开", len(result.recents))
+					a.setStatus(fmt.Sprintf("已添加 %d 个文档到最近打开", len(result.recents)))
 				}
 			case commandSaveAs:
 				if result.path != "" {
 					a.startSaveAs(result.path)
 				} else {
-					a.status = "已取消另存为"
+					a.setStatus("已取消另存为")
 					if a.pendingCloseTabID != "" {
 						a.pendingCloseTabID = ""
 					}
@@ -236,21 +237,21 @@ func (a *App) processAsyncResults() {
 				a.wordPDFPickerRequest = nil
 				a.spreadsheetPDFPickerRequest = nil
 				if result.path == "" {
-					a.status = "已取消导出 PDF"
+					a.setStatus("已取消导出 PDF")
 				} else if wordReq != nil {
 					a.startWordPDFFileExport(wordReq.state, wordReq.key, result.path, wordReq.orientation)
 				} else if sheetReq != nil {
 					a.startSpreadsheetPDFFileExport(sheetReq.state, sheetReq.sheet, result.path, sheetReq.orientation)
 				} else {
-					a.status = "PDF 导出状态已过期，请重新导出"
+					a.setStatus("PDF 导出状态已过期，请重新导出")
 				}
 			case commandShareCopy:
 				request := a.wordShareCopyRequest
 				a.wordShareCopyRequest = nil
 				if result.path == "" {
-					a.status = "已取消共享副本导出"
+					a.setStatus("已取消共享副本导出")
 				} else if request == nil {
-					a.status = "共享副本状态已过期，请重新导出"
+					a.setStatus("共享副本状态已过期，请重新导出")
 				} else {
 					a.startWordShareCopyFile(request, result.path)
 				}
@@ -281,7 +282,7 @@ func (a *App) processAsyncResults() {
 		}
 		if result.generation == a.documentGeneration && result.state == a.documentSessionState {
 			if result.err != nil {
-				a.status = "读取文档信息失败：" + result.err.Error()
+				a.setStatus("读取文档信息失败：" + result.err.Error())
 			} else {
 				a.showWordDocumentInfoDialog(result.properties)
 			}
@@ -306,7 +307,7 @@ func (a *App) processAsyncResults() {
 		if result.err == nil && activeResult && result.applied {
 			invalidateAllWordImagePreviews(result.state)
 			reconcileWordSelection(result.state, true)
-			a.status = "已恢复历史版本"
+			a.setStatus("已恢复历史版本")
 			a.startWordPagination(result.state)
 			a.persistActiveSession()
 		}
@@ -350,7 +351,7 @@ func (a *App) processAsyncResults() {
 				result.state.setCommittedWordTextAndClearDraft(result.runID, result.runText)
 				reconcileWordSelection(result.state, false)
 				if activeResult {
-					a.status = "正在编辑 Word 正文"
+					a.setStatus("正在编辑 Word 正文")
 					a.persistActiveSession()
 				}
 				if result.state.wordFlushRequested.Load() {
@@ -362,7 +363,7 @@ func (a *App) processAsyncResults() {
 				a.completeWordParagraphSplit(result)
 			} else if result.textDraft {
 				if result.err != nil {
-					a.status = wordCommandError(result.operation, result.err)
+					a.setStatus(wordCommandError(result.operation, result.err))
 					result.state.wordFlushRequested.Store(false)
 					result.state.wordFlushAllDrafts.Store(false)
 					result.state.wordForceDraftFlush.Store(false)
@@ -392,7 +393,7 @@ func (a *App) processAsyncResults() {
 						a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, result.state.wordRevisionAtomic.Load())
 					}
 					reconcileWordSelection(result.state, false)
-					a.status = "正在编辑 Word 正文"
+					a.setStatus("正在编辑 Word 正文")
 					a.persistActiveSession()
 				}
 				if result.err == nil && result.state.wordFlushRequested.Load() {
@@ -403,7 +404,7 @@ func (a *App) processAsyncResults() {
 			} else if result.wordSymbolInsertion {
 				a.completeWordSymbolInsertion(result)
 			} else if result.err != nil {
-				a.status = wordCommandError(result.operation, result.err)
+				a.setStatus(wordCommandError(result.operation, result.err))
 			} else if !result.history || result.applied {
 				if result.blocks != nil && result.revision == 0 {
 					result.state.setWordBlocks(result.blocks)
@@ -417,12 +418,12 @@ func (a *App) processAsyncResults() {
 				reconcileWordSelection(result.state, result.history)
 				if result.history {
 					if result.undo {
-						a.status = "已撤销 Word 编辑"
+						a.setStatus("已撤销 Word 编辑")
 					} else {
-						a.status = "已重做 Word 编辑"
+						a.setStatus("已重做 Word 编辑")
 					}
 				} else {
-					a.status = wordCommandError(result.operation, nil)
+					a.setStatus(wordCommandError(result.operation, nil))
 				}
 				if result.clearImageSelection && result.state.selectedWordImageID == result.imageID {
 					result.state.selectedWordImageID = ""
@@ -479,12 +480,12 @@ func (a *App) processAsyncResults() {
 				if result.err != nil {
 					state.wordImageErrors[result.id] = result.err.Error()
 					if state == a.documentSessionState {
-						a.status = "图片预览失败：" + result.err.Error()
+						a.setStatus("图片预览失败：" + result.err.Error())
 					}
 				} else if !state.wordImageCache.Put(result.id, result.image) {
 					state.wordImageErrors[result.id] = "图片无法放入文档预览缓存"
 					if state == a.documentSessionState {
-						a.status = "图片预览失败：图片无法放入文档预览缓存"
+						a.setStatus("图片预览失败：图片无法放入文档预览缓存")
 					}
 				} else {
 					delete(state.wordImageErrors, result.id)
@@ -509,11 +510,11 @@ func (a *App) processAsyncResults() {
 	case result := <-a.openResults:
 		a.opening = false
 		if result.err != nil {
-			a.status = result.err.Error()
+			a.setStatus(result.err.Error())
 		} else if err := a.installDocument(result.loaded); err != nil {
-			a.status = err.Error()
+			a.setStatus(err.Error())
 		} else if result.historyErr != nil && result.loaded.word != nil {
-			a.status = "文档已打开，但历史版本暂不可用：" + result.historyErr.Error()
+			a.setStatus("文档已打开，但历史版本暂不可用：" + result.historyErr.Error())
 		}
 	default:
 	}
@@ -521,7 +522,7 @@ func (a *App) processAsyncResults() {
 	case result := <-a.saveResults:
 		a.saving = false
 		if result.err != nil {
-			a.status = "保存失败：" + result.err.Error()
+			a.setStatus("保存失败：" + result.err.Error())
 			if result.tabID == a.pendingCloseTabID && result.tabID != "" {
 				a.showCloseConfirmation(result.tabID, "保存失败", "保存没有完成。可以重试保存、不保存并关闭，或取消关闭。")
 			}
@@ -557,9 +558,9 @@ func (a *App) processAsyncResults() {
 				historyWarning = "文件已保存，但历史版本未记录：" + result.historyErr.Error()
 			}
 			if state := a.sessions[result.tabID]; state != nil && result.token.documentID != "" && state.wordRevisionAtomic.Load() != result.token.revision {
-				a.status = "保存已完成，但保存后文档又有修改"
+				a.setStatus("保存已完成，但保存后文档又有修改")
 				if historyWarning != "" {
-					a.status = historyWarning + "；保存后文档又有修改"
+					a.setStatus(historyWarning + "；保存后文档又有修改")
 				}
 				a.updatePersistedTab(a.tabMeta[result.tabID])
 				a.maybeAutoSaveWord(a.documentSessionState)
@@ -569,9 +570,9 @@ func (a *App) processAsyncResults() {
 				return
 			}
 			if historyWarning != "" {
-				a.status = historyWarning
+				a.setStatus(historyWarning)
 			} else {
-				a.status = "已保存 " + result.path
+				a.setStatus("已保存 " + result.path)
 			}
 			if state := a.sessions[result.tabID]; state != nil {
 				a.updatePersistedTab(a.tabMeta[result.tabID])
@@ -584,7 +585,7 @@ func (a *App) processAsyncResults() {
 				a.closeWorkspaceTab(result.tabID)
 			}
 			if historyWarning != "" {
-				a.status = historyWarning
+				a.setStatus(historyWarning)
 			}
 			a.maybeAutoSaveWord(a.documentSessionState)
 		}
@@ -753,7 +754,7 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 					}
 					if a.cellEdit.Editing {
 						if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-							a.status = "修改失败：" + err.Error()
+							a.setStatus("修改失败：" + err.Error())
 							a.window.Invalidate()
 							continue
 						}
@@ -773,7 +774,7 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 						a.nameBox.SetText("A1")
 						a.formulaEditor.SetText("")
 					} else if err := a.loadSheet(); err != nil {
-						a.status = err.Error()
+						a.setStatus(err.Error())
 					}
 					a.persistViewState()
 				}
@@ -1007,9 +1008,9 @@ func (a *App) layoutEditor(gtx layout.Context) layout.Dimensions {
 	if a.book != nil && a.book.Editable() && a.selectedCell != "" {
 		if a.applyButton.Clicked(gtx) {
 			if err := a.applyCellEdit(); err != nil {
-				a.status = "修改失败：" + err.Error()
+				a.setStatus("修改失败：" + err.Error())
 			} else {
-				a.status = a.selectedCell + " 已修改；点击保存写入原文件"
+				a.setStatus(a.selectedCell + " 已修改；点击保存写入原文件")
 			}
 		}
 		return editorPanel(gtx, a, a.selectedCell, &a.cellEditor, "应用单元格", &a.applyButton)

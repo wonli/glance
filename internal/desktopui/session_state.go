@@ -115,6 +115,7 @@ type documentSessionState struct {
 	wordPendingPasteRunID               string
 	wordPendingPasteText                string
 	jsonEditor                          widget.Editor
+	jsonView                            *jsonWorkspaceView
 	jsonToolbarActionList               widget.List
 	jsonToolbarActionButtons            map[string]*widget.Clickable
 	cellButtons                         map[string]*widget.Clickable
@@ -125,6 +126,9 @@ type documentSessionState struct {
 	selection                           CellSelection
 	selectionSet                        bool
 	selectionDragging                   bool
+	excelFormatPainterActive            bool
+	excelFormatPainterPatch             *document.CellFormatPatch
+	excelFormatPainterSourceCell        string
 	toolbarTab                          spreadsheetToolbarTab
 	toolbarTabs                         [9]widget.Clickable
 	toolbarActionList                   widget.List

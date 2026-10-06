@@ -79,7 +79,7 @@ func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Di
 			// Keep the viewport as wide as the tab strip so Background doesn't
 			// center a shorter natural width and shift the selected tab.
 			gtx.Constraints.Min.X = gtx.Constraints.Max.X
-			return list(gtx)
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, list), layout.Rigid(a.layoutJSONSaveIndicator))
 		}
 
 		contentWidth := gtx.Dp(unit.Dp(112)) +
@@ -92,6 +92,7 @@ func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Di
 				return list(gtx)
 			}),
 			layout.Flexed(1, a.layoutWindowDragHandle),
+			layout.Rigid(a.layoutJSONSaveIndicator),
 		)
 	})
 }
@@ -289,11 +290,11 @@ func (a *App) activateWorkspaceTab(id string) {
 		return
 	}
 	if meta, ok := a.tabMeta[id]; ok && meta.SourcePath != "" {
-		a.status = "工作区快照不可用，正在从源文件恢复：" + meta.SourcePath
+		a.setStatus("工作区快照不可用，正在从源文件恢复：" + meta.SourcePath)
 		a.startOpen(meta.SourcePath)
 		return
 	}
-	a.status = "恢复文档标签失败：" + err.Error()
+	a.setStatus("恢复文档标签失败：" + err.Error())
 }
 
 func (a *App) documentTabWidgets(id string) (*widget.Clickable, *widget.Clickable) {
@@ -444,7 +445,7 @@ func (a *App) activateRecent() {
 		_ = a.collection.Activate(workspace.RecentTabID)
 	}
 	a.documentSessionState = newDocumentSessionState("")
-	a.status = "最近打开的本地文档"
+	a.setStatus("最近打开的本地文档")
 }
 
 func (a *App) closeWorkspaceTab(id string) {
@@ -576,7 +577,7 @@ func (a *App) closeWorkspaceTabWithoutSession(id string, cause error) {
 	if a.activeTabID == "" {
 		a.activateRecent()
 	}
-	a.status = "已关闭无法恢复的文档标签：" + cause.Error()
+	a.setStatus("已关闭无法恢复的文档标签：" + cause.Error())
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -604,7 +605,7 @@ func workspaceSessionOperationName(kind sessionOperationKind) string {
 }
 
 func (a *App) showWorkspaceTabCloseFailure(message string) {
-	a.status = message
+	a.setStatus(message)
 	a.showConfirmDialog("无法关闭文档标签", message, modalDialogWarningConfirmStyle, func(string) {
 		a.modal.Hide()
 	}, modalDialogActionSpec{ID: "ok", Label: "知道了"})

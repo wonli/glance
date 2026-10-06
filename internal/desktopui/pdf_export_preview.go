@@ -71,13 +71,13 @@ func (a *App) openSpreadsheetPDFExportPreview(state *documentSessionState, sheet
 
 	reader, ok := state.book.(document.GridReader)
 	if !ok {
-		a.status = "当前电子表格不支持网格视图，无法导出 PDF"
+		a.setStatus("当前电子表格不支持网格视图，无法导出 PDF")
 		return
 	}
 
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
-		a.status = "电子表格正在处理其他操作，请稍后重试"
+		a.setStatus("电子表格正在处理其他操作，请稍后重试")
 		return
 	}
 
@@ -103,7 +103,7 @@ func (a *App) openSpreadsheetPDFExportPreview(state *documentSessionState, sheet
 		case <-shutdown:
 		}
 	}()
-	a.status = "正在准备 PDF 预览…"
+	a.setStatus("正在准备 PDF 预览…")
 }
 
 func readSpreadsheetPDFPreviewSnapshot(state *documentSessionState, reader document.GridReader, sheet string) (document.SheetWindow, []document.SpreadsheetImage, error) {
@@ -140,7 +140,7 @@ func (a *App) applySpreadsheetPDFPreviewResult(result spreadsheetPDFPreviewResul
 		return
 	}
 	if result.err != nil {
-		a.status = "准备 PDF 预览失败：" + result.err.Error()
+		a.setStatus("准备 PDF 预览失败：" + result.err.Error())
 		return
 	}
 	trimmedWindow := result.window
@@ -184,13 +184,13 @@ func (a *App) applySpreadsheetPDFPreviewResult(result spreadsheetPDFPreviewResul
 
 	a.modal.ShowCustom("导出 PDF 预览", "设置页面方向并预览导出效果", 680, a.layoutPDFExportPreview, func(action string) {
 		if action == "confirm" && a.pdfExportPreview.wordPreviewPending {
-			a.status = "正在按所选方向重新排版，请稍后再导出"
+			a.setStatus("正在按所选方向重新排版，请稍后再导出")
 			return
 		}
 		a.modal.Hide()
 		if action != "confirm" {
 			a.pdfExportPreview.Active = false
-			a.status = "已取消导出 PDF"
+			a.setStatus("已取消导出 PDF")
 			return
 		}
 		chosenOrientation := a.pdfExportPreview.Orientation
@@ -208,7 +208,7 @@ func (a *App) openWordPDFExportPreview(state *documentSessionState, key wordLayo
 
 	reader, ok := any(state.word).(document.WordLayoutReader)
 	if !ok {
-		a.status = "DOCX 适配器未提供分页信息，无法导出 PDF"
+		a.setStatus("DOCX 适配器未提供分页信息，无法导出 PDF")
 		return
 	}
 
@@ -240,13 +240,13 @@ func (a *App) openWordPDFExportPreview(state *documentSessionState, key wordLayo
 
 	a.modal.ShowCustom("导出 PDF 预览", "设置页面方向并预览导出效果", 680, a.layoutPDFExportPreview, func(action string) {
 		if action == "confirm" && a.pdfExportPreview.wordPreviewPending {
-			a.status = "正在按所选方向重新排版，请稍后再导出"
+			a.setStatus("正在按所选方向重新排版，请稍后再导出")
 			return
 		}
 		a.modal.Hide()
 		if action != "confirm" {
 			a.pdfExportPreview.Active = false
-			a.status = "已取消导出 PDF"
+			a.setStatus("已取消导出 PDF")
 			return
 		}
 		chosenOrientation := a.pdfExportPreview.Orientation
@@ -339,7 +339,7 @@ func (a *App) applyWordPDFPreviewResult(result wordPDFPreviewResult) {
 	}
 	prev.wordPreviewPending = false
 	if result.err != nil {
-		a.status = "切换 PDF 方向失败：" + result.err.Error()
+		a.setStatus("切换 PDF 方向失败：" + result.err.Error())
 		return
 	}
 	prev.Orientation = result.orientation
@@ -365,7 +365,7 @@ func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
 			prev.CurrentPageIndex = 0
 		} else if prev.Format == "word" {
 			if err := a.updateWordPreviewOrientation("portrait"); err != nil {
-				a.status = "切换 PDF 方向失败：" + err.Error()
+				a.setStatus("切换 PDF 方向失败：" + err.Error())
 				return layout.Dimensions{}
 			}
 		}
@@ -386,7 +386,7 @@ func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
 			prev.CurrentPageIndex = 0
 		} else if prev.Format == "word" {
 			if err := a.updateWordPreviewOrientation("landscape"); err != nil {
-				a.status = "切换 PDF 方向失败：" + err.Error()
+				a.setStatus("切换 PDF 方向失败：" + err.Error())
 				return layout.Dimensions{}
 			}
 		}

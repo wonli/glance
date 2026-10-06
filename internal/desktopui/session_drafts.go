@@ -266,7 +266,7 @@ func (a *App) surfacePendingWordRestoreError(state *documentSessionState) {
 	if message == "" || epoch <= state.appliedWordRestoreErrorEpoch.Load() {
 		return
 	}
-	a.status = message
+	a.setStatus(message)
 	state.appliedWordRestoreErrorEpoch.Store(epoch)
 }
 
@@ -276,7 +276,7 @@ func (a *App) publishWordRestoreNotice(state *documentSessionState, message stri
 	}
 	epoch := recordWordRestoreNotice(a.ensureDesktopRuntime(), state, message)
 	if state == a.documentSessionState {
-		a.status = message
+		a.setStatus(message)
 		state.appliedWordRestoreErrorEpoch.Store(epoch)
 	}
 }

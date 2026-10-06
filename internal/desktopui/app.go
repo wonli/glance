@@ -51,6 +51,7 @@ type App struct {
 	applyButton           widget.Clickable
 	goToCellButton        widget.Clickable
 
+	feedback                feedbackState
 	status                  string
 	activeSessionDocumentID atomic.Value
 	sessions                map[string]*documentSessionState
@@ -241,6 +242,8 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 	}
 	a.theme.Shaper = text.NewShaper()
 	a.theme.Face = preferredSystemTypeface
+	a.feedback.initialized = true
+	a.feedback.lastStatus = a.status
 	return a
 }
 
@@ -252,7 +255,7 @@ func Run(initialPath string) <-chan struct{} {
 	a := newAppWithRuntime(w, runtime)
 	if initialPath != "" {
 		if err := a.open(initialPath); err != nil {
-			a.status = err.Error()
+			a.setStatus(err.Error())
 		}
 	}
 	go runtime.runAppWindow(a)
@@ -276,7 +279,7 @@ func (a *App) open(path string) error {
 		return err
 	}
 	if historyErr != nil && shared.word != nil {
-		a.status = "文档已打开，但历史版本暂不可用：" + historyErr.Error()
+		a.setStatus("文档已打开，但历史版本暂不可用：" + historyErr.Error())
 	}
 	return nil
 }
@@ -448,7 +451,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 					}
 				}
 				if err != nil {
-					a.status = "新建文档的恢复快照保存失败：" + err.Error()
+					a.setStatus("新建文档的恢复快照保存失败：" + err.Error())
 					return err
 				}
 			}
@@ -474,21 +477,21 @@ func (a *App) installDocument(loaded loadedDocument) error {
 			a.cellEdit.selectCell("A1", "")
 			a.nameBox.SetText("A1")
 			a.formulaEditor.SetText("")
-			a.status = fmt.Sprintf("工作表「%s」：虚拟网格就绪，可浏览并编辑完整 XLSX 地址范围", a.sheet)
+			a.setStatus(fmt.Sprintf("工作表「%s」：虚拟网格就绪，可浏览并编辑完整 XLSX 地址范围", a.sheet))
 			return nil
 		}
 		a.sheet = loaded.sheets[0]
 		a.cellButtons = make(map[string]*widget.Clickable)
-		a.status = "旧版 .xls 只读预览（当前显示首张工作表）"
+		a.setStatus("旧版 .xls 只读预览（当前显示首张工作表）")
 		return a.loadSheet()
 	}
 	a.blockButtons = make(map[int]*widget.Clickable)
 	a.selectedBlock = -1
 	if loaded.word != nil {
-		a.status = fmt.Sprintf("已打开 %s；读取 %d 个内容块", loaded.path, len(a.word.Blocks()))
+		a.setStatus(fmt.Sprintf("已打开 %s；读取 %d 个内容块", loaded.path, len(a.word.Blocks())))
 		a.startWordPagination(state)
 	} else if loaded.jsonDoc != nil {
-		a.status = "已打开 JSON 文本"
+		a.setStatus("已打开 JSON 文本")
 	}
 	return nil
 }
@@ -513,7 +516,7 @@ func (a *App) startOpen(path string) {
 		return
 	}
 	a.opening = true
-	a.status = "正在打开 " + strings.TrimSpace(path)
+	a.setStatus("正在打开 " + strings.TrimSpace(path))
 	go func() {
 		runtime := a.ensureDesktopRuntime()
 		shared, openedFromDisk, err := runtime.openDocumentSessionWithStatus(path)
@@ -646,7 +649,7 @@ func (a *App) startSaveAs(path string) {
 		format = "json"
 	}
 	if err := validateSaveAsExtension(format, path); err != nil {
-		a.status = err.Error()
+		a.setStatus(err.Error())
 		if a.pendingCloseTabID != "" {
 			a.showCloseConfirmation(a.pendingCloseTabID, "保存失败", "文件扩展名不匹配。可以重试保存、不保存并关闭，或取消关闭。")
 		}
@@ -654,7 +657,7 @@ func (a *App) startSaveAs(path string) {
 	}
 	state := a.documentSessionState
 	if state == nil {
-		a.status = "没有活动文档"
+		a.setStatus("没有活动文档")
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationSave)
@@ -746,11 +749,11 @@ func (a *App) loadSheet() error {
 		}
 	}
 	if len(rows) == 0 {
-		a.status = fmt.Sprintf("工作表「%s」为空（未读到单元格内容）", a.sheet)
+		a.setStatus(fmt.Sprintf("工作表「%s」为空（未读到单元格内容）", a.sheet))
 	} else if len(rows) == maxPreviewRows {
-		a.status = fmt.Sprintf("工作表「%s」：已读入前 %d 行，%d 个非空单元格", a.sheet, len(rows), nonEmpty)
+		a.setStatus(fmt.Sprintf("工作表「%s」：已读入前 %d 行，%d 个非空单元格", a.sheet, len(rows), nonEmpty))
 	} else {
-		a.status = fmt.Sprintf("工作表「%s」：已读入 %d 行，%d 个非空单元格", a.sheet, len(rows), nonEmpty)
+		a.setStatus(fmt.Sprintf("工作表「%s」：已读入 %d 行，%d 个非空单元格", a.sheet, len(rows), nonEmpty))
 	}
 	return nil
 }
@@ -815,7 +818,7 @@ func (a *App) commitGridCell(value string) error {
 	a.cellEditor.SetText(a.cellEdit.Original)
 	a.formulaEditor.SetText(a.cellEdit.Original)
 	if changed {
-		a.status = fmt.Sprintf("%s 已修改；点击保存写入原文件", a.selectedCell)
+		a.setStatus(fmt.Sprintf("%s 已修改；点击保存写入原文件", a.selectedCell))
 		a.persistActiveSession()
 	}
 	return nil

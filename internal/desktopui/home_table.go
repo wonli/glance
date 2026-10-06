@@ -89,7 +89,7 @@ func (a *App) layoutHomeRecentRow(gtx layout.Context, item workspace.Recent) lay
 		a.homeMoreButtons[item.Path] = more
 	}
 	if more.Clicked(gtx) {
-		a.status = "最近文件操作"
+		a.setStatus("最近文件操作")
 	}
 
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(56)), gtx.Dp(unit.Dp(56))
@@ -338,7 +338,7 @@ func (a *App) toggleHomeFavorite(path string) {
 		return
 	}
 	if err := a.workspaceStore.SaveFavorite(path, favorite); err != nil {
-		a.status = "收藏保存失败：" + err.Error()
+		a.setStatus("收藏保存失败：" + err.Error())
 	}
 }
 
@@ -349,7 +349,7 @@ func (a *App) loadHomeFavorites() {
 	}
 	favorites, err := a.workspaceStore.LoadFavorites()
 	if err != nil {
-		a.status = "读取收藏失败：" + err.Error()
+		a.setStatus("读取收藏失败：" + err.Error())
 		return
 	}
 	if a.homeFavorites == nil {

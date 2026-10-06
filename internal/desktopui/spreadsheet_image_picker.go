@@ -73,9 +73,9 @@ func (a *App) startSpreadsheetImagePicker(operation spreadsheetImagePickerOperat
 	}
 	a.xlsxImagePickerRunning = true
 	if operation == spreadsheetImageInsert {
-		a.status = "选择要插入的 PNG/JPEG 图片…"
+		a.setStatus("选择要插入的 PNG/JPEG 图片…")
 	} else {
-		a.status = "选择用于替换的 PNG/JPEG 图片…"
+		a.setStatus("选择用于替换的 PNG/JPEG 图片…")
 	}
 	choose := a.xlsxImageFilePicker
 	if choose == nil {
@@ -106,22 +106,22 @@ func (a *App) handleSpreadsheetImagePickerResult(result spreadsheetImagePickerRe
 		return
 	}
 	if result.err != nil {
-		a.status = "图片读取失败：" + result.err.Error()
+		a.setStatus("图片读取失败：" + result.err.Error())
 		return
 	}
 	if result.path == "" {
-		a.status = "已取消选择图片"
+		a.setStatus("已取消选择图片")
 		return
 	}
 	if state.formatRunning.Load() || a.isSaving() {
-		a.status = "工作簿正在处理其他操作，请稍后重试"
+		a.setStatus("工作簿正在处理其他操作，请稍后重试")
 		return
 	}
 	switch result.operation {
 	case spreadsheetImageInsert:
 		width, height, err := spreadsheetPictureInitialSize(result.data)
 		if err != nil {
-			a.status = "图片读取失败：" + err.Error()
+			a.setStatus("图片读取失败：" + err.Error())
 			return
 		}
 		name := filepath.Base(result.path)
@@ -134,7 +134,7 @@ func (a *App) handleSpreadsheetImagePickerResult(result spreadsheetImagePickerRe
 		}
 		a.startGridPictureCommand(state, gridPictureCommandRequest{kind: gridPictureCommandReplace, operation: "替换图片", imageID: result.imageID, mediaType: result.mediaType, data: result.data})
 	default:
-		a.status = "无效的图片操作"
+		a.setStatus("无效的图片操作")
 	}
 }
 

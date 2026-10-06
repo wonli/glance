@@ -334,7 +334,7 @@ func (a *App) createNewMenuDocument(kind string) {
 	case "docx":
 		word, err := docx.NewBlank()
 		if err != nil {
-			a.status = err.Error()
+			a.setStatus(err.Error())
 		} else {
 			_ = a.installDocument(loadedDocument{word: word})
 		}

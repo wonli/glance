@@ -1,11 +1,7 @@
 package desktopui
 
 import (
-	"image"
-
 	"gioui.org/layout"
-	"gioui.org/op/clip"
-	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -21,17 +17,25 @@ const (
 var jsonToolbarActions = []ribbonAction{
 	{id: "save", label: "保存", group: "文件", icon: "save"},
 	{id: "save-as", label: "另存为", group: "文件", icon: "save-as"},
+	{id: "import", label: "导入", group: "文件", icon: "folder-open"},
+	{id: "expand-all", label: "全部展开", group: "展开", icon: "unfold-vertical"},
+	{id: "collapse-all", label: "全部折叠", group: "展开", icon: "fold-vertical"},
+	{id: "expand-level", label: "展开层级", group: "展开", icon: "list-tree"},
 	{id: "format", label: "格式化", group: "格式", icon: "braces"},
 	{id: "minify", label: "压缩", group: "格式", icon: "minimize-2"},
-	{id: "sort-keys", label: "排序键", group: "工具", icon: "arrow-up-down"},
-	{id: "validate", label: "验证", group: "工具", icon: "circle-check"},
+	{id: "search", label: "搜索", group: "格式", icon: "search"},
+	{id: "copy", label: "复制", group: "格式", icon: "copy"},
+	{id: "sort-keys", label: "排序", group: "工具", icon: "arrow-up-down"},
+	{id: "validate", label: "校验", group: "工具", icon: "circle-check"},
 }
 
 func (a *App) layoutJSON(gtx layout.Context) layout.Dimensions {
+	a.handleJSONWorkspaceEvents(gtx)
 	a.handleJSONToolbarEvents(gtx)
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(a.layoutJSONToolbar),
-		layout.Flexed(1, a.layoutJSONEditor),
+		layout.Flexed(1, a.layoutJSONWorkspace),
+		layout.Rigid(a.layoutJSONStatus),
 	)
 }
 
@@ -60,59 +64,29 @@ func (a *App) handleJSONToolbarEvents(gtx layout.Context) {
 
 	formatBtn := jsonToolbarButton(state, a, "format")
 	if formatBtn != nil && formatBtn.Clicked(gtx) && !a.isSaving() {
-		a.formatJSONDocument()
+		a.startJSONTool("format")
 	}
 
 	minifyBtn := jsonToolbarButton(state, a, "minify")
 	if minifyBtn != nil && minifyBtn.Clicked(gtx) && !a.isSaving() {
-		a.minifyJSONDocument()
+		a.startJSONTool("minify")
 	}
 
 	sortBtn := jsonToolbarButton(state, a, "sort-keys")
 	if sortBtn != nil && sortBtn.Clicked(gtx) && !a.isSaving() {
-		a.sortJSONKeysDocument()
+		a.startJSONTool("sort-keys")
 	}
 
 	validateBtn := jsonToolbarButton(state, a, "validate")
 	if validateBtn != nil && validateBtn.Clicked(gtx) && !a.isSaving() {
-		a.validateJSONDocument()
+		a.startJSONTool("validate")
 	}
-}
-
-func (a *App) layoutJSONToolbar(gtx layout.Context) layout.Dimensions {
-	state := a.documentSessionState
-	if state == nil || a.jsonDoc == nil {
-		return layout.Dimensions{}
+	for _, id := range []string{"expand-all", "collapse-all", "expand-level", "search", "copy", "level-1", "level-2", "level-3", "mode-tree", "mode-source", "mode-compare", "paste", "import", "copy-value", "copy-key", "copy-object", "copy-dot", "copy-path", "copy-pointer", "row-copy-value", "row-copy-path", "level-all", "apply-value", "cancel-value"} {
+		if jsonToolbarButton(state, a, id).Clicked(gtx) {
+			a.handleJSONWorkspaceAction(gtx, id)
+		}
 	}
-	state.jsonToolbarActionList.List.Axis = layout.Horizontal
-	height := gtx.Dp(unit.Dp(jsonToolbarHeightDP))
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-	actions := jsonToolbarActions
 
-	return layout.Background{}.Layout(gtx,
-		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
-			paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
-			return layout.Dimensions{Size: gtx.Constraints.Max}
-		},
-		func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return state.jsonToolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
-					action := actions[index]
-					enabled := a.jsonToolbarActionEnabled(action)
-					button := jsonToolbarButton(state, a, action.id)
-					icon, _ := jsonToolbarActionIcon(action, enabled)
-					background := contentSurface
-					return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
-						btnGtx := gtx
-						btnGtx.Constraints.Min = image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight))
-						btnGtx.Constraints.Max = btnGtx.Constraints.Min
-						return toolbarIconButton(btnGtx, a.theme, button, icon, jsonToolbarIconSize, action.label, action.label, enabled, false, background)
-					})
-				})
-			})
-		},
-	)
 }
 
 func (a *App) layoutJSONSaveToolbar(gtx layout.Context) layout.Dimensions {
@@ -123,10 +97,15 @@ func (a *App) jsonToolbarActionEnabled(action ribbonAction) bool {
 	if a == nil || a.jsonDoc == nil || a.isSaving() {
 		return false
 	}
+	if a.jsonView != nil && a.jsonView.toolPending {
+		return false
+	}
 	switch action.id {
 	case "save":
 		return a.isDirty()
-	case "save-as", "format", "minify", "sort-keys", "validate":
+	case "import":
+		return !a.opening
+	case "save-as", "format", "minify", "sort-keys", "validate", "expand-all", "collapse-all", "expand-level", "search", "copy":
 		return true
 	default:
 		return false
@@ -158,10 +137,10 @@ func (a *App) formatJSONDocument() {
 	if a == nil || a.documentSessionState == nil || a.jsonDoc == nil {
 		return
 	}
-	text := a.jsonEditor.Text()
+	text := a.jsonDraftText()
 	formatted, err := jsondoc.Format(text)
 	if err != nil {
-		a.status = "JSON 格式化失败：" + err.Error()
+		a.setStatus("JSON 格式化失败：" + err.Error())
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -174,10 +153,10 @@ func (a *App) minifyJSONDocument() {
 	if a == nil || a.documentSessionState == nil || a.jsonDoc == nil {
 		return
 	}
-	text := a.jsonEditor.Text()
+	text := a.jsonDraftText()
 	minified, err := jsondoc.Minify(text)
 	if err != nil {
-		a.status = "JSON 压缩失败：" + err.Error()
+		a.setStatus("JSON 压缩失败：" + err.Error())
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -190,10 +169,10 @@ func (a *App) sortJSONKeysDocument() {
 	if a == nil || a.documentSessionState == nil || a.jsonDoc == nil {
 		return
 	}
-	text := a.jsonEditor.Text()
+	text := a.jsonDraftText()
 	sorted, err := jsondoc.SortKeys(text)
 	if err != nil {
-		a.status = "JSON 排序键失败：" + err.Error()
+		a.setStatus("JSON 排序键失败：" + err.Error())
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -206,11 +185,11 @@ func (a *App) validateJSONDocument() {
 	if a == nil || a.documentSessionState == nil || a.jsonDoc == nil {
 		return
 	}
-	text := a.jsonEditor.Text()
+	text := a.jsonDraftText()
 	if err := jsondoc.Validate(text); err != nil {
-		a.status = "JSON 验证失败：" + err.Error()
+		a.setStatus("JSON 验证失败：" + err.Error())
 	} else {
-		a.status = "JSON 格式正确"
+		a.setStatus("JSON 格式正确")
 	}
 	if a.window != nil {
 		a.window.Invalidate()
@@ -218,57 +197,68 @@ func (a *App) validateJSONDocument() {
 }
 
 func (a *App) applyJSONTextMutation(newText, successStatus string) {
+	a.applyJSONTextMutationChecked(newText, successStatus, nil)
+}
+
+func (a *App) applyJSONTextMutationIfSource(newText, successStatus, expectedSource string) bool {
+	return a.applyJSONTextMutationChecked(newText, successStatus, &expectedSource)
+}
+
+func (a *App) applyJSONTextMutationChecked(newText, successStatus string, expectedSource *string) bool {
 	token, ok := a.documentSessionState.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.status = "JSON 文档正在处理其他操作"
+		a.setStatus("JSON 文档正在处理其他操作")
 		if a.window != nil {
 			a.window.Invalidate()
 		}
-		return
+		return false
 	}
 	unlock := lockSessionAdapterWrite(a.documentSessionState)
+	current := a.jsonDoc.Text()
+	if expectedSource != nil && current != *expectedSource {
+		unlock()
+		a.completeSessionOperation(a.documentSessionState, token, nil, false)
+		a.setStatus("JSON 内容已经改变，已取消操作")
+		return false
+	}
+	if current == newText {
+		unlock()
+		a.completeSessionOperation(a.documentSessionState, token, nil, false)
+		return true
+	}
 	err := a.jsonDoc.SetText(newText)
 	unlock()
 	a.completeSessionOperation(a.documentSessionState, token, err, err == nil)
 	if err != nil {
-		a.status = err.Error()
+		a.setStatus(err.Error())
 	} else {
-		a.jsonEditor.SetText(newText)
+		v := a.ensureJSONView()
+		if len(newText) <= jsonSourceEditLimit {
+			a.jsonEditor.SetText(newText)
+			v.sourceLoaded = true
+		} else if v.sourceLoaded {
+			a.jsonEditor.SetText("")
+			v.sourceLoaded = false
+		}
+		v.sourceSynced = newText
 		a.persistActiveSession()
-		a.status = successStatus
+		a.setStatus(successStatus)
 	}
 	if a.window != nil {
 		a.window.Invalidate()
 	}
+	return err == nil
 }
 
 func (a *App) layoutJSONEditor(gtx layout.Context) layout.Dimensions {
-	unlock := lockSessionAdapterRead(a.documentSessionState)
-	text := a.jsonDoc.Text()
-	unlock()
-	if a.jsonEditor.Text() != text {
-		a.jsonEditor.SetText(text)
+	v := a.ensureJSONView()
+	if !v.sourceLoaded {
+		return a.layoutJSONSourcePreview(gtx, v.parsed, v.sourceSegments, &v.sourceList)
 	}
-	return layout.Inset{Top: unit.Dp(8), Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(16), Left: unit.Dp(20), Right: unit.Dp(20), Bottom: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		style := material.Editor(a.theme, &a.jsonEditor, "编辑 JSON 文本")
-		dims := style.Layout(gtx)
-		updated := a.jsonEditor.Text()
-		if updated != text {
-			token, ok := a.documentSessionState.beginOperation(sessionOperationMutation)
-			if !ok {
-				a.status = "JSON 文档正在处理其他操作"
-				return dims
-			}
-			unlock := lockSessionAdapterWrite(a.documentSessionState)
-			err := a.jsonDoc.SetText(updated)
-			unlock()
-			a.completeSessionOperation(a.documentSessionState, token, err, err == nil)
-			if err != nil {
-				a.status = err.Error()
-			} else {
-				a.persistActiveSession()
-			}
-		}
-		return dims
+		style.Font.Typeface = jsonMonoFace
+		style.TextSize = unit.Sp(13)
+		return style.Layout(gtx)
 	})
 }
