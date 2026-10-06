@@ -1,0 +1,156 @@
+package xlsx
+
+import (
+	"math"
+	"testing"
+
+	"glance/internal/document"
+)
+
+func TestWorkbookPageLayoutOrientationAndUndo(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+
+	sheets := wb.SheetNames()
+	if len(sheets) == 0 {
+		t.Fatal("expected at least one sheet")
+	}
+	sheet := sheets[0]
+
+	editor, ok := any(wb).(document.SpreadsheetPageLayoutEditor)
+	if !ok {
+		t.Fatal("workbook does not implement SpreadsheetPageLayoutEditor")
+	}
+
+	layout, err := editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.Orientation != "portrait" {
+		t.Fatalf("expected default portrait, got %q", layout.Orientation)
+	}
+
+	// Change to landscape
+	if err := editor.SetSheetPageOrientation(sheet, "landscape"); err != nil {
+		t.Fatalf("SetSheetPageOrientation failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.Orientation != "landscape" {
+		t.Fatalf("expected landscape, got %q", layout.Orientation)
+	}
+
+	// Test Undo
+	history := any(wb).(document.SpreadsheetHistory)
+	undone, err := history.Undo()
+	if err != nil || !undone {
+		t.Fatalf("Undo failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.Orientation != "portrait" {
+		t.Fatalf("expected restored portrait after undo, got %q", layout.Orientation)
+	}
+
+	// Test Redo
+	redone, err := history.Redo()
+	if err != nil || !redone {
+		t.Fatalf("Redo failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.Orientation != "landscape" {
+		t.Fatalf("expected landscape after redo, got %q", layout.Orientation)
+	}
+
+	// Error case
+	if err := editor.SetSheetPageOrientation(sheet, "slant"); err == nil {
+		t.Fatal("expected error for invalid orientation")
+	}
+}
+
+func TestWorkbookPageLayoutMarginsAndUndo(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+
+	sheet := wb.SheetNames()[0]
+	editor := any(wb).(document.SpreadsheetPageLayoutEditor)
+
+	// Set wide margins (1.0 inch all around)
+	if err := editor.SetSheetPageMargins(sheet, 1.0, 1.0, 1.0, 1.0); err != nil {
+		t.Fatalf("SetSheetPageMargins failed: %v", err)
+	}
+
+	layout, err := editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if math.Abs(layout.MarginTop-1.0) > 0.01 || math.Abs(layout.MarginLeft-1.0) > 0.01 {
+		t.Fatalf("unexpected margins: top=%f left=%f", layout.MarginTop, layout.MarginLeft)
+	}
+
+	// Undo
+	history := any(wb).(document.SpreadsheetHistory)
+	undone, err := history.Undo()
+	if err != nil || !undone {
+		t.Fatalf("Undo failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if math.Abs(layout.MarginTop-0.75) > 0.01 {
+		t.Fatalf("expected restored top margin ~0.75, got %f", layout.MarginTop)
+	}
+
+	// Error case: negative
+	if err := editor.SetSheetPageMargins(sheet, -1.0, 1.0, 1.0, 1.0); err == nil {
+		t.Fatal("expected error for negative margin")
+	}
+}
+
+func TestWorkbookPageLayoutSizeAndUndo(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+
+	sheet := wb.SheetNames()[0]
+	editor := any(wb).(document.SpreadsheetPageLayoutEditor)
+
+	// Set Letter paper size (1)
+	if err := editor.SetSheetPageSize(sheet, 1); err != nil {
+		t.Fatalf("SetSheetPageSize failed: %v", err)
+	}
+
+	layout, err := editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PaperSize != 1 {
+		t.Fatalf("expected paper size 1, got %d", layout.PaperSize)
+	}
+
+	// Undo
+	history := any(wb).(document.SpreadsheetHistory)
+	undone, err := history.Undo()
+	if err != nil || !undone {
+		t.Fatalf("Undo failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PaperSize != 9 { // Default A4
+		t.Fatalf("expected restored paper size 9, got %d", layout.PaperSize)
+	}
+
+	// Error case: zero size
+	if err := editor.SetSheetPageSize(sheet, 0); err == nil {
+		t.Fatal("expected error for zero paper size")
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
+	"glance/internal/format/xlsx"
 )
 
 type toolbarTestBook struct{ editable bool }
@@ -187,12 +188,12 @@ func TestExcelPageLayoutActionClickShowsMissingNotice(t *testing.T) {
 	}
 
 	frame()
-	point := f32.Pt(34, 58) // First Page Layout action, "页边距".
+	point := f32.Pt(194, 58) // 4th Page Layout action, "打印区域" (unimplemented).
 	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: point})
 	frame()
 	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: point})
 	frame()
-	if want := "“页边距”功能暂未实现"; app.status != want {
+	if want := "“打印区域”功能暂未实现"; app.status != want {
 		t.Fatalf("status after clicking Excel Page Layout action = %q, want %q", app.status, want)
 	}
 }
@@ -561,3 +562,83 @@ func TestSpreadsheetZoomInAndZoom100(t *testing.T) {
 		t.Fatalf("expected scale 1.0, got %v", v.Scale)
 	}
 }
+
+func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
+	wb := xlsx.NewBlank()
+	defer wb.Close()
+
+	state := newDocumentSessionState("")
+	state.book = wb
+	state.sheet = wb.SheetNames()[0]
+	v := newGridViewport()
+	state.virtualGrid = v
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionLayoutMargins) {
+		t.Fatal("layout-margins should be enabled")
+	}
+	if !app.toolbarActionEnabled(toolbarActionLayoutOrientation) {
+		t.Fatal("layout-orientation should be enabled")
+	}
+	if !app.toolbarActionEnabled(toolbarActionLayoutSize) {
+		t.Fatal("layout-size should be enabled")
+	}
+
+	// 1. Orientation Dialog
+	app.showSpreadsheetOrientationDialog()
+	if !app.modal.Visible || app.modal.Title != "纸张方向" {
+		t.Fatalf("expected modal dialog for orientation, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("landscape")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("orientation command failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for orientation formatResult")
+	}
+	layout, err := wb.GetSheetPageLayout(state.sheet)
+	if err != nil || layout.Orientation != "landscape" {
+		t.Fatalf("expected landscape orientation, got %+v (err=%v)", layout, err)
+	}
+
+	// 2. Margins Dialog
+	app.showSpreadsheetMarginsDialog()
+	if !app.modal.Visible || app.modal.Title != "页边距设置" {
+		t.Fatalf("expected modal dialog for margins, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("narrow")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("margins command failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for margins formatResult")
+	}
+	layout, err = wb.GetSheetPageLayout(state.sheet)
+	if err != nil || layout.MarginLeft != 0.25 {
+		t.Fatalf("expected narrow margin 0.25, got %+v (err=%v)", layout, err)
+	}
+
+	// 3. Page Size Dialog
+	app.showSpreadsheetPageSizeDialog()
+	if !app.modal.Visible || app.modal.Title != "纸张大小设置" {
+		t.Fatalf("expected modal dialog for page size, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("letter")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("page size command failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for page size formatResult")
+	}
+	layout, err = wb.GetSheetPageLayout(state.sheet)
+	if err != nil || layout.PaperSize != 1 {
+		t.Fatalf("expected paper size 1 (Letter), got %+v (err=%v)", layout, err)
+	}
+}
+

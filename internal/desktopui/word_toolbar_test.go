@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1161,3 +1162,103 @@ func TestWordToolbarParagraphSpacingBeforeAndAfter(t *testing.T) {
 		t.Fatalf("expected out-of-range status error, got %q", app.status)
 	}
 }
+
+func TestWordPageSetupDialogsAndCommands(t *testing.T) {
+	state := newDocumentSessionState("sample.docx")
+	doc, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	state.word = doc
+	state.setWordBlocks(doc.WordBlocks())
+	app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 1)}
+
+	orientAction := ribbonAction{id: "layout-orientation", label: "方向"}
+	marginsAction := ribbonAction{id: "layout-margins", label: "页边距"}
+	sizeAction := ribbonAction{id: "layout-size", label: "纸张大小"}
+
+	if !app.wordToolbarActionEnabled(orientAction) || !app.wordToolbarActionEnabled(marginsAction) || !app.wordToolbarActionEnabled(sizeAction) {
+		t.Fatal("expected page setup actions to be enabled")
+	}
+
+	// 1. Orientation Dialog and Command
+	app.executeWordToolbarAction("layout-orientation")
+	if !app.modal.Visible || app.modal.Title != "页面方向" {
+		t.Fatalf("expected modal dialog for layout-orientation, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("landscape")
+	if app.modal.Visible {
+		t.Fatal("modal should be hidden after landscape action")
+	}
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("layout-orientation command failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for layout-orientation command result")
+	}
+
+	layout := doc.WordLayoutData()
+	if len(layout.Sections) == 0 || layout.Sections[0].PageSetup.Orientation != "landscape" {
+		t.Fatalf("expected orientation landscape, got %#v", layout.Sections)
+	}
+
+	// 2. Margins Dialog and Command
+	app.executeWordToolbarAction("layout-margins")
+	if !app.modal.Visible || app.modal.Title != "页边距设置" {
+		t.Fatalf("expected modal dialog for layout-margins, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("narrow")
+	if app.modal.Visible {
+		t.Fatal("modal should be hidden after narrow action")
+	}
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("layout-margins command failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for layout-margins command result")
+	}
+
+	layout = doc.WordLayoutData()
+	setup := layout.Sections[0].PageSetup
+	if setup.MarginTopPT != 36 || setup.MarginLeftPT != 36 {
+		t.Fatalf("expected narrow margins (36pt), got top=%f left=%f", setup.MarginTopPT, setup.MarginLeftPT)
+	}
+
+	// 3. Page Size Dialog and Command
+	app.executeWordToolbarAction("layout-size")
+	if !app.modal.Visible || app.modal.Title != "纸张大小设置" {
+		t.Fatalf("expected modal dialog for layout-size, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("letter")
+	if app.modal.Visible {
+		t.Fatal("modal should be hidden after letter action")
+	}
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("layout-size command failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for layout-size command result")
+	}
+
+	layout = doc.WordLayoutData()
+	setup = layout.Sections[0].PageSetup
+	// Since current orientation is landscape, width > height (792 x 612)
+	if (math.Abs(setup.WidthPT-792) > 1.0 && math.Abs(setup.WidthPT-612) > 1.0) || (math.Abs(setup.HeightPT-792) > 1.0 && math.Abs(setup.HeightPT-612) > 1.0) {
+		t.Fatalf("expected Letter page size dimensions, got width=%f height=%f", setup.WidthPT, setup.HeightPT)
+	}
+}
+

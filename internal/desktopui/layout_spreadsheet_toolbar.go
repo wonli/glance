@@ -407,6 +407,18 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			}
 			continue
 		}
+		if action.slot == toolbarActionLayoutMargins {
+			a.showSpreadsheetMarginsDialog()
+			continue
+		}
+		if action.slot == toolbarActionLayoutOrientation {
+			a.showSpreadsheetOrientationDialog()
+			continue
+		}
+		if action.slot == toolbarActionLayoutSize {
+			a.showSpreadsheetPageSizeDialog()
+			continue
+		}
 		style := a.selectedCellStyle()
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
@@ -464,7 +476,8 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionFormatPainter, toolbarActionFontFamily,
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat,
 		toolbarActionSum, toolbarActionFind,
-		toolbarActionZoomIn, toolbarActionZoom100:
+		toolbarActionZoomIn, toolbarActionZoom100,
+		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize:
 		return false
 	default:
 		return true
@@ -489,6 +502,9 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	switch slot {
 	case toolbarActionZoomIn, toolbarActionZoom100:
 		return state.book != nil && state.virtualGrid != nil && !state.formatRunning.Load()
+	case toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize:
+		_, ok := state.book.(document.SpreadsheetPageLayoutEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case 0, 1:
 		_, ok := state.book.(document.SpreadsheetHistory)
 		return ok && !state.formatRunning.Load() && !a.isSaving()

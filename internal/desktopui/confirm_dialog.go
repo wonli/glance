@@ -104,6 +104,24 @@ func defaultConfirmStyleForTitle(title string) (modalDialogConfirmStyle, bool) {
 			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
 			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
 		}, true
+	case "页面方向":
+		return modalDialogConfirmStyle{
+			Icon:           "layout-orientation",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
+	case "页边距设置":
+		return modalDialogConfirmStyle{
+			Icon:           "layout-margins",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
+	case "纸张大小设置":
+		return modalDialogConfirmStyle{
+			Icon:           "layout-size",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
 	default:
 		return modalDialogConfirmStyle{}, false
 	}
