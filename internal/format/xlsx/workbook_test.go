@@ -372,6 +372,42 @@ func TestSetCellFormatsWrapTextAlignmentAndPercent(t *testing.T) {
 	}
 }
 
+func TestSetCellFormatsFontSizeAndFamily(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	formatter, ok := any(wb).(document.SpreadsheetFormatter)
+	if !ok {
+		t.Fatal("workbook does not implement SpreadsheetFormatter")
+	}
+
+	size := 16.0
+	family := "Arial"
+	if err := formatter.SetCellFormats("Sheet1", singleCellRange("A1"), document.CellFormatPatch{FontSize: &size, FontFamily: &family}); err != nil {
+		t.Fatalf("SetCellFormats with size and family: %v", err)
+	}
+
+	window, err := wb.Window("Sheet1", 1, 1, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if window.Cells[0][0].Style.FontSize != 16.0 {
+		t.Fatalf("A1 FontSize want 16.0, got %v", window.Cells[0][0].Style.FontSize)
+	}
+	if window.Cells[0][0].Style.FontFamily != "Arial" {
+		t.Fatalf("A1 FontFamily want Arial, got %q", window.Cells[0][0].Style.FontFamily)
+	}
+
+	// Validation tests
+	badSize := -1.0
+	if err := formatter.SetCellFormats("Sheet1", singleCellRange("A1"), document.CellFormatPatch{FontSize: &badSize}); err == nil {
+		t.Fatal("expected error for negative font size")
+	}
+	emptyFamily := "   "
+	if err := formatter.SetCellFormats("Sheet1", singleCellRange("A1"), document.CellFormatPatch{FontFamily: &emptyFamily}); err == nil {
+		t.Fatal("expected error for empty font family")
+	}
+}
+
 func singleCellRange(cell string) document.CellRange {
 	column, row, err := excelize.CellNameToCoordinates(cell)
 	if err != nil {

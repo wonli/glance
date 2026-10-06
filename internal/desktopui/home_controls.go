@@ -37,7 +37,10 @@ func homeRecentCountStyle(theme *material.Theme, text string, scale float32) mat
 func homeIcon(gtx layout.Context, name string, size unit.Dp, tint color.NRGBA) layout.Dimensions {
 	pixels := gtx.Dp(size)
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(pixels, pixels), image.Pt(pixels, pixels)
-	icon, ok := tintedToolbarIcon(name, tint)
+	icon, ok := svgIconTint("home", name, tint)
+	if !ok {
+		icon, ok = tintedToolbarIcon(name, tint)
+	}
 	if !ok {
 		return layout.Dimensions{Size: image.Pt(pixels, pixels)}
 	}
@@ -107,9 +110,16 @@ func homeActionTitle(gtx layout.Context, theme *material.Theme, action homeActio
 func homeActionBadge(gtx layout.Context, action homeAction) layout.Dimensions {
 	width, height := gtx.Dp(unit.Dp(38)), gtx.Dp(unit.Dp(38))
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
-	shape := clip.UniformRRect(image.Rect(0, 0, width, height), gtx.Dp(unit.Dp(7)))
-	paint.FillShape(gtx.Ops, action.iconColor, shape.Op(gtx.Ops))
+	shape := clip.UniformRRect(image.Rect(0, 0, width, height), gtx.Dp(unit.Dp(8)))
+	badgeFill := action.iconColor
+	if action.id == "open" {
+		badgeFill = homeSurface
+	}
+	paint.FillShape(gtx.Ops, badgeFill, shape.Op(gtx.Ops))
 	iconTint := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	if action.id == "open" {
+		iconTint = action.iconColor
+	}
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return homeIcon(gtx, action.icon, 21, iconTint)
 	})
@@ -194,7 +204,7 @@ func homeFilterWidth(label string) unit.Dp {
 		return 64
 	case "Markdown":
 		return 109
-	case "HTML":
+	case "JSON":
 		return 77
 	default:
 		return 0
@@ -295,6 +305,8 @@ func homeFileIconName(extension string) string {
 		return "file"
 	case "MD", "MARK":
 		return "file-code"
+	case "JSON":
+		return "braces"
 	case "HTML", "HTM":
 		return "code"
 	default:

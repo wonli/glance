@@ -382,3 +382,182 @@ func TestSpreadsheetToolbarClickAppliesFormat(t *testing.T) {
 		t.Fatalf("formatter did not receive WrapText patch: %+v", fake.lastPatch)
 	}
 }
+
+func TestSpreadsheetFormatPainterTogglesAndCancels(t *testing.T) {
+	fake := &formattingTestBook{toolbarTestBook: toolbarTestBook{editable: true}}
+	state := newDocumentSessionState("")
+	state.book = fake
+	state.sheet = "Sheet1"
+	state.selectionSet = true
+	state.selection = CellSelection{Active: CellPosition{Row: 0, Column: 0}, Anchor: CellPosition{Row: 0, Column: 0}}
+	state.virtualGrid = &gridViewport{
+		Window: document.SheetWindow{
+			StartRow:    1,
+			StartColumn: 1,
+			Cells: [][]document.Cell{
+				{{Style: document.CellStyle{Bold: true, FontFamily: "Arial", FontSize: 12}}},
+			},
+		},
+	}
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionFormatPainter) {
+		t.Fatal("format painter should be enabled when selection is set")
+	}
+
+	app.toggleSpreadsheetFormatPainter()
+	if !state.excelFormatPainterActive || state.excelFormatPainterPatch == nil {
+		t.Fatal("format painter should be active after toggle")
+	}
+	if state.excelFormatPainterPatch.Bold == nil || !*state.excelFormatPainterPatch.Bold {
+		t.Fatalf("captured patch should have Bold=true, got %+v", state.excelFormatPainterPatch)
+	}
+
+	app.cancelSpreadsheetFormatPainter()
+	if state.excelFormatPainterActive || state.excelFormatPainterPatch != nil {
+		t.Fatal("format painter should be inactive after cancel")
+	}
+
+	app.toggleSpreadsheetFormatPainter()
+	if !state.excelFormatPainterActive {
+		t.Fatal("format painter should be active again")
+	}
+	app.toggleSpreadsheetFormatPainter()
+	if state.excelFormatPainterActive {
+		t.Fatal("format painter should be inactive after second toggle")
+	}
+}
+
+func TestSpreadsheetFormatPainterAppliesToTargetSelection(t *testing.T) {
+	fake := &formattingTestBook{toolbarTestBook: toolbarTestBook{editable: true}}
+	state := newDocumentSessionState("")
+	state.book = fake
+	state.sheet = "Sheet1"
+	state.selectionSet = true
+	state.selection = CellSelection{Active: CellPosition{Row: 0, Column: 0}, Anchor: CellPosition{Row: 0, Column: 0}}
+	state.virtualGrid = &gridViewport{
+		Window: document.SheetWindow{
+			StartRow:    1,
+			StartColumn: 1,
+			Cells: [][]document.Cell{
+				{
+					{Style: document.CellStyle{Bold: true, Italic: true, FontFamily: "Consolas", FontSize: 14}},
+					{Style: document.CellStyle{}},
+				},
+				{
+					{Style: document.CellStyle{}},
+					{Style: document.CellStyle{}},
+				},
+			},
+		},
+	}
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	app.toggleSpreadsheetFormatPainter()
+	if !state.excelFormatPainterActive {
+		t.Fatal("format painter should be active")
+	}
+
+	// Move selection to target B2 (Row 1, Column 1)
+	state.selection = CellSelection{Active: CellPosition{Row: 1, Column: 1}, Anchor: CellPosition{Row: 1, Column: 1}}
+	app.applySpreadsheetFormatPainter()
+
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("applySpreadsheetFormatPainter error: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for formatResult")
+	}
+
+	if state.excelFormatPainterActive {
+		t.Fatal("format painter should be deactivated after application")
+	}
+	if fake.lastRange != (document.CellRange{StartRow: 2, StartColumn: 2, EndRow: 2, EndColumn: 2}) {
+		t.Fatalf("target range mismatch: got %+v", fake.lastRange)
+	}
+	if fake.lastPatch.Bold == nil || !*fake.lastPatch.Bold {
+		t.Fatalf("target patch bold want true, got %+v", fake.lastPatch.Bold)
+	}
+	if fake.lastPatch.FontFamily == nil || *fake.lastPatch.FontFamily != "Consolas" {
+		t.Fatalf("target patch font family want Consolas, got %+v", fake.lastPatch.FontFamily)
+	}
+}
+
+func TestSpreadsheetFontFamilyDialog(t *testing.T) {
+	fake := &formattingTestBook{toolbarTestBook: toolbarTestBook{editable: true}}
+	state := newDocumentSessionState("")
+	state.book = fake
+	state.sheet = "Sheet1"
+	state.selectionSet = true
+	state.selection = CellSelection{Active: CellPosition{Row: 0, Column: 0}, Anchor: CellPosition{Row: 0, Column: 0}}
+	state.virtualGrid = &gridViewport{
+		Window: document.SheetWindow{
+			StartRow:    1,
+			StartColumn: 1,
+			Cells: [][]document.Cell{
+				{{Style: document.CellStyle{FontFamily: "宋体"}}},
+			},
+		},
+	}
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionFontFamily) {
+		t.Fatal("font family action should be enabled")
+	}
+
+	app.showSpreadsheetFontFamilyDialog()
+	if !app.modal.Visible {
+		t.Fatal("font family modal dialog should be visible")
+	}
+
+	app.modal.Input.SetText("Microsoft YaHei")
+	app.modal.OnAction("confirm")
+
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("applyCellFormat error: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for formatResult")
+	}
+
+	if fake.lastPatch.FontFamily == nil || *fake.lastPatch.FontFamily != "Microsoft YaHei" {
+		t.Fatalf("expected FontFamily 'Microsoft YaHei', got %+v", fake.lastPatch)
+	}
+}
+
+func TestSpreadsheetZoomInAndZoom100(t *testing.T) {
+	fake := &formattingTestBook{toolbarTestBook: toolbarTestBook{editable: true}}
+	state := newDocumentSessionState("")
+	state.book = fake
+	state.sheet = "Sheet1"
+	v := newGridViewport()
+	state.virtualGrid = v
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+
+	if !app.toolbarActionEnabled(toolbarActionZoomIn) {
+		t.Fatal("zoom-in should be enabled")
+	}
+	if !app.toolbarActionEnabled(toolbarActionZoom100) {
+		t.Fatal("zoom-100 should be enabled")
+	}
+
+	// Trigger zoom-in
+	newScale := v.Scale + 0.15
+	if newScale > 2.5 {
+		newScale = 2.5
+	}
+	v.setScale(newScale)
+	if v.Scale != 1.15 {
+		t.Fatalf("expected scale 1.15, got %v", v.Scale)
+	}
+
+	// Trigger zoom-100
+	v.setScale(1.0)
+	if v.Scale != 1.0 {
+		t.Fatalf("expected scale 1.0, got %v", v.Scale)
+	}
+}

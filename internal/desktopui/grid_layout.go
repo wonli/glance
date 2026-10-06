@@ -219,11 +219,16 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		if !ok {
 			break
 		}
-		if ke, yes := ev.(key.Event); yes && ke.State == key.Press && ke.Name == key.NameF2 && a.selectedCell != "" {
-			if a.cellEdit.begin() {
-				a.cellEditor.SetText(a.cellEdit.Original)
-				gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
+		if ke, yes := ev.(key.Event); yes && ke.State == key.Press {
+			if ke.Name == key.NameEscape && a.documentSessionState != nil && a.documentSessionState.excelFormatPainterActive {
+				a.cancelSpreadsheetFormatPainter()
 				a.window.Invalidate()
+			} else if ke.Name == key.NameF2 && a.selectedCell != "" {
+				if a.cellEdit.begin() {
+					a.cellEditor.SetText(a.cellEdit.Original)
+					gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
+					a.window.Invalidate()
+				}
 			}
 		}
 	}
@@ -344,7 +349,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				a.updateGridSelection(v, position, extend, false)
 				a.selectionDragging = true
 				gtx.Execute(pointer.GrabCmd{Tag: &v.PointerTag, ID: pe.PointerID})
-				if !extend && pe.Time-v.LastClickTime <= 500*time.Millisecond && v.LastClickAddress == address && previousAddress == address {
+				if !extend && pe.Time-v.LastClickTime <= 500*time.Millisecond && v.LastClickAddress == address && previousAddress == address && (state == nil || !state.excelFormatPainterActive) {
 					cell := windowCell(v.Window, row, col)
 					a.cellEdit.begin()
 					a.cellEditor.SetText(cell.Value)
@@ -434,6 +439,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			} else if a.selectionDragging {
 				a.selectionDragging = false
 				a.persistViewState()
+				if a.documentSessionState != nil && a.documentSessionState.excelFormatPainterActive {
+					a.applySpreadsheetFormatPainter()
+				}
 				a.window.Invalidate()
 			}
 		case pointer.Cancel:
@@ -468,6 +476,8 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		} else {
 			pointer.CursorGrab.Add(gtx.Ops)
 		}
+	} else if a.documentSessionState != nil && a.documentSessionState.excelFormatPainterActive {
+		pointer.CursorCrosshair.Add(gtx.Ops)
 	}
 	dims := paintVirtualGrid(gtx, a, v)
 	paint.FillShape(gtx.Ops, gridLine, clip.Stroke{Path: gridShape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())

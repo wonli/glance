@@ -17,6 +17,7 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/format/docx"
+	"glance/internal/format/jsondoc"
 	"glance/internal/format/xlsx"
 )
 
@@ -53,12 +54,12 @@ var homeActions = []homeAction{
 	{id: "xlsx", label: "AI Sheets", extension: ".xlsx", icon: "file-spreadsheet", iconColor: color.NRGBA{R: 79, G: 166, B: 107, A: 255}, titleSize: 16, ai: true},
 	{id: "pptx", label: "AI Slides", extension: ".pptx", icon: "presentation", iconColor: color.NRGBA{R: 226, G: 59, B: 39, A: 255}, titleSize: 16, ai: true},
 	{id: "md", label: "AI Markdown", extension: ".md", icon: "file-code", iconColor: color.NRGBA{R: 133, G: 88, B: 232, A: 255}, titleSize: 13, ai: true},
-	{id: "html", label: "AI HTML", extension: ".html", icon: "code", iconColor: color.NRGBA{R: 18, G: 162, B: 161, A: 255}, titleSize: 16, ai: true},
+	{id: "json", label: "JSON", extension: ".json", icon: "braces", iconColor: color.NRGBA{R: 214, G: 154, B: 45, A: 255}, titleSize: 16},
 	{id: "pdf", label: "AI PDF", extension: ".pdf", icon: "file", iconColor: color.NRGBA{R: 240, G: 68, B: 69, A: 255}, titleSize: 16, ai: true},
 	{id: "open", label: "打开本地文件", extension: ".docx / .xlsx", icon: "folder-open", iconColor: color.NRGBA{R: 123, G: 134, B: 146, A: 255}, titleSize: 13},
 }
 
-var homeFilters = []string{"全部", "文档", "表格", "演示", "PDF", "Markdown", "HTML"}
+var homeFilters = []string{"全部", "文档", "表格", "演示", "PDF", "Markdown", "JSON"}
 
 const (
 	homeSearchPlaceholder                 = "搜索文件名..."
@@ -451,6 +452,8 @@ func (a *App) handleHomeAction(id string) {
 			return
 		}
 		_ = a.installDocument(loadedDocument{word: word})
+	case "json":
+		_ = a.installDocument(loadedDocument{jsonDoc: jsondoc.NewBlank()})
 	case "xlsx":
 		book := xlsx.NewBlank()
 		_ = a.installDocument(loadedDocument{book: book, sheets: book.SheetNames()})

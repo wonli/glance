@@ -111,10 +111,16 @@ func (w *Workbook) SetCellFormats(sheet string, bounds document.CellRange, patch
 
 func validateCellFormatPatch(patch document.CellFormatPatch) error {
 	if patch.ClearFormat {
-		if patch.Bold != nil || patch.Italic != nil || patch.Underline != nil || patch.FontColor != nil || patch.FillColor != nil || patch.HorizontalAlignment != nil || patch.NumberFormat != nil || patch.BorderPreset != nil || patch.WrapText != nil {
+		if patch.Bold != nil || patch.Italic != nil || patch.Underline != nil || patch.FontColor != nil || patch.FillColor != nil || patch.HorizontalAlignment != nil || patch.NumberFormat != nil || patch.BorderPreset != nil || patch.WrapText != nil || patch.FontSize != nil || patch.FontFamily != nil {
 			return errors.New("clear format cannot be combined with other format changes")
 		}
 		return nil
+	}
+	if patch.FontSize != nil && (*patch.FontSize <= 0 || *patch.FontSize > 409) {
+		return fmt.Errorf("invalid font size %v (must be between 1 and 409)", *patch.FontSize)
+	}
+	if patch.FontFamily != nil && strings.TrimSpace(*patch.FontFamily) == "" {
+		return errors.New("font family cannot be empty")
 	}
 	if patch.FontColor != nil && *patch.FontColor != "" && normalizeRGBColor(*patch.FontColor) == "" {
 		return errors.New("font color must be a six-digit RGB color")
@@ -174,7 +180,7 @@ func cloneExcelizeStyle(style *excelize.Style) excelize.Style {
 }
 
 func applyCellFormatPatch(style *excelize.Style, patch document.CellFormatPatch, row, column int, bounds document.CellRange) {
-	if patch.Bold != nil || patch.Italic != nil || patch.Underline != nil || patch.FontColor != nil {
+	if patch.Bold != nil || patch.Italic != nil || patch.Underline != nil || patch.FontColor != nil || patch.FontSize != nil || patch.FontFamily != nil {
 		if style.Font == nil {
 			style.Font = &excelize.Font{}
 		}
@@ -193,6 +199,12 @@ func applyCellFormatPatch(style *excelize.Style, patch document.CellFormatPatch,
 		}
 		if patch.FontColor != nil {
 			style.Font.Color = excelizeRGBColor(*patch.FontColor)
+		}
+		if patch.FontSize != nil && *patch.FontSize > 0 {
+			style.Font.Size = *patch.FontSize
+		}
+		if patch.FontFamily != nil && *patch.FontFamily != "" {
+			style.Font.Family = *patch.FontFamily
 		}
 	}
 	if patch.FillColor != nil {

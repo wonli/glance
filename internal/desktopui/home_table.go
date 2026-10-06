@@ -364,7 +364,7 @@ func homeTypeMatches(path, filter string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch filter {
 	case "文档":
-		return ext == ".docx" || ext == ".doc" || ext == ".json" || ext == ".txt"
+		return ext == ".docx" || ext == ".doc" || ext == ".txt"
 	case "表格":
 		return ext == ".xlsx" || ext == ".xls" || ext == ".csv"
 	case "演示":
@@ -373,8 +373,8 @@ func homeTypeMatches(path, filter string) bool {
 		return ext == ".pdf"
 	case "Markdown":
 		return ext == ".md" || ext == ".markdown"
-	case "HTML":
-		return ext == ".html" || ext == ".htm"
+	case "JSON":
+		return ext == ".json"
 	default:
 		return true
 	}
@@ -401,6 +401,8 @@ func homeFileColor(path string) color.NRGBA {
 		return color.NRGBA{R: 240, G: 68, B: 69, A: 255}
 	case ".md", ".markdown":
 		return color.NRGBA{R: 133, G: 88, B: 232, A: 255}
+	case ".json":
+		return color.NRGBA{R: 214, G: 154, B: 45, A: 255}
 	case ".html", ".htm":
 		return color.NRGBA{R: 18, G: 162, B: 161, A: 255}
 	default:

@@ -443,7 +443,7 @@ func TestHomeSidebarFillsPenFrameHeight(t *testing.T) {
 }
 
 func TestHomeActionIconsMatchPenLucideAssets(t *testing.T) {
-	want := []string{"file-text", "file-spreadsheet", "presentation", "file-code", "code", "file", "folder-open"}
+	want := []string{"file-text", "file-spreadsheet", "presentation", "file-code", "braces", "file", "folder-open"}
 	if len(homeActions) != len(want) {
 		t.Fatalf("home action count=%d; want %d", len(homeActions), len(want))
 	}
@@ -451,7 +451,7 @@ func TestHomeActionIconsMatchPenLucideAssets(t *testing.T) {
 		if homeActions[i].icon != icon {
 			t.Errorf("home action %q icon=%q; want Pen icon %q", homeActions[i].id, homeActions[i].icon, icon)
 		}
-		if _, ok := toolbarIconData(icon); !ok {
+		if _, ok := svgIconOriginal("home", icon); !ok {
 			t.Errorf("home action %q has no sprite asset for Pen icon %q", homeActions[i].id, icon)
 		}
 	}

@@ -19,14 +19,14 @@ func TestRibbonHeightAndCommandStripUnified(t *testing.T) {
 	// Verify height constants are unified across formats:
 	// Word: 34 dp categories + 68 dp command strip = 102 dp total
 	// Excel: 34 dp categories + 68 dp command strip = 102 dp total
-	// JSON: 68 dp command strip (matches Word and Excel command strip height)
+	// JSON: 54 dp compact toolbar (eswCo)
 	if wordRibbonCategoryHeightDP != 34 || wordRibbonCommandHeightDP != 68 || wordRibbonHeightDP != 102 {
 		t.Fatalf("Word ribbon heights mismatch: category=%d, command=%d, total=%d; want 34/68/102",
 			wordRibbonCategoryHeightDP, wordRibbonCommandHeightDP, wordRibbonHeightDP)
 	}
 
-	if jsonToolbarHeightDP != 68 {
-		t.Fatalf("JSON toolbar height = %d dp, want 68 dp (unified with Word/Excel command strip)", jsonToolbarHeightDP)
+	if jsonToolbarHeightDP != 54 {
+		t.Fatalf("JSON toolbar height = %d dp, want 54 dp (Pen eswCo)", jsonToolbarHeightDP)
 	}
 
 	if toolbarButtonWidth != 44 || toolbarButtonHeight != 48 {
@@ -73,8 +73,8 @@ func TestRibbonHeightAndCommandStripUnified(t *testing.T) {
 	app.documentSessionState = stateJSON
 	app.jsonDoc = jsonDoc
 	dimsJSON := app.layoutJSONToolbar(gtx)
-	if dimsJSON.Size.Y != 68 {
-		t.Fatalf("JSON ribbon toolbar height = %d px, want 68 px", dimsJSON.Size.Y)
+	if dimsJSON.Size.Y != 54 {
+		t.Fatalf("JSON ribbon toolbar height = %d px, want 54 px", dimsJSON.Size.Y)
 	}
 }
 
@@ -229,7 +229,7 @@ func TestWordAndExcelAndJSONRibbonButtonsRenderUnifiedLabels(t *testing.T) {
 	appJSON.layoutJSONToolbar(gtxJSON)
 	routerJSON.Frame(opsJSON)
 
-	wantedJSONLabels := []string{"格式化", "压缩", "排序键", "验证"}
+	wantedJSONLabels := []string{"格式化", "压缩", "排序", "校验"}
 	foundJSONLabels := make(map[string]bool)
 	var visitJSON func([]input.SemanticNode)
 	visitJSON = func(nodes []input.SemanticNode) {

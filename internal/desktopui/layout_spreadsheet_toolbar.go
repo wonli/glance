@@ -373,6 +373,40 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetFindDialog()
 			continue
 		}
+		if action.slot == toolbarActionFormatPainter {
+			a.toggleSpreadsheetFormatPainter()
+			continue
+		}
+		if action.slot == toolbarActionFontFamily {
+			a.showSpreadsheetFontFamilyDialog()
+			continue
+		}
+		if action.slot == toolbarActionZoomIn {
+			v := state.virtualGrid
+			if v != nil {
+				newScale := v.Scale + 0.15
+				if newScale > 2.5 {
+					newScale = 2.5
+				}
+				v.setScale(newScale)
+				a.status = fmt.Sprintf("缩放比例：%.0f%%", newScale*100)
+				if a.window != nil {
+					a.window.Invalidate()
+				}
+			}
+			continue
+		}
+		if action.slot == toolbarActionZoom100 {
+			v := state.virtualGrid
+			if v != nil {
+				v.setScale(1.0)
+				a.status = "缩放比例：100%"
+				if a.window != nil {
+					a.window.Invalidate()
+				}
+			}
+			continue
+		}
 		style := a.selectedCellStyle()
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
@@ -427,8 +461,10 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 	}
 	switch slot {
 	case toolbarActionOpenFile, toolbarActionSaveAs, toolbarActionExport,
+		toolbarActionFormatPainter, toolbarActionFontFamily,
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat,
-		toolbarActionSum, toolbarActionFind:
+		toolbarActionSum, toolbarActionFind,
+		toolbarActionZoomIn, toolbarActionZoom100:
 		return false
 	default:
 		return true
@@ -451,13 +487,19 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return state.book != nil && !state.formatRunning.Load() && !a.isSaving()
 	}
 	switch slot {
+	case toolbarActionZoomIn, toolbarActionZoom100:
+		return state.book != nil && state.virtualGrid != nil && !state.formatRunning.Load()
 	case 0, 1:
 		_, ok := state.book.(document.SpreadsheetHistory)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case 4, 5, 6, 7, 8, 9, 10, 11, 16,
+		toolbarActionFontFamily,
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat:
 		_, ok := state.book.(document.SpreadsheetFormatter)
 		return ok && state.selectionSet && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionFormatPainter:
+		_, ok := state.book.(document.SpreadsheetFormatter)
+		return ok && (state.selectionSet || state.excelFormatPainterActive) && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionSum:
 		_, reader := state.book.(document.SpreadsheetRangeReader)
 		_, editor := state.book.(document.SpreadsheetBatchEditor)
@@ -545,7 +587,8 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 							action := actions[index]
 							style := a.selectedCellStyle()
 							mixed := action.slot >= 0 && formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
-							active := action.slot >= 0 && !mixed && formatStyleActive(action.slot, style)
+							formatActive := formatStyleActive(action.slot, style) || (action.slot == toolbarActionFormatPainter && state != nil && state.excelFormatPainterActive)
+							active := action.slot >= 0 && !mixed && formatActive
 							enabled := action.slot >= 0 && a.toolbarActionEnabled(action.slot)
 							var button *widget.Clickable
 							if action.slot >= 0 {
