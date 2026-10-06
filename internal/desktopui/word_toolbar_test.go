@@ -1568,6 +1568,181 @@ func TestWordReviewRestrictProtection(t *testing.T) {
 	}
 }
 
+func TestWordLineNumbersDialogAndCommand(t *testing.T) {
+	doc, err := docx.NewBlank()
+	if err != nil {
+		t.Fatalf("failed to create blank docx: %v", err)
+	}
+	defer doc.Close()
+
+	state := newDocumentSessionState("test.docx")
+	state.word = doc
+	state.wordBlocks = cloneWordBlockSnapshot(doc.WordBlocks())
+	state.wordToolbarTab = wordTabLayout
+
+	app := &App{
+		documentSessionState: state,
+		wordCommandResults:   make(chan wordCommandResult, 4),
+	}
+
+	var lineNumAction ribbonAction
+	for _, a := range wordToolbarActions(wordTabLayout) {
+		if a.id == "layout-line-numbers" {
+			lineNumAction = a
+			break
+		}
+	}
+	if lineNumAction.id == "" {
+		t.Fatal("layout-line-numbers action not found in wordTabLayout")
+	}
+
+	if !app.wordToolbarActionEnabled(lineNumAction) {
+		t.Fatal("layout-line-numbers should be enabled")
+	}
+
+	// 1. Show line numbers dialog -> Click "continuous"
+	app.showWordLineNumbersDialog()
+	if !app.modal.Visible || app.modal.Title != "行号设置" {
+		t.Fatalf("expected modal dialog for line numbers, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+
+	app.modal.OnAction("continuous")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("set line numbers command failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for line numbers command result")
+	}
+
+	readXML := func() string {
+		snap, err := doc.Snapshot()
+		if err != nil {
+			t.Fatalf("doc.Snapshot failed: %v", err)
+		}
+		zr, err := zip.NewReader(bytes.NewReader(snap), int64(len(snap)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range zr.File {
+			if f.Name == "word/document.xml" {
+				rc, err := f.Open()
+				if err != nil {
+					t.Fatal(err)
+				}
+				b, _ := io.ReadAll(rc)
+				_ = rc.Close()
+				return string(b)
+			}
+		}
+		return ""
+	}
+
+	xml := readXML()
+	if !strings.Contains(xml, `w:restart="continuous"`) {
+		t.Fatalf("expected continuous line numbers in xml: %s", xml)
+	}
+
+	// 2. Clear line numbers
+	app.showWordLineNumbersDialog()
+	app.modal.OnAction("none")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("clear line numbers command failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for clear line numbers command result")
+	}
+
+	xml = readXML()
+	if strings.Contains(xml, "lnNumType") {
+		t.Fatalf("expected lnNumType removed from xml: %s", xml)
+	}
+}
+
+func TestWordSelectAllAndPageColor(t *testing.T) {
+	doc, err := docx.NewBlank()
+	if err != nil {
+		t.Fatalf("NewBlank failed: %v", err)
+	}
+	defer doc.Close()
+
+	textEditor, _ := any(doc).(document.WordTextEditor)
+	blocks := doc.WordBlocks()
+	for _, b := range blocks {
+		if b.Paragraph != nil {
+			for _, in := range b.Paragraph.Inlines {
+				if in.Kind == document.WordTextInline && in.Text != nil && in.Text.Editable {
+					_ = textEditor.ReplaceTextRun(in.Text.ID, "Hello Word Document")
+					break
+				}
+			}
+		}
+	}
+
+	state := newDocumentSessionState("test.docx")
+	state.word = doc
+	state.wordBlocks = doc.WordBlocks()
+	app := &App{documentSessionState: state}
+
+	// 1. Verify toolbar action enabled
+	if !app.wordToolbarActionEnabled(ribbonAction{id: "select"}) {
+		t.Fatal("select action should be enabled")
+	}
+	if !app.wordToolbarActionEnabled(ribbonAction{id: "design-page-color"}) {
+		t.Fatal("design-page-color action should be enabled")
+	}
+
+	// 2. Test Select All
+	app.selectAllWordText()
+	if app.status != "已全选文档正文" {
+		t.Fatalf("unexpected status: %q", app.status)
+	}
+	if state.wordPageTextSelection == nil {
+		t.Fatal("expected active wordPageTextSelection after select all")
+	}
+	selectedText, ok := wordPageSelectedText(state)
+	if !ok || len(selectedText) == 0 {
+		t.Fatalf("expected non-empty selected text, got ok=%v text=%q", ok, selectedText)
+	}
+
+	// 3. Test Page Color Dialog & Parchment
+	app.showWordPageColorDialog()
+	if !app.modal.Visible || app.modal.Title != "页面颜色" {
+		t.Fatalf("expected 页面颜色 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("parchment")
+	if state.wordBackgroundColor == nil {
+		t.Fatal("expected wordBackgroundColor to be set")
+	}
+	if state.wordBackgroundColor.R != 0xFA || state.wordBackgroundColor.G != 0xF8 || state.wordBackgroundColor.B != 0xF5 {
+		t.Fatalf("unexpected wordBackgroundColor: %+v", *state.wordBackgroundColor)
+	}
+	editor, _ := any(doc).(document.WordPageBackgroundEditor)
+	bg, err := editor.GetPageBackgroundColor()
+	if err != nil || bg != "FAF8F5" {
+		t.Fatalf("expected doc background FAF8F5, got %q (err=%v)", bg, err)
+	}
+
+	// 4. Clear Page Color (White)
+	app.showWordPageColorDialog()
+	app.modal.OnAction("white")
+	if state.wordBackgroundColor != nil {
+		t.Fatalf("expected wordBackgroundColor nil after white, got %+v", *state.wordBackgroundColor)
+	}
+	bg, _ = editor.GetPageBackgroundColor()
+	if bg != "" {
+		t.Fatalf("expected empty background color after white, got %q", bg)
+	}
+}
+
+
 
 
 

@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"image/color"
 	"sync/atomic"
 
 	"glance/internal/document"
@@ -151,6 +152,7 @@ type documentSessionState struct {
 	wordToolbarColorButtons             [8]widget.Clickable
 	wordToolbarColorPicker              bool
 	wordToolbarHighlightPicker          bool
+	wordBackgroundColor                 *color.NRGBA
 	wordObjectButtons                   map[string]*widget.Clickable
 	wordImageInteractions               map[string]*wordImageInteraction
 	wordImageFocusRequestID             string

@@ -446,6 +446,18 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			}
 			continue
 		}
+		if action.slot == toolbarActionRecalculate {
+			a.recalculateSpreadsheet()
+			continue
+		}
+		if action.slot == toolbarActionRefreshAll {
+			a.refreshAllSpreadsheet()
+			continue
+		}
+		if action.slot == toolbarActionInsertTable || action.slot == toolbarActionTableFormat {
+			a.showSpreadsheetInsertTableDialog("")
+			continue
+		}
 		if action.slot == toolbarActionInsertLink {
 			a.showSpreadsheetLinkDialog()
 			continue
@@ -464,6 +476,34 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 		}
 		if action.slot == toolbarActionRemoveDuplicates {
 			a.showSpreadsheetRemoveDuplicatesDialog()
+			continue
+		}
+		if action.slot == toolbarActionInsertFunction {
+			a.showSpreadsheetInsertFunctionDialog("")
+			continue
+		}
+		if action.slot == toolbarActionRecentFunctions {
+			a.showSpreadsheetInsertFunctionDialog("recent")
+			continue
+		}
+		if action.slot == toolbarActionLogicalFunctions {
+			a.showSpreadsheetInsertFunctionDialog("logical")
+			continue
+		}
+		if action.slot == toolbarActionTextFunctions {
+			a.showSpreadsheetInsertFunctionDialog("text")
+			continue
+		}
+		if action.slot == toolbarActionDateTimeFunctions {
+			a.showSpreadsheetInsertFunctionDialog("datetime")
+			continue
+		}
+		if action.slot == toolbarActionNameManager {
+			a.showSpreadsheetNameManagerDialog()
+			continue
+		}
+		if action.slot == toolbarActionFlashFill {
+			a.applySpreadsheetFlashFill()
 			continue
 		}
 		if action.slot == toolbarActionNormalView {
@@ -546,8 +586,13 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionZoomIn, toolbarActionZoom100,
 		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize,
 		toolbarActionPrintArea, toolbarActionViewGridlines, toolbarActionLayoutGridlines,
+		toolbarActionInsertTable, toolbarActionTableFormat,
 		toolbarActionInsertLink, toolbarActionHeaderRow,
-		toolbarActionFreezePanes, toolbarActionRemoveDuplicates,
+		toolbarActionFreezePanes, toolbarActionRemoveDuplicates, toolbarActionTextToColumns,
+		toolbarActionRecalculate, toolbarActionRefreshAll,
+		toolbarActionInsertFunction, toolbarActionRecentFunctions, toolbarActionLogicalFunctions,
+		toolbarActionTextFunctions, toolbarActionDateTimeFunctions, toolbarActionNameManager,
+		toolbarActionFlashFill,
 		toolbarActionNormalView, toolbarActionPageBreakPreview, toolbarActionRuler,
 		toolbarActionProtectSheet, toolbarActionProtectWorkbook:
 		return false
@@ -583,6 +628,9 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	case toolbarActionProtectWorkbook:
 		_, ok := state.book.(document.SpreadsheetWorkbookProtectionEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionInsertTable, toolbarActionTableFormat:
+		_, ok := state.book.(document.SpreadsheetTableEditor)
+		return ok && state.selectionSet && state.selection.Bounds().EndRow > state.selection.Bounds().StartRow && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionFreezePanes:
 		_, ok := state.book.(document.SpreadsheetPanesEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
@@ -592,6 +640,18 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	case toolbarActionRemoveDuplicates:
 		_, ok := state.book.(document.SpreadsheetDuplicatesEditor)
 		return ok && state.selectionSet && state.selection.Bounds().EndRow > state.selection.Bounds().StartRow && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionInsertFunction, toolbarActionRecentFunctions, toolbarActionLogicalFunctions, toolbarActionTextFunctions, toolbarActionDateTimeFunctions:
+		_, ok := state.book.(document.SpreadsheetFormulaEditor)
+		return ok && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionNameManager:
+		_, ok := state.book.(document.SpreadsheetDefinedNameEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionFlashFill:
+		_, ok := state.book.(document.SpreadsheetFlashFillEditor)
+		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionRecalculate, toolbarActionRefreshAll:
+		_, ok := state.book.(document.SpreadsheetRecalculateEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize, toolbarActionPrintArea, toolbarActionHeaderRow:
 		_, ok := state.book.(document.SpreadsheetPageLayoutEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
@@ -1031,3 +1091,39 @@ func toolbarPickerPatch(kind spreadsheetToolbarPicker, index int) (document.Cell
 	}
 	return document.CellFormatPatch{}, false
 }
+
+func (a *App) recalculateSpreadsheet() {
+	state := a.documentSessionState
+	if state == nil || state.book == nil {
+		return
+	}
+	if ed, ok := state.book.(document.SpreadsheetRecalculateEditor); ok {
+		_ = ed.RecalculateFormulas()
+	}
+	if state.virtualGrid != nil {
+		state.virtualGrid.invalidateWindow()
+	}
+	a.setStatus("已重新计算工作簿公式")
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+
+func (a *App) refreshAllSpreadsheet() {
+	state := a.documentSessionState
+	if state == nil || state.book == nil {
+		return
+	}
+	if ed, ok := state.book.(document.SpreadsheetRecalculateEditor); ok {
+		_ = ed.RecalculateFormulas()
+	}
+	if state.virtualGrid != nil {
+		state.virtualGrid.invalidateWindow()
+	}
+	state.sheets = state.book.SheetNames()
+	a.setStatus("已刷新全部工作表数据")
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+

@@ -307,3 +307,54 @@ type SpreadsheetTextToColumnsResult struct {
 type SpreadsheetTextToColumnsEditor interface {
 	SplitTextToColumns(sheet string, bounds CellRange, keyColumn int, delimiter string) (SpreadsheetTextToColumnsResult, error)
 }
+
+// SpreadsheetTableSpec specifies options for creating a spreadsheet table.
+type SpreadsheetTableSpec struct {
+	Sheet     string
+	Range     CellRange
+	Name      string
+	StyleName string
+}
+
+// SpreadsheetTableEditor is an optional capability for formatting or inserting structured tables.
+type SpreadsheetTableEditor interface {
+	AddTable(spec SpreadsheetTableSpec) error
+}
+
+// SpreadsheetRecalculateEditor is an optional capability for recalculating formulas and updating linked values.
+type SpreadsheetRecalculateEditor interface {
+	RecalculateFormulas() error
+}
+
+// SpreadsheetFormulaEditor provides formula read and write capabilities.
+type SpreadsheetFormulaEditor interface {
+	SetCellFormula(sheet, cell, formula string) error
+	GetCellFormula(sheet, cell string) (string, error)
+}
+
+// SpreadsheetDefinedName represents a named range or formula in a workbook.
+type SpreadsheetDefinedName struct {
+	Name    string
+	Ref     string
+	Scope   string
+	Comment string
+}
+
+// SpreadsheetDefinedNameEditor provides reading, adding, and deleting defined names.
+type SpreadsheetDefinedNameEditor interface {
+	GetDefinedNames() ([]SpreadsheetDefinedName, error)
+	SetDefinedName(name SpreadsheetDefinedName) error
+	DeleteDefinedName(name string, scope string) error
+}
+
+// SpreadsheetFlashFillResult describes the result of a flash fill / series fill operation.
+type SpreadsheetFlashFillResult struct {
+	RowsFilled int
+}
+
+// SpreadsheetFlashFillEditor supports filling down series or repeating patterns into selection.
+type SpreadsheetFlashFillEditor interface {
+	FlashFill(sheet string, selection CellRange) (SpreadsheetFlashFillResult, error)
+}
+
+

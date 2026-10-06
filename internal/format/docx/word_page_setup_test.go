@@ -220,3 +220,58 @@ func TestWordPageColumnsAndUndo(t *testing.T) {
 	}
 }
 
+func TestWordPageLineNumbers(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatalf("failed to create blank doc: %v", err)
+	}
+	defer doc.Close()
+
+	editor, ok := any(doc).(document.WordPageSetupEditor)
+	if !ok {
+		t.Fatal("doc does not implement WordPageSetupEditor")
+	}
+
+	// 1. Set continuous line numbers
+	if err := editor.SetPageLineNumbers("continuous"); err != nil {
+		t.Fatalf("SetPageLineNumbers(continuous) failed: %v", err)
+	}
+	xml := string(doc.parts[doc.documentIdx].data)
+	if !strings.Contains(xml, `w:restart="continuous"`) {
+		t.Fatalf("expected continuous line numbers in xml: %s", xml)
+	}
+
+	// 2. Set newPage line numbers
+	if err := editor.SetPageLineNumbers("newPage"); err != nil {
+		t.Fatalf("SetPageLineNumbers(newPage) failed: %v", err)
+	}
+	xml = string(doc.parts[doc.documentIdx].data)
+	if !strings.Contains(xml, `w:restart="newPage"`) {
+		t.Fatalf("expected newPage line numbers in xml: %s", xml)
+	}
+
+	// 3. Clear line numbers
+	if err := editor.SetPageLineNumbers("none"); err != nil {
+		t.Fatalf("SetPageLineNumbers(none) failed: %v", err)
+	}
+	xml = string(doc.parts[doc.documentIdx].data)
+	if strings.Contains(xml, "lnNumType") {
+		t.Fatalf("expected lnNumType removed from xml: %s", xml)
+	}
+
+	// 4. Undo clear -> restores newPage
+	history, ok := any(doc).(document.WordHistory)
+	if !ok {
+		t.Fatal("doc does not implement WordHistory")
+	}
+	undone, err := history.Undo()
+	if err != nil || !undone {
+		t.Fatalf("Undo failed: %v", err)
+	}
+	xml = string(doc.parts[doc.documentIdx].data)
+	if !strings.Contains(xml, `w:restart="newPage"`) {
+		t.Fatalf("expected newPage line numbers restored on undo: %s", xml)
+	}
+}
+
+

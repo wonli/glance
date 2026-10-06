@@ -291,7 +291,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, editable := any(state.word).(document.WordTextEditor)
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
 		return editable && ok && !state.formatRunning.Load() && !a.isSaving()
-	case "layout-orientation", "layout-margins", "layout-size", "layout-columns":
+	case "layout-orientation", "layout-margins", "layout-size", "layout-columns", "layout-line-numbers":
 		_, editable := any(state.word).(document.WordPageSetupEditor)
 		return editable && !state.formatRunning.Load() && !a.isSaving()
 	case "find":
@@ -337,6 +337,11 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "design-compact", "design-spacious":
 		_, ok := any(state.word).(document.WordParagraphSpacingEditor)
 		return ok && len(state.wordBlocks) > 0 && !state.formatRunning.Load() && !a.isSaving()
+	case "select":
+		return len(state.wordBlocks) > 0
+	case "design-page-color":
+		_, ok := any(state.word).(document.WordPageBackgroundEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
 	default:
 		return false
 	}
@@ -551,12 +556,18 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordColumnsDialog()
 		case "layout-breaks":
 			a.showWordBreaksDialog()
+		case "layout-line-numbers":
+			a.showWordLineNumbersDialog()
 		case "find":
 			a.showWordFindDialog()
 		case "replace":
 			a.showWordReplaceDialog()
 		case "insert-symbol":
 			a.openWordSymbolPicker()
+		case "select":
+			a.selectAllWordText()
+		case "design-page-color":
+			a.showWordPageColorDialog()
 		case "review-word-count":
 			a.showWordCountDetails()
 		case "review-restrict":
@@ -720,6 +731,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.showWordColumnsDialog()
 	case "layout-breaks":
 		a.showWordBreaksDialog()
+	case "layout-line-numbers":
+		a.showWordLineNumbersDialog()
 	case "find":
 		a.showWordFindDialog()
 	case "replace":
@@ -1864,6 +1877,44 @@ func (a *App) showWordColumnsDialog() {
 	)
 }
 
+func (a *App) showWordLineNumbersDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	if _, ok := any(state.word).(document.WordPageSetupEditor); !ok {
+		return
+	}
+	message := "请选择正文行号编排方式："
+	a.modal.Show("行号设置", message, func(action string) {
+		a.modal.Hide()
+		var mode string
+		var label string
+		switch action {
+		case "continuous":
+			mode = "continuous"
+			label = "连续行号"
+		case "newPage":
+			mode = "newPage"
+			label = "每页重置行号"
+		case "none":
+			mode = "none"
+			label = "清除行号"
+		default:
+			return
+		}
+		a.runWordPageSetupCommand("设置"+label, func(editor document.WordPageSetupEditor) error {
+			return editor.SetPageLineNumbers(mode)
+		})
+	},
+		modalDialogActionSpec{ID: "continuous", Label: "连续编号"},
+		modalDialogActionSpec{ID: "newPage", Label: "每页重置"},
+		modalDialogActionSpec{ID: "none", Label: "无 (清除行号)"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+
 func (a *App) showWordBreaksDialog() {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
@@ -2244,4 +2295,150 @@ func wordCommandError(operation string, err error) string {
 		return "已完成" + operation
 	}
 	return fmt.Sprintf("%s失败：%v", operation, err)
+}
+
+func parseHexColor(s string) (color.NRGBA, error) {
+	s = strings.TrimPrefix(strings.TrimSpace(s), "#")
+	if len(s) == 3 {
+		s = string([]byte{s[0], s[0], s[1], s[1], s[2], s[2]})
+	}
+	if len(s) != 6 {
+		return color.NRGBA{}, fmt.Errorf("invalid hex color %q", s)
+	}
+	v, err := strconv.ParseUint(s, 16, 32)
+	if err != nil {
+		return color.NRGBA{}, err
+	}
+	return color.NRGBA{
+		R: uint8(v >> 16),
+		G: uint8((v >> 8) & 0xFF),
+		B: uint8(v & 0xFF),
+		A: 255,
+	}, nil
+}
+
+func (a *App) selectAllWordText() {
+	state := a.documentSessionState
+	if state == nil || len(state.wordBlocks) == 0 {
+		return
+	}
+	paragraphs := allWordParagraphs(wordBlocksForState(state))
+	var firstRunID, lastRunID string
+	var lastRunLen int
+
+	for _, p := range paragraphs {
+		for _, in := range p.Inlines {
+			if in.Kind == document.WordTextInline && in.Text != nil && in.Text.Editable {
+				if firstRunID == "" {
+					firstRunID = in.Text.ID
+				}
+				lastRunID = in.Text.ID
+				text := in.Text.Text
+				if ed := state.wordRunEditors[in.Text.ID]; ed != nil {
+					text = ed.Text()
+				}
+				lastRunLen = len([]rune(text))
+			}
+		}
+	}
+	if firstRunID == "" {
+		a.setStatus("当前文档无文字内容")
+		return
+	}
+	order := make(map[string]int)
+	for _, p := range paragraphs {
+		for _, in := range p.Inlines {
+			if in.Kind == document.WordTextInline && in.Text != nil && in.Text.Editable {
+				if _, exists := order[in.Text.ID]; !exists {
+					order[in.Text.ID] = len(order)
+				}
+			}
+		}
+	}
+	state.wordPageTextSelection = &wordPageTextSelection{
+		anchor:   wordPageCaretPosition{runID: firstRunID, runeOffset: 0},
+		focus:    wordPageCaretPosition{runID: lastRunID, runeOffset: lastRunLen},
+		runOrder: order,
+	}
+	populateWordPageRunOrder(state.wordPageTextSelection, state.wordLayoutResult)
+	if state.selectedWordRunID != "" {
+		if ed := state.wordRunEditors[state.selectedWordRunID]; ed != nil {
+			ed.SetCaret(0, len([]rune(ed.Text())))
+		}
+	}
+	a.setStatus("已全选文档正文")
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+
+func (a *App) showWordPageColorDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordPageBackgroundEditor)
+	if !ok {
+		a.setStatus("当前文档不支持设置页面背景色")
+		return
+	}
+	currentColor, _ := editor.GetPageBackgroundColor()
+	prompt := "请选择或输入页面底色："
+	if currentColor != "" {
+		prompt = fmt.Sprintf("当前页面底色为 #%s。请选择或修改底色：", currentColor)
+	}
+
+	a.modal.ShowInput("页面颜色", prompt, currentColor, "16 进制颜色代码（如 FAF8F5，留空为纯白）", func(action string) {
+		a.modal.Hide()
+		switch action {
+		case "confirm":
+			val := strings.TrimSpace(a.modal.Input.Text())
+			a.applyWordPageColor(val)
+		case "white":
+			a.applyWordPageColor("")
+		case "parchment":
+			a.applyWordPageColor("FAF8F5")
+		case "green":
+			a.applyWordPageColor("E8F5E9")
+		case "blue":
+			a.applyWordPageColor("E3F2FD")
+		case "dark":
+			a.applyWordPageColor("263238")
+		}
+	},
+		modalDialogActionSpec{ID: "confirm", Label: "应用自定义"},
+		modalDialogActionSpec{ID: "parchment", Label: "羊皮纸米黄"},
+		modalDialogActionSpec{ID: "green", Label: "护眼绿"},
+		modalDialogActionSpec{ID: "white", Label: "纯白"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) applyWordPageColor(hexColor string) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordPageBackgroundEditor)
+	if !ok {
+		return
+	}
+	clean := strings.TrimPrefix(strings.TrimSpace(hexColor), "#")
+	if err := editor.SetPageBackgroundColor(clean); err != nil {
+		a.setStatus("设置页面颜色失败：" + err.Error())
+		return
+	}
+	if clean == "" || strings.EqualFold(clean, "none") {
+		state.wordBackgroundColor = nil
+		a.setStatus("已清除页面背景色")
+	} else {
+		c, err := parseHexColor(clean)
+		if err == nil {
+			state.wordBackgroundColor = &c
+		}
+		a.setStatus(fmt.Sprintf("已设置页面背景色为 #%s", strings.ToUpper(clean)))
+	}
+	if a.window != nil {
+		a.window.Invalidate()
+	}
 }

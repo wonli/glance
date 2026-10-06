@@ -459,5 +459,95 @@ func (d *Document) SetPageColumns(columns int) error {
 	return d.applyWordDocumentXMLLocked(patched)
 }
 
+// SetPageLineNumbers sets or clears line numbering for the document.
+// restart can be "continuous", "newPage", or "none" (or empty to disable).
+func (d *Document) SetPageLineNumbers(restart string) error {
+	mode := strings.TrimSpace(restart)
+	if mode != "" && mode != "none" && mode != "continuous" && mode != "newPage" {
+		return fmt.Errorf("unsupported line numbers mode %q: must be continuous, newPage, or none", restart)
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	if d.documentIdx < 0 || d.documentIdx >= len(d.parts) {
+		return fmt.Errorf("DOCX document part is unavailable")
+	}
+
+	data := d.parts[d.documentIdx].data
+	root, err := parseWordXML(data)
+	if err != nil {
+		return fmt.Errorf("parse DOCX document: %w", err)
+	}
+	prefix := elementPrefix(root.rawName)
+	if prefix == "" {
+		prefix = "w"
+	}
+	body := firstChild(root, "body")
+	if body == nil {
+		return fmt.Errorf("DOCX document has no body element")
+	}
+
+	sections := findWordSectionNodes(body)
+	if len(sections) == 0 {
+		if mode == "" || mode == "none" {
+			return nil
+		}
+		lnNumMarkup := makeWordPropertyMarkup(prefix, "lnNumType", "countBy", "1")
+		lnNumMarkup, _ = setRawXMLAttribute(lnNumMarkup, prefix, "restart", mode)
+		sectPrMarkup := wrapWordElement(prefix, "sectPr", lnNumMarkup)
+		patched, err := applyXMLReplacements(data, []xmlReplacement{{start: body.contentEnd, end: body.contentEnd, value: sectPrMarkup}})
+		if err != nil {
+			return err
+		}
+		return d.applyWordDocumentXMLLocked(patched)
+	}
+
+	var replacements []xmlReplacement
+	for _, sectPr := range sections {
+		lnNum := firstChild(sectPr, "lnNumType")
+		if mode == "" || mode == "none" {
+			if lnNum != nil {
+				replacements = append(replacements, xmlReplacement{start: lnNum.start, end: lnNum.end, value: nil})
+			}
+		} else {
+			if lnNum != nil {
+				opening := data[lnNum.start:lnNum.openEnd]
+				patchedOpening := opening
+				patchedOpening, err = setRawXMLAttribute(patchedOpening, prefix, "countBy", "1")
+				if err != nil {
+					return err
+				}
+				patchedOpening, err = setRawXMLAttribute(patchedOpening, prefix, "restart", mode)
+				if err != nil {
+					return err
+				}
+				replacements = append(replacements, xmlReplacement{start: lnNum.start, end: lnNum.openEnd, value: patchedOpening})
+			} else {
+				lnNumMarkup := makeWordPropertyMarkup(prefix, "lnNumType", "countBy", "1")
+				lnNumMarkup, _ = setRawXMLAttribute(lnNumMarkup, prefix, "restart", mode)
+				rep, err := insertWordSectionProperty(data, sectPr, prefix, "lnNumType", lnNumMarkup)
+				if err != nil {
+					return err
+				}
+				replacements = append(replacements, rep)
+			}
+		}
+	}
+
+	if len(replacements) == 0 {
+		return nil
+	}
+
+	patched, err := applyXMLReplacements(data, replacements)
+	if err != nil {
+		return err
+	}
+	return d.applyWordDocumentXMLLocked(patched)
+}
+
 var _ document.WordPageSetupEditor = (*Document)(nil)
+
 

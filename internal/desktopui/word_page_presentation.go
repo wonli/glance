@@ -266,7 +266,11 @@ func (a *App) drawWordPageSurface(gtx layout.Context, state *documentSessionStat
 		shadowRect := pageRect.Add(image.Pt(gtx.Dp(unit.Dp(2)), gtx.Dp(unit.Dp(3))))
 		paint.FillShape(gtx.Ops, wordPageShadow, clip.Rect{Min: shadowRect.Min, Max: shadowRect.Max}.Op())
 	}
-	paint.FillShape(gtx.Ops, wordPageSurface, clip.Rect{Min: pageRect.Min, Max: pageRect.Max}.Op())
+	surfaceColor := wordPageSurface
+	if state.wordBackgroundColor != nil {
+		surfaceColor = *state.wordBackgroundColor
+	}
+	paint.FillShape(gtx.Ops, surfaceColor, clip.Rect{Min: pageRect.Min, Max: pageRect.Max}.Op())
 	if state.wordGridlinesVisible && !state.wordReadingMode {
 		drawWordGridlines(gtx, pageRect)
 	}

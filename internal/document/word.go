@@ -300,11 +300,18 @@ type WordPageSetupEditor interface {
 	SetPageMargins(topPT, rightPT, bottomPT, leftPT float64) error
 	SetPageSize(widthPT, heightPT float64) error
 	SetPageColumns(columns int) error
+	SetPageLineNumbers(restart string) error
 }
 
 // WordDocumentProtectionEditor is an optional capability for inspecting and updating Word document protection.
 type WordDocumentProtectionEditor interface {
 	GetWordDocumentProtection() (bool, error)
 	SetWordDocumentProtection(readOnly bool) error
+}
+
+// WordPageBackgroundEditor is an optional capability for inspecting and setting page background color.
+type WordPageBackgroundEditor interface {
+	GetPageBackgroundColor() (string, error)
+	SetPageBackgroundColor(hexColor string) error
 }
 

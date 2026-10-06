@@ -176,15 +176,45 @@ func defaultConfirmStyleForTitle(title string) (modalDialogConfirmStyle, bool) {
 			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
 			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
 		}, true
+	case "行号设置":
+		return modalDialogConfirmStyle{
+			Icon:           "list-ordered",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
 	case "文本分列", "自定义分列":
 		return modalDialogConfirmStyle{
 			Icon:           "columns-3",
 			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
 			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
 		}, true
+	case "创建表格":
+		return modalDialogConfirmStyle{
+			Icon:           "table",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
 	case "限制编辑":
 		return modalDialogConfirmStyle{
 			Icon:           "shield-check",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
+	case "页面颜色":
+		return modalDialogConfirmStyle{
+			Icon:           "palette",
+			IconBackground: color.NRGBA{R: 243, G: 232, B: 255, A: 255},
+			IconForeground: color.NRGBA{R: 147, G: 51, B: 234, A: 255},
+		}, true
+	case "插入函数", "最近使用的函数", "逻辑函数", "文本函数", "日期时间函数":
+		return modalDialogConfirmStyle{
+			Icon:           "sigma",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
+	case "名称管理器":
+		return modalDialogConfirmStyle{
+			Icon:           "tag",
 			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
 			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
 		}, true

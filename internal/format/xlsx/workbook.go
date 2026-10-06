@@ -646,3 +646,73 @@ func contains(items []string, target string) bool {
 	}
 	return false
 }
+
+var _ document.SpreadsheetRecalculateEditor = (*Workbook)(nil)
+var _ document.SpreadsheetFormulaEditor = (*Workbook)(nil)
+
+// RecalculateFormulas recalculates formulas and updates cached values in the workbook.
+func (w *Workbook) RecalculateFormulas() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return err
+	}
+	_ = w.file.UpdateLinkedValue()
+	return nil
+}
+
+// SetCellFormula sets the formula expression for a cell and updates linked values.
+func (w *Workbook) SetCellFormula(sheet, cell, formula string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return err
+	}
+	cleanFormula := strings.TrimSpace(formula)
+	cleanFormula = strings.TrimPrefix(cleanFormula, "=")
+	if cleanFormula == "" {
+		return errors.New("formula expression cannot be empty")
+	}
+	column, row, err := excelize.CellNameToCoordinates(cell)
+	if err != nil {
+		return fmt.Errorf("invalid cell reference %q: %w", cell, err)
+	}
+	if row > maxXLSXRows || column > maxXLSXColumns {
+		return fmt.Errorf("cell reference %q exceeds XLSX worksheet limits", cell)
+	}
+	if !contains(w.file.GetSheetList(), sheet) {
+		return fmt.Errorf("worksheet %q does not exist", sheet)
+	}
+	currentFormula, _ := w.file.GetCellFormula(sheet, cell)
+	if currentFormula == cleanFormula {
+		return nil
+	}
+	beforeSnapshot, err := w.snapshotLocked()
+	if err != nil {
+		return fmt.Errorf("capture formula edit history: %w", err)
+	}
+	if err := w.file.SetCellFormula(sheet, cell, cleanFormula); err != nil {
+		return err
+	}
+	if err := w.recordHistoryLocked(beforeSnapshot); err != nil {
+		_ = w.restoreSnapshotLocked(beforeSnapshot)
+		return err
+	}
+	_ = w.file.UpdateLinkedValue()
+	w.dirty = true
+	return nil
+}
+
+// GetCellFormula returns the formula expression for a cell.
+func (w *Workbook) GetCellFormula(sheet, cell string) (string, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return "", err
+	}
+	if !contains(w.file.GetSheetList(), sheet) {
+		return "", fmt.Errorf("worksheet %q does not exist", sheet)
+	}
+	return w.file.GetCellFormula(sheet, cell)
+}
+
