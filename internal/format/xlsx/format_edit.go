@@ -111,7 +111,7 @@ func (w *Workbook) SetCellFormats(sheet string, bounds document.CellRange, patch
 
 func validateCellFormatPatch(patch document.CellFormatPatch) error {
 	if patch.ClearFormat {
-		if patch.Bold != nil || patch.Italic != nil || patch.Underline != nil || patch.FontColor != nil || patch.FillColor != nil || patch.HorizontalAlignment != nil || patch.NumberFormat != nil || patch.BorderPreset != nil {
+		if patch.Bold != nil || patch.Italic != nil || patch.Underline != nil || patch.FontColor != nil || patch.FillColor != nil || patch.HorizontalAlignment != nil || patch.NumberFormat != nil || patch.BorderPreset != nil || patch.WrapText != nil {
 			return errors.New("clear format cannot be combined with other format changes")
 		}
 		return nil
@@ -131,7 +131,7 @@ func validateCellFormatPatch(patch document.CellFormatPatch) error {
 	}
 	if patch.NumberFormat != nil {
 		switch *patch.NumberFormat {
-		case "General", "0", "0.00", "yyyy-mm-dd":
+		case "General", "0", "0.00", "0%", "0.00%", "yyyy-mm-dd":
 		default:
 			return fmt.Errorf("unsupported number format %q", *patch.NumberFormat)
 		}
@@ -212,6 +212,12 @@ func applyCellFormatPatch(style *excelize.Style, patch document.CellFormatPatch,
 			style.Alignment.Horizontal = strings.ToLower(*patch.HorizontalAlignment)
 		}
 	}
+	if patch.WrapText != nil {
+		if style.Alignment == nil {
+			style.Alignment = &excelize.Alignment{}
+		}
+		style.Alignment.WrapText = *patch.WrapText
+	}
 	if patch.NumberFormat != nil {
 		style.CustomNumFmt = nil
 		style.DecimalPlaces = nil
@@ -222,6 +228,10 @@ func applyCellFormatPatch(style *excelize.Style, patch document.CellFormatPatch,
 			style.NumFmt = 1
 		case "0.00":
 			style.NumFmt = 2
+		case "0%":
+			style.NumFmt = 9
+		case "0.00%":
+			style.NumFmt = 10
 		case "yyyy-mm-dd":
 			format := *patch.NumberFormat
 			style.CustomNumFmt = &format
@@ -286,6 +296,10 @@ func cellNumberFormat(style *excelize.Style) string {
 		return "0"
 	case 2:
 		return "0.00"
+	case 9:
+		return "0%"
+	case 10:
+		return "0.00%"
 	case 14:
 		return "m/d/yy"
 	default:

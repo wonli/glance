@@ -311,6 +311,67 @@ func TestSetCellFormatsAppliesAllSupportedPropertiesAndClears(t *testing.T) {
 	}
 }
 
+func TestSetCellFormatsWrapTextAlignmentAndPercent(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	wb.SetDirty(false)
+	formatter := document.SpreadsheetFormatter(wb)
+
+	trueVal := true
+	left := "left"
+	right := "right"
+	pct := "0%"
+	pctDec := "0.00%"
+
+	tests := []struct {
+		cell  string
+		patch document.CellFormatPatch
+	}{
+		{"A1", document.CellFormatPatch{WrapText: &trueVal}},
+		{"B1", document.CellFormatPatch{HorizontalAlignment: &left}},
+		{"C1", document.CellFormatPatch{HorizontalAlignment: &right}},
+		{"D1", document.CellFormatPatch{NumberFormat: &pct}},
+		{"E1", document.CellFormatPatch{NumberFormat: &pctDec}},
+	}
+	for _, item := range tests {
+		if err := formatter.SetCellFormats("Sheet1", singleCellRange(item.cell), item.patch); err != nil {
+			t.Fatalf("format %s: %v", item.cell, err)
+		}
+	}
+
+	window, err := wb.Window("Sheet1", 1, 1, 1, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !window.Cells[0][0].Style.WrapText {
+		t.Fatalf("A1 WrapText want true, got %v", window.Cells[0][0].Style.WrapText)
+	}
+	if window.Cells[0][1].Style.HorizontalAlignment != "left" {
+		t.Fatalf("B1 HorizontalAlignment want left, got %v", window.Cells[0][1].Style.HorizontalAlignment)
+	}
+	if window.Cells[0][2].Style.HorizontalAlignment != "right" {
+		t.Fatalf("C1 HorizontalAlignment want right, got %v", window.Cells[0][2].Style.HorizontalAlignment)
+	}
+	if window.Cells[0][3].Style.NumberFormat != "0%" {
+		t.Fatalf("D1 NumberFormat want 0%%, got %v", window.Cells[0][3].Style.NumberFormat)
+	}
+	if window.Cells[0][4].Style.NumberFormat != "0.00%" {
+		t.Fatalf("E1 NumberFormat want 0.00%%, got %v", window.Cells[0][4].Style.NumberFormat)
+	}
+
+	// Verify clear format on wrap text
+	if err := formatter.SetCellFormats("Sheet1", singleCellRange("A1"), document.CellFormatPatch{ClearFormat: true}); err != nil {
+		t.Fatal(err)
+	}
+	window, err = wb.Window("Sheet1", 1, 1, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if window.Cells[0][0].Style.WrapText {
+		t.Fatalf("A1 WrapText after clear want false, got %v", window.Cells[0][0].Style.WrapText)
+	}
+}
+
 func singleCellRange(cell string) document.CellRange {
 	column, row, err := excelize.CellNameToCoordinates(cell)
 	if err != nil {

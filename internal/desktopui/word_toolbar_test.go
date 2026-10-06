@@ -1061,3 +1061,103 @@ func tinyToolbarPNG(t *testing.T) []byte {
 }
 
 var _ document.WordHistory = (*docx.Document)(nil)
+
+func TestWordToolbarParagraphSpacingBeforeAndAfter(t *testing.T) {
+	state := newDocumentSessionState("sample.docx")
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state.word = word
+	state.setWordBlocks(word.WordBlocks())
+	paragraph := allWordParagraphs(state.wordBlocks)[0]
+	app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 1)}
+
+	beforeAction := ribbonAction{id: "layout-before", label: "段前"}
+	afterAction := ribbonAction{id: "layout-after", label: "段后"}
+
+	state.selectedWordParagraphID = ""
+	if app.wordToolbarActionEnabled(beforeAction) || app.wordToolbarActionEnabled(afterAction) {
+		t.Fatal("paragraph spacing should be disabled when no paragraph is selected")
+	}
+
+	state.selectedWordParagraphID = paragraph.ID
+	if !app.wordToolbarActionEnabled(beforeAction) || !app.wordToolbarActionEnabled(afterAction) {
+		t.Fatal("paragraph spacing should be enabled when paragraph is selected")
+	}
+
+	// Test layout-before
+	app.executeWordToolbarAction("layout-before")
+	if !app.modal.Visible || app.modal.Title != "段前间距" {
+		t.Fatalf("expected modal dialog for layout-before, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("12")
+	app.modal.OnAction("confirm")
+	if app.modal.Visible {
+		t.Fatal("modal should be hidden after confirm")
+	}
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("layout-before failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for layout-before command result")
+	}
+
+	updated := allWordParagraphs(state.wordBlocks)[0]
+	if updated.Layout.BeforePT != 12 {
+		t.Fatalf("expected BeforePT=12, got %g", updated.Layout.BeforePT)
+	}
+
+	// Test layout-after
+	app.executeWordToolbarAction("layout-after")
+	if !app.modal.Visible || app.modal.Title != "段后间距" {
+		t.Fatalf("expected modal dialog for layout-after, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("18")
+	app.modal.OnAction("confirm")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("layout-after failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for layout-after command result")
+	}
+
+	updated = allWordParagraphs(state.wordBlocks)[0]
+	if updated.Layout.AfterPT != 18 {
+		t.Fatalf("expected AfterPT=18, got %g", updated.Layout.AfterPT)
+	}
+
+	// Test undo restores AfterPT
+	app.applyWordHistory(true)
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("undo failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for undo result")
+	}
+	updated = allWordParagraphs(state.wordBlocks)[0]
+	if updated.Layout.AfterPT != 0 {
+		t.Fatalf("expected AfterPT restored to 0 after undo, got %g", updated.Layout.AfterPT)
+	}
+
+	// Test invalid input
+	app.executeWordToolbarAction("layout-before")
+	app.modal.Input.SetText("2000")
+	app.modal.OnAction("confirm")
+	if !strings.Contains(app.status, "必须在 0 到 1584 磅之间") {
+		t.Fatalf("expected out-of-range status error, got %q", app.status)
+	}
+}

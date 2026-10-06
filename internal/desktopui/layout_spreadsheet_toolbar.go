@@ -418,7 +418,13 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 	if slot < toolbarActionFormatPainter || slot > toolbarActionLast {
 		return false
 	}
-	return slot != toolbarActionOpenFile && slot != toolbarActionSaveAs && slot != toolbarActionExport
+	switch slot {
+	case toolbarActionOpenFile, toolbarActionSaveAs, toolbarActionExport,
+		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat:
+		return false
+	default:
+		return true
+	}
 }
 
 func (a *App) showSpreadsheetFeatureMissing(name string) {
@@ -440,7 +446,8 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	case 0, 1:
 		_, ok := state.book.(document.SpreadsheetHistory)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
-	case 4, 5, 6, 7, 8, 9, 10, 11, 16:
+	case 4, 5, 6, 7, 8, 9, 10, 11, 16,
+		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat:
 		_, ok := state.book.(document.SpreadsheetFormatter)
 		return ok && state.selectionSet && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case 2, 3:
@@ -658,7 +665,13 @@ func toolbarPickerTitle(picker spreadsheetToolbarPicker) string {
 	}
 }
 
-func formatStyleSlot(slot int) bool { return slot >= 4 && slot <= 11 }
+func formatStyleSlot(slot int) bool {
+	return (slot >= 4 && slot <= 11) ||
+		slot == toolbarActionAlignLeft ||
+		slot == toolbarActionAlignRight ||
+		slot == toolbarActionWrapText ||
+		slot == toolbarActionPercentFormat
+}
 
 func formatStyleActive(slot int, style document.CellStyle) bool {
 	switch slot {
@@ -673,7 +686,15 @@ func formatStyleActive(slot int, style document.CellStyle) bool {
 	case 8:
 		return style.FillColor != ""
 	case 9:
-		return style.HorizontalAlignment != "" && style.HorizontalAlignment != "general"
+		return style.HorizontalAlignment == "center"
+	case toolbarActionAlignLeft:
+		return style.HorizontalAlignment == "left"
+	case toolbarActionAlignRight:
+		return style.HorizontalAlignment == "right"
+	case toolbarActionWrapText:
+		return style.WrapText
+	case toolbarActionPercentFormat:
+		return style.NumberFormat == "0%" || style.NumberFormat == "0.00%"
 	case 10:
 		return style.NumberFormat != "" && style.NumberFormat != "General"
 	case 11:
@@ -712,9 +733,11 @@ func (a *App) selectionFormatMixed(slot int) bool {
 				equal = current.FontColor == base.FontColor
 			case 8:
 				equal = current.FillColor == base.FillColor
-			case 9:
+			case 9, toolbarActionAlignLeft, toolbarActionAlignRight:
 				equal = current.HorizontalAlignment == base.HorizontalAlignment
-			case 10:
+			case toolbarActionWrapText:
+				equal = current.WrapText == base.WrapText
+			case 10, toolbarActionPercentFormat:
 				equal = current.NumberFormat == base.NumberFormat
 			case 11:
 				equal = current.Borders == base.Borders
@@ -767,6 +790,27 @@ func formatPatchForToolbarAction(slot int, style document.CellStyle) (document.C
 		return document.CellFormatPatch{Underline: &v}, true
 	case 16:
 		return document.CellFormatPatch{ClearFormat: true}, true
+	case toolbarActionAlignLeft:
+		align := "left"
+		if strings.EqualFold(style.HorizontalAlignment, "left") {
+			align = "general"
+		}
+		return document.CellFormatPatch{HorizontalAlignment: &align}, true
+	case toolbarActionAlignRight:
+		align := "right"
+		if strings.EqualFold(style.HorizontalAlignment, "right") {
+			align = "general"
+		}
+		return document.CellFormatPatch{HorizontalAlignment: &align}, true
+	case toolbarActionWrapText:
+		v := !style.WrapText
+		return document.CellFormatPatch{WrapText: &v}, true
+	case toolbarActionPercentFormat:
+		format := "0.00%"
+		if style.NumberFormat == "0.00%" || style.NumberFormat == "0%" {
+			format = "General"
+		}
+		return document.CellFormatPatch{NumberFormat: &format}, true
 	default:
 		return document.CellFormatPatch{}, false
 	}

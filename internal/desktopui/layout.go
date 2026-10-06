@@ -377,7 +377,7 @@ func (a *App) processAsyncResults() {
 						result.state.wordRulerIndentIntent = nil
 					} else if result.state.wordDeferredToolbarAction == "export-pdf" || result.state.wordDeferredToolbarAction == "share" {
 						result.state.wordDeferredToolbarAction = ""
-					} else if result.state.wordDeferredToolbarAction == "insert-symbol" {
+					} else if result.state.wordDeferredToolbarAction == "insert-symbol" || result.state.wordDeferredToolbarAction == "layout-before" || result.state.wordDeferredToolbarAction == "layout-after" {
 						result.state.wordDeferredToolbarAction = ""
 					} else if result.state.wordDeferredToolbarAction == "apply-format-painter" {
 						result.state.wordDeferredToolbarAction = ""

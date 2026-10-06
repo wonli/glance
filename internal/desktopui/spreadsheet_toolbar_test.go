@@ -326,3 +326,59 @@ func TestToolbarStyleUsesActiveCellAndMarksMixedSelection(t *testing.T) {
 		t.Fatal("uniform italic should not be marked mixed")
 	}
 }
+
+type formattingTestBook struct {
+	toolbarTestBook
+	lastPatch document.CellFormatPatch
+	lastSheet string
+	lastRange document.CellRange
+}
+
+func (f *formattingTestBook) SetCellFormats(sheet string, bounds document.CellRange, patch document.CellFormatPatch) error {
+	f.lastSheet = sheet
+	f.lastRange = bounds
+	f.lastPatch = patch
+	return nil
+}
+
+func TestSpreadsheetToolbarClickAppliesFormat(t *testing.T) {
+	fake := &formattingTestBook{toolbarTestBook: toolbarTestBook{editable: true}}
+	state := newDocumentSessionState("")
+	state.book = fake
+	state.sheet = "Sheet1"
+	state.selectionSet = true
+	state.selection = CellSelection{Active: CellPosition{Row: 0, Column: 0}, Anchor: CellPosition{Row: 0, Column: 0}}
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionWrapText) {
+		t.Fatal("toolbarActionWrapText should be enabled")
+	}
+	if !app.toolbarActionEnabled(toolbarActionAlignLeft) {
+		t.Fatal("toolbarActionAlignLeft should be enabled")
+	}
+	if !app.toolbarActionEnabled(toolbarActionAlignRight) {
+		t.Fatal("toolbarActionAlignRight should be enabled")
+	}
+	if !app.toolbarActionEnabled(toolbarActionPercentFormat) {
+		t.Fatal("toolbarActionPercentFormat should be enabled")
+	}
+
+	patch, ok := formatPatchForToolbarAction(toolbarActionWrapText, document.CellStyle{})
+	if !ok || patch.WrapText == nil || !*patch.WrapText {
+		t.Fatalf("unexpected patch: %+v", patch)
+	}
+	app.applyCellFormat(patch)
+
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("applyCellFormat error: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for formatResult")
+	}
+
+	if fake.lastPatch.WrapText == nil || !*fake.lastPatch.WrapText {
+		t.Fatalf("formatter did not receive WrapText patch: %+v", fake.lastPatch)
+	}
+}

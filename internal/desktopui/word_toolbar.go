@@ -283,6 +283,10 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 			return paragraph.LeftIndentEMU > 0
 		}
 		return paragraph.LeftIndentEMU <= wordMaxParagraphIndentEMU-wordParagraphIndentStepEMU
+	case "layout-before", "layout-after":
+		_, editable := any(state.word).(document.WordParagraphSpacingEditor)
+		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
+		return editable && ok
 	case "find":
 		_, content := any(state.word).(document.WordContentReader)
 		return content
@@ -519,6 +523,8 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.setWordList(action.id)
 		case "decrease-indent", "increase-indent":
 			a.adjustWordParagraphIndent(action.id)
+		case "layout-before", "layout-after":
+			a.showWordParagraphSpacingDialog(action.id)
 		case "find":
 			a.showWordFindDialog()
 		case "replace":
@@ -672,6 +678,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.setWordList(actionID)
 	case "decrease-indent", "increase-indent":
 		a.adjustWordParagraphIndent(actionID)
+	case "layout-before", "layout-after":
+		a.showWordParagraphSpacingDialog(actionID)
 	case "find":
 		a.showWordFindDialog()
 	case "replace":
@@ -1424,6 +1432,64 @@ func (a *App) adjustWordParagraphIndent(actionID string) {
 	a.runWordCommand("调整段落缩进", func(editor document.WordTextEditor) error {
 		return editor.SetParagraphIndents(paragraphID, leftIndent, rightIndent)
 	})
+}
+
+func (a *App) showWordParagraphSpacingDialog(actionID string) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	paragraph, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
+	if !ok {
+		return
+	}
+	paragraphID := paragraph.ID
+	title, message, currentPT, opName := "段前间距", "设置段前间距（磅，0–1584）", paragraph.Layout.BeforePT, "设置段前间距"
+	if actionID == "layout-after" {
+		title, message, currentPT, opName = "段后间距", "设置段后间距（磅，0–1584）", paragraph.Layout.AfterPT, "设置段后间距"
+	}
+	initialVal := strconv.FormatFloat(currentPT, 'f', -1, 64)
+	a.modal.ShowInput(title, message, initialVal, "间距（磅）", func(action string) {
+		draft := strings.TrimSpace(a.modal.Input.Text())
+		a.modal.Hide()
+		if action != "confirm" {
+			return
+		}
+		pt, err := strconv.ParseFloat(draft, 64)
+		if err != nil || math.IsNaN(pt) || math.IsInf(pt, 0) || pt < 0 || pt > 1584 {
+			a.status = title + "必须在 0 到 1584 磅之间"
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+			return
+		}
+		twips := int64(math.Round(pt * 20.0))
+		a.runWordSpacingCommand(opName, func(editor document.WordParagraphSpacingEditor) error {
+			if actionID == "layout-before" {
+				return editor.SetParagraphSpacing(paragraphID, &twips, nil)
+			}
+			return editor.SetParagraphSpacing(paragraphID, nil, &twips)
+		})
+	}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+}
+
+func (a *App) runWordSpacingCommand(operation string, edit func(document.WordParagraphSpacingEditor) error) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	editor, ok := any(state.word).(document.WordParagraphSpacingEditor)
+	if !ok {
+		return
+	}
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
+	generation := a.documentGeneration
+	go func() {
+		blocks, err := runWordMutation(state, func() error { return edit(editor) })
+		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
+	}()
 }
 
 func (a *App) showWordCountDetails() {

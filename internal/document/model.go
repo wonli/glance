@@ -38,6 +38,7 @@ type CellFormatPatch struct {
 	HorizontalAlignment *string
 	NumberFormat        *string
 	BorderPreset        *string
+	WrapText            *bool
 	ClearFormat         bool
 }
 
