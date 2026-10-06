@@ -10,7 +10,6 @@ import (
 
 	"gioui.org/io/clipboard"
 	"gioui.org/layout"
-	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -523,7 +522,7 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 	if !a.spreadsheetToolbarVisible() {
 		return layout.Dimensions{}
 	}
-	height := gtx.Dp(unit.Dp(90))
+	height := gtx.Dp(unit.Dp(102))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	state := a.documentSessionState
 	return layout.Background{}.Layout(gtx,
@@ -537,13 +536,11 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 					return layoutRibbonCategoryTabs(gtx, a.theme, toolbarCategoryLabelsForState(state), state.toolbarTabs[:], int(state.toolbarTab))
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					stripHeight := gtx.Dp(unit.Dp(56))
+					stripHeight := gtx.Dp(unit.Dp(68))
 					gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = stripHeight, stripHeight
 					actions := toolbarActionsForTab(state.toolbarTab)
-					iconSize := unit.Dp(20)
-					shift := op.Offset(image.Pt(0, -gtx.Dp(unit.Dp(4)))).Push(gtx.Ops)
-					defer shift.Pop()
-					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(16), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					iconSize := toolbarIconSize
+					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return state.toolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
 							action := actions[index]
 							style := a.selectedCellStyle()
@@ -566,7 +563,10 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 							}
 							icon, _ := tintedToolbarIcon(action.icon, iconColor)
 							return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
-								return toolbarIconButton(gtx, button, icon, iconSize, action.label, enabled, mixed, background)
+								btnGtx := gtx
+								btnGtx.Constraints.Min = image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight))
+								btnGtx.Constraints.Max = btnGtx.Constraints.Min
+								return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, action.label, enabled, mixed, background)
 							})
 						})
 					})
@@ -590,10 +590,10 @@ func (a *App) layoutSpreadsheetToolbarPickerOverlay(gtx layout.Context) layout.D
 	if panelWidth > gtx.Constraints.Max.X {
 		panelWidth = gtx.Constraints.Max.X
 	}
-	normalWidth := gtx.Dp(unit.Dp(42))
-	groupWidth := gtx.Dp(unit.Dp(49))
+	normalWidth := gtx.Dp(unit.Dp(51))
+	groupWidth := gtx.Dp(unit.Dp(55))
 	panelX := toolbarPickerPanelX(state.toolbarPickerSlot, actions, state.toolbarActionList.List.Position, normalWidth, groupWidth, gtx.Constraints.Max.X, panelWidth)
-	panelX += gtx.Dp(unit.Dp(22))
+	panelX += gtx.Dp(unit.Dp(8))
 	maxX := gtx.Constraints.Max.X - panelWidth
 	if maxX < 0 {
 		maxX = 0
@@ -605,7 +605,7 @@ func (a *App) layoutSpreadsheetToolbarPickerOverlay(gtx layout.Context) layout.D
 	if gtx.Metric.PxPerDp > 0 {
 		left = unit.Dp(float32(panelX) / gtx.Metric.PxPerDp)
 	}
-	return layout.Inset{Left: left, Top: unit.Dp(94)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: left, Top: unit.Dp(106)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		width := panelWidth
 		if width > gtx.Constraints.Max.X {
 			width = gtx.Constraints.Max.X

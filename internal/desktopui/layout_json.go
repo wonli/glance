@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	jsonToolbarHeightDP = 54
-	jsonToolbarIconSize = unit.Dp(18)
+	jsonToolbarHeightDP = 68
+	jsonToolbarIconSize = toolbarIconSize
 )
 
 var jsonToolbarActions = []ribbonAction{
@@ -96,7 +96,7 @@ func (a *App) layoutJSONToolbar(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(9), Bottom: unit.Dp(9), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return state.jsonToolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
 					action := actions[index]
 					enabled := a.jsonToolbarActionEnabled(action)
@@ -104,7 +104,10 @@ func (a *App) layoutJSONToolbar(gtx layout.Context) layout.Dimensions {
 					icon, _ := jsonToolbarActionIcon(action, enabled)
 					background := contentSurface
 					return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
-						return toolbarIconButton(gtx, button, icon, jsonToolbarIconSize, action.label, enabled, false, background)
+						btnGtx := gtx
+						btnGtx.Constraints.Min = image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight))
+						btnGtx.Constraints.Max = btnGtx.Constraints.Min
+						return toolbarIconButton(btnGtx, a.theme, button, icon, jsonToolbarIconSize, action.label, action.label, enabled, false, background)
 					})
 				})
 			})

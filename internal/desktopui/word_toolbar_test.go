@@ -157,14 +157,14 @@ func TestWordRibbonUsesSemanticallyClosestExcelGlyphs(t *testing.T) {
 
 func TestWordRibbonActionSlotsMatchPenNodeClpgm(t *testing.T) {
 	want := map[wordToolbarTab][]int{
-		wordTabFile:    {34, 76, 118, 179, 221, 263, 324, 366, 408, 469, 511, 553},
-		wordTabHome:    {34, 76, 118, 160, 221, 263, 305, 347, 389, 431, 473, 515, 576, 618, 660, 702, 744, 786, 828, 870, 931, 973, 1015, 1076, 1118, 1160, 1202},
-		wordTabInsert:  {34, 76, 118, 179, 240, 282, 324, 385, 427, 488, 530, 572, 633, 675, 736, 778},
-		wordTabDesign:  {34, 76, 118, 160, 221, 263, 324, 366, 408},
-		wordTabLayout:  {34, 76, 118, 160, 221, 263, 324, 366, 408, 469, 511, 553},
-		wordTabReview:  {34, 76, 137, 179, 240, 282, 343, 385, 427, 488, 530},
-		wordTabView:    {34, 76, 118, 179, 221, 263, 324, 366, 408, 469, 511, 572},
-		wordTabPicture: {34, 76, 118, 179, 221},
+		wordTabFile:    {34, 84, 134, 203, 253, 303, 372, 422, 472, 541, 591, 641},
+		wordTabHome:    {34, 84, 134, 184, 253, 303, 353, 403, 453, 503, 553, 603, 672, 722, 772, 822, 872, 922, 972, 1022, 1091, 1141, 1191, 1260, 1310, 1360, 1410},
+		wordTabInsert:  {34, 84, 134, 203, 272, 322, 372, 441, 491, 560, 610, 660, 729, 779, 848, 898},
+		wordTabDesign:  {34, 84, 134, 184, 253, 303, 372, 422, 472},
+		wordTabLayout:  {34, 84, 134, 184, 253, 303, 372, 422, 472, 541, 591, 641},
+		wordTabReview:  {34, 84, 153, 203, 272, 322, 391, 441, 491, 560, 610},
+		wordTabView:    {34, 84, 134, 203, 253, 303, 372, 422, 472, 541, 591, 660},
+		wordTabPicture: {34, 84, 134, 184, 234},
 	}
 	for tab, expected := range want {
 		got := wordPenActionPositions[tab]
@@ -178,13 +178,13 @@ func TestWordRibbonActionSlotsMatchPenNodeClpgm(t *testing.T) {
 		}
 	}
 	wantDividers := map[wordToolbarTab][]int{
-		wordTabFile:   {166, 311, 456},
-		wordTabHome:   {208, 563, 918, 1063},
-		wordTabInsert: {166, 227, 372, 475, 620, 723},
-		wordTabDesign: {208, 311},
-		wordTabLayout: {208, 311, 456},
-		wordTabReview: {124, 227, 330, 475},
-		wordTabView:   {166, 311, 456, 559},
+		wordTabFile:   {190, 359, 528},
+		wordTabHome:   {240, 659, 1078, 1247},
+		wordTabInsert: {190, 259, 428, 547, 716, 835},
+		wordTabDesign: {240, 359},
+		wordTabLayout: {240, 359, 528},
+		wordTabReview: {140, 259, 378, 547},
+		wordTabView:   {190, 359, 528, 647},
 	}
 	for tab, expected := range wantDividers {
 		got := wordPenGroupDividers[tab]

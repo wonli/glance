@@ -230,67 +230,151 @@ func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, labels 
 	)
 }
 
+const (
+	toolbarButtonWidth        = unit.Dp(44)
+	toolbarButtonHeight       = unit.Dp(48)
+	toolbarButtonCornerRadius = unit.Dp(5)
+	toolbarIconSize           = unit.Dp(18)
+	toolbarItemGap            = unit.Dp(6)
+
+	excelToolbarButtonWidth   = unit.Dp(48)
+	excelToolbarButtonHeight  = unit.Dp(48)
+	excelToolbarItemGap       = unit.Dp(3)
+	excelToolbarDividerHeight = unit.Dp(24)
+
+	wordRibbonButtonWidth     = unit.Dp(44)
+	wordRibbonButtonHeight    = unit.Dp(48)
+	wordRibbonItemGap         = unit.Dp(6)
+	wordRibbonDividerHeight   = unit.Dp(32)
+	wordRibbonDividerMargin   = 12
+)
+
+var (
+	toolbarLabelText = color.NRGBA{R: 89, G: 98, B: 109, A: 255}
+)
+
+func ribbonLabelTextSize(label string) unit.Sp {
+	runes := len([]rune(label))
+	switch {
+	case runes <= 2:
+		return unit.Sp(10)
+	case runes == 3:
+		return unit.Sp(9.5)
+	case runes == 4:
+		return unit.Sp(9)
+	default:
+		return unit.Sp(8.5)
+	}
+}
+
 func layoutToolbarActionItem(gtx layout.Context, action ribbonAction, index int, actions []ribbonAction, child layout.Widget) layout.Dimensions {
 	groupStart := index == 0 || actions[index-1].group != action.group
 	groupEnd := index == len(actions)-1 || actions[index+1].group != action.group
 	children := make([]layout.FlexChild, 0, 5)
 	if groupStart && index > 0 {
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(12)), 0)}
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(excelToolbarItemGap), 0)}
 		}))
 	}
 	children = append(children, layout.Rigid(child))
-	gap := unit.Dp(6)
-	if groupEnd {
-		gap = unit.Dp(12)
-	}
 	children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-		return layout.Dimensions{Size: image.Pt(gtx.Dp(gap), 0)}
+		return layout.Dimensions{Size: image.Pt(gtx.Dp(excelToolbarItemGap), 0)}
 	}))
 	if groupEnd && index < len(actions)-1 {
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(1)), gtx.Dp(unit.Dp(32)))
+			gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(1)), gtx.Dp(excelToolbarDividerHeight))
 			gtx.Constraints.Max = gtx.Constraints.Min
-			shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(4)))).Push(gtx.Ops)
 			paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Max: gtx.Constraints.Min}.Op())
-			shift.Pop()
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}))
 	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 }
 
-func toolbarIconButton(gtx layout.Context, button *widget.Clickable, icon image.Image, iconSize unit.Dp, label string, enabled, mixed bool, background color.NRGBA) layout.Dimensions {
-	const buttonSize = unit.Dp(36)
-	size := gtx.Dp(buttonSize)
-	gtx.Constraints.Min = image.Pt(size, size)
-	gtx.Constraints.Max = image.Pt(size, size)
+func toolbarIconButton(gtx layout.Context, theme *material.Theme, button *widget.Clickable, icon image.Image, iconSize unit.Dp, label, description string, enabled, mixed bool, background color.NRGBA) layout.Dimensions {
+	if theme == nil {
+		theme = material.NewTheme()
+	}
+	if description == "" {
+		description = label
+	}
+	widthDP := toolbarButtonWidth
+	if gtx.Constraints.Min.X > 0 && gtx.Metric.PxPerDp > 0 {
+		widthDP = unit.Dp(float32(gtx.Constraints.Min.X) / gtx.Metric.PxPerDp)
+	} else if runes := len([]rune(label)); runes >= 4 && (gtx.Constraints.Max.X == 0 || gtx.Constraints.Max.X > gtx.Dp(toolbarButtonWidth)) {
+		widthDP = unit.Dp(48)
+	}
+	width := gtx.Dp(widthDP)
+	height := gtx.Dp(toolbarButtonHeight)
+	gtx.Constraints.Min = image.Pt(width, height)
+	gtx.Constraints.Max = image.Pt(width, height)
 	draw := func(gtx layout.Context) layout.Dimensions {
+		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
 		semantic.Button.Add(gtx.Ops)
-		semantic.DescriptionOp(label).Add(gtx.Ops)
+		semantic.DescriptionOp(description).Add(gtx.Ops)
+		semantic.EnabledOp(enabled).Add(gtx.Ops)
+		bounds.Pop()
+
 		buttonBackground := background
 		if button != nil && enabled && (button.Hovered() || gtx.Focused(button)) && !mixed {
 			buttonBackground = toolbarHoverBackground
 		}
-		paint.FillShape(gtx.Ops, buttonBackground, clip.UniformRRect(image.Rectangle{Max: image.Pt(size, size)}, gtx.Dp(unit.Dp(7))).Op(gtx.Ops))
-		if icon != nil {
-			layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				iconSizePx := gtx.Dp(iconSize)
-				gtx.Constraints.Min = image.Pt(iconSizePx, iconSizePx)
-				gtx.Constraints.Max = gtx.Constraints.Min
-				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(iconSize) / 96.0}.Layout(gtx)
-			})
-		}
+		paint.FillShape(gtx.Ops, buttonBackground, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(toolbarButtonCornerRadius)).Op(gtx.Ops))
+		layout.Flex{
+			Axis:      layout.Vertical,
+			Alignment: layout.Middle,
+			Spacing:   layout.SpaceBetween,
+		}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					if icon == nil {
+						return layout.Dimensions{Size: image.Pt(width, gtx.Dp(iconSize))}
+					}
+					iconSizePx := gtx.Dp(iconSize)
+					iconGtx := gtx
+					iconGtx.Constraints.Min = image.Pt(iconSizePx, iconSizePx)
+					iconGtx.Constraints.Max = iconGtx.Constraints.Min
+					scale := float32(iconSize) / 96.0
+					if b := icon.Bounds(); b.Dx() > 0 {
+						scale = float32(iconSize) / float32(b.Dx())
+					}
+					return layout.Center.Layout(iconGtx, func(gtx layout.Context) layout.Dimensions {
+						return widget.Image{
+							Src:      paint.NewImageOp(icon),
+							Fit:      widget.Contain,
+							Position: layout.Center,
+							Scale:    scale,
+						}.Layout(gtx)
+					})
+				})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if label == "" {
+					return layout.Dimensions{}
+				}
+				return layout.Inset{Bottom: unit.Dp(4), Left: unit.Dp(1), Right: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					textColor := toolbarLabelText
+					if !enabled {
+						textColor = disabledToolbarText
+					}
+					caption := material.Caption(theme, label)
+					caption.TextSize = ribbonLabelTextSize(label)
+					caption.Color = textColor
+					caption.MaxLines = 1
+					return layout.Center.Layout(gtx, caption.Layout)
+				})
+			}),
+		)
 		if mixed {
 			dotSize, inset := gtx.Dp(unit.Dp(5)), gtx.Dp(unit.Dp(5))
-			paint.FillShape(gtx.Ops, toolbarGlyphText, clip.Ellipse(image.Rect(size-dotSize-inset, inset, size-inset, dotSize+inset)).Op(gtx.Ops))
+			paint.FillShape(gtx.Ops, toolbarGlyphText, clip.Ellipse(image.Rect(width-dotSize-inset, inset, width-inset, dotSize+inset)).Op(gtx.Ops))
 		}
-		return layout.Dimensions{Size: image.Pt(size, size)}
+		return layout.Dimensions{Size: image.Pt(width, height)}
 	}
-	if button == nil {
-		return draw(gtx)
+	if button != nil && enabled {
+		return button.Layout(gtx, draw)
 	}
-	return button.Layout(gtx, draw)
+	return draw(gtx)
 }
 
 func toolbarTabButton(gtx layout.Context, theme *material.Theme, button *widget.Clickable, label string, selected bool) layout.Dimensions {

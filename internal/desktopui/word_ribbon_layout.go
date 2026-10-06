@@ -19,7 +19,7 @@ const (
 	wordRibbonCategoryHeightDP    = 34
 	wordRibbonCategoryTabWidthDP  = 31
 	wordRibbonCategoryTabHeightDP = 30
-	wordRibbonCommandHeightDP     = 56
+	wordRibbonCommandHeightDP     = 68
 	wordRibbonHeightDP            = wordRibbonCategoryHeightDP + wordRibbonCommandHeightDP
 	spreadsheetRibbonLeftInsetDP  = 16
 )
@@ -128,92 +128,129 @@ func (a *App) layoutWordHomeRibbonControls(gtx layout.Context, state *documentSe
 	return a.layoutWordRibbonActions(gtx, state, wordTabHome)
 }
 
-var wordPenActionPositions = map[wordToolbarTab][]int{
-	wordTabFile:    {34, 76, 118, 179, 221, 263, 324, 366, 408, 469, 511, 553},
-	wordTabHome:    {34, 76, 118, 160, 221, 263, 305, 347, 389, 431, 473, 515, 576, 618, 660, 702, 744, 786, 828, 870, 931, 973, 1015, 1076, 1118, 1160, 1202},
-	wordTabInsert:  {34, 76, 118, 179, 240, 282, 324, 385, 427, 488, 530, 572, 633, 675, 736, 778},
-	wordTabDesign:  {34, 76, 118, 160, 221, 263, 324, 366, 408},
-	wordTabLayout:  {34, 76, 118, 160, 221, 263, 324, 366, 408, 469, 511, 553},
-	wordTabReview:  {34, 76, 137, 179, 240, 282, 343, 385, 427, 488, 530},
-	wordTabView:    {34, 76, 118, 179, 221, 263, 324, 366, 408, 469, 511, 572},
-	wordTabPicture: {34, 76, 118, 179, 221},
-}
+var (
+	wordPenActionPositions = make(map[wordToolbarTab][]int)
+	wordPenGroupDividers   = make(map[wordToolbarTab][]int)
+)
 
-var wordPenGroupDividers = map[wordToolbarTab][]int{
-	wordTabFile:   {166, 311, 456},
-	wordTabHome:   {208, 563, 918, 1063},
-	wordTabInsert: {166, 227, 372, 475, 620, 723},
-	wordTabDesign: {208, 311},
-	wordTabLayout: {208, 311, 456},
-	wordTabReview: {124, 227, 330, 475},
-	wordTabView:   {166, 311, 456, 559},
+func init() {
+	allTabs := []wordToolbarTab{
+		wordTabFile,
+		wordTabHome,
+		wordTabInsert,
+		wordTabDesign,
+		wordTabLayout,
+		wordTabReview,
+		wordTabView,
+		wordTabPicture,
+	}
+	buttonWidth := int(toolbarButtonWidth)
+	gap := int(toolbarItemGap)
+	dividerMargin := 12
+	dividerWidth := 1
+	for _, tab := range allTabs {
+		actions := wordToolbarActions(tab)
+		if len(actions) == 0 {
+			continue
+		}
+		positions := make([]int, len(actions))
+		var dividers []int
+		x := 34
+		for i, action := range actions {
+			if i > 0 && action.group != actions[i-1].group {
+				dividerX := x - gap + dividerMargin
+				dividers = append(dividers, dividerX)
+				x = dividerX + dividerWidth + dividerMargin
+			}
+			positions[i] = x
+			x += buttonWidth + gap
+		}
+		wordPenActionPositions[tab] = positions
+		wordPenGroupDividers[tab] = dividers
+	}
 }
 
 func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSessionState, tab wordToolbarTab) layout.Dimensions {
-	width, height := gtx.Constraints.Max.X, gtx.Dp(unit.Dp(wordRibbonCommandHeightDP))
-	positions := wordPenActionPositions[tab]
-	if len(positions) == 0 {
-		return layout.Dimensions{Size: image.Pt(width, height)}
-	}
-	for _, x := range wordPenGroupDividers[tab] {
-		px := gtx.Dp(unit.Dp(x))
-		dividerTop := gtx.Dp(unit.Dp(10))
-		dividerHeight := gtx.Dp(unit.Dp(32))
-		paint.FillShape(gtx.Ops, wordStatusTopRule, clip.Rect{Min: image.Pt(px, dividerTop), Max: image.Pt(px+gtx.Dp(unit.Dp(1)), dividerTop+dividerHeight)}.Op())
-	}
 	actions := wordToolbarActions(tab)
-	for index, action := range actions {
-		if index >= len(positions) {
-			break
-		}
-		a.layoutWordRibbonIconButtonAt(gtx, state, action, positions[index])
+	iconSize := toolbarIconSize
+	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		// Keep short command lists full-width so Background does not center them.
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		return state.wordToolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
+			action := actions[index]
+			enabled := a.wordToolbarActionEnabled(action)
+			button := wordToolbarButton(state, action.id)
+			description := a.wordToolbarActionDescription(action)
+			if action.id == "view-new-window" && !enabled {
+				if _, reason := wordNewWindowAvailability(state, a.desktopRuntime); reason != "" {
+					description += "，不可用：" + reason
+				}
+			}
+			active := enabled && wordToolbarActionActive(state, action)
+			background := contentSurface
+			if active {
+				background = toolbarActiveBackground
+			}
+			icon, _ := wordToolbarActionIcon(action, enabled)
+			return layoutWordToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
+				btnGtx := gtx
+				btnGtx.Constraints.Min = image.Pt(gtx.Dp(toolbarButtonWidth), gtx.Dp(toolbarButtonHeight))
+				btnGtx.Constraints.Max = btnGtx.Constraints.Min
+				return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, description, enabled, false, background)
+			})
+		})
+	})
+}
+
+func layoutWordToolbarActionItem(gtx layout.Context, action ribbonAction, index int, actions []ribbonAction, child layout.Widget) layout.Dimensions {
+	groupEnd := index == len(actions)-1 || actions[index+1].group != action.group
+	children := make([]layout.FlexChild, 0, 4)
+	children = append(children, layout.Rigid(child))
+	if !groupEnd {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(toolbarItemGap), 0)}
+		}))
+	} else if index < len(actions)-1 {
+		children = append(children,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(12)), 0)}
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(1)), gtx.Dp(unit.Dp(32)))
+				gtx.Constraints.Max = gtx.Constraints.Min
+				paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Max: gtx.Constraints.Min}.Op())
+				return layout.Dimensions{Size: gtx.Constraints.Min}
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(12)), 0)}
+			}),
+		)
 	}
-	return layout.Dimensions{Size: image.Pt(width, height)}
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 }
 
 func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP int) {
-	width, height := gtx.Dp(unit.Dp(36)), gtx.Dp(unit.Dp(36))
+	width, height := gtx.Dp(toolbarButtonWidth), gtx.Dp(toolbarButtonHeight)
 	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(10))
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
+	defer transform.Pop()
 	buttonGtx := gtx
 	buttonGtx.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}
 	enabled := a.wordToolbarActionEnabled(action)
 	button := wordToolbarButton(state, action.id)
-	draw := func(gtx layout.Context) layout.Dimensions {
-		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
-		semantic.Button.Add(gtx.Ops)
-		description := a.wordToolbarActionDescription(action)
-		if action.id == "view-new-window" && !enabled {
-			if _, reason := wordNewWindowAvailability(state, a.desktopRuntime); reason != "" {
-				description += "，不可用：" + reason
-			}
+	description := a.wordToolbarActionDescription(action)
+	if action.id == "view-new-window" && !enabled {
+		if _, reason := wordNewWindowAvailability(state, a.desktopRuntime); reason != "" {
+			description += "，不可用：" + reason
 		}
-		semantic.DescriptionOp(description).Add(gtx.Ops)
-		semantic.EnabledOp(enabled).Add(gtx.Ops)
-		bounds.Pop()
-		if active := enabled && wordToolbarActionActive(state, action); active || (enabled && button.Hovered()) {
-			background := toolbarActiveBackground
-			if button.Hovered() {
-				background = toolbarHoverBackground
-			}
-			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-		}
-		if icon, ok := wordToolbarActionIcon(action, enabled); ok {
-			iconSize := gtx.Dp(unit.Dp(20))
-			iconGtx := gtx
-			iconGtx.Constraints = layout.Constraints{Min: image.Pt(iconSize, iconSize), Max: image.Pt(iconSize, iconSize)}
-			iconOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(8)), gtx.Dp(unit.Dp(8)))).Push(gtx.Ops)
-			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(20)}.Layout(iconGtx)
-			iconOffset.Pop()
-		}
-		return layout.Dimensions{Size: image.Pt(width, height)}
 	}
-	if enabled {
-		button.Layout(buttonGtx, draw)
-	} else {
-		draw(buttonGtx)
+	active := enabled && wordToolbarActionActive(state, action)
+	background := contentSurface
+	if active {
+		background = toolbarActiveBackground
 	}
-	transform.Pop()
+	icon, _ := wordToolbarActionIcon(action, enabled)
+	toolbarIconButton(buttonGtx, a.theme, button, icon, toolbarIconSize, action.label, description, enabled, false, background)
 }
 
 func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP, yDP int) {
