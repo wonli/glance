@@ -388,4 +388,76 @@ func (d *Document) SetPageSize(widthPT, heightPT float64) error {
 	return d.applyWordDocumentXMLLocked(patched)
 }
 
+// SetPageColumns updates or sets the number of columns for the document sections (1 to 4).
+func (d *Document) SetPageColumns(columns int) error {
+	if columns < 1 || columns > 4 {
+		return fmt.Errorf("unsupported column count %d: must be between 1 and 4", columns)
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	if d.documentIdx < 0 || d.documentIdx >= len(d.parts) {
+		return fmt.Errorf("DOCX document part is unavailable")
+	}
+
+	data := d.parts[d.documentIdx].data
+	root, err := parseWordXML(data)
+	if err != nil {
+		return fmt.Errorf("parse DOCX before setting columns: %w", err)
+	}
+	body := firstChild(root, "body")
+	if body == nil {
+		return fmt.Errorf("DOCX document has no body")
+	}
+
+	prefix := elementPrefix(body.rawName)
+	sections := findWordSectionNodes(body)
+	if len(sections) == 0 {
+		colsMarkup := makeWordPropertyMarkup(prefix, "cols", "num", strconv.Itoa(columns))
+		colsMarkup, _ = setRawXMLAttribute(colsMarkup, prefix, "space", "720")
+		sectPrMarkup := wrapWordElement(prefix, "sectPr", colsMarkup)
+		patched, err := applyXMLReplacements(data, []xmlReplacement{{start: body.contentEnd, end: body.contentEnd, value: sectPrMarkup}})
+		if err != nil {
+			return err
+		}
+		return d.applyWordDocumentXMLLocked(patched)
+	}
+
+	var replacements []xmlReplacement
+	for _, sectPr := range sections {
+		cols := firstChild(sectPr, "cols")
+		if cols != nil {
+			opening := data[cols.start:cols.openEnd]
+			patchedOpening := opening
+			patchedOpening, err = setRawXMLAttribute(patchedOpening, prefix, "num", strconv.Itoa(columns))
+			if err != nil {
+				return err
+			}
+			patchedOpening, err = setRawXMLAttribute(patchedOpening, prefix, "space", "720")
+			if err != nil {
+				return err
+			}
+			replacements = append(replacements, xmlReplacement{start: cols.start, end: cols.openEnd, value: patchedOpening})
+		} else {
+			colsMarkup := makeWordPropertyMarkup(prefix, "cols", "num", strconv.Itoa(columns))
+			colsMarkup, _ = setRawXMLAttribute(colsMarkup, prefix, "space", "720")
+			rep, err := insertWordSectionProperty(data, sectPr, prefix, "cols", colsMarkup)
+			if err != nil {
+				return err
+			}
+			replacements = append(replacements, rep)
+		}
+	}
+
+	patched, err := applyXMLReplacements(data, replacements)
+	if err != nil {
+		return err
+	}
+	return d.applyWordDocumentXMLLocked(patched)
+}
+
 var _ document.WordPageSetupEditor = (*Document)(nil)
+

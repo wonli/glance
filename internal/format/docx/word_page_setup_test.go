@@ -168,3 +168,55 @@ func TestWordPageSizeAndUndo(t *testing.T) {
 		t.Fatal("expected error for zero width")
 	}
 }
+
+func TestWordPageColumnsAndUndo(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	editor, ok := any(doc).(document.WordPageSetupEditor)
+	if !ok {
+		t.Fatal("doc does not implement WordPageSetupEditor")
+	}
+
+	// Set 2 columns
+	if err := editor.SetPageColumns(2); err != nil {
+		t.Fatalf("SetPageColumns 2 failed: %v", err)
+	}
+	xml := string(doc.parts[doc.documentIdx].data)
+	if !strings.Contains(xml, `w:cols`) || !strings.Contains(xml, `w:num="2"`) {
+		t.Fatalf("XML missing 2 columns: %s", xml)
+	}
+
+	// Undo
+	history := any(doc).(document.WordHistory)
+	undone, err := history.Undo()
+	if err != nil || !undone {
+		t.Fatalf("Undo failed: %v", err)
+	}
+	xml = string(doc.parts[doc.documentIdx].data)
+	if strings.Contains(xml, `w:num="2"`) {
+		t.Fatalf("expected 2 columns undone: %s", xml)
+	}
+
+	// Redo
+	redone, err := history.Redo()
+	if err != nil || !redone {
+		t.Fatalf("Redo failed: %v", err)
+	}
+	xml = string(doc.parts[doc.documentIdx].data)
+	if !strings.Contains(xml, `w:num="2"`) {
+		t.Fatalf("expected 2 columns restored after redo: %s", xml)
+	}
+
+	// Invalid column counts
+	if err := editor.SetPageColumns(0); err == nil {
+		t.Fatal("expected error for 0 columns")
+	}
+	if err := editor.SetPageColumns(5); err == nil {
+		t.Fatal("expected error for 5 columns")
+	}
+}
+

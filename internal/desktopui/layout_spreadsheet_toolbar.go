@@ -454,6 +454,14 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetPrintTitlesDialog()
 			continue
 		}
+		if action.slot == toolbarActionFreezePanes {
+			a.showSpreadsheetFreezePanesDialog()
+			continue
+		}
+		if action.slot == toolbarActionRemoveDuplicates {
+			a.showSpreadsheetRemoveDuplicatesDialog()
+			continue
+		}
 		style := a.selectedCellStyle()
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
@@ -514,7 +522,8 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionZoomIn, toolbarActionZoom100,
 		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize,
 		toolbarActionPrintArea, toolbarActionViewGridlines,
-		toolbarActionInsertLink, toolbarActionHeaderRow:
+		toolbarActionInsertLink, toolbarActionHeaderRow,
+		toolbarActionFreezePanes, toolbarActionRemoveDuplicates:
 		return false
 	default:
 		return true
@@ -539,6 +548,12 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	switch slot {
 	case toolbarActionZoomIn, toolbarActionZoom100, toolbarActionViewGridlines:
 		return state.book != nil && state.virtualGrid != nil && !state.formatRunning.Load()
+	case toolbarActionFreezePanes:
+		_, ok := state.book.(document.SpreadsheetPanesEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionRemoveDuplicates:
+		_, ok := state.book.(document.SpreadsheetDuplicatesEditor)
+		return ok && state.selectionSet && state.selection.Bounds().EndRow > state.selection.Bounds().StartRow && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize, toolbarActionPrintArea, toolbarActionHeaderRow:
 		_, ok := state.book.(document.SpreadsheetPageLayoutEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()

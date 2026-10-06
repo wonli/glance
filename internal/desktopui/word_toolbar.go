@@ -291,7 +291,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, editable := any(state.word).(document.WordTextEditor)
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
 		return editable && ok && !state.formatRunning.Load() && !a.isSaving()
-	case "layout-orientation", "layout-margins", "layout-size":
+	case "layout-orientation", "layout-margins", "layout-size", "layout-columns":
 		_, editable := any(state.word).(document.WordPageSetupEditor)
 		return editable && !state.formatRunning.Load() && !a.isSaving()
 	case "find":
@@ -538,6 +538,8 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordMarginsDialog()
 		case "layout-size":
 			a.showWordPageSizeDialog()
+		case "layout-columns":
+			a.showWordColumnsDialog()
 		case "find":
 			a.showWordFindDialog()
 		case "replace":
@@ -701,6 +703,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.showWordMarginsDialog()
 	case "layout-size":
 		a.showWordPageSizeDialog()
+	case "layout-columns":
+		a.showWordColumnsDialog()
 	case "find":
 		a.showWordFindDialog()
 	case "replace":
@@ -1735,6 +1739,39 @@ func (a *App) showWordPageSizeDialog() {
 		modalDialogActionSpec{ID: "confirm", Label: "应用"},
 		modalDialogActionSpec{ID: "a4", Label: "A4 (210×297mm)"},
 		modalDialogActionSpec{ID: "letter", Label: "Letter (8.5×11in)"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordColumnsDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	if _, ok := any(state.word).(document.WordPageSetupEditor); !ok {
+		return
+	}
+	message := "选择页面分栏排版布局："
+	a.modal.Show("分栏设置", message, func(action string) {
+		a.modal.Hide()
+		var cols int
+		switch action {
+		case "col1":
+			cols = 1
+		case "col2":
+			cols = 2
+		case "col3":
+			cols = 3
+		default:
+			return
+		}
+		a.runWordPageSetupCommand(fmt.Sprintf("设置页面分栏为 %d 栏", cols), func(editor document.WordPageSetupEditor) error {
+			return editor.SetPageColumns(cols)
+		})
+	},
+		modalDialogActionSpec{ID: "col1", Label: "一栏 (单栏常规)"},
+		modalDialogActionSpec{ID: "col2", Label: "两栏 (双栏排版)"},
+		modalDialogActionSpec{ID: "col3", Label: "三栏 (三栏报刊)"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
 }

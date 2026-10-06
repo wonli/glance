@@ -246,4 +246,30 @@ type SpreadsheetHyperlinkEditor interface {
 	RemoveCellHyperlink(sheet, cell string) error
 }
 
+// SpreadsheetPaneFreeze describes frozen rows and columns in a worksheet.
+type SpreadsheetPaneFreeze struct {
+	Frozen bool
+	XSplit int // number of frozen columns on the left (0 = none)
+	YSplit int // number of frozen rows at the top (0 = none)
+}
+
+// SpreadsheetPanesEditor is an optional capability for configuring frozen panes.
+type SpreadsheetPanesEditor interface {
+	GetSheetPanes(sheet string) (SpreadsheetPaneFreeze, error)
+	SetSheetPanes(sheet string, freeze SpreadsheetPaneFreeze) error
+}
+
+// SpreadsheetDuplicatesResult reports the outcome of a duplicate row removal operation.
+type SpreadsheetDuplicatesResult struct {
+	RemovedCount   int
+	RemainingCount int
+}
+
+// SpreadsheetDuplicatesEditor is an optional capability for deduplicating rows in a range.
+type SpreadsheetDuplicatesEditor interface {
+	RemoveDuplicates(sheet string, bounds CellRange, keyColumn int) (SpreadsheetDuplicatesResult, error)
+}
+
+
+
 

@@ -286,4 +286,5 @@ type WordPageSetupEditor interface {
 	SetPageOrientation(orientation string) error
 	SetPageMargins(topPT, rightPT, bottomPT, leftPT float64) error
 	SetPageSize(widthPT, heightPT float64) error
+	SetPageColumns(columns int) error
 }

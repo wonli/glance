@@ -1,10 +1,12 @@
 package desktopui
 
 import (
+	"archive/zip"
 	"bytes"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"math"
 	"path/filepath"
 	"strings"
@@ -1259,6 +1261,57 @@ func TestWordPageSetupDialogsAndCommands(t *testing.T) {
 	// Since current orientation is landscape, width > height (792 x 612)
 	if (math.Abs(setup.WidthPT-792) > 1.0 && math.Abs(setup.WidthPT-612) > 1.0) || (math.Abs(setup.HeightPT-792) > 1.0 && math.Abs(setup.HeightPT-612) > 1.0) {
 		t.Fatalf("expected Letter page size dimensions, got width=%f height=%f", setup.WidthPT, setup.HeightPT)
+	}
+
+	// 4. Columns Dialog and Command
+	columnsAction := ribbonAction{id: "layout-columns", label: "分栏"}
+	if !app.wordToolbarActionEnabled(columnsAction) {
+		t.Fatal("expected layout-columns action to be enabled")
+	}
+	app.executeWordToolbarAction("layout-columns")
+	if !app.modal.Visible || app.modal.Title != "分栏设置" {
+		t.Fatalf("expected modal dialog for layout-columns, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("col2")
+	if app.modal.Visible {
+		t.Fatal("modal should be hidden after col2 action")
+	}
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("layout-columns command failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for layout-columns command result")
+	}
+	snap, err := doc.Snapshot()
+	if err != nil {
+		t.Fatalf("doc.Snapshot failed: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(snap), int64(len(snap)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var docXML string
+	for _, f := range zr.File {
+		if f.Name == "word/document.xml" {
+			rc, err := f.Open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, err := io.ReadAll(rc)
+			_ = rc.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			docXML = string(b)
+			break
+		}
+	}
+	if !strings.Contains(docXML, `w:cols`) || !strings.Contains(docXML, `w:num="2"`) {
+		t.Fatalf("expected 2 columns in word/document.xml, got: %s", docXML)
 	}
 }
 

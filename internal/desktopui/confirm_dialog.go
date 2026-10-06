@@ -146,6 +146,24 @@ func defaultConfirmStyleForTitle(title string) (modalDialogConfirmStyle, bool) {
 			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
 			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
 		}, true
+	case "分栏设置":
+		return modalDialogConfirmStyle{
+			Icon:           "columns-2",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
+	case "冻结窗格":
+		return modalDialogConfirmStyle{
+			Icon:           "panels-top-left",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
+	case "删除重复项":
+		return modalDialogConfirmStyle{
+			Icon:           "trash-2",
+			IconBackground: color.NRGBA{R: 253, G: 238, B: 238, A: 255},
+			IconForeground: color.NRGBA{R: 199, G: 68, B: 68, A: 255},
+		}, true
 	default:
 		return modalDialogConfirmStyle{}, false
 	}

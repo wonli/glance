@@ -819,4 +819,140 @@ func TestSpreadsheetLinkDialogAndCommand(t *testing.T) {
 	}
 }
 
+func TestSpreadsheetFreezePanesDialogAndCommand(t *testing.T) {
+	wb := xlsx.NewBlank()
+	defer wb.Close()
+
+	state := newDocumentSessionState("")
+	state.book = wb
+	state.sheet = wb.SheetNames()[0]
+	state.selectionSet = true
+	state.selection = CellSelection{
+		Anchor: CellPosition{Row: 2, Column: 1},
+		Active: CellPosition{Row: 2, Column: 1}, // B3
+	}
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionFreezePanes) {
+		t.Fatal("toolbarActionFreezePanes should be enabled")
+	}
+
+	// 1. Freeze top row
+	app.showSpreadsheetFreezePanesDialog()
+	if !app.modal.Visible || app.modal.Title != "冻结窗格" {
+		t.Fatalf("expected modal dialog for freeze panes, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("freeze_row")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("freeze top row failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for freeze top row formatResult")
+	}
+
+	panes, err := wb.GetSheetPanes(state.sheet)
+	if err != nil || !panes.Frozen || panes.YSplit != 1 || panes.XSplit != 0 {
+		t.Fatalf("expected frozen top row (YSplit=1, XSplit=0), got %+v (err=%v)", panes, err)
+	}
+
+	// 2. Unfreeze panes
+	app.showSpreadsheetFreezePanesDialog()
+	if !app.modal.Visible {
+		t.Fatal("expected modal dialog for freeze panes")
+	}
+	app.modal.OnAction("unfreeze")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("unfreeze panes failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for unfreeze formatResult")
+	}
+
+	panes, err = wb.GetSheetPanes(state.sheet)
+	if err != nil || panes.Frozen {
+		t.Fatalf("expected unfrozen panes, got %+v (err=%v)", panes, err)
+	}
+}
+
+func TestSpreadsheetRemoveDuplicatesDialogAndCommand(t *testing.T) {
+	wb := xlsx.NewBlank()
+	defer wb.Close()
+
+	sheet := wb.SheetNames()[0]
+	_ = wb.SetCellText(sheet, "A1", "Alice")
+	_ = wb.SetCellText(sheet, "B1", "100")
+	_ = wb.SetCellText(sheet, "A2", "Bob")
+	_ = wb.SetCellText(sheet, "B2", "200")
+	_ = wb.SetCellText(sheet, "A3", "Alice")
+	_ = wb.SetCellText(sheet, "B3", "100") // exact duplicate of row 1
+
+	state := newDocumentSessionState("")
+	state.book = wb
+	state.sheet = sheet
+	state.selectionSet = true
+	state.selection = CellSelection{
+		Anchor: CellPosition{Row: 0, Column: 0},
+		Active: CellPosition{Row: 2, Column: 1}, // A1:B3 (3 rows, 2 columns)
+	}
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionRemoveDuplicates) {
+		t.Fatal("toolbarActionRemoveDuplicates should be enabled")
+	}
+
+	app.showSpreadsheetRemoveDuplicatesDialog()
+	if !app.modal.Visible || app.modal.Title != "删除重复项" {
+		t.Fatalf("expected modal dialog for remove duplicates, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+
+	// Deduplicate across all columns
+	app.modal.OnAction("all")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("remove duplicates failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for remove duplicates formatResult")
+	}
+
+	// Verify row 3 was removed, leaving 2 rows
+	cells, err := wb.Range(sheet, 10, 10)
+	if err != nil {
+		t.Fatalf("failed to read range: %v", err)
+	}
+	var rowCount int
+	for _, row := range cells {
+		if len(row) > 0 && row[0].Value != "" {
+			rowCount++
+		}
+	}
+	if rowCount != 2 {
+		t.Fatalf("expected 2 remaining rows, got %d", rowCount)
+	}
+
+	// Verify Undo restores row 3
+	if applied, err := wb.Undo(); err != nil || !applied {
+		t.Fatalf("Undo failed: applied=%v, err=%v", applied, err)
+	}
+	cells, err = wb.Range(sheet, 10, 10)
+	if err != nil {
+		t.Fatalf("failed to read range: %v", err)
+	}
+	rowCount = 0
+	for _, row := range cells {
+		if len(row) > 0 && row[0].Value != "" {
+			rowCount++
+		}
+	}
+	if rowCount != 3 {
+		t.Fatalf("expected 3 rows restored after Undo, got %d", rowCount)
+	}
+}
+
+
 

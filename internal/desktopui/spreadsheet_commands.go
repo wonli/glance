@@ -1042,4 +1042,165 @@ func (a *App) showSpreadsheetPrintTitlesDialog() {
 	}, actions...)
 }
 
+func (a *App) runSpreadsheetPanesCommand(operation string, edit func(document.SpreadsheetPanesEditor) error) {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || state.formatRunning.Load() {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetPanesEditor)
+	if !ok {
+		return
+	}
+	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
+	go func() {
+		unlock := lockSessionAdapterWrite(state)
+		err := edit(editor)
+		unlock()
+		a.completeSessionOperation(state, token, err, true)
+		select {
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case <-a.shutdown:
+		}
+	}()
+}
+
+func (a *App) showSpreadsheetFreezePanesDialog() {
+	state := a.documentSessionState
+	if state == nil || state.book == nil {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetPanesEditor)
+	if !ok {
+		return
+	}
+	sheet := state.sheet
+	panes, _ := editor.GetSheetPanes(sheet)
+
+	var activeCol, activeRow int
+	if state.selectionSet {
+		activeCol = state.selection.Active.Column
+		activeRow = state.selection.Active.Row
+	}
+
+	actions := []modalDialogActionSpec{
+		{ID: "freeze_row", Label: "冻结首行"},
+		{ID: "freeze_col", Label: "冻结首列"},
+	}
+	if activeCol > 0 || activeRow > 0 {
+		cellRef := xlsx.CellName(activeCol+1, activeRow+1)
+		actions = append(actions, modalDialogActionSpec{ID: "freeze_sel", Label: "冻结至选区 (" + cellRef + ")"})
+	}
+	if panes.Frozen {
+		actions = append(actions, modalDialogActionSpec{ID: "unfreeze", Label: "取消冻结"})
+	}
+	actions = append(actions, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+
+	var msg string
+	if panes.Frozen {
+		msg = fmt.Sprintf("当前工作表已冻结（行: %d，列: %d）。\n请选择调整或取消冻结：", panes.YSplit, panes.XSplit)
+	} else {
+		msg = "冻结工作表可以在滚动时保持特定行或列始终可见。\n请选择冻结方式："
+	}
+
+	a.modal.Show("冻结窗格", msg, func(action string) {
+		a.modal.Hide()
+		switch action {
+		case "freeze_row":
+			a.runSpreadsheetPanesCommand("冻结首行", func(ed document.SpreadsheetPanesEditor) error {
+				return ed.SetSheetPanes(sheet, document.SpreadsheetPaneFreeze{Frozen: true, XSplit: 0, YSplit: 1})
+			})
+			a.setStatus("已冻结首行")
+		case "freeze_col":
+			a.runSpreadsheetPanesCommand("冻结首列", func(ed document.SpreadsheetPanesEditor) error {
+				return ed.SetSheetPanes(sheet, document.SpreadsheetPaneFreeze{Frozen: true, XSplit: 1, YSplit: 0})
+			})
+			a.setStatus("已冻结首列")
+		case "freeze_sel":
+			a.runSpreadsheetPanesCommand("冻结选区", func(ed document.SpreadsheetPanesEditor) error {
+				return ed.SetSheetPanes(sheet, document.SpreadsheetPaneFreeze{Frozen: true, XSplit: activeCol, YSplit: activeRow})
+			})
+			a.setStatus(fmt.Sprintf("已冻结至 %s", xlsx.CellName(activeCol+1, activeRow+1)))
+		case "unfreeze":
+			a.runSpreadsheetPanesCommand("取消冻结", func(ed document.SpreadsheetPanesEditor) error {
+				return ed.SetSheetPanes(sheet, document.SpreadsheetPaneFreeze{Frozen: false})
+			})
+			a.setStatus("已取消冻结窗格")
+		}
+	}, actions...)
+}
+
+func (a *App) runSpreadsheetDuplicatesCommand(operation string, edit func(document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error)) {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || state.formatRunning.Load() {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetDuplicatesEditor)
+	if !ok {
+		return
+	}
+	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
+	go func() {
+		unlock := lockSessionAdapterWrite(state)
+		res, err := edit(editor)
+		unlock()
+		a.completeSessionOperation(state, token, err, true)
+		if err == nil {
+			a.setStatus(fmt.Sprintf("已删除 %d 个重复项，保留 %d 个唯一项", res.RemovedCount, res.RemainingCount))
+		}
+		select {
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case <-a.shutdown:
+		}
+	}()
+}
+
+func (a *App) showSpreadsheetRemoveDuplicatesDialog() {
+	state := a.documentSessionState
+	if state == nil || state.book == nil {
+		return
+	}
+	if !state.selectionSet {
+		a.setStatus("请先选择包含数据的单元格区域")
+		return
+	}
+	bounds := state.selection.Bounds()
+	rowCount := bounds.EndRow - bounds.StartRow + 1
+	if rowCount <= 1 {
+		a.setStatus("选区至少需要 2 行才能执行删除重复项")
+		return
+	}
+	sheet := state.sheet
+	rangeRef := fmt.Sprintf("%s%d:%s%d", columnName(bounds.StartColumn), bounds.StartRow, columnName(bounds.EndColumn), bounds.EndRow)
+	keyCol := state.selection.Active.Column + 1
+	activeColName := columnName(keyCol)
+
+	msg := fmt.Sprintf("将在选区 %s（共 %d 行）中查找并删除重复数据。\n默认按当前活动列（%s 列）排重，或按整行全部列排重。", rangeRef, rowCount, activeColName)
+
+	a.modal.Show("删除重复项", msg, func(action string) {
+		a.modal.Hide()
+		switch action {
+		case "col":
+			a.runSpreadsheetDuplicatesCommand("按列删除重复项", func(ed document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error) {
+				return ed.RemoveDuplicates(sheet, bounds, keyCol)
+			})
+		case "all":
+			a.runSpreadsheetDuplicatesCommand("按整行删除重复项", func(ed document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error) {
+				return ed.RemoveDuplicates(sheet, bounds, 0)
+			})
+		}
+	},
+		modalDialogActionSpec{ID: "col", Label: fmt.Sprintf("按 %s 列排重", activeColName)},
+		modalDialogActionSpec{ID: "all", Label: "按全部列排重"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
 
