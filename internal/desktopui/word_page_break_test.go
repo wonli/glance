@@ -107,3 +107,66 @@ func TestWordInsertPageBreakToolbarStaysDisabledForTableRuns(t *testing.T) {
 }
 
 var _ document.WordPageBreakEditor = (*docx.Document)(nil)
+
+func TestWordInsertBreaksDialogAndColumnBreak(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	paragraph := word.WordBlocks()[0].Paragraph
+	run := paragraph.Inlines[0].Text
+	if err := word.ReplaceTextRun(run.ID, "前缀后缀"); err != nil {
+		t.Fatal(err)
+	}
+	blocks := cloneWordBlockSnapshot(word.WordBlocks())
+	paragraph = blocks[0].Paragraph
+	run = paragraph.Inlines[0].Text
+	state := newDocumentSessionState("breaks.docx")
+	state.word = word
+	state.wordBlocks = blocks
+	state.selectedWordParagraphID = paragraph.ID
+	state.selectedWordRunID = run.ID
+	editor := wordRunEditor(state, *run)
+	editor.SetText("前缀后缀")
+	editor.SetCaret(2, 2)
+	app := &App{
+		documentSessionState: state,
+		wordCommandResults:   make(chan wordCommandResult, 4),
+		shutdown:             make(chan struct{}),
+	}
+	var action ribbonAction
+	found := false
+	for _, candidate := range wordToolbarActions(wordTabLayout) {
+		if candidate.id == "layout-breaks" {
+			action, found = candidate, true
+			break
+		}
+	}
+	if !found || !app.wordToolbarActionEnabled(action) {
+		t.Fatal("Layout > Breaks should be enabled for an editable body-text caret")
+	}
+
+	app.showWordBreaksDialog()
+	if !app.modal.Visible || app.modal.Title != "插入分隔符" {
+		t.Fatalf("expected modal dialog for breaks, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+
+	app.modal.OnAction("column")
+	deadline := time.Now().Add(3 * time.Second)
+	for (state.formatRunning.Load() || state.wordPageBreakIntent != nil) && time.Now().Before(deadline) {
+		app.processAsyncResults()
+		time.Sleep(5 * time.Millisecond)
+	}
+	if state.formatRunning.Load() || state.wordPageBreakIntent != nil {
+		t.Fatal("timed out waiting for the asynchronous break command")
+	}
+
+	paragraph = state.wordBlocks[0].Paragraph
+	if len(paragraph.Inlines) != 3 || paragraph.Inlines[1].PageBreak == nil || paragraph.Inlines[1].PageBreak.Type != document.WordBreakColumn {
+		t.Fatalf("expected column break inline in paragraph, got %#v", paragraph.Inlines)
+	}
+	if !strings.Contains(app.status, "已插入分栏符") {
+		t.Fatalf("expected status '已插入分栏符', got %q", app.status)
+	}
+}

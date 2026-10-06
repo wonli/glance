@@ -305,7 +305,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, editable := any(state.word).(document.WordTextRangeEditor)
 		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
 		return editable && ok && run.Editable && wordBodyRunEditable(wordBlocksForState(state), run.ID)
-	case "page-break":
+	case "page-break", "layout-breaks":
 		_, editor := any(state.word).(document.WordPageBreakEditor)
 		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
 		return editor && ok && run.Editable && wordBodyRunEditable(wordBlocksForState(state), run.ID)
@@ -540,6 +540,8 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordPageSizeDialog()
 		case "layout-columns":
 			a.showWordColumnsDialog()
+		case "layout-breaks":
+			a.showWordBreaksDialog()
 		case "find":
 			a.showWordFindDialog()
 		case "replace":
@@ -705,6 +707,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.showWordPageSizeDialog()
 	case "layout-columns":
 		a.showWordColumnsDialog()
+	case "layout-breaks":
+		a.showWordBreaksDialog()
 	case "find":
 		a.showWordFindDialog()
 	case "replace":
@@ -1772,6 +1776,30 @@ func (a *App) showWordColumnsDialog() {
 		modalDialogActionSpec{ID: "col1", Label: "一栏 (单栏常规)"},
 		modalDialogActionSpec{ID: "col2", Label: "两栏 (双栏排版)"},
 		modalDialogActionSpec{ID: "col3", Label: "三栏 (三栏报刊)"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordBreaksDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	if _, ok := any(state.word).(document.WordPageBreakEditor); !ok {
+		return
+	}
+	message := "选择在当前光标位置插入的分隔符类型："
+	a.modal.Show("插入分隔符", message, func(action string) {
+		a.modal.Hide()
+		switch action {
+		case "page":
+			a.queueWordBreak(document.WordBreakPage)
+		case "column":
+			a.queueWordBreak(document.WordBreakColumn)
+		}
+	},
+		modalDialogActionSpec{ID: "page", Label: "分页符 (进入下一页)"},
+		modalDialogActionSpec{ID: "column", Label: "分栏符 (进入下一栏)"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
 }

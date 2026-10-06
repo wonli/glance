@@ -1203,4 +1203,144 @@ func (a *App) showSpreadsheetRemoveDuplicatesDialog() {
 	)
 }
 
+func (a *App) runSpreadsheetViewCommand(operation string, edit func(document.SpreadsheetViewsEditor) error) {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || state.formatRunning.Load() {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetViewsEditor)
+	if !ok {
+		return
+	}
+	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
+	go func() {
+		unlock := lockSessionAdapterWrite(state)
+		err := edit(editor)
+		unlock()
+		a.completeSessionOperation(state, token, err, true)
+		select {
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case <-a.shutdown:
+		}
+	}()
+}
+
+func (a *App) setSpreadsheetViewMode(mode string) {
+	state := a.documentSessionState
+	if state == nil {
+		return
+	}
+	label := "普通视图"
+	if mode == "pageBreakPreview" {
+		label = "分页预览"
+	}
+	state.spreadsheetViewMode = mode
+	sheet := state.sheet
+	a.runSpreadsheetViewCommand("切换"+label, func(editor document.SpreadsheetViewsEditor) error {
+		return editor.SetSheetViewMode(sheet, mode)
+	})
+	a.setStatus("已切换为" + label)
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+
+func (a *App) toggleSpreadsheetRuler() {
+	state := a.documentSessionState
+	if state == nil {
+		return
+	}
+	state.spreadsheetRulerVisible = !state.spreadsheetRulerVisible
+	show := state.spreadsheetRulerVisible
+	sheet := state.sheet
+	a.runSpreadsheetViewCommand("切换标尺", func(editor document.SpreadsheetViewsEditor) error {
+		return editor.SetSheetRuler(sheet, show)
+	})
+	if show {
+		a.setStatus("已显示标尺")
+	} else {
+		a.setStatus("已隐藏标尺")
+	}
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+
+func (a *App) runSpreadsheetProtectionCommand(operation string, edit func(document.SpreadsheetProtectionEditor) error) {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || state.formatRunning.Load() {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetProtectionEditor)
+	if !ok {
+		return
+	}
+	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
+	go func() {
+		unlock := lockSessionAdapterWrite(state)
+		err := edit(editor)
+		unlock()
+		a.completeSessionOperation(state, token, err, true)
+		select {
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case <-a.shutdown:
+		}
+	}()
+}
+
+func (a *App) showSpreadsheetProtectSheetDialog() {
+	state := a.documentSessionState
+	if state == nil || state.book == nil {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetProtectionEditor)
+	if !ok {
+		return
+	}
+	sheet := state.sheet
+	isProtected, _ := editor.GetSheetProtection(sheet)
+
+	if isProtected {
+		a.modal.ShowInput("撤销保护工作表", "当前工作表已受保护。\n若设置了密码请输入密码（无密码直接确定）：", "", "密码（可选）", func(action string) {
+			pwd := a.modal.Input.Text()
+			a.modal.Hide()
+			if action != "confirm" {
+				return
+			}
+			a.runSpreadsheetProtectionCommand("撤销保护工作表", func(ed document.SpreadsheetProtectionEditor) error {
+				return ed.UnprotectSheet(sheet, pwd)
+			})
+			a.setStatus("已撤销工作表保护")
+		},
+			modalDialogActionSpec{ID: "confirm", Label: "撤销保护"},
+			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		)
+	} else {
+		a.modal.ShowInput("保护工作表", "保护工作表可防止其他用户更改工作表中的数据。\n可设置保护密码（可选，留空无密码）：", "", "密码（可选）", func(action string) {
+			pwd := a.modal.Input.Text()
+			a.modal.Hide()
+			if action != "confirm" {
+				return
+			}
+			a.runSpreadsheetProtectionCommand("保护工作表", func(ed document.SpreadsheetProtectionEditor) error {
+				return ed.ProtectSheet(sheet, pwd)
+			})
+			a.setStatus("已保护工作表")
+		},
+			modalDialogActionSpec{ID: "confirm", Label: "保护工作表"},
+			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		)
+	}
+}
+
+
+
 

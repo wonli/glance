@@ -954,5 +954,158 @@ func TestSpreadsheetRemoveDuplicatesDialogAndCommand(t *testing.T) {
 	}
 }
 
+func TestSpreadsheetViewModesAndRuler(t *testing.T) {
+	wb := xlsx.NewBlank()
+	defer wb.Close()
+
+	sheet := wb.SheetNames()[0]
+	state := newDocumentSessionState("")
+	state.book = wb
+	state.sheet = sheet
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionNormalView) {
+		t.Fatal("normal view should be enabled")
+	}
+	if !app.toolbarActionEnabled(toolbarActionPageBreakPreview) {
+		t.Fatal("page break preview should be enabled")
+	}
+	if !app.toolbarActionEnabled(toolbarActionRuler) {
+		t.Fatal("ruler should be enabled")
+	}
+
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+
+	// 1. Switch to Page Break Preview
+	state.toolbarTab = toolbarTabView
+	state.toolbarActionButtons[toolbarActionPageBreakPreview].Click()
+	app.handleSpreadsheetToolbarEvents(gtx)
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("set page break preview failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for page break preview formatResult")
+	}
+	if state.spreadsheetViewMode != "pageBreakPreview" {
+		t.Fatalf("expected state view mode pageBreakPreview, got %q", state.spreadsheetViewMode)
+	}
+	view, err := wb.GetSheetView(sheet)
+	if err != nil || view.ViewMode != "pageBreakPreview" {
+		t.Fatalf("expected workbook view mode pageBreakPreview, got %+v (err=%v)", view, err)
+	}
+
+	// 2. Switch back to Normal View
+	state.toolbarActionButtons[toolbarActionNormalView].Click()
+	app.handleSpreadsheetToolbarEvents(gtx)
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("set normal view failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for normal view formatResult")
+	}
+	if state.spreadsheetViewMode != "normal" {
+		t.Fatalf("expected state view mode normal, got %q", state.spreadsheetViewMode)
+	}
+	view, err = wb.GetSheetView(sheet)
+	if err != nil || view.ViewMode != "normal" {
+		t.Fatalf("expected workbook view mode normal, got %+v (err=%v)", view, err)
+	}
+
+	// 3. Toggle Ruler
+	initRuler := state.spreadsheetRulerVisible
+	state.toolbarActionButtons[toolbarActionRuler].Click()
+	app.handleSpreadsheetToolbarEvents(gtx)
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("toggle ruler failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for ruler formatResult")
+	}
+	if state.spreadsheetRulerVisible == initRuler {
+		t.Fatal("expected ruler visibility to toggle")
+	}
+	view, err = wb.GetSheetView(sheet)
+	if err != nil || view.ShowRuler != state.spreadsheetRulerVisible {
+		t.Fatalf("expected workbook ruler %v, got %+v (err=%v)", state.spreadsheetRulerVisible, view, err)
+	}
+}
+
+func TestSpreadsheetProtectSheetDialogAndCommand(t *testing.T) {
+	wb := xlsx.NewBlank()
+	defer wb.Close()
+
+	sheet := wb.SheetNames()[0]
+	state := newDocumentSessionState("")
+	state.book = wb
+	state.sheet = sheet
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionProtectSheet) {
+		t.Fatal("protect sheet should be enabled")
+	}
+
+	// 1. Show protect sheet dialog (currently unprotected)
+	app.showSpreadsheetProtectSheetDialog()
+	if !app.modal.Visible || app.modal.Title != "保护工作表" {
+		t.Fatalf("expected protect sheet modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("testpass")
+	app.modal.OnAction("confirm")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("protect sheet failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for protect sheet formatResult")
+	}
+
+	protected, err := wb.GetSheetProtection(sheet)
+	if err != nil || !protected {
+		t.Fatalf("expected sheet protected, got %v (err=%v)", protected, err)
+	}
+
+	// 2. Show unprotect sheet dialog (currently protected)
+	app.showSpreadsheetProtectSheetDialog()
+	if !app.modal.Visible || app.modal.Title != "撤销保护工作表" {
+		t.Fatalf("expected unprotect sheet modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("testpass")
+	app.modal.OnAction("confirm")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("unprotect sheet failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for unprotect sheet formatResult")
+	}
+
+	protected, err = wb.GetSheetProtection(sheet)
+	if err != nil || protected {
+		t.Fatalf("expected sheet unprotected, got %v (err=%v)", protected, err)
+	}
+
+	// 3. Test Undo restores protection
+	applied, err := wb.Undo()
+	if err != nil || !applied {
+		t.Fatalf("undo failed: applied=%v, err=%v", applied, err)
+	}
+	protected, err = wb.GetSheetProtection(sheet)
+	if err != nil || !protected {
+		t.Fatalf("expected sheet protected after undo, got %v (err=%v)", protected, err)
+	}
+}
+
+
+
 
 

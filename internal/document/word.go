@@ -122,9 +122,18 @@ type WordImage struct {
 	Editable        bool
 }
 
-// WordPageBreak represents a native DOCX page break in continuous-flow preview.
+// WordBreakType identifies the type of break to insert (e.g. "page", "column").
+type WordBreakType string
+
+const (
+	WordBreakPage   WordBreakType = "page"
+	WordBreakColumn WordBreakType = "column"
+)
+
+// WordPageBreak represents a native DOCX break in continuous-flow preview.
 type WordPageBreak struct {
-	ID string
+	ID   string
+	Type WordBreakType
 }
 
 // WordUnsupported describes retained content that cannot be projected safely.
@@ -196,10 +205,11 @@ type WordBodyEditor interface {
 	InsertBodyParagraph() (paragraphID string, err error)
 }
 
-// WordPageBreakEditor inserts a page break at a Unicode text range in an
+// WordPageBreakEditor inserts a page or column break at a Unicode text range in an
 // editable run. The returned run is the caret location after the break.
 type WordPageBreakEditor interface {
 	InsertPageBreakAtRange(runID, value string, start, end int) (paragraphID, caretRunID string, err error)
+	InsertBreakAtRange(runID, value string, start, end int, breakType WordBreakType) (paragraphID, caretRunID string, err error)
 }
 
 // WordParagraphEditor exposes safe keyboard-driven paragraph structure edits.

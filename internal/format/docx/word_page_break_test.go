@@ -189,3 +189,41 @@ func TestWordPageBreakXMLContainsOnlyOneNativeMarker(t *testing.T) {
 		t.Fatalf("serialized DOCX has %d native page-break markers: %s", count, xml)
 	}
 }
+
+func TestInsertWordColumnBreakAndUndo(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	runID := blocks[0].Paragraph.Inlines[0].Text.ID
+	paragraphID, caretRunID, err := doc.InsertBreakAtRange(runID, "bold", 2, 2, document.WordBreakColumn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paragraphID != blocks[0].Paragraph.ID || caretRunID == "" {
+		t.Fatalf("column break paragraph/run=%q/%q", paragraphID, caretRunID)
+	}
+	paragraph := doc.WordBlocks()[0].Paragraph
+	if len(paragraph.Inlines) != 4 {
+		t.Fatalf("inlines count = %d, want 4", len(paragraph.Inlines))
+	}
+	if paragraph.Inlines[1].PageBreak == nil || paragraph.Inlines[1].PageBreak.Type != document.WordBreakColumn {
+		t.Fatalf("expected column break inline, got %#v", paragraph.Inlines[1])
+	}
+	data, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	xmlDoc := string(readZipPart(t, data, "word/document.xml"))
+	if !strings.Contains(xmlDoc, `w:type="column"`) {
+		t.Fatalf("expected w:type=\"column\" in document.xml, got: %s", xmlDoc)
+	}
+
+	// Verify Undo
+	if ok, err := doc.Undo(); err != nil || !ok {
+		t.Fatalf("Undo failed: ok=%v, err=%v", ok, err)
+	}
+	undoBlocks := doc.WordBlocks()
+	if len(undoBlocks[0].Paragraph.Inlines) != 2 {
+		t.Fatalf("expected 2 inlines restored after Undo, got %d", len(undoBlocks[0].Paragraph.Inlines))
+	}
+}

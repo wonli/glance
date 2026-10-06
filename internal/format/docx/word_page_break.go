@@ -10,6 +10,10 @@ import (
 )
 
 func (d *Document) InsertPageBreakAtRange(runID, value string, start, end int) (string, string, error) {
+	return d.InsertBreakAtRange(runID, value, start, end, document.WordBreakPage)
+}
+
+func (d *Document) InsertBreakAtRange(runID, value string, start, end int, breakType document.WordBreakType) (string, string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.checkOpen(); err != nil {
@@ -20,24 +24,24 @@ func (d *Document) InsertPageBreakAtRange(runID, value string, start, end int) (
 		return "", "", fmt.Errorf("Word text run %q is not editable", runID)
 	}
 	if target.paragraph.parent == nil || target.paragraph.parent.name.Space != wordprocessingMLNamespace || target.paragraph.parent.name.Local != "body" {
-		return "", "", errors.New("page-break insertion is supported only in a direct body paragraph")
+		return "", "", errors.New("break insertion is supported only in a direct body paragraph")
 	}
 	if paragraphContainsSectionProperties(target.paragraph) {
-		return "", "", errors.New("cannot insert a page break into a section-properties paragraph")
+		return "", "", errors.New("cannot insert a break into a section-properties paragraph")
 	}
 	runes := []rune(value)
 	if start < 0 || end < start || end > len(runes) {
-		return "", "", errors.New("page-break range is outside the editable text run")
+		return "", "", errors.New("break range is outside the editable text run")
 	}
 	if target.text.parent != target.run || target.run.parent != target.paragraph || target.text.name.Space != wordprocessingMLNamespace || target.text.name.Local != "t" || target.run.name.Space != wordprocessingMLNamespace || target.run.name.Local != "r" {
-		return "", "", errors.New("page-break target no longer matches the editable Word text run")
+		return "", "", errors.New("break target no longer matches the editable Word text run")
 	}
 	if len(target.text.children) != 0 {
-		return "", "", errors.New("page-break target text contains nested markup")
+		return "", "", errors.New("break target text contains nested markup")
 	}
 	data := d.parts[d.documentIdx].data
 	if bytes.Contains(data[target.text.contentStart:target.text.contentEnd], []byte("<")) {
-		return "", "", errors.New("page-break target text contains non-text XML")
+		return "", "", errors.New("break target text contains non-text XML")
 	}
 	properties, err := validateWordPageBreakRun(data, target.run, target.text)
 	if err != nil {
@@ -70,21 +74,21 @@ func (d *Document) InsertPageBreakAtRange(runID, value string, start, end int) (
 	if before != "" {
 		replacement = append(replacement, makeRun(textMarkup)...)
 	}
-	pageBreak := wordPageBreakMarkup(target.run.rawName)
-	replacement = append(replacement, makeRun(pageBreak)...)
+	breakElement := wordBreakMarkup(target.run.rawName, breakType)
+	replacement = append(replacement, makeRun(breakElement)...)
 	replacement = append(replacement, makeRun(suffixMarkup)...)
 	patched, err := applyXMLReplacements(data, []xmlReplacement{{start: target.run.start, end: target.run.end, value: replacement}})
 	if err != nil {
-		return "", "", fmt.Errorf("insert DOCX page break: %w", err)
+		return "", "", fmt.Errorf("insert DOCX break: %w", err)
 	}
 	paragraphID := target.paragraphID
 	virtualParts := append([]part(nil), d.parts...)
 	virtualParts[d.documentIdx].data = patched
 	projection, err := projectWordDocument(virtualParts, d.documentIdx)
 	if err != nil {
-		return "", "", fmt.Errorf("project DOCX after page-break insertion: %w", err)
+		return "", "", fmt.Errorf("project DOCX after break insertion: %w", err)
 	}
-	pageBreakSeen := false
+	breakSeen := false
 	caretRunID := ""
 	for _, block := range projection.blocks {
 		if block.Paragraph == nil || block.Paragraph.ID != paragraphID {
@@ -92,10 +96,10 @@ func (d *Document) InsertPageBreakAtRange(runID, value string, start, end int) (
 		}
 		for _, inline := range block.Paragraph.Inlines {
 			if inline.PageBreak != nil {
-				pageBreakSeen = true
+				breakSeen = true
 				continue
 			}
-			if pageBreakSeen && inline.Text != nil && inline.Text.Editable {
+			if breakSeen && inline.Text != nil && inline.Text.Editable {
 				caretRunID = inline.Text.ID
 				break
 			}
@@ -103,7 +107,7 @@ func (d *Document) InsertPageBreakAtRange(runID, value string, start, end int) (
 		break
 	}
 	if caretRunID == "" {
-		return "", "", errors.New("inserted DOCX page break has no editable caret run after it")
+		return "", "", errors.New("inserted DOCX break has no editable caret run after it")
 	}
 	if err := d.applyWordDocumentXMLLocked(patched); err != nil {
 		return "", "", err
@@ -117,22 +121,22 @@ func validateWordPageBreakRun(data []byte, run, text *wordXMLNode) (*wordXMLNode
 	cursor := run.contentStart
 	for index, child := range run.children {
 		if !onlyXMLWhitespace(data[cursor:child.start]) {
-			return nil, errors.New("page-break run contains comments or unsupported markup between its children")
+			return nil, errors.New("break run contains comments or unsupported markup between its children")
 		}
 		if child == text {
 			textCount++
 		} else if child.name.Space == wordprocessingMLNamespace && child.name.Local == "rPr" && properties == nil && index == 0 {
 			properties = child
 		} else {
-			return nil, errors.New("page-break insertion requires a text-only run without unsupported children")
+			return nil, errors.New("break insertion requires a text-only run without unsupported children")
 		}
 		cursor = child.end
 	}
 	if !onlyXMLWhitespace(data[cursor:run.contentEnd]) {
-		return nil, errors.New("page-break run contains comments or unsupported trailing markup")
+		return nil, errors.New("break run contains comments or unsupported trailing markup")
 	}
 	if textCount != 1 {
-		return nil, errors.New("page-break insertion requires exactly one text element in the run")
+		return nil, errors.New("break insertion requires exactly one text element in the run")
 	}
 	return properties, nil
 }
@@ -163,12 +167,20 @@ func wordPageBreakTextMarkup(data []byte, node *wordXMLNode, value string) ([]by
 	return result, nil
 }
 
-func wordPageBreakMarkup(runName string) []byte {
+func wordBreakMarkup(runName string, breakType document.WordBreakType) []byte {
 	prefix := rawWordPrefix(runName)
-	if prefix == "" {
-		return []byte(`<w:br xmlns:w="` + wordprocessingMLNamespace + `" w:type="page"/>`)
+	bt := "page"
+	if breakType == document.WordBreakColumn {
+		bt = "column"
 	}
-	return []byte(fmt.Sprintf(`<%s:br %s:type="page"/>`, prefix, prefix))
+	if prefix == "" {
+		return []byte(fmt.Sprintf(`<w:br xmlns:w="%s" w:type="%s"/>`, wordprocessingMLNamespace, bt))
+	}
+	return []byte(fmt.Sprintf(`<%s:br %s:type="%s"/>`, prefix, prefix, bt))
+}
+
+func wordPageBreakMarkup(runName string) []byte {
+	return wordBreakMarkup(runName, document.WordBreakPage)
 }
 
 var _ document.WordPageBreakEditor = (*Document)(nil)

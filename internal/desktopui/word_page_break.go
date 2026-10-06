@@ -7,6 +7,7 @@ type wordPageBreakIntent struct {
 	value          string
 	selectionStart int
 	selectionEnd   int
+	breakType      document.WordBreakType
 }
 
 func wordBodyRunEditable(blocks []document.WordBlock, runID string) bool {
@@ -24,13 +25,17 @@ func wordBodyRunEditable(blocks []document.WordBlock, runID string) bool {
 }
 
 func (a *App) queueWordPageBreak() {
+	a.queueWordBreak(document.WordBreakPage)
+}
+
+func (a *App) queueWordBreak(breakType document.WordBreakType) {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || state.wordPageBreakIntent != nil || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
 	_, ok := any(state.word).(document.WordPageBreakEditor)
 	if !ok {
-		a.setStatus("当前 DOCX 适配器不支持插入分页符")
+		a.setStatus("当前 DOCX 适配器不支持插入分隔符")
 		return
 	}
 	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
@@ -44,10 +49,10 @@ func (a *App) queueWordPageBreak() {
 		start, end = end, start
 	}
 	if _, _, valid := wordTextAroundSelection(value, start, end); !valid {
-		a.setStatus("无法按当前光标位置插入分页符，请重试")
+		a.setStatus("无法按当前光标位置插入分隔符，请重试")
 		return
 	}
-	state.wordPageBreakIntent = &wordPageBreakIntent{runID: run.ID, value: value, selectionStart: start, selectionEnd: end}
+	state.wordPageBreakIntent = &wordPageBreakIntent{runID: run.ID, value: value, selectionStart: start, selectionEnd: end, breakType: breakType}
 	captureWordTextDraft(state, run.ID, value)
 	state.wordForceDraftFlush.Store(true)
 	state.wordFlushRequested.Store(true)
@@ -66,7 +71,7 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 		state.wordPageBreakIntent = nil
 		state.wordFlushRequested.Store(false)
 		state.wordFlushAllDrafts.Store(false)
-		a.setStatus("当前 DOCX 适配器不支持插入分页符")
+		a.setStatus("当前 DOCX 适配器不支持插入分隔符")
 		return
 	}
 	intent := *state.wordPageBreakIntent
@@ -75,24 +80,28 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 		state.wordPageBreakIntent = nil
 		state.wordFlushRequested.Store(false)
 		state.wordFlushAllDrafts.Store(false)
-		a.setStatus("无法按当前光标位置插入分页符，请重试")
+		a.setStatus("无法按当前光标位置插入分隔符，请重试")
 		return
 	}
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
 		return
 	}
 	generation := a.documentGeneration
+	operation := "插入分页符"
+	if intent.breakType == document.WordBreakColumn {
+		operation = "插入分栏符"
+	}
 	go func() {
 		var paragraphID, caretRunID string
 		blocks, err := runWordMutation(state, func() error {
 			var insertErr error
-			paragraphID, caretRunID, insertErr = editor.InsertPageBreakAtRange(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd)
+			paragraphID, caretRunID, insertErr = editor.InsertBreakAtRange(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd, intent.breakType)
 			return insertErr
 		})
 		a.publishWordCommand(wordCommandResult{
 			state:                 state,
 			generation:            generation,
-			operation:             "插入分页符",
+			operation:             operation,
 			err:                   err,
 			blocks:                blocks,
 			pageBreak:             true,
@@ -147,7 +156,7 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	}
 	newRun, ok := selectedWordRun(wordBlocksForState(state), result.pageBreakCaretRunID)
 	if !ok || result.pageBreakParagraphID == "" {
-		a.setStatus("分页符已插入，但无法定位插入点")
+		a.setStatus("分隔符已插入，但无法定位插入点")
 		a.persistActiveSession()
 		return
 	}
@@ -163,6 +172,10 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	caretEditor.SetText(newRun.Text)
 	caretEditor.SetCaret(0, 0)
 	reconcileWordSelection(state, false)
-	a.setStatus("已插入分页符")
+	msg := "已插入分页符"
+	if intent != nil && intent.breakType == document.WordBreakColumn {
+		msg = "已插入分栏符"
+	}
+	a.setStatus(msg)
 	a.persistActiveSession()
 }

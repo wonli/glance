@@ -45,10 +45,10 @@
 | | 开始 | 27 | 22 | 0 | 5 |
 | | 插入 | 16 | 3 | 0 | 13 |
 | | 设计 | 9 | 0 | 0 | 9 |
-| | 布局 | 12 | 7 | 0 | 5 |
+| | 布局 | 12 | 8 | 0 | 4 |
 | | 审阅 | 11 | 1 | 0 | 10 |
 | | 视图 | 12 | 10 | 0 | 2 |
-| | **Word 常驻小计** | **99** | **54** | **0** | **45** |
+| | **Word 常驻小计** | **99** | **55** | **0** | **44** |
 | Word 上下文标签 | 图片（选图后出现） | 5 | 5 | 0 | 0 |
 | **Excel 常驻功能区** | 文件 | 6 | 5 | 0 | 1 |
 | | 开始 | 24 | 21 | 0 | 3 |
@@ -56,11 +56,11 @@
 | | 页面布局 | 6 | 5 | 0 | 1 |
 | | 公式 | 8 | 1 | 0 | 7 |
 | | 数据 | 7 | 3 | 0 | 4 |
-| | 审阅 | 6 | 0 | 0 | 6 |
-| | 视图 | 7 | 4 | 0 | 3 |
-| | **Excel 常驻小计** | **73** | **41** | **0** | **32** |
+| | 审阅 | 6 | 1 | 0 | 5 |
+| | 视图 | 7 | 7 | 0 | 0 |
+| | **Excel 常驻小计** | **73** | **45** | **0** | **28** |
 | Excel 上下文标签 | 图片（选图后出现） | 3 | 3 | 0 | 0 |
-| **全应用功能区总计** | **全常驻标签合计** | **172** | **95** | **0** | **77** |
+| **全应用功能区总计** | **全常驻标签合计** | **172** | **100** | **0** | **72** |
 
 *(注：Word 另有快捷撤销/重做 `wordHistoryActions`；Excel 撤销/重做已包含在“开始”功能区中。)*
 
@@ -144,13 +144,13 @@
 - [ ] **页面颜色** `design-page-color`（图标：`design-page-color.svg`，组：页面背景）：待 `w:background` 页面底色写入。
 - [ ] **页面边框** `design-page-border`（图标：`design-page-border.svg`，组：页面背景）：待 section 页面边框设置。
 
-### 3.5 布局（12 项：已接通 7，待实现 5）
+### 3.5 布局（12 项：已接通 8，待实现 4）
 
 - [x] **页边距** `layout-margins`（图标：`layout-margins.svg`，组：页面设置）：通过统一 `ModalDialog` 弹窗支持预设（普通 72pt、窄 36pt）与上/下/左/右自定义输入（0–1000 pt），转换为 twips 写入 DOCX `<w:sectPr><w:pgMar>`，支持保存重开与撤销重做。
 - [x] **方向** `layout-orientation`（图标：`layout-orientation.svg`，组：页面设置）：通过统一 `ModalDialog` 弹窗切换纵向（Portrait）与横向（Landscape），自动适配纸张宽高互换与 `<w:pgSz w:orient>` 写入，驱动共享分页引擎与 PDF 重排，支持撤销重做。
 - [x] **纸张大小** `layout-size`（图标：`layout-size.svg`，组：页面设置）：通过统一 `ModalDialog` 弹窗支持标准尺寸预设（A4 210×297mm、Letter 8.5×11in）与自定义宽高输入（1–3000 pt），写入 DOCX `<w:sectPr><w:pgSz>`，支持撤销重做。
 - [x] **分栏** `layout-columns`（图标：`layout-columns.svg`，组：页面设置）：通过统一 `ModalDialog` 弹窗支持单栏、两栏、三栏设置（1–4 栏），向 DOCX `<w:sectPr><w:cols>` 写入分栏结构并规范排列顺序，支持保存重开、撤销重做与历史快照保护。
-- [ ] **分隔符** `layout-breaks`（图标：`layout-breaks.svg`，组：分隔）：待分节符/分栏符读写。
+- [x] **分隔符** `layout-breaks`（图标：`layout-breaks.svg`，组：分隔）：通过统一 `ModalDialog` 弹窗支持插入分页符（`w:br w:type="page"`）与分栏符（`w:br w:type="column"`），切分正文 run 并自动定位光标，驱动连续排版与分页重排，支持保存重开与撤销重做。
 - [ ] **行号** `layout-line-numbers`（图标：`layout-line-numbers.svg`，组：分隔）：待行号排版显示。
 - [x] **缩进** `layout-indent`（图标：`layout-indent.svg`，组：段落）：通过统一 `ModalDialog` 弹窗支持左侧/右侧自定义缩进输入（0–1000 磅）或一键清除缩进，转换为 EMU 写入 DOCX 段落 XML，受撤销重做与历史快照保护。
 - [x] **段前** `layout-before`（图标：`layout-before.svg`，组：段落）：通过统一 `ModalDialog` 弹窗输入磅值（0–1584 pt），由 `math.Round(pt * 20.0)` 转换为 twips 写入 DOCX 段落 XML，支持撤销重做。
@@ -278,20 +278,20 @@
 - [x] **删除重复项**（Slot 63，图标：`trash-2.svg`，组：数据工具）：通过统一 `ModalDialog` 弹窗支持按活动列或整行全部列快速排重，倒序移除重复行防止坐标偏移，受完整撤销重做（Undo/Redo）与历史快照保护。
 - [ ] **数据验证**（Slot 64，图标：`circle-check.svg`，组：数据工具）：未实现。
 
-### 4.7 审阅（6 项：已接通 0，未实现 6）
+### 4.7 审阅（6 项：已接通 1，未实现 5）
 
 - [ ] **拼写检查**（Slot 65，图标：`spell-check-2.svg`，组：校对）：未实现。
 - [ ] **翻译**（Slot 66，图标：`languages.svg`，组：校对）：未实现。
 - [ ] **新建批注**（Slot 67，图标：`message-square-plus.svg`，组：批注）：未实现。
 - [ ] **删除批注**（Slot 68，图标：`message-square-x.svg`，组：批注）：未实现。
-- [ ] **保护工作表**（Slot 69，图标：`lock-keyhole.svg`，组：保护）：未实现。
+- [x] **保护工作表**（Slot 69，图标：`lock-keyhole.svg`，组：保护）：通过统一 `ModalDialog` 弹窗支持设置保护密码或无密码保护工作表，并支持已有保护工作表的安全撤销验证，通过 excelize ProtectSheet / UnprotectSheet 写入并受撤销重做与历史快照保护。
 - [ ] **保护工作簿**（Slot 70，图标：`shield-check.svg`，组：保护）：未实现。
 
-### 4.8 视图（7 项：已接通 4，未实现 3）
+### 4.8 视图（7 项：全部已接通，未实现 0）
 
-- [ ] **普通视图**（Slot 71，图标：`layout-grid.svg`，组：工作簿视图）：未实现。
-- [ ] **分页预览**（Slot 72，图标：`file-spreadsheet.svg`，组：工作簿视图）：未实现。
-- [ ] **标尺**（Slot 73，图标：`ruler.svg`，组：显示）：未实现。
+- [x] **普通视图**（Slot 71，图标：`layout-grid.svg`，组：工作簿视图）：一键切换当前工作表为常规网格视图（`normal`），按钮高亮与状态栏实时反馈，通过 excelize SetSheetView 写入并受撤销重做保护。
+- [x] **分页预览**（Slot 72，图标：`file-spreadsheet.svg`，组：工作簿视图）：一键切换当前工作表为分页预览视图（`pageBreakPreview`），按钮高亮与状态栏实时反馈，通过 excelize SetSheetView 写入并受撤销重做保护。
+- [x] **标尺**（Slot 73，图标：`ruler.svg`，组：显示）：一键切换当前工作表标尺显示状态，按钮高亮与状态栏实时反馈，通过 excelize SetSheetView 写入并受撤销重做保护。
 - [x] **网格线**（Slot 74，图标：`grid-3x3.svg`，组：显示）：切换工作表网格线显隐，按钮高亮与状态栏实时反馈；通过 excelize SetSheetView 同步工作表属性并受撤销重做保护；动态刷新单元格绘制缓存。
 - [x] **放大**（Slot 75，图标：`zoom-in.svg`，组：缩放）：网格视口缩放比例递增 15%（上限 250%），自适应重排并于状态栏实时反馈当前百分比。
 - [x] **100%显示**（Slot 76，图标：`maximize.svg`，组：缩放）：将网格视口缩放比例一键还原至 100% 原始尺寸。

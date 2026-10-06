@@ -270,6 +270,28 @@ type SpreadsheetDuplicatesEditor interface {
 	RemoveDuplicates(sheet string, bounds CellRange, keyColumn int) (SpreadsheetDuplicatesResult, error)
 }
 
+// SpreadsheetSheetView describes the view mode and element visibility for a worksheet.
+type SpreadsheetSheetView struct {
+	ViewMode  string // "normal", "pageBreakPreview", "pageLayout"
+	ShowRuler bool
+}
+
+// SpreadsheetViewsEditor is an optional capability for configuring worksheet views and ruler.
+type SpreadsheetViewsEditor interface {
+	GetSheetView(sheet string) (SpreadsheetSheetView, error)
+	SetSheetViewMode(sheet string, mode string) error
+	SetSheetRuler(sheet string, show bool) error
+}
+
+// SpreadsheetProtectionEditor is an optional capability for protecting worksheets.
+type SpreadsheetProtectionEditor interface {
+	GetSheetProtection(sheet string) (bool, error)
+	ProtectSheet(sheet string, password string) error
+	UnprotectSheet(sheet string, password string) error
+}
+
+
+
 
 
 

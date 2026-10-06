@@ -476,8 +476,13 @@ func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, para
 			p.appendProjectedInline(paragraph, projectedID, inline, child, run)
 			*inlineIndex++
 		case "br":
-			if child.name.Space == wordprocessingMLNamespace && strings.EqualFold(attrValue(child, "type"), "page") {
-				pageBreak := &document.WordPageBreak{ID: id}
+			brType := attrValue(child, "type")
+			if child.name.Space == wordprocessingMLNamespace && (strings.EqualFold(brType, "page") || strings.EqualFold(brType, "column")) {
+				bt := document.WordBreakPage
+				if strings.EqualFold(brType, "column") {
+					bt = document.WordBreakColumn
+				}
+				pageBreak := &document.WordPageBreak{ID: id, Type: bt}
 				p.appendProjectedInline(paragraph, id, document.WordInline{Kind: document.WordPageBreakInline, PageBreak: pageBreak}, child, run)
 			} else {
 				p.appendProjectedInline(paragraph, id, unsupportedInline(id, "Unsupported run content: "+child.name.Local), child, run)

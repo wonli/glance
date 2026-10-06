@@ -130,6 +130,8 @@ type documentSessionState struct {
 	excelFormatPainterPatch             *document.CellFormatPatch
 	excelFormatPainterSourceCell        string
 	spreadsheetGridlinesHidden          bool
+	spreadsheetViewMode                 string
+	spreadsheetRulerVisible             bool
 	toolbarTab                          spreadsheetToolbarTab
 	toolbarTabs                         [9]widget.Clickable
 	toolbarActionList                   widget.List

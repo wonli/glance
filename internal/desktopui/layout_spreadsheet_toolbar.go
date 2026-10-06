@@ -462,6 +462,22 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetRemoveDuplicatesDialog()
 			continue
 		}
+		if action.slot == toolbarActionNormalView {
+			a.setSpreadsheetViewMode("normal")
+			continue
+		}
+		if action.slot == toolbarActionPageBreakPreview {
+			a.setSpreadsheetViewMode("pageBreakPreview")
+			continue
+		}
+		if action.slot == toolbarActionRuler {
+			a.toggleSpreadsheetRuler()
+			continue
+		}
+		if action.slot == toolbarActionProtectSheet {
+			a.showSpreadsheetProtectSheetDialog()
+			continue
+		}
 		style := a.selectedCellStyle()
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
@@ -523,7 +539,9 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize,
 		toolbarActionPrintArea, toolbarActionViewGridlines,
 		toolbarActionInsertLink, toolbarActionHeaderRow,
-		toolbarActionFreezePanes, toolbarActionRemoveDuplicates:
+		toolbarActionFreezePanes, toolbarActionRemoveDuplicates,
+		toolbarActionNormalView, toolbarActionPageBreakPreview, toolbarActionRuler,
+		toolbarActionProtectSheet:
 		return false
 	default:
 		return true
@@ -548,6 +566,12 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	switch slot {
 	case toolbarActionZoomIn, toolbarActionZoom100, toolbarActionViewGridlines:
 		return state.book != nil && state.virtualGrid != nil && !state.formatRunning.Load()
+	case toolbarActionNormalView, toolbarActionPageBreakPreview, toolbarActionRuler:
+		_, ok := state.book.(document.SpreadsheetViewsEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionProtectSheet:
+		_, ok := state.book.(document.SpreadsheetProtectionEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionFreezePanes:
 		_, ok := state.book.(document.SpreadsheetPanesEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
@@ -662,7 +686,10 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 							mixed := action.slot >= 0 && formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
 							formatActive := formatStyleActive(action.slot, style) ||
 								(action.slot == toolbarActionFormatPainter && state != nil && state.excelFormatPainterActive) ||
-								(action.slot == toolbarActionViewGridlines && (state == nil || !state.spreadsheetGridlinesHidden))
+								(action.slot == toolbarActionViewGridlines && (state == nil || !state.spreadsheetGridlinesHidden)) ||
+								(action.slot == toolbarActionNormalView && (state == nil || state.spreadsheetViewMode == "normal" || state.spreadsheetViewMode == "")) ||
+								(action.slot == toolbarActionPageBreakPreview && state != nil && state.spreadsheetViewMode == "pageBreakPreview") ||
+								(action.slot == toolbarActionRuler && state != nil && state.spreadsheetRulerVisible)
 							active := action.slot >= 0 && !mixed && formatActive
 							enabled := action.slot >= 0 && a.toolbarActionEnabled(action.slot)
 							var button *widget.Clickable
