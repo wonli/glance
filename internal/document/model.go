@@ -160,6 +160,18 @@ type SpreadsheetRangeReader interface {
 	ReadRange(sheet string, bounds CellRange) ([][]Cell, error)
 }
 
+// CellMatch represents a cell matched by a search query. Coordinates are 1-based.
+type CellMatch struct {
+	Row    int
+	Column int
+	Value  string
+}
+
+// SpreadsheetSearcher is an optional capability for searching cell values in a worksheet.
+type SpreadsheetSearcher interface {
+	SearchSheet(sheet, query string) ([]CellMatch, error)
+}
+
 type StructureEditKind uint8
 
 const (

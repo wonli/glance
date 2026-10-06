@@ -366,6 +366,14 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			}
 			continue
 		}
+		if action.slot == toolbarActionSum {
+			a.applySpreadsheetAutoSum()
+			continue
+		}
+		if action.slot == toolbarActionFind {
+			a.showSpreadsheetFindDialog()
+			continue
+		}
 		style := a.selectedCellStyle()
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
@@ -420,7 +428,8 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 	}
 	switch slot {
 	case toolbarActionOpenFile, toolbarActionSaveAs, toolbarActionExport,
-		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat:
+		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat,
+		toolbarActionSum, toolbarActionFind:
 		return false
 	default:
 		return true
@@ -450,6 +459,13 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat:
 		_, ok := state.book.(document.SpreadsheetFormatter)
 		return ok && state.selectionSet && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionSum:
+		_, reader := state.book.(document.SpreadsheetRangeReader)
+		_, editor := state.book.(document.SpreadsheetBatchEditor)
+		return reader && editor && state.selectionSet && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionFind:
+		_, ok := state.book.(document.SpreadsheetSearcher)
+		return ok && !state.formatRunning.Load()
 	case 2, 3:
 		_, reader := state.book.(document.SpreadsheetRangeReader)
 		_, editor := state.book.(document.SpreadsheetBatchEditor)

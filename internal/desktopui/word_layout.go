@@ -203,7 +203,9 @@ func clearWordImageSelection(state *documentSessionState) {
 	state.wordImageFocusRequestID = ""
 	state.selectedBlock = -1
 	state.selectedBlockEditable = false
-	state.wordToolbarTab = wordTabHome
+	if state.wordToolbarTab == wordTabPicture {
+		state.wordToolbarTab = wordTabHome
+	}
 }
 
 func wordObjectButton(state *documentSessionState, id string) *widget.Clickable {

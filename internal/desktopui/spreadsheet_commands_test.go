@@ -2,8 +2,10 @@ package desktopui
 
 import (
 	"testing"
+	"time"
 
 	"glance/internal/document"
+	"glance/internal/format/xlsx"
 )
 
 func TestFormatPatchForToolbarActionTogglesAndClears(t *testing.T) {
@@ -125,5 +127,159 @@ func TestFormatPatchForExcelP0ToolbarActions(t *testing.T) {
 	}
 	if formatStyleActive(toolbarActionPercentFormat, document.CellStyle{NumberFormat: "General"}) {
 		t.Error("percent General should not be active")
+	}
+}
+
+type mockRangeReader struct {
+	cells map[string]string
+}
+
+func (m *mockRangeReader) ReadRange(sheet string, bounds document.CellRange) ([][]document.Cell, error) {
+	rows := bounds.EndRow - bounds.StartRow + 1
+	cols := bounds.EndColumn - bounds.StartColumn + 1
+	res := make([][]document.Cell, rows)
+	for r := 0; r < rows; r++ {
+		res[r] = make([]document.Cell, cols)
+		for c := 0; c < cols; c++ {
+			ref := xlsx.CellName(bounds.StartColumn+c, bounds.StartRow+r)
+			res[r][c] = document.Cell{Value: m.cells[ref]}
+		}
+	}
+	return res, nil
+}
+
+func TestComputeAutoSumEdits(t *testing.T) {
+	reader := &mockRangeReader{
+		cells: map[string]string{
+			"A1": "10",
+			"A2": "20.5",
+			"A3": "30",
+			"B1": "100",
+			"B2": "200",
+			"B3": "300",
+			"C1": "5",
+			"D1": "15",
+			"E1": "",
+		},
+	}
+
+	// 1. Multi-cell multi-column selection (A1:B3 -> targets A4, B4)
+	bounds := document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}
+	edits := computeAutoSumEdits(reader, "Sheet1", bounds)
+	if len(edits) != 2 {
+		t.Fatalf("expected 2 edits, got %d: %+v", len(edits), edits)
+	}
+	if edits[0].Row != 4 || edits[0].Column != 1 || edits[0].Value != "60.5" {
+		t.Errorf("col A sum mismatch: %+v", edits[0])
+	}
+	if edits[1].Row != 4 || edits[1].Column != 2 || edits[1].Value != "600" {
+		t.Errorf("col B sum mismatch: %+v", edits[1])
+	}
+
+	// 2. Multi-cell with empty bottom row (A1:A4 where A4 is empty -> target is A4)
+	bounds = document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 1}
+	edits = computeAutoSumEdits(reader, "Sheet1", bounds)
+	if len(edits) != 1 || edits[0].Row != 4 || edits[0].Column != 1 || edits[0].Value != "60.5" {
+		t.Fatalf("empty bottom row sum mismatch: %+v", edits)
+	}
+
+	// 3. Single cell selection at A4 (empty, scans upwards to A1..A3)
+	bounds = document.CellRange{StartRow: 4, StartColumn: 1, EndRow: 4, EndColumn: 1}
+	edits = computeAutoSumEdits(reader, "Sheet1", bounds)
+	if len(edits) != 1 || edits[0].Row != 4 || edits[0].Column != 1 || edits[0].Value != "60.5" {
+		t.Fatalf("single cell upward scan sum mismatch: %+v", edits)
+	}
+
+	// 4. Single-row multi-column selection (C1:D1 -> target is E1)
+	bounds = document.CellRange{StartRow: 1, StartColumn: 3, EndRow: 1, EndColumn: 4}
+	edits = computeAutoSumEdits(reader, "Sheet1", bounds)
+	if len(edits) != 1 || edits[0].Row != 1 || edits[0].Column != 5 || edits[0].Value != "20" {
+		t.Fatalf("horizontal sum mismatch: %+v", edits)
+	}
+
+	// 5. Unimplemented actions check for Sum and Find
+	if unimplementedSpreadsheetToolbarAction(toolbarActionSum) {
+		t.Error("toolbarActionSum should not be unimplemented")
+	}
+	if unimplementedSpreadsheetToolbarAction(toolbarActionFind) {
+		t.Error("toolbarActionFind should not be unimplemented")
+	}
+}
+
+type mockSearcherBook struct {
+	toolbarTestBook
+	searchMatches []document.CellMatch
+	lastSearch    string
+	lastBatch     []document.CellEdit
+}
+
+func (m *mockSearcherBook) SearchSheet(sheet, query string) ([]document.CellMatch, error) {
+	m.lastSearch = query
+	return m.searchMatches, nil
+}
+
+func (m *mockSearcherBook) ReadRange(sheet string, bounds document.CellRange) ([][]document.Cell, error) {
+	return [][]document.Cell{
+		{{Value: "10"}},
+		{{Value: "20"}},
+	}, nil
+}
+
+func (m *mockSearcherBook) SetCells(sheet string, edits []document.CellEdit) error {
+	m.lastBatch = edits
+	return nil
+}
+
+func TestSpreadsheetFindDialogAndAutoSumIntegration(t *testing.T) {
+	book := &mockSearcherBook{
+		toolbarTestBook: toolbarTestBook{editable: true},
+		searchMatches: []document.CellMatch{
+			{Row: 2, Column: 2, Value: "Apple"},
+			{Row: 5, Column: 3, Value: "Apple Pie"},
+		},
+	}
+	state := newDocumentSessionState("")
+	state.book = book
+	state.sheet = "Sheet1"
+	state.virtualGrid = newGridViewport()
+	state.selectionSet = true
+	state.selection = CellSelection{Active: CellPosition{Row: 0, Column: 0}, Anchor: CellPosition{Row: 0, Column: 0}}
+	app := &App{documentSessionState: state, formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	// Test Find enabled
+	if !app.toolbarActionEnabled(toolbarActionFind) {
+		t.Fatal("toolbarActionFind should be enabled")
+	}
+	if !app.toolbarActionEnabled(toolbarActionSum) {
+		t.Fatal("toolbarActionSum should be enabled")
+	}
+
+	// Test Find execution
+	app.showSpreadsheetFindDialog()
+	if app.modal.Title != "查找" {
+		t.Fatalf("modal title = %q; want 查找", app.modal.Title)
+	}
+	app.modal.Input.SetText("Apple")
+	app.modal.OnAction("confirm")
+	if book.lastSearch != "Apple" {
+		t.Fatalf("search query = %q; want Apple", book.lastSearch)
+	}
+	if state.selection.Active.Row != 1 || state.selection.Active.Column != 1 {
+		t.Fatalf("focused cell = (%d, %d); want (1, 1) for B2", state.selection.Active.Row, state.selection.Active.Column)
+	}
+
+	// Test AutoSum execution
+	state.selection = CellSelection{Active: CellPosition{Row: 0, Column: 0}, Anchor: CellPosition{Row: 1, Column: 0}}
+	app.applySpreadsheetAutoSum()
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("applyBatchEdits error: %v", res.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for auto-sum result")
+	}
+	if len(book.lastBatch) != 1 || book.lastBatch[0].Value != "30" {
+		t.Fatalf("lastBatch = %+v; want sum of 30", book.lastBatch)
 	}
 }

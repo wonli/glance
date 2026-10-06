@@ -302,7 +302,9 @@ func (a *App) focusWordPageRun(gtx layout.Context, state *documentSessionState, 
 	state.wordPendingCaretOffset = end
 	state.wordPendingCaretByX = false
 	state.wordLayoutFocusedRunID = runID
-	state.wordToolbarTab = wordTabHome
+	if state.wordToolbarTab == wordTabPicture {
+		state.wordToolbarTab = wordTabHome
+	}
 	gtx.Execute(op.InvalidateCmd{})
 }
 

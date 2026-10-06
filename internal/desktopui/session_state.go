@@ -121,6 +121,7 @@ type documentSessionState struct {
 	sheetButtons                        map[string]*widget.Clickable
 	blockButtons                        map[int]*widget.Clickable
 	selectedCell                        string
+	excelFindQuery                      string
 	selection                           CellSelection
 	selectionSet                        bool
 	selectionDragging                   bool

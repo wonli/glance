@@ -123,18 +123,24 @@ func (a *App) goToCell() {
 		a.status = "单元格地址无效"
 		return
 	}
-	if a.virtualGrid == nil {
+	a.navigateToCell(r, c)
+}
+
+func (a *App) navigateToCell(row, column int) {
+	if a.virtualGrid == nil || row < 1 || column < 1 || row > xlsxRows || column > xlsxColumns {
 		return
 	}
 	v := a.virtualGrid
-	a.updateGridSelection(v, CellPosition{Row: r - 1, Column: c - 1}, false, false)
+	a.updateGridSelection(v, CellPosition{Row: row - 1, Column: column - 1}, false, false)
 	a.persistViewState()
-	x, _ := v.Columns.Boundary(c - 1)
-	y, _ := v.Rows.Boundary(r - 1)
+	x, _ := v.Columns.Boundary(column - 1)
+	y, _ := v.Rows.Boundary(row - 1)
 	v.scroll(x-v.X, y-v.Y, gtxGridContentWidth(a), gtxGridContentHeight(a))
 	v.invalidateWindow()
 	v.PendingSelectionLoad = true
-	a.window.Invalidate()
+	if a.window != nil {
+		a.window.Invalidate()
+	}
 }
 
 func gtxGridContentWidth(a *App) float64  { return a.lastGridWidth }

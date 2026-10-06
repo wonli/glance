@@ -1347,7 +1347,9 @@ func (a *App) focusWordTextMatch(state *documentSessionState, blocks []document.
 	state.wordImageFocusRequestID = ""
 	state.selectedBlock = -1
 	state.selectedBlockEditable = true
-	state.wordToolbarTab = wordTabHome
+	if state.wordToolbarTab == wordTabPicture {
+		state.wordToolbarTab = wordTabHome
+	}
 	state.wordPendingFocusRunID = run.ID
 	state.wordPendingCaretRunID = ""
 	state.wordPendingCaretByX = false
