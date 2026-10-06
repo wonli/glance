@@ -122,6 +122,18 @@ func defaultConfirmStyleForTitle(title string) (modalDialogConfirmStyle, bool) {
 			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
 			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
 		}, true
+	case "段落缩进":
+		return modalDialogConfirmStyle{
+			Icon:           "layout-indent",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
+	case "打印区域设置":
+		return modalDialogConfirmStyle{
+			Icon:           "scan",
+			IconBackground: color.NRGBA{R: 234, G: 242, B: 252, A: 255},
+			IconForeground: color.NRGBA{R: 52, G: 120, B: 209, A: 255},
+		}, true
 	default:
 		return modalDialogConfirmStyle{}, false
 	}

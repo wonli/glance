@@ -207,12 +207,13 @@ type SpreadsheetSorter interface {
 
 // SpreadsheetPageLayout describes the format-neutral print page setup for a worksheet.
 type SpreadsheetPageLayout struct {
-	Orientation string  // "portrait" or "landscape"
-	PaperSize   int     // 1=Letter, 9=A4, 8=A3, 5=Legal
-	MarginTop   float64 // in inches (e.g. 0.75)
-	MarginRight float64 // in inches (e.g. 0.7)
+	Orientation  string  // "portrait" or "landscape"
+	PaperSize    int     // 1=Letter, 9=A4, 8=A3, 5=Legal
+	MarginTop    float64 // in inches (e.g. 0.75)
+	MarginRight  float64 // in inches (e.g. 0.7)
 	MarginBottom float64 // in inches (e.g. 0.75)
-	MarginLeft  float64 // in inches (e.g. 0.7)
+	MarginLeft   float64 // in inches (e.g. 0.7)
+	PrintArea    string  // e.g. "$A$1:$D$10" or empty
 }
 
 // SpreadsheetPageLayoutEditor is an optional capability for editing worksheet page setup.
@@ -221,5 +222,13 @@ type SpreadsheetPageLayoutEditor interface {
 	SetSheetPageOrientation(sheet string, orientation string) error
 	SetSheetPageMargins(sheet string, top, right, bottom, left float64) error
 	SetSheetPageSize(sheet string, paperSize int) error
+	SetSheetPrintArea(sheet string, printArea string) error
 }
+
+// SpreadsheetGridlinesEditor is an optional capability for reading and toggling worksheet gridlines.
+type SpreadsheetGridlinesEditor interface {
+	GetSheetGridlines(sheet string) (bool, error)
+	SetSheetGridlines(sheet string, show bool) error
+}
+
 

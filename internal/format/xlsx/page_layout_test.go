@@ -154,3 +154,117 @@ func TestWorkbookPageLayoutSizeAndUndo(t *testing.T) {
 		t.Fatal("expected error for zero paper size")
 	}
 }
+
+func TestWorkbookPageLayoutPrintAreaAndUndo(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+
+	sheet := wb.SheetNames()[0]
+	editor := any(wb).(document.SpreadsheetPageLayoutEditor)
+
+	layout, err := editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PrintArea != "" {
+		t.Fatalf("expected empty print area initially, got %q", layout.PrintArea)
+	}
+
+	// Set print area
+	if err := editor.SetSheetPrintArea(sheet, "$A$1:$D$10"); err != nil {
+		t.Fatalf("SetSheetPrintArea failed: %v", err)
+	}
+
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PrintArea != "$A$1:$D$10" {
+		t.Fatalf("expected print area $A$1:$D$10, got %q", layout.PrintArea)
+	}
+
+	// Undo
+	history := any(wb).(document.SpreadsheetHistory)
+	undone, err := history.Undo()
+	if err != nil || !undone {
+		t.Fatalf("Undo failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PrintArea != "" {
+		t.Fatalf("expected empty print area after undo, got %q", layout.PrintArea)
+	}
+
+	// Redo
+	redone, err := history.Redo()
+	if err != nil || !redone {
+		t.Fatalf("Redo failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PrintArea != "$A$1:$D$10" {
+		t.Fatalf("expected print area after redo, got %q", layout.PrintArea)
+	}
+
+	// Clear print area
+	if err := editor.SetSheetPrintArea(sheet, ""); err != nil {
+		t.Fatalf("clear print area failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PrintArea != "" {
+		t.Fatalf("expected empty print area after clear, got %q", layout.PrintArea)
+	}
+}
+
+func TestWorkbookGridlinesAndUndo(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+
+	sheet := wb.SheetNames()[0]
+	editor, ok := any(wb).(document.SpreadsheetGridlinesEditor)
+	if !ok {
+		t.Fatal("workbook does not implement SpreadsheetGridlinesEditor")
+	}
+
+	visible, err := editor.GetSheetGridlines(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetGridlines failed: %v", err)
+	}
+	if !visible {
+		t.Fatal("expected default gridlines to be visible")
+	}
+
+	// Turn off gridlines
+	if err := editor.SetSheetGridlines(sheet, false); err != nil {
+		t.Fatalf("SetSheetGridlines failed: %v", err)
+	}
+	visible, err = editor.GetSheetGridlines(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetGridlines failed: %v", err)
+	}
+	if visible {
+		t.Fatal("expected gridlines to be hidden")
+	}
+
+	// Undo
+	history := any(wb).(document.SpreadsheetHistory)
+	undone, err := history.Undo()
+	if err != nil || !undone {
+		t.Fatalf("Undo failed: %v", err)
+	}
+	visible, err = editor.GetSheetGridlines(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetGridlines failed: %v", err)
+	}
+	if !visible {
+		t.Fatal("expected gridlines visible after undo")
+	}
+}
+

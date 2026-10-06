@@ -287,6 +287,10 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, editable := any(state.word).(document.WordParagraphSpacingEditor)
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
 		return editable && ok
+	case "layout-indent":
+		_, editable := any(state.word).(document.WordTextEditor)
+		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
+		return editable && ok && !state.formatRunning.Load() && !a.isSaving()
 	case "layout-orientation", "layout-margins", "layout-size":
 		_, editable := any(state.word).(document.WordPageSetupEditor)
 		return editable && !state.formatRunning.Load() && !a.isSaving()
@@ -689,6 +693,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.adjustWordParagraphIndent(actionID)
 	case "layout-before", "layout-after":
 		a.showWordParagraphSpacingDialog(actionID)
+	case "layout-indent":
+		a.showWordParagraphIndentDialog()
 	case "layout-orientation":
 		a.showWordOrientationDialog()
 	case "layout-margins":
@@ -1507,6 +1513,59 @@ func (a *App) runWordSpacingCommand(operation string, edit func(document.WordPar
 		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
 	}()
+}
+
+func (a *App) showWordParagraphIndentDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	paragraph, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
+	if !ok {
+		return
+	}
+	paragraphID := paragraph.ID
+	leftPT := float64(paragraph.LeftIndentEMU) / 12700.0
+	rightPT := float64(paragraph.RightIndentEMU) / 12700.0
+	labels := []string{"左侧缩进（磅）", "右侧缩进（磅）"}
+	hints := []string{"0", "0"}
+	initial := []string{
+		strconv.FormatFloat(leftPT, 'f', -1, 64),
+		strconv.FormatFloat(rightPT, 'f', -1, 64),
+	}
+	a.modal.ShowForm("段落缩进", "设置所选段落的左侧和右侧缩进（0–1000 磅）：",
+		labels, hints, initial,
+		func(action string) {
+			switch action {
+			case "none":
+				a.modal.Hide()
+				a.runWordCommand("清除段落缩进", func(editor document.WordTextEditor) error {
+					return editor.SetParagraphIndents(paragraphID, 0, 0)
+				})
+			case "confirm":
+				left, err1 := strconv.ParseFloat(strings.TrimSpace(a.modal.FormInputs[0].Text()), 64)
+				right, err2 := strconv.ParseFloat(strings.TrimSpace(a.modal.FormInputs[1].Text()), 64)
+				if err1 != nil || err2 != nil || left < 0 || right < 0 || left > 1000 || right > 1000 {
+					a.setStatus("缩进必须是 0 到 1000 磅之间的数值")
+					if a.window != nil {
+						a.window.Invalidate()
+					}
+					return
+				}
+				a.modal.Hide()
+				leftEMU := int64(math.Round(left * 12700.0))
+				rightEMU := int64(math.Round(right * 12700.0))
+				a.runWordCommand("设置段落缩进", func(editor document.WordTextEditor) error {
+					return editor.SetParagraphIndents(paragraphID, leftEMU, rightEMU)
+				})
+			case "cancel":
+				a.modal.Hide()
+			}
+		},
+		modalDialogActionSpec{ID: "confirm", Label: "应用"},
+		modalDialogActionSpec{ID: "none", Label: "无缩进 (0pt)"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
 }
 
 func (a *App) showWordOrientationDialog() {

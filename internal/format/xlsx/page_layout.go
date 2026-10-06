@@ -51,6 +51,16 @@ func (w *Workbook) GetSheetPageLayout(sheet string) (document.SpreadsheetPageLay
 	if margins.Left != nil {
 		result.MarginLeft = *margins.Left
 	}
+	for _, dn := range w.file.GetDefinedName() {
+		if dn.Name == "_xlnm.Print_Area" && (dn.Scope == sheet || (dn.Scope == "" && (strings.HasPrefix(dn.RefersTo, sheet+"!") || strings.HasPrefix(dn.RefersTo, "'"+sheet+"'!")))) {
+			ref := dn.RefersTo
+			if idx := strings.Index(ref, "!"); idx >= 0 {
+				ref = ref[idx+1:]
+			}
+			result.PrintArea = ref
+			break
+		}
+	}
 	return result, nil
 }
 
@@ -133,4 +143,78 @@ func (w *Workbook) SetSheetPageSize(sheet string, paperSize int) error {
 	return nil
 }
 
-var _ document.SpreadsheetPageLayoutEditor = (*Workbook)(nil)
+// SetSheetPrintArea sets or clears the print area for a worksheet.
+// If printArea is empty, any existing print area for the worksheet is removed.
+func (w *Workbook) SetSheetPrintArea(sheet string, printArea string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return err
+	}
+	beforeSnapshot, err := w.snapshotLocked()
+	if err != nil {
+		return err
+	}
+	cleanArea := strings.TrimSpace(printArea)
+	if cleanArea == "" {
+		_ = w.file.DeleteDefinedName(&excelize.DefinedName{
+			Name:  "_xlnm.Print_Area",
+			Scope: sheet,
+		})
+	} else {
+		refersTo := fmt.Sprintf("'%s'!%s", strings.ReplaceAll(sheet, "'", "''"), cleanArea)
+		if err := w.file.SetDefinedName(&excelize.DefinedName{
+			Name:     "_xlnm.Print_Area",
+			RefersTo: refersTo,
+			Scope:    sheet,
+		}); err != nil {
+			return fmt.Errorf("set print area for sheet %q: %w", sheet, err)
+		}
+	}
+	if err := w.recordHistoryLocked(beforeSnapshot); err != nil {
+		return err
+	}
+	w.dirty = true
+	return nil
+}
+
+// GetSheetGridlines returns whether gridlines are visible for the worksheet.
+func (w *Workbook) GetSheetGridlines(sheet string) (bool, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return true, err
+	}
+	opts, err := w.file.GetSheetView(sheet, 0)
+	if err != nil || opts.ShowGridLines == nil {
+		return true, nil
+	}
+	return *opts.ShowGridLines, nil
+}
+
+// SetSheetGridlines updates whether gridlines are displayed for the worksheet.
+func (w *Workbook) SetSheetGridlines(sheet string, show bool) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return err
+	}
+	beforeSnapshot, err := w.snapshotLocked()
+	if err != nil {
+		return err
+	}
+	if err := w.file.SetSheetView(sheet, 0, &excelize.ViewOptions{ShowGridLines: &show}); err != nil {
+		return fmt.Errorf("set sheet gridlines for %q: %w", sheet, err)
+	}
+	if err := w.recordHistoryLocked(beforeSnapshot); err != nil {
+		return err
+	}
+	w.dirty = true
+	return nil
+}
+
+var (
+	_ document.SpreadsheetPageLayoutEditor = (*Workbook)(nil)
+	_ document.SpreadsheetGridlinesEditor  = (*Workbook)(nil)
+)
+

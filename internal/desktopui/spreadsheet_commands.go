@@ -853,3 +853,57 @@ func (a *App) showSpreadsheetPageSizeDialog() {
 	)
 }
 
+func (a *App) showSpreadsheetPrintAreaDialog() {
+	state := a.documentSessionState
+	if state == nil || state.book == nil {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetPageLayoutEditor)
+	if !ok {
+		return
+	}
+	sheet := state.sheet
+	layout, _ := editor.GetSheetPageLayout(sheet)
+	var selRef string
+	if state.selectionSet {
+		bounds := state.selection.Bounds()
+		selRef = fmt.Sprintf("$%s$%d:$%s$%d", columnName(bounds.StartColumn), bounds.StartRow, columnName(bounds.EndColumn), bounds.EndRow)
+	}
+
+	var message string
+	if layout.PrintArea != "" {
+		message = fmt.Sprintf("当前打印区域：%s\n\n您可将当前选区设为新的打印区域，或清除现有打印区域。", layout.PrintArea)
+	} else {
+		message = "当前未设置打印区域。\n\n您可将当前选区设为打印区域。"
+	}
+
+	actions := make([]modalDialogActionSpec, 0, 3)
+	if selRef != "" {
+		actions = append(actions, modalDialogActionSpec{ID: "set", Label: "设为打印区域 (" + selRef + ")"})
+	}
+	if layout.PrintArea != "" {
+		actions = append(actions, modalDialogActionSpec{ID: "clear", Label: "清除打印区域"})
+	}
+	actions = append(actions, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+
+	a.modal.Show("打印区域设置", message, func(action string) {
+		a.modal.Hide()
+		switch action {
+		case "set":
+			if selRef == "" {
+				return
+			}
+			a.runSpreadsheetPageLayoutCommand("设置打印区域", func(ed document.SpreadsheetPageLayoutEditor) error {
+				return ed.SetSheetPrintArea(sheet, selRef)
+			})
+			a.setStatus("已设置打印区域：" + selRef)
+		case "clear":
+			a.runSpreadsheetPageLayoutCommand("清除打印区域", func(ed document.SpreadsheetPageLayoutEditor) error {
+				return ed.SetSheetPrintArea(sheet, "")
+			})
+			a.setStatus("已清除打印区域")
+		}
+	}, actions...)
+}
+
+

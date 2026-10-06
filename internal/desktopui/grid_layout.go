@@ -480,7 +480,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		pointer.CursorCrosshair.Add(gtx.Ops)
 	}
 	dims := paintVirtualGrid(gtx, a, v)
-	paint.FillShape(gtx.Ops, gridLine, clip.Stroke{Path: gridShape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+	if a.documentSessionState == nil || !a.documentSessionState.spreadsheetGridlinesHidden {
+		paint.FillShape(gtx.Ops, gridLine, clip.Stroke{Path: gridShape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+	}
 	area.Pop()
 	return dims
 }

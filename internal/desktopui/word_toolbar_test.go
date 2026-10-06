@@ -1262,3 +1262,89 @@ func TestWordPageSetupDialogsAndCommands(t *testing.T) {
 	}
 }
 
+func TestWordParagraphIndentDialogAndCommand(t *testing.T) {
+	state := newDocumentSessionState("sample.docx")
+	doc, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	state.word = doc
+	state.setWordBlocks(doc.WordBlocks())
+	app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 1)}
+
+	blocks := doc.WordBlocks()
+	if len(blocks) == 0 || blocks[0].Paragraph == nil {
+		t.Fatal("expected at least one paragraph block")
+	}
+	state.selectedWordParagraphID = blocks[0].Paragraph.ID
+	if len(blocks[0].Paragraph.Inlines) > 0 && blocks[0].Paragraph.Inlines[0].Text != nil {
+		state.selectedWordRunID = blocks[0].Paragraph.Inlines[0].Text.ID
+	}
+
+	indentAction := ribbonAction{id: "layout-indent", label: "缩进"}
+	if !app.wordToolbarActionEnabled(indentAction) {
+		t.Fatal("expected layout-indent action to be enabled")
+	}
+
+	// 1. Open dialog and set custom indent
+	app.executeWordToolbarAction("layout-indent")
+	if !app.modal.Visible || app.modal.Title != "段落缩进" {
+		t.Fatalf("expected modal dialog for layout-indent, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	if len(app.modal.FormInputs) < 2 {
+		t.Fatalf("expected at least 2 form inputs, got %d", len(app.modal.FormInputs))
+	}
+	app.modal.FormInputs[0].SetText("72")
+	app.modal.FormInputs[1].SetText("36")
+	app.modal.OnAction("confirm")
+	if app.modal.Visible {
+		t.Fatal("modal should be hidden after confirm action")
+	}
+
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("layout-indent command failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for layout-indent command result")
+	}
+
+	p := doc.WordBlocks()[0].Paragraph
+	const wantLeftEMU, wantRightEMU int64 = 72 * 12700, 36 * 12700
+	if p.LeftIndentEMU != wantLeftEMU || p.RightIndentEMU != wantRightEMU {
+		t.Fatalf("expected paragraph indents %d/%d EMU, got %d/%d EMU", wantLeftEMU, wantRightEMU, p.LeftIndentEMU, p.RightIndentEMU)
+	}
+
+	// 2. Open dialog and click "none" (reset to 0)
+	app.executeWordToolbarAction("layout-indent")
+	if !app.modal.Visible {
+		t.Fatal("modal should be visible")
+	}
+	app.modal.OnAction("none")
+	if app.modal.Visible {
+		t.Fatal("modal should be hidden after none action")
+	}
+
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("layout-indent none command failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for layout-indent none command result")
+	}
+
+	p = doc.WordBlocks()[0].Paragraph
+	if p.LeftIndentEMU != 0 || p.RightIndentEMU != 0 {
+		t.Fatalf("expected indents reset to 0, got %d/%d EMU", p.LeftIndentEMU, p.RightIndentEMU)
+	}
+}
+
+

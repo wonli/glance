@@ -188,12 +188,12 @@ func TestExcelPageLayoutActionClickShowsMissingNotice(t *testing.T) {
 	}
 
 	frame()
-	point := f32.Pt(194, 58) // 4th Page Layout action, "打印区域" (unimplemented).
+	point := f32.Pt(248, 58) // 5th Page Layout action, "网格线" (unimplemented).
 	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: point})
 	frame()
 	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: point})
 	frame()
-	if want := "“打印区域”功能暂未实现"; app.status != want {
+	if want := "“网格线”功能暂未实现"; app.status != want {
 		t.Fatalf("status after clicking Excel Page Layout action = %q, want %q", app.status, want)
 	}
 }
@@ -598,9 +598,9 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for orientation formatResult")
 	}
-	layout, err := wb.GetSheetPageLayout(state.sheet)
-	if err != nil || layout.Orientation != "landscape" {
-		t.Fatalf("expected landscape orientation, got %+v (err=%v)", layout, err)
+	pageLayout, err := wb.GetSheetPageLayout(state.sheet)
+	if err != nil || pageLayout.Orientation != "landscape" {
+		t.Fatalf("expected landscape orientation, got %+v (err=%v)", pageLayout, err)
 	}
 
 	// 2. Margins Dialog
@@ -617,9 +617,9 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for margins formatResult")
 	}
-	layout, err = wb.GetSheetPageLayout(state.sheet)
-	if err != nil || layout.MarginLeft != 0.25 {
-		t.Fatalf("expected narrow margin 0.25, got %+v (err=%v)", layout, err)
+	pageLayout, err = wb.GetSheetPageLayout(state.sheet)
+	if err != nil || pageLayout.MarginLeft != 0.25 {
+		t.Fatalf("expected narrow margin 0.25, got %+v (err=%v)", pageLayout, err)
 	}
 
 	// 3. Page Size Dialog
@@ -636,9 +636,83 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for page size formatResult")
 	}
-	layout, err = wb.GetSheetPageLayout(state.sheet)
-	if err != nil || layout.PaperSize != 1 {
-		t.Fatalf("expected paper size 1 (Letter), got %+v (err=%v)", layout, err)
+	pageLayout, err = wb.GetSheetPageLayout(state.sheet)
+	if err != nil || pageLayout.PaperSize != 1 {
+		t.Fatalf("expected paper size 1 (Letter), got %+v (err=%v)", pageLayout, err)
+	}
+
+	// 4. Print Area Dialog and Commands
+	if !app.toolbarActionEnabled(toolbarActionPrintArea) {
+		t.Fatal("print-area should be enabled")
+	}
+	state.selectionSet = true
+	state.selection = CellSelection{
+		Anchor: CellPosition{Row: 0, Column: 0},
+		Active: CellPosition{Row: 9, Column: 3},
+	}
+	app.showSpreadsheetPrintAreaDialog()
+	if !app.modal.Visible || app.modal.Title != "打印区域设置" {
+		t.Fatalf("expected modal dialog for print area, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("set")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("set print area failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for print area formatResult")
+	}
+	pageLayout, err = wb.GetSheetPageLayout(state.sheet)
+	if err != nil || pageLayout.PrintArea != "$A$1:$D$10" {
+		t.Fatalf("expected print area $A$1:$D$10, got %+v (err=%v)", pageLayout, err)
+	}
+
+	// Clear print area
+	app.showSpreadsheetPrintAreaDialog()
+	if !app.modal.Visible {
+		t.Fatal("expected modal dialog for print area")
+	}
+	app.modal.OnAction("clear")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("clear print area failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for clear print area formatResult")
+	}
+	pageLayout, err = wb.GetSheetPageLayout(state.sheet)
+	if err != nil || pageLayout.PrintArea != "" {
+		t.Fatalf("expected empty print area after clear, got %+v (err=%v)", pageLayout, err)
+	}
+
+	// 5. View Gridlines Toggle
+	if !app.toolbarActionEnabled(toolbarActionViewGridlines) {
+		t.Fatal("view-gridlines should be enabled")
+	}
+	if state.spreadsheetGridlinesHidden {
+		t.Fatal("expected gridlines initially visible")
+	}
+	state.toolbarTab = toolbarTabView
+	state.toolbarActionButtons[toolbarActionViewGridlines].Click()
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	app.handleSpreadsheetToolbarEvents(gtx)
+	if !state.spreadsheetGridlinesHidden {
+		t.Fatal("expected gridlines to be hidden after toggle")
+	}
+	if app.status != "已隐藏网格线" {
+		t.Fatalf("expected status '已隐藏网格线', got %q", app.status)
+	}
+	state.toolbarActionButtons[toolbarActionViewGridlines].Click()
+	app.handleSpreadsheetToolbarEvents(gtx)
+	if state.spreadsheetGridlinesHidden {
+		t.Fatal("expected gridlines to be visible after second toggle")
+	}
+	if app.status != "已显示网格线" {
+		t.Fatalf("expected status '已显示网格线', got %q", app.status)
 	}
 }
 

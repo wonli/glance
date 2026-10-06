@@ -30,12 +30,13 @@ type gridPaintStyle struct {
 const maxCachedCellPaints = 1024
 
 type cellPaintKey struct {
-	Value   string
-	Source  document.CellStyle
-	Style   gridPaintStyle
-	Size    image.Point
-	PxPerDp float32
-	PxPerSp float32
+	Value     string
+	Source    document.CellStyle
+	Style     gridPaintStyle
+	Size      image.Point
+	PxPerDp   float32
+	PxPerSp   float32
+	Gridlines bool
 }
 
 type cellPaintEntry struct {
@@ -71,6 +72,10 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(rowHead, 0), Max: image.Pt(rowHead+1, size.Y)}.Op())
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(0, colHead), Max: image.Pt(size.X, colHead+1)}.Op())
 	selection, hasSelection := a.selection, a.selectionSet
+	gridlines := true
+	if a != nil && a.documentSessionState != nil && a.documentSessionState.spreadsheetGridlinesHidden {
+		gridlines = false
+	}
 	if v.WindowRange.StartRow > 0 {
 		paintedMerges := make(map[document.CellRange]bool, len(v.Window.Merges))
 		for i, row := range v.Window.Cells {
@@ -122,7 +127,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 						style.Font = color.NRGBA{R: 62, G: 111, B: 169, A: 255}
 					}
 				}
-				paintCachedCell(gtx, v, a.theme, cell, fullRect, visibleRect, style)
+				paintCachedCellWithGridlines(gtx, v, a.theme, cell, fullRect, visibleRect, style, gridlines)
 			}
 		}
 	}
@@ -232,12 +237,16 @@ func cellEditorStyle(theme *material.Theme, editor *widget.Editor, cellStyle doc
 }
 
 func paintCachedCell(gtx layout.Context, v *gridViewport, theme *material.Theme, cell document.Cell, fullRect, visibleRect image.Rectangle, style gridPaintStyle) {
-	key := cellPaintKey{Value: cell.Value, Source: cell.Style, Style: style, Size: fullRect.Size(), PxPerDp: gtx.Metric.PxPerDp, PxPerSp: gtx.Metric.PxPerSp}
+	paintCachedCellWithGridlines(gtx, v, theme, cell, fullRect, visibleRect, style, true)
+}
+
+func paintCachedCellWithGridlines(gtx layout.Context, v *gridViewport, theme *material.Theme, cell document.Cell, fullRect, visibleRect image.Rectangle, style gridPaintStyle, gridlines bool) {
+	key := cellPaintKey{Value: cell.Value, Source: cell.Style, Style: style, Size: fullRect.Size(), PxPerDp: gtx.Metric.PxPerDp, PxPerSp: gtx.Metric.PxPerSp, Gridlines: gridlines}
 	entry := v.cachedCellPaint(key, func(entry *cellPaintEntry) {
 		recordGtx := gtx
 		recordGtx.Ops = &entry.ops
 		record := op.Record(recordGtx.Ops)
-		paintStyledCell(recordGtx, theme, cell, image.Rectangle{Max: fullRect.Size()}, style)
+		paintStyledCell(recordGtx, theme, cell, image.Rectangle{Max: fullRect.Size()}, style, gridlines)
 		entry.call = record.Stop()
 	})
 	area := clip.Rect(visibleRect).Push(gtx.Ops)
@@ -267,6 +276,10 @@ func (v *gridViewport) cachedCellPaint(key cellPaintKey, record func(*cellPaintE
 }
 
 func paintTextBox(gtx layout.Context, theme *material.Theme, text string, rect image.Rectangle, fg, bg color.NRGBA, bold bool) {
+	paintTextBoxWithGridlines(gtx, theme, text, rect, fg, bg, bold, true)
+}
+
+func paintTextBoxWithGridlines(gtx layout.Context, theme *material.Theme, text string, rect image.Rectangle, fg, bg color.NRGBA, bold bool, gridlines bool) {
 	if rect.Empty() {
 		return
 	}
@@ -274,8 +287,10 @@ func paintTextBox(gtx layout.Context, theme *material.Theme, text string, rect i
 	defer transform.Pop()
 	sz := rect.Size()
 	paint.FillShape(gtx.Ops, bg, clip.Rect{Max: sz}.Op())
-	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(0, sz.Y-1), Max: sz}.Op())
-	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(sz.X-1, 0), Max: sz}.Op())
+	if gridlines {
+		paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(0, sz.Y-1), Max: sz}.Op())
+		paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(sz.X-1, 0), Max: sz}.Op())
+	}
 	gtx.Constraints = layout.Constraints{Min: sz, Max: sz}
 	label := material.Body2(theme, text)
 	label.Color = fg
@@ -292,8 +307,8 @@ func paintTextBox(gtx layout.Context, theme *material.Theme, text string, rect i
 	})
 }
 
-func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Cell, rect image.Rectangle, style gridPaintStyle) {
-	paintTextBox(gtx, theme, "", rect, style.Font, style.Fill, false)
+func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Cell, rect image.Rectangle, style gridPaintStyle, gridlines bool) {
+	paintTextBoxWithGridlines(gtx, theme, "", rect, style.Font, style.Fill, false, gridlines)
 	clipOp := clip.Rect(rect).Push(gtx.Ops)
 	defer clipOp.Pop()
 	transform := op.Offset(rect.Min).Push(gtx.Ops)

@@ -419,6 +419,29 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetPageSizeDialog()
 			continue
 		}
+		if action.slot == toolbarActionPrintArea {
+			a.showSpreadsheetPrintAreaDialog()
+			continue
+		}
+		if action.slot == toolbarActionViewGridlines {
+			state.spreadsheetGridlinesHidden = !state.spreadsheetGridlinesHidden
+			if state.virtualGrid != nil {
+				state.virtualGrid.CellPaintCache = nil
+				state.virtualGrid.CellPaintFIFO = nil
+			}
+			if state.spreadsheetGridlinesHidden {
+				a.setStatus("已隐藏网格线")
+			} else {
+				a.setStatus("已显示网格线")
+			}
+			if editor, ok := state.book.(document.SpreadsheetGridlinesEditor); ok {
+				_ = editor.SetSheetGridlines(state.sheet, !state.spreadsheetGridlinesHidden)
+			}
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+			continue
+		}
 		style := a.selectedCellStyle()
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
@@ -477,7 +500,8 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat,
 		toolbarActionSum, toolbarActionFind,
 		toolbarActionZoomIn, toolbarActionZoom100,
-		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize:
+		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize,
+		toolbarActionPrintArea, toolbarActionViewGridlines:
 		return false
 	default:
 		return true
@@ -500,9 +524,9 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return state.book != nil && !state.formatRunning.Load() && !a.isSaving()
 	}
 	switch slot {
-	case toolbarActionZoomIn, toolbarActionZoom100:
+	case toolbarActionZoomIn, toolbarActionZoom100, toolbarActionViewGridlines:
 		return state.book != nil && state.virtualGrid != nil && !state.formatRunning.Load()
-	case toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize:
+	case toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize, toolbarActionPrintArea:
 		_, ok := state.book.(document.SpreadsheetPageLayoutEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case 0, 1:
@@ -603,7 +627,9 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 							action := actions[index]
 							style := a.selectedCellStyle()
 							mixed := action.slot >= 0 && formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
-							formatActive := formatStyleActive(action.slot, style) || (action.slot == toolbarActionFormatPainter && state != nil && state.excelFormatPainterActive)
+							formatActive := formatStyleActive(action.slot, style) ||
+								(action.slot == toolbarActionFormatPainter && state != nil && state.excelFormatPainterActive) ||
+								(action.slot == toolbarActionViewGridlines && (state == nil || !state.spreadsheetGridlinesHidden))
 							active := action.slot >= 0 && !mixed && formatActive
 							enabled := action.slot >= 0 && a.toolbarActionEnabled(action.slot)
 							var button *widget.Clickable
