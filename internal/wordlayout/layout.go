@@ -903,6 +903,9 @@ func mergeTextStyle(target *document.WordTextStyle, source document.WordTextStyl
 		if source.Underline {
 			mask |= document.WordTextUnderlineSet
 		}
+		if source.Strike {
+			mask |= document.WordTextStrikeSet
+		}
 		if source.FontFamily != "" {
 			mask |= document.WordTextFontFamilySet
 		}
@@ -924,6 +927,9 @@ func mergeTextStyle(target *document.WordTextStyle, source document.WordTextStyl
 	}
 	if mask&document.WordTextUnderlineSet != 0 {
 		target.Underline = source.Underline
+	}
+	if mask&document.WordTextStrikeSet != 0 {
+		target.Strike = source.Strike
 	}
 	if mask&document.WordTextFontFamilySet != 0 {
 		target.FontFamily = source.FontFamily

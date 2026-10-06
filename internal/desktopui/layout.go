@@ -33,6 +33,9 @@ var (
 
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	a.ensureDesktopRuntime()
+	if a.markdownDoc != nil && !a.modal.Visible {
+		a.updateMarkdownInput(gtx)
+	}
 	a.processAsyncResults()
 	a.reconcileWorkspaceTabs()
 	syncWindowViewFromSharedSession(gtx, a.documentSessionState)
@@ -549,6 +552,14 @@ func (a *App) processAsyncResults() {
 					if state.word != nil {
 						state.word.SetSourcePath(result.path)
 					}
+					if state.markdownDoc != nil {
+						if state.markdownView != nil {
+							unlock := lockSessionAdapterWrite(state)
+							state.markdownView.draftEpoch.Add(1)
+							unlock()
+						}
+						state.markdownDoc.SetSourcePath(result.path)
+					}
 					if state.jsonDoc != nil {
 						state.jsonDoc.SetSourcePath(result.path)
 					}
@@ -683,7 +694,7 @@ func (a *App) visibleStatus() string {
 }
 
 func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
-	if a.activeTabID == "recent" || (a.book == nil && a.word == nil && a.jsonDoc == nil) {
+	if a.activeTabID == "recent" || (a.book == nil && a.word == nil && a.jsonDoc == nil && a.markdownDoc == nil) {
 		return a.layoutRecent(gtx)
 	}
 	switch {
@@ -691,6 +702,8 @@ func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
 		return a.layoutWorkbook(gtx)
 	case a.word != nil:
 		return a.layoutWord(gtx)
+	case a.markdownDoc != nil:
+		return a.layoutMarkdownDocument(gtx)
 	case a.jsonDoc != nil:
 		return a.layoutJSON(gtx)
 	default:

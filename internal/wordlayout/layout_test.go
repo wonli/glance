@@ -12,6 +12,35 @@ import (
 
 type layoutFakeShaper struct{}
 
+func TestExplicitTextNewlinesCreateLinesWithoutControlGlyphs(t *testing.T) {
+	paragraph := &document.WordParagraph{ID: "p", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "r", Text: "first\n\nsecond\r\nthird"}}}}
+	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), Input{Blocks: []document.WordBlock{{ID: "p", Kind: document.WordParagraphBlock, Paragraph: paragraph}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fragments []TextFragment
+	for _, page := range result.Pages {
+		fragments = append(fragments, page.Text...)
+	}
+	var first, second, third float64
+	for _, f := range fragments {
+		if strings.ContainsAny(f.Text, "\r\n") {
+			t.Fatalf("control glyph emitted: %q", f.Text)
+		}
+		switch f.RuneStart {
+		case 0:
+			first = f.BaselineYPT
+		case 7:
+			second = f.BaselineYPT
+		case 15:
+			third = f.BaselineYPT
+		}
+	}
+	if first == 0 || second <= first || third <= second || second-first < 1.5*(third-second) {
+		t.Fatalf("newlines or blank line lost: %v", fragments)
+	}
+}
+
 func (layoutFakeShaper) Shape(value string, style document.WordTextStyle) (ShapedText, error) {
 	size := style.FontSize
 	if size <= 0 {

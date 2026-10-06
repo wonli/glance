@@ -16,6 +16,7 @@ import (
 
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
+	"glance/internal/format/markdowndoc"
 	"glance/internal/format/xlsx"
 )
 
@@ -176,7 +177,7 @@ func (a *App) createMenuFormats() []createMenuFormat {
 		{click: &a.actionNewDOCX, id: "docx", label: "文档", extension: "DOCX", icon: "docx", accent: color.NRGBA{R: 52, G: 120, B: 209, A: 255}, enabled: true},
 		{click: &a.actionNewXLSX, id: "xlsx", label: "表格", extension: "XLSX", icon: "xlsx", accent: color.NRGBA{R: 79, G: 166, B: 107, A: 255}, enabled: true},
 		{id: "pptx", label: "演示文稿", extension: "PPTX", icon: "pptx", accent: color.NRGBA{R: 228, G: 130, B: 60, A: 255}},
-		{id: "markdown", label: "Markdown", extension: "MD", icon: "markdown", accent: color.NRGBA{R: 138, G: 90, B: 194, A: 255}},
+		{click: &a.actionNewMarkdown, enabled: true, id: "markdown", label: "Markdown", extension: "MD", icon: "markdown", accent: color.NRGBA{R: 138, G: 90, B: 194, A: 255}},
 		{click: &a.actionNewJSON, id: "json", label: "JSON 数据", extension: "JSON", icon: "json", accent: color.NRGBA{R: 43, G: 157, B: 152, A: 255}, enabled: true},
 		{id: "pdf", label: "PDF 文档", extension: "PDF", icon: "pdf", accent: color.NRGBA{R: 240, G: 68, B: 69, A: 255}},
 	}
@@ -341,6 +342,8 @@ func (a *App) createNewMenuDocument(kind string) {
 	case "xlsx":
 		book := xlsx.NewBlank()
 		_ = a.installDocument(loadedDocument{book: book, sheets: book.SheetNames()})
+	case "markdown":
+		_ = a.installDocument(loadedDocument{markdownDoc: markdowndoc.NewBlank()})
 	case "json":
 		_ = a.installDocument(loadedDocument{jsonDoc: jsondoc.NewBlank()})
 	}
@@ -447,6 +450,7 @@ func (a *App) createActionItems() []createActionItem {
 		createActionItem{click: &a.actionNewDOCX, label: "文档", icon: "file-text"},
 		createActionItem{click: &a.actionNewXLSX, label: "表格", icon: "file-spreadsheet"},
 		createActionItem{click: &a.actionNewJSON, label: "JSON 数据", icon: "file-code"},
+		createActionItem{click: &a.actionNewMarkdown, label: "Markdown 文本", icon: "file-text"},
 	)
 	return buttons
 }

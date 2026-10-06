@@ -9,3 +9,5 @@ config.yaml
 trashDir
 *.csv
 go.work*
+
+.superpowers/sdd/

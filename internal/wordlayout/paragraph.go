@@ -16,6 +16,7 @@ const (
 	atomText paragraphAtomKind = iota + 1
 	atomImage
 	atomPageBreak
+	atomLineBreak
 )
 
 type paragraphAtom struct {
@@ -223,6 +224,35 @@ func shapeTextAtoms(ctx context.Context, shaper TextShaper, pathCache map[glyphP
 		return nil, err
 	}
 	runes := []rune(text)
+	// Shape visible segments independently. Line delimiters have no font glyph
+	// and must force a line even when the remaining printable width is ample.
+	for _, r := range runes {
+		if r != '\n' && r != '\r' {
+			continue
+		}
+		var atoms []paragraphAtom
+		start := 0
+		for i := 0; i < len(runes); i++ {
+			if runes[i] != '\n' && runes[i] != '\r' {
+				continue
+			}
+			segment, err := shapeTextAtoms(ctx, shaper, pathCache, runID, string(runes[start:i]), runeOffset+start, style, synthetic, sourceID)
+			if err != nil {
+				return nil, err
+			}
+			atoms = append(atoms, segment...)
+			atoms = append(atoms, paragraphAtom{kind: atomLineBreak})
+			if runes[i] == '\r' && i+1 < len(runes) && runes[i+1] == '\n' {
+				i++
+			}
+			start = i + 1
+		}
+		segment, err := shapeTextAtoms(ctx, shaper, pathCache, runID, string(runes[start:]), runeOffset+start, style, synthetic, sourceID)
+		if err != nil {
+			return nil, err
+		}
+		return append(atoms, segment...), nil
+	}
 	for _, r := range runes {
 		if isRTL(r) {
 			return nil, fmt.Errorf("right-to-left text shaping is not supported in this Word layout slice")
@@ -352,6 +382,10 @@ func wrapParagraphAtoms(atoms []paragraphAtom, maxWidth float64, paragraph docum
 		current = current[:0]
 	}
 	for _, atom := range atoms {
+		if atom.kind == atomLineBreak {
+			flush(false)
+			continue
+		}
 		if atom.kind == atomPageBreak {
 			if len(current) > 0 {
 				flush(true)

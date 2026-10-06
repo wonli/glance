@@ -449,6 +449,9 @@ func (a *App) activateRecent() {
 }
 
 func (a *App) closeWorkspaceTab(id string) {
+	if id == a.activeTabID {
+		a.flushMarkdownDraft()
+	}
 	a.ensureDesktopRuntime()
 	if a.modal.Visible {
 		return
@@ -458,7 +461,7 @@ func (a *App) closeWorkspaceTab(id string) {
 		a.closeWorkspaceTabWithoutSession(id, err)
 		return
 	}
-	if sessionPath(state) == "" || sessionDirty(state) {
+	if sessionPath(state) == "" || sessionDirty(state) || markdownHasPendingDraft(state) {
 		title, message := "保存更改？", "此文档有尚未保存的修改。关闭前要保存吗？"
 		if sessionPath(state) == "" {
 			title, message = "保存新文档？", "此新建文档尚未保存到本地目录。关闭后将丢弃草稿；要先保存吗？"
@@ -641,6 +644,8 @@ func (a *App) handleCloseConfirmation(action string) {
 			ext := "xlsx"
 			if a.word != nil {
 				ext = "docx"
+			} else if a.markdownDoc != nil {
+				ext = "md"
 			} else if a.jsonDoc != nil {
 				ext = "json"
 			}
@@ -702,5 +707,5 @@ func (a *App) closeWorkspace() {
 }
 
 func (a *App) hasActiveDocument() bool {
-	return a.book != nil || a.word != nil || a.jsonDoc != nil
+	return a.book != nil || a.word != nil || a.jsonDoc != nil || a.markdownDoc != nil
 }

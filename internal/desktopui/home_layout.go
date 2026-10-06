@@ -18,6 +18,7 @@ import (
 
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
+	"glance/internal/format/markdowndoc"
 	"glance/internal/format/xlsx"
 )
 
@@ -462,7 +463,7 @@ func (a *App) handleHomeAction(id string) {
 	case "pptx":
 		a.setStatus("演示文稿创建功能尚未开放")
 	case "md":
-		a.setStatus("Markdown 创建功能尚未开放")
+		_ = a.installDocument(loadedDocument{markdownDoc: markdowndoc.NewBlank()})
 	case "html":
 		a.setStatus("HTML 创建功能尚未开放")
 	case "pdf":

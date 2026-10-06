@@ -4,6 +4,8 @@
 
 Build a local desktop document viewer/editor for basic Excel and Word workflows. The UI is rendered with Gio. Keep format libraries replaceable and keep their types out of UI state.
 
+Markdown uses `internal/format/markdowndoc` as an exact UTF-8 source adapter. Its neutral `document.MarkdownSnapshot` carries headings with rune offsets, semantic spans and table cells. Gio owns stable editors, outline/preview lists and ribbon buttons; source transforms run through the session mutation path. Completed drafts are synchronized before saving or leaving a tab; active IME composition stays transient. Parsing, bounded local-image decoding, formula rasterization and PDF pagination run in background workers. Preview results match source and path; PDF replacement additionally checks the owning session revision and draft epoch under the adapter lock. PDF export reuses the Word layout/font pipeline without exposing Markdown parser types to widgets. The view caches text and source-line offsets by Gio text version, so unchanged frames avoid copying the whole source.
+
 This architecture borrows the format-adapter, normalized-document, session, and compatibility boundaries used by the sibling `tools` project, and applies Gio interaction lessons from `mysql-ai`. Reuse the boundaries and proven interaction patterns; do not copy their Rust/Tauri/Svelte or database-specific implementation.
 
 ## Layers and ownership

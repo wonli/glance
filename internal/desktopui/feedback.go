@@ -117,6 +117,9 @@ func (a *App) layoutFeedback(gtx layout.Context) layout.Dimensions {
 
 func (a *App) layoutFeedbackCard(gtx layout.Context) layout.Dimensions {
 	style := feedbackAppearance(a.feedback.kind)
+	if strings.HasPrefix(a.feedback.message, "PDF 已导出，") {
+		style.title = "导出完成"
+	}
 	bounds := image.Rectangle{Max: gtx.Constraints.Max}
 	for _, shadow := range []struct{ offset, alpha int }{{6, 5}, {4, 9}} {
 		paint.FillShape(gtx.Ops, color.NRGBA{R: 31, G: 41, B: 55, A: uint8(shadow.alpha)}, clip.UniformRRect(bounds.Add(image.Pt(0, gtx.Dp(unit.Dp(shadow.offset)))), gtx.Dp(10)).Op(gtx.Ops))

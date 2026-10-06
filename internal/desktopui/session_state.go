@@ -114,6 +114,7 @@ type documentSessionState struct {
 	wordInsertAfterDraftFlush           bool
 	wordPendingPasteRunID               string
 	wordPendingPasteText                string
+	markdownView                        *markdownViewState
 	jsonEditor                          widget.Editor
 	jsonView                            *jsonWorkspaceView
 	jsonToolbarActionList               widget.List

@@ -446,6 +446,13 @@ func (s *wordTextShaper) orderedFonts(style document.WordTextStyle) []fontscan.F
 		}
 	}
 	sort.SliceStable(remaining, func(i, j int) bool {
+		// macOS LastResort claims every rune but paints generic fallback boxes.
+		// Prefer a real symbol font before this final fallback.
+		leftLast := strings.Contains(strings.ToLower(remaining[i].Location.File), "lastresort")
+		rightLast := strings.Contains(strings.ToLower(remaining[j].Location.File), "lastresort")
+		if leftLast != rightLast {
+			return !leftLast
+		}
 		if remaining[i].Family != remaining[j].Family {
 			return remaining[i].Family < remaining[j].Family
 		}

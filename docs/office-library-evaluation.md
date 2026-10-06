@@ -75,6 +75,16 @@ Sources: [PDFKit `PDFDocument(data:)`](https://developer.apple.com/documentation
 
 The app currently uses `github.com/extrame/xls` to attempt first-sheet read-only access to BIFF `.xls`. The provided sample opens, but LibreOffice inspection shows all three sheets are empty; this is not evidence of cell-value fidelity. Do not advertise useful legacy XLS preview until a populated `.xls` corpus fixture passes. No XLS write path is enabled.
 
+### Markdown: selected source parser and local math renderer
+
+`github.com/yuin/goldmark v1.7.13` (MIT) is selected behind the neutral Markdown adapter. GFM and the built-in Footnote extension cover table alignment, task checkboxes, emphasis/deletion, links/linked images, nested lists/quotes and standard named footnotes. Literal code, punctuation escapes, entities, escaped dollars and currency have dedicated regressions. Source is retained independently of the AST, including BOM and CRLF; heading offsets use a linear source-line index. Parser objects never enter Gio state. See [Goldmark's primary documentation](https://github.com/yuin/goldmark).
+
+`github.com/alecthomas/chroma/v2 v2.27.0` (MIT; Go 1.25 minimum; pure Go) supplies fenced-code syntax tokens behind the Markdown adapter. A fixed light palette becomes neutral literal code spans; lexer/token types never enter UI state. C# (`c#` alias), CSS, JavaScript and PHP snippets without an opening `<?php` have keyword-colour and exact-source regressions, including BOM, CRLF and Chinese. Unknown or absent language labels remain plain code. Highlighting accepts at most 1 MiB and 100,000 tokens, checks a 250 ms work budget between iterator calls, and relies on Chroma's 250 ms timeout for each regex match; this is not a hard total wall-clock deadline. Any limit, lexer failure or source mismatch returns the entire original text without partial highlighting. Tokenisation does not interpret Markdown links, images or formulas. Sources: [Chroma primary documentation](https://github.com/alecthomas/chroma), [v2.27.0 lexers](https://pkg.go.dev/github.com/alecthomas/chroma/v2@v2.27.0/lexers).
+
+`codeberg.org/go-latex/latex v0.3.0` (BSD-3-Clause) supplies local math glyph rendering. The earlier GitHub project is archived; the maintained Codeberg module is selected. Evaluation found that the upstream renderer does not implement all script AST forms needed by the approved fixture corpus. A bounded adapter composition layer handles superscripts, subscripts, fractions and roots, with serialized upstream access and explicit diagnostics. Tests cover Greek/operator glyphs, scripts, fractions, roots, malformed expressions and unsupported commands. Accepted expression length is 4096 bytes, nesting depth 24, and output dimensions at most 8192 × 4096 pixels. These limits and tests support only the documented subset, not full TeX. See [module documentation](https://pkg.go.dev/codeberg.org/go-latex/latex).
+
+PDF uses the already selected Word PDF/font/layout adapters. Markdown PDF regressions cover Chinese searchable text and images/formulas both in body and table cells. Unsupported resources fail before output replacement; a revision/draft/session guard prevents stale results from replacing an existing destination. Gio captures and the representative PDF were visually inspected on macOS arm64.
+
 ## Required evaluation corpus
 
 Keep small, redistributable fixtures for at least:
@@ -92,3 +102,5 @@ For every candidate, record: open success/error, extracted model, visible render
 - `.xls` and `.doc` are separate format work; do not infer legacy-format support from `.xlsx`/`.docx` support.
 
 Update this document after evaluation; do not leave a candidate presented as selected merely because an API example compiles.
+
+Markdown resource acceptance now includes bounded HTTP/HTTPS raster loading with redirect/status/byte/pixel validation, cancellation, deduplication and four-worker concurrency regressions. Formula UI dimensions scale with screen metrics; PDF uses 0.5 points per 144-DPI raster pixel.

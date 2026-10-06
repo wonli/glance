@@ -19,7 +19,6 @@ import (
 	"glance/internal/wordlayout"
 )
 
-
 // ImageSource returns the original image data referenced by a page scene.
 type ImageSource interface {
 	ImageBytes(imageID string) ([]byte, error)
@@ -424,6 +423,11 @@ func drawTextFragment(page *gopdf.Page, fragment wordlayout.TextFragment) {
 		page.SetFillColor(textColor(fragment.Style.FontColor))
 		page.Rect(fragment.XPT, fragment.BaselineYPT+math.Max(0.5, fontSize*0.08), pen, 0.6, gopdf.Fill)
 	}
+	if fragment.Style.Strike && pen > 0 {
+		fontSize := effectiveFontSize(fragment.Style.FontSize)
+		page.SetFillColor(textColor(fragment.Style.FontColor))
+		page.Rect(fragment.XPT, fragment.BaselineYPT-fontSize*0.32, pen, math.Max(0.6, fontSize*0.04), gopdf.Fill)
+	}
 }
 
 func drawCellBorder(page *gopdf.Page, bounds wordlayout.Rect) {
@@ -487,4 +491,3 @@ func fragmentTextChunks(fragment wordlayout.TextFragment) ([]textChunk, error) {
 	}
 	return chunks, nil
 }
-

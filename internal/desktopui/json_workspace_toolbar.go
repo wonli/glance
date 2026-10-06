@@ -112,7 +112,7 @@ func (a *App) layoutJSONModeSwitch(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutJSONSaveIndicator(gtx layout.Context) layout.Dimensions {
-	if a.jsonDoc == nil || a.activeTabID == "recent" {
+	if (a.jsonDoc == nil && a.markdownDoc == nil) || a.activeTabID == "recent" {
 		return layout.Dimensions{}
 	}
 	gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(110), gtx.Dp(37)))

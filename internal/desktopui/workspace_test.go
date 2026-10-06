@@ -370,8 +370,8 @@ func TestPlusMenuAnchorsAtPenClpgmTabPosition(t *testing.T) {
 func TestCreateMenuItemsHaveMonochromeIconsAndASectionDivider(t *testing.T) {
 	a := New(nil, "")
 	items := a.createActionItems()
-	if len(items) != 6 || !items[2].separator {
-		t.Fatalf("new-document menu items=%+v; want open actions, one divider, and three create actions", items)
+	if len(items) != 7 || !items[2].separator {
+		t.Fatalf("new-document menu items=%+v; want open actions, one divider, and four create actions", items)
 	}
 	for _, item := range items {
 		if item.separator {

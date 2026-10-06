@@ -178,7 +178,10 @@ func (c *Collection) AddTabInactive(tab Tab, format string) error {
 // workspace drafts must use this instead of AddTab so a restart can always
 // restore the document even if the asynchronous editor snapshot has not run.
 func (c *Collection) AddDocument(session Session, activate bool) error {
-	if len(session.Payload) == 0 {
+	// Empty Markdown source is a complete snapshot. A nil payload still means
+	// the caller did not supply a snapshot; structured formats need bytes.
+	emptySource := strings.EqualFold(session.Format, "markdown") || strings.EqualFold(session.Format, "md")
+	if session.Payload == nil || (len(session.Payload) == 0 && !emptySource) {
 		return errors.New("workspace document snapshot is required")
 	}
 	c.mu.Lock()

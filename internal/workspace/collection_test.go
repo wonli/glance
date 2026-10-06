@@ -7,6 +7,36 @@ import (
 	"time"
 )
 
+func TestCollectionEmptyMarkdownSnapshotAndMissingSnapshotGate(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	c, err := OpenCollection(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []string{"markdown", "md", "docx", "xlsx", "json"} {
+		missing := Session{Tab: Tab{ID: "missing-" + format, Kind: "draft"}, Format: format}
+		if c.AddDocument(missing, true) == nil {
+			t.Fatalf("missing %s snapshot accepted", format)
+		}
+		missing.Payload = []byte{}
+		if format == "md" || format == "markdown" {
+			if err = c.AddDocument(missing, true); err != nil {
+				t.Fatal(err)
+			}
+			doc, found, err := s.LoadDocument(missing.Tab.ID)
+			if err != nil || !found || doc.Format != format || len(doc.Payload) != 0 {
+				t.Fatalf("empty snapshot not durable: %+v %v %v", doc, found, err)
+			}
+		} else if c.AddDocument(missing, true) == nil {
+			t.Fatalf("empty structured %s snapshot accepted", format)
+		}
+	}
+}
+
 func TestCollectionSwitchAndCloseKeepSessionsIndependent(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "workspace.db"))
 	if err != nil {

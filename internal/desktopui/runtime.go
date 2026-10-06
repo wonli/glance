@@ -212,6 +212,9 @@ func closeUnregisteredSessionAdapters(candidate, existing *sharedDocumentSession
 		_ = candidate.word.Close()
 		candidate.adapterMu.Unlock()
 	}
+	if candidate.markdownDoc != nil && candidate.markdownDoc != existing.markdownDoc {
+		_ = candidate.markdownDoc.Close()
+	}
 	if candidate.jsonDoc != nil && candidate.jsonDoc != existing.jsonDoc {
 		candidate.adapterMu.Lock()
 		_ = candidate.jsonDoc.Close()
@@ -309,6 +312,8 @@ func sharedSessionFromLoadedDocument(loaded loadedDocument) *sharedDocumentSessi
 			format = "xlsx"
 		case loaded.word != nil:
 			format = "docx"
+		case loaded.markdownDoc != nil:
+			format = "markdown"
 		case loaded.jsonDoc != nil:
 			format = "json"
 		}
@@ -320,6 +325,7 @@ func sharedSessionFromLoadedDocument(loaded loadedDocument) *sharedDocumentSessi
 	if loaded.word != nil && loaded.wordBlocks == nil {
 		session.wordBlocks = cloneWordBlockSnapshot(loaded.word.WordBlocks())
 	}
+	session.markdownDoc = loaded.markdownDoc
 	session.jsonDoc = loaded.jsonDoc
 	session.sheets = append([]string(nil), loaded.sheets...)
 	return session
@@ -330,13 +336,14 @@ func loadedDocumentFromSharedSession(session *sharedDocumentSession) loadedDocum
 		return loadedDocument{}
 	}
 	return loadedDocument{
-		shared:     session,
-		path:       session.path,
-		book:       session.book,
-		word:       session.word,
-		wordBlocks: cloneWordBlockSnapshot(session.wordBlocks),
-		jsonDoc:    session.jsonDoc,
-		sheets:     append([]string(nil), session.sheets...),
+		shared:      session,
+		path:        session.path,
+		book:        session.book,
+		word:        session.word,
+		wordBlocks:  cloneWordBlockSnapshot(session.wordBlocks),
+		jsonDoc:     session.jsonDoc,
+		markdownDoc: session.markdownDoc,
+		sheets:      append([]string(nil), session.sheets...),
 	}
 }
 
@@ -466,6 +473,10 @@ func closeSharedDocumentSession(session *sharedDocumentSession) {
 		}
 		if session.word != nil {
 			_ = session.word.Close()
+		}
+		if session.markdownDoc != nil {
+			_ = session.markdownDoc.Close()
+			session.markdownDoc = nil
 		}
 		if session.jsonDoc != nil {
 			_ = session.jsonDoc.Close()

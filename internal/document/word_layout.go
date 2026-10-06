@@ -99,6 +99,7 @@ const (
 	WordTextFontSizeSet
 	WordTextFontColorSet
 	WordTextHighlightSet
+	WordTextStrikeSet
 )
 
 // WordStyle describes one paragraph or character style and its inheritance

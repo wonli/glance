@@ -19,6 +19,7 @@ import (
 	"glance/internal/document"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
+	"glance/internal/format/markdowndoc"
 	wordpdf "glance/internal/format/pdf"
 	legacyxls "glance/internal/format/xls"
 	"glance/internal/format/xlsx"
@@ -47,6 +48,7 @@ type App struct {
 	actionNewXLSX         widget.Clickable
 	actionNewDOCX         widget.Clickable
 	actionNewJSON         widget.Clickable
+	actionNewMarkdown     widget.Clickable
 	actionCloseCreateMenu widget.Clickable
 	applyButton           widget.Clickable
 	goToCellButton        widget.Clickable
@@ -289,13 +291,14 @@ func (a *App) open(path string) error {
 }
 
 type loadedDocument struct {
-	shared     *sharedDocumentSession
-	path       string
-	book       document.Spreadsheet
-	word       *docx.Document
-	wordBlocks []document.WordBlock
-	jsonDoc    *jsondoc.Document
-	sheets     []string
+	shared      *sharedDocumentSession
+	path        string
+	book        document.Spreadsheet
+	word        *docx.Document
+	wordBlocks  []document.WordBlock
+	jsonDoc     *jsondoc.Document
+	markdownDoc *markdowndoc.Document
+	sheets      []string
 }
 type openResult struct {
 	loaded     loadedDocument
@@ -327,6 +330,12 @@ func loadDocument(path string) (loadedDocument, error) {
 			return loadedDocument{}, err
 		}
 		return loadedDocument{path: path, word: word, wordBlocks: cloneWordBlockSnapshot(word.WordBlocks())}, nil
+	case ".md", ".markdown":
+		d, err := markdowndoc.Open(path)
+		if err != nil {
+			return loadedDocument{}, err
+		}
+		return loadedDocument{path: path, markdownDoc: d}, nil
 	case ".json":
 		jsonDocument, err := jsondoc.Open(path)
 		if err != nil {
@@ -345,11 +354,12 @@ func loadDocument(path string) (loadedDocument, error) {
 		}
 		return loadedDocument{path: path, book: book, sheets: sheets}, nil
 	default:
-		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx、.docx 和 .json", filepath.Ext(path))
+		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx、.docx、.json 和 Markdown", filepath.Ext(path))
 	}
 }
 
 func (a *App) installDocument(loaded loadedDocument) error {
+	a.prepareMarkdownDeparture()
 	runtime := a.ensureDesktopRuntime()
 	a.reconcileWorkspaceTabs()
 	a.documentGeneration++
@@ -362,6 +372,9 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		}
 		if loaded.word != nil {
 			loaded.word.SetDirty(false)
+		}
+		if loaded.markdownDoc != nil {
+			loaded.markdownDoc.SetDirty(false)
 		}
 		if loaded.jsonDoc != nil {
 			loaded.jsonDoc.SetDirty(false)
@@ -391,6 +404,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	state := newDocumentSessionView(shared, a.windowID)
 	a.documentSessionState = state
 	a.book, a.word, a.sheets = loaded.book, loaded.word, loaded.sheets
+	a.markdownDoc = loaded.markdownDoc
 	a.jsonDoc = loaded.jsonDoc
 	a.documentSessionState.jsonDoc = loaded.jsonDoc
 	a.path = loaded.path
@@ -414,12 +428,17 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		kind = "draft"
 	}
 	format := strings.TrimPrefix(strings.ToLower(filepath.Ext(loaded.path)), ".")
+	if loaded.markdownDoc != nil {
+		format = "markdown"
+	}
 	if format == "" {
 		switch {
 		case loaded.book != nil:
 			format = "xlsx"
 		case loaded.word != nil:
 			format = "docx"
+		case loaded.markdownDoc != nil:
+			format = "markdown"
 		case loaded.jsonDoc != nil:
 			format = "json"
 		}
@@ -510,6 +529,9 @@ func closeLoadedDocument(loaded loadedDocument) {
 	if loaded.word != nil {
 		_ = loaded.word.Close()
 	}
+	if loaded.markdownDoc != nil {
+		_ = loaded.markdownDoc.Close()
+	}
 	if loaded.jsonDoc != nil {
 		_ = loaded.jsonDoc.Close()
 	}
@@ -572,6 +594,9 @@ func (a *App) startSave() {
 }
 
 func (a *App) startSaveForReason(reason wordSaveReason) {
+	if !a.prepareMarkdownSave() {
+		return
+	}
 	if state := a.documentSessionState; a.word != nil && state != nil && (state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil) {
 		state.wordSaveAfterDrafts = true
 		state.wordSaveAfterDraftsReason = reason
@@ -597,7 +622,7 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 	if !ok {
 		return
 	}
-	book, word, jsonDocument, tabID := a.book, a.word, a.jsonDoc, a.activeTabID
+	book, word, jsonDocument, markdownDocument, tabID := a.book, a.word, a.jsonDoc, a.markdownDoc, a.activeTabID
 	path := sessionPath(state)
 	a.saving = true
 	go func() {
@@ -626,6 +651,8 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 			case <-a.shutdown:
 			}
 			return
+		} else if markdownDocument != nil {
+			err = markdownDocument.Save()
 		} else if jsonDocument != nil {
 			err = jsonDocument.Save()
 		}
@@ -642,12 +669,18 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 }
 
 func (a *App) startSaveAs(path string) {
+	if !a.prepareMarkdownSave() {
+		return
+	}
 	if a.isSaving() {
 		return
 	}
 	format := "xlsx"
 	if a.word != nil {
 		format = "docx"
+	}
+	if a.markdownDoc != nil {
+		format = "markdown"
 	}
 	if a.jsonDoc != nil {
 		format = "json"
@@ -668,7 +701,7 @@ func (a *App) startSaveAs(path string) {
 	if !ok {
 		return
 	}
-	book, word, jsonDocument, tabID := a.book, a.word, a.jsonDoc, a.activeTabID
+	book, word, jsonDocument, markdownDocument, tabID := a.book, a.word, a.jsonDoc, a.markdownDoc, a.activeTabID
 	a.saving = true
 	go func() {
 		unlock := lockSessionAdapterWrite(state)
@@ -704,6 +737,8 @@ func (a *App) startSaveAs(path string) {
 			case <-a.shutdown:
 			}
 			return
+		case markdownDocument != nil:
+			err = markdownDocument.SaveAs(path)
 		case jsonDocument != nil:
 			err = jsonDocument.SaveAs(path)
 		default:
@@ -722,6 +757,13 @@ func (a *App) startSaveAs(path string) {
 }
 
 func validateSaveAsExtension(format, path string) error {
+	if format == "markdown" {
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".md" || ext == ".markdown" {
+			return nil
+		}
+		return fmt.Errorf("另存为扩展名必须是 .md 或 .markdown")
+	}
 	want := map[string]string{"xlsx": ".xlsx", "docx": ".docx", "json": ".json"}[format]
 	if want == "" {
 		return fmt.Errorf("不支持 %s 格式另存为", format)
@@ -860,6 +902,9 @@ func (a *App) applyWordEdit() error {
 }
 
 func (a *App) save() error {
+	if !a.prepareMarkdownSave() {
+		return fmt.Errorf("请先完成输入法选字")
+	}
 	unlock := lockSessionAdapterWrite(a.documentSessionState)
 	defer unlock()
 	switch {
@@ -871,6 +916,8 @@ func (a *App) save() error {
 		if err := a.word.Save(); err != nil {
 			return err
 		}
+	case a.markdownDoc != nil:
+		return a.markdownDoc.Save()
 	case a.jsonDoc != nil:
 		if a.path == "" {
 			return fmt.Errorf("JSON 草稿需要另存为")
@@ -885,10 +932,11 @@ func (a *App) save() error {
 }
 
 func (a *App) isDirty() bool {
-	return sessionDirty(a.documentSessionState) || wordHasPendingTextDrafts(a.documentSessionState) || (a.documentSessionState != nil && (a.documentSessionState.wordParagraphSplitIntent != nil || a.documentSessionState.wordParagraphJoinIntent != nil))
+	return markdownHasPendingDraft(a.documentSessionState) || sessionDirty(a.documentSessionState) || wordHasPendingTextDrafts(a.documentSessionState) || (a.documentSessionState != nil && (a.documentSessionState.wordParagraphSplitIntent != nil || a.documentSessionState.wordParagraphJoinIntent != nil))
 }
 
 func (a *App) closeDocument() error {
+	a.prepareMarkdownDeparture()
 	a.documentGeneration++
 	unlock := lockSessionAdapterWrite(a.documentSessionState)
 	defer unlock()
@@ -902,6 +950,10 @@ func (a *App) closeDocument() error {
 			err = closeErr
 		}
 		a.word = nil
+	}
+	if a.markdownDoc != nil {
+		err = a.markdownDoc.Close()
+		a.markdownDoc = nil
 	}
 	if a.jsonDoc != nil {
 		if closeErr := a.jsonDoc.Close(); err == nil {

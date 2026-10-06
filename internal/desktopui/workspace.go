@@ -16,11 +16,17 @@ import (
 	"glance/internal/document"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
+	"glance/internal/format/markdowndoc"
 	"glance/internal/format/xlsx"
 	"glance/internal/workspace"
 )
 
 type sessionViewSnapshot struct {
+	MarkdownMode               int  `json:"markdown_mode"`
+	MarkdownCollapsed          bool `json:"markdown_collapsed"`
+	MarkdownStart, MarkdownEnd int
+	MarkdownPreviewFirst       int
+	MarkdownQuery              string
 	Sheet                      string         `json:"sheet"`
 	SelectedCell               string         `json:"selected_cell"`
 	SelectedBlock              int            `json:"selected_block"`
@@ -165,7 +171,7 @@ func (a *App) initializeWorkspace() {
 }
 
 func hasRestorableSnapshot(record workspace.Session) bool {
-	return record.Format != "" && (len(record.Payload) > 0 || strings.EqualFold(record.Format, "json") || isEmptyDraftWithoutSnapshot(record))
+	return record.Format != "" && (len(record.Payload) > 0 || strings.EqualFold(record.Format, "json") || strings.EqualFold(record.Format, "markdown") || strings.EqualFold(record.Format, "md") || isEmptyDraftWithoutSnapshot(record))
 }
 
 func isEmptyDraftWithoutSnapshot(record workspace.Session) bool {
@@ -173,7 +179,7 @@ func isEmptyDraftWithoutSnapshot(record workspace.Session) bool {
 		return false
 	}
 	switch strings.ToLower(record.Format) {
-	case "docx", "xlsx", "json":
+	case "docx", "xlsx", "json", "markdown", "md":
 		return true
 	default:
 		return false
@@ -228,6 +234,14 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
 		word.SetSourcePath(record.Tab.SourcePath)
 		word.SetDirty(record.Dirty)
+	case "md", "markdown":
+		d, err := markdowndoc.OpenSnapshot(record.Payload)
+		if err != nil {
+			return nil, err
+		}
+		d.SetSourcePath(record.Tab.SourcePath)
+		d.SetDirty(record.Dirty)
+		state.markdownDoc = d
 	case "json":
 		var jsonDocument *jsondoc.Document
 		if isEmptyDraftWithoutSnapshot(record) {
@@ -291,6 +305,16 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		state.selection = CellSelection{Anchor: position, Active: position}
 		state.selectionSet = true
 	}
+	if state.markdownDoc != nil {
+		v := newMarkdownView(state.markdownDoc.Text())
+		v.mode = min(2, max(0, view.MarkdownMode))
+		v.collapsed = view.MarkdownCollapsed
+		start, end := clampEditorSelection(view.MarkdownStart, view.MarkdownEnd, v.editor.Text())
+		v.editor.SetCaret(start, end)
+		v.preview.Position.First = max(0, view.MarkdownPreviewFirst)
+		v.search.SetText(view.MarkdownQuery)
+		state.markdownView = v
+	}
 	state.nameBox.SetText(state.selectedCell)
 	return state, nil
 }
@@ -345,6 +369,9 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 	if state == nil || state.closed.Load() {
 		return
 	}
+	if a.documentSessionState != state {
+		a.prepareMarkdownDeparture()
+	}
 	a.documentGeneration++
 	a.closeWordVersionHistory()
 	if a.activeTabID != "" && a.documentSessionState != nil {
@@ -385,6 +412,8 @@ func (a *App) snapshotActive() ([]byte, error) {
 		return nil, fmt.Errorf("当前表格格式不支持工作区快照")
 	case a.word != nil:
 		return a.word.Snapshot()
+	case a.markdownDoc != nil:
+		return a.markdownDoc.Snapshot()
 	case a.jsonDoc != nil:
 		return a.jsonDoc.Snapshot()
 	default:
@@ -532,7 +561,7 @@ func scanOfficeFolder(path string) ([]workspace.Recent, error) {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext != ".xlsx" && ext != ".xls" && ext != ".docx" && ext != ".json" {
+		if ext != ".xlsx" && ext != ".xls" && ext != ".docx" && ext != ".json" && ext != ".md" && ext != ".markdown" {
 			continue
 		}
 		recents = append(recents, workspace.Recent{Path: filepath.Join(path, entry.Name()), Kind: strings.TrimPrefix(ext, ".")})
@@ -569,6 +598,8 @@ func snapshotState(state *documentSessionState) ([]byte, error) {
 		}
 	case state.word != nil:
 		return state.word.Snapshot()
+	case state.markdownDoc != nil:
+		return state.markdownDoc.Snapshot()
 	case state.jsonDoc != nil:
 		return state.jsonDoc.Snapshot()
 	default:
@@ -579,7 +610,7 @@ func snapshotState(state *documentSessionState) ([]byte, error) {
 func sessionDirty(state *documentSessionState) bool {
 	unlock := lockSessionAdapterRead(state)
 	defer unlock()
-	return state.book != nil && state.book.Dirty() || state.word != nil && state.word.Dirty() || state.jsonDoc != nil && state.jsonDoc.Dirty()
+	return state.book != nil && state.book.Dirty() || state.word != nil && state.word.Dirty() || state.jsonDoc != nil && state.jsonDoc.Dirty() || state.markdownDoc != nil && state.markdownDoc.Dirty()
 }
 
 func sessionPath(state *documentSessionState) string {
@@ -610,6 +641,14 @@ func (a *App) viewStateBytes() []byte {
 		if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
 			view.SelectedWordSelectionStart, view.SelectedWordSelectionEnd = editor.Selection()
 		}
+	}
+	if a.markdownView != nil {
+		v := a.markdownView
+		view.MarkdownMode = v.mode
+		view.MarkdownCollapsed = v.collapsed
+		view.MarkdownStart, view.MarkdownEnd = v.editor.Selection()
+		view.MarkdownPreviewFirst = v.preview.Position.First
+		view.MarkdownQuery = v.search.Text()
 	}
 	if a.virtualGrid != nil {
 		view.GridX, view.GridY, view.GridScale = a.virtualGrid.X, a.virtualGrid.Y, a.virtualGrid.Scale
@@ -693,6 +732,9 @@ func (a *App) updatePersistedTab(meta workspace.Tab) {
 }
 
 func sessionFormat(meta workspace.Tab, state *documentSessionState) string {
+	if state != nil && state.markdownDoc != nil {
+		return "markdown"
+	}
 	format := strings.TrimPrefix(strings.ToLower(filepath.Ext(meta.SourcePath)), ".")
 	if format == "" {
 		format = strings.TrimPrefix(strings.ToLower(filepath.Ext(meta.Title)), ".")

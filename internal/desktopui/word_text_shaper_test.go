@@ -8,8 +8,20 @@ import (
 	"testing"
 
 	"github.com/go-text/typesetting/font"
+	"github.com/go-text/typesetting/fontscan"
 	"glance/internal/document"
 )
+
+func TestWordFontFallbackUsesRealSymbolsBeforeLastResort(t *testing.T) {
+	s := &wordTextShaper{fonts: []fontscan.Footprint{
+		{Family: ".lastresort", Location: fontscan.Location{File: "/fonts/LastResort.otf"}},
+		{Family: "symbol", Location: fontscan.Location{File: "/fonts/Symbol.ttf"}},
+	}}
+	ordered := s.orderedFonts(document.WordTextStyle{})
+	if len(ordered) != 2 || ordered[0].Family != "symbol" {
+		t.Fatalf("fallback order: %v", ordered)
+	}
+}
 
 func TestWordTextShaperMixedCJKLatinMissingGlyphUsesReportedFallback(t *testing.T) {
 	shaper, err := newWordTextShaperWithCacheDir(t.TempDir())

@@ -105,6 +105,7 @@ type WordTextStyle struct {
 	Bold       bool
 	Italic     bool
 	Underline  bool
+	Strike     bool
 	FontFamily string
 	FontSize   float64
 	FontColor  string

@@ -3,7 +3,9 @@ module glance
 go 1.27.0
 
 require (
+	codeberg.org/go-latex/latex v0.3.0
 	gioui.org v0.10.2
+	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/SalvioniDigitalSolutions/gopdf v0.0.0-20260922202729-55a8f5fed5f5
 	github.com/extrame/xls v0.0.1
 	github.com/gin-gonic/gin v1.12.0
@@ -14,7 +16,8 @@ require (
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
 	github.com/wonli/aqi v1.11.0
 	github.com/xuri/excelize/v2 v2.11.0
-	golang.org/x/image v0.38.0
+	github.com/yuin/goldmark v1.7.13
+	golang.org/x/image v0.40.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
 	gorm.io/gen v0.3.29
@@ -25,11 +28,13 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	gioui.org/shader v1.0.9 // indirect
+	git.sr.ht/~sbinet/gg v0.7.0 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic v1.15.4 // indirect
 	github.com/bytedance/sonic/loader v0.5.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect
+	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/extrame/ole2 v0.0.0-20160812065207-d69429661ad7 // indirect
 	github.com/fatih/color v1.19.0 // indirect
@@ -48,6 +53,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect

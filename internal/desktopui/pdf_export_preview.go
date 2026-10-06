@@ -23,7 +23,9 @@ import (
 
 type pdfExportPreviewState struct {
 	Active           bool
-	Format           string // "word", "spreadsheet"
+	Format           string // "word", "spreadsheet", "markdown"
+	markdownResult   markdownFileResult
+	resourceWarnings widget.List
 	Orientation      string // "portrait", "landscape"
 	CurrentPageIndex int    // 0-indexed
 	TotalPages       int
@@ -363,6 +365,8 @@ func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
 			prev.TotalPages = pagination.TotalPages
 			prev.Orientation = "portrait"
 			prev.CurrentPageIndex = 0
+		} else if prev.Format == "markdown" {
+			a.updateMarkdownPDFOrientation("portrait")
 		} else if prev.Format == "word" {
 			if err := a.updateWordPreviewOrientation("portrait"); err != nil {
 				a.setStatus("切换 PDF 方向失败：" + err.Error())
@@ -384,6 +388,8 @@ func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
 			prev.TotalPages = pagination.TotalPages
 			prev.Orientation = "landscape"
 			prev.CurrentPageIndex = 0
+		} else if prev.Format == "markdown" {
+			a.updateMarkdownPDFOrientation("landscape")
 		} else if prev.Format == "word" {
 			if err := a.updateWordPreviewOrientation("landscape"); err != nil {
 				a.setStatus("切换 PDF 方向失败：" + err.Error())
@@ -523,7 +529,7 @@ func (a *App) layoutPDFExportSummaryRow(gtx layout.Context) layout.Dimensions {
 
 	hintText := "正文根据所选方向流式重排"
 	hintColor := color.NRGBA{R: 71, G: 85, B: 105, A: 255}
-	if prev.Format == "word" && prev.wordPreviewPending {
+	if (prev.Format == "word" || prev.Format == "markdown") && prev.wordPreviewPending {
 		hintText = "正在按所选方向重新排版…"
 	}
 	if prev.Format == "spreadsheet" {
