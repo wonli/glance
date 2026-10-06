@@ -143,6 +143,8 @@ type App struct {
 	wordPDFPreviewResults        chan wordPDFPreviewResult
 	wordShareCopyResults         chan wordShareCopyResult
 	wordShareCopyRequest         *wordShareCopyPickerRequest
+	spreadsheetShareCopyResults  chan spreadsheetShareCopyResult
+	spreadsheetShareCopyRequest  *spreadsheetShareCopyPickerRequest
 	wordPDFFontSource            wordpdf.FontSource
 	wordPrinter                  printservice.Printer
 	wordPrintResults             chan wordPrintResult
@@ -198,6 +200,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		spreadsheetPDFPreviewResults: make(chan spreadsheetPDFPreviewResult, 1),
 		wordPDFPreviewResults:        make(chan wordPDFPreviewResult, 1),
 		wordShareCopyResults:         make(chan wordShareCopyResult, 1),
+		spreadsheetShareCopyResults:  make(chan spreadsheetShareCopyResult, 1),
 		wordPrinter:                  printservice.New(),
 		wordPrintResults:             make(chan wordPrintResult, 1),
 		wordVersionHistoryResults:    make(chan wordVersionHistoryResult, 1),
@@ -230,6 +233,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		wordLayoutResults:       make(chan wordLayoutResult, 8),
 		windowOpenResults:       make(chan error, 1),
 	}
+
 	if window != nil {
 		a.attachWindow(windowID, a)
 		a.initializeWorkspace()

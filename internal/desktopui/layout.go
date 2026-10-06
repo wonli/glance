@@ -117,6 +117,11 @@ func (a *App) processAsyncResults() {
 	default:
 	}
 	select {
+	case result := <-a.spreadsheetShareCopyResults:
+		a.applySpreadsheetShareCopyResult(result)
+	default:
+	}
+	select {
 	case result := <-a.wordPrintResults:
 		a.applyWordPrintResult(result)
 	default:
@@ -197,6 +202,7 @@ func (a *App) processAsyncResults() {
 			}
 			if result.kind == commandShareCopy {
 				a.wordShareCopyRequest = nil
+				a.spreadsheetShareCopyRequest = nil
 			}
 			if result.kind == commandSaveAs && a.pendingCloseTabID != "" {
 				a.showCloseConfirmation(a.pendingCloseTabID, "保存失败", "无法选择另存为位置。可以重试保存、不保存并关闭，或取消关闭。")
@@ -246,14 +252,18 @@ func (a *App) processAsyncResults() {
 					a.setStatus("PDF 导出状态已过期，请重新导出")
 				}
 			case commandShareCopy:
-				request := a.wordShareCopyRequest
+				wordReq := a.wordShareCopyRequest
+				sheetReq := a.spreadsheetShareCopyRequest
 				a.wordShareCopyRequest = nil
+				a.spreadsheetShareCopyRequest = nil
 				if result.path == "" {
 					a.setStatus("已取消共享副本导出")
-				} else if request == nil {
-					a.setStatus("共享副本状态已过期，请重新导出")
+				} else if wordReq != nil {
+					a.startWordShareCopyFile(wordReq, result.path)
+				} else if sheetReq != nil {
+					a.startSpreadsheetShareCopyFile(sheetReq, result.path)
 				} else {
-					a.startWordShareCopyFile(request, result.path)
+					a.setStatus("共享副本状态已过期，请重新导出")
 				}
 			}
 		}

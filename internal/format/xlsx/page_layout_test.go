@@ -268,3 +268,74 @@ func TestWorkbookGridlinesAndUndo(t *testing.T) {
 	}
 }
 
+func TestWorkbookPageLayoutPrintTitlesAndUndo(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+
+	sheet := wb.SheetNames()[0]
+	editor, ok := any(wb).(document.SpreadsheetPageLayoutEditor)
+	if !ok {
+		t.Fatal("workbook does not implement SpreadsheetPageLayoutEditor")
+	}
+
+	layout, err := editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PrintTitles != "" {
+		t.Fatalf("expected empty initial print titles, got %q", layout.PrintTitles)
+	}
+
+	// Set print titles to repeated rows "$1:$1"
+	if err := editor.SetSheetPrintTitles(sheet, "$1:$1"); err != nil {
+		t.Fatalf("SetSheetPrintTitles failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PrintTitles != "$1:$1" {
+		t.Fatalf("expected print titles $1:$1, got %q", layout.PrintTitles)
+	}
+
+	// Undo
+	history := any(wb).(document.SpreadsheetHistory)
+	undone, err := history.Undo()
+	if err != nil || !undone {
+		t.Fatalf("Undo failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PrintTitles != "" {
+		t.Fatalf("expected empty print titles after undo, got %q", layout.PrintTitles)
+	}
+
+	// Redo
+	redone, err := history.Redo()
+	if err != nil || !redone {
+		t.Fatalf("Redo failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PrintTitles != "$1:$1" {
+		t.Fatalf("expected print titles after redo, got %q", layout.PrintTitles)
+	}
+
+	// Clear print titles
+	if err := editor.SetSheetPrintTitles(sheet, ""); err != nil {
+		t.Fatalf("clear print titles failed: %v", err)
+	}
+	layout, err = editor.GetSheetPageLayout(sheet)
+	if err != nil {
+		t.Fatalf("GetSheetPageLayout failed: %v", err)
+	}
+	if layout.PrintTitles != "" {
+		t.Fatalf("expected empty print titles after clear, got %q", layout.PrintTitles)
+	}
+}
+
+

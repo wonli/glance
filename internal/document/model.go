@@ -214,6 +214,7 @@ type SpreadsheetPageLayout struct {
 	MarginBottom float64 // in inches (e.g. 0.75)
 	MarginLeft   float64 // in inches (e.g. 0.7)
 	PrintArea    string  // e.g. "$A$1:$D$10" or empty
+	PrintTitles  string  // e.g. "$1:$1" or empty
 }
 
 // SpreadsheetPageLayoutEditor is an optional capability for editing worksheet page setup.
@@ -223,12 +224,26 @@ type SpreadsheetPageLayoutEditor interface {
 	SetSheetPageMargins(sheet string, top, right, bottom, left float64) error
 	SetSheetPageSize(sheet string, paperSize int) error
 	SetSheetPrintArea(sheet string, printArea string) error
+	SetSheetPrintTitles(sheet string, printTitles string) error
 }
 
 // SpreadsheetGridlinesEditor is an optional capability for reading and toggling worksheet gridlines.
 type SpreadsheetGridlinesEditor interface {
 	GetSheetGridlines(sheet string) (bool, error)
 	SetSheetGridlines(sheet string, show bool) error
+}
+
+// CellHyperlink describes a hyperlink attached to a worksheet cell.
+type CellHyperlink struct {
+	Target  string // e.g. "https://example.com" or "Sheet2!A1"
+	Tooltip string // optional hover text
+}
+
+// SpreadsheetHyperlinkEditor is an optional capability for managing worksheet hyperlinks.
+type SpreadsheetHyperlinkEditor interface {
+	GetCellHyperlink(sheet, cell string) (CellHyperlink, bool, error)
+	SetCellHyperlink(sheet, cell, target, tooltip string) error
+	RemoveCellHyperlink(sheet, cell string) error
 }
 
 

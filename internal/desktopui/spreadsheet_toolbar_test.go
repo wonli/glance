@@ -687,7 +687,48 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 		t.Fatalf("expected empty print area after clear, got %+v (err=%v)", pageLayout, err)
 	}
 
-	// 5. View Gridlines Toggle
+	// 5. Print Titles / Header Row Dialog
+	if !app.toolbarActionEnabled(toolbarActionHeaderRow) {
+		t.Fatal("header-row / print-titles should be enabled")
+	}
+	app.showSpreadsheetPrintTitlesDialog()
+	if !app.modal.Visible || app.modal.Title != "打印标题设置" {
+		t.Fatalf("expected modal dialog for print titles, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("set")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("set print titles failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for print titles formatResult")
+	}
+	pageLayout, err = wb.GetSheetPageLayout(state.sheet)
+	if err != nil || pageLayout.PrintTitles != "$1:$10" {
+		t.Fatalf("expected print titles $1:$10, got %+v (err=%v)", pageLayout, err)
+	}
+
+	// Clear print titles
+	app.showSpreadsheetPrintTitlesDialog()
+	if !app.modal.Visible {
+		t.Fatal("expected modal dialog for print titles")
+	}
+	app.modal.OnAction("clear")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("clear print titles failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for clear print titles formatResult")
+	}
+	pageLayout, err = wb.GetSheetPageLayout(state.sheet)
+	if err != nil || pageLayout.PrintTitles != "" {
+		t.Fatalf("expected empty print titles after clear, got %+v (err=%v)", pageLayout, err)
+	}
+
+	// 6. View Gridlines Toggle
 	if !app.toolbarActionEnabled(toolbarActionViewGridlines) {
 		t.Fatal("view-gridlines should be enabled")
 	}
@@ -715,4 +756,67 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 		t.Fatalf("expected status '已显示网格线', got %q", app.status)
 	}
 }
+
+func TestSpreadsheetLinkDialogAndCommand(t *testing.T) {
+	wb := xlsx.NewBlank()
+	defer wb.Close()
+
+	state := newDocumentSessionState("")
+	state.book = wb
+	state.sheet = wb.SheetNames()[0]
+	state.selectionSet = true
+	state.selection = CellSelection{
+		Anchor: CellPosition{Row: 1, Column: 1},
+		Active: CellPosition{Row: 1, Column: 1}, // B2
+	}
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	if !app.toolbarActionEnabled(toolbarActionInsertLink) {
+		t.Fatal("toolbarActionInsertLink should be enabled")
+	}
+
+	// 1. Show link dialog on empty cell B2
+	app.showSpreadsheetLinkDialog()
+	if !app.modal.Visible || app.modal.Title != "插入链接" {
+		t.Fatalf("expected modal dialog for link, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("https://example.com")
+	app.modal.SecondInput.SetText("Example")
+	app.modal.OnAction("confirm")
+
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("insert link failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for insert link formatResult")
+	}
+
+	link, ok, err := wb.GetCellHyperlink(state.sheet, "B2")
+	if err != nil || !ok || link.Target != "https://example.com" {
+		t.Fatalf("expected hyperlink https://example.com on B2, got ok=%v target=%q (err=%v)", ok, link.Target, err)
+	}
+
+	// 2. Reopen link dialog on B2 (now has link) and remove link
+	app.showSpreadsheetLinkDialog()
+	if !app.modal.Visible {
+		t.Fatal("expected modal dialog for link")
+	}
+	app.modal.OnAction("remove")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("remove link failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for remove link formatResult")
+	}
+
+	link, ok, err = wb.GetCellHyperlink(state.sheet, "B2")
+	if err != nil || ok {
+		t.Fatalf("expected no hyperlink after remove, got ok=%v (err=%v)", ok, err)
+	}
+}
+
 

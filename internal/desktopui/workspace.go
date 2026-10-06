@@ -486,7 +486,11 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 	case commandExportPDF:
 		a.setStatus("选择 PDF 保存位置…")
 	case commandShareCopy:
-		a.setStatus("选择共享 DOCX 副本保存位置…")
+		if format == "xlsx" {
+			a.setStatus("选择共享 XLSX 副本保存位置…")
+		} else {
+			a.setStatus("选择共享 DOCX 副本保存位置…")
+		}
 	}
 	runner := a.fileCommandRunner
 	go func() {

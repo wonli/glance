@@ -551,7 +551,30 @@ func (w *Workbook) SaveAsDocument(path string) error {
 	return nil
 }
 
+// SaveAsWithCommitGuard writes a copy and checks guard after the temporary
+// package has been fully written but immediately before it replaces path.
+// A successful guard may return a release function that is called after the
+// atomic replacement attempt completes.
+func (w *Workbook) SaveAsWithCommitGuard(path string, guard func() (func(), error)) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return err
+	}
+	return w.saveToWithGuard(path, guard)
+}
+
+func (w *Workbook) HistoryState() uint64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.historyState
+}
+
 func (w *Workbook) saveTo(path string) error {
+	return w.saveToWithGuard(path, nil)
+}
+
+func (w *Workbook) saveToWithGuard(path string, guard func() (func(), error)) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".glance-*.xlsx")
 	if err != nil {
@@ -576,6 +599,16 @@ func (w *Workbook) saveTo(path string) error {
 	}
 	if err := written.Close(); err != nil {
 		return err
+	}
+	var release func()
+	if guard != nil {
+		release, err = guard()
+		if err != nil {
+			return err
+		}
+	}
+	if release != nil {
+		defer release()
 	}
 	if err := fileutil.ReplaceFile(tmpPath, path); err != nil {
 		return fmt.Errorf("replace workbook: %w", err)

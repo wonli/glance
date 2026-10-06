@@ -58,7 +58,13 @@ func (w *Workbook) GetSheetPageLayout(sheet string) (document.SpreadsheetPageLay
 				ref = ref[idx+1:]
 			}
 			result.PrintArea = ref
-			break
+		}
+		if dn.Name == "_xlnm.Print_Titles" && (dn.Scope == sheet || (dn.Scope == "" && (strings.HasPrefix(dn.RefersTo, sheet+"!") || strings.HasPrefix(dn.RefersTo, "'"+sheet+"'!")))) {
+			ref := dn.RefersTo
+			if idx := strings.Index(ref, "!"); idx >= 0 {
+				ref = ref[idx+1:]
+			}
+			result.PrintTitles = ref
 		}
 	}
 	return result, nil
@@ -169,6 +175,41 @@ func (w *Workbook) SetSheetPrintArea(sheet string, printArea string) error {
 			Scope:    sheet,
 		}); err != nil {
 			return fmt.Errorf("set print area for sheet %q: %w", sheet, err)
+		}
+	}
+	if err := w.recordHistoryLocked(beforeSnapshot); err != nil {
+		return err
+	}
+	w.dirty = true
+	return nil
+}
+
+// SetSheetPrintTitles sets or clears the repeating rows/columns titles for printing a worksheet.
+// If printTitles is empty, any existing print titles for the worksheet are removed.
+func (w *Workbook) SetSheetPrintTitles(sheet string, printTitles string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return err
+	}
+	beforeSnapshot, err := w.snapshotLocked()
+	if err != nil {
+		return err
+	}
+	cleanTitles := strings.TrimSpace(printTitles)
+	if cleanTitles == "" {
+		_ = w.file.DeleteDefinedName(&excelize.DefinedName{
+			Name:  "_xlnm.Print_Titles",
+			Scope: sheet,
+		})
+	} else {
+		refersTo := fmt.Sprintf("'%s'!%s", strings.ReplaceAll(sheet, "'", "''"), cleanTitles)
+		if err := w.file.SetDefinedName(&excelize.DefinedName{
+			Name:     "_xlnm.Print_Titles",
+			RefersTo: refersTo,
+			Scope:    sheet,
+		}); err != nil {
+			return fmt.Errorf("set print titles for sheet %q: %w", sheet, err)
 		}
 	}
 	if err := w.recordHistoryLocked(beforeSnapshot); err != nil {

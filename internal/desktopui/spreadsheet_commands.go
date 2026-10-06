@@ -906,4 +906,140 @@ func (a *App) showSpreadsheetPrintAreaDialog() {
 	}, actions...)
 }
 
+func (a *App) runSpreadsheetHyperlinkCommand(operation string, edit func(document.SpreadsheetHyperlinkEditor) error) {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || state.formatRunning.Load() {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetHyperlinkEditor)
+	if !ok {
+		return
+	}
+	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
+	go func() {
+		unlock := lockSessionAdapterWrite(state)
+		err := edit(editor)
+		unlock()
+		a.completeSessionOperation(state, token, err, true)
+		select {
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case <-a.shutdown:
+		}
+	}()
+}
+
+func (a *App) showSpreadsheetLinkDialog() {
+	state := a.documentSessionState
+	if state == nil || state.book == nil {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetHyperlinkEditor)
+	if !ok {
+		return
+	}
+	col := state.selection.Active.Column + 1
+	row := state.selection.Active.Row + 1
+	cellName := xlsx.CellName(col, row)
+	sheet := state.sheet
+
+	existingLink, hasLink, _ := editor.GetCellHyperlink(sheet, cellName)
+	initialTarget := existingLink.Target
+	initialTooltip := existingLink.Tooltip
+
+	actions := []modalDialogActionSpec{
+		{ID: "confirm", Label: "确定"},
+	}
+	if hasLink {
+		actions = append(actions, modalDialogActionSpec{ID: "remove", Label: "删除链接"})
+	}
+	actions = append(actions, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+
+	a.modal.ShowDualInput("插入链接", fmt.Sprintf("为单元格 %s 设置超链接：", cellName),
+		initialTarget, "链接地址 (例如 https://example.com 或 Sheet2!A1)",
+		initialTooltip, "提示文本 (可选)",
+		func(action string) {
+			switch action {
+			case "confirm":
+				target := strings.TrimSpace(a.modal.Input.Text())
+				tooltip := strings.TrimSpace(a.modal.SecondInput.Text())
+				a.modal.Hide()
+				if target == "" {
+					a.setStatus("链接地址不能为空")
+					return
+				}
+				a.runSpreadsheetHyperlinkCommand("插入链接", func(ed document.SpreadsheetHyperlinkEditor) error {
+					return ed.SetCellHyperlink(sheet, cellName, target, tooltip)
+				})
+				a.setStatus(fmt.Sprintf("已为 %s 设置链接：%s", cellName, target))
+			case "remove":
+				a.modal.Hide()
+				a.runSpreadsheetHyperlinkCommand("删除链接", func(ed document.SpreadsheetHyperlinkEditor) error {
+					return ed.RemoveCellHyperlink(sheet, cellName)
+				})
+				a.setStatus(fmt.Sprintf("已删除 %s 的超链接", cellName))
+			case "cancel":
+				a.modal.Hide()
+			}
+		},
+		actions...,
+	)
+}
+
+func (a *App) showSpreadsheetPrintTitlesDialog() {
+	state := a.documentSessionState
+	if state == nil || state.book == nil {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetPageLayoutEditor)
+	if !ok {
+		return
+	}
+	sheet := state.sheet
+	layout, _ := editor.GetSheetPageLayout(sheet)
+	var selRowsRef string
+	if state.selectionSet {
+		bounds := state.selection.Bounds()
+		selRowsRef = fmt.Sprintf("$%d:$%d", bounds.StartRow, bounds.EndRow)
+	}
+
+	var message string
+	if layout.PrintTitles != "" {
+		message = fmt.Sprintf("当前打印标题行：%s\n\n您可将当前选中行设为顶端标题行，或清除现有打印标题。", layout.PrintTitles)
+	} else {
+		message = "当前未设置打印标题行。\n\n在打印多页表格时，打印标题行会在每一页顶端重复打印。\n您可将当前选中行设为顶端标题行。"
+	}
+
+	actions := make([]modalDialogActionSpec, 0, 3)
+	if selRowsRef != "" {
+		actions = append(actions, modalDialogActionSpec{ID: "set", Label: "设为标题行 (" + selRowsRef + ")"})
+	}
+	if layout.PrintTitles != "" {
+		actions = append(actions, modalDialogActionSpec{ID: "clear", Label: "清除标题行"})
+	}
+	actions = append(actions, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+
+	a.modal.Show("打印标题设置", message, func(action string) {
+		a.modal.Hide()
+		switch action {
+		case "set":
+			if selRowsRef == "" {
+				return
+			}
+			a.runSpreadsheetPageLayoutCommand("设置打印标题行", func(ed document.SpreadsheetPageLayoutEditor) error {
+				return ed.SetSheetPrintTitles(sheet, selRowsRef)
+			})
+			a.setStatus("已设置打印标题行：" + selRowsRef)
+		case "clear":
+			a.runSpreadsheetPageLayoutCommand("清除打印标题行", func(ed document.SpreadsheetPageLayoutEditor) error {
+				return ed.SetSheetPrintTitles(sheet, "")
+			})
+			a.setStatus("已清除打印标题行")
+		}
+	}, actions...)
+}
+
 

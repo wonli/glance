@@ -298,6 +298,10 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.requestSpreadsheetPDFExport()
 			continue
 		}
+		if action.slot == toolbarActionShare {
+			a.requestSpreadsheetShareCopy()
+			continue
+		}
 		if action.slot >= 12 && action.slot <= 15 {
 			pos := state.selection.Active
 			kind := []document.StructureEditKind{document.StructureInsertRows, document.StructureDeleteRows, document.StructureInsertColumns, document.StructureDeleteColumns}[action.slot-12]
@@ -442,6 +446,14 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			}
 			continue
 		}
+		if action.slot == toolbarActionInsertLink {
+			a.showSpreadsheetLinkDialog()
+			continue
+		}
+		if action.slot == toolbarActionHeaderRow {
+			a.showSpreadsheetPrintTitlesDialog()
+			continue
+		}
 		style := a.selectedCellStyle()
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
@@ -495,13 +507,14 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		return false
 	}
 	switch slot {
-	case toolbarActionOpenFile, toolbarActionSaveAs, toolbarActionExport,
+	case toolbarActionOpenFile, toolbarActionSaveAs, toolbarActionExport, toolbarActionShare,
 		toolbarActionFormatPainter, toolbarActionFontFamily,
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat,
 		toolbarActionSum, toolbarActionFind,
 		toolbarActionZoomIn, toolbarActionZoom100,
 		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize,
-		toolbarActionPrintArea, toolbarActionViewGridlines:
+		toolbarActionPrintArea, toolbarActionViewGridlines,
+		toolbarActionInsertLink, toolbarActionHeaderRow:
 		return false
 	default:
 		return true
@@ -526,9 +539,12 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	switch slot {
 	case toolbarActionZoomIn, toolbarActionZoom100, toolbarActionViewGridlines:
 		return state.book != nil && state.virtualGrid != nil && !state.formatRunning.Load()
-	case toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize, toolbarActionPrintArea:
+	case toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize, toolbarActionPrintArea, toolbarActionHeaderRow:
 		_, ok := state.book.(document.SpreadsheetPageLayoutEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionInsertLink:
+		_, ok := state.book.(document.SpreadsheetHyperlinkEditor)
+		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case 0, 1:
 		_, ok := state.book.(document.SpreadsheetHistory)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
@@ -582,6 +598,8 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return state.book != nil && !a.isSaving()
 	case toolbarActionExport:
 		return state.book != nil && !state.formatRunning.Load() && !a.isSaving() && !state.spreadsheetPDFExportRunning
+	case toolbarActionShare:
+		return state.book != nil && !state.formatRunning.Load() && !a.isSaving() && !a.fileCommandRunning
 	default:
 		return false
 	}

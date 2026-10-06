@@ -2,6 +2,7 @@ package xlsx
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -37,6 +38,42 @@ func TestSnapshotRestoresEditedWorkbook(t *testing.T) {
 func TestOpenSnapshotRejectsMalformedPayload(t *testing.T) {
 	if _, err := OpenSnapshot(bytes.Repeat([]byte("x"), 32)); err == nil {
 		t.Fatal("expected malformed snapshot error")
+	}
+}
+
+func TestWorkbookSaveAsWithCommitGuard(t *testing.T) {
+	book := NewBlank()
+	defer book.Close()
+	if err := book.SetCellText("Sheet1", "A1", "original"); err != nil {
+		t.Fatal(err)
+	}
+
+	target := filepath.Join(t.TempDir(), "copy.xlsx")
+	// Test when guard fails
+	guardErr := errors.New("guard aborted")
+	err := book.SaveAsWithCommitGuard(target, func() (func(), error) {
+		return nil, guardErr
+	})
+	if !errors.Is(err, guardErr) {
+		t.Fatalf("expected guardErr, got %v", err)
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Fatalf("target should not exist after guard failure")
+	}
+
+	// Test when guard succeeds
+	calledRelease := false
+	err = book.SaveAsWithCommitGuard(target, func() (func(), error) {
+		return func() { calledRelease = true }, nil
+	})
+	if err != nil {
+		t.Fatalf("SaveAsWithCommitGuard failed: %v", err)
+	}
+	if !calledRelease {
+		t.Fatal("release was not called after successful save")
+	}
+	if _, statErr := os.Stat(target); statErr != nil {
+		t.Fatalf("target should exist after successful save: %v", statErr)
 	}
 }
 
