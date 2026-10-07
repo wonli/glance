@@ -497,7 +497,7 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 	totalHeight := prepared.totalHeight()
 	keepTogether := prepared.style.paragraph.KeepTogether || prepared.style.paragraph.KeepWithNext
 	if allowPageFlow && keepTogether && totalHeight <= c.content.HeightPT+epsilonPT && c.used && c.y+totalHeight > c.content.YPT+c.content.HeightPT+epsilonPT {
-		c.nextPage()
+		c.advanceColumn()
 	}
 	if allowPageFlow {
 		if !c.ensureSpace(firstHeight, prepared.sourceID) {
@@ -531,7 +531,11 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 		if borderSourceID == "" {
 			borderSourceID = prepared.sourceID
 		}
-		placeParagraphLine(c, prepared.sourceID, borderSourceID, fixedPageIndex, y, area, prepared.style.paragraph, line, lineIndex == 0, lineIndex == len(prepared.lines)-1)
+		currentArea := area
+		if allowPageFlow {
+			currentArea = c.currentColumnRect()
+		}
+		placeParagraphLine(c, prepared.sourceID, borderSourceID, fixedPageIndex, y, currentArea, prepared.style.paragraph, line, lineIndex == 0, lineIndex == len(prepared.lines)-1)
 		y += line.height
 		if allowPageFlow {
 			c.y = y

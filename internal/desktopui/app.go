@@ -21,6 +21,7 @@ import (
 	"glance/internal/format/jsondoc"
 	"glance/internal/format/markdowndoc"
 	wordpdf "glance/internal/format/pdf"
+	"glance/internal/format/pdfdoc"
 	legacyxls "glance/internal/format/xls"
 	"glance/internal/format/xlsx"
 	"glance/internal/printservice"
@@ -298,6 +299,7 @@ type loadedDocument struct {
 	wordBlocks  []document.WordBlock
 	jsonDoc     *jsondoc.Document
 	markdownDoc *markdowndoc.Document
+	pdfDoc      *pdfdoc.Document
 	sheets      []string
 }
 type openResult struct {
@@ -324,6 +326,12 @@ func loadDocument(path string) (loadedDocument, error) {
 			return loadedDocument{}, fmt.Errorf("工作簿没有可显示的工作表")
 		}
 		return loadedDocument{path: path, book: book, sheets: sheets}, nil
+	case ".pdf":
+		d, err := pdfdoc.Open(path)
+		if err != nil {
+			return loadedDocument{}, err
+		}
+		return loadedDocument{path: path, pdfDoc: d}, nil
 	case ".docx":
 		word, err := docx.Open(path)
 		if err != nil {
@@ -373,6 +381,9 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		if loaded.word != nil {
 			loaded.word.SetDirty(false)
 		}
+		if loaded.pdfDoc != nil {
+			loaded.pdfDoc.SetDirty(false)
+		}
 		if loaded.markdownDoc != nil {
 			loaded.markdownDoc.SetDirty(false)
 		}
@@ -404,6 +415,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	state := newDocumentSessionView(shared, a.windowID)
 	a.documentSessionState = state
 	a.book, a.word, a.sheets = loaded.book, loaded.word, loaded.sheets
+	a.pdfDoc = loaded.pdfDoc
 	a.markdownDoc = loaded.markdownDoc
 	a.jsonDoc = loaded.jsonDoc
 	a.documentSessionState.jsonDoc = loaded.jsonDoc
@@ -523,6 +535,9 @@ func closeLoadedDocument(loaded loadedDocument) {
 	if loaded.shared != nil {
 		return
 	}
+	if loaded.pdfDoc != nil {
+		_ = loaded.pdfDoc.Close()
+	}
 	if loaded.book != nil {
 		_ = loaded.book.Close()
 	}
@@ -622,7 +637,7 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 	if !ok {
 		return
 	}
-	book, word, jsonDocument, markdownDocument, tabID := a.book, a.word, a.jsonDoc, a.markdownDoc, a.activeTabID
+	book, word, jsonDocument, markdownDocument, pdfDocument, tabID := a.book, a.word, a.jsonDoc, a.markdownDoc, a.pdfDoc, a.activeTabID
 	path := sessionPath(state)
 	a.saving = true
 	go func() {
@@ -651,6 +666,8 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 			case <-a.shutdown:
 			}
 			return
+		} else if pdfDocument != nil {
+			err = pdfDocument.Save()
 		} else if markdownDocument != nil {
 			err = markdownDocument.Save()
 		} else if jsonDocument != nil {
@@ -682,6 +699,9 @@ func (a *App) startSaveAs(path string) {
 	if a.markdownDoc != nil {
 		format = "markdown"
 	}
+	if a.pdfDoc != nil {
+		format = "pdf"
+	}
 	if a.jsonDoc != nil {
 		format = "json"
 	}
@@ -701,7 +721,7 @@ func (a *App) startSaveAs(path string) {
 	if !ok {
 		return
 	}
-	book, word, jsonDocument, markdownDocument, tabID := a.book, a.word, a.jsonDoc, a.markdownDoc, a.activeTabID
+	book, word, jsonDocument, markdownDocument, pdfDocument, tabID := a.book, a.word, a.jsonDoc, a.markdownDoc, a.pdfDoc, a.activeTabID
 	a.saving = true
 	go func() {
 		unlock := lockSessionAdapterWrite(state)
@@ -737,6 +757,8 @@ func (a *App) startSaveAs(path string) {
 			case <-a.shutdown:
 			}
 			return
+		case pdfDocument != nil:
+			err = pdfDocument.SaveAs(path)
 		case markdownDocument != nil:
 			err = markdownDocument.SaveAs(path)
 		case jsonDocument != nil:
@@ -916,6 +938,8 @@ func (a *App) save() error {
 		if err := a.word.Save(); err != nil {
 			return err
 		}
+	case a.pdfDoc != nil:
+		return a.pdfDoc.Save()
 	case a.markdownDoc != nil:
 		return a.markdownDoc.Save()
 	case a.jsonDoc != nil:
@@ -950,6 +974,10 @@ func (a *App) closeDocument() error {
 			err = closeErr
 		}
 		a.word = nil
+	}
+	if a.pdfDoc != nil {
+		err = a.pdfDoc.Close()
+		a.pdfDoc = nil
 	}
 	if a.markdownDoc != nil {
 		err = a.markdownDoc.Close()

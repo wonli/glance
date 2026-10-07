@@ -2953,8 +2953,11 @@ func (a *App) showWordHyperlinkDialog() {
 				a.window.Invalidate()
 			}
 		},
+		modalDialogActionSpec{ID: "confirm", Label: "插入"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
 }
+
 
 func (a *App) showWordTextBoxDialog() {
 	state := a.documentSessionState

@@ -68,6 +68,9 @@ func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, style
 		}
 		y := c.y
 		x := area.XPT
+		if c.columns > 1 {
+			x = c.currentColumnRect().XPT
+		}
 		for cellIndex, cell := range row.cells {
 			cellWidth := area.WidthPT / float64(max(1, len(widths)))
 			if cellIndex < len(widths) {

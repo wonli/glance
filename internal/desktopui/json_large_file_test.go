@@ -157,3 +157,39 @@ func TestJSONLargeFileInteractiveLayout(t *testing.T) {
 		t.Fatal("viewing large JSON modified the original source")
 	}
 }
+
+func TestJSONSyntheticLargeFileLayout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy 100MB layout test in short mode")
+	}
+	var b strings.Builder
+	b.WriteString("[\n")
+	for i := 0; b.Len() < 100*1024*1024; i++ {
+		if i > 0 {
+			b.WriteString(",\n")
+		}
+		b.WriteString(`{"id": 123456, "name": "test_user_name_string", "active": true, "score": 98.5, "email": "user@example.com", "role": "developer"}`)
+	}
+	b.WriteString("\n]")
+	text := b.String()
+
+	tree, err := jsondoc.ParseTree(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := newTestAppWithJSON(t, text)
+	v := app.ensureJSONView()
+	segments := jsonSourceSegments(text)
+	v.accept(jsonTreeResult{text: text, tree: tree, segments: segments, baselineSegments: segments})
+
+	if len(v.outline) > 1000 {
+		t.Fatalf("outline has too many entries: %d", len(v.outline))
+	}
+	var ops op.Ops
+	gtx := layout.Context{Ops: &ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(1200, 800))}
+	dims := app.layoutJSON(gtx)
+	if dims.Size != image.Pt(1200, 800) {
+		t.Fatalf("unexpected dims: %v", dims)
+	}
+}
+

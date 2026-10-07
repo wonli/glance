@@ -584,6 +584,9 @@ func (a *App) processAsyncResults() {
 						}
 						state.markdownDoc.SetSourcePath(result.path)
 					}
+					if state.pdfDoc != nil {
+						state.pdfDoc.SetSourcePath(result.path)
+					}
 					if state.jsonDoc != nil {
 						state.jsonDoc.SetSourcePath(result.path)
 					}
@@ -718,7 +721,7 @@ func (a *App) visibleStatus() string {
 }
 
 func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
-	if a.activeTabID == "recent" || (a.book == nil && a.word == nil && a.jsonDoc == nil && a.markdownDoc == nil) {
+	if a.activeTabID == "recent" || (a.book == nil && a.word == nil && a.jsonDoc == nil && a.markdownDoc == nil && a.pdfDoc == nil) {
 		return a.layoutRecent(gtx)
 	}
 	switch {
@@ -726,6 +729,8 @@ func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
 		return a.layoutWorkbook(gtx)
 	case a.word != nil:
 		return a.layoutWord(gtx)
+	case a.pdfDoc != nil:
+		return a.layoutPDFDocument(gtx)
 	case a.markdownDoc != nil:
 		return a.layoutMarkdownDocument(gtx)
 	case a.jsonDoc != nil:

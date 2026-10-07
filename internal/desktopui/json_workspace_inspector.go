@@ -71,13 +71,13 @@ func (a *App) layoutJSONInspector(gtx layout.Context) layout.Dimensions {
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return a.layoutJSONPathField(gtx, "点路径", n.DotPath, "copy-dot")
+						return a.layoutJSONPathField(gtx, "点路径", v.tree.NodeDotPath(v.selected), "copy-dot")
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return a.layoutJSONPathField(gtx, "JSONPath", n.JSONPath, "copy-path")
+						return a.layoutJSONPathField(gtx, "JSONPath", v.tree.NodeJSONPath(v.selected), "copy-path")
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return a.layoutJSONPathField(gtx, "JSON Pointer", n.Pointer, "copy-pointer")
+						return a.layoutJSONPathField(gtx, "JSON Pointer", v.tree.NodePointer(v.selected), "copy-pointer")
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: 18}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

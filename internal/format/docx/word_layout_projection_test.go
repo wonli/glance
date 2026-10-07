@@ -189,7 +189,7 @@ func TestWordLayoutProjectionReportsUnsupportedSectionsAndTableStructures(t *tes
 	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
 	<w:p><w:r><w:t>section one</w:t></w:r><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:pPr></w:p>
 	<w:tbl><w:tblGrid><w:gridCol w:w="4320"/><w:gridCol w:w="4320"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>merged</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>nested</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>vertical merge</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
-	<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/><w:cols w:num="2"/></w:sectPr>
+	<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/><w:cols w:num="5"/></w:sectPr>
 	</w:body></w:document>`
 	doc := wordLayoutProjectionFixture(t, documentXML, "")
 	data := requireWordLayoutReader(t, doc).WordLayoutData()
@@ -208,6 +208,30 @@ func TestWordLayoutProjectionReportsUnsupportedSectionsAndTableStructures(t *tes
 	for _, code := range []string{"table-grid-span", "table-vertical-merge", "nested-table"} {
 		if codes[code] != "b1" {
 			t.Errorf("table diagnostic %q source = %q; want body block b1", code, codes[code])
+		}
+	}
+}
+
+func TestWordLayoutProjectionProjectsColumns(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+	<w:p><w:r><w:t>hello</w:t></w:r></w:p>
+	<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:cols w:num="2" w:space="720"/></w:sectPr>
+	</w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+	data := requireWordLayoutReader(t, doc).WordLayoutData()
+	if len(data.Sections) != 1 {
+		t.Fatalf("sections count = %d", len(data.Sections))
+	}
+	setup := data.Sections[0].PageSetup
+	if setup.Columns != 2 {
+		t.Errorf("got columns %d, want 2", setup.Columns)
+	}
+	if setup.ColumnSpacingPT != 36.0 {
+		t.Errorf("got column spacing %f, want 36.0", setup.ColumnSpacingPT)
+	}
+	for _, item := range data.Unsupported {
+		if item.Code == "columns" {
+			t.Errorf("unexpected columns unsupported diagnostic: %+v", item)
 		}
 	}
 }

@@ -126,8 +126,19 @@ func projectWordSection(startBlock int, node *wordXMLNode, sourceID string, unsu
 		if count == "" {
 			count = "1"
 		}
-		if parsed, err := strconv.Atoi(count); err != nil || parsed != 1 {
-			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: sourceID, Code: "columns", Description: "Multi-column section layout is not supported yet."})
+		space := attrValue(columns, "space")
+		parsed, err := strconv.Atoi(count)
+		if err != nil || parsed < 1 || parsed > 4 {
+			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: sourceID, Code: "columns", Description: "Column count must be between 1 and 4."})
+		} else {
+			section.PageSetup.Columns = parsed
+			section.PageSetup.Set |= document.WordPageColumnsSet
+			if space != "" {
+				section.PageSetup.ColumnSpacingPT = wordTwipsToPoints(space)
+				section.PageSetup.Set |= document.WordPageColumnSpacingSet
+			} else {
+				section.PageSetup.ColumnSpacingPT = 36.0
+			}
 		}
 	}
 	return section

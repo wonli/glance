@@ -212,6 +212,9 @@ func closeUnregisteredSessionAdapters(candidate, existing *sharedDocumentSession
 		_ = candidate.word.Close()
 		candidate.adapterMu.Unlock()
 	}
+	if candidate.pdfDoc != nil && candidate.pdfDoc != existing.pdfDoc {
+		_ = candidate.pdfDoc.Close()
+	}
 	if candidate.markdownDoc != nil && candidate.markdownDoc != existing.markdownDoc {
 		_ = candidate.markdownDoc.Close()
 	}
@@ -325,6 +328,7 @@ func sharedSessionFromLoadedDocument(loaded loadedDocument) *sharedDocumentSessi
 	if loaded.word != nil && loaded.wordBlocks == nil {
 		session.wordBlocks = cloneWordBlockSnapshot(loaded.word.WordBlocks())
 	}
+	session.pdfDoc = loaded.pdfDoc
 	session.markdownDoc = loaded.markdownDoc
 	session.jsonDoc = loaded.jsonDoc
 	session.sheets = append([]string(nil), loaded.sheets...)
@@ -343,6 +347,7 @@ func loadedDocumentFromSharedSession(session *sharedDocumentSession) loadedDocum
 		wordBlocks:  cloneWordBlockSnapshot(session.wordBlocks),
 		jsonDoc:     session.jsonDoc,
 		markdownDoc: session.markdownDoc,
+		pdfDoc:      session.pdfDoc,
 		sheets:      append([]string(nil), session.sheets...),
 	}
 }
@@ -473,6 +478,10 @@ func closeSharedDocumentSession(session *sharedDocumentSession) {
 		}
 		if session.word != nil {
 			_ = session.word.Close()
+		}
+		if session.pdfDoc != nil {
+			_ = session.pdfDoc.Close()
+			session.pdfDoc = nil
 		}
 		if session.markdownDoc != nil {
 			_ = session.markdownDoc.Close()

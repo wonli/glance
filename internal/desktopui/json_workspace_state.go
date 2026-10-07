@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"strings"
 
 	"gioui.org/io/clipboard"
@@ -88,6 +89,19 @@ func (a *App) ensureJSONView() *jsonWorkspaceView {
 	return a.jsonView
 }
 
+func (v *jsonWorkspaceView) isCollapsed(id int) bool {
+	if state, ok := v.collapsed[id]; ok {
+		return state
+	}
+	if v.tree == nil || id < 0 || id >= len(v.tree.Nodes) {
+		return false
+	}
+	if v.expandedLevel < 0 {
+		return false
+	}
+	return v.tree.Nodes[id].Depth >= v.expandedLevel
+}
+
 func (v *jsonWorkspaceView) accept(result jsonTreeResult) {
 	v.pending = false
 	if result.text != v.requested {
@@ -97,15 +111,16 @@ func (v *jsonWorkspaceView) accept(result jsonTreeResult) {
 	collapsed := make(map[string]bool)
 	if v.tree != nil {
 		if v.selected >= 0 && v.selected < len(v.tree.Nodes) {
-			pointer = v.tree.Nodes[v.selected].Pointer
+			pointer = v.tree.NodePointer(v.selected)
 		}
-		for id, closed := range v.collapsed {
-			if closed && id < len(v.tree.Nodes) {
-				collapsed[v.tree.Nodes[id].Pointer] = true
+		if len(v.collapsed) < 1000 {
+			for id, closed := range v.collapsed {
+				if id >= 0 && id < len(v.tree.Nodes) {
+					collapsed[v.tree.NodePointer(id)] = closed
+				}
 			}
 		}
 	}
-	first := v.tree == nil
 	v.tree, v.err, v.parsed = result.tree, result.err, result.text
 	v.sourceSegments = result.segments
 	if result.baselineSegments != nil {
@@ -115,12 +130,13 @@ func (v *jsonWorkspaceView) accept(result jsonTreeResult) {
 	v.rowButtons, v.toggleButtons, v.outlineButtons = make(map[int]*widget.Clickable), make(map[int]*widget.Clickable), make(map[int]*widget.Clickable)
 	selected := 0
 	if v.tree != nil {
-		for id, n := range v.tree.Nodes {
-			if n.Pointer == pointer {
-				selected = id
-			}
-			if n.Container() && (collapsed[n.Pointer] || (first && n.Depth >= v.expandedLevel)) {
-				v.collapsed[id] = true
+		if pointer != "" {
+			selected = v.tree.FindNodeByPointer(pointer)
+		}
+		for p, closed := range collapsed {
+			target := v.tree.FindNodeByPointer(p)
+			if target >= 0 && target < len(v.tree.Nodes) {
+				v.collapsed[target] = closed
 			}
 		}
 		v.selectNode(selected)
@@ -141,9 +157,9 @@ func (v *jsonWorkspaceView) selectNode(id int) {
 	}
 	v.value.ReadOnly = n.Container() || len(value) > jsonValueEditLimit
 	if n.Container() {
-		value = fmt.Sprintf("{ %d keys }", len(n.Children))
+		value = fmt.Sprintf("{ %d keys }", v.tree.ChildCount(id))
 		if n.Kind == "array" {
-			value = fmt.Sprintf("[ %d items ]", len(n.Children))
+			value = fmt.Sprintf("[ %d items ]", v.tree.ChildCount(id))
 		}
 	} else if len(value) > jsonValueEditLimit {
 		value = jsonTextPreview(value, 4096)
@@ -157,8 +173,9 @@ func (v *jsonWorkspaceView) rebuildRows() {
 		return
 	}
 	query := strings.ToLower(strings.TrimSpace(v.search.Text()))
-	matches := make([]bool, len(v.tree.Nodes))
+	var matches []bool
 	if query != "" {
+		matches = make([]bool, len(v.tree.Nodes))
 		for id, n := range v.tree.Nodes {
 			if strings.Contains(strings.ToLower(n.Key), query) || (!n.Container() && strings.Contains(strings.ToLower(n.Display), query)) {
 				for at := id; at >= 0 && !matches[at]; at = v.tree.Nodes[at].Parent {
@@ -175,20 +192,27 @@ func (v *jsonWorkspaceView) rebuildRows() {
 		}
 		v.rows = append(v.rows, jsonTreeRow{node: id})
 		if n.Container() {
-			if !v.collapsed[id] || query != "" {
-				for _, child := range n.Children {
+			if !v.isCollapsed(id) || query != "" {
+				for child := n.FirstChild; child >= 0; child = v.tree.Nodes[child].NextSibling {
 					walk(child)
 				}
-				if len(n.Children) > 0 {
+				if v.tree.ChildCount(id) > 0 {
 					v.rows = append(v.rows, jsonTreeRow{node: id, closing: true})
 				}
 			}
 		}
 	}
 	walk(0)
+	maxOutline := 1000
 	for id, n := range v.tree.Nodes {
 		if n.Container() && (query == "" || matches[id]) {
+			if len(v.tree.Nodes) > 10000 && n.Depth > 2 {
+				continue
+			}
 			v.outline = append(v.outline, id)
+			if len(v.outline) >= maxOutline {
+				break
+			}
 		}
 	}
 }
@@ -208,6 +232,9 @@ func (a *App) requestJSONTree() {
 		baselineSegments := segments
 		if baseline != text {
 			baselineSegments = jsonSourceSegments(baseline)
+		}
+		if len(text) > 512*1024 {
+			debug.FreeOSMemory()
 		}
 		results <- jsonTreeResult{text: text, tree: tree, err: err, segments: segments, baselineSegments: baselineSegments}
 		if window != nil {
@@ -393,12 +420,8 @@ func (a *App) handleJSONWorkspaceAction(gtx layout.Context, id string) {
 			level = 2
 		}
 		v.expandedLevel = level
-		if v.tree != nil {
-			for i, n := range v.tree.Nodes {
-				v.collapsed[i] = level >= 0 && n.Depth >= level && n.Container()
-			}
-			v.rebuildRows()
-		}
+		v.collapsed = make(map[int]bool)
+		v.rebuildRows()
 	case "search":
 		gtx.Execute(key.FocusCmd{Tag: &v.search})
 	case "copy":
@@ -437,11 +460,11 @@ func (a *App) handleJSONWorkspaceAction(gtx layout.Context, id string) {
 				value = v.tree.Nodes[n.Parent].Raw
 			}
 		case "copy-dot":
-			value = n.DotPath
+			value = v.tree.NodeDotPath(v.selected)
 		case "copy-path", "row-copy-path":
-			value = n.JSONPath
+			value = v.tree.NodeJSONPath(v.selected)
 		case "copy-pointer":
-			value = n.Pointer
+			value = v.tree.NodePointer(v.selected)
 		default:
 			return
 		}

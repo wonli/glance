@@ -190,9 +190,9 @@ func (a *App) layoutJSONNavigator(gtx layout.Context) layout.Dimensions {
 								paint.FillShape(gtx.Ops, color.NRGBA{R: 229, G: 237, B: 247, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(4)).Op(gtx.Ops))
 								paint.FillShape(gtx.Ops, jsonBlue, clip.Rect{Max: image.Pt(gtx.Dp(3), gtx.Constraints.Max.Y)}.Op())
 							}
-							count := fmt.Sprintf("{%d}", len(n.Children))
+							count := fmt.Sprintf("{%d}", v.tree.ChildCount(id))
 							if n.Kind == "array" {
-								count = fmt.Sprintf("[%d]", len(n.Children))
+								count = fmt.Sprintf("[%d]", v.tree.ChildCount(id))
 							}
 							inset := unit.Dp(12 + min(n.Depth, 6)*16)
 							return layout.Inset{Left: inset, Right: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -222,11 +222,12 @@ func (a *App) layoutJSONBreadcrumb(gtx layout.Context) layout.Dimensions {
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					text := "root"
 					if v.tree != nil && v.selected < len(v.tree.Nodes) {
-						n := v.tree.Nodes[v.selected]
+						target := v.selected
+						n := v.tree.Nodes[target]
 						if !n.Container() && n.Parent >= 0 {
-							n = v.tree.Nodes[n.Parent]
+							target = n.Parent
 						}
-						text = strings.ReplaceAll(jsonTextPreview(n.DotPath, 1024), ".", "  ›  ")
+						text = strings.ReplaceAll(jsonTextPreview(v.tree.NodeDotPath(target), 1024), ".", "  ›  ")
 					}
 					gtx.Constraints.Min.Y = 0
 					return jsonLabel(gtx, a, text, 12, mutedText, false, true)

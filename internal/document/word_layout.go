@@ -13,17 +13,21 @@ const (
 	WordPageMarginRightSet
 	WordPageMarginBottomSet
 	WordPageMarginLeftSet
+	WordPageColumnsSet
+	WordPageColumnSpacingSet
 )
 
 type WordPageSetup struct {
-	WidthPT        float64
-	HeightPT       float64
-	Orientation    string
-	MarginTopPT    float64
-	MarginRightPT  float64
-	MarginBottomPT float64
-	MarginLeftPT   float64
-	Set            WordPageSetupMask
+	WidthPT         float64
+	HeightPT        float64
+	Orientation     string
+	MarginTopPT     float64
+	MarginRightPT   float64
+	MarginBottomPT  float64
+	MarginLeftPT    float64
+	Columns         int
+	ColumnSpacingPT float64
+	Set             WordPageSetupMask
 }
 
 // WordSection maps one section's page settings to the first body block using

@@ -752,3 +752,79 @@ func joinPageText(page PageScene) string {
 	}
 	return value.String()
 }
+
+func TestMultiColumnLayout(t *testing.T) {
+	// Page: width 200, height 100, margin 10 -> content width 180, height 80
+	// 2 columns with spacing 20 -> column width = (180 - 20) / 2 = 80 pt
+	// Col 0: X = 10..90
+	// Col 1: X = 110..190
+	input := layoutTestInput(200, 100, 10,
+		paragraphBlock("p0", "ColZero", document.WordTextStyle{FontSize: 40}),
+		paragraphBlock("p1", "ColOne", document.WordTextStyle{FontSize: 40}),
+		paragraphBlock("p2", "PageOneColZero", document.WordTextStyle{FontSize: 40}),
+	)
+	input.Layout.Sections = []document.WordSection{{
+		StartBlock: 0,
+		PageSetup: document.WordPageSetup{
+			WidthPT:         200,
+			HeightPT:        100,
+			MarginTopPT:     10,
+			MarginBottomPT:  10,
+			MarginLeftPT:    10,
+			MarginRightPT:   10,
+			Columns:         2,
+			ColumnSpacingPT: 20,
+			Set:             document.WordPageWidthSet | document.WordPageHeightSet | document.WordPageMarginTopSet | document.WordPageMarginBottomSet | document.WordPageMarginLeftSet | document.WordPageMarginRightSet | document.WordPageColumnsSet | document.WordPageColumnSpacingSet,
+		},
+	}}
+
+	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.CanPreview {
+		t.Fatalf("CanPreview = false, diagnostics: %+v", result.Diagnostics)
+	}
+	if len(result.Pages) != 2 {
+		t.Fatalf("page count = %d, want 2", len(result.Pages))
+	}
+	// Page 0 should have ColZero and ColOne
+	page0 := result.Pages[0]
+	if len(page0.Text) < 2 {
+		t.Fatalf("page 0 text count = %d, want at least 2", len(page0.Text))
+	}
+	// Verify p0 is in col 0 (around X=10) and p1 is in col 1 (around X=110)
+	var p0X, p1X float64
+	p0Found, p1Found := false, false
+	for _, f := range page0.Text {
+		if f.RunID == "p0.run" && !p0Found {
+			p0X = f.XPT
+			p0Found = true
+		}
+		if f.RunID == "p1.run" && !p1Found {
+			p1X = f.XPT
+			p1Found = true
+		}
+	}
+	if !p0Found || p0X < 10 || p0X > 30 {
+		t.Errorf("p0 X = %f (found=%v), want ~10", p0X, p0Found)
+	}
+	if !p1Found || p1X < 100 || p1X > 130 {
+		t.Errorf("p1 X = %f (found=%v), want ~110", p1X, p1Found)
+	}
+
+	// Page 1 should have PageOneColZero in Col 0 (around X=10)
+	page1 := result.Pages[1]
+	var p2X float64
+	p2Found := false
+	for _, f := range page1.Text {
+		if f.RunID == "p2.run" && !p2Found {
+			p2X = f.XPT
+			p2Found = true
+		}
+	}
+	if !p2Found || p2X < 10 || p2X > 30 {
+		t.Errorf("p2 X = %f (found=%v), want ~10 on page 1", p2X, p2Found)
+	}
+}
+

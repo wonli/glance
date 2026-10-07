@@ -54,13 +54,13 @@ func (a *App) layoutJSONTreeRow(gtx layout.Context, index int, row jsonTreeRow, 
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(15), gtx.Dp(24)))
-					if !n.Container() || row.closing || len(n.Children) == 0 {
+					if !n.Container() || row.closing || v.tree.ChildCount(row.node) == 0 {
 						return layout.Dimensions{Size: gtx.Constraints.Max}
 					}
 					button := jsonViewButton(v.toggleButtons, row.node)
 					return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						icon := "chevron-down"
-						if v.collapsed[row.node] && v.search.Text() == "" {
+						if v.isCollapsed(row.node) && v.search.Text() == "" {
 							icon = "chevron-right"
 						}
 						return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return jsonIcon(gtx, icon, 15, mutedText) })
@@ -90,11 +90,11 @@ func (a *App) layoutJSONTreeRow(gtx layout.Context, index int, row jsonTreeRow, 
 						} else {
 							value = "["
 						}
-						if v.collapsed[row.node] && v.search.Text() == "" || len(n.Children) == 0 {
+						if (v.isCollapsed(row.node) && v.search.Text() == "") || v.tree.ChildCount(row.node) == 0 {
 							if n.Kind == "object" {
-								value = fmt.Sprintf("{ %d keys }", len(n.Children))
+								value = fmt.Sprintf("{ %d keys }", v.tree.ChildCount(row.node))
 							} else {
-								value = fmt.Sprintf("[ %d items ]", len(n.Children))
+								value = fmt.Sprintf("[ %d items ]", v.tree.ChildCount(row.node))
 							}
 						}
 					}

@@ -17,6 +17,7 @@ import (
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
 	"glance/internal/format/markdowndoc"
+	"glance/internal/format/pdfdoc"
 	"glance/internal/format/xlsx"
 	"glance/internal/workspace"
 )
@@ -179,7 +180,7 @@ func isEmptyDraftWithoutSnapshot(record workspace.Session) bool {
 		return false
 	}
 	switch strings.ToLower(record.Format) {
-	case "docx", "xlsx", "json", "markdown", "md":
+	case "pdf", "docx", "xlsx", "json", "markdown", "md":
 		return true
 	default:
 		return false
@@ -240,6 +241,14 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
 		word.SetSourcePath(record.Tab.SourcePath)
 		word.SetDirty(record.Dirty)
+	case "pdf":
+		d, err := pdfdoc.OpenSnapshot(record.Payload)
+		if err != nil {
+			return nil, err
+		}
+		d.SetSourcePath(record.Tab.SourcePath)
+		d.SetDirty(record.Dirty)
+		state.pdfDoc = d
 	case "md", "markdown":
 		d, err := markdowndoc.OpenSnapshot(record.Payload)
 		if err != nil {
@@ -418,6 +427,8 @@ func (a *App) snapshotActive() ([]byte, error) {
 		return nil, fmt.Errorf("当前表格格式不支持工作区快照")
 	case a.word != nil:
 		return a.word.Snapshot()
+	case a.pdfDoc != nil:
+		return a.pdfDoc.Snapshot()
 	case a.markdownDoc != nil:
 		return a.markdownDoc.Snapshot()
 	case a.jsonDoc != nil:
@@ -567,7 +578,7 @@ func scanOfficeFolder(path string) ([]workspace.Recent, error) {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext != ".xlsx" && ext != ".xls" && ext != ".docx" && ext != ".json" && ext != ".md" && ext != ".markdown" {
+		if ext != ".pdf" && ext != ".xlsx" && ext != ".xls" && ext != ".docx" && ext != ".json" && ext != ".md" && ext != ".markdown" {
 			continue
 		}
 		recents = append(recents, workspace.Recent{Path: filepath.Join(path, entry.Name()), Kind: strings.TrimPrefix(ext, ".")})
@@ -604,6 +615,8 @@ func snapshotState(state *documentSessionState) ([]byte, error) {
 		}
 	case state.word != nil:
 		return state.word.Snapshot()
+	case state.pdfDoc != nil:
+		return state.pdfDoc.Snapshot()
 	case state.markdownDoc != nil:
 		return state.markdownDoc.Snapshot()
 	case state.jsonDoc != nil:
@@ -616,7 +629,7 @@ func snapshotState(state *documentSessionState) ([]byte, error) {
 func sessionDirty(state *documentSessionState) bool {
 	unlock := lockSessionAdapterRead(state)
 	defer unlock()
-	return state.book != nil && state.book.Dirty() || state.word != nil && state.word.Dirty() || state.jsonDoc != nil && state.jsonDoc.Dirty() || state.markdownDoc != nil && state.markdownDoc.Dirty()
+	return state.book != nil && state.book.Dirty() || state.word != nil && state.word.Dirty() || state.jsonDoc != nil && state.jsonDoc.Dirty() || state.markdownDoc != nil && state.markdownDoc.Dirty() || state.pdfDoc != nil && state.pdfDoc.Dirty()
 }
 
 func sessionPath(state *documentSessionState) string {
@@ -738,6 +751,9 @@ func (a *App) updatePersistedTab(meta workspace.Tab) {
 }
 
 func sessionFormat(meta workspace.Tab, state *documentSessionState) string {
+	if state != nil && state.pdfDoc != nil {
+		return "pdf"
+	}
 	if state != nil && state.markdownDoc != nil {
 		return "markdown"
 	}

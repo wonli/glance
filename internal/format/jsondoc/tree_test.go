@@ -1,6 +1,7 @@
 package jsondoc
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -49,3 +50,37 @@ func TestTreeRejectsInvalidAndTrailingJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestMeasureLargeJSONMemory(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("[\n")
+	for i := 0; b.Len() < 100*1024*1024; i++ {
+		if i > 0 {
+			b.WriteString(",\n")
+		}
+		b.WriteString(`{"id": 123456, "name": "test_user_name_string", "active": true, "score": 98.5, "email": "user@example.com", "role": "developer"}`)
+	}
+	b.WriteString("\n]")
+	jsonStr := b.String()
+	t.Logf("Generated JSON size: %d MB", len(jsonStr)/(1024*1024))
+
+	runtime.GC()
+	var m1 runtime.MemStats
+	runtime.ReadMemStats(&m1)
+
+	tree, err := ParseTree(jsonStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m2 runtime.MemStats
+	runtime.ReadMemStats(&m2)
+	t.Logf("Nodes: %d, KeyCount: %d", len(tree.Nodes), tree.KeyCount)
+	t.Logf("Alloc: %d MB, TotalAlloc: %d MB, HeapSys: %d MB, Sys: %d MB, NumGC: %d",
+		(m2.Alloc-m1.Alloc)/(1024*1024),
+		(m2.TotalAlloc-m1.TotalAlloc)/(1024*1024),
+		(m2.HeapSys-m1.HeapSys)/(1024*1024),
+		(m2.Sys-m1.Sys)/(1024*1024),
+		m2.NumGC-m1.NumGC)
+}
+
+

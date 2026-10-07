@@ -1899,9 +1899,13 @@ func TestWordToolbar_BookmarkLinkAndTextBox(t *testing.T) {
 	if !app.modal.Visible || app.modal.Title != "插入超链接" {
 		t.Fatalf("expected 插入超链接 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
 	}
+	if len(app.modal.Actions) != 2 || app.modal.Actions[0].Label != "插入" || app.modal.Actions[1].Label != "取消" {
+		t.Fatalf("expected modal actions [插入, 取消], got %+v", app.modal.Actions)
+	}
 	app.modal.Input.SetText("https://golang.org")
 	app.modal.SecondInput.SetText("Go官网")
 	app.modal.OnAction("confirm")
+
 	if !strings.Contains(app.status, "已成功插入超链接") {
 		t.Fatalf("unexpected status after insert link: %q", app.status)
 	}
@@ -2352,3 +2356,57 @@ func TestWordEditing_SplitAfterFontColorAndHighlight(t *testing.T) {
 		t.Fatalf("status reported failure: %s", app.status)
 	}
 }
+
+func TestWordToolbar_ColumnsDialogAndLayout(t *testing.T) {
+	state := newDocumentSessionState("columns_test.docx")
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state.word = word
+	app := &App{
+		documentSessionState: state,
+		wordCommandResults:   make(chan wordCommandResult, 2),
+	}
+
+	app.showWordColumnsDialog()
+	if !app.modal.Visible || app.modal.Title != "分栏设置" {
+		t.Fatalf("modal not shown: visible=%v, title=%q", app.modal.Visible, app.modal.Title)
+	}
+
+	action := app.modal.Actions[1] // col2
+	if action.ID != "col2" {
+		t.Fatalf("action 1 = %q, want col2", action.ID)
+	}
+	app.modal.OnAction(action.ID)
+	if app.modal.Visible {
+		t.Fatal("modal should be hidden after action")
+	}
+
+	select {
+	case res := <-app.wordCommandResults:
+		if res.err != nil {
+			t.Fatalf("command failed: %v", res.err)
+		}
+		app.wordCommandResults <- res
+		app.processAsyncResults()
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for command result")
+	}
+
+	layoutReader, ok := any(word).(document.WordLayoutReader)
+	if !ok {
+		t.Fatal("word does not implement WordLayoutReader")
+	}
+	data := layoutReader.WordLayoutData()
+	if len(data.Sections) == 0 || data.Sections[0].PageSetup.Columns != 2 {
+		t.Fatalf("expected 2 columns in section, got %+v", data.Sections)
+	}
+	for _, diag := range data.Unsupported {
+		if diag.Code == "columns" {
+			t.Fatalf("unexpected unsupported columns diagnostic: %+v", diag)
+		}
+	}
+}
+

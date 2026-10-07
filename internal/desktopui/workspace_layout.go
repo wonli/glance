@@ -644,6 +644,8 @@ func (a *App) handleCloseConfirmation(action string) {
 			ext := "xlsx"
 			if a.word != nil {
 				ext = "docx"
+			} else if a.pdfDoc != nil {
+				a.startFileCommand(commandSaveAs, "pdf")
 			} else if a.markdownDoc != nil {
 				ext = "md"
 			} else if a.jsonDoc != nil {
@@ -707,5 +709,5 @@ func (a *App) closeWorkspace() {
 }
 
 func (a *App) hasActiveDocument() bool {
-	return a.book != nil || a.word != nil || a.jsonDoc != nil || a.markdownDoc != nil
+	return a.book != nil || a.word != nil || a.jsonDoc != nil || a.markdownDoc != nil || a.pdfDoc != nil
 }

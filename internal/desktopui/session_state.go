@@ -12,6 +12,7 @@ import (
 
 // documentSessionState holds persistent Gio widgets and view state for one window's document view.
 type documentSessionState struct {
+	pdfView *pdfViewState
 	*sharedDocumentSession
 	windowID                            uint64
 	closed                              atomic.Bool

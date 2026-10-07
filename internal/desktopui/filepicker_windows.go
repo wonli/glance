@@ -11,7 +11,7 @@ import (
 )
 
 func chooseOfficeFile() (string, error) {
-	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = 'Office/JSON documents (*.xlsx;*.xls;*.docx;*.json;*.md;*.markdown)|*.xlsx;*.xls;*.docx;*.json;*.md;*.markdown'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }"
+	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = 'Office/JSON documents (*.xlsx;*.xls;*.docx;*.json;*.md;*.markdown;*.pdf)|*.xlsx;*.xls;*.docx;*.json;*.md;*.markdown;*.pdf'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }"
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	var stderr bytes.Buffer

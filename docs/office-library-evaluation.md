@@ -104,3 +104,14 @@ For every candidate, record: open success/error, extracted model, visible render
 Update this document after evaluation; do not leave a candidate presented as selected merely because an API example compiles.
 
 Markdown resource acceptance now includes bounded HTTP/HTTPS raster loading with redirect/status/byte/pixel validation, cancellation, deduplication and four-worker concurrency regressions. Formula UI dimensions scale with screen metrics; PDF uses 0.5 points per 144-DPI raster pixel.
+
+
+### PDF workspace adapter — 2026-10-07
+
+Reuses the already pinned `github.com/SalvioniDigitalSolutions/gopdf` at `v0.0.0-20260922202729-55a8f5fed5f5`; no new PDF dependency. Third-party reader/update/render types stay inside `internal/format/pdfdoc`; UI consumes neutral `document.PDFPage`, `PDFInfo` and `PDFCommand`.
+
+The canonical state is a validated PDF package revision. Commands apply an incremental update, serialize and reopen before publication. Rendering uses an immutable package snapshot; raster pixels and hit data carry the same revision. Tests cover text edit/no-op/stale command, notes/highlights/ink, rotation, save/reopen, unchanged second page, existing notes, undo/redo and failed-save dirty preservation. UI tests cover shared model identity, recovery, stale scenes and visible canvas pixels at two window sizes.
+
+API availability is not a compatibility guarantee. Current text-fragment API does not expose every graphics-state transform/opacity needed for safe arbitrary editing. Consequently pages with ExtGState/XObject resources, invisible text and rotated text are restricted; signed PDFs reject mutations, and encrypted/repaired files reject opening. Text replacement depends on the original font encoding and does not reconstruct paragraphs. Native printing is integrated but not hardware-verified. See `office-support.md` for the maintained boundary.
+
+Native render fallback: macOS/cgo uses CoreGraphics/CoreFoundation when the pure-Go renderer reports missing glyphs or an error. The renderer receives in-memory bytes of the accepted model revision, never reopens the source path. Annotation appearances are composited from a temporary, unsaved rendering projection of that same revision. Geometry regression checks 1× and 2× placement. This is a platform rendering backend, not a separate editing model; non-macOS builds retain the Go renderer and diagnostics. The local SimSun-embedded Chinese PDF exposed the need for this fallback.

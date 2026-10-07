@@ -2,100 +2,480 @@ package jsondoc
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"glance/internal/document"
 )
 
+var arrayIndexStrings [1000]string
+
+func init() {
+	for i := 0; i < len(arrayIndexStrings); i++ {
+		arrayIndexStrings[i] = strconv.Itoa(i)
+	}
+}
+
+func arrayIndexStr(i int) string {
+	if i < len(arrayIndexStrings) {
+		return arrayIndexStrings[i]
+	}
+	return strconv.Itoa(i)
+}
+
 // ParseTree retains source order, duplicate keys and exact number spelling.
 // Callers should parse outside the window loop and publish the immutable view.
 func ParseTree(source string) (*document.JSONTree, error) {
-	d := json.NewDecoder(strings.NewReader(source))
-	d.UseNumber()
-	tree := &document.JSONTree{Source: source}
-	var parse func(string, int, int, string, string, string) (int, error)
-	parse = func(key string, parent, depth int, pointer, path, dot string) (int, error) {
-		start := int(d.InputOffset())
-		for start < len(source) && strings.ContainsRune(" \t\r\n,:", rune(source[start])) {
-			start++
+	trimmed := strings.TrimSpace(source)
+	if trimmed == "" {
+		return nil, errors.New("empty JSON source")
+	}
+	large := len(source) > 512*1024
+	estNodes := 64
+	if large {
+		estNodes = len(source) / 18
+	}
+	p := &fastParser{
+		src:    source,
+		len:    len(source),
+		nodes:  make([]document.JSONNode, 0, estNodes),
+		intern: make(map[string]string, 256),
+		large:  large,
+	}
+	rootPointer, rootPath, rootDot := "", "", ""
+	if !large {
+		rootPointer, rootPath, rootDot = "", "$", "root"
+	}
+	if _, err := p.parseValue("root", -1, 0, rootPointer, rootPath, rootDot); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	if p.pos < p.len {
+		return nil, errors.New("multiple JSON values")
+	}
+	return &document.JSONTree{
+		Source:   source,
+		Nodes:    p.nodes,
+		KeyCount: p.keyCount,
+		MaxDepth: p.maxDepth,
+	}, nil
+}
+
+type fastParser struct {
+	src      string
+	pos      int
+	len      int
+	nodes    []document.JSONNode
+	keyCount int
+	maxDepth int
+	intern   map[string]string
+	large    bool
+}
+
+func (p *fastParser) skipWhitespace() {
+	for p.pos < p.len {
+		b := p.src[p.pos]
+		if b == ' ' || b == '\t' || b == '\r' || b == '\n' {
+			p.pos++
+		} else {
+			break
 		}
-		token, err := d.Token()
+	}
+}
+
+func (p *fastParser) internStr(s string) string {
+	if val, ok := p.intern[s]; ok {
+		return val
+	}
+	if len(p.intern) < 1024 {
+		p.intern[s] = s
+	}
+	return s
+}
+
+func (p *fastParser) parseString() (display string, rawStart, rawEnd int, err error) {
+	if p.pos >= p.len || p.src[p.pos] != '"' {
+		return "", 0, 0, errors.New("expected '\"'")
+	}
+	rawStart = p.pos
+	p.pos++
+	start := p.pos
+	hasEscape := false
+
+	for p.pos < p.len {
+		b := p.src[p.pos]
+		if b == '"' {
+			rawEnd = p.pos + 1
+			content := p.src[start:p.pos]
+			p.pos++
+			if !hasEscape {
+				display = content
+			} else {
+				display, err = unescapeJSONString(content)
+				if err != nil {
+					return "", 0, 0, err
+				}
+			}
+			return display, rawStart, rawEnd, nil
+		}
+		if b == '\\' {
+			hasEscape = true
+			p.pos++
+			if p.pos >= p.len {
+				return "", 0, 0, errors.New("unexpected EOF in string escape")
+			}
+			p.pos++
+			continue
+		}
+		if b < 0x20 {
+			return "", 0, 0, errors.New("unescaped control character in string")
+		}
+		p.pos++
+	}
+	return "", 0, 0, errors.New("unterminated string")
+}
+
+func unescapeJSONString(s string) (string, error) {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c != '\\' {
+			b.WriteByte(c)
+			continue
+		}
+		i++
+		if i >= len(s) {
+			return "", errors.New("incomplete escape")
+		}
+		switch s[i] {
+		case '"':
+			b.WriteByte('"')
+		case '\\':
+			b.WriteByte('\\')
+		case '/':
+			b.WriteByte('/')
+		case 'b':
+			b.WriteByte('\b')
+		case 'f':
+			b.WriteByte('\f')
+		case 'n':
+			b.WriteByte('\n')
+		case 'r':
+			b.WriteByte('\r')
+		case 't':
+			b.WriteByte('\t')
+		case 'u':
+			if i+4 >= len(s) {
+				return "", errors.New("incomplete unicode escape")
+			}
+			r, err := strconv.ParseUint(s[i+1:i+5], 16, 16)
+			if err != nil {
+				return "", err
+			}
+			i += 4
+			runeVal := rune(r)
+			if utf16.IsSurrogate(runeVal) {
+				if i+6 < len(s) && s[i+1] == '\\' && s[i+2] == 'u' {
+					r2, err2 := strconv.ParseUint(s[i+3:i+7], 16, 16)
+					if err2 == nil {
+						combined := utf16.DecodeRune(runeVal, rune(r2))
+						if combined != utf8.RuneError {
+							i += 6
+							b.WriteRune(combined)
+							continue
+						}
+					}
+				}
+			}
+			b.WriteRune(runeVal)
+		default:
+			return "", fmt.Errorf("invalid escape character '\\%c'", s[i])
+		}
+	}
+	return b.String(), nil
+}
+
+func (p *fastParser) parseNumber() (display string, rawStart, rawEnd int, err error) {
+	rawStart = p.pos
+	if p.pos < p.len && p.src[p.pos] == '-' {
+		p.pos++
+	}
+	if p.pos >= p.len {
+		return "", 0, 0, errors.New("expected digit after '-'")
+	}
+	if p.src[p.pos] == '0' {
+		p.pos++
+	} else if p.src[p.pos] >= '1' && p.src[p.pos] <= '9' {
+		for p.pos < p.len && p.src[p.pos] >= '0' && p.src[p.pos] <= '9' {
+			p.pos++
+		}
+	} else {
+		return "", 0, 0, errors.New("expected digit")
+	}
+	if p.pos < p.len && p.src[p.pos] == '.' {
+		p.pos++
+		if p.pos >= p.len || p.src[p.pos] < '0' || p.src[p.pos] > '9' {
+			return "", 0, 0, errors.New("expected digit after '.'")
+		}
+		for p.pos < p.len && p.src[p.pos] >= '0' && p.src[p.pos] <= '9' {
+			p.pos++
+		}
+	}
+	if p.pos < p.len && (p.src[p.pos] == 'e' || p.src[p.pos] == 'E') {
+		p.pos++
+		if p.pos < p.len && (p.src[p.pos] == '+' || p.src[p.pos] == '-') {
+			p.pos++
+		}
+		if p.pos >= p.len || p.src[p.pos] < '0' || p.src[p.pos] > '9' {
+			return "", 0, 0, errors.New("expected digit in exponent")
+		}
+		for p.pos < p.len && p.src[p.pos] >= '0' && p.src[p.pos] <= '9' {
+			p.pos++
+		}
+	}
+	rawEnd = p.pos
+	return p.src[rawStart:rawEnd], rawStart, rawEnd, nil
+}
+
+func (p *fastParser) parseLiteral(lit string) error {
+	if p.pos+len(lit) <= p.len && p.src[p.pos:p.pos+len(lit)] == lit {
+		p.pos += len(lit)
+		return nil
+	}
+	end := p.pos + 10
+	if end > p.len {
+		end = p.len
+	}
+	return fmt.Errorf("unexpected token near %q", p.src[p.pos:end])
+}
+
+func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, dot string) (int, error) {
+	p.skipWhitespace()
+	if p.pos >= p.len {
+		return 0, io.EOF
+	}
+	b := p.src[p.pos]
+	start := p.pos
+
+	id := len(p.nodes)
+	if depth > p.maxDepth {
+		p.maxDepth = depth
+	}
+
+	switch b {
+	case '{':
+		p.pos++
+		p.nodes = append(p.nodes, document.JSONNode{
+			Key: key, Kind: "object", Parent: parent, Depth: depth, Start: start,
+			Pointer: pointer, JSONPath: path, DotPath: dot,
+			FirstChild: -1, NextSibling: -1,
+		})
+		lastChild := -1
+		count := 0
+		for {
+			p.skipWhitespace()
+			if p.pos >= p.len {
+				return 0, errors.New("unterminated object")
+			}
+			if p.src[p.pos] == '}' {
+				p.pos++
+				break
+			}
+			childKey, _, _, err := p.parseString()
+			if err != nil {
+				return 0, err
+			}
+			childKey = p.internStr(childKey)
+			p.keyCount++
+
+			p.skipWhitespace()
+			if p.pos >= p.len || p.src[p.pos] != ':' {
+				return 0, errors.New("expected ':' after object key")
+			}
+			p.pos++
+
+			childPointer, childPath, childDot := "", "", ""
+			if !p.large {
+				escaped := strings.ReplaceAll(strings.ReplaceAll(childKey, "~", "~0"), "/", "~1")
+				childPointer = pointer + "/" + escaped
+				if jsonPathIdentifier(childKey) {
+					childPath, childDot = path+"."+childKey, dot+"."+childKey
+				} else {
+					quoted, _ := json.Marshal(childKey)
+					childPath, childDot = path+"["+string(quoted)+"]", dot+"["+string(quoted)+"]"
+				}
+			}
+
+			childID, err := p.parseValue(childKey, id, depth+1, childPointer, childPath, childDot)
+			if err != nil {
+				return 0, err
+			}
+			if lastChild < 0 {
+				p.nodes[id].FirstChild = childID
+			} else {
+				p.nodes[lastChild].NextSibling = childID
+			}
+			lastChild = childID
+			count++
+			if !p.large {
+				p.nodes[id].Children = append(p.nodes[id].Children, childID)
+			}
+
+			p.skipWhitespace()
+			if p.pos >= p.len {
+				return 0, errors.New("unterminated object")
+			}
+			if p.src[p.pos] == ',' {
+				p.pos++
+				continue
+			} else if p.src[p.pos] == '}' {
+				p.pos++
+				break
+			} else {
+				return 0, errors.New("expected ',' or '}' in object")
+			}
+		}
+		p.nodes[id].ChildCount = count
+		p.nodes[id].End = p.pos
+		p.nodes[id].Raw = p.src[start:p.pos]
+		return id, nil
+
+	case '[':
+		p.pos++
+		p.nodes = append(p.nodes, document.JSONNode{
+			Key: key, Kind: "array", Parent: parent, Depth: depth, Start: start,
+			Pointer: pointer, JSONPath: path, DotPath: dot,
+			FirstChild: -1, NextSibling: -1,
+		})
+		lastChild := -1
+		count := 0
+		index := 0
+		for {
+			p.skipWhitespace()
+			if p.pos >= p.len {
+				return 0, errors.New("unterminated array")
+			}
+			if p.src[p.pos] == ']' {
+				p.pos++
+				break
+			}
+			childKey := arrayIndexStr(index)
+			childPointer, childPath, childDot := "", "", ""
+			if !p.large {
+				childPointer = pointer + "/" + childKey
+				childPath, childDot = path+"["+childKey+"]", dot+"["+childKey+"]"
+			}
+			childID, err := p.parseValue(childKey, id, depth+1, childPointer, childPath, childDot)
+			if err != nil {
+				return 0, err
+			}
+			if lastChild < 0 {
+				p.nodes[id].FirstChild = childID
+			} else {
+				p.nodes[lastChild].NextSibling = childID
+			}
+			lastChild = childID
+			count++
+			if !p.large {
+				p.nodes[id].Children = append(p.nodes[id].Children, childID)
+			}
+			index++
+
+			p.skipWhitespace()
+			if p.pos >= p.len {
+				return 0, errors.New("unterminated array")
+			}
+			if p.src[p.pos] == ',' {
+				p.pos++
+				continue
+			} else if p.src[p.pos] == ']' {
+				p.pos++
+				break
+			} else {
+				return 0, errors.New("expected ',' or ']' in array")
+			}
+		}
+		p.nodes[id].ChildCount = count
+		p.nodes[id].End = p.pos
+		p.nodes[id].Raw = p.src[start:p.pos]
+		return id, nil
+
+	case '"':
+		disp, rawStart, rawEnd, err := p.parseString()
 		if err != nil {
 			return 0, err
 		}
-		n := document.JSONNode{Key: key, Parent: parent, Depth: depth, Start: start, Pointer: pointer, JSONPath: path, DotPath: dot}
-		switch value := token.(type) {
-		case json.Delim:
-			if value == '{' {
-				n.Kind = "object"
-			} else if value == '[' {
-				n.Kind = "array"
-			} else {
-				return 0, fmt.Errorf("unexpected delimiter %q", value)
-			}
-		case string:
-			n.Kind, n.Display = "string", value
-		case json.Number:
-			n.Kind, n.Display = "number", value.String()
-		case bool:
-			n.Kind, n.Display = "boolean", strconv.FormatBool(value)
-		case nil:
-			n.Kind, n.Display = "null", "null"
+		if len(disp) <= 64 {
+			disp = p.internStr(disp)
 		}
-		id := len(tree.Nodes)
-		tree.Nodes = append(tree.Nodes, n)
-		tree.MaxDepth = max(tree.MaxDepth, depth)
-		if n.Container() {
-			for index := 0; d.More(); index++ {
-				childKey := strconv.Itoa(index)
-				childPath, childDot := path+"["+childKey+"]", dot+"["+childKey+"]"
-				if n.Kind == "object" {
-					t, err := d.Token()
-					if err != nil {
-						return 0, err
-					}
-					var ok bool
-					childKey, ok = t.(string)
-					if !ok {
-						return 0, fmt.Errorf("expected object key")
-					}
-					tree.KeyCount++
-					if jsonPathIdentifier(childKey) {
-						childPath, childDot = path+"."+childKey, dot+"."+childKey
-					} else {
-						quoted, _ := json.Marshal(childKey)
-						childPath, childDot = path+"["+string(quoted)+"]", dot+"["+string(quoted)+"]"
-					}
-				}
-				escaped := strings.ReplaceAll(strings.ReplaceAll(childKey, "~", "~0"), "/", "~1")
-				child, err := parse(childKey, id, depth+1, pointer+"/"+escaped, childPath, childDot)
-				if err != nil {
-					return 0, err
-				}
-				tree.Nodes[id].Children = append(tree.Nodes[id].Children, child)
-			}
-			if _, err := d.Token(); err != nil {
-				return 0, err
-			}
-		}
-		tree.Nodes[id].End = int(d.InputOffset())
-		tree.Nodes[id].Raw = source[start:tree.Nodes[id].End]
+		p.nodes = append(p.nodes, document.JSONNode{
+			Key: key, Kind: "string", Raw: p.src[rawStart:rawEnd], Display: disp,
+			Pointer: pointer, JSONPath: path, DotPath: dot,
+			Parent: parent, Depth: depth, Start: rawStart, End: rawEnd,
+			FirstChild: -1, NextSibling: -1,
+		})
 		return id, nil
-	}
-	if _, err := parse("root", -1, 0, "", "$", "root"); err != nil {
-		return nil, err
-	}
-	if _, err := d.Token(); err != io.EOF {
-		if err == nil {
-			err = fmt.Errorf("multiple JSON values")
+
+	case 't':
+		if err := p.parseLiteral("true"); err != nil {
+			return 0, err
 		}
-		return nil, err
+		p.nodes = append(p.nodes, document.JSONNode{
+			Key: key, Kind: "boolean", Raw: "true", Display: "true",
+			Pointer: pointer, JSONPath: path, DotPath: dot,
+			Parent: parent, Depth: depth, Start: start, End: p.pos,
+			FirstChild: -1, NextSibling: -1,
+		})
+		return id, nil
+
+	case 'f':
+		if err := p.parseLiteral("false"); err != nil {
+			return 0, err
+		}
+		p.nodes = append(p.nodes, document.JSONNode{
+			Key: key, Kind: "boolean", Raw: "false", Display: "false",
+			Pointer: pointer, JSONPath: path, DotPath: dot,
+			Parent: parent, Depth: depth, Start: start, End: p.pos,
+			FirstChild: -1, NextSibling: -1,
+		})
+		return id, nil
+
+	case 'n':
+		if err := p.parseLiteral("null"); err != nil {
+			return 0, err
+		}
+		p.nodes = append(p.nodes, document.JSONNode{
+			Key: key, Kind: "null", Raw: "null", Display: "null",
+			Pointer: pointer, JSONPath: path, DotPath: dot,
+			Parent: parent, Depth: depth, Start: start, End: p.pos,
+			FirstChild: -1, NextSibling: -1,
+		})
+		return id, nil
+
+	case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		disp, rawStart, rawEnd, err := p.parseNumber()
+		if err != nil {
+			return 0, err
+		}
+		p.nodes = append(p.nodes, document.JSONNode{
+			Key: key, Kind: "number", Raw: disp, Display: disp,
+			Pointer: pointer, JSONPath: path, DotPath: dot,
+			Parent: parent, Depth: depth, Start: rawStart, End: rawEnd,
+			FirstChild: -1, NextSibling: -1,
+		})
+		return id, nil
+
+
+	default:
+		return 0, fmt.Errorf("unexpected character '%c'", b)
 	}
-	return tree, nil
 }
 
 func jsonPathIdentifier(key string) bool {

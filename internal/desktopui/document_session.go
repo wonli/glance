@@ -9,6 +9,7 @@ import (
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
 	"glance/internal/format/markdowndoc"
+	"glance/internal/format/pdfdoc"
 	"glance/internal/wordlayout"
 
 	"gioui.org/layout"
@@ -51,6 +52,7 @@ type sharedDocumentSession struct {
 	wordBlocks                  []document.WordBlock
 	jsonDoc                     *jsondoc.Document
 	markdownDoc                 *markdowndoc.Document
+	pdfDoc                      *pdfdoc.Document
 	sheets                      []string
 	wordRunCommitted            map[string]string
 	wordRunDrafts               map[string]string

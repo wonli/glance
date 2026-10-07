@@ -138,6 +138,7 @@ type Result struct {
 
 type layoutCheckpoint struct {
 	PageIndex            int
+	Col                  int
 	YPT                  float64
 	Used                 bool
 	PendingBreak         bool
@@ -239,6 +240,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 				}
 				copy(result.blockCheckpoints[:dirtyBlock], previous.blockCheckpoints[:dirtyBlock])
 				cursor.pageIndex = checkpoint.PageIndex
+				cursor.currentCol = checkpoint.Col
 				cursor.y = checkpoint.YPT
 				cursor.used = checkpoint.Used
 				cursor.pendingBreak = checkpoint.PendingBreak
@@ -270,7 +272,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 			prepared, ok := preparedParagraphs[blockIndex]
 			if !ok {
 				var err error
-				prepared, err = prepareParagraph(ctx, e.shaper, styles, *block.Paragraph, block.ID, content.WidthPT, false, input.EditorParagraphInsets)
+				prepared, err = prepareParagraph(ctx, e.shaper, styles, *block.Paragraph, block.ID, cursor.columnWidth, false, input.EditorParagraphInsets)
 				if err != nil {
 					return Result{}, err
 				}
@@ -281,7 +283,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 					nextPrepared, exists := preparedParagraphs[blockIndex+1]
 					if !exists {
 						var err error
-						nextPrepared, err = prepareParagraph(ctx, e.shaper, styles, *nextBlock.Paragraph, nextBlock.ID, content.WidthPT, false, input.EditorParagraphInsets)
+						nextPrepared, err = prepareParagraph(ctx, e.shaper, styles, *nextBlock.Paragraph, nextBlock.ID, cursor.columnWidth, false, input.EditorParagraphInsets)
 						if err != nil {
 							return Result{}, err
 						}
@@ -306,7 +308,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 						cursor.diagnostic(DiagnosticWarning, block.ID, "keep-with-next-target-unsupported", "Keep-with-next is applied to consecutive paragraphs only; the following block cannot be kept with this paragraph.")
 						break
 					}
-					nextPrepared, err := prepareParagraph(ctx, e.shaper, styles, *nextBlock.Paragraph, nextBlock.ID, content.WidthPT, false, input.EditorParagraphInsets)
+					nextPrepared, err := prepareParagraph(ctx, e.shaper, styles, *nextBlock.Paragraph, nextBlock.ID, cursor.columnWidth, false, input.EditorParagraphInsets)
 					if err != nil {
 						return Result{}, err
 					}
@@ -318,10 +320,10 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 					}
 				}
 				if groupEnd > blockIndex && !preparedHasPageBreak(prepared) && groupHeight <= content.HeightPT+epsilonPT && cursor.used && cursor.y+groupHeight > content.YPT+content.HeightPT+epsilonPT {
-					cursor.nextPage()
+					cursor.advanceColumn()
 				}
 			}
-			if err := cursor.placePreparedParagraph(ctx, prepared, content, true, -1, 0); err != nil {
+			if err := cursor.placePreparedParagraph(ctx, prepared, cursor.currentColumnRect(), true, -1, 0); err != nil {
 				return Result{}, err
 			}
 		case document.WordTableBlock:
@@ -329,7 +331,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 				cursor.diagnostic(DiagnosticError, block.ID, "invalid-table", "The table block has no table data.")
 				continue
 			}
-			if err := cursor.layoutTable(ctx, e.shaper, styles, block.ID, *block.Table, content, input.EditorParagraphInsets); err != nil {
+			if err := cursor.layoutTable(ctx, e.shaper, styles, block.ID, *block.Table, cursor.currentColumnRect(), input.EditorParagraphInsets); err != nil {
 				return Result{}, err
 			}
 		case document.WordUnsupportedBlock:
@@ -379,14 +381,28 @@ func resolvePageSetup(layout document.WordLayoutData, fallback document.WordPage
 		}
 		return defaultValue
 	}
+	cols := 1
+	if section.Columns >= 1 {
+		cols = section.Columns
+	} else if fallback.Columns >= 1 {
+		cols = fallback.Columns
+	}
+	colSpace := 36.0
+	if section.Set&document.WordPageColumnSpacingSet != 0 || section.ColumnSpacingPT > 0 {
+		colSpace = section.ColumnSpacingPT
+	} else if fallback.Set&document.WordPageColumnSpacingSet != 0 || fallback.ColumnSpacingPT > 0 {
+		colSpace = fallback.ColumnSpacingPT
+	}
 	setup := document.WordPageSetup{
-		WidthPT:        value(section.Set, document.WordPageWidthSet, section.WidthPT, fallback.WidthPT),
-		HeightPT:       value(section.Set, document.WordPageHeightSet, section.HeightPT, fallback.HeightPT),
-		MarginTopPT:    value(section.Set, document.WordPageMarginTopSet, section.MarginTopPT, fallback.MarginTopPT),
-		MarginRightPT:  value(section.Set, document.WordPageMarginRightSet, section.MarginRightPT, fallback.MarginRightPT),
-		MarginBottomPT: value(section.Set, document.WordPageMarginBottomSet, section.MarginBottomPT, fallback.MarginBottomPT),
-		MarginLeftPT:   value(section.Set, document.WordPageMarginLeftSet, section.MarginLeftPT, fallback.MarginLeftPT),
-		Orientation:    strings.ToLower(section.Orientation),
+		WidthPT:         value(section.Set, document.WordPageWidthSet, section.WidthPT, fallback.WidthPT),
+		HeightPT:        value(section.Set, document.WordPageHeightSet, section.HeightPT, fallback.HeightPT),
+		MarginTopPT:     value(section.Set, document.WordPageMarginTopSet, section.MarginTopPT, fallback.MarginTopPT),
+		MarginRightPT:   value(section.Set, document.WordPageMarginRightSet, section.MarginRightPT, fallback.MarginRightPT),
+		MarginBottomPT:  value(section.Set, document.WordPageMarginBottomSet, section.MarginBottomPT, fallback.MarginBottomPT),
+		MarginLeftPT:    value(section.Set, document.WordPageMarginLeftSet, section.MarginLeftPT, fallback.MarginLeftPT),
+		Columns:         cols,
+		ColumnSpacingPT: colSpace,
+		Orientation:     strings.ToLower(section.Orientation),
 	}
 	explicitOrientation := section.Set&document.WordPageOrientationSet != 0 || section.Orientation != ""
 	if setup.Orientation == "" && section.WidthPT == 0 && section.HeightPT == 0 {
@@ -436,6 +452,10 @@ type layoutCursor struct {
 	setup              document.WordPageSetup
 	content            Rect
 	pageIndex          int
+	currentCol         int
+	columns            int
+	columnWidth        float64
+	columnSpacing      float64
 	y                  float64
 	used               bool
 	pendingBreak       bool
@@ -451,9 +471,49 @@ type glyphPathCacheKey struct {
 }
 
 func newLayoutCursor(result *Result, setup document.WordPageSetup, content Rect) *layoutCursor {
-	cursor := &layoutCursor{result: result, setup: setup, content: content, glyphPaths: make(map[glyphPathCacheKey][]GlyphPathCommand), currentBlockIndex: -1}
+	cols := setup.Columns
+	if cols < 1 {
+		cols = 1
+	}
+	colSpacing := setup.ColumnSpacingPT
+	if colSpacing < 0 {
+		colSpacing = 0
+	}
+	colWidth := content.WidthPT
+	if cols > 1 {
+		totalGaps := float64(cols-1) * colSpacing
+		if content.WidthPT > totalGaps {
+			colWidth = (content.WidthPT - totalGaps) / float64(cols)
+		} else {
+			cols = 1
+			colWidth = content.WidthPT
+		}
+	}
+	cursor := &layoutCursor{
+		result:             result,
+		setup:              setup,
+		content:            content,
+		columns:            cols,
+		columnWidth:        colWidth,
+		columnSpacing:      colSpacing,
+		glyphPaths:         make(map[glyphPathCacheKey][]GlyphPathCommand),
+		currentBlockIndex:  -1,
+	}
 	cursor.startPage()
 	return cursor
+}
+
+func (c *layoutCursor) currentColumnRect() Rect {
+	x := c.content.XPT
+	if c.columns > 1 && c.currentCol > 0 {
+		x += float64(c.currentCol) * (c.columnWidth + c.columnSpacing)
+	}
+	return Rect{
+		XPT:      x,
+		YPT:      c.content.YPT,
+		WidthPT:  c.columnWidth,
+		HeightPT: c.content.HeightPT,
+	}
 }
 
 func fingerprintBlocks(ctx context.Context, blocks []document.WordBlock) ([][32]byte, error) {
@@ -716,12 +776,23 @@ func (c *layoutCursor) startPage() {
 		Index: c.pageIndex, PageSetup: c.setup,
 		Clip: Rect{WidthPT: c.setup.WidthPT, HeightPT: c.setup.HeightPT}, Content: c.content,
 	})
+	c.currentCol = 0
 	c.y = c.content.YPT
 	c.used = false
 }
 
 func (c *layoutCursor) nextPage() {
 	c.startPage()
+}
+
+func (c *layoutCursor) advanceColumn() {
+	if c.currentCol+1 < c.columns {
+		c.currentCol++
+		c.y = c.content.YPT
+		c.used = false
+	} else {
+		c.nextPage()
+	}
 }
 
 func (c *layoutCursor) diagnostic(severity DiagnosticSeverity, sourceID, code, detail string) {
@@ -740,11 +811,11 @@ func (c *layoutCursor) diagnostic(severity DiagnosticSeverity, sourceID, code, d
 
 func (c *layoutCursor) checkpoint() layoutCheckpoint {
 	if c.pageIndex < 0 || c.pageIndex >= len(c.result.Pages) {
-		return layoutCheckpoint{PageIndex: -1, YPT: c.y, Used: c.used, PendingBreak: c.pendingBreak}
+		return layoutCheckpoint{PageIndex: -1, Col: 0, YPT: c.y, Used: c.used, PendingBreak: c.pendingBreak}
 	}
 	page := c.result.Pages[c.pageIndex]
 	return layoutCheckpoint{
-		PageIndex: c.pageIndex, YPT: c.y, Used: c.used, PendingBreak: c.pendingBreak,
+		PageIndex: c.pageIndex, Col: c.currentCol, YPT: c.y, Used: c.used, PendingBreak: c.pendingBreak,
 		TextCount: len(page.Text), ImageCount: len(page.Images),
 		TableCellCount: len(page.TableCells), ParagraphBorderCount: len(page.ParagraphBorders),
 	}
@@ -767,7 +838,7 @@ func (c *layoutCursor) ensureSpace(height float64, sourceID string) bool {
 	}
 	if c.y+height > c.content.YPT+c.content.HeightPT+epsilonPT {
 		if c.used {
-			c.nextPage()
+			c.advanceColumn()
 		} else {
 			c.diagnostic(DiagnosticError, sourceID, "item-overflow", "A Word layout item does not fit in the printable page area.")
 			return false
