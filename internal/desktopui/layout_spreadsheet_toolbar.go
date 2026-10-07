@@ -462,6 +462,26 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetLinkDialog()
 			continue
 		}
+		if action.slot == toolbarActionInsertShapes {
+			a.showSpreadsheetInsertShapeDialog()
+			continue
+		}
+		if action.slot == toolbarActionInsertTextBox {
+			a.showSpreadsheetInsertTextBoxDialog()
+			continue
+		}
+		if action.slot == toolbarActionInsertColumnChart {
+			a.showSpreadsheetInsertChartDialog(document.SpreadsheetChartColumn)
+			continue
+		}
+		if action.slot == toolbarActionInsertLineChart {
+			a.showSpreadsheetInsertChartDialog(document.SpreadsheetChartLine)
+			continue
+		}
+		if action.slot == toolbarActionInsertPieChart {
+			a.showSpreadsheetInsertChartDialog(document.SpreadsheetChartPie)
+			continue
+		}
 		if action.slot == toolbarActionHeaderRow {
 			a.showSpreadsheetPrintTitlesDialog()
 			continue
@@ -603,7 +623,9 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize,
 		toolbarActionPrintArea, toolbarActionViewGridlines, toolbarActionLayoutGridlines,
 		toolbarActionInsertTable, toolbarActionTableFormat, toolbarActionConditionalFormat,
-		toolbarActionInsertLink, toolbarActionHeaderRow,
+		toolbarActionInsertLink, toolbarActionInsertShapes, toolbarActionInsertTextBox,
+		toolbarActionInsertColumnChart, toolbarActionInsertLineChart, toolbarActionInsertPieChart,
+		toolbarActionHeaderRow,
 		toolbarActionFreezePanes, toolbarActionRemoveDuplicates, toolbarActionTextToColumns,
 		toolbarActionRecalculate, toolbarActionRefreshAll,
 		toolbarActionInsertFunction, toolbarActionRecentFunctions, toolbarActionLogicalFunctions,
@@ -685,6 +707,12 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	case toolbarActionInsertLink:
 		_, ok := state.book.(document.SpreadsheetHyperlinkEditor)
 		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionInsertShapes, toolbarActionInsertTextBox:
+		_, ok := state.book.(document.SpreadsheetShapeEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionInsertColumnChart, toolbarActionInsertLineChart, toolbarActionInsertPieChart:
+		_, ok := state.book.(document.SpreadsheetChartEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case 0, 1:
 		_, ok := state.book.(document.SpreadsheetHistory)
 		return ok && !state.formatRunning.Load() && !a.isSaving()

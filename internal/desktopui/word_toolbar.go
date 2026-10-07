@@ -351,6 +351,15 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "cover":
 		_, ok := any(state.word).(document.WordCoverPageEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "insert-bookmark":
+		_, ok := any(state.word).(document.WordBookmarkEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "insert-link":
+		_, ok := any(state.word).(document.WordHyperlinkEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "insert-textbox":
+		_, ok := any(state.word).(document.WordTextBoxEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case "review-language":
 		_, ok := any(state.word).(document.WordLanguageEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
@@ -586,6 +595,12 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordInsertTableDialog()
 		case "cover":
 			a.showWordCoverPageDialog()
+		case "insert-bookmark":
+			a.showWordBookmarkDialog()
+		case "insert-link":
+			a.showWordHyperlinkDialog()
+		case "insert-textbox":
+			a.showWordTextBoxDialog()
 		case "review-language":
 			a.showWordLanguageDialog()
 		case "review-word-count":
@@ -761,6 +776,16 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.queueWordPageBreak()
 	case "blank-page":
 		a.queueWordBlankPage()
+	case "cover":
+		a.showWordCoverPageDialog()
+	case "insert-bookmark":
+		a.showWordBookmarkDialog()
+	case "insert-link":
+		a.showWordHyperlinkDialog()
+	case "insert-textbox":
+		a.showWordTextBoxDialog()
+	case "review-language":
+		a.showWordLanguageDialog()
 	case "design-compact":
 		a.runWordSpacingCommand("紧凑段落间距", func(editor document.WordParagraphSpacingEditor) error {
 			return editor.SetAllParagraphsSpacing(0, 80)
@@ -2672,4 +2697,120 @@ func (a *App) showWordLanguageDialog() {
 	)
 }
 
+func (a *App) showWordBookmarkDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordBookmarkEditor)
+	if !ok {
+		a.setStatus("当前文档不支持插入书签")
+		return
+	}
+	runID := state.selectedWordRunID
+	a.modal.ShowInput("插入书签", "请输入书签名称（仅支持字母、数字与下划线）：", "Bookmark1", "例如 Bookmark_1", func(action string) {
+		a.modal.Hide()
+		if action != "confirm" {
+			return
+		}
+		name := strings.TrimSpace(a.modal.Input.Text())
+		if name == "" {
+			name = "Bookmark1"
+		}
+		err := editor.InsertBookmark(runID, name)
+		if err != nil {
+			a.setStatus("插入书签失败：" + err.Error())
+			return
+		}
+		a.setStatus(fmt.Sprintf("已成功插入书签 “%s”", name))
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	},
+		modalDialogActionSpec{ID: "confirm", Label: "插入书签"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
 
+func (a *App) showWordHyperlinkDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordHyperlinkEditor)
+	if !ok {
+		a.setStatus("当前文档不支持插入超链接")
+		return
+	}
+	runID := state.selectedWordRunID
+	var defaultText string
+	if run, ok := selectedWordRun(wordBlocksForState(state), runID); ok {
+		defaultText = run.Text
+	}
+	if defaultText == "" {
+		defaultText = "访问链接"
+	}
+
+	a.modal.ShowDualInput("插入超链接", "为当前位置设置超链接：",
+		"https://example.com", "链接地址 (例如 https://example.com 或 #书签名称)",
+		defaultText, "显示文本",
+		func(action string) {
+			a.modal.Hide()
+			if action != "confirm" {
+				return
+			}
+			urlVal := strings.TrimSpace(a.modal.Input.Text())
+			textVal := strings.TrimSpace(a.modal.SecondInput.Text())
+			if urlVal == "" {
+				a.setStatus("超链接地址不能为空")
+				return
+			}
+			if textVal == "" {
+				textVal = urlVal
+			}
+			err := editor.InsertHyperlink(runID, textVal, urlVal)
+			if err != nil {
+				a.setStatus("插入超链接失败：" + err.Error())
+				return
+			}
+			a.setStatus("已成功插入超链接")
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		},
+	)
+}
+
+func (a *App) showWordTextBoxDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordTextBoxEditor)
+	if !ok {
+		a.setStatus("当前文档不支持插入文本框")
+		return
+	}
+	a.modal.ShowInput("插入文本框", "请输入文本框引用文字：", "重要提示文本", "输入内容", func(action string) {
+		a.modal.Hide()
+		if action != "confirm" {
+			return
+		}
+		text := strings.TrimSpace(a.modal.Input.Text())
+		if text == "" {
+			text = "文本框内容"
+		}
+		err := editor.InsertTextBox("", text)
+		if err != nil {
+			a.setStatus("插入文本框失败：" + err.Error())
+			return
+		}
+		a.setStatus("已成功插入文本框")
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	},
+		modalDialogActionSpec{ID: "confirm", Label: "插入文本框"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}

@@ -43,24 +43,24 @@
 |---|---|---:|---:|---:|---:|
 | **Word 常驻功能区** | 文件 | 12 | 11 | 0 | 1 |
 | | 开始 | 27 | 23 | 0 | 4 |
-| | 插入 | 16 | 6 | 0 | 10 |
+| | 插入 | 16 | 9 | 0 | 7 |
 | | 设计 | 9 | 4 | 0 | 5 |
 | | 布局 | 12 | 9 | 0 | 3 |
 | | 审阅 | 11 | 3 | 0 | 8 |
 | | 视图 | 12 | 10 | 0 | 2 |
-| | **Word 常驻小计** | **99** | **66** | **0** | **33** |
+| | **Word 常驻小计** | **99** | **69** | **0** | **30** |
 | Word 上下文标签 | 图片（选图后出现） | 5 | 5 | 0 | 0 |
 | **Excel 常驻功能区** | 文件 | 6 | 5 | 0 | 1 |
 | | 开始 | 24 | 24 | 0 | 0 |
-| | 插入 | 9 | 3 | 0 | 6 |
+| | 插入 | 9 | 8 | 0 | 1 |
 | | 页面布局 | 6 | 6 | 0 | 0 |
 | | 公式 | 8 | 8 | 0 | 0 |
 | | 数据 | 7 | 7 | 0 | 0 |
 | | 审阅 | 6 | 4 | 0 | 2 |
 | | 视图 | 7 | 7 | 0 | 0 |
-| | **Excel 常驻小计** | **73** | **63** | **0** | **10** |
+| | **Excel 常驻小计** | **73** | **68** | **0** | **5** |
 | Excel 上下文标签 | 图片（选图后出现） | 3 | 3 | 0 | 0 |
-| **全应用功能区总计** | **全常驻标签合计** | **172** | **129** | **0** | **43** |
+| **全应用功能区总计** | **全常驻标签合计** | **172** | **137** | **0** | **35** |
 
 *(注：Word 另有快捷撤销/重做 `wordHistoryActions`；Excel 撤销/重做已包含在“开始”功能区中。)*
 
@@ -113,21 +113,21 @@
 - [ ] **加载项** `add-ins`（图标：`add-ins.svg`，组：编辑器）：待设计受限插件扩展接口。
 - [ ] **设计器** `designer`（图标：`designer.svg`，组：编辑器）：待排版规则引擎或建议服务接入。
 
-### 3.3 插入（16 项：已接通 4，待实现 12）
+### 3.3 插入（16 项：已接通 9，待实现 7）
 
-- [ ] **封面** `cover`（图标：`cover.svg`，组：页面）：待实现本地标准封面模板插入。
+- [x] **封面** `cover`（图标：`cover.svg`，组：页面）：通过统一 `ModalDialog` 弹窗向 DOCX 文档首页插入标准封面页（标题、副标题、作者及分页符），驱动连续排版与分页重排，受撤销重做（Undo/Redo）与历史快照保护。
 - [x] **空白页** `blank-page`（图标：`blank-page.svg`，组：页面）：在当前 caret 插入双原生分页符与空白编辑 run，自动定位光标至空白页，驱动连续排版与分页重排，支持保存重开与撤销重做。
 - [x] **分页** `page-break`（图标：`page-break.svg`，组：页面）：在当前 caret 插入原生 `w:br w:type="page"`，支持保存重开与分页重排。
 - [x] **表格** `insert-table`（图标：`insert-table.svg`，组：表格）：通过统一 `ModalDialog` 弹窗支持标准尺寸预设（2x2、3x3、4x4、5x3）与自定义行列输入（1–100 行，1–50 列），向 DOCX 写入规范 `<w:tbl>` 网格结构并在当前光标段落下插入，直接对接 Gio UI 真实表格渲染并受撤销重做（Undo/Redo）与历史快照保护。
 - [x] **图片** `insert-image`（图标：`insert-image.svg`，组：插图）：异步文件选择器插入 PNG/JPEG 行内图片。
 - [ ] **形状** `insert-shapes`（图标：`insert-shapes.svg`，组：插图）：待 DrawingML 形状中立模型与 XML 写入。
 - [ ] **图表** `insert-chart`（图标：`insert-chart.svg`，组：插图）：待图表部件与数据模型接入。
-- [ ] **链接** `insert-link`（图标：`insert-link.svg`，组：链接）：待超链接关系与 run 标注。
-- [ ] **书签** `insert-bookmark`（图标：`insert-bookmark.svg`，组：链接）：待书签起点/终点标记。
+- [x] **链接** `insert-link`（图标：`insert-link.svg`，组：链接）：通过统一 `ModalDialog` 双输入弹窗向当前选区/Run 插入外部 Web 超链接（写入 `word/_rels/document.xml.rels` 外部关系）或内部书签超链接（`w:anchor`），带下划线与标准超链接蓝色着色，受完整撤销重做（Undo/Redo）与历史快照保护。
+- [x] **书签** `insert-bookmark`（图标：`insert-bookmark.svg`，组：链接）：通过统一 `ModalDialog` 弹窗在当前选区/Run 插入命名书签（`<w:bookmarkStart>` 与 `<w:bookmarkEnd>`，自动分配唯一 ID 与转义名称），受完整撤销重做（Undo/Redo）与历史快照保护。
 - [ ] **页眉** `insert-header`（图标：`insert-header.svg`，组：页眉页脚）：待 section 页眉 part 读写。
 - [ ] **页脚** `insert-footer`（图标：`insert-footer.svg`，组：页眉页脚）：待 section 页脚 part 读写。
 - [ ] **页码** `insert-page-number`（图标：`insert-page-number.svg`，组：页眉页脚）：待动态页码字段与分页渲染贯通。
-- [ ] **文本框** `insert-textbox`（图标：`insert-textbox.svg`，组：文本）：待 DrawingML 文本框模型。
+- [x] **文本框** `insert-textbox`（图标：`insert-textbox.svg`，组：文本）：通过统一 `ModalDialog` 弹窗在当前光标段落下插入标准 Callout 文本框（1x1 结构化排版框、左侧强调蓝边与柔和底色），直接对接 Gio UI 原生表格渲染并受撤销重做（Undo/Redo）保护。
 - [ ] **艺术字** `insert-wordart`（图标：`insert-wordart.svg`，组：文本）：待文本特效渲染。
 - [ ] **公式** `insert-equation`（图标：`insert-equation.svg`，组：符号）：待 OMML 数学公式模型。
 - [x] **符号** `insert-symbol`（图标：`insert-symbol.svg`，组：符号）：弹出 24 常用标点/货币/数学/箭头符号面板并按字符插入。
@@ -164,7 +164,7 @@
 - [ ] **编辑器** `review-editor`（图标：`review-editor.svg`，组：校对）：待拼写语法检查服务。
 - [x] **字数统计** `review-word-count`（图标：`review-word-count.svg`，组：校对）：打开统一模态面板展示含/不含空白字数、段落数、表格数。
 - [ ] **翻译** `review-translate`（图标：`review-translate.svg`，组：语言）：待离线词典/翻译服务。
-- [ ] **语言** `review-language`（图标：`review-language.svg`，组：语言）：待校对语言标记写入。
+- [x] **语言** `review-language`（图标：`review-language.svg`，组：语言）：通过统一 `ModalDialog` 弹窗支持标准校对语言预设（简体中文 zh-CN、英语 en-US、日语 ja-JP）与自定义语言代码输入，底层向 DOCX 写入 `<w:lang>` 属性，受撤销重做（Undo/Redo）与历史快照保护。
 - [ ] **新建批注** `review-new-comment`（图标：`review-new-comment.svg`，组：批注）：待 comment 部件与锚点模型。
 - [ ] **删除批注** `review-delete-comment`（图标：`review-delete-comment.svg`，组：批注）：待批注删除。
 - [ ] **修订** `review-track`（图标：`review-track.svg`，组：修订）：待修订跟踪（Track Changes）模型。
@@ -227,7 +227,7 @@
 - [x] **数字格式**（Slot 10，图标：`hash.svg`，组：格式）：弹出格式选择器（常规/整数/两位小数/日期）并应用。
 - [x] **插入**（Slot 12，图标：`square-plus.svg`，组：单元格）：在当前活动行前插入 1 行。
 - [x] **删除**（Slot 13，图标：`trash-2.svg`，组：单元格）：删除当前活动行。
-- [ ] **条件格式**（Slot 35，图标：`sparkles.svg`，组：单元格）：未实现。
+- [x] **条件格式**（Slot 35，图标：`sparkles.svg`，组：单元格）：通过统一 `ModalDialog` 弹窗支持为选区配置预设条件格式规则（渐变数据条 data_bar、三色色阶 3_color_scale、高亮重复值 duplicate、高于平均值 above_average）或一键清除规则，底层调用 Excelize 写入并受完整撤销重做（Undo/Redo）与历史快照保护。
 - [x] **表格格式**（Slot 36，图标：`table.svg`，组：单元格）：通过统一 `ModalDialog` 弹窗选择中等风格、浅色风格或深色风格，在当前选区自动创建格式化表格并规范首行标题，受撤销重做（Undo/Redo）与历史快照保护。
 - [x] **求和**（Slot 37，图标：`sigma.svg`，组：编辑）：对选区内连续数值进行自动求和（支持多列底部填入、单行右侧填入以及单单元格向上/向左探查），结果自动批量写入并受撤销重做保护。
 - [x] **排序**（Slot 18，图标：`arrow-up-down.svg`，组：编辑）：按当前选区活动列升序排序。
@@ -236,17 +236,17 @@
 - [x] **撤销**（Slot 0，图标：`undo-2.svg`，组：历史）：撤销上一步网格编辑或格式修改。
 - [x] **重做**（Slot 1，图标：`redo-2.svg`，组：历史）：重做下一步操作。
 
-### 4.3 插入（9 项：已接通 3，未实现 6）
+### 4.3 插入（9 项：已接通 8，未实现 1）
 
 - [x] **表格**（Slot 39，图标：`table.svg`，组：插入）：通过统一 `ModalDialog` 弹窗在当前选区插入结构化表格，支持多套预设表格样式，受撤销重做（Undo/Redo）与历史快照保护。
 - [ ] **数据透视表**（Slot 40，图标：`layout-grid.svg`，组：插入）：未实现。
 - [x] **图片**（Slot 25，图标：`image.svg`，组：插入）：文件选择器选择图片，作为浮动对象插入工作表。
-- [ ] **形状**（Slot 41，图标：`shapes.svg`，组：插入）：未实现。
-- [ ] **柱状图**（Slot 42，图标：`chart-column.svg`，组：图表）：未实现。
-- [ ] **折线图**（Slot 43，图标：`route.svg`，组：图表）：未实现。
-- [ ] **饼图**（Slot 44，图标：`chart-pie.svg`，组：图表）：未实现。
+- [x] **形状**（Slot 41，图标：`shapes.svg`，组：插入）：通过统一 `ModalDialog` 弹窗支持在指定单元格位置插入标准几何形状（圆角矩形 roundRect、矩形 rect、椭圆 ellipse、箭头 rightArrow、五角星 star5），底层调用 Excelize AddShape 写入并受撤销重做与历史快照保护。
+- [x] **柱状图**（Slot 42，图标：`chart-column.svg`，组：图表）：通过统一 `ModalDialog` 弹窗基于选区范围自动解析分类轴与数据序列，在工作表指定位置插入标准柱状图（`excelize.Col`），支持图表标题自定义，受撤销重做与历史快照保护。
+- [x] **折线图**（Slot 43，图标：`route.svg`，组：图表）：通过统一 `ModalDialog` 弹窗基于选区范围插入标准趋势折线图（`excelize.Line`），支持图表标题自定义，受撤销重做与历史快照保护。
+- [x] **饼图**（Slot 44，图标：`chart-pie.svg`，组：图表）：通过统一 `ModalDialog` 弹窗基于选区范围插入标准占比饼图（`excelize.Pie`），支持图表标题自定义，受撤销重做与历史快照保护。
 - [x] **链接**（Slot 45，图标：`link.svg`，组：链接）：通过统一 `ModalDialog` 双输入弹窗为当前选中单元格设置超链接（外部 URL 或跨工作表单元格引用）及提示文本；若单元格为空自动填充链接文本，支持移除现有超链接与撤销重做。
-- [ ] **文本框**（Slot 46，图标：`text-cursor-input.svg`，组：文本）：未实现。
+- [x] **文本框**（Slot 46，图标：`text-cursor-input.svg`，组：文本）：通过统一 `ModalDialog` 弹窗在工作表指定单元格位置插入带有富文本段落的矩形文本框，底层调用 Excelize AddShape 写入并受撤销重做与历史快照保护。
 
 ### 4.4 页面布局（6 项：全部已接通，未实现 0）
 

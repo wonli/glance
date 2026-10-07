@@ -325,11 +325,22 @@ type WordTableInsertEditor interface {
 type WordCoverPageEditor interface {
 	InsertCoverPage(title, subtitle, author string) error
 }
-
 // WordLanguageEditor provides setting the proofing/document language tag.
 type WordLanguageEditor interface {
 	SetLanguage(runID, langCode string) error
 }
 
+// WordBookmarkEditor provides inserting named bookmarks into the Word document.
+type WordBookmarkEditor interface {
+	InsertBookmark(runID, name string) error
+}
 
+// WordHyperlinkEditor provides adding external or anchor hyperlinks into the Word document.
+type WordHyperlinkEditor interface {
+	InsertHyperlink(runID, text, targetURL string) error
+}
 
+// WordTextBoxEditor provides inserting a stylized callout text box into the Word document.
+type WordTextBoxEditor interface {
+	InsertTextBox(afterParagraphID, text string) error
+}

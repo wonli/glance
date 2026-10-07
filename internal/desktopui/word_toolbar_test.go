@@ -1849,9 +1849,56 @@ func TestWordToolbar_CoverPageAndLanguage(t *testing.T) {
 	}
 }
 
+func TestWordToolbar_BookmarkLinkAndTextBox(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
 
+	state := newDocumentSessionState("word-insert.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	app := &App{documentSessionState: state}
 
+	// 1. Verify actions are enabled
+	for _, id := range []string{"insert-bookmark", "insert-link", "insert-textbox"} {
+		if !app.wordToolbarActionEnabled(ribbonAction{id: id}) {
+			t.Fatalf("expected action %q to be enabled", id)
+		}
+	}
 
+	// 2. Test Insert Bookmark Dialog & Execution
+	app.showWordBookmarkDialog()
+	if !app.modal.Visible || app.modal.Title != "插入书签" {
+		t.Fatalf("expected 插入书签 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("Test_Bookmark")
+	app.modal.OnAction("confirm")
+	if !strings.Contains(app.status, "已成功插入书签") {
+		t.Fatalf("unexpected status after insert bookmark: %q", app.status)
+	}
 
+	// 3. Test Insert Hyperlink Dialog & Execution
+	app.showWordHyperlinkDialog()
+	if !app.modal.Visible || app.modal.Title != "插入超链接" {
+		t.Fatalf("expected 插入超链接 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("https://golang.org")
+	app.modal.SecondInput.SetText("Go官网")
+	app.modal.OnAction("confirm")
+	if !strings.Contains(app.status, "已成功插入超链接") {
+		t.Fatalf("unexpected status after insert link: %q", app.status)
+	}
 
-
+	// 4. Test Insert Text Box Dialog & Execution
+	app.showWordTextBoxDialog()
+	if !app.modal.Visible || app.modal.Title != "插入文本框" {
+		t.Fatalf("expected 插入文本框 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("侧边栏重要提示")
+	app.modal.OnAction("confirm")
+	if !strings.Contains(app.status, "已成功插入文本框") {
+		t.Fatalf("unexpected status after insert textbox: %q", app.status)
+	}
+}

@@ -418,5 +418,40 @@ type SpreadsheetConditionalFormatEditor interface {
 	ClearConditionalFormat(sheet string, bounds CellRange) error
 }
 
+// SpreadsheetShapeSpec defines parameters for adding a shape or text box to a worksheet.
+type SpreadsheetShapeSpec struct {
+	Sheet  string
+	Cell   string // Top-left anchor cell, e.g. "B2"
+	Type   string // Shape type: "rect", "roundRect", "ellipse", "rightArrow", "star5", etc.
+	Width  uint   // Width in pixels (default e.g. 160)
+	Height uint   // Height in pixels (default e.g. 90)
+	Text   string // Optional inner text
+}
 
+// SpreadsheetShapeEditor provides adding shapes and text boxes to a worksheet.
+type SpreadsheetShapeEditor interface {
+	AddShape(spec SpreadsheetShapeSpec) error
+}
 
+// SpreadsheetChartKind represents supported chart types.
+type SpreadsheetChartKind string
+
+const (
+	SpreadsheetChartColumn SpreadsheetChartKind = "col"
+	SpreadsheetChartLine   SpreadsheetChartKind = "line"
+	SpreadsheetChartPie    SpreadsheetChartKind = "pie"
+)
+
+// SpreadsheetChartSpec defines parameters for generating a chart in a worksheet.
+type SpreadsheetChartSpec struct {
+	Sheet string
+	Cell  string // Top-left anchor cell, e.g. "E2"
+	Kind  SpreadsheetChartKind
+	Title string
+	Range CellRange // Data range, e.g. A1:B5
+}
+
+// SpreadsheetChartEditor provides adding charts to a worksheet.
+type SpreadsheetChartEditor interface {
+	AddChart(spec SpreadsheetChartSpec) error
+}
