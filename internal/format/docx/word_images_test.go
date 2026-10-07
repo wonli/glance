@@ -256,6 +256,36 @@ func TestInsertInlineImageAfterTextRoundTripsAndUsesCollisionFreeParts(t *testin
 	}
 }
 
+func TestInsertInlineImageConstrainsOversizedImage(t *testing.T) {
+	doc := imageOperationFixture(t,
+		imageDocRoot(`<w:p><w:r><w:t>text</w:t></w:r></w:p>`),
+		imageRelationshipRoot(), imageContentTypes(), nil)
+	defer doc.Close()
+	paragraph := doc.WordBlocks()[0].Paragraph
+	// 2000x3000 image
+	largeImageBytes := imageFixtureBytes(t, 2000, 3000, color.NRGBA{R: 50, G: 150, B: 250, A: 255})
+	imageID, err := requireWordImageEditor(t, doc).InsertInlineImage(paragraph.ID, "", "image/png", largeImageBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := doc.WordBlocks()[0].Paragraph
+	var img *document.WordImage
+	for _, inline := range updated.Inlines {
+		if inline.Image != nil && inline.Image.ID == imageID {
+			img = inline.Image
+			break
+		}
+	}
+	if img == nil {
+		t.Fatalf("inserted image %q not found in inlines: %+v", imageID, updated.Inlines)
+	}
+	const maxDefaultWidthEMU = int64(5.5 * 914400)
+	const maxDefaultHeightEMU = int64(7.5 * 914400)
+	if img.WidthEMU > maxDefaultWidthEMU || img.HeightEMU > maxDefaultHeightEMU {
+		t.Fatalf("oversized image dimensions = %dx%d; want <= %dx%d", img.WidthEMU, img.HeightEMU, maxDefaultWidthEMU, maxDefaultHeightEMU)
+	}
+}
+
 func TestReplacingOneImageDoesNotChangeSharedMediaUsedByAnother(t *testing.T) {
 	shared := imageFixtureBytes(t, 1, 1, color.NRGBA{R: 200, G: 40, B: 30, A: 255})
 	doc := imageOperationFixture(t,

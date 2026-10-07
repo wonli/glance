@@ -2713,6 +2713,10 @@ func (a *App) insertWordTable(editor document.WordTableInsertEditor, rows, cols 
 		a.setStatus("插入表格失败：" + err.Error())
 		return
 	}
+	if state.word != nil {
+		state.setWordBlocks(state.word.WordBlocks())
+		a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
+	}
 	a.setStatus(fmt.Sprintf("已成功插入 %d行%d列 表格", rows, cols))
 	_ = tableID
 	if a.window != nil {
@@ -2793,6 +2797,10 @@ func (a *App) showWordCoverPageDialog() {
 		if err != nil {
 			a.setStatus("插入封面失败：" + err.Error())
 			return
+		}
+		if state.word != nil {
+			state.setWordBlocks(state.word.WordBlocks())
+			a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 		}
 		a.setStatus("已成功在文档首页插入标准封面页")
 		if a.window != nil {
@@ -2881,6 +2889,10 @@ func (a *App) showWordBookmarkDialog() {
 			a.setStatus("插入书签失败：" + err.Error())
 			return
 		}
+		if state.word != nil {
+			state.setWordBlocks(state.word.WordBlocks())
+			a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
+		}
 		a.setStatus(fmt.Sprintf("已成功插入书签 “%s”", name))
 		if a.window != nil {
 			a.window.Invalidate()
@@ -2932,6 +2944,10 @@ func (a *App) showWordHyperlinkDialog() {
 				a.setStatus("插入超链接失败：" + err.Error())
 				return
 			}
+			if state.word != nil {
+				state.setWordBlocks(state.word.WordBlocks())
+				a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
+			}
 			a.setStatus("已成功插入超链接")
 			if a.window != nil {
 				a.window.Invalidate()
@@ -2963,6 +2979,10 @@ func (a *App) showWordTextBoxDialog() {
 		if err != nil {
 			a.setStatus("插入文本框失败：" + err.Error())
 			return
+		}
+		if state.word != nil {
+			state.setWordBlocks(state.word.WordBlocks())
+			a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 		}
 		a.setStatus("已成功插入文本框")
 		if a.window != nil {
@@ -3555,6 +3575,10 @@ func (a *App) showWordWordArtDialog() {
 				a.setStatus("插入艺术字失败：" + err.Error())
 				return
 			}
+			if state.word != nil {
+				state.setWordBlocks(state.word.WordBlocks())
+				a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
+			}
 			a.setStatus("已成功插入艺术字：" + text)
 			if a.window != nil {
 				a.window.Invalidate()
@@ -3611,6 +3635,10 @@ func (a *App) showWordEquationDialog() {
 				if err := textBoxEditor.InsertTextBox(afterPID, "【公式】"+formula); err != nil {
 					a.setStatus("插入公式失败：" + err.Error())
 					return
+				}
+				if state.word != nil {
+					state.setWordBlocks(state.word.WordBlocks())
+					a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 				}
 				a.setStatus("已成功插入公式")
 				if a.window != nil {
@@ -3670,6 +3698,10 @@ func (a *App) showWordShapesDialog() {
 			if err := textBoxEditor.InsertTextBox(afterPID, content); err != nil {
 				a.setStatus("插入形状失败：" + err.Error())
 				return
+			}
+			if state.word != nil {
+				state.setWordBlocks(state.word.WordBlocks())
+				a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 			}
 			a.setStatus("已成功插入形状：" + shapeType)
 			if a.window != nil {

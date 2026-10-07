@@ -152,6 +152,19 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 				height *= ratio
 				styles.cursor.diagnostic(DiagnosticWarning, image.ID, "image-scaled-to-page", "The inline image was scaled down to fit the printable text width.")
 			}
+			maxHeight := styles.cursor.content.HeightPT
+			if maxHeight > 0 {
+				reserved := prepared.style.paragraph.BeforePT + prepared.style.paragraph.AfterPT + prepared.uiBeforePT + prepared.uiAfterPT + 4
+				if available := maxHeight - reserved; available > 20 {
+					maxHeight = available
+				}
+			}
+			if height > maxHeight && maxHeight > 0 {
+				ratio := maxHeight / height
+				width *= ratio
+				height *= ratio
+				styles.cursor.diagnostic(DiagnosticWarning, image.ID, "image-scaled-to-page", "The inline image was scaled down to fit the printable page height.")
+			}
 			atoms = append(atoms, paragraphAtom{kind: atomImage, sourceID: image.ID, imageID: image.ID, imageRotation: image.RotationDegrees, imageWidth: width, imageHeight: height, advance: width, ascent: height, breakBefore: true, breakAfter: true})
 		case document.WordPageBreakInline:
 			if inline.PageBreak == nil {
@@ -176,6 +189,18 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 						styles.cursor.diagnostic(DiagnosticWarning, source, "missing-image-media", detail+"; a placeholder is shown.")
 						if width > imageWidth && imageWidth > 0 {
 							ratio := imageWidth / width
+							width *= ratio
+							height *= ratio
+						}
+						maxHeight := styles.cursor.content.HeightPT
+						if maxHeight > 0 {
+							reserved := prepared.style.paragraph.BeforePT + prepared.style.paragraph.AfterPT + prepared.uiBeforePT + prepared.uiAfterPT + 4
+							if available := maxHeight - reserved; available > 20 {
+								maxHeight = available
+							}
+						}
+						if height > maxHeight && maxHeight > 0 {
+							ratio := maxHeight / height
 							width *= ratio
 							height *= ratio
 						}

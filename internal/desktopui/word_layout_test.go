@@ -1,7 +1,9 @@
 package desktopui
 
 import (
+	"bytes"
 	"image"
+	"image/png"
 	"reflect"
 	"testing"
 	"time"
@@ -421,5 +423,67 @@ func TestWordHistoryRefreshesProjectionAndInvalidatesImageCache(t *testing.T) {
 	}
 	if state.wordImageCache.Bytes() != 0 {
 		t.Fatalf("redo should invalidate decoded image previews; got %d bytes", state.wordImageCache.Bytes())
+	}
+}
+
+func TestWordImageInsertOversizedLayoutSuccess(t *testing.T) {
+	doc, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	state := newDocumentSessionState("test.docx")
+	state.word = doc
+	state.setWordBlocks(doc.WordBlocks())
+
+	paragraphs := allWordParagraphs(state.wordBlocks)
+	if len(paragraphs) == 0 {
+		t.Fatal("expected at least one paragraph")
+	}
+
+	largeImg := image.NewRGBA(image.Rect(0, 0, 1500, 2500))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, largeImg); err != nil {
+		t.Fatal(err)
+	}
+
+	app := &App{
+		documentSessionState: state,
+		wordCommandResults:   make(chan wordCommandResult, 2),
+		wordLayoutResults:    make(chan wordLayoutResult, 4),
+		shutdown:             make(chan struct{}),
+	}
+
+	app.runWordImageInsertCommand(paragraphs[0].ID, "", "image/png", buf.Bytes())
+
+	select {
+	case res := <-app.wordCommandResults:
+		if res.err != nil {
+			t.Fatalf("insert image failed: %v", res.err)
+		}
+		app.wordCommandResults <- res
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for image insert")
+	}
+
+	app.startWordPagination(state)
+
+	select {
+	case layoutRes := <-app.wordLayoutResults:
+		if layoutRes.err != nil {
+			t.Fatalf("word layout failed with error: %v", layoutRes.err)
+		}
+		for _, diag := range layoutRes.result.Diagnostics {
+			if diag.Severity == wordlayout.DiagnosticError {
+				t.Fatalf("unexpected layout error diagnostic: %+v", diag)
+			}
+		}
+		if len(layoutRes.result.Pages) == 0 || len(layoutRes.result.Pages[0].Images) == 0 {
+			t.Fatalf("expected placed image on first page, got %d pages", len(layoutRes.result.Pages))
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for word layout result")
 	}
 }

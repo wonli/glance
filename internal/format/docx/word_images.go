@@ -91,6 +91,16 @@ func (d *Document) InsertInlineImage(paragraphID, afterInlineID, mediaType strin
 	docPrID := d.nextWordDocPrID()
 	imageID := "img-" + strconv.Itoa(docPrID)
 	widthEMU, heightEMU := int64(config.Width)*wordPixelToEMU, int64(config.Height)*wordPixelToEMU
+	const maxDefaultWidthEMU = int64(5.5 * 914400)  // 5.5 inches ≈ 5,029,200 EMU
+	const maxDefaultHeightEMU = int64(7.5 * 914400) // 7.5 inches ≈ 6,858,000 EMU
+	if widthEMU > maxDefaultWidthEMU && widthEMU > 0 {
+		heightEMU = heightEMU * maxDefaultWidthEMU / widthEMU
+		widthEMU = maxDefaultWidthEMU
+	}
+	if heightEMU > maxDefaultHeightEMU && heightEMU > 0 {
+		widthEMU = widthEMU * maxDefaultHeightEMU / heightEMU
+		heightEMU = maxDefaultHeightEMU
+	}
 	drawing := wordDrawingMarkup(paragraph.rawName, docPrID, relationshipID, widthEMU, heightEMU, path.Base(mediaName))
 	if run != nil {
 		drawing, err = wordDrawingChildMarkup(drawing, elementPrefix(paragraph.rawName))

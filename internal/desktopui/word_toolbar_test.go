@@ -1788,6 +1788,21 @@ func TestWordToolbar_TableAndPageBorder(t *testing.T) {
 		t.Fatal("inserted table not found in document blocks")
 	}
 
+	// Verify table is immediately visible in the active session without closing/reopening
+	sessionBlocks := wordBlocksForState(state)
+	foundInSession := false
+	for _, block := range sessionBlocks {
+		if block.Kind == document.WordTableBlock && block.Table != nil {
+			foundInSession = true
+			if len(block.Table.Rows) != 3 {
+				t.Fatalf("expected 3 rows in session blocks, got %d", len(block.Table.Rows))
+			}
+		}
+	}
+	if !foundInSession {
+		t.Fatal("inserted table not immediately visible in session state word blocks")
+	}
+
 	// 3. Page Border Dialog & Execution
 	app.showWordPageBorderDialog()
 	if !app.modal.Visible || app.modal.Title != "页面边框" {
@@ -2337,4 +2352,3 @@ func TestWordEditing_SplitAfterFontColorAndHighlight(t *testing.T) {
 		t.Fatalf("status reported failure: %s", app.status)
 	}
 }
-

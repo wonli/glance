@@ -579,6 +579,35 @@ func TestLayoutScalesInlineImageToIndentedTextWidth(t *testing.T) {
 	}
 }
 
+func TestLayoutScalesInlineImageToPrintablePageHeight(t *testing.T) {
+	// Page height 100pt, margins 10pt -> printable height is 80pt
+	// Image has height 200pt (2540000 EMU), width 100pt (1270000 EMU)
+	paragraph := document.WordParagraph{
+		ID:        "p0",
+		Alignment: document.WordAlignDefault,
+		Inlines: []document.WordInline{{Kind: document.WordImageInline, Image: &document.WordImage{
+			ID: "img0", WidthEMU: 1270000, HeightEMU: 2540000, Resolved: true,
+		}}},
+	}
+	input := layoutTestInput(120, 100, 10, document.WordBlock{ID: "p0", Kind: document.WordParagraphBlock, Paragraph: &paragraph})
+	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, diag := range result.Diagnostics {
+		if diag.Severity == DiagnosticError {
+			t.Fatalf("unexpected layout error diagnostic: %+v", diag)
+		}
+	}
+	if len(result.Pages) == 0 || len(result.Pages[0].Images) != 1 {
+		t.Fatalf("pages/images = %+v; want one placed image", result.Pages)
+	}
+	image := result.Pages[0].Images[0]
+	if image.Bounds.HeightPT > 80 {
+		t.Fatalf("image height = %.2f; should not exceed printable page height 80pt", image.Bounds.HeightPT)
+	}
+}
+
 func TestLayoutKeepsParagraphWithNextParagraphOnFreshPage(t *testing.T) {
 	prefix := paragraphBlock("prefix", "x", document.WordTextStyle{FontSize: 15})
 	kept := paragraphBlock("kept", "a", document.WordTextStyle{FontSize: 10})
