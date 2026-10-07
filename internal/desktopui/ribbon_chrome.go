@@ -188,7 +188,7 @@ var excelIconAssetNames = map[string]string{
 	"folder-plus": "square-plus", "file-text": "file-down", "file-spreadsheet": "table-2", "presentation": "chart-column",
 	"file-code": "scan", "code": "scan-2", "file": "file-output", "search": "search",
 	"list-filter": "list-filter", "ellipsis": "message-square-plus", "chevron-down": "arrow-up-down", "star-filled": "star-filled",
-	"paint-bucket": "paintbrush", "grid": "grid-3x3",
+	"paint-bucket": "paintbrush", "grid": "grid-3x3", "pencil": "pencil",
 }
 
 var (

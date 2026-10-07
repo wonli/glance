@@ -18,31 +18,65 @@ import (
 )
 
 var pdfToolbarActions = []ribbonAction{
-	{id: "open", label: "打开", group: "file", icon: "open"},
-	{id: "close", label: "关闭", group: "file", icon: "close"},
+	{id: "open", label: "打开", group: "file", icon: "folder-open"},
 	{id: "save", label: "保存", group: "file", icon: "save"},
-	{id: "save-as", label: "另存为", group: "file", icon: "save-as"},
+	{id: "save-as", label: "另存为", group: "file", icon: "file-down"},
 
-	{id: "thumbnails", label: "缩略图", group: "view", icon: "thumbnails"},
+	{id: "thumbnails", label: "缩略图", group: "view", icon: "panel-left"},
 	{id: "search", label: "搜索", group: "view", icon: "search"},
 
-	{id: "previous", label: "上一页", group: "page", icon: "previous"},
+	{id: "previous", label: "上一页", group: "page", icon: "chevron-left"},
 	{id: "page-indicator", label: "页码", group: "page", icon: ""},
-	{id: "next", label: "下一页", group: "page", icon: "next"},
+	{id: "next", label: "下一页", group: "page", icon: "chevron-right"},
 
-	{id: "zoom-out", label: "缩小", group: "zoom", icon: "zoom-out"},
+	{id: "zoom-out", label: "缩小", group: "zoom", icon: "minus"},
 	{id: "zoom-indicator", label: "缩放", group: "zoom", icon: ""},
-	{id: "zoom-in", label: "放大", group: "zoom", icon: "zoom-in"},
-	{id: "fit-width", label: "适合宽度", group: "zoom", icon: "fit-width"},
-	{id: "fit-page", label: "适合页面", group: "zoom", icon: "fit-page"},
-	{id: "rotate", label: "旋转", group: "zoom", icon: "rotate"},
+	{id: "zoom-in", label: "放大", group: "zoom", icon: "plus"},
+	{id: "fit-width", label: "适合宽度", group: "zoom", icon: "view-multiple-pages"},
+	{id: "fit-page", label: "适合页面", group: "zoom", icon: "view-single-page"},
+	{id: "rotate", label: "旋转", group: "zoom", icon: "rotate-cw"},
 
-	{id: "highlight", label: "高亮", group: "annotate", icon: "highlight"},
-	{id: "note", label: "添加批注", group: "annotate", icon: "note"},
-	{id: "ink", label: "自由绘制", group: "annotate", icon: "ink"},
+	{id: "highlight", label: "高亮", group: "annotate", icon: "text-highlight"},
+	{id: "note", label: "添加批注", group: "annotate", icon: "message-square-plus"},
+	{id: "ink", label: "自由绘制", group: "annotate", icon: "pencil"},
 
 	{id: "undo", label: "撤销", group: "history", icon: "undo"},
 	{id: "redo", label: "重做", group: "history", icon: "redo"},
+}
+
+var pdfIconAliases = map[string]string{
+	"open":       "folder-open",
+	"save-as":    "file-down",
+	"thumbnails": "panel-left",
+	"previous":   "chevron-left",
+	"next":       "chevron-right",
+	"zoom-out":   "minus",
+	"zoom-in":    "plus",
+	"fit-width":  "view-multiple-pages",
+	"fit-page":   "view-single-page",
+	"rotate":     "rotate-cw",
+	"highlight":  "text-highlight",
+	"note":       "message-square-plus",
+	"ink":        "pencil",
+	"pencil":     "pencil",
+	"download":   "file-down",
+	"print":      "printer",
+}
+
+func pdfToolbarIcon(name string, tint color.NRGBA) (image.Image, bool) {
+	if alias, ok := pdfIconAliases[name]; ok {
+		name = alias
+	}
+	if img, ok := tintedToolbarIcon(name, tint); ok {
+		return img, true
+	}
+	if img, ok := svgIconTintAtSize("word", name, 96, tint); ok {
+		return img, true
+	}
+	if img, ok := svgIconTintAtSize("excel", name, 96, tint); ok {
+		return img, true
+	}
+	return nil, false
 }
 
 func (a *App) layoutPDFDocument(gtx layout.Context) layout.Dimensions {
@@ -101,24 +135,43 @@ func (a *App) layoutPDFRibbon(gtx layout.Context) layout.Dimensions {
 							})
 						})
 					}
-					enabled := !v.pending && !a.isSaving()
+					enabled := !a.isSaving()
+					if action.id == "save" {
+						enabled = enabled && a.isDirty()
+					}
 					if action.id == "undo" {
 						enabled = enabled && v.info.CanUndo
 					}
 					if action.id == "redo" {
 						enabled = enabled && v.info.CanRedo
 					}
-					iconCol := toolbarIconColor(enabled)
+					active := false
 					if action.id == "thumbnails" && v.thumbnails {
-						iconCol = color.NRGBA{R: 43, G: 108, B: 176, A: 255}
+						active = true
 					}
-					icon, ok := svgIconTintAtSize("pdf", action.icon, 192, iconCol)
+					if action.id == "highlight" && v.tool == "highlight" {
+						active = true
+					}
+					if action.id == "ink" && v.tool == "ink" {
+						active = true
+					}
+					if action.id == "note" && v.tool == "note" {
+						active = true
+					}
+
+					iconCol := toolbarIconColor(enabled)
+					background := contentSurface
+					if active {
+						iconCol = color.NRGBA{R: 43, G: 108, B: 176, A: 255}
+						background = toolbarActiveBackground
+					}
+					icon, ok := pdfToolbarIcon(action.icon, iconCol)
 					if !ok {
 						icon, _ = markdownToolbarIcon(action, enabled)
 					}
 					return layoutToolbarActionItem(gtx, action, i, pdfToolbarActions, func(gtx layout.Context) layout.Dimensions {
-						gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(48), gtx.Dp(48)))
-						return toolbarIconButton(gtx, a.theme, v.button(action.id), icon, 18, action.label, action.label, enabled, false, contentSurface)
+						gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
+						return toolbarIconButton(gtx, a.theme, v.button(action.id), icon, toolbarIconSize, action.label, action.label, enabled, false, background)
 					})
 				})
 			}),
@@ -128,18 +181,18 @@ func (a *App) layoutPDFRibbon(gtx layout.Context) layout.Dimensions {
 						layout.Rigid(a.layoutPDFModeSwitch),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								enabled := !v.pending && !a.isSaving()
-								icon, _ := svgIconTintAtSize("pdf", "print", 192, toolbarIconColor(enabled))
-								gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(48), gtx.Dp(48)))
-								return toolbarIconButton(gtx, a.theme, v.button("print"), icon, 18, "打印", "打印", enabled, false, contentSurface)
+								enabled := !a.isSaving()
+								icon, _ := pdfToolbarIcon("printer", toolbarIconColor(enabled))
+								gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
+								return toolbarIconButton(gtx, a.theme, v.button("print"), icon, toolbarIconSize, "打印", "打印", enabled, false, contentSurface)
 							})
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								enabled := !v.pending && !a.isSaving()
-								icon, _ := svgIconTintAtSize("pdf", "download", 192, toolbarIconColor(enabled))
-								gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(48), gtx.Dp(48)))
-								return toolbarIconButton(gtx, a.theme, v.button("download"), icon, 18, "下载", "下载", enabled, false, contentSurface)
+								enabled := !a.isSaving()
+								icon, _ := pdfToolbarIcon("file-down", toolbarIconColor(enabled))
+								gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
+								return toolbarIconButton(gtx, a.theme, v.button("download"), icon, toolbarIconSize, "下载", "下载", enabled, false, contentSurface)
 							})
 						}),
 					)

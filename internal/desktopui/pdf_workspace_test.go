@@ -206,3 +206,37 @@ func TestPDFBusyConfirmRetainsDraft(t *testing.T) {
 		t.Fatal("cancel changed document")
 	}
 }
+
+func TestPDFRibbonIconsResolutionAndSolidGlyphs(t *testing.T) {
+	wantIcons := []string{
+		"open", "save", "save-as", "thumbnails", "search",
+		"previous", "next", "zoom-out", "zoom-in", "fit-width", "fit-page",
+		"rotate", "highlight", "note", "ink", "pencil", "undo", "redo",
+		"printer", "download",
+	}
+	for _, name := range wantIcons {
+		img, ok := pdfToolbarIcon(name, toolbarGlyphText)
+		if !ok || img == nil {
+			t.Fatalf("PDF toolbar icon %q failed to load", name)
+		}
+		if b := img.Bounds(); b.Dx() <= 0 || b.Dy() <= 0 {
+			t.Fatalf("PDF toolbar icon %q has zero bounds: %v", name, b)
+		}
+	}
+
+	for _, action := range pdfToolbarActions {
+		if action.id == "close" {
+			t.Fatalf("PDF ribbon should not contain close action")
+		}
+		if action.id == "ink" && action.icon != "pencil" {
+			t.Fatalf("PDF ink action should use pencil icon from Pen node zBDLW, got %q", action.icon)
+		}
+		if action.icon == "" {
+			continue
+		}
+		img, ok := pdfToolbarIcon(action.icon, toolbarGlyphText)
+		if !ok || img == nil {
+			t.Fatalf("action %q icon %q failed to load", action.id, action.icon)
+		}
+	}
+}
