@@ -5,8 +5,8 @@ go 1.27.0
 require (
 	codeberg.org/go-latex/latex v0.3.0
 	gioui.org v0.10.2
-	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/SalvioniDigitalSolutions/gopdf v0.0.0-20260922202729-55a8f5fed5f5
+	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/extrame/xls v0.0.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-text/typesetting v0.3.4
@@ -29,6 +29,7 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	gioui.org/shader v1.0.9 // indirect
 	git.sr.ht/~sbinet/gg v0.7.0 // indirect
+	github.com/F31/go-pptx/v2 v2.0.3 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic v1.15.4 // indirect
 	github.com/bytedance/sonic/loader v0.5.2 // indirect

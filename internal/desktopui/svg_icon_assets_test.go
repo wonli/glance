@@ -22,8 +22,27 @@ func TestEveryWordToolbarActionHasSVGAsset(t *testing.T) {
 	}
 }
 
+func TestEveryPPTXToolbarActionHasDedicatedSVGAsset(t *testing.T) {
+	allTabs := []string{"home", "file", "insert", "design", "transitions", "animations", "slideshow", "review", "view"}
+	color := pptxTextSecondary
+
+	for _, tab := range allTabs {
+		actions := pptxActionsForTab(tab)
+		for _, action := range actions {
+			if _, err := os.Stat(filepath.Join("assets", "icons", "pptx", action.icon+".svg")); err != nil {
+				t.Errorf("PPTX action %q (%s) has no dedicated SVG asset %q: %v", action.id, action.label, action.icon, err)
+				continue
+			}
+			icon, ok := pptxToolbarIcon(action.icon, color)
+			if !ok || icon == nil {
+				t.Errorf("PPTX action %q (%s) failed to render from pptxToolbarIcon %q", action.id, action.label, action.icon)
+			}
+		}
+	}
+}
+
 func TestEveryBundledSVGIconRendersInGioImageFormat(t *testing.T) {
-	for _, family := range []string{"word", "excel"} {
+	for _, family := range []string{"word", "excel", "pptx"} {
 		entries, err := fs.ReadDir(svgIconAssets, "assets/icons/"+family)
 		if err != nil {
 			t.Fatalf("read %s icon directory: %v", family, err)

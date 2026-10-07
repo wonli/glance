@@ -22,6 +22,7 @@ import (
 	"glance/internal/format/markdowndoc"
 	wordpdf "glance/internal/format/pdf"
 	"glance/internal/format/pdfdoc"
+	"glance/internal/format/pptx"
 	legacyxls "glance/internal/format/xls"
 	"glance/internal/format/xlsx"
 	"glance/internal/printservice"
@@ -51,6 +52,7 @@ type App struct {
 	actionNewJSON         widget.Clickable
 	actionNewMarkdown     widget.Clickable
 	actionNewPDF          widget.Clickable
+	actionNewPPTX         widget.Clickable
 	actionCloseCreateMenu widget.Clickable
 	applyButton           widget.Clickable
 	goToCellButton        widget.Clickable
@@ -301,6 +303,7 @@ type loadedDocument struct {
 	jsonDoc     *jsondoc.Document
 	markdownDoc *markdowndoc.Document
 	pdfDoc      *pdfdoc.Document
+	pptxDoc     *pptx.Document
 	sheets      []string
 }
 type openResult struct {
@@ -351,6 +354,12 @@ func loadDocument(path string) (loadedDocument, error) {
 			return loadedDocument{}, err
 		}
 		return loadedDocument{path: path, jsonDoc: jsonDocument}, nil
+	case ".pptx":
+		d, err := pptx.Open(path)
+		if err != nil {
+			return loadedDocument{}, err
+		}
+		return loadedDocument{path: path, pptxDoc: d}, nil
 	case ".xls":
 		book, err := legacyxls.Open(path)
 		if err != nil {
@@ -363,7 +372,7 @@ func loadDocument(path string) (loadedDocument, error) {
 		}
 		return loadedDocument{path: path, book: book, sheets: sheets}, nil
 	default:
-		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx、.docx、.json 和 Markdown", filepath.Ext(path))
+		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx、.docx、.pptx、.pdf、.json 和 Markdown", filepath.Ext(path))
 	}
 }
 
@@ -390,6 +399,9 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		}
 		if loaded.jsonDoc != nil {
 			loaded.jsonDoc.SetDirty(false)
+		}
+		if loaded.pptxDoc != nil {
+			loaded.pptxDoc.SetDirty(false)
 		}
 	}
 	shared := loaded.shared
@@ -419,7 +431,9 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	a.pdfDoc = loaded.pdfDoc
 	a.markdownDoc = loaded.markdownDoc
 	a.jsonDoc = loaded.jsonDoc
+	a.pptxDoc = loaded.pptxDoc
 	a.documentSessionState.jsonDoc = loaded.jsonDoc
+	a.documentSessionState.pptxDoc = loaded.pptxDoc
 	a.path = loaded.path
 	if loaded.book != nil && len(loaded.sheets) > 0 {
 		a.sheet = loaded.sheets[0]
@@ -450,6 +464,8 @@ func (a *App) installDocument(loaded loadedDocument) error {
 			format = "xlsx"
 		case loaded.word != nil:
 			format = "docx"
+		case loaded.pptxDoc != nil:
+			format = "pptx"
 		case loaded.pdfDoc != nil:
 			format = "pdf"
 		case loaded.markdownDoc != nil:
@@ -460,7 +476,11 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	}
 	title := filepath.Base(loaded.path)
 	if loaded.path == "" {
-		title = "新建文档"
+		if loaded.pptxDoc != nil {
+			title = "新建演示文稿.pptx"
+		} else {
+			title = "新建文档"
+		}
 	}
 	meta := workspace.Tab{ID: id, Kind: kind, Title: title, DocumentID: id, SourcePath: loaded.path, Position: len(a.tabMeta)}
 	a.activeTabID = id
@@ -528,6 +548,9 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	if loaded.word != nil {
 		a.setStatus(fmt.Sprintf("已打开 %s；读取 %d 个内容块", loaded.path, len(a.word.Blocks())))
 		a.startWordPagination(state)
+	} else if loaded.pptxDoc != nil {
+		snap := loaded.pptxDoc.Snapshot()
+		a.setStatus(fmt.Sprintf("已打开演示文稿；包含 %d 页幻灯片", snap.SlideCount))
 	} else if loaded.jsonDoc != nil {
 		a.setStatus("已打开 JSON 文本")
 	}
@@ -552,6 +575,9 @@ func closeLoadedDocument(loaded loadedDocument) {
 	}
 	if loaded.jsonDoc != nil {
 		_ = loaded.jsonDoc.Close()
+	}
+	if loaded.pptxDoc != nil {
+		_ = loaded.pptxDoc.Close()
 	}
 }
 
@@ -640,7 +666,7 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 	if !ok {
 		return
 	}
-	book, word, jsonDocument, markdownDocument, pdfDocument, tabID := a.book, a.word, a.jsonDoc, a.markdownDoc, a.pdfDoc, a.activeTabID
+	book, word, pptxDocument, jsonDocument, markdownDocument, pdfDocument, tabID := a.book, a.word, a.pptxDoc, a.jsonDoc, a.markdownDoc, a.pdfDoc, a.activeTabID
 	path := sessionPath(state)
 	a.saving = true
 	go func() {
@@ -669,6 +695,8 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 			case <-a.shutdown:
 			}
 			return
+		} else if pptxDocument != nil {
+			err = pptxDocument.Save()
 		} else if pdfDocument != nil {
 			err = pdfDocument.Save()
 		} else if markdownDocument != nil {
@@ -699,6 +727,9 @@ func (a *App) startSaveAs(path string) {
 	if a.word != nil {
 		format = "docx"
 	}
+	if a.pptxDoc != nil {
+		format = "pptx"
+	}
 	if a.markdownDoc != nil {
 		format = "markdown"
 	}
@@ -724,7 +755,7 @@ func (a *App) startSaveAs(path string) {
 	if !ok {
 		return
 	}
-	book, word, jsonDocument, markdownDocument, pdfDocument, tabID := a.book, a.word, a.jsonDoc, a.markdownDoc, a.pdfDoc, a.activeTabID
+	book, word, pptxDocument, jsonDocument, markdownDocument, pdfDocument, tabID := a.book, a.word, a.pptxDoc, a.jsonDoc, a.markdownDoc, a.pdfDoc, a.activeTabID
 	a.saving = true
 	go func() {
 		unlock := lockSessionAdapterWrite(state)
@@ -760,6 +791,21 @@ func (a *App) startSaveAs(path string) {
 			case <-a.shutdown:
 			}
 			return
+		case pptxDocument != nil:
+			err = pptxDocument.SaveAs(path)
+			unlock()
+			if err == nil {
+				a.ensureDesktopRuntime().updateSessionPath(state.sharedDocumentSession, path)
+			}
+			state.finishOperation(token)
+			select {
+			case a.saveResults <- saveResult{path: path, tabID: tabID, saveAs: true, token: token, err: err}:
+				if a.window != nil {
+					a.window.Invalidate()
+				}
+			case <-a.shutdown:
+			}
+			return
 		case pdfDocument != nil:
 			err = pdfDocument.SaveAs(path)
 		case markdownDocument != nil:
@@ -789,7 +835,7 @@ func validateSaveAsExtension(format, path string) error {
 		}
 		return fmt.Errorf("另存为扩展名必须是 .md 或 .markdown")
 	}
-	want := map[string]string{"xlsx": ".xlsx", "docx": ".docx", "json": ".json"}[format]
+	want := map[string]string{"xlsx": ".xlsx", "docx": ".docx", "json": ".json", "pptx": ".pptx", "pdf": ".pdf"}[format]
 	if want == "" {
 		return fmt.Errorf("不支持 %s 格式另存为", format)
 	}
@@ -952,6 +998,8 @@ func (a *App) save() error {
 		if err := a.jsonDoc.Save(); err != nil {
 			return err
 		}
+	case a.pptxDoc != nil:
+		return a.pptxDoc.Save()
 	default:
 		return fmt.Errorf("没有打开的 Office 文件")
 	}
@@ -992,6 +1040,13 @@ func (a *App) closeDocument() error {
 		}
 		a.jsonDoc = nil
 	}
+	if a.pptxDoc != nil {
+		if closeErr := a.pptxDoc.Close(); err == nil {
+			err = closeErr
+		}
+		a.pptxDoc = nil
+	}
+	a.pptxView = nil
 	a.sheets, a.sheet, a.grid = nil, "", nil
 	a.virtualGrid = nil
 	a.cellEdit = cellEditState{}

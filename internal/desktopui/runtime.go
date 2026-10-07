@@ -315,6 +315,8 @@ func sharedSessionFromLoadedDocument(loaded loadedDocument) *sharedDocumentSessi
 			format = "xlsx"
 		case loaded.word != nil:
 			format = "docx"
+		case loaded.pptxDoc != nil:
+			format = "pptx"
 		case loaded.markdownDoc != nil:
 			format = "markdown"
 		case loaded.jsonDoc != nil:
@@ -329,6 +331,7 @@ func sharedSessionFromLoadedDocument(loaded loadedDocument) *sharedDocumentSessi
 		session.wordBlocks = cloneWordBlockSnapshot(loaded.word.WordBlocks())
 	}
 	session.pdfDoc = loaded.pdfDoc
+	session.pptxDoc = loaded.pptxDoc
 	session.markdownDoc = loaded.markdownDoc
 	session.jsonDoc = loaded.jsonDoc
 	session.sheets = append([]string(nil), loaded.sheets...)
@@ -348,6 +351,7 @@ func loadedDocumentFromSharedSession(session *sharedDocumentSession) loadedDocum
 		jsonDoc:     session.jsonDoc,
 		markdownDoc: session.markdownDoc,
 		pdfDoc:      session.pdfDoc,
+		pptxDoc:     session.pptxDoc,
 		sheets:      append([]string(nil), session.sheets...),
 	}
 }

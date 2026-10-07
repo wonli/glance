@@ -627,6 +627,8 @@ func snapshotState(state *documentSessionState) ([]byte, error) {
 		return state.markdownDoc.Snapshot()
 	case state.jsonDoc != nil:
 		return state.jsonDoc.Snapshot()
+	case state.pptxDoc != nil:
+		return state.pptxDoc.SnapshotBytes()
 	default:
 		return nil, fmt.Errorf("没有可保存的活动文档")
 	}
@@ -635,7 +637,7 @@ func snapshotState(state *documentSessionState) ([]byte, error) {
 func sessionDirty(state *documentSessionState) bool {
 	unlock := lockSessionAdapterRead(state)
 	defer unlock()
-	return state.book != nil && state.book.Dirty() || state.word != nil && state.word.Dirty() || state.jsonDoc != nil && state.jsonDoc.Dirty() || state.markdownDoc != nil && state.markdownDoc.Dirty() || state.pdfDoc != nil && state.pdfDoc.Dirty()
+	return state.book != nil && state.book.Dirty() || state.word != nil && state.word.Dirty() || state.jsonDoc != nil && state.jsonDoc.Dirty() || state.markdownDoc != nil && state.markdownDoc.Dirty() || state.pdfDoc != nil && state.pdfDoc.Dirty() || state.pptxDoc != nil && state.pptxDoc.Dirty()
 }
 
 func sessionPath(state *documentSessionState) string {

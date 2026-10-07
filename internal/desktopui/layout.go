@@ -721,7 +721,7 @@ func (a *App) visibleStatus() string {
 }
 
 func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
-	if a.activeTabID == "recent" || (a.book == nil && a.word == nil && a.jsonDoc == nil && a.markdownDoc == nil && a.pdfDoc == nil) {
+	if a.activeTabID == "recent" || (a.book == nil && a.word == nil && a.pptxDoc == nil && a.jsonDoc == nil && a.markdownDoc == nil && a.pdfDoc == nil) {
 		return a.layoutRecent(gtx)
 	}
 	switch {
@@ -729,6 +729,8 @@ func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
 		return a.layoutWorkbook(gtx)
 	case a.word != nil:
 		return a.layoutWord(gtx)
+	case a.pptxDoc != nil:
+		return a.layoutPresentationDocument(gtx)
 	case a.pdfDoc != nil:
 		return a.layoutPDFDocument(gtx)
 	case a.markdownDoc != nil:
@@ -1051,7 +1053,7 @@ func (a *App) layoutWord(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutEditor(gtx layout.Context) layout.Dimensions {
-	if a.jsonDoc != nil {
+	if a.jsonDoc != nil || a.pptxDoc != nil {
 		return layout.Dimensions{}
 	}
 	if _, virtual := a.book.(document.GridReader); virtual {

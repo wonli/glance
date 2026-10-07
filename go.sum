@@ -33,6 +33,8 @@ github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 h1:nCYfg
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0/go.mod h1:ucUjca2JtSZboY8IoUqyQyuuXvwbMBVwFOm0vdQPNhA=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.8.0 h1:Nljr4q1GRA/5vCrMONS+g4u4LRHNgOXVSh3O43J2CnI=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.8.0/go.mod h1:Y33QHnf0FfdVewFFISOGe20mkZbxX4H839o955/PoeI=
+github.com/F31/go-pptx/v2 v2.0.3 h1:3i+hDogAeujzkLlCqghNdwyeqDOmMLIl6oKHYBGMTO4=
+github.com/F31/go-pptx/v2 v2.0.3/go.mod h1:aNl/m5DcwqjCYgn32r5j2j16GUqB2d3hzZEVs+FrISM=
 github.com/SalvioniDigitalSolutions/gopdf v0.0.0-20260922202729-55a8f5fed5f5 h1:8D8Tk4WTPnSJTFdB172lkyBLlExzC/EysR1ECIx+QR8=
 github.com/SalvioniDigitalSolutions/gopdf v0.0.0-20260922202729-55a8f5fed5f5/go.mod h1:avv9LMMkO0KIK0waqid03Pd1pJw1Qz2c+9w32USC8fQ=
 github.com/alecthomas/chroma/v2 v2.27.0 h1:FodwmyOBgJULFYmDqibcp9pvfDLWdtPRh9v/r5BXYZs=
