@@ -2268,3 +2268,73 @@ func TestWordToolbar_RemainingActionsBatch(t *testing.T) {
 	app.modal.OnAction("enable_alert")
 }
 
+func TestWordEditing_SplitAfterFontColorAndHighlight(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state := newDocumentSessionState("test.docx")
+	state.word = word
+	state.setWordBlocks(word.WordBlocks())
+
+	paragraphs := allWordParagraphs(state.wordBlocks)
+	if len(paragraphs) == 0 || len(paragraphs[0].Inlines) == 0 || paragraphs[0].Inlines[0].Text == nil {
+		t.Fatal("expected paragraph with text run")
+	}
+	run := paragraphs[0].Inlines[0].Text
+	state.selectedWordParagraphID = paragraphs[0].ID
+	state.selectedWordRunID = run.ID
+
+	app := &App{
+		documentSessionState: state,
+		wordCommandResults:   make(chan wordCommandResult, 2),
+	}
+
+	// 1. Replace run text
+	if err := word.ReplaceTextRun(run.ID, "换行测试文本"); err != nil {
+		t.Fatal(err)
+	}
+	state.setWordBlocks(word.WordBlocks())
+
+	// 2. Set font color and highlight
+	colorVal := "FF0000"
+	highlightVal := "yellow"
+	if err := word.SetTextRunStyle(run.ID, document.WordTextFormatPatch{
+		FontColor: &colorVal,
+		Highlight: &highlightVal,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	state.setWordBlocks(word.WordBlocks())
+
+	// 3. Initiate split intent at caret index 2 ("换行" / "测试文本")
+	state.wordParagraphSplitIntent = &wordParagraphSplitIntent{
+		runID:          run.ID,
+		value:          "换行测试文本",
+		selectionStart: 2,
+		selectionEnd:   2,
+	}
+	app.startWordParagraphSplit(state)
+
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("split paragraph failed: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for paragraph split")
+	}
+
+	// Verify that blocks now have 2 paragraphs and no error status
+	blocks := state.wordBlocks
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 paragraphs after split, got %d", len(blocks))
+	}
+	if strings.Contains(app.status, "失败") {
+		t.Fatalf("status reported failure: %s", app.status)
+	}
+}
+

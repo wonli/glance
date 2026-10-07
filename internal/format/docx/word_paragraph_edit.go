@@ -557,10 +557,9 @@ func splitWordRunXML(data []byte, run, targetText *wordXMLNode, leftText, rightT
 	for _, child := range run.children {
 		gap := data[cursor:child.start]
 		if child.name.Local == "rPr" {
-			if found {
-				return nil, nil, errors.New("cannot split a DOCX run with text properties after its text")
+			if !found {
+				properties.Write(gap)
 			}
-			properties.Write(gap)
 			properties.Write(data[child.start:child.end])
 			cursor = child.end
 			continue

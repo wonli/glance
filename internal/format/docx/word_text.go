@@ -208,7 +208,7 @@ func (d *Document) SetTextRunFontFamily(runID, family string) error {
 			}
 		}
 		if properties == nil {
-			patched, err = insertElementContent(data, target.run, wrapWordProperties(prefix, markup))
+			patched, err = insertElementContentAtStart(data, target.run, wrapWordProperties(prefix, markup))
 		} else {
 			patched, err = insertElementContent(data, properties, markup)
 		}
@@ -254,7 +254,7 @@ func (d *Document) SetParagraphAlignment(paragraphID string, alignment document.
 	if pPr == nil {
 		prefix := elementPrefix(paragraph.rawName)
 		markup := wrapWordElement(prefix, "pPr", makeWordPropertyMarkup(prefix, "jc", "val", value))
-		patched, err = insertElementContent(data, paragraph, markup)
+		patched, err = insertElementContentAtStart(data, paragraph, markup)
 	} else if jc := firstChild(pPr, "jc"); jc != nil {
 		patched, err = patchElementAttribute(data, jc, "val", value)
 	} else {
@@ -311,7 +311,7 @@ func (d *Document) SetParagraphIndents(paragraphID string, leftEMU, rightEMU int
 		if err != nil {
 			return err
 		}
-		patched, err = insertElementContent(data, paragraph, wrapWordElement(prefix, "pPr", property))
+		patched, err = insertElementContentAtStart(data, paragraph, wrapWordElement(prefix, "pPr", property))
 	} else if indent == nil {
 		property := makeWordPropertyMarkup(prefix, "ind", leftName, leftValue)
 		property, err = setRawXMLAttribute(property, prefix, rightName, rightValue)
@@ -512,7 +512,7 @@ func patchRunProperties(data []byte, run *wordXMLNode, updates map[string]wordPr
 		if len(markup) == 0 {
 			return data, nil
 		}
-		return insertElementContent(data, run, wrapWordProperties(prefix, markup))
+		return insertElementContentAtStart(data, run, wrapWordProperties(prefix, markup))
 	}
 
 	var replacements []xmlReplacement
@@ -629,6 +629,23 @@ func insertElementContent(data []byte, node *wordXMLNode, value []byte) ([]byte,
 		return applyXMLReplacements(data, []xmlReplacement{{start: node.start, end: node.end, value: replacement}})
 	}
 	return applyXMLReplacements(data, []xmlReplacement{{start: node.contentEnd, end: node.contentEnd, value: value}})
+}
+
+func insertElementContentAtStart(data []byte, node *wordXMLNode, value []byte) ([]byte, error) {
+	if len(value) == 0 {
+		return data, nil
+	}
+	if node.selfClosing {
+		opening, err := expandSelfClosingTag(data[node.start:node.openEnd])
+		if err != nil {
+			return nil, err
+		}
+		replacement := append([]byte(nil), opening...)
+		replacement = append(replacement, value...)
+		replacement = append(replacement, []byte("</"+node.rawName+">")...)
+		return applyXMLReplacements(data, []xmlReplacement{{start: node.start, end: node.end, value: replacement}})
+	}
+	return applyXMLReplacements(data, []xmlReplacement{{start: node.openEnd, end: node.openEnd, value: value}})
 }
 
 func expandSelfClosingTag(rawOpen []byte) ([]byte, error) {
