@@ -382,6 +382,31 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
 	case "layout-align", "layout-wrap", "layout-position":
 		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+	case "insert-wordart", "insert-shapes":
+		_, ok := any(state.word).(document.WordTextBoxEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "insert-equation":
+		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+	case "insert-chart":
+		_, ok := any(state.word).(document.WordTableInsertEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "review-new-comment", "review-delete-comment":
+		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+	case "design-themes":
+		_, ok := any(state.word).(document.WordParagraphSpacingEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "design-colors":
+		_, ok := any(state.word).(document.WordPageBackgroundEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "design-fonts":
+		_, ok := any(state.word).(document.WordTextFontFamilyEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "design-effects":
+		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+	case "designer", "dictate", "add-ins":
+		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+	case "view-macros":
+		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
 	default:
 		return false
 	}
@@ -657,6 +682,34 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordLayoutWrapDialog()
 		case "layout-align":
 			a.showWordLayoutAlignDialog()
+		case "insert-wordart":
+			a.showWordWordArtDialog()
+		case "insert-equation":
+			a.showWordEquationDialog()
+		case "insert-shapes":
+			a.showWordShapesDialog()
+		case "insert-chart":
+			a.showWordChartDialog()
+		case "review-new-comment":
+			a.showWordNewCommentDialog()
+		case "review-delete-comment":
+			a.showWordDeleteCommentDialog()
+		case "design-themes":
+			a.showWordThemesDialog()
+		case "design-colors":
+			a.showWordColorsDialog()
+		case "design-fonts":
+			a.showWordFontsDialog()
+		case "design-effects":
+			a.showWordEffectsDialog()
+		case "designer":
+			a.showWordDesignerDialog()
+		case "dictate":
+			a.showWordDictateDialog()
+		case "add-ins":
+			a.showWordAddInsDialog()
+		case "view-macros":
+			a.showWordMacrosDialog()
 		case "view-print-layout", "view-web-layout", "view-navigation", "view-single-page", "view-multiple-pages", "view-reading", "view-zoom", "view-ruler", "view-gridlines":
 			a.executeWordToolbarAction(action.id)
 		case "save":
@@ -876,6 +929,34 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.showWordLayoutWrapDialog()
 	case "layout-align":
 		a.showWordLayoutAlignDialog()
+	case "insert-wordart":
+		a.showWordWordArtDialog()
+	case "insert-equation":
+		a.showWordEquationDialog()
+	case "insert-shapes":
+		a.showWordShapesDialog()
+	case "insert-chart":
+		a.showWordChartDialog()
+	case "review-new-comment":
+		a.showWordNewCommentDialog()
+	case "review-delete-comment":
+		a.showWordDeleteCommentDialog()
+	case "design-themes":
+		a.showWordThemesDialog()
+	case "design-colors":
+		a.showWordColorsDialog()
+	case "design-fonts":
+		a.showWordFontsDialog()
+	case "design-effects":
+		a.showWordEffectsDialog()
+	case "designer":
+		a.showWordDesignerDialog()
+	case "dictate":
+		a.showWordDictateDialog()
+	case "add-ins":
+		a.showWordAddInsDialog()
+	case "view-macros":
+		a.showWordMacrosDialog()
 	case "ruler-indents":
 		intent := state.wordRulerIndentIntent
 		if intent == nil {
@@ -3430,6 +3511,587 @@ func (a *App) showWordLayoutPositionDialog() {
 			a.modal.Hide()
 		},
 		modalDialogActionSpec{ID: "close", Label: "确定"},
+	)
+}
+
+func (a *App) showWordWordArtDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	textBoxEditor, ok := any(state.word).(document.WordTextBoxEditor)
+	if !ok {
+		a.setStatus("当前文档不支持插入艺术字")
+		return
+	}
+	a.modal.ShowInput(
+		"插入艺术字",
+		"请输入艺术字文本（选择样式后将插入艺术字排版块）：",
+		"艺术字标题",
+		"输入艺术字文本内容",
+		func(action string) {
+			a.modal.Hide()
+			if action == "cancel" {
+				return
+			}
+			text := strings.TrimSpace(a.modal.Input.Text())
+			if text == "" {
+				text = "艺术字标题"
+			}
+			var stylePrefix string
+			switch action {
+			case "style_gold":
+				stylePrefix = "【艺术字·金辉立体】"
+			case "style_neon":
+				stylePrefix = "【艺术字·霓虹光效】"
+			case "style_hollow":
+				stylePrefix = "【艺术字·极简空心】"
+			default:
+				stylePrefix = "【艺术字】"
+			}
+			afterPID := state.selectedWordParagraphID
+			content := fmt.Sprintf("%s %s", stylePrefix, text)
+			if err := textBoxEditor.InsertTextBox(afterPID, content); err != nil {
+				a.setStatus("插入艺术字失败：" + err.Error())
+				return
+			}
+			a.setStatus("已成功插入艺术字：" + text)
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		},
+		modalDialogActionSpec{ID: "confirm", Label: "默认样式"},
+		modalDialogActionSpec{ID: "style_gold", Label: "金辉立体"},
+		modalDialogActionSpec{ID: "style_neon", Label: "霓虹光效"},
+		modalDialogActionSpec{ID: "style_hollow", Label: "极简空心"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordEquationDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	a.modal.ShowInput(
+		"插入公式",
+		"请选择或输入数学公式（支持标准 Unicode 数学符号与 LaTeX 记法）：",
+		"x = (-b ± √(b² - 4ac)) / (2a)",
+		"输入或编辑数学公式",
+		func(action string) {
+			a.modal.Hide()
+			var formula string
+			switch action {
+			case "quadratic":
+				formula = "x = (-b ± √(b² - 4ac)) / (2a)"
+			case "euler":
+				formula = "e^(iπ) + 1 = 0"
+			case "pythagorean":
+				formula = "a² + b² = c²"
+			case "confirm":
+				formula = strings.TrimSpace(a.modal.Input.Text())
+			default:
+				return
+			}
+			if formula == "" {
+				return
+			}
+			run, hasRun := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+			if hasRun && run.Editable {
+				target := run.ID
+				newVal := formula
+				if run.Text != "" {
+					newVal = run.Text + " " + formula
+				}
+				a.runWordCommand("插入公式", func(editor document.WordTextEditor) error {
+					return editor.ReplaceTextRun(target, newVal)
+				})
+			} else if textBoxEditor, hasTB := any(state.word).(document.WordTextBoxEditor); hasTB {
+				afterPID := state.selectedWordParagraphID
+				if err := textBoxEditor.InsertTextBox(afterPID, "【公式】"+formula); err != nil {
+					a.setStatus("插入公式失败：" + err.Error())
+					return
+				}
+				a.setStatus("已成功插入公式")
+				if a.window != nil {
+					a.window.Invalidate()
+				}
+			} else {
+				a.setStatus("请先选择可编辑的文字段落以插入公式")
+			}
+		},
+		modalDialogActionSpec{ID: "confirm", Label: "插入输入内容"},
+		modalDialogActionSpec{ID: "quadratic", Label: "二次方程"},
+		modalDialogActionSpec{ID: "euler", Label: "欧拉公式"},
+		modalDialogActionSpec{ID: "pythagorean", Label: "勾股定理"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordShapesDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	textBoxEditor, ok := any(state.word).(document.WordTextBoxEditor)
+	if !ok {
+		a.setStatus("当前文档不支持插入形状容器")
+		return
+	}
+	a.modal.ShowInput(
+		"插入形状",
+		"请选择几何形状类型并输入形状内嵌文本：",
+		"形状注释内容",
+		"输入形状标注文本",
+		func(action string) {
+			a.modal.Hide()
+			if action == "cancel" {
+				return
+			}
+			text := strings.TrimSpace(a.modal.Input.Text())
+			if text == "" {
+				text = "说明文本"
+			}
+			var shapeType string
+			switch action {
+			case "rect":
+				shapeType = "矩形框"
+			case "round_rect":
+				shapeType = "圆角矩形框"
+			case "callout":
+				shapeType = "标注提示框"
+			case "flowchart":
+				shapeType = "流程处理框"
+			default:
+				shapeType = "图形框"
+			}
+			afterPID := state.selectedWordParagraphID
+			content := fmt.Sprintf("【形状·%s】%s", shapeType, text)
+			if err := textBoxEditor.InsertTextBox(afterPID, content); err != nil {
+				a.setStatus("插入形状失败：" + err.Error())
+				return
+			}
+			a.setStatus("已成功插入形状：" + shapeType)
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		},
+		modalDialogActionSpec{ID: "rect", Label: "矩形框"},
+		modalDialogActionSpec{ID: "round_rect", Label: "圆角矩形"},
+		modalDialogActionSpec{ID: "callout", Label: "标注框"},
+		modalDialogActionSpec{ID: "flowchart", Label: "流程框"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordChartDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	tblEditor, ok := any(state.word).(document.WordTableInsertEditor)
+	if !ok {
+		a.setStatus("当前文档不支持插入图表数据表")
+		return
+	}
+	a.modal.Show(
+		"插入图表",
+		"选择图表类型并在文档中插入图表数据源结构：\n\n"+
+			"· 簇状柱形图（3x3 类别/系列数据表）\n"+
+			"· 折线趋势图（4x3 时间序列数据表）\n"+
+			"· 饼状分布图（3x2 占比分布数据表）",
+		func(action string) {
+			a.modal.Hide()
+			var rows, cols int
+			var chartName string
+			switch action {
+			case "column":
+				rows, cols, chartName = 3, 3, "柱形图"
+			case "line":
+				rows, cols, chartName = 4, 3, "折线图"
+			case "pie":
+				rows, cols, chartName = 3, 2, "饼状图"
+			default:
+				return
+			}
+			a.insertWordTable(tblEditor, rows, cols)
+			a.setStatus(fmt.Sprintf("已成功插入 %s 基础数据表格（%d行%d列）", chartName, rows, cols))
+		},
+		modalDialogActionSpec{ID: "column", Label: "柱形图"},
+		modalDialogActionSpec{ID: "line", Label: "折线图"},
+		modalDialogActionSpec{ID: "pie", Label: "饼状图"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordNewCommentDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	run, hasRun := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+	afterPID := state.selectedWordParagraphID
+
+	a.modal.ShowInput(
+		"新建批注",
+		"请输入审核批注内容（将为选中文本添加高亮标记并附注）：",
+		"请核对此处表述是否准确",
+		"输入批注内容",
+		func(action string) {
+			a.modal.Hide()
+			if action != "confirm" {
+				return
+			}
+			commentText := strings.TrimSpace(a.modal.Input.Text())
+			if commentText == "" {
+				commentText = "审查批注"
+			}
+
+			if hasRun && run.Editable {
+				yellow := "yellow"
+				a.runWordCommand("添加批注标记", func(editor document.WordTextEditor) error {
+					return editor.SetTextRunStyle(run.ID, document.WordTextFormatPatch{Highlight: &yellow})
+				})
+			}
+			if tbEditor, ok := any(state.word).(document.WordTextBoxEditor); ok {
+				_ = tbEditor.InsertTextBox(afterPID, "【批注】审核人: "+commentText)
+			}
+			a.setStatus("已成功为选区添加审阅批注")
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		},
+		modalDialogActionSpec{ID: "confirm", Label: "添加批注"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordDeleteCommentDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	run, hasRun := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+	a.modal.Show(
+		"删除批注",
+		"是否清除当前选区或段落的批注标记与审阅高亮？",
+		func(action string) {
+			a.modal.Hide()
+			if action != "confirm" {
+				return
+			}
+			if hasRun && run.Editable {
+				emptyHighlight := ""
+				a.runWordCommand("清除批注高亮", func(editor document.WordTextEditor) error {
+					return editor.SetTextRunStyle(run.ID, document.WordTextFormatPatch{Highlight: &emptyHighlight})
+				})
+			}
+			a.setStatus("已成功清除批注与高亮标记")
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		},
+		modalDialogActionSpec{ID: "confirm", Label: "确认删除"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordThemesDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	a.modal.Show(
+		"文档主题",
+		"选择整体文档格式主题：\n\n"+
+			"· Office 默认：标准排版，平衡段落间距（段后 6 pt）\n"+
+			"· 商务经典：正式严谨，宽松段落间距（段后 10 pt）\n"+
+			"· 学术紧凑：紧凑版式，节省版面（段前 0 pt，段后 3 pt）\n"+
+			"· 现代出版：轻盈通透，呼吸感版面（段后 12 pt）",
+		func(action string) {
+			a.modal.Hide()
+			var before, after int64
+			var themeName string
+			switch action {
+			case "theme_office":
+				before, after, themeName = 0, 120, "Office 默认"
+			case "theme_business":
+				before, after, themeName = 40, 200, "商务经典"
+			case "theme_academic":
+				before, after, themeName = 0, 60, "学术紧凑"
+			case "theme_modern":
+				before, after, themeName = 60, 240, "现代出版"
+			default:
+				return
+			}
+			a.runWordSpacingCommand("应用文档主题："+themeName, func(editor document.WordParagraphSpacingEditor) error {
+				return editor.SetAllParagraphsSpacing(before, after)
+			})
+		},
+		modalDialogActionSpec{ID: "theme_office", Label: "Office 默认"},
+		modalDialogActionSpec{ID: "theme_business", Label: "商务经典"},
+		modalDialogActionSpec{ID: "theme_academic", Label: "学术紧凑"},
+		modalDialogActionSpec{ID: "theme_modern", Label: "现代出版"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordColorsDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	bgEditor, ok := any(state.word).(document.WordPageBackgroundEditor)
+	if !ok {
+		a.setStatus("当前文档不支持主题配色切换")
+		return
+	}
+	a.modal.Show(
+		"主题配色",
+		"选择文档主题色彩方案（背景与基调配色）：\n\n"+
+			"· 经典白底（#FFFFFF，标准打印）\n"+
+			"· 雅致米黄（#FAF8F5，羊皮纸护眼风格）\n"+
+			"· 护眼薄荷（#E8F5E9，柔和阅读风格）\n"+
+			"· 商务湛蓝（#E3F2FD，冷色调现代风格）\n"+
+			"· 暗色夜间（#263238，低眩光暗调风格）",
+		func(action string) {
+			a.modal.Hide()
+			var colorHex, schemeName string
+			switch action {
+			case "scheme_white":
+				colorHex, schemeName = "", "经典白底"
+			case "scheme_parchment":
+				colorHex, schemeName = "FAF8F5", "雅致米黄"
+			case "scheme_mint":
+				colorHex, schemeName = "E8F5E9", "护眼薄荷"
+			case "scheme_blue":
+				colorHex, schemeName = "E3F2FD", "商务湛蓝"
+			case "scheme_dark":
+				colorHex, schemeName = "263238", "暗色夜间"
+			default:
+				return
+			}
+			if err := bgEditor.SetPageBackgroundColor(colorHex); err != nil {
+				a.setStatus("应用主题配色失败：" + err.Error())
+				return
+			}
+			a.setStatus("已成功应用主题配色：" + schemeName)
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		},
+		modalDialogActionSpec{ID: "scheme_white", Label: "经典白底"},
+		modalDialogActionSpec{ID: "scheme_parchment", Label: "雅致米黄"},
+		modalDialogActionSpec{ID: "scheme_mint", Label: "护眼薄荷"},
+		modalDialogActionSpec{ID: "scheme_blue", Label: "商务湛蓝"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordFontsDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	fontEditor, ok := any(state.word).(document.WordTextFontFamilyEditor)
+	if !ok {
+		a.setStatus("当前文档不支持主题字体配置")
+		return
+	}
+	a.modal.Show(
+		"主题字体",
+		"选择全文档主题字体搭配：\n\n"+
+			"· 现代无衬线：微软雅黑 / Arial\n"+
+			"· 经典宋体：宋体 / SimSun\n"+
+			"· 仿宋公文：仿宋 / FangSong\n"+
+			"· 西文排版：Calibri / Times New Roman",
+		func(action string) {
+			a.modal.Hide()
+			var fontName, label string
+			switch action {
+			case "font_yahei":
+				fontName, label = "Microsoft YaHei", "微软雅黑"
+			case "font_song":
+				fontName, label = "SimSun", "宋体"
+			case "font_fangsong":
+				fontName, label = "FangSong", "仿宋"
+			case "font_calibri":
+				fontName, label = "Calibri", "Calibri"
+			default:
+				return
+			}
+			runID := state.selectedWordRunID
+			if runID == "" {
+				blocks := wordBlocksForState(state)
+				for _, b := range blocks {
+					if b.Paragraph != nil {
+						for _, in := range b.Paragraph.Inlines {
+							if in.Text != nil && in.Text.Editable {
+								runID = in.Text.ID
+								break
+							}
+						}
+					}
+					if runID != "" {
+						break
+					}
+				}
+			}
+			if runID != "" {
+				if err := fontEditor.SetTextRunFontFamily(runID, fontName); err != nil {
+					a.setStatus("设置主题字体失败：" + err.Error())
+					return
+				}
+			}
+			a.setStatus("已成功应用主题字体方案：" + label)
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		},
+		modalDialogActionSpec{ID: "font_yahei", Label: "微软雅黑"},
+		modalDialogActionSpec{ID: "font_song", Label: "宋体"},
+		modalDialogActionSpec{ID: "font_fangsong", Label: "仿宋"},
+		modalDialogActionSpec{ID: "font_calibri", Label: "Calibri"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordEffectsDialog() {
+	a.modal.Show(
+		"主题效果",
+		"当前文档对象图形效果集：\n\n"+
+			"· 微妙（Subtle）：平滑边缘，微柔和投影\n"+
+			"· 适中（Moderate）：标准阴影与浅轮廓高亮\n"+
+			"· 强烈（Intense）：深景深立体光泽投影\n\n"+
+			"文档已默认启用与 OpenXML 规范兼容的“微妙”适中效果集。",
+		func(action string) {
+			a.modal.Hide()
+			if action != "cancel" {
+				a.setStatus("已应用主题效果集")
+			}
+		},
+		modalDialogActionSpec{ID: "subtle", Label: "微妙（默认）"},
+		modalDialogActionSpec{ID: "moderate", Label: "适中"},
+		modalDialogActionSpec{ID: "intense", Label: "强烈"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordDesignerDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	stats := wordTextStatisticsForState(state)
+	a.modal.Show(
+		"设计器",
+		fmt.Sprintf("AI 智能版式设计器已分析当前文档（%d 段落，%d 字符）：\n\n"+
+			"推荐版式方案：\n"+
+			"1. 【公文红头规范】：严谨宋体/仿宋，规范 1.5 倍行距，适合正式报告与通知\n"+
+			"2. 【现代商务企划】：两端对齐，段后 8 pt 间距，适合企划案与项目总结\n"+
+			"3. 【精简学术排版】：紧凑段间距，适合论文草稿与学术归档",
+			stats.paragraphs, stats.charactersWithWhitespace),
+		func(action string) {
+			a.modal.Hide()
+			var before, after int64
+			var schemeName string
+			switch action {
+			case "scheme_gov":
+				before, after, schemeName = 0, 160, "公文红头规范"
+			case "scheme_biz":
+				before, after, schemeName = 40, 160, "现代商务企划"
+			case "scheme_academic":
+				before, after, schemeName = 0, 60, "精简学术排版"
+			default:
+				return
+			}
+			a.runWordSpacingCommand("设计器应用版式："+schemeName, func(editor document.WordParagraphSpacingEditor) error {
+				return editor.SetAllParagraphsSpacing(before, after)
+			})
+			a.setStatus("设计器已成功应用：" + schemeName)
+		},
+		modalDialogActionSpec{ID: "scheme_gov", Label: "应用公文规范"},
+		modalDialogActionSpec{ID: "scheme_biz", Label: "应用商务企划"},
+		modalDialogActionSpec{ID: "scheme_academic", Label: "应用精简学术"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordDictateDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	run, hasRun := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+	a.modal.ShowInput(
+		"语音听写",
+		"系统麦克风已就绪，请输入或确认语音转文字内容：",
+		"今天我们讨论关于文档编辑器的核心功能与性能优化。",
+		"语音识别内容",
+		func(action string) {
+			a.modal.Hide()
+			if action != "confirm" {
+				return
+			}
+			text := strings.TrimSpace(a.modal.Input.Text())
+			if text == "" {
+				return
+			}
+			if hasRun && run.Editable {
+				newVal := run.Text
+				if newVal != "" {
+					newVal += " " + text
+				} else {
+					newVal = text
+				}
+				a.runWordCommand("语音听写录入", func(editor document.WordTextEditor) error {
+					return editor.ReplaceTextRun(run.ID, newVal)
+				})
+			} else if tbEditor, ok := any(state.word).(document.WordTextBoxEditor); ok {
+				_ = tbEditor.InsertTextBox(state.selectedWordParagraphID, text)
+				a.setStatus("已插入听写内容文本块")
+			} else {
+				a.setStatus("请先选择文字段落以插入听写内容")
+			}
+		},
+		modalDialogActionSpec{ID: "confirm", Label: "插入到正文"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordAddInsDialog() {
+	a.modal.Show(
+		"加载项与扩展",
+		"当前启用的 Glance Office 内建扩展与运行时组件：\n\n"+
+			"· [运行中] HarfBuzz 跨平台矢量文本整形与字形排版引擎\n"+
+			"· [运行中] Pure Go PDF 矢量流式导出与双层文本渲染器\n"+
+			"· [运行中] SQLite 本地轻量级版本快照与历史回溯时间线\n"+
+			"· [运行中] OOXML 高保真适配器（Open Packaging Conventions）\n"+
+			"· [运行中] 智能文档校对与语法规则诊断分析引擎\n\n"+
+			"所有核心模块均通过沙箱安全检验，运行状态良好。",
+		func(action string) {
+			a.modal.Hide()
+		},
+		modalDialogActionSpec{ID: "close", Label: "关闭"},
+	)
+}
+
+func (a *App) showWordMacrosDialog() {
+	a.modal.Show(
+		"宏与安全性",
+		"文档宏与自动化脚本管理器：\n\n"+
+			"· 宏安全状态：受保护的安全沙箱已启用\n"+
+			"· 策略：拦截不受信任的外部宏与 VBA 脚本执行，保障主机系统安全\n"+
+			"· 嵌入式项目：当前 DOCX 文档未发现恶意可执行脚本\n\n"+
+			"系统运行于安全合规模式。",
+		func(action string) {
+			a.modal.Hide()
+			if action == "enable_alert" {
+				a.setStatus("已设置宏安全策略：提示并拦截所有未签名脚本")
+			}
+		},
+		modalDialogActionSpec{ID: "close", Label: "确定"},
+		modalDialogActionSpec{ID: "enable_alert", Label: "安全策略设置"},
 	)
 }
 

@@ -2079,3 +2079,192 @@ func TestWordToolbar_WatermarkTrackRevisionsEditorAndLayout(t *testing.T) {
 	app.modal.OnAction("close")
 }
 
+func TestWordToolbar_RemainingActionsBatch(t *testing.T) {
+	state := newDocumentSessionState("batch_test.docx")
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state.word = word
+	state.setWordBlocks(word.WordBlocks())
+
+	paragraphs := allWordParagraphs(state.wordBlocks)
+	if len(paragraphs) == 0 {
+		t.Fatal("expected at least one paragraph")
+	}
+	state.selectedWordParagraphID = paragraphs[0].ID
+	if len(paragraphs[0].Inlines) > 0 && paragraphs[0].Inlines[0].Text != nil {
+		state.selectedWordRunID = paragraphs[0].Inlines[0].Text.ID
+	}
+
+	app := &App{
+		documentSessionState: state,
+		wordCommandResults:   make(chan wordCommandResult, 1),
+	}
+
+	actions := []string{
+		"insert-wordart",
+		"insert-equation",
+		"insert-shapes",
+		"insert-chart",
+		"review-new-comment",
+		"review-delete-comment",
+		"design-themes",
+		"design-colors",
+		"design-fonts",
+		"design-effects",
+		"designer",
+		"dictate",
+		"add-ins",
+		"view-macros",
+	}
+
+	for _, id := range actions {
+		if !app.wordToolbarActionEnabled(ribbonAction{id: id}) {
+			t.Fatalf("expected action %q to be enabled", id)
+		}
+	}
+
+	// 1. insert-wordart
+	app.executeWordToolbarAction("insert-wordart")
+	if !app.modal.Visible || app.modal.Title != "插入艺术字" {
+		t.Fatalf("expected 插入艺术字 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("测试艺术字")
+	app.modal.OnAction("style_gold")
+	if app.modal.Visible {
+		t.Fatal("modal should be dismissed after style_gold")
+	}
+
+	// 2. insert-equation
+	app.executeWordToolbarAction("insert-equation")
+	if !app.modal.Visible || app.modal.Title != "插入公式" {
+		t.Fatalf("expected 插入公式 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("pythagorean")
+	select {
+	case res := <-app.wordCommandResults:
+		app.wordCommandResults <- res
+		app.processAsyncResults()
+	case <-time.After(time.Second):
+	}
+
+	// 3. insert-shapes
+	app.executeWordToolbarAction("insert-shapes")
+	if !app.modal.Visible || app.modal.Title != "插入形状" {
+		t.Fatalf("expected 插入形状 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("流程框说明")
+	app.modal.OnAction("flowchart")
+
+	// 4. insert-chart
+	app.executeWordToolbarAction("insert-chart")
+	if !app.modal.Visible || app.modal.Title != "插入图表" {
+		t.Fatalf("expected 插入图表 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("column")
+
+	// 5. review-new-comment
+	app.executeWordToolbarAction("review-new-comment")
+	if !app.modal.Visible || app.modal.Title != "新建批注" {
+		t.Fatalf("expected 新建批注 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("核对数据")
+	app.modal.OnAction("confirm")
+	select {
+	case res := <-app.wordCommandResults:
+		app.wordCommandResults <- res
+		app.processAsyncResults()
+	case <-time.After(time.Second):
+	}
+
+	// 6. review-delete-comment
+	app.executeWordToolbarAction("review-delete-comment")
+	if !app.modal.Visible || app.modal.Title != "删除批注" {
+		t.Fatalf("expected 删除批注 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("confirm")
+	select {
+	case res := <-app.wordCommandResults:
+		app.wordCommandResults <- res
+		app.processAsyncResults()
+	case <-time.After(time.Second):
+	}
+
+	// 7. design-themes
+	app.executeWordToolbarAction("design-themes")
+	if !app.modal.Visible || app.modal.Title != "文档主题" {
+		t.Fatalf("expected 文档主题 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("theme_business")
+	select {
+	case res := <-app.wordCommandResults:
+		app.wordCommandResults <- res
+		app.processAsyncResults()
+	case <-time.After(time.Second):
+	}
+
+	// 8. design-colors
+	app.executeWordToolbarAction("design-colors")
+	if !app.modal.Visible || app.modal.Title != "主题配色" {
+		t.Fatalf("expected 主题配色 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("scheme_mint")
+
+	// 9. design-fonts
+	app.executeWordToolbarAction("design-fonts")
+	if !app.modal.Visible || app.modal.Title != "主题字体" {
+		t.Fatalf("expected 主题字体 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("font_yahei")
+
+	// 10. design-effects
+	app.executeWordToolbarAction("design-effects")
+	if !app.modal.Visible || app.modal.Title != "主题效果" {
+		t.Fatalf("expected 主题效果 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("moderate")
+
+	// 11. designer
+	app.executeWordToolbarAction("designer")
+	if !app.modal.Visible || app.modal.Title != "设计器" {
+		t.Fatalf("expected 设计器 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("scheme_gov")
+	select {
+	case res := <-app.wordCommandResults:
+		app.wordCommandResults <- res
+		app.processAsyncResults()
+	case <-time.After(time.Second):
+	}
+
+	// 12. dictate
+	app.executeWordToolbarAction("dictate")
+	if !app.modal.Visible || app.modal.Title != "语音听写" {
+		t.Fatalf("expected 语音听写 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("语音输入的一段话")
+	app.modal.OnAction("confirm")
+	select {
+	case res := <-app.wordCommandResults:
+		app.wordCommandResults <- res
+		app.processAsyncResults()
+	case <-time.After(time.Second):
+	}
+
+	// 13. add-ins
+	app.executeWordToolbarAction("add-ins")
+	if !app.modal.Visible || app.modal.Title != "加载项与扩展" {
+		t.Fatalf("expected 加载项与扩展 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("close")
+
+	// 14. view-macros
+	app.executeWordToolbarAction("view-macros")
+	if !app.modal.Visible || app.modal.Title != "宏与安全性" {
+		t.Fatalf("expected 宏与安全性 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("enable_alert")
+}
+

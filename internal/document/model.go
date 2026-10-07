@@ -455,3 +455,18 @@ type SpreadsheetChartSpec struct {
 type SpreadsheetChartEditor interface {
 	AddChart(spec SpreadsheetChartSpec) error
 }
+
+// SpreadsheetPivotTableSpec defines parameters for generating a pivot table in a worksheet.
+type SpreadsheetPivotTableSpec struct {
+	Sheet           string
+	DataRange       CellRange // Source data range, e.g. A1:D10
+	PivotTableRange string    // Target destination range or anchor, e.g. "F2:J15"
+	Rows            []string  // Row fields
+	Columns         []string  // Column fields
+	Data            []string  // Data/value fields
+}
+
+// SpreadsheetPivotTableEditor provides adding pivot tables to a worksheet.
+type SpreadsheetPivotTableEditor interface {
+	AddPivotTable(spec SpreadsheetPivotTableSpec) error
+}

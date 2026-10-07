@@ -294,6 +294,10 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.startSaveAsPicker("xlsx")
 			continue
 		}
+		if action.slot == toolbarActionPrint {
+			a.requestSpreadsheetPrint()
+			continue
+		}
 		if action.slot == toolbarActionExport {
 			a.requestSpreadsheetPDFExport()
 			continue
@@ -456,6 +460,10 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 		}
 		if action.slot == toolbarActionInsertTable || action.slot == toolbarActionTableFormat {
 			a.showSpreadsheetInsertTableDialog("")
+			continue
+		}
+		if action.slot == toolbarActionPivotTable {
+			a.showSpreadsheetPivotTableDialog()
 			continue
 		}
 		if action.slot == toolbarActionInsertLink {
@@ -623,14 +631,14 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		return false
 	}
 	switch slot {
-	case toolbarActionOpenFile, toolbarActionSaveAs, toolbarActionExport, toolbarActionShare,
+	case toolbarActionOpenFile, toolbarActionSaveAs, toolbarActionPrint, toolbarActionExport, toolbarActionShare,
 		toolbarActionFormatPainter, toolbarActionFontFamily,
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat,
 		toolbarActionSum, toolbarActionFind,
 		toolbarActionZoomIn, toolbarActionZoom100,
 		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize,
 		toolbarActionPrintArea, toolbarActionViewGridlines, toolbarActionLayoutGridlines,
-		toolbarActionInsertTable, toolbarActionTableFormat, toolbarActionConditionalFormat,
+		toolbarActionInsertTable, toolbarActionTableFormat, toolbarActionPivotTable, toolbarActionConditionalFormat,
 		toolbarActionInsertLink, toolbarActionInsertShapes, toolbarActionInsertTextBox,
 		toolbarActionInsertColumnChart, toolbarActionInsertLineChart, toolbarActionInsertPieChart,
 		toolbarActionHeaderRow,
@@ -724,6 +732,9 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	case toolbarActionInsertColumnChart, toolbarActionInsertLineChart, toolbarActionInsertPieChart:
 		_, ok := state.book.(document.SpreadsheetChartEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionPivotTable:
+		_, ok := state.book.(document.SpreadsheetPivotTableEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case 0, 1:
 		_, ok := state.book.(document.SpreadsheetHistory)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
@@ -775,6 +786,8 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return !state.formatRunning.Load()
 	case toolbarActionSaveAs:
 		return state.book != nil && !a.isSaving()
+	case toolbarActionPrint:
+		return state.book != nil && a.wordPrinter != nil && a.wordPrinter.Available() && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionExport:
 		return state.book != nil && !state.formatRunning.Load() && !a.isSaving() && !state.spreadsheetPDFExportRunning
 	case toolbarActionShare:

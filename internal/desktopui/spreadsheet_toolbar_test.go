@@ -1,15 +1,14 @@
 package desktopui
 
 import (
+	"context"
 	"image"
 	"image/color"
 	"strings"
 	"testing"
 	"time"
 
-	"gioui.org/f32"
 	"gioui.org/io/input"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -17,6 +16,7 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
+	"glance/internal/printservice"
 )
 
 type toolbarTestBook struct{ editable bool }
@@ -129,73 +129,11 @@ func TestExcelRibbonActionsUseExcelIconAssets(t *testing.T) {
 	}
 }
 
-func TestExcelInsertActionClickShowsMissingNotice(t *testing.T) {
-	book := &toolbarTestBook{editable: true}
-	state := newDocumentSessionState("")
-	state.book = book
-	state.toolbarTab = toolbarTabInsert
-	app := &App{documentSessionState: state, theme: material.NewTheme()}
-	router := new(input.Router)
-	var ops op.Ops
-	gtx := layout.Context{
-		Source:      router.Source(),
-		Ops:         &ops,
-		Now:         time.Now(),
-		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
-		Constraints: layout.Constraints{Max: image.Pt(800, 600)},
-	}
-	frame := func() {
-		t.Helper()
-		ops.Reset()
-		gtx.Source = router.Source()
-		app.handleSpreadsheetToolbarEvents(gtx)
-		app.layoutSpreadsheetToolbar(gtx)
-		router.Frame(&ops)
-	}
-
-	frame()
-	point := f32.Pt(74, 58) // 2nd Insert action, "数据透视表" (unimplemented).
-	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: point})
-	frame()
-	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: point})
-	frame()
-	if want := "“数据透视表”功能暂未实现"; app.status != want {
-		t.Fatalf("status after clicking an unavailable action = %q, want %q", app.status, want)
-	}
-}
-
-func TestExcelReviewActionClickShowsMissingNotice(t *testing.T) {
-	book := &toolbarTestBook{editable: true}
-	state := newDocumentSessionState("")
-	state.book = book
-	state.toolbarTab = toolbarTabReview
-	app := &App{documentSessionState: state, theme: material.NewTheme()}
-	router := new(input.Router)
-	var ops op.Ops
-	gtx := layout.Context{
-		Source:      router.Source(),
-		Ops:         &ops,
-		Now:         time.Now(),
-		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
-		Constraints: layout.Constraints{Max: image.Pt(800, 600)},
-	}
-	frame := func() {
-		t.Helper()
-		ops.Reset()
-		gtx.Source = router.Source()
-		app.handleSpreadsheetToolbarEvents(gtx)
-		app.layoutSpreadsheetToolbar(gtx)
-		router.Frame(&ops)
-	}
-
-	frame()
-	point := f32.Pt(34, 58) // 1st Review action, "拼写检查" (unimplemented).
-	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: point})
-	frame()
-	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: point})
-	frame()
-	if want := "“拼写检查”功能暂未实现"; app.status != want {
-		t.Fatalf("status after clicking Excel Review action = %q, want %q", app.status, want)
+func TestExcelMissingNoticeFallback(t *testing.T) {
+	app := &App{theme: material.NewTheme()}
+	app.showSpreadsheetFeatureMissing("自定义扩展")
+	if want := "“自定义扩展”功能暂未实现"; app.status != want {
+		t.Fatalf("status after showSpreadsheetFeatureMissing = %q, want %q", app.status, want)
 	}
 }
 
@@ -1770,4 +1708,76 @@ func TestSpreadsheetToolbar_SpellCheckAndTranslate(t *testing.T) {
 		t.Fatalf("expected translated text '你好世界' in cell A1, got %v (err: %v)", rows, err)
 	}
 }
+
+func TestSpreadsheetToolbar_PivotTableAndPrint(t *testing.T) {
+	wb := xlsx.NewBlank()
+	defer wb.Close()
+
+	sheet := wb.SheetNames()[0]
+	_ = wb.SetCellText(sheet, "A1", "Item")
+	_ = wb.SetCellText(sheet, "B1", "Dept")
+	_ = wb.SetCellText(sheet, "C1", "100")
+
+	state := newDocumentSessionState("test_pivot_print.xlsx")
+	state.book = wb
+	state.sheets = wb.SheetNames()
+	state.sheet = sheet
+	state.virtualGrid = newGridViewport()
+	state.selection = CellSelection{
+		Anchor: CellPosition{Row: 0, Column: 0},
+		Active: CellPosition{Row: 2, Column: 2},
+	}
+	state.selectionSet = true
+	app := &App{
+		documentSessionState: state,
+		theme:                material.NewTheme(),
+		formatResults:        make(chan spreadsheetFormatResult, 10),
+		wordPrinter:          &darwinTestPrinter{},
+	}
+
+	// 1. Pivot Table
+	if unimplementedSpreadsheetToolbarAction(toolbarActionPivotTable) {
+		t.Fatal("toolbarActionPivotTable should not be unimplemented")
+	}
+	if !app.toolbarActionEnabled(toolbarActionPivotTable) {
+		t.Fatal("toolbarActionPivotTable should be enabled")
+	}
+	app.showSpreadsheetPivotTableDialog()
+	if !app.modal.Visible || app.modal.Title != "插入数据透视表" {
+		t.Fatalf("expected 插入数据透视表 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("confirm")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("insert pivot table failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for pivot table formatResult")
+	}
+
+	// 2. Print
+	if unimplementedSpreadsheetToolbarAction(toolbarActionPrint) {
+		t.Fatal("toolbarActionPrint should not be unimplemented")
+	}
+	if !app.toolbarActionEnabled(toolbarActionPrint) {
+		t.Fatal("toolbarActionPrint should be enabled")
+	}
+	app.requestSpreadsheetPrint()
+	if !app.modal.Visible || app.modal.Title != "打印工作表" {
+		t.Fatalf("expected 打印工作表 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("print")
+	if !strings.Contains(app.status, "打印任务") {
+		t.Fatalf("unexpected status after print: %q", app.status)
+	}
+}
+
+type darwinTestPrinter struct{}
+
+func (p *darwinTestPrinter) Available() bool { return true }
+func (p *darwinTestPrinter) Print(ctx context.Context, data []byte, opts printservice.Options) error {
+	return nil
+}
+
 
