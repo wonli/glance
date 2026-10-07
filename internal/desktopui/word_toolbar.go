@@ -360,6 +360,11 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "insert-textbox":
 		_, ok := any(state.word).(document.WordTextBoxEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "insert-header", "insert-footer", "insert-page-number":
+		_, ok := any(state.word).(document.WordHeaderFooterEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "view-side-by-side":
+		return state.word != nil
 	case "review-language":
 		_, ok := any(state.word).(document.WordLanguageEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
@@ -601,6 +606,14 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordHyperlinkDialog()
 		case "insert-textbox":
 			a.showWordTextBoxDialog()
+		case "insert-header":
+			a.showWordHeaderDialog()
+		case "insert-footer":
+			a.showWordFooterDialog()
+		case "insert-page-number":
+			a.showWordPageNumberDialog()
+		case "view-side-by-side":
+			a.toggleWordSideBySideView()
 		case "review-language":
 			a.showWordLanguageDialog()
 		case "review-word-count":
@@ -784,6 +797,14 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.showWordHyperlinkDialog()
 	case "insert-textbox":
 		a.showWordTextBoxDialog()
+	case "insert-header":
+		a.showWordHeaderDialog()
+	case "insert-footer":
+		a.showWordFooterDialog()
+	case "insert-page-number":
+		a.showWordPageNumberDialog()
+	case "view-side-by-side":
+		a.toggleWordSideBySideView()
 	case "review-language":
 		a.showWordLanguageDialog()
 	case "design-compact":
@@ -2814,3 +2835,139 @@ func (a *App) showWordTextBoxDialog() {
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
 }
+
+func (a *App) showWordHeaderDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordHeaderFooterEditor)
+	if !ok {
+		a.setStatus("当前文档不支持设置页眉")
+		return
+	}
+	a.modal.ShowInput("插入页眉", "请输入页眉文字：", "文档标题", "输入页眉内容", func(action string) {
+		a.modal.Hide()
+		if action != "confirm" {
+			return
+		}
+		text := strings.TrimSpace(a.modal.Input.Text())
+		if text == "" {
+			text = "页眉"
+		}
+		err := editor.SetHeader(text)
+		if err != nil {
+			a.setStatus("设置页眉失败：" + err.Error())
+			return
+		}
+		a.setStatus("已成功设置页眉")
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	},
+		modalDialogActionSpec{ID: "confirm", Label: "设置页眉"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordFooterDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordHeaderFooterEditor)
+	if !ok {
+		a.setStatus("当前文档不支持设置页脚")
+		return
+	}
+	a.modal.ShowInput("插入页脚", "请输入页脚文字：", "内部机密 · 请勿外传", "输入页脚内容", func(action string) {
+		a.modal.Hide()
+		if action != "confirm" {
+			return
+		}
+		text := strings.TrimSpace(a.modal.Input.Text())
+		if text == "" {
+			text = "页脚"
+		}
+		err := editor.SetFooter(text)
+		if err != nil {
+			a.setStatus("设置页脚失败：" + err.Error())
+			return
+		}
+		a.setStatus("已成功设置页脚")
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	},
+		modalDialogActionSpec{ID: "confirm", Label: "设置页脚"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordPageNumberDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordHeaderFooterEditor)
+	if !ok {
+		a.setStatus("当前文档不支持插入页码")
+		return
+	}
+	a.modal.ShowInput("插入页码", "选择页码对齐方式：", "center", "居中(center), 靠右(right), 靠左(left)", func(action string) {
+		a.modal.Hide()
+		var align string
+		switch action {
+		case "confirm":
+			align = strings.TrimSpace(a.modal.Input.Text())
+		case "center":
+			align = "center"
+		case "right":
+			align = "right"
+		case "left":
+			align = "left"
+		default:
+			return
+		}
+		if align == "" {
+			align = "center"
+		}
+		err := editor.SetPageNumber(align)
+		if err != nil {
+			a.setStatus("插入页码失败：" + err.Error())
+			return
+		}
+		a.setStatus("已成功在页脚插入页码")
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	},
+		modalDialogActionSpec{ID: "center", Label: "居中对齐"},
+		modalDialogActionSpec{ID: "right", Label: "靠右对齐"},
+		modalDialogActionSpec{ID: "left", Label: "靠左对齐"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) toggleWordSideBySideView() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	if a.desktopRuntime != nil && a.desktopRuntime.windowCount() > 1 {
+		a.setStatus("已开启并排查看模式")
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+		return
+	}
+	enabled, _ := wordNewWindowAvailability(state, a.desktopRuntime)
+	if enabled {
+		a.requestWordNewWindow()
+		a.setStatus("已打开新窗口并排查看")
+	} else {
+		a.selectWordMultiplePagesView()
+		a.setStatus("已开启双页并排查看")
+	}
+}
+

@@ -344,3 +344,10 @@ type WordHyperlinkEditor interface {
 type WordTextBoxEditor interface {
 	InsertTextBox(afterParagraphID, text string) error
 }
+
+// WordHeaderFooterEditor provides configuring document header, footer, or page numbers.
+type WordHeaderFooterEditor interface {
+	SetHeader(text string) error
+	SetFooter(text string) error
+	SetPageNumber(align string) error
+}

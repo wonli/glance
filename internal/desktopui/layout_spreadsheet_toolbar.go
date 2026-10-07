@@ -562,6 +562,14 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetConditionalFormatDialog()
 			continue
 		}
+		if action.slot == toolbarActionSpellCheck {
+			a.showSpreadsheetSpellCheckDialog()
+			continue
+		}
+		if action.slot == toolbarActionTranslate {
+			a.showSpreadsheetTranslateDialog()
+			continue
+		}
 		style := a.selectedCellStyle()
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
@@ -633,6 +641,7 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionFlashFill,
 		toolbarActionDataValidation,
 		toolbarActionNewComment, toolbarActionDeleteComment,
+		toolbarActionSpellCheck, toolbarActionTranslate,
 		toolbarActionNormalView, toolbarActionPageBreakPreview, toolbarActionRuler,
 		toolbarActionProtectSheet, toolbarActionProtectWorkbook:
 		return false
@@ -698,6 +707,8 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	case toolbarActionNewComment, toolbarActionDeleteComment:
 		_, ok := state.book.(document.SpreadsheetCommentEditor)
 		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionSpellCheck, toolbarActionTranslate:
+		return state.book != nil && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionRecalculate, toolbarActionRefreshAll:
 		_, ok := state.book.(document.SpreadsheetRecalculateEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()

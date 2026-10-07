@@ -1902,3 +1902,62 @@ func TestWordToolbar_BookmarkLinkAndTextBox(t *testing.T) {
 		t.Fatalf("unexpected status after insert textbox: %q", app.status)
 	}
 }
+
+func TestWordToolbar_HeaderFooterPageNumberAndSideBySide(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+
+	state := newDocumentSessionState("word-header-footer.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	app := &App{documentSessionState: state}
+
+	// 1. Verify availability
+	for _, id := range []string{"insert-header", "insert-footer", "insert-page-number", "view-side-by-side"} {
+		if !app.wordToolbarActionEnabled(ribbonAction{id: id}) {
+			t.Fatalf("expected action %q to be enabled", id)
+		}
+	}
+
+	// 2. Set Header
+	app.showWordHeaderDialog()
+	if !app.modal.Visible || app.modal.Title != "插入页眉" {
+		t.Fatalf("expected 插入页眉 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("测试页眉内容")
+	app.modal.OnAction("confirm")
+	if !strings.Contains(app.status, "已成功设置页眉") {
+		t.Fatalf("unexpected status after set header: %q", app.status)
+	}
+
+	// 3. Set Footer
+	app.showWordFooterDialog()
+	if !app.modal.Visible || app.modal.Title != "插入页脚" {
+		t.Fatalf("expected 插入页脚 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("测试页脚内容")
+	app.modal.OnAction("confirm")
+	if !strings.Contains(app.status, "已成功设置页脚") {
+		t.Fatalf("unexpected status after set footer: %q", app.status)
+	}
+
+	// 4. Set Page Number
+	app.showWordPageNumberDialog()
+	if !app.modal.Visible || app.modal.Title != "插入页码" {
+		t.Fatalf("expected 插入页码 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("center")
+	if !strings.Contains(app.status, "已成功在页脚插入页码") {
+		t.Fatalf("unexpected status after set page number: %q", app.status)
+	}
+
+	// 5. Toggle Side by Side View
+	app.toggleWordSideBySideView()
+	if !strings.Contains(app.status, "并排查看") {
+		t.Fatalf("unexpected status after toggle side by side: %q", app.status)
+	}
+}
+

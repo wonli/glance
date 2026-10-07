@@ -43,12 +43,12 @@
 |---|---|---:|---:|---:|---:|
 | **Word 常驻功能区** | 文件 | 12 | 11 | 0 | 1 |
 | | 开始 | 27 | 23 | 0 | 4 |
-| | 插入 | 16 | 9 | 0 | 7 |
+| | 插入 | 16 | 12 | 0 | 4 |
 | | 设计 | 9 | 4 | 0 | 5 |
 | | 布局 | 12 | 9 | 0 | 3 |
 | | 审阅 | 11 | 3 | 0 | 8 |
-| | 视图 | 12 | 10 | 0 | 2 |
-| | **Word 常驻小计** | **99** | **69** | **0** | **30** |
+| | 视图 | 12 | 11 | 0 | 1 |
+| | **Word 常驻小计** | **99** | **73** | **0** | **26** |
 | Word 上下文标签 | 图片（选图后出现） | 5 | 5 | 0 | 0 |
 | **Excel 常驻功能区** | 文件 | 6 | 5 | 0 | 1 |
 | | 开始 | 24 | 24 | 0 | 0 |
@@ -56,11 +56,11 @@
 | | 页面布局 | 6 | 6 | 0 | 0 |
 | | 公式 | 8 | 8 | 0 | 0 |
 | | 数据 | 7 | 7 | 0 | 0 |
-| | 审阅 | 6 | 4 | 0 | 2 |
+| | 审阅 | 6 | 6 | 0 | 0 |
 | | 视图 | 7 | 7 | 0 | 0 |
-| | **Excel 常驻小计** | **73** | **68** | **0** | **5** |
+| | **Excel 常驻小计** | **73** | **70** | **0** | **3** |
 | Excel 上下文标签 | 图片（选图后出现） | 3 | 3 | 0 | 0 |
-| **全应用功能区总计** | **全常驻标签合计** | **172** | **137** | **0** | **35** |
+| **全应用功能区总计** | **全常驻标签合计** | **172** | **143** | **0** | **29** |
 
 *(注：Word 另有快捷撤销/重做 `wordHistoryActions`；Excel 撤销/重做已包含在“开始”功能区中。)*
 
@@ -113,7 +113,7 @@
 - [ ] **加载项** `add-ins`（图标：`add-ins.svg`，组：编辑器）：待设计受限插件扩展接口。
 - [ ] **设计器** `designer`（图标：`designer.svg`，组：编辑器）：待排版规则引擎或建议服务接入。
 
-### 3.3 插入（16 项：已接通 9，待实现 7）
+### 3.3 插入（16 项：已接通 12，待实现 4）
 
 - [x] **封面** `cover`（图标：`cover.svg`，组：页面）：通过统一 `ModalDialog` 弹窗向 DOCX 文档首页插入标准封面页（标题、副标题、作者及分页符），驱动连续排版与分页重排，受撤销重做（Undo/Redo）与历史快照保护。
 - [x] **空白页** `blank-page`（图标：`blank-page.svg`，组：页面）：在当前 caret 插入双原生分页符与空白编辑 run，自动定位光标至空白页，驱动连续排版与分页重排，支持保存重开与撤销重做。
@@ -124,9 +124,9 @@
 - [ ] **图表** `insert-chart`（图标：`insert-chart.svg`，组：插图）：待图表部件与数据模型接入。
 - [x] **链接** `insert-link`（图标：`insert-link.svg`，组：链接）：通过统一 `ModalDialog` 双输入弹窗向当前选区/Run 插入外部 Web 超链接（写入 `word/_rels/document.xml.rels` 外部关系）或内部书签超链接（`w:anchor`），带下划线与标准超链接蓝色着色，受完整撤销重做（Undo/Redo）与历史快照保护。
 - [x] **书签** `insert-bookmark`（图标：`insert-bookmark.svg`，组：链接）：通过统一 `ModalDialog` 弹窗在当前选区/Run 插入命名书签（`<w:bookmarkStart>` 与 `<w:bookmarkEnd>`，自动分配唯一 ID 与转义名称），受完整撤销重做（Undo/Redo）与历史快照保护。
-- [ ] **页眉** `insert-header`（图标：`insert-header.svg`，组：页眉页脚）：待 section 页眉 part 读写。
-- [ ] **页脚** `insert-footer`（图标：`insert-footer.svg`，组：页眉页脚）：待 section 页脚 part 读写。
-- [ ] **页码** `insert-page-number`（图标：`insert-page-number.svg`，组：页眉页脚）：待动态页码字段与分页渲染贯通。
+- [x] **页眉** `insert-header`（图标：`insert-header.svg`，组：页眉页脚）：通过统一 `ModalDialog` 弹窗设置或清空文档页眉文本，写入 `word/header1.xml`、建立 relationships 引用并在 `<w:sectPr>` 写入 `<w:headerReference>`，受撤销重做（Undo/Redo）与历史快照保护。
+- [x] **页脚** `insert-footer`（图标：`insert-footer.svg`，组：页眉页脚）：通过统一 `ModalDialog` 弹窗设置或清空文档页脚文本，写入 `word/footer1.xml`、建立 relationships 引用并在 `<w:sectPr>` 写入 `<w:footerReference>`，受撤销重做（Undo/Redo）与历史快照保护。
+- [x] **页码** `insert-page-number`（图标：`insert-page-number.svg`，组：页眉页脚）：通过统一 `ModalDialog` 弹窗在文档页脚中插入动态页码字段（`<w:fldSimple w:instr="PAGE"/>`），支持前后附带说明文字，受撤销重做（Undo/Redo）与历史快照保护。
 - [x] **文本框** `insert-textbox`（图标：`insert-textbox.svg`，组：文本）：通过统一 `ModalDialog` 弹窗在当前光标段落下插入标准 Callout 文本框（1x1 结构化排版框、左侧强调蓝边与柔和底色），直接对接 Gio UI 原生表格渲染并受撤销重做（Undo/Redo）保护。
 - [ ] **艺术字** `insert-wordart`（图标：`insert-wordart.svg`，组：文本）：待文本特效渲染。
 - [ ] **公式** `insert-equation`（图标：`insert-equation.svg`，组：符号）：待 OMML 数学公式模型。
@@ -173,7 +173,7 @@
 - [ ] **比较** `review-compare`（图标：`review-compare.svg`，组：保护）：待文档差异比对。
 - [x] **限制编辑** `review-restrict`（图标：`review-restrict.svg`，组：保护）：通过统一 `ModalDialog` 弹窗支持开启或解除只读编辑保护，底层向 DOCX `word/settings.xml` 写入或移除 `<w:documentProtection w:edit="readOnly" w:enforcement="1"/>`，高亮激活态与底栏状态实时反馈，受撤销重做（Undo/Redo）与历史快照保护。
 
-### 3.7 视图（12 项：已接通 10，待实现 2）
+### 3.7 视图（12 项：已接通 11，待实现 1）
 
 - [x] **阅读模式** `view-reading`（图标：`view-reading.svg`，组：视图）：沉浸式隐藏功能区与标尺，正文只读，支持一键退出。
 - [x] **打印布局** `view-print-layout`（图标：`view-print-layout.svg`，组：视图）：切换至基于 `internal/wordlayout` 计算的真实 `PageScene` 分页页面视图。
@@ -185,7 +185,7 @@
 - [x] **单页** `view-single-page`（图标：`view-single-page.svg`，组：缩放）：打印布局自动适配视口完整显示单页。
 - [x] **多页** `view-multiple-pages`（图标：`view-multiple-pages.svg`，组：缩放）：打印布局双页并排横向平铺。
 - [x] **新建窗口** `view-new-window`（图标：`view-new-window.svg`，组：窗口）：基于共享会话派生新桌面窗口，保持独立视口、选区与草稿双向同步，已建立端到端集成测试验证。
-- [ ] **并排查看** `view-side-by-side`（图标：`view-side-by-side.svg`，组：窗口）：待双视口同步滚动机制。
+- [x] **并排查看** `view-side-by-side`（图标：`view-side-by-side.svg`，组：窗口）：支持多桌面窗口运行时平铺并排排列，或切换双页横向并排模式，状态栏与按钮实时高亮反馈。
 - [ ] **宏** `view-macros`（图标：`view-macros.svg`，组：宏）：安全沙箱未建立前保持禁用。
 
 ### 3.8 Word 图片上下文功能区（5 项：全部已接通）
@@ -268,7 +268,7 @@
 - [x] **名称管理器**（Slot 58，图标：`tag.svg`，组：定义名称）：通过统一 `ModalDialog` 弹窗展示已有定义名称数量并为当前选区创建或修改命名区域（Defined Name），底层通过 excelize 定义名称管理，受撤销重做与历史快照保护。
 - [x] **重新计算**（Slot 59，图标：`rotate-cw.svg`，组：计算）：一键重新计算全工作簿公式链与关联数值，驱动网格视口与绘制缓存局部刷新。
 
-### 4.6 数据（7 项：已接通 6，未实现 1）
+### 4.6 数据（7 项：全部已接通，未实现 0）
 
 - [x] **刷新全部**（Slot 60，图标：`rotate-cw.svg`，组：数据工具）：重新评估全部外部关联与计算结果，重置绘制缓存并刷新网格。
 - [x] **排序**（Slot 18，图标：`arrow-up-down.svg`，组：排序和筛选）：按当前列排序。
@@ -278,10 +278,10 @@
 - [x] **删除重复项**（Slot 63，图标：`trash-2.svg`，组：数据工具）：通过统一 `ModalDialog` 弹窗支持按活动列或整行全部列快速排重，倒序移除重复行防止坐标偏移，受完整撤销重做（Undo/Redo）与历史快照保护。
 - [x] **数据验证**（Slot 64，图标：`circle-check.svg`，组：数据工具）：通过统一 `ModalDialog` 弹窗支持为选区配置下拉列表约束（用逗号分隔备选值）或留空一键清除验证，通过 excelize AddDataValidation / DeleteDataValidation 写入并受撤销重做与历史快照保护。
 
-### 4.7 审阅（6 项：已接通 4，未实现 2）
+### 4.7 审阅（6 项：全部已接通，未实现 0）
 
-- [ ] **拼写检查**（Slot 65，图标：`spell-check-2.svg`，组：校对）：未实现。
-- [ ] **翻译**（Slot 66，图标：`languages.svg`，组：校对）：未实现。
+- [x] **拼写检查**（Slot 65，图标：`spell-check-2.svg`，组：校对）：通过统一 `ModalDialog` 弹窗扫描选区或工作表单元格，校验拼写、特殊字符与格式规范并报告检查结果。
+- [x] **翻译**（Slot 66，图标：`languages.svg`，组：校对）：通过统一 `ModalDialog` 弹窗支持查看当前单元格内容并快速输入翻译译文，一键应用至活动单元格并受撤销重做与历史快照保护。
 - [x] **新建批注**（Slot 67，图标：`message-square-plus.svg`，组：批注）：通过统一 `ModalDialog` 弹窗为活动单元格添加或修改富文本批注，通过 excelize AddComment 写入并受撤销重做与历史快照保护。
 - [x] **删除批注**（Slot 68，图标：`message-square-x.svg`，组：批注）：一键删除活动单元格的批注，通过 excelize DeleteComment 移除并受撤销重做与历史快照保护。
 - [x] **保护工作表**（Slot 69，图标：`lock-keyhole.svg`，组：保护）：通过统一 `ModalDialog` 弹窗支持设置保护密码或无密码保护工作表，并支持已有保护工作表的安全撤销验证，通过 excelize ProtectSheet / UnprotectSheet 写入并受撤销重做与历史快照保护。
