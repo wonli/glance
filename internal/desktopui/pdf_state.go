@@ -6,6 +6,7 @@ import (
 	"glance/internal/document"
 	"image"
 	"strings"
+	"sync"
 )
 
 type pdfPageResult struct {
@@ -41,6 +42,33 @@ type pdfViewState struct {
 	scene                             document.PDFPage
 	ink                               []document.PDFPoint
 	pointerDown                       bool
+
+	workerMu      sync.Mutex
+	workerDone    chan struct{}
+	workersClosed bool
+}
+
+func (v *pdfViewState) workerSignal() chan struct{} {
+	v.workerMu.Lock()
+	defer v.workerMu.Unlock()
+	if v.workerDone == nil {
+		v.workerDone = make(chan struct{})
+		if v.workersClosed {
+			close(v.workerDone)
+		}
+	}
+	return v.workerDone
+}
+
+func (v *pdfViewState) cancelWorkers() {
+	v.workerMu.Lock()
+	if !v.workersClosed {
+		v.workersClosed = true
+		if v.workerDone != nil {
+			close(v.workerDone)
+		}
+	}
+	v.workerMu.Unlock()
 }
 
 func (a *App) ensurePDFView() *pdfViewState {
@@ -168,6 +196,7 @@ func (a *App) requestPDFPage(index int) {
 	d := a.pdfDoc
 	window := a.window
 	shutdown := a.shutdown
+	done := v.workerSignal()
 	go func() {
 		pixels, p, w, e := d.Render(index, 144)
 		p.Index = index
@@ -177,6 +206,7 @@ func (a *App) requestPDFPage(index int) {
 			if window != nil {
 				window.Invalidate()
 			}
+		case <-done:
 		case <-shutdown:
 		}
 	}()

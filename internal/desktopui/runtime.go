@@ -579,6 +579,7 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 		if view != nil {
 			view.releaseJSONViewResources()
 			view.releaseWordViewResources()
+			view.releasePDFViewResources()
 			view.closed.Store(true)
 		}
 	}
@@ -586,12 +587,14 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 		if view != nil {
 			view.releaseJSONViewResources()
 			view.releaseWordViewResources()
+			view.releasePDFViewResources()
 			view.closed.Store(true)
 		}
 	}
 	if app.documentSessionState != nil {
 		app.documentSessionState.releaseJSONViewResources()
 		app.documentSessionState.releaseWordViewResources()
+		app.documentSessionState.releasePDFViewResources()
 		app.documentSessionState.closed.Store(true)
 	}
 	if wasPrimary {

@@ -524,6 +524,7 @@ func (a *App) closeWorkspaceTabNow(id string) {
 	// The closing tab must release its own resources in either case.
 	state.releaseJSONViewResources()
 	state.releaseWordViewResources()
+	state.releasePDFViewResources()
 	delete(a.sessions, id)
 	delete(a.tabMeta, id)
 	delete(a.tabButtons, id)
@@ -683,6 +684,7 @@ func closeSessionState(s *documentSessionState) {
 	if s != nil {
 		s.releaseJSONViewResources()
 		s.releaseWordViewResources()
+		s.releasePDFViewResources()
 		s.closed.Store(true)
 	}
 }

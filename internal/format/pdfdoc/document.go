@@ -97,13 +97,26 @@ func (d *Document) SetDirty(v bool) {
 	}
 }
 func (d *Document) SetSourcePath(p string) { d.mu.Lock(); defer d.mu.Unlock(); d.path = p }
-func (d *Document) Close() error           { d.mu.Lock(); defer d.mu.Unlock(); d.closed = true; return nil }
+func (d *Document) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.closed = true
+	d.data = nil
+	d.saved = nil
+	d.reader = nil
+	d.undo = nil
+	d.redo = nil
+	return nil
+}
 func (d *Document) Page(index int) (document.PDFPage, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.page(index)
 }
 func (d *Document) page(index int) (document.PDFPage, error) {
+	if d.closed || d.reader == nil {
+		return document.PDFPage{}, errors.New("PDF 已关闭")
+	}
 	size, e := d.reader.PageSize(index)
 	if e != nil {
 		return document.PDFPage{}, e

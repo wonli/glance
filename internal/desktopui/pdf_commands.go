@@ -27,6 +27,7 @@ func (a *App) startPDFCommand(c document.PDFCommand) bool {
 	d := a.pdfDoc
 	window := a.window
 	shutdown := a.shutdown
+	done := v.workerSignal()
 	go func() {
 		unlock := lockSessionAdapterWrite(state)
 		var e error
@@ -49,6 +50,7 @@ func (a *App) startPDFCommand(c document.PDFCommand) bool {
 			if window != nil {
 				window.Invalidate()
 			}
+		case <-done:
 		case <-shutdown:
 		}
 	}()

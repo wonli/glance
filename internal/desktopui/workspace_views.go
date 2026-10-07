@@ -31,6 +31,8 @@ func (a *App) reconcileWorkspaceTabs() {
 		}
 		if state := a.sessions[id]; state != nil {
 			state.releaseJSONViewResources()
+			state.releaseWordViewResources()
+			state.releasePDFViewResources()
 			state.closed.Store(true)
 		}
 		delete(a.sessions, id)
