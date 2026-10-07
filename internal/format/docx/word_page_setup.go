@@ -548,6 +548,96 @@ func (d *Document) SetPageLineNumbers(restart string) error {
 	return d.applyWordDocumentXMLLocked(patched)
 }
 
+// SetPageBorders sets or clears borders for all pages in the document.
+// borderType can be "single", "box", "double", "dashed", "wave", "none", or empty.
+func (d *Document) SetPageBorders(borderType string) error {
+	mode := strings.ToLower(strings.TrimSpace(borderType))
+	if mode == "box" {
+		mode = "single"
+	}
+	if mode != "" && mode != "none" && mode != "single" && mode != "double" && mode != "dashed" && mode != "wave" {
+		return fmt.Errorf("unsupported page border type %q", borderType)
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return err
+	}
+	if d.documentIdx < 0 || d.documentIdx >= len(d.parts) {
+		return fmt.Errorf("DOCX document part is unavailable")
+	}
+
+	data := d.parts[d.documentIdx].data
+	root, err := parseWordXML(data)
+	if err != nil {
+		return fmt.Errorf("parse DOCX document: %w", err)
+	}
+	prefix := elementPrefix(root.rawName)
+	if prefix == "" {
+		prefix = "w"
+	}
+	body := firstChild(root, "body")
+	if body == nil {
+		return fmt.Errorf("DOCX document has no body element")
+	}
+
+	makeBordersMarkup := func() []byte {
+		var b strings.Builder
+		b.WriteString(fmt.Sprintf("<%s:pgBorders %s:offsetFrom=\"page\">", prefix, prefix))
+		for _, side := range []string{"top", "left", "bottom", "right"} {
+			b.WriteString(fmt.Sprintf("<%s:%s %s:val=\"%s\" %s:sz=\"4\" %s:space=\"24\" %s:color=\"auto\"/>", prefix, side, prefix, mode, prefix, prefix, prefix))
+		}
+		b.WriteString(fmt.Sprintf("</%s:pgBorders>", prefix))
+		return []byte(b.String())
+	}
+
+	sections := findWordSectionNodes(body)
+	if len(sections) == 0 {
+		if mode == "" || mode == "none" {
+			return nil
+		}
+		sectPrMarkup := wrapWordElement(prefix, "sectPr", makeBordersMarkup())
+		patched, err := applyXMLReplacements(data, []xmlReplacement{{start: body.contentEnd, end: body.contentEnd, value: sectPrMarkup}})
+		if err != nil {
+			return err
+		}
+		return d.applyWordDocumentXMLLocked(patched)
+	}
+
+	var replacements []xmlReplacement
+	for _, sectPr := range sections {
+		pgBorders := firstChild(sectPr, "pgBorders")
+		if mode == "" || mode == "none" {
+			if pgBorders != nil {
+				replacements = append(replacements, xmlReplacement{start: pgBorders.start, end: pgBorders.end, value: nil})
+			}
+		} else {
+			bordersMarkup := makeBordersMarkup()
+			if pgBorders != nil {
+				replacements = append(replacements, xmlReplacement{start: pgBorders.start, end: pgBorders.end, value: bordersMarkup})
+			} else {
+				rep, err := insertWordSectionProperty(data, sectPr, prefix, "pgBorders", bordersMarkup)
+				if err != nil {
+					return err
+				}
+				replacements = append(replacements, rep)
+			}
+		}
+	}
+
+	if len(replacements) == 0 {
+		return nil
+	}
+
+	patched, err := applyXMLReplacements(data, replacements)
+	if err != nil {
+		return err
+	}
+	return d.applyWordDocumentXMLLocked(patched)
+}
+
 var _ document.WordPageSetupEditor = (*Document)(nil)
+
 
 

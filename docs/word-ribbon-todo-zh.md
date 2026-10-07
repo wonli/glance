@@ -43,24 +43,24 @@
 |---|---|---:|---:|---:|---:|
 | **Word 常驻功能区** | 文件 | 12 | 11 | 0 | 1 |
 | | 开始 | 27 | 23 | 0 | 4 |
-| | 插入 | 16 | 4 | 0 | 12 |
-| | 设计 | 9 | 3 | 0 | 6 |
+| | 插入 | 16 | 5 | 0 | 11 |
+| | 设计 | 9 | 4 | 0 | 5 |
 | | 布局 | 12 | 9 | 0 | 3 |
 | | 审阅 | 11 | 2 | 0 | 9 |
 | | 视图 | 12 | 10 | 0 | 2 |
-| | **Word 常驻小计** | **99** | **62** | **0** | **37** |
+| | **Word 常驻小计** | **99** | **64** | **0** | **35** |
 | Word 上下文标签 | 图片（选图后出现） | 5 | 5 | 0 | 0 |
 | **Excel 常驻功能区** | 文件 | 6 | 5 | 0 | 1 |
 | | 开始 | 24 | 22 | 0 | 2 |
 | | 插入 | 9 | 3 | 0 | 6 |
 | | 页面布局 | 6 | 6 | 0 | 0 |
 | | 公式 | 8 | 8 | 0 | 0 |
-| | 数据 | 7 | 6 | 0 | 1 |
-| | 审阅 | 6 | 2 | 0 | 4 |
+| | 数据 | 7 | 7 | 0 | 0 |
+| | 审阅 | 6 | 4 | 0 | 2 |
 | | 视图 | 7 | 7 | 0 | 0 |
-| | **Excel 常驻小计** | **73** | **59** | **0** | **14** |
+| | **Excel 常驻小计** | **73** | **62** | **0** | **11** |
 | Excel 上下文标签 | 图片（选图后出现） | 3 | 3 | 0 | 0 |
-| **全应用功能区总计** | **全常驻标签合计** | **172** | **121** | **0** | **51** |
+| **全应用功能区总计** | **全常驻标签合计** | **172** | **126** | **0** | **46** |
 
 *(注：Word 另有快捷撤销/重做 `wordHistoryActions`；Excel 撤销/重做已包含在“开始”功能区中。)*
 
@@ -118,7 +118,7 @@
 - [ ] **封面** `cover`（图标：`cover.svg`，组：页面）：待实现本地标准封面模板插入。
 - [x] **空白页** `blank-page`（图标：`blank-page.svg`，组：页面）：在当前 caret 插入双原生分页符与空白编辑 run，自动定位光标至空白页，驱动连续排版与分页重排，支持保存重开与撤销重做。
 - [x] **分页** `page-break`（图标：`page-break.svg`，组：页面）：在当前 caret 插入原生 `w:br w:type="page"`，支持保存重开与分页重排。
-- [ ] **表格** `insert-table`（图标：`insert-table.svg`，组：表格）：已有只读表格渲染，待实现插入行列与表格结构编辑。
+- [x] **表格** `insert-table`（图标：`insert-table.svg`，组：表格）：通过统一 `ModalDialog` 弹窗支持标准尺寸预设（2x2、3x3、4x4、5x3）与自定义行列输入（1–100 行，1–50 列），向 DOCX 写入规范 `<w:tbl>` 网格结构并在当前光标段落下插入，直接对接 Gio UI 真实表格渲染并受撤销重做（Undo/Redo）与历史快照保护。
 - [x] **图片** `insert-image`（图标：`insert-image.svg`，组：插图）：异步文件选择器插入 PNG/JPEG 行内图片。
 - [ ] **形状** `insert-shapes`（图标：`insert-shapes.svg`，组：插图）：待 DrawingML 形状中立模型与 XML 写入。
 - [ ] **图表** `insert-chart`（图标：`insert-chart.svg`，组：插图）：待图表部件与数据模型接入。
@@ -142,7 +142,7 @@
 - [x] **宽松** `design-spacious`（图标：`design-spacious.svg`，组：段落间距）：通过 `SetAllParagraphsSpacing(0, 240)` 将全文档所有段落统一设置为宽松间距（段前 0 pt，段后 12 pt），批量应用 XML patch 并受撤销重做与历史快照保护。
 - [ ] **水印** `design-watermark`（图标：`design-watermark.svg`，组：页面背景）：待背景层/页眉水印 DrawingML 支持。
 - [x] **页面颜色** `design-page-color`（图标：`design-page-color.svg`，组：页面背景）：通过统一 `ModalDialog` 弹窗支持标准预设（羊皮纸米黄 #FAF8F5、护眼绿 #E8F5E9、柔和淡蓝 #E3F2FD、深色夜间 #263238、纯白）及任意自定义 16 进制颜色输入，向 DOCX `word/document.xml` 写入或清除 `<w:background w:color="HEX"/>`，实时驱动页面表面动态着色与重排，受撤销重做（Undo/Redo）与历史快照保护。
-- [ ] **页面边框** `design-page-border`（图标：`design-page-border.svg`，组：页面背景）：待 section 页面边框设置。
+- [x] **页面边框** `design-page-border`（图标：`design-page-border.svg`，组：页面背景）：通过统一 `ModalDialog` 弹窗支持单线方框（box/single）、双线方框（double）、虚线方框（dashed）预设及无边框清除，向 DOCX `<w:sectPr><w:pgBorders>` 写入标准四方页面边框，受撤销重做（Undo/Redo）与历史快照保护。
 
 ### 3.5 布局（12 项：已接通 9，待实现 3）
 
@@ -276,14 +276,14 @@
 - [x] **分列**（Slot 61，图标：`columns-3.svg`，组：数据工具）：通过统一 `ModalDialog` 弹窗支持逗号、分号、空格、制表符预设及任意自定义分隔符向右拆分数据，写入单元格并动态反馈处理行数与扩展列数，受完整撤销重做（Undo/Redo）与历史快照保护。
 - [x] **快速填充**（Slot 62，图标：`wand-sparkles.svg`，组：数据工具）：智能识别数字序列递增步长、带编号文本（如“Item 1”）及首行数据规律，一键向下推断并快速填充至选区空白行，受完整撤销重做（Undo/Redo）与历史快照保护。
 - [x] **删除重复项**（Slot 63，图标：`trash-2.svg`，组：数据工具）：通过统一 `ModalDialog` 弹窗支持按活动列或整行全部列快速排重，倒序移除重复行防止坐标偏移，受完整撤销重做（Undo/Redo）与历史快照保护。
-- [ ] **数据验证**（Slot 64，图标：`circle-check.svg`，组：数据工具）：未实现。
+- [x] **数据验证**（Slot 64，图标：`circle-check.svg`，组：数据工具）：通过统一 `ModalDialog` 弹窗支持为选区配置下拉列表约束（用逗号分隔备选值）或留空一键清除验证，通过 excelize AddDataValidation / DeleteDataValidation 写入并受撤销重做与历史快照保护。
 
-### 4.7 审阅（6 项：已接通 2，未实现 4）
+### 4.7 审阅（6 项：已接通 4，未实现 2）
 
 - [ ] **拼写检查**（Slot 65，图标：`spell-check-2.svg`，组：校对）：未实现。
 - [ ] **翻译**（Slot 66，图标：`languages.svg`，组：校对）：未实现。
-- [ ] **新建批注**（Slot 67，图标：`message-square-plus.svg`，组：批注）：未实现。
-- [ ] **删除批注**（Slot 68，图标：`message-square-x.svg`，组：批注）：未实现。
+- [x] **新建批注**（Slot 67，图标：`message-square-plus.svg`，组：批注）：通过统一 `ModalDialog` 弹窗为活动单元格添加或修改富文本批注，通过 excelize AddComment 写入并受撤销重做与历史快照保护。
+- [x] **删除批注**（Slot 68，图标：`message-square-x.svg`，组：批注）：一键删除活动单元格的批注，通过 excelize DeleteComment 移除并受撤销重做与历史快照保护。
 - [x] **保护工作表**（Slot 69，图标：`lock-keyhole.svg`，组：保护）：通过统一 `ModalDialog` 弹窗支持设置保护密码或无密码保护工作表，并支持已有保护工作表的安全撤销验证，通过 excelize ProtectSheet / UnprotectSheet 写入并受撤销重做与历史快照保护。
 - [x] **保护工作簿**（Slot 70，图标：`shield-check.svg`，组：保护）：通过统一 `ModalDialog` 弹窗支持设置保护密码或无密码保护工作簿结构，并支持已有保护工作簿的安全撤销验证，通过 excelize ProtectWorkbook / UnprotectWorkbook 写入并受撤销重做与历史快照保护。
 

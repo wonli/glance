@@ -526,6 +526,18 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetProtectWorkbookDialog()
 			continue
 		}
+		if action.slot == toolbarActionDataValidation {
+			a.showSpreadsheetDataValidationDialog()
+			continue
+		}
+		if action.slot == toolbarActionNewComment {
+			a.showSpreadsheetNewCommentDialog()
+			continue
+		}
+		if action.slot == toolbarActionDeleteComment {
+			a.deleteSpreadsheetComment()
+			continue
+		}
 		style := a.selectedCellStyle()
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
@@ -593,6 +605,8 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionInsertFunction, toolbarActionRecentFunctions, toolbarActionLogicalFunctions,
 		toolbarActionTextFunctions, toolbarActionDateTimeFunctions, toolbarActionNameManager,
 		toolbarActionFlashFill,
+		toolbarActionDataValidation,
+		toolbarActionNewComment, toolbarActionDeleteComment,
 		toolbarActionNormalView, toolbarActionPageBreakPreview, toolbarActionRuler,
 		toolbarActionProtectSheet, toolbarActionProtectWorkbook:
 		return false
@@ -648,6 +662,12 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionFlashFill:
 		_, ok := state.book.(document.SpreadsheetFlashFillEditor)
+		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionDataValidation:
+		_, ok := state.book.(document.SpreadsheetDataValidationEditor)
+		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionNewComment, toolbarActionDeleteComment:
+		_, ok := state.book.(document.SpreadsheetCommentEditor)
 		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionRecalculate, toolbarActionRefreshAll:
 		_, ok := state.book.(document.SpreadsheetRecalculateEditor)

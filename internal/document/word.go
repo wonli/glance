@@ -301,6 +301,7 @@ type WordPageSetupEditor interface {
 	SetPageSize(widthPT, heightPT float64) error
 	SetPageColumns(columns int) error
 	SetPageLineNumbers(restart string) error
+	SetPageBorders(borderType string) error
 }
 
 // WordDocumentProtectionEditor is an optional capability for inspecting and updating Word document protection.
@@ -314,4 +315,10 @@ type WordPageBackgroundEditor interface {
 	GetPageBackgroundColor() (string, error)
 	SetPageBackgroundColor(hexColor string) error
 }
+
+// WordTableInsertEditor exposes inserting a basic table into the document body.
+type WordTableInsertEditor interface {
+	InsertTable(afterParagraphID string, rows, cols int) (tableID string, err error)
+}
+
 

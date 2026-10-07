@@ -1742,6 +1742,71 @@ func TestWordSelectAllAndPageColor(t *testing.T) {
 	}
 }
 
+func TestWordToolbar_TableAndPageBorder(t *testing.T) {
+	doc, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	state := newDocumentSessionState("test.docx")
+	state.word = doc
+	state.wordBlocks = doc.WordBlocks()
+	state.selectedWordParagraphID = state.wordBlocks[0].Paragraph.ID
+	app := &App{documentSessionState: state}
+
+	// 1. Verify availability
+	if !app.wordToolbarActionEnabled(ribbonAction{id: "insert-table"}) {
+		t.Fatal("expected insert-table to be available")
+	}
+	if !app.wordToolbarActionEnabled(ribbonAction{id: "design-page-border"}) {
+		t.Fatal("expected design-page-border to be available")
+	}
+
+	// 2. Insert Table Dialog & Execution
+	app.showWordInsertTableDialog()
+	if !app.modal.Visible || app.modal.Title != "插入表格" {
+		t.Fatalf("expected 插入表格 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("3x3")
+	if !strings.Contains(app.status, "已成功插入 3行3列 表格") {
+		t.Fatalf("unexpected status after insert table: %q", app.status)
+	}
+
+	// Verify table in document
+	blocks := doc.WordBlocks()
+	foundTable := false
+	for _, block := range blocks {
+		if block.Kind == document.WordTableBlock && block.Table != nil {
+			foundTable = true
+			if len(block.Table.Rows) != 3 {
+				t.Fatalf("expected 3 rows, got %d", len(block.Table.Rows))
+			}
+		}
+	}
+	if !foundTable {
+		t.Fatal("inserted table not found in document blocks")
+	}
+
+	// 3. Page Border Dialog & Execution
+	app.showWordPageBorderDialog()
+	if !app.modal.Visible || app.modal.Title != "页面边框" {
+		t.Fatalf("expected 页面边框 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("double")
+	if !strings.Contains(app.status, "已设置页面边框") {
+		t.Fatalf("unexpected status after set page border: %q", app.status)
+	}
+
+	// 4. Clear Page Border
+	app.showWordPageBorderDialog()
+	app.modal.OnAction("none")
+	if !strings.Contains(app.status, "已清除页面边框") {
+		t.Fatalf("unexpected status after clear page border: %q", app.status)
+	}
+}
+
+
 
 
 

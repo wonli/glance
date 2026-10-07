@@ -357,4 +357,42 @@ type SpreadsheetFlashFillEditor interface {
 	FlashFill(sheet string, selection CellRange) (SpreadsheetFlashFillResult, error)
 }
 
+// SpreadsheetDataValidationType represents validation rule kinds.
+type SpreadsheetDataValidationType string
+
+const (
+	DataValidationTypeList   SpreadsheetDataValidationType = "list"
+	DataValidationTypeNumber SpreadsheetDataValidationType = "number"
+)
+
+// SpreadsheetDataValidationSpec specifies a data validation constraint for a range.
+type SpreadsheetDataValidationSpec struct {
+	Sheet     string
+	Range     CellRange
+	Type      SpreadsheetDataValidationType
+	DropList  []string
+	MinNumber *float64
+	MaxNumber *float64
+}
+
+// SpreadsheetDataValidationEditor provides adding and removing cell data validations.
+type SpreadsheetDataValidationEditor interface {
+	AddDataValidation(spec SpreadsheetDataValidationSpec) error
+	DeleteDataValidation(sheet string, bounds CellRange) error
+}
+
+// SpreadsheetComment represents a cell note/comment.
+type SpreadsheetComment struct {
+	Author string
+	Cell   string
+	Text   string
+}
+
+// SpreadsheetCommentEditor provides adding, reading, and deleting cell comments.
+type SpreadsheetCommentEditor interface {
+	GetComments(sheet string) ([]SpreadsheetComment, error)
+	AddComment(sheet string, comment SpreadsheetComment) error
+	DeleteComment(sheet string, cell string) error
+}
+
 
