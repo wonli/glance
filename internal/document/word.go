@@ -351,3 +351,19 @@ type WordHeaderFooterEditor interface {
 	SetFooter(text string) error
 	SetPageNumber(align string) error
 }
+
+// WordTrackRevisionsEditor provides inspection and toggling of revision tracking,
+// as well as batch accepting or rejecting tracked changes.
+type WordTrackRevisionsEditor interface {
+	GetTrackRevisions() (bool, error)
+	SetTrackRevisions(enabled bool) error
+	AcceptAllRevisions() (int, error)
+	RejectAllRevisions() (int, error)
+}
+
+// WordWatermarkEditor provides inspecting, adding and clearing document watermarks.
+type WordWatermarkEditor interface {
+	GetWatermark() (string, error)
+	SetWatermark(text string) error
+	ClearWatermark() error
+}

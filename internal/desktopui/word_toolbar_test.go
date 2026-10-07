@@ -1961,3 +1961,121 @@ func TestWordToolbar_HeaderFooterPageNumberAndSideBySide(t *testing.T) {
 	}
 }
 
+func TestWordToolbar_WatermarkTrackRevisionsEditorAndLayout(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+
+	state := newDocumentSessionState("word-review-design-layout.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	app := &App{documentSessionState: state}
+
+	// 1. Verify availability of all new actions
+	actions := []string{
+		"design-watermark",
+		"review-track", "review-accept", "review-reject",
+		"review-editor", "editor",
+		"review-translate", "review-compare",
+		"layout-position", "layout-wrap", "layout-align",
+	}
+	for _, id := range actions {
+		if !app.wordToolbarActionEnabled(ribbonAction{id: id}) {
+			t.Fatalf("expected action %q to be enabled", id)
+		}
+	}
+
+	// 2. Test Watermark Dialog
+	app.showWordWatermarkDialog()
+	if !app.modal.Visible || app.modal.Title != "文档水印" {
+		t.Fatalf("expected 文档水印 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("绝密文档")
+	app.modal.OnAction("set")
+	// Give background goroutine a moment to complete
+	time.Sleep(50 * time.Millisecond)
+
+	// 3. Test Track Revisions Toggle
+	if wordToolbarActionActive(state, ribbonAction{id: "review-track"}) {
+		t.Fatal("expected track revisions to be inactive initially")
+	}
+	app.toggleWordTrackRevisions()
+	time.Sleep(50 * time.Millisecond)
+	if !state.wordTrackRevisions {
+		t.Fatal("expected state.wordTrackRevisions to be true after toggle")
+	}
+	if !wordToolbarActionActive(state, ribbonAction{id: "review-track"}) {
+		t.Fatal("expected track revisions action to be active after toggle")
+	}
+
+	// 4. Test Accept Revisions Dialog
+	app.acceptWordRevisions()
+	if !app.modal.Visible || app.modal.Title != "接受全部修订" {
+		t.Fatalf("expected 接受全部修订 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("confirm")
+	time.Sleep(50 * time.Millisecond)
+
+	// 5. Test Reject Revisions Dialog
+	app.rejectWordRevisions()
+	if !app.modal.Visible || app.modal.Title != "拒绝全部修订" {
+		t.Fatalf("expected 拒绝全部修订 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("confirm")
+	time.Sleep(50 * time.Millisecond)
+
+	// 6. Test Document Editor Dialog
+	app.showWordEditorDialog()
+	if !app.modal.Visible || app.modal.Title != "文档编辑器" {
+		t.Fatalf("expected 文档编辑器 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	if !strings.Contains(app.modal.Message, "综合评分") {
+		t.Fatalf("expected editor report to mention 综合评分, got: %q", app.modal.Message)
+	}
+	app.modal.OnAction("close")
+
+	// 7. Test Document Translate Dialog
+	app.showWordTranslateDialog()
+	if !app.modal.Visible || app.modal.Title != "翻译" {
+		t.Fatalf("expected 翻译 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("Translated Text")
+	app.modal.OnAction("confirm")
+	time.Sleep(50 * time.Millisecond)
+
+	// 8. Test Document Compare Dialog
+	app.showWordCompareDialog()
+	if !app.modal.Visible || app.modal.Title != "文档比较" {
+		t.Fatalf("expected 文档比较 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	if !strings.Contains(app.modal.Message, "版本") {
+		t.Fatalf("expected compare dialog to mention 版本, got: %q", app.modal.Message)
+	}
+	app.modal.OnAction("close")
+
+	// 9. Test Layout Align Dialog
+	app.showWordLayoutAlignDialog()
+	if !app.modal.Visible || app.modal.Title != "排列对齐" {
+		t.Fatalf("expected 排列对齐 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("center")
+	app.modal.OnAction("confirm")
+	time.Sleep(50 * time.Millisecond)
+
+	// 10. Test Layout Wrap Dialog
+	app.showWordLayoutWrapDialog()
+	if !app.modal.Visible || app.modal.Title != "文字环绕" {
+		t.Fatalf("expected 文字环绕 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("close")
+
+	// 11. Test Layout Position Dialog
+	app.showWordLayoutPositionDialog()
+	if !app.modal.Visible || app.modal.Title != "对象位置" {
+		t.Fatalf("expected 对象位置 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("close")
+}
+

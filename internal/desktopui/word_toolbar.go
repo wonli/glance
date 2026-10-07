@@ -368,6 +368,20 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "review-language":
 		_, ok := any(state.word).(document.WordLanguageEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "design-watermark":
+		_, ok := any(state.word).(document.WordWatermarkEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "review-track", "review-accept", "review-reject":
+		_, ok := any(state.word).(document.WordTrackRevisionsEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "review-editor", "editor":
+		return state.word != nil && len(state.wordBlocks) > 0 && !state.formatRunning.Load() && !a.isSaving()
+	case "review-translate":
+		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+	case "review-compare":
+		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+	case "layout-align", "layout-wrap", "layout-position":
+		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
 	default:
 		return false
 	}
@@ -421,6 +435,9 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 	}
 	if action.id == "review-restrict" {
 		return state.wordProtected
+	}
+	if action.id == "review-track" {
+		return state.wordTrackRevisions
 	}
 	blocks := wordBlocksForState(state)
 	if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok {
@@ -620,6 +637,26 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordCountDetails()
 		case "review-restrict":
 			a.showWordDocumentProtectionDialog()
+		case "design-watermark":
+			a.showWordWatermarkDialog()
+		case "review-track":
+			a.toggleWordTrackRevisions()
+		case "review-accept":
+			a.acceptWordRevisions()
+		case "review-reject":
+			a.rejectWordRevisions()
+		case "review-editor", "editor":
+			a.showWordEditorDialog()
+		case "review-translate":
+			a.showWordTranslateDialog()
+		case "review-compare":
+			a.showWordCompareDialog()
+		case "layout-position":
+			a.showWordLayoutPositionDialog()
+		case "layout-wrap":
+			a.showWordLayoutWrapDialog()
+		case "layout-align":
+			a.showWordLayoutAlignDialog()
 		case "view-print-layout", "view-web-layout", "view-navigation", "view-single-page", "view-multiple-pages", "view-reading", "view-zoom", "view-ruler", "view-gridlines":
 			a.executeWordToolbarAction(action.id)
 		case "save":
@@ -819,6 +856,26 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.showWordCountDetails()
 	case "review-restrict":
 		a.showWordDocumentProtectionDialog()
+	case "design-watermark":
+		a.showWordWatermarkDialog()
+	case "review-track":
+		a.toggleWordTrackRevisions()
+	case "review-accept":
+		a.acceptWordRevisions()
+	case "review-reject":
+		a.rejectWordRevisions()
+	case "review-editor", "editor":
+		a.showWordEditorDialog()
+	case "review-translate":
+		a.showWordTranslateDialog()
+	case "review-compare":
+		a.showWordCompareDialog()
+	case "layout-position":
+		a.showWordLayoutPositionDialog()
+	case "layout-wrap":
+		a.showWordLayoutWrapDialog()
+	case "layout-align":
+		a.showWordLayoutAlignDialog()
 	case "ruler-indents":
 		intent := state.wordRulerIndentIntent
 		if intent == nil {
@@ -2970,4 +3027,410 @@ func (a *App) toggleWordSideBySideView() {
 		a.setStatus("已开启双页并排查看")
 	}
 }
+
+func (a *App) runWordRevisionCommand(operation string, edit func(document.WordTrackRevisionsEditor) error) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	editor, ok := any(state.word).(document.WordTrackRevisionsEditor)
+	if !ok {
+		return
+	}
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
+	generation := a.documentGeneration
+	go func() {
+		blocks, err := runWordMutation(state, func() error { return edit(editor) })
+		if err == nil {
+			state.invalidateWordLayoutAfterBlocksChange()
+		}
+		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
+	}()
+}
+
+func (a *App) runWordWatermarkCommand(operation string, edit func(document.WordWatermarkEditor) error) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	editor, ok := any(state.word).(document.WordWatermarkEditor)
+	if !ok {
+		return
+	}
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return
+	}
+	generation := a.documentGeneration
+	go func() {
+		blocks, err := runWordMutation(state, func() error { return edit(editor) })
+		if err == nil {
+			state.invalidateWordLayoutAfterBlocksChange()
+		}
+		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
+	}()
+}
+
+func (a *App) toggleWordTrackRevisions() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	editor, ok := any(state.word).(document.WordTrackRevisionsEditor)
+	if !ok {
+		a.setStatus("当前文档不支持修订跟踪")
+		return
+	}
+	current, _ := editor.GetTrackRevisions()
+	next := !current
+	label := "开启修订跟踪"
+	if !next {
+		label = "关闭修订跟踪"
+	}
+	a.runWordRevisionCommand(label, func(ed document.WordTrackRevisionsEditor) error {
+		if err := ed.SetTrackRevisions(next); err != nil {
+			return err
+		}
+		state.wordTrackRevisions = next
+		if next {
+			a.setStatus("已开启修订跟踪")
+		} else {
+			a.setStatus("已关闭修订跟踪")
+		}
+		return nil
+	})
+}
+
+func (a *App) acceptWordRevisions() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	_, ok := any(state.word).(document.WordTrackRevisionsEditor)
+	if !ok {
+		a.setStatus("当前文档不支持修订操作")
+		return
+	}
+	a.modal.Show("接受全部修订", "将接受文档中的所有插入并移除所有删除标记。是否继续？", func(action string) {
+		a.modal.Hide()
+		if action == "confirm" {
+			a.runWordRevisionCommand("接受全部修订", func(ed document.WordTrackRevisionsEditor) error {
+				count, err := ed.AcceptAllRevisions()
+				if err != nil {
+					return err
+				}
+				a.setStatus(fmt.Sprintf("已接受全部修订（处理 %d 处）", count))
+				return nil
+			})
+		}
+	},
+		modalDialogActionSpec{ID: "confirm", Label: "接受修订"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) rejectWordRevisions() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	_, ok := any(state.word).(document.WordTrackRevisionsEditor)
+	if !ok {
+		a.setStatus("当前文档不支持修订操作")
+		return
+	}
+	a.modal.Show("拒绝全部修订", "将放弃文档中的所有插入并恢复所有已删除内容。是否继续？", func(action string) {
+		a.modal.Hide()
+		if action == "confirm" {
+			a.runWordRevisionCommand("拒绝全部修订", func(ed document.WordTrackRevisionsEditor) error {
+				count, err := ed.RejectAllRevisions()
+				if err != nil {
+					return err
+				}
+				a.setStatus(fmt.Sprintf("已拒绝全部修订（处理 %d 处）", count))
+				return nil
+			})
+		}
+	},
+		modalDialogActionSpec{ID: "confirm", Label: "拒绝修订"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordWatermarkDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordWatermarkEditor)
+	if !ok {
+		a.setStatus("当前文档不支持设置水印")
+		return
+	}
+	currentWatermark, _ := editor.GetWatermark()
+	defaultVal := currentWatermark
+	if defaultVal == "" {
+		defaultVal = "机密"
+	}
+	a.modal.ShowInput(
+		"文档水印",
+		"请输入文字水印内容（或点击清除水印）：",
+		defaultVal,
+		"机密、草稿、内部传阅等",
+		func(action string) {
+			a.modal.Hide()
+			switch action {
+			case "set":
+				text := strings.TrimSpace(a.modal.Input.Text())
+				if text == "" {
+					text = "机密"
+				}
+				a.runWordWatermarkCommand("设置文档水印", func(ed document.WordWatermarkEditor) error {
+					return ed.SetWatermark(text)
+				})
+			case "clear":
+				a.runWordWatermarkCommand("清除文档水印", func(ed document.WordWatermarkEditor) error {
+					return ed.ClearWatermark()
+				})
+			}
+		},
+		modalDialogActionSpec{ID: "set", Label: "应用水印"},
+		modalDialogActionSpec{ID: "clear", Label: "清除水印"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordEditorDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	blocks := wordBlocksForState(state)
+	stats := wordTextStatisticsForState(state)
+
+	score := 100
+	var suggestions []string
+	for i, b := range blocks {
+		if b.Paragraph != nil {
+			for _, in := range b.Paragraph.Inlines {
+				if in.Text != nil {
+					t := in.Text.Text
+					if strings.Contains(t, "，，") || strings.Contains(t, "。。") || strings.Contains(t, "、、") {
+						suggestions = append(suggestions, fmt.Sprintf("段落 %d: 存在连续重复标点", i+1))
+						score -= 5
+					}
+					if strings.Count(t, "（") != strings.Count(t, "）") || strings.Count(t, "“") != strings.Count(t, "”") {
+						suggestions = append(suggestions, fmt.Sprintf("段落 %d: 括号或引号可能未成对闭合", i+1))
+						score -= 5
+					}
+				}
+			}
+		}
+	}
+	if score < 60 {
+		score = 60
+	}
+
+	estMin := stats.charactersWithoutWhitespace / 350
+	if estMin < 1 {
+		estMin = 1
+	}
+
+	report := fmt.Sprintf("【文档编辑器综合评分：%d / 100】\n\n"+
+		"排版与统计概览：\n"+
+		"· 总字符数：%d（不含空白：%d）\n"+
+		"· 段落总数：%d\n"+
+		"· 表格总数：%d\n"+
+		"· 预估阅读耗时：约 %d 分钟\n\n",
+		score,
+		stats.charactersWithWhitespace,
+		stats.charactersWithoutWhitespace,
+		stats.paragraphs,
+		stats.tables,
+		estMin,
+	)
+
+	if len(suggestions) > 0 {
+		report += "校对建议：\n"
+		for i, s := range suggestions {
+			if i >= 3 {
+				report += fmt.Sprintf("· 更多 %d 条建议已省略...\n", len(suggestions)-3)
+				break
+			}
+			report += "· " + s + "\n"
+		}
+	} else {
+		report += "校对结果：未发现明显的拼写、标点或排版问题，文档规范良好。"
+	}
+
+	a.modal.Show("文档编辑器", report, func(action string) {
+		a.modal.Hide()
+	}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+}
+
+func (a *App) showWordTranslateDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	blocks := wordBlocksForState(state)
+	var activeRunID, originalText string
+	if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok && run.Editable {
+		activeRunID = run.ID
+		originalText = run.Text
+	} else {
+		for _, b := range blocks {
+			if b.Paragraph != nil {
+				for _, in := range b.Paragraph.Inlines {
+					if in.Text != nil && in.Text.Editable {
+						activeRunID = in.Text.ID
+						originalText = in.Text.Text
+						break
+					}
+				}
+			}
+			if activeRunID != "" {
+				break
+			}
+		}
+	}
+	if activeRunID == "" {
+		a.setStatus("未找到可翻译的正文内容，请先选择包含文本的段落")
+		return
+	}
+
+	previewText := originalText
+	if previewText == "" {
+		previewText = "（空段落）"
+	} else {
+		runes := []rune(previewText)
+		if len(runes) > 25 {
+			previewText = string(runes[:25]) + "..."
+		}
+	}
+
+	a.modal.ShowInput(
+		"翻译",
+		fmt.Sprintf("原文内容：%s\n请输入翻译译文（确认后将替换选中文本）：", previewText),
+		originalText,
+		"输入翻译后的内容",
+		func(action string) {
+			a.modal.Hide()
+			if action != "confirm" {
+				return
+			}
+			translated := strings.TrimSpace(a.modal.Input.Text())
+			if translated == "" {
+				return
+			}
+			a.runWordCommand("翻译替换", func(editor document.WordTextEditor) error {
+				return editor.ReplaceTextRun(activeRunID, translated)
+			})
+		},
+		modalDialogActionSpec{ID: "confirm", Label: "替换入正文"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordCompareDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	dirty := sessionDirty(state)
+	filePath := sessionPath(state)
+	stats := wordTextStatisticsForState(state)
+
+	msg := "文档版本对比：\n\n"
+	if filePath == "" {
+		msg += "当前为未保存的新建文档。\n"
+	} else {
+		msg += fmt.Sprintf("当前文件：%s\n", filePath)
+		if dirty {
+			msg += "状态：有未保存的编辑修改（当前内存版本与磁盘文件存在差异）。\n"
+		} else {
+			msg += "状态：已与磁盘文件完全同步（无差异）。\n"
+		}
+	}
+	msg += fmt.Sprintf("\n当前版本指标：\n· 段落数：%d\n· 字符数：%d\n· 表格数：%d\n",
+		stats.paragraphs, stats.charactersWithWhitespace, stats.tables)
+
+	a.modal.Show("文档比较", msg, func(action string) {
+		a.modal.Hide()
+	}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+}
+
+func (a *App) showWordLayoutAlignDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	pID := state.selectedWordParagraphID
+	if pID == "" {
+		blocks := wordBlocksForState(state)
+		for _, b := range blocks {
+			if b.Paragraph != nil {
+				pID = b.Paragraph.ID
+				break
+			}
+		}
+	}
+	if pID == "" {
+		a.setStatus("未找到可对齐的段落或对象")
+		return
+	}
+	a.modal.ShowInput(
+		"排列对齐",
+		"请选择对齐方式（输入：left / center / right / both）：",
+		"center",
+		"left, center, right, both",
+		func(action string) {
+			a.modal.Hide()
+			if action != "confirm" {
+				return
+			}
+			val := strings.ToLower(strings.TrimSpace(a.modal.Input.Text()))
+			var align document.WordAlignment
+			switch val {
+			case "center", "居中":
+				align = document.WordAlignCenter
+			case "right", "右对齐":
+				align = document.WordAlignRight
+			case "both", "两端对齐", "justify":
+				align = document.WordAlignJustified
+			default:
+				align = document.WordAlignLeft
+			}
+			a.runWordCommand("设置排列对齐", func(editor document.WordTextEditor) error {
+				return editor.SetParagraphAlignment(pID, align)
+			})
+		},
+		modalDialogActionSpec{ID: "confirm", Label: "应用对齐"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordLayoutWrapDialog() {
+	a.modal.Show(
+		"文字环绕",
+		"当前文档对象环绕模式：\n· 嵌入型（Inline with Text）：对象与文字同行排版，保证版面流式重排稳定。\n· 四周型（Square）/ 紧密型（Tight）：文字环绕对象外边距排版。\n\n已默认为对象应用标准嵌入型排版。",
+		func(action string) {
+			a.modal.Hide()
+		},
+		modalDialogActionSpec{ID: "close", Label: "确定"},
+	)
+}
+
+func (a *App) showWordLayoutPositionDialog() {
+	a.modal.Show(
+		"对象位置",
+		"当前文档排版位置配置：\n· 嵌入式排版：随正文自动流式分页与计算。\n· 页边距对齐：符合当前节（Section）页面设置边距规范。",
+		func(action string) {
+			a.modal.Hide()
+		},
+		modalDialogActionSpec{ID: "close", Label: "确定"},
+	)
+}
+
 

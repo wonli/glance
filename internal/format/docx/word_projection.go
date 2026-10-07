@@ -272,6 +272,15 @@ func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordPar
 			continue
 		case "r":
 			p.appendRunInlines(&paragraph, node, child, &inlineIndex)
+		case "ins":
+			for _, linked := range child.children {
+				if linked.name.Local == "r" {
+					p.appendRunInlines(&paragraph, node, linked, &inlineIndex)
+				}
+			}
+		case "del":
+			// In standard preview mode, deleted text is omitted.
+			continue
 		case "hyperlink":
 			for _, linked := range child.children {
 				if linked.name.Local == "r" {

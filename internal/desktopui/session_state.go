@@ -36,6 +36,7 @@ type documentSessionState struct {
 	wordRulerHidden                     bool
 	wordGridlinesVisible                bool
 	wordProtected                       bool
+	wordTrackRevisions                  bool
 	wordLayoutActivePage                int
 	wordLayoutZoom                      float64
 	wordPageListState                   widget.List
