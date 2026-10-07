@@ -395,4 +395,28 @@ type SpreadsheetCommentEditor interface {
 	DeleteComment(sheet string, cell string) error
 }
 
+// SpreadsheetConditionalFormatType represents preset conditional format kinds.
+type SpreadsheetConditionalFormatType string
+
+const (
+	ConditionalFormatDataBar     SpreadsheetConditionalFormatType = "data_bar"
+	ConditionalFormat3ColorScale SpreadsheetConditionalFormatType = "3_color_scale"
+	ConditionalFormatDuplicate   SpreadsheetConditionalFormatType = "duplicate"
+	ConditionalFormatAboveAvg    SpreadsheetConditionalFormatType = "above_average"
+)
+
+// SpreadsheetConditionalFormatSpec specifies a conditional formatting rule for a range.
+type SpreadsheetConditionalFormatSpec struct {
+	Sheet string
+	Range CellRange
+	Type  SpreadsheetConditionalFormatType
+}
+
+// SpreadsheetConditionalFormatEditor provides adding and clearing conditional formatting.
+type SpreadsheetConditionalFormatEditor interface {
+	SetConditionalFormat(spec SpreadsheetConditionalFormatSpec) error
+	ClearConditionalFormat(sheet string, bounds CellRange) error
+}
+
+
 

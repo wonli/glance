@@ -1529,6 +1529,60 @@ func TestSpreadsheetToolbar_DataValidationAndComments(t *testing.T) {
 	}
 }
 
+func TestSpreadsheetToolbar_ConditionalFormat(t *testing.T) {
+	wb := xlsx.NewBlank()
+	defer wb.Close()
+
+	sheet := wb.SheetNames()[0]
+	state := newDocumentSessionState("test.xlsx")
+	state.book = wb
+	state.sheets = wb.SheetNames()
+	state.sheet = sheet
+	state.virtualGrid = newGridViewport()
+	state.selection = CellSelection{
+		Anchor: CellPosition{Row: 0, Column: 0},
+		Active: CellPosition{Row: 5, Column: 1},
+	}
+	state.selectionSet = true
+	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+
+	// 1. Verify availability
+	if unimplementedSpreadsheetToolbarAction(toolbarActionConditionalFormat) {
+		t.Fatal("toolbarActionConditionalFormat should not be unimplemented")
+	}
+	if !app.toolbarActionEnabled(toolbarActionConditionalFormat) {
+		t.Fatal("toolbarActionConditionalFormat should be enabled")
+	}
+
+	// 2. Open dialog and apply data bar
+	app.showSpreadsheetConditionalFormatDialog()
+	if !app.modal.Visible || app.modal.Title != "条件格式" {
+		t.Fatalf("expected 条件格式 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("data_bar")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("apply conditional format failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for conditional format formatResult")
+	}
+
+	// 3. Clear conditional format
+	app.showSpreadsheetConditionalFormatDialog()
+	app.modal.OnAction("clear")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("clear conditional format failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for clear conditional format formatResult")
+	}
+}
+
+
 
 
 

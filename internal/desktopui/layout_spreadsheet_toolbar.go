@@ -538,6 +538,10 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.deleteSpreadsheetComment()
 			continue
 		}
+		if action.slot == toolbarActionConditionalFormat {
+			a.showSpreadsheetConditionalFormatDialog()
+			continue
+		}
 		style := a.selectedCellStyle()
 		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
 			a.applyCellFormat(patch)
@@ -598,7 +602,7 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionZoomIn, toolbarActionZoom100,
 		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize,
 		toolbarActionPrintArea, toolbarActionViewGridlines, toolbarActionLayoutGridlines,
-		toolbarActionInsertTable, toolbarActionTableFormat,
+		toolbarActionInsertTable, toolbarActionTableFormat, toolbarActionConditionalFormat,
 		toolbarActionInsertLink, toolbarActionHeaderRow,
 		toolbarActionFreezePanes, toolbarActionRemoveDuplicates, toolbarActionTextToColumns,
 		toolbarActionRecalculate, toolbarActionRefreshAll,
@@ -665,6 +669,9 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionDataValidation:
 		_, ok := state.book.(document.SpreadsheetDataValidationEditor)
+		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionConditionalFormat:
+		_, ok := state.book.(document.SpreadsheetConditionalFormatEditor)
 		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionNewComment, toolbarActionDeleteComment:
 		_, ok := state.book.(document.SpreadsheetCommentEditor)

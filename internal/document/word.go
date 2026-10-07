@@ -321,4 +321,15 @@ type WordTableInsertEditor interface {
 	InsertTable(afterParagraphID string, rows, cols int) (tableID string, err error)
 }
 
+// WordCoverPageEditor provides inserting a standard cover page into the document.
+type WordCoverPageEditor interface {
+	InsertCoverPage(title, subtitle, author string) error
+}
+
+// WordLanguageEditor provides setting the proofing/document language tag.
+type WordLanguageEditor interface {
+	SetLanguage(runID, langCode string) error
+}
+
+
 

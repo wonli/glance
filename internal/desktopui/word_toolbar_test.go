@@ -1806,6 +1806,50 @@ func TestWordToolbar_TableAndPageBorder(t *testing.T) {
 	}
 }
 
+func TestWordToolbar_CoverPageAndLanguage(t *testing.T) {
+	doc, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	state := newDocumentSessionState("test.docx")
+	state.word = doc
+	state.wordBlocks = doc.WordBlocks()
+	state.selectedWordParagraphID = state.wordBlocks[0].Paragraph.ID
+	app := &App{documentSessionState: state}
+
+	// 1. Verify availability
+	if !app.wordToolbarActionEnabled(ribbonAction{id: "cover"}) {
+		t.Fatal("expected cover to be enabled")
+	}
+	if !app.wordToolbarActionEnabled(ribbonAction{id: "review-language"}) {
+		t.Fatal("expected review-language to be enabled")
+	}
+
+	// 2. Insert Cover Page Dialog & Execution
+	app.showWordCoverPageDialog()
+	if !app.modal.Visible || app.modal.Title != "插入封面" {
+		t.Fatalf("expected 插入封面 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.Input.SetText("项目年度规划")
+	app.modal.OnAction("confirm")
+	if !strings.Contains(app.status, "已成功在文档首页插入标准封面页") {
+		t.Fatalf("unexpected status after insert cover page: %q", app.status)
+	}
+
+	// 3. Set Language Dialog & Execution
+	app.showWordLanguageDialog()
+	if !app.modal.Visible || app.modal.Title != "语言设置" {
+		t.Fatalf("expected 语言设置 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	}
+	app.modal.OnAction("en-US")
+	if !strings.Contains(app.status, "已成功将全文档语言设置为 en-US") {
+		t.Fatalf("unexpected status after set language: %q", app.status)
+	}
+}
+
+
 
 
 

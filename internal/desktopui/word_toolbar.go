@@ -348,6 +348,12 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "insert-table":
 		_, ok := any(state.word).(document.WordTableInsertEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "cover":
+		_, ok := any(state.word).(document.WordCoverPageEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case "review-language":
+		_, ok := any(state.word).(document.WordLanguageEditor)
+		return ok && !state.formatRunning.Load() && !a.isSaving()
 	default:
 		return false
 	}
@@ -578,6 +584,10 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordPageBorderDialog()
 		case "insert-table":
 			a.showWordInsertTableDialog()
+		case "cover":
+			a.showWordCoverPageDialog()
+		case "review-language":
+			a.showWordLanguageDialog()
 		case "review-word-count":
 			a.showWordCountDetails()
 		case "review-restrict":
@@ -2575,4 +2585,91 @@ func (a *App) showWordPageBorderDialog() {
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
 }
+
+func (a *App) showWordCoverPageDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordCoverPageEditor)
+	if !ok {
+		a.setStatus("当前文档不支持插入封面")
+		return
+	}
+	a.modal.ShowInput("插入封面", "请输入封面文档标题：", "工作报告", "输入主标题（副标题和作者将自动补全）", func(action string) {
+		a.modal.Hide()
+		if action != "confirm" {
+			return
+		}
+		title := strings.TrimSpace(a.modal.Input.Text())
+		if title == "" {
+			title = "工作报告"
+		}
+		err := editor.InsertCoverPage(title, "业务总结与未来规划", "项目负责人")
+		if err != nil {
+			a.setStatus("插入封面失败：" + err.Error())
+			return
+		}
+		a.setStatus("已成功在文档首页插入标准封面页")
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	},
+		modalDialogActionSpec{ID: "confirm", Label: "插入封面"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
+func (a *App) showWordLanguageDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	editor, ok := any(state.word).(document.WordLanguageEditor)
+	if !ok {
+		a.setStatus("当前文档不支持设置语言")
+		return
+	}
+	runID := state.selectedWordRunID
+	targetDesc := "当前选区"
+	if runID == "" {
+		targetDesc = "全文档"
+	}
+	prompt := fmt.Sprintf("请选择或输入要为%s设置的校对语言代码：", targetDesc)
+	a.modal.ShowInput("语言设置", prompt, "zh-CN", "例如: zh-CN (中文), en-US (英语), ja-JP (日语)", func(action string) {
+		a.modal.Hide()
+		var lang string
+		switch action {
+		case "confirm":
+			lang = strings.TrimSpace(a.modal.Input.Text())
+		case "zh-CN":
+			lang = "zh-CN"
+		case "en-US":
+			lang = "en-US"
+		case "ja-JP":
+			lang = "ja-JP"
+		default:
+			return
+		}
+		if lang == "" {
+			lang = "zh-CN"
+		}
+		err := editor.SetLanguage(runID, lang)
+		if err != nil {
+			a.setStatus("设置语言失败：" + err.Error())
+			return
+		}
+		a.setStatus(fmt.Sprintf("已成功将%s语言设置为 %s", targetDesc, lang))
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	},
+		modalDialogActionSpec{ID: "confirm", Label: "应用自定义"},
+		modalDialogActionSpec{ID: "zh-CN", Label: "简体中文"},
+		modalDialogActionSpec{ID: "en-US", Label: "英语 (美国)"},
+		modalDialogActionSpec{ID: "ja-JP", Label: "日语"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+}
+
 
