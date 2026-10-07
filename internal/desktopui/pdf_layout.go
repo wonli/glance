@@ -87,7 +87,60 @@ func (a *App) layoutPDFDocument(gtx layout.Context) layout.Dimensions {
 	} else {
 		v.scene = document.PDFPage{}
 	}
+	a.updatePDFScale(gtx)
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(a.layoutPDFRibbon), layout.Flexed(1, a.layoutPDFWorkspace), layout.Rigid(a.layoutPDFStatus))
+}
+
+func (a *App) updatePDFScale(gtx layout.Context) {
+	v := a.ensurePDFView()
+	refW, refH := 595.0, 842.0
+	if r, ok := v.cache[v.page]; ok && r.page.Width > 0 {
+		refW = r.page.Width
+		refH = r.page.Height
+	} else {
+		for _, cached := range v.cache {
+			if cached.page.Width > 0 {
+				refW = cached.page.Width
+				refH = cached.page.Height
+				break
+			}
+		}
+	}
+
+	wide := gtx.Constraints.Max.X >= gtx.Dp(1000)
+	thumbW := 0
+	if v.thumbnails {
+		thumbW = gtx.Dp(140)
+		if wide {
+			thumbW = gtx.Dp(220)
+		}
+	}
+	notesW := 0
+	if wide || v.mode != "read" || v.showSearch {
+		notesW = gtx.Dp(220)
+		if wide {
+			notesW = gtx.Dp(300)
+		}
+	}
+	canvasW := max(1, gtx.Constraints.Max.X-thumbW-notesW)
+	canvasH := max(1, gtx.Constraints.Max.Y-gtx.Dp(54)-gtx.Dp(34))
+
+	width, height := canvasW-gtx.Dp(48), canvasH-gtx.Dp(48)
+	baseScale := float64(gtx.Metric.PxPerDp) * 4 / 3
+	scale := baseScale * v.zoom
+	if v.fit != "" {
+		scale = float64(max(1, width)) / refW
+		if v.fit == "page" {
+			scale = math.Min(scale, float64(max(1, height))/refH)
+		}
+		if baseScale > 0 {
+			v.zoom = scale / baseScale
+		}
+	}
+	if v.scale != scale {
+		gtx.Execute(op.InvalidateCmd{})
+	}
+	v.scale = scale
 }
 
 func (a *App) layoutPDFRibbon(gtx layout.Context) layout.Dimensions {
@@ -126,12 +179,19 @@ func (a *App) layoutPDFRibbon(gtx layout.Context) layout.Dimensions {
 						return layoutToolbarActionItem(gtx, action, i, pdfToolbarActions, func(gtx layout.Context) layout.Dimensions {
 							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(64), gtx.Dp(34)))
 							paint.FillShape(gtx.Ops, color.NRGBA{R: 221, G: 226, B: 231, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(5)).Op(gtx.Ops))
-							paint.FillShape(gtx.Ops, color.NRGBA{R: 247, G: 248, B: 250, A: 255}, clip.UniformRRect(image.Rect(1, 1, gtx.Constraints.Max.X-1, gtx.Constraints.Max.Y-1), gtx.Dp(4)).Op(gtx.Ops))
-							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								l := material.Label(a.theme, 11, fmt.Sprintf("%.0f%%", v.zoom*100))
-								l.Color = color.NRGBA{R: 78, G: 88, B: 99, A: 255}
-								l.Font.Weight = font.SemiBold
-								return l.Layout(gtx)
+							btn := v.button("zoom-indicator")
+							bg := color.NRGBA{R: 247, G: 248, B: 250, A: 255}
+							if btn.Hovered() {
+								bg = color.NRGBA{R: 238, G: 242, B: 246, A: 255}
+							}
+							paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rect(1, 1, gtx.Constraints.Max.X-1, gtx.Constraints.Max.Y-1), gtx.Dp(4)).Op(gtx.Ops))
+							return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									l := material.Label(a.theme, 11, fmt.Sprintf("%.0f%%", v.currentZoom(gtx.Metric)*100))
+									l.Color = color.NRGBA{R: 78, G: 88, B: 99, A: 255}
+									l.Font.Weight = font.SemiBold
+									return l.Layout(gtx)
+								})
 							})
 						})
 					}
@@ -147,6 +207,12 @@ func (a *App) layoutPDFRibbon(gtx layout.Context) layout.Dimensions {
 					}
 					active := false
 					if action.id == "thumbnails" && v.thumbnails {
+						active = true
+					}
+					if action.id == "fit-width" && v.fit == "width" {
+						active = true
+					}
+					if action.id == "fit-page" && v.fit == "page" {
 						active = true
 					}
 					if action.id == "highlight" && v.tool == "highlight" {
@@ -336,11 +402,15 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 		}
 	}
 	width, height := gtx.Constraints.Max.X-gtx.Dp(48), gtx.Constraints.Max.Y-gtx.Dp(48)
-	scale := float64(gtx.Metric.PxPerDp) * 4 / 3 * v.zoom
+	baseScale := float64(gtx.Metric.PxPerDp) * 4 / 3
+	scale := baseScale * v.zoom
 	if v.fit != "" {
 		scale = float64(max(1, width)) / refW
 		if v.fit == "page" {
 			scale = math.Min(scale, float64(max(1, height))/refH)
+		}
+		if baseScale > 0 {
+			v.zoom = scale / baseScale
 		}
 	}
 	if v.scale != scale {
@@ -522,7 +592,7 @@ func (a *App) layoutPDFStatus(gtx layout.Context) layout.Dimensions {
 					if v.info.Dirty {
 						state = "未保存"
 					}
-					return material.Label(a.theme, 11, fmt.Sprintf("%s   %.0f%%   PDF", state, v.scale/(float64(gtx.Metric.PxPerDp)*4/3)*100)).Layout(gtx)
+					return material.Label(a.theme, 11, fmt.Sprintf("%s   %.0f%%   PDF", state, v.currentZoom(gtx.Metric)*100)).Layout(gtx)
 				}),
 			)
 		})

@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"gioui.org/layout"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"glance/internal/document"
 	"image"
@@ -69,6 +70,17 @@ func (v *pdfViewState) cancelWorkers() {
 		}
 	}
 	v.workerMu.Unlock()
+}
+
+func (v *pdfViewState) currentZoom(metric unit.Metric) float64 {
+	base := float64(metric.PxPerDp) * (4.0 / 3.0)
+	if base > 0 && v.scale > 0 {
+		return v.scale / base
+	}
+	if v.zoom > 0 {
+		return v.zoom
+	}
+	return 1.0
 }
 
 func (a *App) ensurePDFView() *pdfViewState {

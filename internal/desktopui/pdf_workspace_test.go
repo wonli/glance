@@ -12,6 +12,7 @@ import (
 	"glance/internal/workspace"
 	"image"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -238,5 +239,100 @@ func TestPDFRibbonIconsResolutionAndSolidGlyphs(t *testing.T) {
 		if !ok || img == nil {
 			t.Fatalf("action %q icon %q failed to load", action.id, action.icon)
 		}
+	}
+}
+
+func TestPDFZoomSyncAndInteractions(t *testing.T) {
+	a := New(nil, "")
+	defer close(a.shutdown)
+	d, err := pdfdoc.OpenSnapshot(pdfTestBytes(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.pdfDoc = d
+	v := a.ensurePDFView()
+	v.cache[0] = pdfPageResult{page: document.PDFPage{Width: 595, Height: 842}}
+
+	// Layout with 1000x800 window
+	size := image.Pt(1000, 800)
+	var ops op.Ops
+	metric := unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	gtx := layout.Context{Ops: &ops, Metric: metric, Constraints: layout.Exact(size)}
+
+	// Initial layout: fit is "page"
+	a.layoutPDFDocument(gtx)
+	initialScale := v.scale
+	if initialScale <= 0 {
+		t.Fatalf("expected positive scale, got %.3f", initialScale)
+	}
+	baseScale := float64(metric.PxPerDp) * (4.0 / 3.0)
+	expectedFitZoom := initialScale / baseScale
+	if math.Abs(v.currentZoom(metric)-expectedFitZoom) > 0.001 {
+		t.Fatalf("effective zoom %.3f != expected %.3f", v.currentZoom(metric), expectedFitZoom)
+	}
+	if math.Abs(v.zoom-expectedFitZoom) > 0.001 {
+		t.Fatalf("v.zoom %.3f not synced to fit zoom %.3f", v.zoom, expectedFitZoom)
+	}
+
+	// Trigger zoom-in: should step up from effective fit zoom, not from 1.0
+	a.handlePDFAction(gtx, "zoom-in")
+	if v.fit != "" {
+		t.Fatalf("expected fit to be cleared after zoom-in, got %q", v.fit)
+	}
+	expectedZoomIn := math.Round(min(4, expectedFitZoom+0.1)*100) / 100
+	if math.Abs(v.zoom-expectedZoomIn) > 0.01 {
+		t.Fatalf("zoom after zoom-in = %.3f; want %.3f (stepped from %.3f)", v.zoom, expectedZoomIn, expectedFitZoom)
+	}
+
+	// Re-layout and verify scale matches new manual zoom
+	ops.Reset()
+	a.layoutPDFDocument(gtx)
+	if math.Abs(v.scale-(baseScale*v.zoom)) > 0.001 {
+		t.Fatalf("scale = %.3f; want %.3f", v.scale, baseScale*v.zoom)
+	}
+
+	// Trigger zoom-out
+	expectedZoomOut := math.Round(max(0.25, v.zoom-0.1)*100) / 100
+	a.handlePDFAction(gtx, "zoom-out")
+	ops.Reset()
+	a.layoutPDFDocument(gtx)
+	if math.Abs(v.zoom-expectedZoomOut) > 0.01 {
+		t.Fatalf("zoom after zoom-out = %.3f; want %.3f", v.zoom, expectedZoomOut)
+	}
+
+	// Trigger zoom-indicator: reset to 100% (actual size)
+	a.handlePDFAction(gtx, "zoom-indicator")
+	if v.zoom != 1.0 || v.fit != "" {
+		t.Fatalf("zoom-indicator did not reset to 1.0 (got zoom=%.3f fit=%q)", v.zoom, v.fit)
+	}
+	ops.Reset()
+	a.layoutPDFDocument(gtx)
+	if math.Abs(v.scale-baseScale) > 0.001 {
+		t.Fatalf("100%% actual scale = %.3f; want %.3f", v.scale, baseScale)
+	}
+	if v.currentZoom(metric) != 1.0 {
+		t.Fatalf("currentZoom at 100%% = %.3f; want 1.0", v.currentZoom(metric))
+	}
+
+	// Trigger fit-width
+	a.handlePDFAction(gtx, "fit-width")
+	if v.fit != "width" {
+		t.Fatalf("fit-width not set, got %q", v.fit)
+	}
+	ops.Reset()
+	a.layoutPDFDocument(gtx)
+	if v.scale <= 0 || v.scale == baseScale {
+		t.Fatalf("fit-width did not recompute scale: %.3f", v.scale)
+	}
+
+	// Trigger fit-page
+	a.handlePDFAction(gtx, "fit-page")
+	if v.fit != "page" {
+		t.Fatalf("fit-page not set, got %q", v.fit)
+	}
+	ops.Reset()
+	a.layoutPDFDocument(gtx)
+	if math.Abs(v.scale-initialScale) > 0.001 {
+		t.Fatalf("fit-page scale = %.3f; want initial scale %.3f", v.scale, initialScale)
 	}
 }

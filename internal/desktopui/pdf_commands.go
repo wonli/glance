@@ -8,6 +8,7 @@ import (
 	"glance/internal/document"
 	"glance/internal/printservice"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -137,10 +138,15 @@ func (a *App) handlePDFAction(gtx layout.Context, id string) {
 		v.canvas.Position.Offset = 0
 		v.clearSelection()
 	case "zoom-out":
-		v.zoom = max(.25, v.zoom-.1)
+		cur := v.currentZoom(gtx.Metric)
+		v.zoom = math.Round(max(.25, cur-.1)*100) / 100
 		v.fit = ""
 	case "zoom-in":
-		v.zoom = min(4, v.zoom+.1)
+		cur := v.currentZoom(gtx.Metric)
+		v.zoom = math.Round(min(4, cur+.1)*100) / 100
+		v.fit = ""
+	case "zoom-indicator", "zoom-100", "actual-size":
+		v.zoom = 1.0
 		v.fit = ""
 	case "fit-width":
 		v.fit = "width"
