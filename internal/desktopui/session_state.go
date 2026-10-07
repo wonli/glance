@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"image/color"
+	"sync"
 	"sync/atomic"
 
 	"glance/internal/document"
@@ -17,6 +18,10 @@ type documentSessionState struct {
 	windowID                            uint64
 	closed                              atomic.Bool
 	wordViewResourcesReleased           atomic.Bool
+	jsonWorkerMu                        sync.Mutex
+	jsonWorkerDone                      chan struct{}
+	jsonWorkersClosed                   bool
+	jsonLarge                           atomic.Bool
 	observedSessionRevision             atomic.Uint64
 	appliedSessionRevision              atomic.Uint64
 	appliedWordDraftEpoch               atomic.Uint64

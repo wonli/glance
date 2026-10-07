@@ -44,6 +44,8 @@ XLSX / DOCX libraries and local filesystem
 - Represent unsupported content explicitly when it affects preview or save safety; do not silently imply complete Office support.
 - Define format capabilities (read, edit constants/text, save) independently from library names.
 - Keep memory and rendering bounded: use visible ranges/pages, avoid duplicating whole files as formatted strings, and provide cancellation for long operations where practical.
+- JSON nodes retain source slices and parent/child/sibling links; paths and child slices are derived on demand. Sources larger than 512 KiB receive an allocation-free lexical count before parsing to allocate the node array exactly. This reduces per-node storage and excess capacity, but the tree still holds every node; it is not lazy parsing. Source previews shape only visible segments of at most 1 KiB.
+- JSON labels and source segments are detached before entering Gio's text-layout cache so a cached substring cannot retain a whole file. Closing a view cancels worker publication through a synchronized signal; its owning UI loop drops the tree and editors. Large-file teardown coalesces background GC/OS-memory reclamation after the closing frame, with another request when an outstanding worker finishes. Workspace tab removal clears the unused pointer slot in its backing array so closed recovery snapshots are collectible.
 
 ### Format adapters (`internal/format/xlsx`, `internal/format/docx`)
 

@@ -15,14 +15,13 @@ type JSONTree struct {
 	MaxDepth int
 }
 
+// JSONNode retains source slices and traversal links. Paths and child slices
+// are derived on demand instead of reserving storage in every node.
 type JSONNode struct {
 	Key, Kind, Raw, Display             string
-	Pointer, JSONPath, DotPath          string
 	Parent, Depth, Start, End           int
 	FirstChild, NextSibling, ChildCount int
-	Children                            []int
 }
-
 
 func (n JSONNode) Container() bool { return n.Kind == "object" || n.Kind == "array" }
 
@@ -31,10 +30,7 @@ func (t *JSONTree) ChildCount(id int) int {
 		return 0
 	}
 	n := t.Nodes[id]
-	if n.ChildCount > 0 {
-		return n.ChildCount
-	}
-	return len(n.Children)
+	return n.ChildCount
 }
 
 func (t *JSONTree) Children(id int) []int {
@@ -42,9 +38,6 @@ func (t *JSONTree) Children(id int) []int {
 		return nil
 	}
 	n := t.Nodes[id]
-	if len(n.Children) > 0 {
-		return n.Children
-	}
 	if n.ChildCount == 0 {
 		return nil
 	}
@@ -58,9 +51,6 @@ func (t *JSONTree) Children(id int) []int {
 func (t *JSONTree) NodePointer(id int) string {
 	if t == nil || id < 0 || id >= len(t.Nodes) {
 		return ""
-	}
-	if t.Nodes[id].Pointer != "" {
-		return t.Nodes[id].Pointer
 	}
 	var parts []string
 	for curr := id; curr > 0 && curr < len(t.Nodes); curr = t.Nodes[curr].Parent {
@@ -79,9 +69,6 @@ func (t *JSONTree) NodePointer(id int) string {
 func (t *JSONTree) NodeJSONPath(id int) string {
 	if t == nil || id < 0 || id >= len(t.Nodes) {
 		return ""
-	}
-	if t.Nodes[id].JSONPath != "" {
-		return t.Nodes[id].JSONPath
 	}
 	var ancestors []int
 	for curr := id; curr >= 0 && curr < len(t.Nodes); curr = t.Nodes[curr].Parent {
@@ -107,9 +94,6 @@ func (t *JSONTree) NodeJSONPath(id int) string {
 func (t *JSONTree) NodeDotPath(id int) string {
 	if t == nil || id < 0 || id >= len(t.Nodes) {
 		return ""
-	}
-	if t.Nodes[id].DotPath != "" {
-		return t.Nodes[id].DotPath
 	}
 	var ancestors []int
 	for curr := id; curr >= 0 && curr < len(t.Nodes); curr = t.Nodes[curr].Parent {
@@ -151,14 +135,6 @@ func (t *JSONTree) FindNodeByPointer(pointer string) int {
 			}
 		}
 		if found < 0 {
-			for _, c := range t.Nodes[curr].Children {
-				if t.Nodes[c].Key == part {
-					found = c
-					break
-				}
-			}
-		}
-		if found < 0 {
 			return curr
 		}
 		curr = found
@@ -177,4 +153,3 @@ func isJSONIdent(key string) bool {
 	}
 	return true
 }
-

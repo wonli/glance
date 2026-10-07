@@ -26,6 +26,22 @@ type Document struct {
 	closed, forcedDirty bool
 }
 
+// NewBlank creates an unsaved blank single-page PDF document.
+func NewBlank() (*Document, error) {
+	doc := gopdf.New()
+	_ = doc.AddPage()
+	var buf bytes.Buffer
+	if _, err := doc.WriteTo(&buf); err != nil {
+		return nil, err
+	}
+	d, err := OpenSnapshot(buf.Bytes())
+	if err != nil {
+		return nil, err
+	}
+	d.SetDirty(true)
+	return d, nil
+}
+
 func Open(path string) (*Document, error) {
 	b, e := os.ReadFile(path)
 	if e != nil {

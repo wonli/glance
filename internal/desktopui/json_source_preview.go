@@ -75,7 +75,9 @@ func (a *App) layoutJSONSourcePreview(gtx layout.Context, source string, segment
 					})
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					style := material.Body2(a.theme, source[segment.start:segment.end])
+					// Gio retains strings in its layout cache. Detach the visible
+					// segment so a cached row cannot pin the whole source file.
+					style := material.Body2(a.theme, strings.Clone(source[segment.start:segment.end]))
 					style.TextSize = 13
 					style.Font.Typeface = jsonMonoFace
 					gtx.Constraints.Min.Y = 0

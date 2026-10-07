@@ -23,6 +23,20 @@ func fixture(t *testing.T) []byte {
 	}
 	return b.Bytes()
 }
+
+func TestNewBlank(t *testing.T) {
+	d, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Dirty() {
+		t.Fatal("NewBlank document must be dirty")
+	}
+	info := d.Info()
+	if info.Pages != 1 {
+		t.Fatalf("pages = %d, want 1", info.Pages)
+	}
+}
 func TestSingleRevisionEditUndoSave(t *testing.T) {
 	d, e := OpenSnapshot(fixture(t))
 	if e != nil {

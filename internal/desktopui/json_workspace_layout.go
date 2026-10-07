@@ -28,7 +28,7 @@ var (
 func jsonLabel(gtx layout.Context, a *App, text string, size unit.Sp, fg color.NRGBA, bold, mono bool) layout.Dimensions {
 	// Labels report their natural height so row alignment can center their ink.
 	gtx.Constraints.Min.Y = 0
-	text = jsonTextPreview(text, 4096)
+	text = strings.Clone(jsonTextPreview(text, 4096))
 	style := homeLabelStyle(a.theme, text, size, fg, font.Normal)
 	if bold {
 		style.Font.Weight = font.SemiBold

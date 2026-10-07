@@ -50,6 +50,7 @@ type App struct {
 	actionNewDOCX         widget.Clickable
 	actionNewJSON         widget.Clickable
 	actionNewMarkdown     widget.Clickable
+	actionNewPDF          widget.Clickable
 	actionCloseCreateMenu widget.Clickable
 	applyButton           widget.Clickable
 	goToCellButton        widget.Clickable
@@ -449,6 +450,8 @@ func (a *App) installDocument(loaded loadedDocument) error {
 			format = "xlsx"
 		case loaded.word != nil:
 			format = "docx"
+		case loaded.pdfDoc != nil:
+			format = "pdf"
 		case loaded.markdownDoc != nil:
 			format = "markdown"
 		case loaded.jsonDoc != nil:

@@ -48,6 +48,7 @@ type jsonWorkspaceView struct {
 	requested, parsed, sourceSynced, baseline string
 	pending                                   bool
 	results                                   chan jsonTreeResult
+	done                                      chan struct{}
 	selected                                  int
 	collapsed                                 map[int]bool
 	rows                                      []jsonTreeRow
@@ -70,6 +71,7 @@ func (a *App) ensureJSONView() *jsonWorkspaceView {
 		text := a.jsonDoc.Text()
 		v := &jsonWorkspaceView{selected: 0, collapsed: make(map[int]bool), results: make(chan jsonTreeResult, 1), baseline: text, sourceSynced: text, requested: text, expandedLevel: 3, rowButtons: make(map[int]*widget.Clickable), toggleButtons: make(map[int]*widget.Clickable), outlineButtons: make(map[int]*widget.Clickable)}
 		v.toolResults = make(chan jsonToolResult, 1)
+		v.done = a.documentSessionState.jsonWorkerSignal()
 		v.search.SingleLine = true
 		v.original.ReadOnly = true
 		if len(text) <= jsonSourceEditLimit {
@@ -83,6 +85,7 @@ func (a *App) ensureJSONView() *jsonWorkspaceView {
 		v.sourceList.List.Axis, v.baselineList.List.Axis = layout.Vertical, layout.Vertical
 		if len(text) > jsonSourceEditLimit {
 			v.expandedLevel = 1
+			a.documentSessionState.jsonLarge.Store(true)
 		}
 		a.jsonView = v
 	}
@@ -225,8 +228,12 @@ func (a *App) requestJSONTree() {
 		return
 	}
 	v.pending = true
-	results, window, baseline := v.results, a.window, v.baseline
+	if len(text) > jsonSourceEditLimit {
+		a.documentSessionState.jsonLarge.Store(true)
+	}
+	results, window, baseline, done := v.results, a.window, v.baseline, v.done
 	go func() {
+		defer releaseClosedJSONWorkerMemory(done, len(text) > jsonSourceEditLimit)
 		tree, err := jsondoc.ParseTree(text)
 		segments := jsonSourceSegments(text)
 		baselineSegments := segments
@@ -236,7 +243,16 @@ func (a *App) requestJSONTree() {
 		if len(text) > 512*1024 {
 			debug.FreeOSMemory()
 		}
-		results <- jsonTreeResult{text: text, tree: tree, err: err, segments: segments, baselineSegments: baselineSegments}
+		select {
+		case <-done:
+			return
+		default:
+		}
+		select {
+		case results <- jsonTreeResult{text: text, tree: tree, err: err, segments: segments, baselineSegments: baselineSegments}:
+		case <-done:
+			return
+		}
 		if window != nil {
 			window.Invalidate()
 		}

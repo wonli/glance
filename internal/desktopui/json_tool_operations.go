@@ -18,8 +18,9 @@ func (a *App) startJSONTool(id string) {
 	}
 	source := a.jsonDraftText()
 	v.toolPending = true
-	results, window := v.toolResults, a.window
+	results, window, done := v.toolResults, a.window, v.done
 	go func() {
+		defer releaseClosedJSONWorkerMemory(done, len(source) > jsonSourceEditLimit)
 		result := jsonToolResult{id: id, source: source}
 		switch id {
 		case "format":
@@ -31,7 +32,16 @@ func (a *App) startJSONTool(id string) {
 		case "validate":
 			result.err = jsondoc.Validate(source)
 		}
-		results <- result
+		select {
+		case <-done:
+			return
+		default:
+		}
+		select {
+		case results <- result:
+		case <-done:
+			return
+		}
 		if window != nil {
 			window.Invalidate()
 		}

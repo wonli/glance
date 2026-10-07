@@ -348,7 +348,9 @@ func (c *Collection) CloseTab(id string) error {
 		}
 	}
 	removed := c.tabs[index]
-	c.tabs = append(c.tabs[:index], c.tabs[index+1:]...)
+	copy(c.tabs[index:], c.tabs[index+1:])
+	c.tabs[len(c.tabs)-1] = nil
+	c.tabs = c.tabs[:len(c.tabs)-1]
 	for i, s := range c.tabs {
 		s.Tab.Position = i
 	}

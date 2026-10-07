@@ -5,6 +5,7 @@ import (
 	"gioui.org/widget"
 	"glance/internal/document"
 	"image"
+	"strings"
 )
 
 type pdfPageResult struct {
@@ -21,6 +22,7 @@ type pdfViewState struct {
 	lastCommand                       document.PDFCommand
 	info                              document.PDFInfo
 	page, selected                    int
+	selectStart, selectEnd            int
 	zoom                              float64
 	fit                               string
 	mode, tool                        string
@@ -43,7 +45,7 @@ type pdfViewState struct {
 
 func (a *App) ensurePDFView() *pdfViewState {
 	if a.pdfView == nil {
-		a.pdfView = &pdfViewState{info: a.pdfDoc.Info(), selected: -1, zoom: 1, fit: "page", mode: "read", thumbnails: true, buttons: map[string]*widget.Clickable{}, results: make(chan pdfPageResult, 1), cache: map[int]pdfPageResult{}, thumbCache: map[int]image.Image{}}
+		a.pdfView = &pdfViewState{info: a.pdfDoc.Info(), selected: -1, selectStart: -1, selectEnd: -1, zoom: 1, fit: "page", mode: "read", thumbnails: true, buttons: map[string]*widget.Clickable{}, results: make(chan pdfPageResult, 1), cache: map[int]pdfPageResult{}, thumbCache: map[int]image.Image{}}
 		a.pdfView.toolbar.Axis = layout.Horizontal
 		a.pdfView.thumbList.Axis = layout.Vertical
 		a.pdfView.canvas.Axis = layout.Vertical
@@ -52,6 +54,47 @@ func (a *App) ensurePDFView() *pdfViewState {
 		a.pdfView.search.SingleLine = true
 	}
 	return a.pdfView
+}
+
+func (v *pdfViewState) selectionRange() (int, int) {
+	if v.selectStart < 0 && v.selectEnd < 0 {
+		if v.selected >= 0 {
+			return v.selected, v.selected
+		}
+		return -1, -1
+	}
+	s := v.selectStart
+	e := v.selectEnd
+	if s < 0 {
+		s = e
+	}
+	if e < 0 {
+		e = s
+	}
+	if s > e {
+		s, e = e, s
+	}
+	return s, e
+}
+
+func (v *pdfViewState) selectedText() string {
+	s, e := v.selectionRange()
+	if s < 0 || e < 0 || len(v.scene.Text) == 0 {
+		return ""
+	}
+	s = max(0, min(s, len(v.scene.Text)-1))
+	e = max(0, min(e, len(v.scene.Text)-1))
+	var parts []string
+	for i := s; i <= e; i++ {
+		parts = append(parts, v.scene.Text[i].Text)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func (v *pdfViewState) clearSelection() {
+	v.selected = -1
+	v.selectStart = -1
+	v.selectEnd = -1
 }
 func (v *pdfViewState) button(id string) *widget.Clickable {
 	if v.buttons[id] == nil {
@@ -74,7 +117,7 @@ func (v *pdfViewState) accept(r pdfPageResult) {
 	if r.info.Revision != v.info.Revision {
 		v.cache = map[int]pdfPageResult{}
 		v.thumbCache = map[int]image.Image{}
-		v.selected = -1
+		v.clearSelection()
 	}
 	v.info = r.info
 	if r.notice != "" {
@@ -87,12 +130,12 @@ func (v *pdfViewState) accept(r pdfPageResult) {
 	}
 	if len(r.search) > 0 {
 		v.page = r.search[0]
-		v.selected = -1
+		v.clearSelection()
 		v.message = "已定位搜索结果"
 		return
 	}
 	if r.pixels != nil {
-		if len(v.cache) >= 3 {
+		if len(v.cache) >= 12 {
 			for k := range v.cache {
 				if k != v.page {
 					delete(v.cache, k)
@@ -102,7 +145,7 @@ func (v *pdfViewState) accept(r pdfPageResult) {
 		}
 		v.cache[r.page.Index] = r
 		v.thumbCache[r.page.Index] = r.pixels
-		if len(v.thumbCache) > 8 {
+		if len(v.thumbCache) > 16 {
 			for k := range v.thumbCache {
 				if k != v.page && k != r.page.Index {
 					delete(v.thumbCache, k)
@@ -143,7 +186,7 @@ func (v *pdfViewState) syncInfo(info document.PDFInfo) {
 	if info.Revision != v.info.Revision {
 		v.cache = map[int]pdfPageResult{}
 		v.thumbCache = map[int]image.Image{}
-		v.selected = -1
+		v.clearSelection()
 		v.scene = document.PDFPage{}
 	}
 	v.info = info

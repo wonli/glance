@@ -173,6 +173,7 @@ func (state *documentSessionState) releaseWordViewResources() {
 	if state == nil || !state.wordViewResourcesReleased.CompareAndSwap(false, true) {
 		return
 	}
+	state.cancelJSONWorkers()
 	if state.sharedDocumentSession != nil && state.sharedDocumentSession.cancelWordLayoutForView(state) && state.ownerRuntime != nil {
 		state.ownerRuntime.invalidateSessionViews(state.documentID)
 	}

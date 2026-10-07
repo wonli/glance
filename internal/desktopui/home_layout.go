@@ -19,6 +19,7 @@ import (
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
 	"glance/internal/format/markdowndoc"
+	"glance/internal/format/pdfdoc"
 	"glance/internal/format/xlsx"
 )
 
@@ -467,7 +468,12 @@ func (a *App) handleHomeAction(id string) {
 	case "html":
 		a.setStatus("HTML 创建功能尚未开放")
 	case "pdf":
-		a.setStatus("PDF 创建功能尚未开放")
+		doc, err := pdfdoc.NewBlank()
+		if err != nil {
+			a.setStatus(err.Error())
+			return
+		}
+		_ = a.installDocument(loadedDocument{pdfDoc: doc})
 	}
 }
 

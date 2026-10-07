@@ -520,6 +520,10 @@ func (a *App) closeWorkspaceTabNow(id string) {
 		}
 	}
 	runtime.removeSession(state.documentID)
+	// Unregistered/headless views are not in the runtime's window map.
+	// The closing tab must release its own resources in either case.
+	state.releaseJSONViewResources()
+	state.releaseWordViewResources()
 	delete(a.sessions, id)
 	delete(a.tabMeta, id)
 	delete(a.tabButtons, id)
@@ -677,6 +681,7 @@ func (a *App) reindexTabMetadata() {
 
 func closeSessionState(s *documentSessionState) {
 	if s != nil {
+		s.releaseJSONViewResources()
 		s.releaseWordViewResources()
 		s.closed.Store(true)
 	}

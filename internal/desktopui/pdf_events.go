@@ -53,7 +53,10 @@ func (a *App) handlePDFEvents(gtx layout.Context) {
 					v.ink = []document.PDFPoint{{X: x, Y: y}}
 					continue
 				}
-				v.selected = pdfHit(v.scene, x, y)
+				hit := pdfHit(v.scene, x, y)
+				v.selected = hit
+				v.selectStart = hit
+				v.selectEnd = hit
 				if v.tool == "highlight" && v.selected >= 0 {
 					a.handlePDFAction(gtx, "highlight")
 					v.tool = ""
@@ -63,6 +66,15 @@ func (a *App) handlePDFEvents(gtx layout.Context) {
 			case pointer.Drag:
 				if v.pointerDown && v.tool == "ink" && len(v.ink) < 10000 {
 					v.ink = append(v.ink, document.PDFPoint{X: x, Y: y})
+				} else if v.pointerDown && v.tool != "ink" {
+					hit := pdfHitOrNearest(v.scene, x, y)
+					if hit >= 0 {
+						if v.selectStart < 0 {
+							v.selectStart = hit
+						}
+						v.selectEnd = hit
+						v.selected = hit
+					}
 				}
 			case pointer.Release:
 				if v.pointerDown && len(v.ink) > 1 {
@@ -80,6 +92,16 @@ func (a *App) handlePDFEvents(gtx layout.Context) {
 		return
 	}
 	a.requestPDFPage(v.page)
+	// Prefetch visible canvas pages for continuous scrolling.
+	if !v.pending {
+		first := max(0, v.canvas.Position.First)
+		for i := first; i < min(v.info.Pages, first+3); i++ {
+			if _, ok := v.cache[i]; !ok {
+				a.requestPDFPage(i)
+				break
+			}
+		}
+	}
 	// Prefetch only the visible thumbnail strip. All requests share one worker slot.
 	if v.thumbnails && !v.pending {
 		for i := max(0, v.thumbList.Position.First); i < min(v.info.Pages, v.thumbList.Position.First+5); i++ {

@@ -7,7 +7,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -39,20 +38,15 @@ func ParseTree(source string) (*document.JSONTree, error) {
 	large := len(source) > 512*1024
 	estNodes := 64
 	if large {
-		estNodes = len(source) / 18
+		estNodes = countJSONNodes(source)
 	}
 	p := &fastParser{
 		src:    source,
 		len:    len(source),
 		nodes:  make([]document.JSONNode, 0, estNodes),
 		intern: make(map[string]string, 256),
-		large:  large,
 	}
-	rootPointer, rootPath, rootDot := "", "", ""
-	if !large {
-		rootPointer, rootPath, rootDot = "", "$", "root"
-	}
-	if _, err := p.parseValue("root", -1, 0, rootPointer, rootPath, rootDot); err != nil {
+	if _, err := p.parseValue("root", -1, 0); err != nil {
 		return nil, err
 	}
 	p.skipWhitespace()
@@ -75,7 +69,6 @@ type fastParser struct {
 	keyCount int
 	maxDepth int
 	intern   map[string]string
-	large    bool
 }
 
 func (p *fastParser) skipWhitespace() {
@@ -256,7 +249,7 @@ func (p *fastParser) parseLiteral(lit string) error {
 	return fmt.Errorf("unexpected token near %q", p.src[p.pos:end])
 }
 
-func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, dot string) (int, error) {
+func (p *fastParser) parseValue(key string, parent, depth int) (int, error) {
 	p.skipWhitespace()
 	if p.pos >= p.len {
 		return 0, io.EOF
@@ -274,7 +267,6 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 		p.pos++
 		p.nodes = append(p.nodes, document.JSONNode{
 			Key: key, Kind: "object", Parent: parent, Depth: depth, Start: start,
-			Pointer: pointer, JSONPath: path, DotPath: dot,
 			FirstChild: -1, NextSibling: -1,
 		})
 		lastChild := -1
@@ -301,19 +293,7 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 			}
 			p.pos++
 
-			childPointer, childPath, childDot := "", "", ""
-			if !p.large {
-				escaped := strings.ReplaceAll(strings.ReplaceAll(childKey, "~", "~0"), "/", "~1")
-				childPointer = pointer + "/" + escaped
-				if jsonPathIdentifier(childKey) {
-					childPath, childDot = path+"."+childKey, dot+"."+childKey
-				} else {
-					quoted, _ := json.Marshal(childKey)
-					childPath, childDot = path+"["+string(quoted)+"]", dot+"["+string(quoted)+"]"
-				}
-			}
-
-			childID, err := p.parseValue(childKey, id, depth+1, childPointer, childPath, childDot)
+			childID, err := p.parseValue(childKey, id, depth+1)
 			if err != nil {
 				return 0, err
 			}
@@ -324,9 +304,6 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 			}
 			lastChild = childID
 			count++
-			if !p.large {
-				p.nodes[id].Children = append(p.nodes[id].Children, childID)
-			}
 
 			p.skipWhitespace()
 			if p.pos >= p.len {
@@ -351,7 +328,6 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 		p.pos++
 		p.nodes = append(p.nodes, document.JSONNode{
 			Key: key, Kind: "array", Parent: parent, Depth: depth, Start: start,
-			Pointer: pointer, JSONPath: path, DotPath: dot,
 			FirstChild: -1, NextSibling: -1,
 		})
 		lastChild := -1
@@ -367,12 +343,7 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 				break
 			}
 			childKey := arrayIndexStr(index)
-			childPointer, childPath, childDot := "", "", ""
-			if !p.large {
-				childPointer = pointer + "/" + childKey
-				childPath, childDot = path+"["+childKey+"]", dot+"["+childKey+"]"
-			}
-			childID, err := p.parseValue(childKey, id, depth+1, childPointer, childPath, childDot)
+			childID, err := p.parseValue(childKey, id, depth+1)
 			if err != nil {
 				return 0, err
 			}
@@ -383,9 +354,6 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 			}
 			lastChild = childID
 			count++
-			if !p.large {
-				p.nodes[id].Children = append(p.nodes[id].Children, childID)
-			}
 			index++
 
 			p.skipWhitespace()
@@ -417,7 +385,6 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 		}
 		p.nodes = append(p.nodes, document.JSONNode{
 			Key: key, Kind: "string", Raw: p.src[rawStart:rawEnd], Display: disp,
-			Pointer: pointer, JSONPath: path, DotPath: dot,
 			Parent: parent, Depth: depth, Start: rawStart, End: rawEnd,
 			FirstChild: -1, NextSibling: -1,
 		})
@@ -429,7 +396,6 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 		}
 		p.nodes = append(p.nodes, document.JSONNode{
 			Key: key, Kind: "boolean", Raw: "true", Display: "true",
-			Pointer: pointer, JSONPath: path, DotPath: dot,
 			Parent: parent, Depth: depth, Start: start, End: p.pos,
 			FirstChild: -1, NextSibling: -1,
 		})
@@ -441,7 +407,6 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 		}
 		p.nodes = append(p.nodes, document.JSONNode{
 			Key: key, Kind: "boolean", Raw: "false", Display: "false",
-			Pointer: pointer, JSONPath: path, DotPath: dot,
 			Parent: parent, Depth: depth, Start: start, End: p.pos,
 			FirstChild: -1, NextSibling: -1,
 		})
@@ -453,7 +418,6 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 		}
 		p.nodes = append(p.nodes, document.JSONNode{
 			Key: key, Kind: "null", Raw: "null", Display: "null",
-			Pointer: pointer, JSONPath: path, DotPath: dot,
 			Parent: parent, Depth: depth, Start: start, End: p.pos,
 			FirstChild: -1, NextSibling: -1,
 		})
@@ -466,28 +430,14 @@ func (p *fastParser) parseValue(key string, parent, depth int, pointer, path, do
 		}
 		p.nodes = append(p.nodes, document.JSONNode{
 			Key: key, Kind: "number", Raw: disp, Display: disp,
-			Pointer: pointer, JSONPath: path, DotPath: dot,
 			Parent: parent, Depth: depth, Start: rawStart, End: rawEnd,
 			FirstChild: -1, NextSibling: -1,
 		})
 		return id, nil
 
-
 	default:
 		return 0, fmt.Errorf("unexpected character '%c'", b)
 	}
-}
-
-func jsonPathIdentifier(key string) bool {
-	if key == "" {
-		return false
-	}
-	for i, r := range key {
-		if r != '_' && r != '$' && !unicode.IsLetter(r) && !(i > 0 && unicode.IsDigit(r)) {
-			return false
-		}
-	}
-	return true
 }
 
 func ReplaceValue(tree *document.JSONTree, id int, value string) (string, error) {

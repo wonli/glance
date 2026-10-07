@@ -22,7 +22,7 @@ func TestTreePreservesOrderNumbersAndEscapedPaths(t *testing.T) {
 		t.Fatal("number precision or duplicate key/order lost")
 	}
 	n := tree.Nodes[4]
-	if n.Pointer != "/a~1b~0c/点.键/0" || n.JSONPath != `$["a/b~c"]["点.键"][0]` || n.Display != "林墨" {
+	if tree.NodePointer(4) != "/a~1b~0c/点.键/0" || tree.NodeJSONPath(4) != `$["a/b~c"]["点.键"][0]` || n.Display != "林墨" {
 		t.Fatalf("node=%+v", n)
 	}
 	updated, err := ReplaceValue(tree, 4, `"中文输入"`)
@@ -82,5 +82,3 @@ func TestMeasureLargeJSONMemory(t *testing.T) {
 		(m2.Sys-m1.Sys)/(1024*1024),
 		m2.NumGC-m1.NumGC)
 }
-
-

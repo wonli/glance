@@ -577,17 +577,20 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 		delete(session.views, windowID)
 		session.viewsMu.Unlock()
 		if view != nil {
+			view.releaseJSONViewResources()
 			view.releaseWordViewResources()
 			view.closed.Store(true)
 		}
 	}
 	for _, view := range app.sessions {
 		if view != nil {
+			view.releaseJSONViewResources()
 			view.releaseWordViewResources()
 			view.closed.Store(true)
 		}
 	}
 	if app.documentSessionState != nil {
+		app.documentSessionState.releaseJSONViewResources()
 		app.documentSessionState.releaseWordViewResources()
 		app.documentSessionState.closed.Store(true)
 	}

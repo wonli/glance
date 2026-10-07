@@ -242,7 +242,13 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		word.SetSourcePath(record.Tab.SourcePath)
 		word.SetDirty(record.Dirty)
 	case "pdf":
-		d, err := pdfdoc.OpenSnapshot(record.Payload)
+		var d *pdfdoc.Document
+		var err error
+		if isEmptyDraftWithoutSnapshot(record) {
+			d, err = pdfdoc.NewBlank()
+		} else {
+			d, err = pdfdoc.OpenSnapshot(record.Payload)
+		}
 		if err != nil {
 			return nil, err
 		}
