@@ -115,6 +115,7 @@ type documentSessionState struct {
 	wordFormatPainterTargetRunID        string
 	wordFormatPainterTargetParagraphID  string
 	wordInsertAfterDraftFlush           bool
+	wordInsertAfterParagraphID          string
 	wordPendingPasteRunID               string
 	wordPendingPasteText                string
 	markdownView                        *markdownViewState

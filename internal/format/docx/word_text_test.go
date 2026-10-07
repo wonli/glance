@@ -619,6 +619,38 @@ func TestInsertBodyParagraphBeforeSectionPropertiesAndRoundTrips(t *testing.T) {
 	}
 }
 
+func TestInsertParagraphAfterSpecificParagraphAndUndo(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	firstParaID := doc.WordBlocks()[0].Paragraph.ID
+	secondParaID, err := requireWordBodyEditor(t, doc).InsertParagraphAfter(firstParaID)
+	if err != nil {
+		t.Fatalf("InsertParagraphAfter failed: %v", err)
+	}
+	blocks := doc.WordBlocks()
+	if len(blocks) != 2 || blocks[1].Paragraph == nil || blocks[1].Paragraph.ID != secondParaID {
+		t.Fatalf("blocks after InsertParagraphAfter = %#v; want 2 with second=%q", blocks, secondParaID)
+	}
+	thirdParaID, err := requireWordBodyEditor(t, doc).InsertParagraphAfter(firstParaID)
+	if err != nil {
+		t.Fatalf("InsertParagraphAfter middle failed: %v", err)
+	}
+	blocks = doc.WordBlocks()
+	if len(blocks) != 3 || blocks[1].Paragraph == nil || blocks[1].Paragraph.ID != thirdParaID {
+		t.Fatalf("blocks after inserting between = %#v; want 3 with middle=%q", blocks, thirdParaID)
+	}
+	history := requireWordHistory(t, doc)
+	if applied, err := history.Undo(); err != nil || !applied {
+		t.Fatalf("undo insert = %v, %v", applied, err)
+	}
+	if len(doc.WordBlocks()) != 2 {
+		t.Fatalf("blocks after undo = %d; want 2", len(doc.WordBlocks()))
+	}
+}
+
 func findRunByText(t *testing.T, blocks []document.WordBlock, value string) (string, string) {
 	t.Helper()
 	for _, block := range blocks {

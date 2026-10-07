@@ -202,9 +202,10 @@ type WordTextFontFamilyEditor interface {
 	SetTextRunFontFamily(runID, family string) error
 }
 
-// WordBodyEditor is an optional capability for adding a body paragraph at the end of a Word document.
+// WordBodyEditor is an optional capability for adding a body paragraph in a Word document.
 type WordBodyEditor interface {
 	InsertBodyParagraph() (paragraphID string, err error)
+	InsertParagraphAfter(afterParagraphID string) (paragraphID string, err error)
 }
 
 // WordPageBreakEditor inserts a page or column break, or a blank page, at a Unicode text range in an

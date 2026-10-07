@@ -19,6 +19,10 @@ type wordParagraphJoinIntent struct {
 }
 
 func (a *App) startWordBodyParagraphInsert() {
+	a.startWordParagraphInsertAfter("")
+}
+
+func (a *App) startWordParagraphInsertAfter(afterParagraphID string) {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || state.wordInsertionRunning || state.formatRunning.Load() || a.isSaving() {
 		return
@@ -37,11 +41,30 @@ func (a *App) startWordBodyParagraphInsert() {
 		var paragraphID string
 		blocks, err := runWordMutation(state, func() error {
 			var insertErr error
-			paragraphID, insertErr = editor.InsertBodyParagraph()
+			if afterParagraphID != "" {
+				paragraphID, insertErr = editor.InsertParagraphAfter(afterParagraphID)
+			} else {
+				paragraphID, insertErr = editor.InsertBodyParagraph()
+			}
 			return insertErr
 		})
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "插入段落", err: err, blocks: blocks, insertedParagraphID: paragraphID, bodyParagraphInsert: true})
 	}()
+}
+
+func (a *App) queueWordParagraphInsert(state *documentSessionState, afterParagraphID string) {
+	if state == nil || state.wordInsertionRunning || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	state.wordInsertAfterParagraphID = afterParagraphID
+	if wordHasPendingTextDrafts(state) {
+		state.wordForceDraftFlush.Store(true)
+		state.wordInsertAfterDraftFlush = true
+		state.wordFlushRequested.Store(true)
+		state.wordFlushAllDrafts.Store(true)
+		return
+	}
+	a.startWordParagraphInsertAfter(afterParagraphID)
 }
 
 func (a *App) focusInsertedWordParagraph(state *documentSessionState, paragraphID string) {
@@ -62,9 +85,21 @@ func (a *App) focusInsertedWordParagraph(state *documentSessionState, paragraphI
 			state.selectedBlock = -1
 			state.selectedBlockEditable = true
 			state.wordPendingFocusRunID = inline.Text.ID
-			wordRunEditor(state, *inline.Text)
+			state.wordPendingCaretRunID = inline.Text.ID
+			state.wordPendingCaretOffset = 0
+			state.wordPendingCaretByX = false
+			state.wordLayoutFocusedRunID = inline.Text.ID
+			state.wordPageFocusedMetaRunID = inline.Text.ID
+			state.wordPageFocusedMetaRevision = state.wordRevisionAtomic.Load()
+			state.wordPageFocusedParagraph = paragraph
+			state.wordPagePendingScrollRunID = inline.Text.ID
+			editor := wordRunEditor(state, *inline.Text)
+			editor.SetCaret(0, 0)
 			state.wordListState.ScrollTo(max(0, len(wordBlocksForState(state))-1))
 			a.setStatus("已插入正文段落，可直接输入")
+			if a.window != nil {
+				a.window.Invalidate()
+			}
 			return
 		}
 	}
@@ -287,7 +322,9 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 	}
 	if state.wordInsertAfterDraftFlush {
 		state.wordInsertAfterDraftFlush = false
-		a.startWordBodyParagraphInsert()
+		afterID := state.wordInsertAfterParagraphID
+		state.wordInsertAfterParagraphID = ""
+		a.startWordParagraphInsertAfter(afterID)
 		return
 	}
 	if state.wordPendingPasteRunID != "" {

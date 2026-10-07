@@ -6,7 +6,7 @@ import (
 	"glance/internal/document"
 )
 
-func (d *Document) InsertBodyParagraph() (string, error) {
+func (d *Document) InsertParagraphAfter(afterParagraphID string) (string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.checkOpen(); err != nil {
@@ -31,6 +31,11 @@ func (d *Document) InsertBodyParagraph() (string, error) {
 			break
 		}
 	}
+	if afterParagraphID != "" {
+		if target, ok := d.wordParagraphTargets[afterParagraphID]; ok && target != nil {
+			insertAt = target.end
+		}
+	}
 	prefix := elementPrefix(body.rawName)
 	run := wrapWordElement(prefix, "r", wrapWordElement(prefix, "t", nil))
 	paragraph := wrapWordElement(prefix, "p", run)
@@ -41,6 +46,15 @@ func (d *Document) InsertBodyParagraph() (string, error) {
 	if err := d.applyWordDocumentXMLLocked(patched); err != nil {
 		return "", err
 	}
+	if afterParagraphID != "" {
+		for index, block := range d.wordBlocks {
+			if block.Kind == document.WordParagraphBlock && block.Paragraph != nil && block.Paragraph.ID == afterParagraphID {
+				if index+1 < len(d.wordBlocks) && d.wordBlocks[index+1].Kind == document.WordParagraphBlock && d.wordBlocks[index+1].Paragraph != nil {
+					return d.wordBlocks[index+1].Paragraph.ID, nil
+				}
+			}
+		}
+	}
 	for index := len(d.wordBlocks) - 1; index >= 0; index-- {
 		block := d.wordBlocks[index]
 		if block.Kind == document.WordParagraphBlock && block.Paragraph != nil {
@@ -48,4 +62,8 @@ func (d *Document) InsertBodyParagraph() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("inserted DOCX paragraph is missing from the body projection")
+}
+
+func (d *Document) InsertBodyParagraph() (string, error) {
+	return d.InsertParagraphAfter("")
 }
