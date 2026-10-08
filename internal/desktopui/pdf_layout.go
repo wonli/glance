@@ -574,20 +574,24 @@ func (a *App) layoutPDFNotes(gtx layout.Context) layout.Dimensions {
 func (a *App) layoutPDFStatus(gtx layout.Context) layout.Dimensions {
 	v := a.ensurePDFView()
 	gtx = jsonFixedHeight(gtx, 34)
-	return jsonPanel(gtx, pageBackground, true, false, func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Left: 20, Right: 20}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return jsonPanel(gtx, pageBackground, false, false, func(gtx layout.Context) layout.Dimensions {
+		paint.FillShape(gtx.Ops, jsonBorderColor, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(1))}.Op())
+		return layout.Inset{Top: 4, Left: 20, Right: 20}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.Y = 0
 					return material.Label(a.theme, 11, fmt.Sprintf("%d / %d 页 · %.1f MB", v.page+1, v.info.Pages, float64(v.info.Bytes)/(1024*1024))).Layout(gtx)
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: 20}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						gtx.Constraints.Min.Y = 0
 						l := material.Label(a.theme, 11, v.message)
 						l.MaxLines = 1
 						return l.Layout(gtx)
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.Y = 0
 					state := "已保存"
 					if v.info.Dirty {
 						state = "未保存"
