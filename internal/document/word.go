@@ -73,7 +73,8 @@ type WordTable struct {
 }
 
 type WordTableRow struct {
-	Cells []WordTableCell
+	CantSplit bool
+	Cells     []WordTableCell
 }
 
 type WordTableVerticalMerge uint8

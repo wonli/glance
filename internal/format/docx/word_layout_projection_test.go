@@ -276,6 +276,24 @@ func TestWordLayoutProjectionProjectsMergedCells(t *testing.T) {
 	}
 }
 
+func TestWordLayoutProjectionReadsCantSplitRows(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+	<w:tbl><w:tblGrid><w:gridCol w:w="4320"/></w:tblGrid>
+		<w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:p><w:r><w:t>kept together</w:t></w:r></w:p></w:tc></w:tr>
+		<w:tr><w:trPr><w:cantSplit w:val="false"/></w:trPr><w:tc><w:p><w:r><w:t>splittable</w:t></w:r></w:p></w:tc></w:tr>
+		<w:tr><w:tc><w:p><w:r><w:t>default split behavior</w:t></w:r></w:p></w:tc></w:tr>
+	</w:tbl></w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+	blocks := doc.WordBlocks()
+	if len(blocks) != 1 || blocks[0].Table == nil || len(blocks[0].Table.Rows) != 3 {
+		t.Fatalf("projected table blocks = %+v; want a three-row table", blocks)
+	}
+	rows := blocks[0].Table.Rows
+	if !rows[0].CantSplit || rows[1].CantSplit || rows[2].CantSplit {
+		t.Fatalf("projected row split flags = %v/%v/%v; want true/false/false", rows[0].CantSplit, rows[1].CantSplit, rows[2].CantSplit)
+	}
+}
+
 func TestWordLayoutProjectionReadsStructuredDocumentContentReadOnly(t *testing.T) {
 	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
 	<w:sdt><w:sdtPr/><w:sdtContent>
@@ -469,4 +487,22 @@ func TestWordLayoutProjectionReportsMalformedStylesPart(t *testing.T) {
 		}
 	}
 	t.Fatalf("malformed styles part has no located layout diagnostic: %+v", data.Unsupported)
+}
+
+func TestWordLayoutProjectionPreservesSectionStartType(t *testing.T) {
+	doc := wordLayoutProjectionFixture(t, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+ <w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>cover</w:t></w:r></w:p>
+ <w:p><w:pPr><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr><w:r><w:t>continuous</w:t></w:r></w:p>
+ <w:p><w:r><w:t>body</w:t></w:r></w:p>
+ <w:sectPr><w:type w:val="oddPage"/></w:sectPr>
+ </w:body></w:document>`, "")
+	sections := doc.WordLayoutData().Sections
+	if len(sections) != 3 {
+		t.Fatalf("sections = %+v", sections)
+	}
+	for i, want := range []string{"nextpage", "continuous", "oddpage"} {
+		if sections[i].StartBlock != i || sections[i].StartType != want {
+			t.Errorf("section %d = %+v; want start=%d type=%s", i, sections[i], i, want)
+		}
+	}
 }

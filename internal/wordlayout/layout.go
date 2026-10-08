@@ -141,15 +141,19 @@ type Result struct {
 }
 
 type layoutCheckpoint struct {
-	PageIndex            int
-	Col                  int
-	YPT                  float64
-	Used                 bool
-	PendingBreak         bool
-	TextCount            int
-	ImageCount           int
-	TableCellCount       int
-	ParagraphBorderCount int
+	PageIndex                  int
+	Col                        int
+	YPT                        float64
+	Used                       bool
+	PendingBreak               bool
+	AutomaticPageStart         bool
+	HasPreviousParagraph       bool
+	PreviousParagraphAfterPT   float64
+	PreviousParagraphLineGapPT float64
+	TextCount                  int
+	ImageCount                 int
+	TableCellCount             int
+	ParagraphBorderCount       int
 }
 
 type Engine struct {
@@ -213,6 +217,12 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 	}
 
 	styles := newStyleResolver(input.Layout, cursor)
+	sectionStartTypes := make(map[int]string, len(input.Layout.Sections))
+	for _, section := range input.Layout.Sections {
+		if section.StartBlock > 0 && section.StartType != "" {
+			sectionStartTypes[section.StartBlock] = strings.ToLower(section.StartType)
+		}
+	}
 	preparedParagraphs := make(map[int]preparedParagraph)
 	startBlock := 0
 	previous := input.Previous
@@ -248,6 +258,10 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 				cursor.y = checkpoint.YPT
 				cursor.used = checkpoint.Used
 				cursor.pendingBreak = checkpoint.PendingBreak
+				cursor.automaticPageStart = checkpoint.AutomaticPageStart
+				cursor.hasPreviousParagraph = checkpoint.HasPreviousParagraph
+				cursor.previousParagraphAfterPT = checkpoint.PreviousParagraphAfterPT
+				cursor.previousParagraphLineGapPT = checkpoint.PreviousParagraphLineGapPT
 			}
 		}
 	}
@@ -267,6 +281,9 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 			}
 		}
 		block := input.Blocks[blockIndex]
+		if startType, ok := sectionStartTypes[blockIndex]; ok {
+			cursor.beginSection(block.ID, startType)
+		}
 		switch block.Kind {
 		case document.WordParagraphBlock:
 			if block.Paragraph == nil {
@@ -305,8 +322,18 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 			}
 			if prepared.style.paragraph.KeepWithNext && !preparedHasPageBreak(prepared) {
 				groupHeight := prepared.totalHeight()
+				if cursor.hasPreviousParagraph && !cursor.pendingBreak {
+					groupHeight += paragraphLeadingAdjustment(cursor.previousParagraphAfterPT, cursor.previousParagraphLineGapPT, prepared) - prepared.style.paragraph.BeforePT
+				}
 				groupEnd := blockIndex
+				previousPrepared := prepared
 				for nextIndex := blockIndex + 1; nextIndex < len(input.Blocks); nextIndex++ {
+					if startType, ok := sectionStartTypes[nextIndex]; ok && startType != "continuous" {
+						// A section page break overrides the previous paragraph's
+						// keep-with-next constraint; do not move both and then
+						// advance again when the new section is placed.
+						break
+					}
 					nextBlock := input.Blocks[nextIndex]
 					if nextBlock.Kind != document.WordParagraphBlock || nextBlock.Paragraph == nil {
 						cursor.diagnostic(DiagnosticWarning, block.ID, "keep-with-next-target-unsupported", "Keep-with-next is applied to consecutive paragraphs only; the following block cannot be kept with this paragraph.")
@@ -318,7 +345,11 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 					}
 					preparedParagraphs[nextIndex] = nextPrepared
 					groupHeight += nextPrepared.totalHeight()
+					if !preparedHasPageBreak(previousPrepared) && !preparedHasPageBreak(nextPrepared) {
+						groupHeight += paragraphSpacingAdjustment(previousPrepared, nextPrepared) - nextPrepared.style.paragraph.BeforePT
+					}
 					groupEnd = nextIndex
+					previousPrepared = nextPrepared
 					if !nextPrepared.style.paragraph.KeepWithNext || preparedHasPageBreak(nextPrepared) {
 						break
 					}
@@ -331,6 +362,9 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 				return Result{}, err
 			}
 		case document.WordTableBlock:
+			cursor.hasPreviousParagraph = false
+			cursor.previousParagraphAfterPT = 0
+			cursor.previousParagraphLineGapPT = 0
 			if block.Table == nil {
 				cursor.diagnostic(DiagnosticError, block.ID, "invalid-table", "The table block has no table data.")
 				continue
@@ -339,6 +373,9 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 				return Result{}, err
 			}
 		case document.WordUnsupportedBlock:
+			cursor.hasPreviousParagraph = false
+			cursor.previousParagraphAfterPT = 0
+			cursor.previousParagraphLineGapPT = 0
 			detail := "This body content is not supported by Word pagination."
 			if block.Unsupported != nil && block.Unsupported.Description != "" {
 				detail = block.Unsupported.Description
@@ -466,20 +503,24 @@ func pageContentRect(setup document.WordPageSetup) Rect {
 }
 
 type layoutCursor struct {
-	result             *Result
-	setup              document.WordPageSetup
-	content            Rect
-	pageIndex          int
-	currentCol         int
-	columns            int
-	columnWidth        float64
-	columnSpacing      float64
-	y                  float64
-	used               bool
-	pendingBreak       bool
-	glyphPaths         map[glyphPathCacheKey][]GlyphPathCommand
-	currentBlockIndex  int
-	sourceBlockIndexes map[string]int
+	result                     *Result
+	setup                      document.WordPageSetup
+	content                    Rect
+	pageIndex                  int
+	currentCol                 int
+	columns                    int
+	columnWidth                float64
+	columnSpacing              float64
+	y                          float64
+	used                       bool
+	pendingBreak               bool
+	automaticPageStart         bool
+	hasPreviousParagraph       bool
+	previousParagraphAfterPT   float64
+	previousParagraphLineGapPT float64
+	glyphPaths                 map[glyphPathCacheKey][]GlyphPathCommand
+	currentBlockIndex          int
+	sourceBlockIndexes         map[string]int
 }
 
 type glyphPathCacheKey struct {
@@ -684,7 +725,11 @@ func clonePagePrefix(source PageScene, checkpoint layoutCheckpoint) PageScene {
 }
 
 func layoutFlowMatches(cursor *layoutCursor, old layoutCheckpoint) bool {
-	return old.PageIndex >= 0 && cursor.used == old.Used && cursor.pendingBreak == old.PendingBreak && math.Abs(cursor.y-old.YPT) <= 1e-4
+	return old.PageIndex >= 0 && cursor.used == old.Used && cursor.pendingBreak == old.PendingBreak && cursor.automaticPageStart == old.AutomaticPageStart &&
+		cursor.hasPreviousParagraph == old.HasPreviousParagraph &&
+		math.Abs(cursor.previousParagraphAfterPT-old.PreviousParagraphAfterPT) <= 1e-4 &&
+		math.Abs(cursor.previousParagraphLineGapPT-old.PreviousParagraphLineGapPT) <= 1e-4 &&
+		math.Abs(cursor.y-old.YPT) <= 1e-4
 }
 
 func appendUniqueDiagnostic(result *Result, diagnostic Diagnostic, blockIndex int) {
@@ -795,8 +840,12 @@ func (c *layoutCursor) startPage() {
 		Clip: Rect{WidthPT: c.setup.WidthPT, HeightPT: c.setup.HeightPT}, Content: c.content,
 	})
 	c.currentCol = 0
+	c.automaticPageStart = false
 	c.y = c.content.YPT
 	c.used = false
+	c.hasPreviousParagraph = false
+	c.previousParagraphAfterPT = 0
+	c.previousParagraphLineGapPT = 0
 }
 
 func (c *layoutCursor) nextPage() {
@@ -808,8 +857,12 @@ func (c *layoutCursor) advanceColumn() {
 		c.currentCol++
 		c.y = c.content.YPT
 		c.used = false
+		c.hasPreviousParagraph = false
+		c.previousParagraphAfterPT = 0
+		c.previousParagraphLineGapPT = 0
 	} else {
 		c.nextPage()
+		c.automaticPageStart = true
 	}
 }
 
@@ -829,11 +882,12 @@ func (c *layoutCursor) diagnostic(severity DiagnosticSeverity, sourceID, code, d
 
 func (c *layoutCursor) checkpoint() layoutCheckpoint {
 	if c.pageIndex < 0 || c.pageIndex >= len(c.result.Pages) {
-		return layoutCheckpoint{PageIndex: -1, Col: 0, YPT: c.y, Used: c.used, PendingBreak: c.pendingBreak}
+		return layoutCheckpoint{PageIndex: -1, Col: 0, YPT: c.y, Used: c.used, PendingBreak: c.pendingBreak, AutomaticPageStart: c.automaticPageStart, HasPreviousParagraph: c.hasPreviousParagraph, PreviousParagraphLineGapPT: c.previousParagraphLineGapPT, PreviousParagraphAfterPT: c.previousParagraphAfterPT}
 	}
 	page := c.result.Pages[c.pageIndex]
 	return layoutCheckpoint{
-		PageIndex: c.pageIndex, Col: c.currentCol, YPT: c.y, Used: c.used, PendingBreak: c.pendingBreak,
+		PageIndex: c.pageIndex, Col: c.currentCol, YPT: c.y, Used: c.used, PendingBreak: c.pendingBreak, AutomaticPageStart: c.automaticPageStart,
+		HasPreviousParagraph: c.hasPreviousParagraph, PreviousParagraphLineGapPT: c.previousParagraphLineGapPT, PreviousParagraphAfterPT: c.previousParagraphAfterPT,
 		TextCount: len(page.Text), ImageCount: len(page.Images),
 		TableCellCount: len(page.TableCells), ParagraphBorderCount: len(page.ParagraphBorders),
 	}

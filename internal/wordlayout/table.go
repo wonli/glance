@@ -13,24 +13,53 @@ const maxTableGridColumns = 512
 type preparedTableCell struct {
 	cell        document.WordTableCell
 	paragraphs  []preparedParagraph
+	lines       []preparedTableLine
+	keepGroups  map[int]tableKeepGroup
 	contentH    float64
 	gridColumn  int
 	gridSpan    int
 	mergeEndRow int
 }
 
-type preparedTableRow struct {
-	index     int
-	cells     []preparedTableCell
+type preparedTableLine struct {
+	paragraph preparedParagraph
+	lineIndex int
 	height    float64
+	leading   float64
+}
+
+type tableKeepGroup struct {
+	end    int
+	height float64
+}
+
+type tableCellLinePlacement struct {
+	line   preparedTableLine
+	offset float64
+}
+
+type preparedTableRow struct {
+	index            int
+	cells            []preparedTableCell
+	height           float64
+	mergeExtraHeight float64
+	mergeTailReserve float64
+	fragments        []tableRowFragment
+}
+
+type tableRowFragment struct {
 	pageIndex int
 	column    int
 	x         float64
 	y         float64
+	height    float64
+	last      bool
+	cells     [][]tableCellLinePlacement
 }
 
 type tableCellPageSegment struct {
 	pageIndex int
+	column    int
 	bounds    Rect
 }
 
@@ -71,9 +100,10 @@ func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, style
 						c.diagnostic(DiagnosticError, paragraph.ID, "table-cell-page-break", "Page breaks inside a table row are not supported.")
 					}
 				}
-				preparedCell.contentH += prepared.totalHeight()
 				preparedCell.paragraphs = append(preparedCell.paragraphs, prepared)
 			}
+			preparedCell.lines, preparedCell.keepGroups = prepareTableCellLines(preparedCell.paragraphs)
+			preparedCell.contentH = preparedParagraphsHeight(preparedCell.paragraphs)
 			if cell.VerticalMerge == document.WordTableVerticalMergeNone {
 				row.height = math.Max(row.height, preparedCell.contentH+tableCellPaddingPT*2)
 			}
@@ -97,10 +127,18 @@ func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, style
 			}
 			mergedHeight := tableRowsHeight(rows, rowIndex, cell.mergeEndRow+1)
 			requiredHeight := cell.contentH + tableCellPaddingPT*2
+			precedingRowsHeight := tableRowsHeight(rows, rowIndex, cell.mergeEndRow)
 			if requiredHeight > mergedHeight {
 				extraHeight := (requiredHeight - mergedHeight) / float64(cell.mergeEndRow-rowIndex+1)
 				for mergeRow := rowIndex; mergeRow <= cell.mergeEndRow; mergeRow++ {
 					rows[mergeRow].height += extraHeight
+					rows[mergeRow].mergeExtraHeight += extraHeight
+				}
+			}
+			if cell.mergeEndRow > rowIndex && requiredHeight > precedingRowsHeight+epsilonPT {
+				if len(cell.lines) > 0 {
+					rows[cell.mergeEndRow].mergeTailReserve = math.Max(rows[cell.mergeEndRow].mergeTailReserve,
+						cell.lines[len(cell.lines)-1].height+tableCellPaddingPT)
 				}
 			}
 		}
@@ -108,26 +146,15 @@ func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, style
 	for rowIndex := range rows {
 		row := &rows[rowIndex]
 		rowID := tableID + ".r" + itoa(rowIndex)
-		if row.height > c.content.HeightPT+epsilonPT {
-			c.diagnostic(DiagnosticError, rowID, "table-row-overflow", "This table row is taller than the printable page area and cannot be split safely.")
+		if !c.layoutTableRow(ctx, row, rowID, table.Rows[rowIndex].CantSplit) {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			return nil
 		}
-		if !c.ensureSpace(row.height, rowID) {
-			// A fresh page cannot fit this row, so do not retry it indefinitely.
-			return nil
-		}
-		row.pageIndex = c.pageIndex
-		row.column = c.currentCol
-		row.y = c.y
-		row.x = area.XPT
-		if c.columns > 1 {
-			row.x = c.currentColumnRect().XPT
-		}
-		c.y += row.height
-		c.used = true
 	}
 	for rowIndex, row := range rows {
-		for _, cell := range row.cells {
+		for cellIndex, cell := range row.cells {
 			if cell.cell.VerticalMerge == document.WordTableVerticalMergeContinue {
 				continue
 			}
@@ -136,7 +163,6 @@ func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, style
 				c.diagnostic(DiagnosticError, tableCellSourceID(tableID, cell.cell), "table-grid-span", "A table cell span extends beyond the available grid columns.")
 				return nil
 			}
-			cellX := row.x + tableGridColumnOffset(widths, cell.gridColumn)
 			if cell.cell.VerticalMerge == document.WordTableVerticalMergeRestart {
 				segments := verticalMergePageSegments(rows, rowIndex, cell, widths)
 				if err := c.placeVerticalMergeCellText(ctx, tableID, cell, cellWidth, segments); err != nil {
@@ -144,30 +170,31 @@ func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, style
 				}
 				continue
 			}
-			inner := Rect{
-				XPT: cellX + tableCellPaddingPT, YPT: row.y + tableCellPaddingPT,
-				WidthPT: math.Max(1, cellWidth-tableCellPaddingPT*2), HeightPT: math.Max(0, row.height-tableCellPaddingPT*2),
-			}
-			cellY := inner.YPT
-			for _, paragraph := range cell.paragraphs {
-				if err := c.placePreparedParagraph(ctx, paragraph, inner, false, row.pageIndex, cellY); err != nil {
-					return err
+			for _, fragment := range row.fragments {
+				inner := Rect{
+					XPT: fragment.x + tableGridColumnOffset(widths, cell.gridColumn) + tableCellPaddingPT,
+					YPT: fragment.y, WidthPT: math.Max(1, cellWidth-tableCellPaddingPT*2),
 				}
-				cellY += paragraph.totalHeight()
+				for _, placement := range fragment.cells[cellIndex] {
+					line := placement.line
+					borderSourceID := line.paragraph.borderSourceID
+					if borderSourceID == "" {
+						borderSourceID = line.paragraph.sourceID
+					}
+					placeParagraphLine(c, line.paragraph.sourceID, borderSourceID, fragment.pageIndex,
+						fragment.y+placement.offset+line.leading, inner, line.paragraph.style.paragraph,
+						line.paragraph.lines[line.lineIndex], line.lineIndex == 0,
+						line.lineIndex == len(line.paragraph.lines)-1)
+				}
 			}
 		}
 	}
 	for rowIndex := range rows {
-		row := rows[rowIndex]
-		x := area.XPT
-		if c.columns > 1 {
-			x = row.x
-		}
+		row := &rows[rowIndex]
 		for _, cell := range row.cells {
 			if cell.cell.VerticalMerge == document.WordTableVerticalMergeContinue {
 				continue
 			}
-			cellX := x + tableGridColumnOffset(widths, cell.gridColumn)
 			cellWidth, ok := tableGridSpanWidth(widths, cell.gridColumn, cell.gridSpan)
 			if !ok {
 				continue
@@ -180,14 +207,350 @@ func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, style
 				c.appendVerticalMergeSegments(tableID, rows, rowIndex, cell, widths, fillColor)
 				continue
 			}
-			c.result.Pages[row.pageIndex].TableCells = append(c.result.Pages[row.pageIndex].TableCells, TableCellPlacement{
-				TableID: tableID, RowIndex: row.index, CellID: cell.cell.ID, FillColor: fillColor,
-				Bounds:        Rect{XPT: cellX, YPT: row.y, WidthPT: cellWidth, HeightPT: row.height},
-				DrawTopBorder: true, DrawBottomBorder: true, DrawLeftBorder: true, DrawRightBorder: true,
-			})
+			for _, fragment := range row.fragments {
+				cellX := fragment.x + tableGridColumnOffset(widths, cell.gridColumn)
+				c.result.Pages[fragment.pageIndex].TableCells = append(c.result.Pages[fragment.pageIndex].TableCells, TableCellPlacement{
+					TableID: tableID, RowIndex: row.index, CellID: cell.cell.ID, FillColor: fillColor,
+					Bounds:        Rect{XPT: cellX, YPT: fragment.y, WidthPT: cellWidth, HeightPT: fragment.height},
+					DrawTopBorder: true, DrawBottomBorder: true, DrawLeftBorder: true, DrawRightBorder: true,
+				})
+			}
 		}
 	}
 	return nil
+}
+
+func prepareTableCellLines(paragraphs []preparedParagraph) ([]preparedTableLine, map[int]tableKeepGroup) {
+	lines := make([]preparedTableLine, 0)
+	paragraphStarts := make([]int, len(paragraphs)+1)
+	var previousParagraph preparedParagraph
+	previousParagraphCanCollapse := false
+	for paragraphIndex, paragraph := range paragraphs {
+		paragraphStarts[paragraphIndex] = len(lines)
+		beforePT := paragraph.style.paragraph.BeforePT
+		if previousParagraphCanCollapse && !preparedHasPageBreak(paragraph) {
+			beforePT = paragraphSpacingAdjustment(previousParagraph, paragraph)
+		}
+		for lineIndex, line := range paragraph.lines {
+			leading, trailing := 0.0, 0.0
+			if lineIndex == 0 {
+				leading = beforePT + paragraph.uiBeforePT
+			}
+			if lineIndex == len(paragraph.lines)-1 {
+				trailing = paragraph.uiAfterPT + paragraph.style.paragraph.AfterPT + paragraphBottomBorderExtent(paragraph.style.paragraph)
+			}
+			lines = append(lines, preparedTableLine{
+				paragraph: paragraph, lineIndex: lineIndex, leading: leading,
+				height: leading + line.height + trailing,
+			})
+		}
+		previousParagraph = paragraph
+		previousParagraphCanCollapse = !preparedHasPageBreak(paragraph)
+	}
+	paragraphStarts[len(paragraphs)] = len(lines)
+
+	groups := make(map[int]tableKeepGroup)
+	for paragraphIndex := 0; paragraphIndex < len(paragraphs); {
+		paragraph := paragraphs[paragraphIndex]
+		layout := paragraph.style.paragraph
+		if !layout.KeepTogether && !layout.KeepWithNext {
+			paragraphIndex++
+			continue
+		}
+		groupEnd := paragraphIndex
+		if layout.KeepWithNext {
+			for groupEnd+1 < len(paragraphs) {
+				groupEnd++
+				if !paragraphs[groupEnd].style.paragraph.KeepWithNext {
+					break
+				}
+			}
+		}
+		startLine, endLine := paragraphStarts[paragraphIndex], paragraphStarts[groupEnd+1]
+		if endLine > startLine {
+			height := 0.0
+			for index := startLine; index < endLine; index++ {
+				height += lines[index].height
+			}
+			groups[startLine] = tableKeepGroup{end: endLine, height: height}
+		}
+		paragraphIndex = groupEnd + 1
+	}
+	return lines, groups
+}
+
+func (c *layoutCursor) layoutTableRow(ctx context.Context, row *preparedTableRow, rowID string, cantSplit bool) bool {
+	if c.pendingBreak {
+		if c.used {
+			c.advanceColumn()
+		}
+		c.pendingBreak = false
+	}
+	remaining := c.content.YPT + c.content.HeightPT - c.y
+	if cantSplit {
+		if row.height > c.content.HeightPT+epsilonPT {
+			c.diagnostic(DiagnosticError, rowID, "table-row-overflow", "This table row is marked not to split but is taller than the printable page area.")
+			return false
+		}
+		if !c.ensureSpace(row.height, rowID) {
+			return false
+		}
+		c.appendWholeTableRow(row, row.height)
+		return true
+	}
+	if row.height <= remaining+epsilonPT {
+		if !c.ensureSpace(row.height, rowID) {
+			return false
+		}
+		c.appendWholeTableRow(row, row.height)
+		return true
+	}
+
+	positions := make([]int, len(row.cells))
+	extraHeight := row.mergeExtraHeight
+	firstFragment := true
+	for {
+		if err := ctx.Err(); err != nil {
+			return false
+		}
+		remaining = c.content.YPT + c.content.HeightPT - c.y
+		if remaining <= epsilonPT {
+			if c.used {
+				c.advanceColumn()
+				firstFragment = len(row.fragments) == 0
+				continue
+			}
+			c.diagnostic(DiagnosticError, rowID, "table-row-overflow", "A table row cannot make progress within the printable page area.")
+			return false
+		}
+		topPadding := 0.0
+		if firstFragment {
+			topPadding = tableCellPaddingPT
+		}
+		capacity := math.Max(0, remaining-topPadding)
+		fragment, nextPositions, cellHeights := c.tableRowLineCandidate(row, positions, capacity, topPadding)
+		allLinesPlaced := tableRowCellsComplete(row, nextPositions)
+		maxCellHeight := maxFloatSlice(cellHeights)
+		extraInFragment := 0.0
+		if allLinesPlaced {
+			availableTail := math.Max(0, remaining-topPadding-maxCellHeight)
+			if extraHeight+tableCellPaddingPT <= availableTail+epsilonPT {
+				extraInFragment = extraHeight
+				fragment.height = topPadding + maxCellHeight + extraInFragment + tableCellPaddingPT
+				fragment.last = true
+			} else {
+				extraInFragment = math.Min(extraHeight, availableTail)
+				rowHeightRemaining := math.Max(0, row.height-tableRowPlacedHeight(row))
+				if row.mergeTailReserve > 0 && rowHeightRemaining > remaining+epsilonPT {
+					maxExtraBeforeTail := rowHeightRemaining - topPadding - maxCellHeight - row.mergeTailReserve
+					if availableTail > maxExtraBeforeTail+epsilonPT {
+						extraToPreserveTail := availableTail - maxExtraBeforeTail
+						row.height += extraToPreserveTail
+						row.mergeExtraHeight += extraToPreserveTail
+						extraHeight += extraToPreserveTail
+						extraInFragment = math.Min(extraHeight, availableTail)
+					} else {
+						extraInFragment = math.Min(extraInFragment, math.Max(0, maxExtraBeforeTail))
+					}
+				}
+				fragment.height = topPadding + maxCellHeight + extraInFragment
+				if extraHeight-extraInFragment <= epsilonPT && fragment.height+tableCellPaddingPT > remaining+epsilonPT {
+					for c.trimTableRowLineCandidate(row, fragment, nextPositions, cellHeights, positions) {
+						allLinesPlaced = tableRowCellsComplete(row, nextPositions)
+						maxCellHeight = maxFloatSlice(cellHeights)
+						if !allLinesPlaced || topPadding+maxCellHeight+extraHeight+tableCellPaddingPT <= remaining+epsilonPT {
+							break
+						}
+					}
+					allLinesPlaced = tableRowCellsComplete(row, nextPositions)
+					maxCellHeight = maxFloatSlice(cellHeights)
+					if allLinesPlaced && topPadding+maxCellHeight+extraHeight+tableCellPaddingPT <= remaining+epsilonPT {
+						extraInFragment = extraHeight
+						fragment.height = topPadding + maxCellHeight + extraInFragment + tableCellPaddingPT
+						fragment.last = true
+					} else {
+						extraInFragment = 0
+						fragment.height = topPadding + maxCellHeight
+					}
+				}
+			}
+			extraHeight = math.Max(0, extraHeight-extraInFragment)
+		} else {
+			fragment.height = topPadding + maxCellHeight
+		}
+		progress := tableRowHasLineProgress(nextPositions, positions) || extraInFragment > epsilonPT
+		if fragment.height <= epsilonPT || !progress {
+			if c.used {
+				c.advanceColumn()
+				firstFragment = len(row.fragments) == 0
+				continue
+			}
+			c.diagnostic(DiagnosticError, rowID, "table-row-overflow", "A table row line is taller than the printable page area.")
+			return false
+		}
+		fragment.pageIndex = c.pageIndex
+		fragment.column = c.currentCol
+		fragment.x = c.currentColumnRect().XPT
+		fragment.y = c.y
+		row.fragments = append(row.fragments, fragment)
+		c.y += fragment.height
+		c.used = true
+		positions = nextPositions
+		if fragment.last {
+			return true
+		}
+		c.advanceColumn()
+		firstFragment = false
+	}
+}
+
+func (c *layoutCursor) appendWholeTableRow(row *preparedTableRow, height float64) {
+	fragment := tableRowFragment{
+		pageIndex: c.pageIndex, column: c.currentCol, x: c.currentColumnRect().XPT,
+		y: c.y, height: height, last: true,
+		cells: make([][]tableCellLinePlacement, len(row.cells)),
+	}
+	for cellIndex, cell := range row.cells {
+		if cell.cell.VerticalMerge != document.WordTableVerticalMergeNone {
+			continue
+		}
+		offset := tableCellPaddingPT
+		for _, line := range cell.lines {
+			fragment.cells[cellIndex] = append(fragment.cells[cellIndex], tableCellLinePlacement{line: line, offset: offset})
+			offset += line.height
+		}
+	}
+	row.fragments = append(row.fragments, fragment)
+	c.y += height
+	c.used = true
+}
+
+func tableRowPlacedHeight(row *preparedTableRow) float64 {
+	height := 0.0
+	for _, fragment := range row.fragments {
+		height += fragment.height
+	}
+	return height
+}
+
+func (c *layoutCursor) tableRowLineCandidate(row *preparedTableRow, positions []int, capacity, topPadding float64) (tableRowFragment, []int, []float64) {
+	fragment := tableRowFragment{cells: make([][]tableCellLinePlacement, len(row.cells))}
+	nextPositions := append([]int(nil), positions...)
+	cellHeights := make([]float64, len(row.cells))
+	keepLimit := math.Max(0, c.content.HeightPT-tableCellPaddingPT*2)
+	for cellIndex, cell := range row.cells {
+		if cell.cell.VerticalMerge != document.WordTableVerticalMergeNone {
+			continue
+		}
+		position := positions[cellIndex]
+		usedHeight := 0.0
+		for position < len(cell.lines) {
+			line := tableCellLineForFragment(cell, position, usedHeight <= epsilonPT && position > 0)
+			if group, ok := cell.keepGroups[position]; ok && group.end > position {
+				groupLines := make([]preparedTableLine, 0, group.end-position)
+				groupHeight := 0.0
+				for groupLine := position; groupLine < group.end; groupLine++ {
+					preparedLine := tableCellLineForFragment(cell, groupLine, usedHeight <= epsilonPT && groupLine == position)
+					groupLines = append(groupLines, preparedLine)
+					groupHeight += preparedLine.height
+				}
+				if groupHeight <= keepLimit+epsilonPT && usedHeight+groupHeight <= capacity+epsilonPT {
+					for _, groupLine := range groupLines {
+						fragment.cells[cellIndex] = append(fragment.cells[cellIndex], tableCellLinePlacement{line: groupLine, offset: topPadding + usedHeight})
+						usedHeight += groupLine.height
+					}
+					position = group.end
+					continue
+				}
+				if groupHeight <= keepLimit+epsilonPT {
+					break
+				}
+			}
+			if usedHeight+line.height > capacity+epsilonPT {
+				break
+			}
+			fragment.cells[cellIndex] = append(fragment.cells[cellIndex], tableCellLinePlacement{line: line, offset: topPadding + usedHeight})
+			usedHeight += line.height
+			position++
+		}
+		nextPositions[cellIndex] = position
+		cellHeights[cellIndex] = usedHeight
+	}
+	fragment.height = topPadding + maxFloatSlice(cellHeights)
+	return fragment, nextPositions, cellHeights
+}
+
+func tableCellLineForFragment(cell preparedTableCell, position int, startsFragment bool) preparedTableLine {
+	line := cell.lines[position]
+	if startsFragment && line.lineIndex == 0 {
+		fullLeading := line.paragraph.style.paragraph.BeforePT + line.paragraph.uiBeforePT
+		line.height += fullLeading - line.leading
+		line.leading = fullLeading
+	}
+	return line
+}
+
+func tableRowHasLineProgress(nextPositions, positions []int) bool {
+	for index := range nextPositions {
+		if nextPositions[index] > positions[index] {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *layoutCursor) trimTableRowLineCandidate(row *preparedTableRow, fragment tableRowFragment, nextPositions []int, cellHeights []float64, positions []int) bool {
+	cellIndex := -1
+	maximumHeight := -1.0
+	for index, placements := range fragment.cells {
+		if len(placements) == 0 {
+			continue
+		}
+		if cellHeights[index] >= maximumHeight {
+			maximumHeight = cellHeights[index]
+			cellIndex = index
+		}
+	}
+	if cellIndex < 0 {
+		return false
+	}
+	cell := row.cells[cellIndex]
+	trimStart := nextPositions[cellIndex] - 1
+	keepLimit := math.Max(0, c.content.HeightPT-tableCellPaddingPT*2)
+	for start, group := range cell.keepGroups {
+		if group.end == nextPositions[cellIndex] && start >= positions[cellIndex] && group.height <= keepLimit+epsilonPT {
+			trimStart = start
+			break
+		}
+	}
+	removeCount := nextPositions[cellIndex] - trimStart
+	if removeCount <= 0 || removeCount > len(fragment.cells[cellIndex]) {
+		return false
+	}
+	fragment.cells[cellIndex] = fragment.cells[cellIndex][:len(fragment.cells[cellIndex])-removeCount]
+	nextPositions[cellIndex] = trimStart
+	cellHeights[cellIndex] = 0
+	for _, placement := range fragment.cells[cellIndex] {
+		cellHeights[cellIndex] += placement.line.height
+	}
+	return true
+}
+
+func tableRowCellsComplete(row *preparedTableRow, positions []int) bool {
+	for cellIndex, cell := range row.cells {
+		if cell.cell.VerticalMerge == document.WordTableVerticalMergeNone && positions[cellIndex] < len(cell.lines) {
+			return false
+		}
+	}
+	return true
+}
+
+func maxFloatSlice(values []float64) float64 {
+	maximum := 0.0
+	for _, value := range values {
+		maximum = math.Max(maximum, value)
+	}
+	return maximum
 }
 
 func (c *layoutCursor) validateTableMergeGeometry(tableID string, table document.WordTable) bool {
@@ -293,32 +656,27 @@ func tableGridSpanWidth(widths []float64, start, span int) (float64, bool) {
 
 func verticalMergePageSegments(rows []preparedTableRow, startRow int, cell preparedTableCell, widths []float64) []tableCellPageSegment {
 	segments := make([]tableCellPageSegment, 0, 2)
-	segmentStart := startRow
-	segmentEnd := startRow
-	flush := func() {
-		row := rows[segmentStart]
-		height := tableRowsHeight(rows, segmentStart, segmentEnd+1)
-		width, ok := tableGridSpanWidth(widths, cell.gridColumn, cell.gridSpan)
-		if !ok || row.pageIndex < 0 {
-			return
-		}
-		x := row.x + tableGridColumnOffset(widths, cell.gridColumn)
-		segments = append(segments, tableCellPageSegment{
-			pageIndex: row.pageIndex,
-			bounds:    Rect{XPT: x, YPT: row.y, WidthPT: width, HeightPT: height},
-		})
+	width, ok := tableGridSpanWidth(widths, cell.gridColumn, cell.gridSpan)
+	if !ok {
+		return segments
 	}
-	for rowIndex := startRow + 1; rowIndex <= cell.mergeEndRow; rowIndex++ {
-		previous := rows[segmentEnd]
-		current := rows[rowIndex]
-		if current.pageIndex != previous.pageIndex || current.column != previous.column {
-			flush()
-			segmentStart, segmentEnd = rowIndex, rowIndex
-			continue
+	for rowIndex := startRow; rowIndex <= cell.mergeEndRow && rowIndex < len(rows); rowIndex++ {
+		for _, fragment := range rows[rowIndex].fragments {
+			bounds := Rect{
+				XPT: fragment.x + tableGridColumnOffset(widths, cell.gridColumn), YPT: fragment.y,
+				WidthPT: width, HeightPT: fragment.height,
+			}
+			if len(segments) > 0 {
+				last := &segments[len(segments)-1]
+				lastBottom := last.bounds.YPT + last.bounds.HeightPT
+				if last.pageIndex == fragment.pageIndex && last.column == fragment.column && math.Abs(lastBottom-bounds.YPT) <= epsilonPT {
+					last.bounds.HeightPT += bounds.HeightPT
+					continue
+				}
+			}
+			segments = append(segments, tableCellPageSegment{pageIndex: fragment.pageIndex, column: fragment.column, bounds: bounds})
 		}
-		segmentEnd = rowIndex
 	}
-	flush()
 	return segments
 }
 
@@ -350,17 +708,31 @@ func (c *layoutCursor) placeVerticalMergeCellText(ctx context.Context, tableID s
 		y = segmentTop(segmentIndex)
 		return true
 	}
+	var previousParagraph preparedParagraph
+	previousParagraphCanCollapse := false
 	for _, paragraph := range cell.paragraphs {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		originalBeforePT := paragraph.style.paragraph.BeforePT
+		beforePT := originalBeforePT
+		canCollapseSpacing := previousParagraphCanCollapse && !preparedHasPageBreak(paragraph)
+		if canCollapseSpacing {
+			beforePT = paragraphSpacingAdjustment(previousParagraph, paragraph)
+		}
 		paragraphHeight := paragraph.totalHeight()
+		if canCollapseSpacing {
+			paragraphHeight += beforePT - originalBeforePT
+		}
 		keepTogether := paragraph.style.paragraph.KeepTogether || paragraph.style.paragraph.KeepWithNext
 		if keepTogether && y+paragraphHeight > segmentBottom(segmentIndex)+epsilonPT {
 			for next := segmentIndex + 1; next < len(segments); next++ {
-				if paragraphHeight <= segmentBottom(next)-segmentTop(next)+epsilonPT {
+				if paragraph.totalHeight() <= segmentBottom(next)-segmentTop(next)+epsilonPT {
 					segmentIndex = next
 					y = segmentTop(next)
+					beforePT = originalBeforePT
+					paragraphHeight = paragraph.totalHeight()
+					canCollapseSpacing = false
 					break
 				}
 			}
@@ -371,7 +743,7 @@ func (c *layoutCursor) placeVerticalMergeCellText(ctx context.Context, tableID s
 			}
 			leading := 0.0
 			if lineIndex == 0 {
-				leading = paragraph.style.paragraph.BeforePT + paragraph.uiBeforePT
+				leading = beforePT + paragraph.uiBeforePT
 			}
 			trailing := 0.0
 			if lineIndex == len(paragraph.lines)-1 {
@@ -381,6 +753,10 @@ func (c *layoutCursor) placeVerticalMergeCellText(ctx context.Context, tableID s
 				if !advanceSegment() {
 					c.diagnostic(DiagnosticError, paragraph.sourceID, "table-cell-content-overflow", "Merged table cell text does not fit within its paginated cell segments.")
 					return nil
+				}
+				if lineIndex == 0 && canCollapseSpacing {
+					leading = originalBeforePT + paragraph.uiBeforePT
+					canCollapseSpacing = false
 				}
 			}
 			segment := segments[segmentIndex]
@@ -395,6 +771,8 @@ func (c *layoutCursor) placeVerticalMergeCellText(ctx context.Context, tableID s
 			placeParagraphLine(c, paragraph.sourceID, borderSourceID, segment.pageIndex, lineY, area, paragraph.style.paragraph, line, lineIndex == 0, lineIndex == len(paragraph.lines)-1)
 			y = lineY + line.height + trailing
 		}
+		previousParagraph = paragraph
+		previousParagraphCanCollapse = !preparedHasPageBreak(paragraph)
 	}
 	return nil
 }

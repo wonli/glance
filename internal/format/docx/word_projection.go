@@ -686,6 +686,12 @@ func (p *wordProjector) table(node *wordXMLNode, id string) document.WordTable {
 			continue
 		}
 		row := document.WordTableRow{}
+		if rowProperties := firstChild(child, "trPr"); rowProperties != nil {
+			if cantSplit := firstChild(rowProperties, "cantSplit"); cantSplit != nil {
+				value, present := attrValuePresent(cantSplit, "val")
+				row.CantSplit = !present || isWordTrue(value)
+			}
+		}
 		cellIndex := 0
 		for _, cellNode := range child.children {
 			if cellNode.name.Local != "tc" {
@@ -1090,6 +1096,7 @@ func cloneWordBlocks(blocks []document.WordBlock) []document.WordBlock {
 			table := document.WordTable{Layout: block.Table.Layout, Rows: make([]document.WordTableRow, len(block.Table.Rows))}
 			table.Layout.GridColumnsEMU = append([]int64(nil), block.Table.Layout.GridColumnsEMU...)
 			for rowIndex, row := range block.Table.Rows {
+				table.Rows[rowIndex].CantSplit = row.CantSplit
 				table.Rows[rowIndex].Cells = make([]document.WordTableCell, len(row.Cells))
 				for cellIndex, cell := range row.Cells {
 					table.Rows[rowIndex].Cells[cellIndex] = document.WordTableCell{

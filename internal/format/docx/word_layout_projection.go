@@ -165,7 +165,12 @@ func sectionPageSetupsDiffer(sections []document.WordSection) bool {
 }
 
 func projectWordSection(startBlock int, node *wordXMLNode, sourceID string, unsupported *[]document.WordLayoutUnsupported) document.WordSection {
-	section := document.WordSection{StartBlock: startBlock}
+	section := document.WordSection{StartBlock: startBlock, StartType: "nextpage"}
+	if sectionType := firstChild(node, "type"); sectionType != nil {
+		if value := strings.TrimSpace(attrValue(sectionType, "val")); value != "" {
+			section.StartType = strings.ToLower(value)
+		}
+	}
 	pageSize := firstChild(node, "pgSz")
 	if pageSize != nil {
 		if value := attrValue(pageSize, "w"); value != "" {

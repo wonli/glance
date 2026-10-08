@@ -30,11 +30,11 @@ type WordPageSetup struct {
 	Set             WordPageSetupMask
 }
 
-// WordSection maps one section's page settings to the first body block using
-// those settings. Pagination accepts multiple sections when their effective
-// page setups match; section-specific geometry remains unsupported.
+// WordSection maps one section's page settings and start behavior to the first
+// body block using those settings. Section-specific geometry remains unsupported.
 type WordSection struct {
 	StartBlock int
+	StartType  string
 	PageSetup  WordPageSetup
 }
 

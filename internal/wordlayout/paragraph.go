@@ -240,7 +240,7 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 		styles.cursor.diagnostic(DiagnosticWarning, sourceID, "cached-field-result", "Field instructions are retained but not recalculated; the stored field result is shown.")
 	}
 	if len(atoms) == 0 {
-		// Empty paragraphs still occupy one line, as in a Word document.
+		// Empty paragraph marks obey the same line-spacing rule as text.
 		prepared.lines = []paragraphLine{{ascent: prepared.style.text.FontSize * 0.8, descent: prepared.style.text.FontSize * 0.2}}
 		prepared.lines[0].height = lineHeight(prepared.lines[0], prepared.style.paragraph)
 		return prepared, nil
@@ -583,24 +583,57 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 	if prepared.style.paragraph.PageBreakBefore {
 		c.pendingBreak = true
 	}
-	firstHeight := prepared.style.paragraph.BeforePT + prepared.uiBeforePT + prepared.lines[0].height
+	canCollapseSpacing := allowPageFlow && c.hasPreviousParagraph && !c.pendingBreak && !preparedHasPageBreak(prepared)
+	beforePT := prepared.style.paragraph.BeforePT
+	if canCollapseSpacing {
+		beforePT = paragraphLeadingAdjustment(c.previousParagraphAfterPT, c.previousParagraphLineGapPT, prepared)
+	}
+	firstHeight := beforePT + prepared.uiBeforePT + prepared.lines[0].height
 	if len(prepared.lines) == 1 {
 		firstHeight += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
 	}
 	totalHeight := prepared.totalHeight()
+	if canCollapseSpacing {
+		totalHeight += beforePT - prepared.style.paragraph.BeforePT
+	}
 	keepTogether := prepared.style.paragraph.KeepTogether || prepared.style.paragraph.KeepWithNext
 	if allowPageFlow && keepTogether && totalHeight <= c.content.HeightPT+epsilonPT && c.used && c.y+totalHeight > c.content.YPT+c.content.HeightPT+epsilonPT {
 		c.advanceColumn()
+		canCollapseSpacing = false
+		beforePT = prepared.style.paragraph.BeforePT
+		firstHeight = beforePT + prepared.uiBeforePT + prepared.lines[0].height
+		if len(prepared.lines) == 1 {
+			firstHeight += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
+		}
 	}
 	if allowPageFlow {
+		// Collapsing a large trailing gap may reclaim more space than the
+		// next line occupies. Rebase the cursor before checking the line;
+		// the line itself must never be passed as a negative-height item.
+		if beforePT < 0 {
+			c.y += beforePT
+			firstHeight -= beforePT
+			beforePT = 0
+		}
+		oldPage, oldColumn := c.pageIndex, c.currentCol
 		if !c.ensureSpace(firstHeight, prepared.sourceID) {
 			return nil
 		}
-		c.y += prepared.style.paragraph.BeforePT + prepared.uiBeforePT
+		if canCollapseSpacing && (c.pageIndex != oldPage || c.currentCol != oldColumn) {
+			beforePT = prepared.style.paragraph.BeforePT
+			firstHeight = beforePT + prepared.uiBeforePT + prepared.lines[0].height
+			if len(prepared.lines) == 1 {
+				firstHeight += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
+			}
+			if !c.ensureSpace(firstHeight, prepared.sourceID) {
+				return nil
+			}
+		}
+		c.y += beforePT + prepared.uiBeforePT
 		fixedY = c.y
 		fixedPageIndex = c.pageIndex
 	} else {
-		fixedY += prepared.style.paragraph.BeforePT + prepared.uiBeforePT
+		fixedY += beforePT + prepared.uiBeforePT
 	}
 	y := fixedY
 	for lineIndex, line := range prepared.lines {
@@ -645,6 +678,9 @@ func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared prep
 	}
 	if allowPageFlow {
 		c.y += prepared.style.paragraph.AfterPT
+		c.hasPreviousParagraph = !preparedHasPageBreak(prepared)
+		c.previousParagraphAfterPT = prepared.style.paragraph.AfterPT
+		c.previousParagraphLineGapPT = paragraphLineGap(prepared, true)
 	} else {
 		y += prepared.style.paragraph.AfterPT
 	}
