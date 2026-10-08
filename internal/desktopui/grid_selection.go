@@ -58,12 +58,18 @@ func clampCellPosition(position CellPosition) CellPosition {
 // selectionAtPoint maps a pointer position local to the full grid widget to a
 // zero-based cell coordinate. The row and column headers are part of that widget.
 func selectionAtPoint(v *gridViewport, point image.Point) (CellPosition, bool) {
+	if v == nil {
+		return CellPosition{}, false
+	}
+	return selectionAtPointWithHeaders(v, point, int(gridRowHeader*v.Scale), int(gridColumnHeader*v.Scale))
+}
+
+func selectionAtPointWithHeaders(v *gridViewport, point image.Point, rowHeader, columnHeader int) (CellPosition, bool) {
 	if v == nil || v.Rows == nil || v.Columns == nil || !finite(v.Scale) || v.Scale <= 0 {
 		return CellPosition{}, false
 	}
 	row, column, ok := cellAtPoint(
-		v.Rows, v.Columns, v.X, v.Y, point,
-		int(gridRowHeader*v.Scale), int(gridColumnHeader*v.Scale),
+		v.Rows, v.Columns, v.X, v.Y, point, rowHeader, columnHeader,
 	)
 	if !ok {
 		return CellPosition{}, false
@@ -72,12 +78,17 @@ func selectionAtPoint(v *gridViewport, point image.Point) (CellPosition, bool) {
 }
 
 func selectionRect(v *gridViewport, selection CellSelection) image.Rectangle {
+	if v == nil {
+		return image.Rectangle{}
+	}
+	return selectionRectWithHeaders(v, selection, int(gridRowHeader*v.Scale), int(gridColumnHeader*v.Scale))
+}
+
+func selectionRectWithHeaders(v *gridViewport, selection CellSelection, rowHeader, columnHeader int) image.Rectangle {
 	if v == nil || v.Rows == nil || v.Columns == nil {
 		return image.Rectangle{}
 	}
-	return cellRect(v.Rows, v.Columns, selection.Bounds(), v.X, v.Y).Add(image.Pt(
-		int(gridRowHeader*v.Scale), int(gridColumnHeader*v.Scale),
-	))
+	return cellRect(v.Rows, v.Columns, selection.Bounds(), v.X, v.Y).Add(image.Pt(rowHeader, columnHeader))
 }
 
 func selectionBorderRects(rect image.Rectangle, width int) [4]image.Rectangle {

@@ -152,7 +152,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		a.virtualGrid = newGridViewport()
 	}
 	v := a.virtualGrid
-	v.setScale(float64(gtx.Metric.PxPerDp))
+	v.setScale(float64(gtx.Metric.PxPerDp) * a.spreadsheetZoom())
 	width, height := float64(gtx.Constraints.Max.X), float64(gtx.Constraints.Max.Y)
 	rowHeaderPx := gtx.Dp(unit.Dp(gridRowHeader))
 	columnHeaderPx := gtx.Dp(unit.Dp(gridColumnHeader))
@@ -379,7 +379,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				}
 				a.window.Invalidate()
 			} else if a.selectionDragging {
-				if position, hit := selectionAtPoint(v, image.Pt(int(pe.Position.X), int(pe.Position.Y))); hit {
+				if position, hit := selectionAtPointWithHeaders(v, image.Pt(int(pe.Position.X), int(pe.Position.Y)), rowHeaderPx, columnHeaderPx); hit {
 					position = selectionAnchor(v.Window.Merges, position)
 					a.updateGridSelection(v, position, true, false)
 					a.window.Invalidate()

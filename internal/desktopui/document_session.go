@@ -116,6 +116,7 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 		windowID:                 windowID,
 		wordViewMode:             wordViewContinuous,
 		wordLayoutZoom:           1,
+		spreadsheetZoom:          1,
 		gridList:                 widget.List{List: layout.List{Axis: layout.Vertical}},
 		wordListState:            widget.List{List: layout.List{Axis: layout.Vertical}},
 		wordPageListState:        widget.List{List: layout.List{Axis: layout.Vertical}},

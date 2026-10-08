@@ -69,6 +69,11 @@ type documentSessionState struct {
 	wordStatusZoomOutButton             widget.Clickable
 	wordStatusZoomInButton              widget.Clickable
 	wordStatusZoomDrag                  gesture.Drag
+	spreadsheetZoom                     float64
+	spreadsheetStatusZoomOutButton      widget.Clickable
+	spreadsheetStatusZoomInButton       widget.Clickable
+	spreadsheetStatusZoomResetBtn       widget.Clickable
+	spreadsheetStatusZoomDrag           gesture.Drag
 	sheet                               string
 	grid                                [][]document.Cell
 	gridList                            widget.List

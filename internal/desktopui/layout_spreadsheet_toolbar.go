@@ -390,28 +390,22 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			continue
 		}
 		if action.slot == toolbarActionZoomIn {
-			v := state.virtualGrid
-			if v != nil {
-				newScale := v.Scale + 0.15
-				if newScale > 2.5 {
-					newScale = 2.5
-				}
-				v.setScale(newScale)
-				a.setStatus(fmt.Sprintf("缩放比例：%.0f%%", newScale*100))
-				if a.window != nil {
-					a.window.Invalidate()
-				}
+			newZoom := a.spreadsheetZoom() + 0.1
+			if newZoom > 2.0 {
+				newZoom = 2.0
+			}
+			a.setSpreadsheetZoom(newZoom)
+			a.setStatus(fmt.Sprintf("缩放比例：%.0f%%", newZoom*100))
+			if a.window != nil {
+				a.window.Invalidate()
 			}
 			continue
 		}
 		if action.slot == toolbarActionZoom100 {
-			v := state.virtualGrid
-			if v != nil {
-				v.setScale(1.0)
-				a.setStatus("缩放比例：100%")
-				if a.window != nil {
-					a.window.Invalidate()
-				}
+			a.setSpreadsheetZoom(1.0)
+			a.setStatus("缩放比例：100%")
+			if a.window != nil {
+				a.window.Invalidate()
 			}
 			continue
 		}

@@ -16,6 +16,7 @@ type windowViewSnapshot struct {
 	wordPageFitMode            bool
 	wordMultiplePagesMode      bool
 	wordLayoutZoom             float64
+	spreadsheetZoom            float64
 	wordRulerHidden            bool
 	wordGridlinesVisible       bool
 	wordNavigationVisible      bool
@@ -41,6 +42,7 @@ func captureWindowView(a *App) windowViewSnapshot {
 		wordPageFitMode:         state.wordPageFitMode,
 		wordMultiplePagesMode:   state.wordMultiplePagesMode,
 		wordLayoutZoom:          state.wordLayoutZoom,
+		spreadsheetZoom:         state.spreadsheetZoom,
 		wordRulerHidden:         state.wordRulerHidden,
 		wordGridlinesVisible:    state.wordGridlinesVisible,
 		wordNavigationVisible:   state.wordNavigationVisible,
@@ -65,6 +67,9 @@ func newDocumentViewFromSnapshot(shared *sharedDocumentSession, windowID uint64,
 	view.wordMultiplePagesMode = snapshot.wordMultiplePagesMode
 	if snapshot.wordLayoutZoom > 0 {
 		view.wordLayoutZoom = snapshot.wordLayoutZoom
+	}
+	if snapshot.spreadsheetZoom > 0 {
+		view.spreadsheetZoom = snapshot.spreadsheetZoom
 	}
 	view.wordRulerHidden = snapshot.wordRulerHidden
 	view.wordGridlinesVisible = snapshot.wordGridlinesVisible

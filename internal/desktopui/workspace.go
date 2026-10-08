@@ -37,6 +37,7 @@ type sessionViewSnapshot struct {
 	GridX                      float64        `json:"grid_x"`
 	GridY                      float64        `json:"grid_y"`
 	GridScale                  float64        `json:"grid_scale"`
+	SpreadsheetZoom            float64        `json:"spreadsheet_zoom,omitempty"`
 	SelectedRow                int            `json:"selected_row"`
 	SelectedColumn             int            `json:"selected_column"`
 	WordViewMode               wordViewMode   `json:"word_view_mode"`
@@ -313,6 +314,9 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 	}
 	if state.virtualGrid != nil {
 		state.virtualGrid.X, state.virtualGrid.Y = view.GridX, view.GridY
+		if view.SpreadsheetZoom > 0 {
+			state.spreadsheetZoom = spreadsheetZoomClamp(view.SpreadsheetZoom)
+		}
 		if view.GridScale > 0 {
 			state.virtualGrid.setScale(view.GridScale)
 		}
@@ -679,6 +683,7 @@ func (a *App) viewStateBytes() []byte {
 	}
 	if a.virtualGrid != nil {
 		view.GridX, view.GridY, view.GridScale = a.virtualGrid.X, a.virtualGrid.Y, a.virtualGrid.Scale
+		view.SpreadsheetZoom = a.spreadsheetZoom()
 		view.SelectedRow, view.SelectedColumn = a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn
 	}
 	data, _ := json.Marshal(view)
