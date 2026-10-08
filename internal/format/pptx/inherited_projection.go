@@ -14,10 +14,11 @@ type placeholderKey struct {
 }
 
 type placeholderRecord struct {
-	id      uint32
-	key     placeholderKey
-	bounds  document.PresentationRect
-	hasXfrm bool
+	id        uint32
+	key       placeholderKey
+	bounds    document.PresentationRect
+	hasXfrm   bool
+	transform presentationTransformMetadata
 }
 
 // inheritedElements projects supported, non-placeholder master and layout
@@ -83,6 +84,49 @@ func (p *pptxPackage) placeholderBounds(slidePart, layoutPart, masterPart string
 	return result
 }
 
+// placeholderTransforms resolves the effective inherited transform for each
+// slide-local placeholder that has no transform of its own. These values are
+// used for editing previews and to materialize a slide-local transform on
+// save without changing its layout or master.
+func (p *pptxPackage) placeholderTransforms(slidePart, layoutPart, masterPart string) map[uint32]presentationTransformMetadata {
+	slideRoot, ok := p.xmlPart(slidePart)
+	if !ok {
+		return nil
+	}
+	slideTree := shapeTree(slideRoot)
+	if slideTree == nil {
+		return nil
+	}
+	layoutRoot, _ := p.xmlPart(layoutPart)
+	masterRoot, _ := p.xmlPart(masterPart)
+	layoutTree, masterTree := shapeTree(layoutRoot), shapeTree(masterRoot)
+	result := make(map[uint32]presentationTransformMetadata)
+	for _, shape := range slideTree.Children {
+		if shape.XMLName.Local != "sp" {
+			continue
+		}
+		slideRecord, found := placeholderRecordForShape(shape)
+		if !found || slideRecord.id == 0 || slideRecord.hasXfrm {
+			continue
+		}
+		inherited, matched, ambiguous := uniquePlaceholderRecord(layoutTree, slideRecord.key)
+		if ambiguous {
+			continue
+		}
+		if !matched || !inherited.hasXfrm || !validPresentationRect(inherited.bounds) {
+			inherited, matched, ambiguous = uniquePlaceholderRecord(masterTree, slideRecord.key)
+		}
+		if ambiguous || !matched || !inherited.hasXfrm || !validPresentationRect(inherited.bounds) {
+			continue
+		}
+		metadata := inherited.transform
+		metadata.Bounds = inherited.bounds
+		metadata.HasXfrm = true
+		result[slideRecord.id] = metadata
+	}
+	return result
+}
+
 // placeholderTypes returns the role of each slide-local placeholder keyed by
 // its non-visual shape ID. The layout/master versions supply appearance and
 // geometry, but only slide-local placeholders are editable.
@@ -110,8 +154,16 @@ func (p *pptxPackage) placeholderTypes(slidePart string) map[uint32]string {
 }
 
 func uniquePlaceholderBounds(tree *pptxXMLNode, key placeholderKey) (document.PresentationRect, bool, bool) {
+	record, found, ambiguous := uniquePlaceholderRecord(tree, key)
+	if !found || ambiguous || !record.hasXfrm {
+		return document.PresentationRect{}, false, ambiguous
+	}
+	return record.bounds, true, false
+}
+
+func uniquePlaceholderRecord(tree *pptxXMLNode, key placeholderKey) (placeholderRecord, bool, bool) {
 	if tree == nil {
-		return document.PresentationRect{}, false, false
+		return placeholderRecord{}, false, false
 	}
 	var match *placeholderRecord
 	count := 0
@@ -130,12 +182,12 @@ func uniquePlaceholderBounds(tree *pptxXMLNode, key placeholderKey) (document.Pr
 		}
 	}
 	if count > 1 {
-		return document.PresentationRect{}, false, true
+		return placeholderRecord{}, false, true
 	}
-	if match == nil || !match.hasXfrm {
-		return document.PresentationRect{}, false, false
+	if match == nil {
+		return placeholderRecord{}, false, false
 	}
-	return match.bounds, true, false
+	return *match, true, false
 }
 
 func placeholderRecordForShape(shape pptxXMLNode) (placeholderRecord, bool) {
@@ -171,7 +223,29 @@ func placeholderRecordForShape(shape pptxXMLNode) (placeholderRecord, bool) {
 		key.index = uint32(index)
 	}
 	bounds, hasXfrm := shapeBounds(shape)
-	return placeholderRecord{id: uint32(id), key: key, bounds: bounds, hasXfrm: hasXfrm}, true
+	transform := shapeTransformMetadataFromXML(shape)
+	transform.Bounds = bounds
+	transform.HasXfrm = hasXfrm
+	return placeholderRecord{id: uint32(id), key: key, bounds: bounds, hasXfrm: hasXfrm, transform: transform}, true
+}
+
+func shapeIDFromXML(shape pptxXMLNode) uint32 {
+	nv := shape.child("nvSpPr")
+	if nv == nil {
+		nv = shape.child("nvPicPr")
+	}
+	if nv == nil {
+		return 0
+	}
+	cNvPr := nv.child("cNvPr")
+	if cNvPr == nil {
+		return 0
+	}
+	id, err := strconv.ParseUint(cNvPr.attr("id"), 10, 32)
+	if err != nil {
+		return 0
+	}
+	return uint32(id)
 }
 
 func (p *pptxPackage) projectInheritedPart(partPath string, partIndex int, colorMap, theme map[string]string) []document.PresentationElement {

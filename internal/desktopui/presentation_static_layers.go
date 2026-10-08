@@ -36,8 +36,8 @@ func drawPresentationBackground(gtx layout.Context, slide document.PresentationS
 // drawPresentationStaticElements paints read-only master/layout elements.
 // It deliberately has no presentation view state, so these elements cannot
 // register click, selection, or text-editing interactions.
-func (a *App) drawPresentationStaticElements(gtx layout.Context, elements []document.PresentationElement, scale float64, bounds image.Rectangle) {
+func (a *App) drawPresentationStaticElements(gtx layout.Context, elements []document.PresentationElement, scale float64) {
 	for _, elem := range elements {
-		a.drawPresentationThumbnailElement(gtx, elem, scale, bounds)
+		a.drawPresentationThumbnailElement(gtx, elem, scale)
 	}
 }

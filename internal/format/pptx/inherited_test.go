@@ -3,15 +3,20 @@ package pptx
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/binary"
+	"encoding/xml"
 	"fmt"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -571,6 +576,932 @@ func TestEmptySlidePlaceholderProjectsAsTypedEditableText(t *testing.T) {
 	if after, err := os.ReadFile(source); err != nil || !bytes.Equal(sourceBytes, after) {
 		t.Fatalf("editing placeholder modified source package: err=%v", err)
 	}
+}
+
+func TestProjectionPreservesParagraphSpacing(t *testing.T) {
+	shape := inheritedShapeXML(61, "spaced text", 0, 0, 400, 120, "FFFFFF", "line spacing")
+	shape = strings.Replace(shape, `<a:p><a:r>`, `<a:p><a:pPr><a:lnSpc><a:spcPct val="150000"/></a:lnSpc><a:spcBef><a:spcPts val="600"/></a:spcBef><a:spcAft><a:spcPct val="50000"/></a:spcAft></a:pPr><a:r>`, 1)
+	source := writePPTXFixture(t, inheritedFixtureParts(inheritedSlideXML("", shape), inheritedLayoutXML("", ""), inheritedMasterXML(""), nil))
+	doc, err := Open(source)
+	if err != nil {
+		t.Fatalf("open fixture: %v", err)
+	}
+	defer doc.Close()
+
+	slide := doc.Snapshot().Slides[0]
+	if len(slide.Elements) != 1 || len(slide.Elements[0].Paragraphs) != 1 {
+		t.Fatalf("projected spaced paragraphs = %+v", slide.Elements)
+	}
+	paragraph := slide.Elements[0].Paragraphs[0]
+	if paragraph.LineSpacing == nil || paragraph.LineSpacing.Kind != "pct" || paragraph.LineSpacing.Value != 1.5 {
+		t.Errorf("line spacing = %+v, want 150%%", paragraph.LineSpacing)
+	}
+	if paragraph.SpaceBefore == nil || paragraph.SpaceBefore.Kind != "pts" || paragraph.SpaceBefore.Value != 6 {
+		t.Errorf("space before = %+v, want 6pt", paragraph.SpaceBefore)
+	}
+	if paragraph.SpaceAfter == nil || paragraph.SpaceAfter.Kind != "pct" || paragraph.SpaceAfter.Value != 0.5 {
+		t.Errorf("space after = %+v, want 50%%", paragraph.SpaceAfter)
+	}
+}
+
+func TestUpdateSlideElementStyleProjectsAndNoops(t *testing.T) {
+	doc, _ := openTransformTestDocument(t, transformTestShapeXML(7, `<a:xfrm><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`))
+	defer doc.Close()
+	fontFamily, textColor := "Aptos", "#AABBCC"
+	fontSize, borderWidth := 22.0, 1.25
+	bold, italic, underline := true, false, true
+	align, fillColor, borderColor := "center", "#123456", "#654321"
+	lineSpacing := document.PresentationSpacing{Kind: "pct", Value: 1.5}
+	spaceBefore := document.PresentationSpacing{Kind: "pts", Value: 6}
+	patch := document.PresentationElementStylePatch{
+		FontFamily: &fontFamily, FontSizePT: &fontSize, Bold: &bold, Italic: &italic, Underline: &underline,
+		TextColorHex: &textColor, ParagraphAlignment: &align, LineSpacing: &lineSpacing, SpaceBefore: &spaceBefore,
+		FillColorHex: &fillColor, BorderColor: &borderColor, BorderWidthPT: &borderWidth,
+	}
+	before := doc.revision
+	if err := doc.UpdateSlideElementStyle(0, 7, patch); err != nil {
+		t.Fatalf("UpdateSlideElementStyle: %v", err)
+	}
+	if doc.revision != before+1 || !doc.dirty {
+		t.Fatalf("style revision/dirty = %d/%t, want %d/true", doc.revision, doc.dirty, before+1)
+	}
+	elem := presentationElementByID(t, doc.Snapshot().Slides[0], 7)
+	if len(elem.Paragraphs) != 1 || len(elem.Paragraphs[0].Runs) != 1 {
+		t.Fatalf("styled element paragraphs = %+v", elem.Paragraphs)
+	}
+	paragraph, run := elem.Paragraphs[0], elem.Paragraphs[0].Runs[0]
+	if run.Font != fontFamily || run.SizePT != fontSize || !run.Bold || run.Italic || !run.Underline || run.ColorHex != textColor {
+		t.Errorf("styled run = %+v", run)
+	}
+	if paragraph.Align != align || paragraph.LineSpacing == nil || *paragraph.LineSpacing != lineSpacing || paragraph.SpaceBefore == nil || *paragraph.SpaceBefore != spaceBefore {
+		t.Errorf("styled paragraph = %+v", paragraph)
+	}
+	if elem.FillColorHex != fillColor || elem.BorderColor != borderColor || elem.BorderWidth != borderWidth {
+		t.Errorf("styled shape fill/border = %q/%q/%.2f", elem.FillColorHex, elem.BorderColor, elem.BorderWidth)
+	}
+	if err := doc.UpdateSlideElementStyle(0, 7, patch); err != nil {
+		t.Fatalf("repeat no-op style update: %v", err)
+	}
+	if doc.revision != before+1 {
+		t.Fatalf("identical style update advanced revision to %d", doc.revision)
+	}
+}
+
+func TestUpdateSlideElementStyleNoopsAgainstOriginalStyle(t *testing.T) {
+	doc, _ := openTransformTestDocument(t, transformTestShapeXML(7, `<a:xfrm><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`))
+	defer doc.Close()
+	elem := presentationElementByID(t, doc.Snapshot().Slides[0], 7)
+	run := elem.Paragraphs[0].Runs[0]
+	revision, dirty := doc.Revision(), doc.IsDirty()
+	if err := doc.UpdateSlideElementStyle(0, 7, document.PresentationElementStylePatch{FontSizePT: &run.SizePT, Bold: &run.Bold}); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Revision() != revision || doc.IsDirty() != dirty {
+		t.Fatal("selecting the object's original style advanced dirty/revision state")
+	}
+}
+
+func TestUpdateSlideElementStyleRejectsInvalidPatch(t *testing.T) {
+	doc, _ := openTransformTestDocument(t, transformTestShapeXML(7, `<a:xfrm><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`))
+	defer doc.Close()
+	badColor, tooLarge, badAlignment, badLineWidth := "not-a-color", 401.0, "distributed", -1.0
+	tests := []struct {
+		name  string
+		patch document.PresentationElementStylePatch
+	}{
+		{name: "color", patch: document.PresentationElementStylePatch{TextColorHex: &badColor}},
+		{name: "font size", patch: document.PresentationElementStylePatch{FontSizePT: &tooLarge}},
+		{name: "alignment", patch: document.PresentationElementStylePatch{ParagraphAlignment: &badAlignment}},
+		{name: "line width", patch: document.PresentationElementStylePatch{BorderWidthPT: &badLineWidth}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			before := doc.revision
+			if err := doc.UpdateSlideElementStyle(0, 7, test.patch); err == nil {
+				t.Fatal("invalid style patch unexpectedly succeeded")
+			}
+			if doc.revision != before || doc.dirty {
+				t.Fatalf("invalid style changed revision/dirty state: %d/%t", doc.revision, doc.dirty)
+			}
+		})
+	}
+	bold := true
+	if err := doc.UpdateSlideElementStyle(0, 99, document.PresentationElementStylePatch{Bold: &bold}); err == nil {
+		t.Fatal("missing style target unexpectedly succeeded")
+	}
+}
+
+func TestUpdateSlideElementStylePersistsAndComposesWithTransform(t *testing.T) {
+	shape := transformTestShapeXML(7, `<a:xfrm><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`)
+	shape = strings.Replace(shape, `<a:p><a:r>`, `<a:p><a:pPr algn="l"><a:lnSpc><a:spcPct val="100000"/></a:lnSpc><a:extLst><a:ext uri="keep-me"/></a:extLst></a:pPr><a:r>`, 1)
+	shape = strings.Replace(shape, `<a:rPr lang="en-US" sz="1800"/>`, `<a:rPr lang="en-US" sz="1800" customAttr="keep"><a:latin typeface="Old Latin"/><a:extLst><a:ext uri="keep-run"/></a:extLst></a:rPr>`, 1)
+	doc, source := openTransformTestDocument(t, shape)
+	defer doc.Close()
+	fontFamily, textColor, fillColor, borderColor := `Aptos "Display"`, "#AABBCC", "#123456", "#654321"
+	fontSize, borderWidth := 22.0, 1.25
+	bold, italic, underline := true, false, true
+	align := "center"
+	lineSpacing := document.PresentationSpacing{Kind: "pct", Value: 1.5}
+	spaceBefore := document.PresentationSpacing{Kind: "pts", Value: 6}
+	spaceAfter := document.PresentationSpacing{Kind: "pts", Value: 3}
+	patch := document.PresentationElementStylePatch{
+		FontFamily: &fontFamily, FontSizePT: &fontSize, Bold: &bold, Italic: &italic, Underline: &underline,
+		TextColorHex: &textColor, ParagraphAlignment: &align, LineSpacing: &lineSpacing, SpaceBefore: &spaceBefore,
+		SpaceAfter: &spaceAfter, FillColorHex: &fillColor, BorderColor: &borderColor, BorderWidthPT: &borderWidth,
+	}
+	if err := doc.UpdateSlideElementStyle(0, 7, patch); err != nil {
+		t.Fatalf("UpdateSlideElementStyle: %v", err)
+	}
+	wantBounds := document.PresentationRect{X: 8, Y: 9, W: 90, H: 45}
+	if err := doc.UpdateSlideElementTransform(0, 7, wantBounds, 17.5); err != nil {
+		t.Fatalf("UpdateSlideElementTransform: %v", err)
+	}
+	output := filepath.Join(t.TempDir(), "styled.pptx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatalf("SaveAs style and transform: %v", err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatalf("Open saved style: %v", err)
+	}
+	defer reopened.Close()
+	element := presentationElementByID(t, reopened.Snapshot().Slides[0], 7)
+	if err := validateProjectedPresentationStyle(element, patch); err != nil {
+		t.Fatalf("reopened style: %v, element %+v", err, element)
+	}
+	if !samePresentationRect(element.Bounds, wantBounds) || math.Abs(element.RotationDeg-17.5) > 1e-8 {
+		t.Fatalf("reopened geometry = %+v rotation %.2f, want %+v rotation 17.5", element.Bounds, element.RotationDeg, wantBounds)
+	}
+	patchedSlide := string(readPPTXPartForTest(t, output, "ppt/slides/slide1.xml"))
+	for _, preserved := range []string{`customAttr="keep"`, `uri="keep-run"`, `uri="keep-me"`, `algn="ctr"`, `sz="2200"`, `u="sng"`} {
+		if !strings.Contains(patchedSlide, preserved) {
+			t.Errorf("saved slide XML lost expected style or unknown content %q", preserved)
+		}
+	}
+	sourceBytes, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read source fixture: %v", err)
+	}
+	outputBytes, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("read output fixture: %v", err)
+	}
+	if bytes.Equal(sourceBytes, outputBytes) {
+		t.Fatal("SaveAs did not produce an edited PPTX")
+	}
+	if doc.IsDirty() {
+		t.Fatal("successful SaveAs left the document dirty")
+	}
+	snapshotBytes, err := doc.SnapshotBytes()
+	if err != nil {
+		t.Fatalf("SnapshotBytes with style overlay: %v", err)
+	}
+	snapshot, err := OpenBytes(snapshotBytes)
+	if err != nil {
+		t.Fatalf("OpenBytes style snapshot: %v", err)
+	}
+	defer snapshot.Close()
+	snapshotElement := presentationElementByID(t, snapshot.Snapshot().Slides[0], 7)
+	if err := validateProjectedPresentationStyle(snapshotElement, patch); err != nil {
+		t.Fatalf("recovered style snapshot: %v", err)
+	}
+}
+
+func TestUpdateSlideElementStyleCanExplicitlyClearFillAndLine(t *testing.T) {
+	doc, _ := openTransformTestDocument(t, transformTestShapeXML(7, `<a:xfrm><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`))
+	defer doc.Close()
+	none := ""
+	if err := doc.UpdateSlideElementStyle(0, 7, document.PresentationElementStylePatch{FillColorHex: &none, BorderColor: &none}); err != nil {
+		t.Fatalf("clear shape fill and line: %v", err)
+	}
+	output := filepath.Join(t.TempDir(), "no-fill.pptx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatalf("SaveAs explicit no fill/line: %v", err)
+	}
+	xml := string(readPPTXPartForTest(t, output, "ppt/slides/slide1.xml"))
+	if strings.Contains(xml, `<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>`) || !strings.Contains(xml, `<a:noFill/>`) {
+		t.Fatalf("saved XML did not represent explicit no fill: %s", xml)
+	}
+	if !strings.Contains(xml, `<a:ln><a:noFill/></a:ln>`) {
+		t.Fatalf("saved XML did not represent explicit no line: %s", xml)
+	}
+}
+
+func TestUpdateSlideElementStyleRejectsUnsupportedTextStructure(t *testing.T) {
+	shape := transformTestShapeXML(7, `<a:xfrm><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`)
+	shape = strings.Replace(shape, `</a:p></p:txBody>`, `</a:p><a:p><a:r><a:rPr/><a:t>second paragraph</a:t></a:r></a:p></p:txBody>`, 1)
+	doc, _ := openTransformTestDocument(t, shape)
+	defer doc.Close()
+	align := "center"
+	before := doc.Snapshot()
+	if err := doc.UpdateSlideElementStyle(0, 7, document.PresentationElementStylePatch{ParagraphAlignment: &align}); err == nil {
+		t.Fatal("multi-paragraph text style edit unexpectedly succeeded")
+	}
+	after := doc.Snapshot()
+	if after.Dirty != before.Dirty || after.Revision != before.Revision {
+		t.Fatalf("unsupported text style edit changed dirty/revision state: before=%t/%d after=%t/%d", before.Dirty, before.Revision, after.Dirty, after.Revision)
+	}
+}
+
+func TestUpdateSlideElementTransformPersistsBoundsAndRotation(t *testing.T) {
+	doc, source := openTransformTestDocument(t, transformTestShapeXML(7, `<a:xfrm><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`))
+	defer doc.Close()
+
+	wantBounds := document.PresentationRect{X: -2.25, Y: 7.5, W: 91.25, H: 40.5}
+	if err := doc.UpdateSlideElementTransform(0, 7, wantBounds, 37.5); err != nil {
+		t.Fatalf("UpdateSlideElementTransform: %v", err)
+	}
+	if !doc.IsDirty() {
+		t.Fatal("transform update did not mark document dirty")
+	}
+
+	output := filepath.Join(t.TempDir(), "transformed.pptx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatalf("SaveAs transformed presentation: %v", err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatalf("reopen transformed presentation: %v", err)
+	}
+	defer reopened.Close()
+	element := presentationElementByID(t, reopened.Snapshot().Slides[0], 7)
+	if element.Bounds != wantBounds || element.RotationDeg != 37.5 {
+		t.Fatalf("reopened transform = bounds %+v, rotation %v; want %+v, 37.5", element.Bounds, element.RotationDeg, wantBounds)
+	}
+	if after, err := os.ReadFile(source); err != nil || len(after) == 0 {
+		t.Fatalf("source fixture became unreadable: err=%v", err)
+	}
+}
+
+func TestUpdateSlidePictureTransformPersists(t *testing.T) {
+	parts := pictureFixtureParts(
+		[]testPictureRef{{id: 7, rid: "rId2"}},
+		[]testImageRel{{id: "rId2", target: "../media/picture.png"}},
+		map[string][]byte{"ppt/media/picture.png": encodeTestRaster(t, "png", color.NRGBA{R: 220, A: 255})},
+	)
+	source := writePPTXFixture(t, parts)
+	doc, err := Open(source)
+	if err != nil {
+		t.Fatalf("Open picture fixture: %v", err)
+	}
+	defer doc.Close()
+	element := presentationElementByID(t, doc.Snapshot().Slides[0], 7)
+	if element.Kind != document.ElementKindPicture {
+		t.Fatalf("element kind = %q, want picture", element.Kind)
+	}
+	want := document.PresentationRect{X: 47.25, Y: 13.5, W: 63.75, H: 52.25}
+	if err := doc.UpdateSlideElementTransform(0, 7, want, 319.5); err != nil {
+		t.Fatalf("UpdateSlideElementTransform picture: %v", err)
+	}
+	output := filepath.Join(t.TempDir(), "picture-transformed.pptx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatalf("SaveAs picture transform: %v", err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatalf("reopen picture transform: %v", err)
+	}
+	defer reopened.Close()
+	got := presentationElementByID(t, reopened.Snapshot().Slides[0], 7)
+	if got.Bounds != want || got.RotationDeg != 319.5 || got.Image == nil {
+		t.Fatalf("reopened picture = bounds %+v rotation %v image=%t, want %+v 319.5 with image", got.Bounds, got.RotationDeg, got.Image != nil, want)
+	}
+}
+
+func TestPictureProjectionIncludesBytesAndCrop(t *testing.T) {
+	original := encodeTestRaster(t, "png", color.NRGBA{G: 220, A: 255})
+	doc, _ := openPictureCropTestDocument(t, original, `l="10000" t="20000" r="30000" b="40000"`, true, false)
+	defer doc.Close()
+
+	slide := doc.Snapshot().Slides[0]
+	target := presentationElementByID(t, slide, 7)
+	if target.Kind != document.ElementKindPicture || !bytes.Equal(target.ImageBytes, original) || target.Image == nil {
+		t.Fatalf("picture source projection = kind %q bytes=%d image=%t", target.Kind, len(target.ImageBytes), target.Image != nil)
+	}
+	if target.Crop != (document.PresentationCrop{Left: 10000, Top: 20000, Right: 30000, Bottom: 40000}) {
+		t.Fatalf("picture crop = %+v", target.Crop)
+	}
+	if !target.CanEditPicture {
+		t.Fatal("valid slide-local PNG picture is not marked editable")
+	}
+}
+
+func TestReplaceSlidePicturePreservesIdentityAndResetsCrop(t *testing.T) {
+	original := encodeTestRaster(t, "png", color.NRGBA{B: 220, A: 255})
+	replacement := encodeTestRaster(t, "jpeg", color.NRGBA{R: 220, A: 255})
+	doc, _ := openPictureCropTestDocument(t, original, `l="10000" t="0" r="0" b="0"`, true, false)
+	defer doc.Close()
+
+	before := doc.Snapshot().Slides[0]
+	targetBefore := presentationElementByID(t, before, 7)
+	siblingBefore := presentationElementByID(t, before, 8)
+	if err := doc.ReplaceSlidePicture(0, 7, "image/jpeg", replacement); err != nil {
+		t.Fatalf("ReplaceSlidePicture: %v", err)
+	}
+	after := doc.Snapshot().Slides[0]
+	targetAfter := presentationElementByID(t, after, 7)
+	siblingAfter := presentationElementByID(t, after, 8)
+	if targetAfter.ID != targetBefore.ID || targetAfter.Bounds != targetBefore.Bounds || targetAfter.RotationDeg != targetBefore.RotationDeg || targetAfter.AltText != "target alt text" {
+		t.Fatalf("replacement changed target identity/frame/rotation/alt text: before %+v after %+v", targetBefore, targetAfter)
+	}
+	if targetAfter.Crop != (document.PresentationCrop{}) || !bytes.Equal(targetAfter.ImageBytes, replacement) {
+		t.Fatalf("replacement bytes/crop = bytes %d crop %+v", len(targetAfter.ImageBytes), targetAfter.Crop)
+	}
+	if !bytes.Equal(siblingAfter.ImageBytes, original) || siblingAfter.ID != siblingBefore.ID {
+		t.Fatalf("replacement changed sibling sharing source media: before %+v after %+v", siblingBefore, siblingAfter)
+	}
+	if !doc.IsDirty() {
+		t.Fatal("replacement did not mark document dirty")
+	}
+}
+
+func TestReplaceSlidePictureRejectsUnsupportedTargets(t *testing.T) {
+	imageBytes := encodeTestRaster(t, "png", color.NRGBA{R: 220, A: 255})
+	tests := []struct {
+		name string
+		open func(*testing.T) *Document
+		id   int64
+	}{
+		{name: "missing id", open: func(t *testing.T) *Document {
+			doc, _ := openPictureCropTestDocument(t, imageBytes, "", false, false)
+			return doc
+		}, id: 999},
+		{name: "external relationship", open: func(t *testing.T) *Document {
+			doc, _ := openPictureCropTestDocument(t, imageBytes, "", false, true)
+			return doc
+		}, id: 7},
+		{name: "non-picture shape", open: func(t *testing.T) *Document {
+			doc, _ := openTransformTestDocument(t, transformTestShapeXML(7, `<a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="1270000"/></a:xfrm>`))
+			return doc
+		}, id: 7},
+		{name: "duplicate picture id", open: func(t *testing.T) *Document {
+			parts := pictureFixtureParts(
+				[]testPictureRef{{id: 7, rid: "rId2"}, {id: 7, rid: "rId2"}},
+				[]testImageRel{{id: "rId2", target: "../media/picture.png"}},
+				map[string][]byte{"ppt/media/picture.png": imageBytes},
+			)
+			doc, err := Open(writePPTXFixture(t, parts))
+			if err != nil {
+				t.Fatalf("Open duplicate ID fixture: %v", err)
+			}
+			return doc
+		}, id: 7},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			doc := test.open(t)
+			defer doc.Close()
+			before := doc.Snapshot()
+			if err := doc.ReplaceSlidePicture(0, test.id, "image/png", imageBytes); err == nil {
+				t.Fatal("unsupported replacement unexpectedly succeeded")
+			}
+			after := doc.Snapshot()
+			if after.Revision != before.Revision || after.Dirty != before.Dirty {
+				t.Fatalf("rejected replacement changed state: before (%d,%t), after (%d,%t)", before.Revision, before.Dirty, after.Revision, after.Dirty)
+			}
+		})
+	}
+}
+
+func TestReplaceSlidePictureRejectsInvalidImageData(t *testing.T) {
+	original := encodeTestRaster(t, "png", color.NRGBA{B: 220, A: 255})
+	doc, _ := openPictureCropTestDocument(t, original, "", false, false)
+	defer doc.Close()
+	before := doc.Snapshot()
+	for _, test := range []struct {
+		name      string
+		mediaType string
+		data      []byte
+		wantError string
+	}{
+		{name: "corrupt", mediaType: "image/png", data: []byte("broken"), wantError: "损坏"},
+		{name: "format mismatch", mediaType: "image/png", data: encodeTestRaster(t, "jpeg", color.NRGBA{R: 220, A: 255}), wantError: "与实际"},
+		{name: "over edge limit", mediaType: "image/png", data: pngConfigOnly(32769, 1), wantError: "尺寸"},
+		{name: "over pixel limit", mediaType: "image/png", data: pngConfigOnly(8192, 8193), wantError: "尺寸"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := doc.ReplaceSlidePicture(0, 7, test.mediaType, test.data); err == nil {
+				t.Fatal("invalid image data was accepted")
+			} else if !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("replacement error = %q, want it to identify %q", err, test.wantError)
+			}
+			after := doc.Snapshot()
+			if after.Revision != before.Revision || after.Dirty != before.Dirty || !bytes.Equal(presentationElementByID(t, after.Slides[0], 7).ImageBytes, original) {
+				t.Fatal("rejected image data changed committed picture state")
+			}
+		})
+	}
+}
+
+func pngConfigOnly(width, height uint32) []byte {
+	data := append([]byte(nil), []byte("\x89PNG\r\n\x1a\n")...)
+	chunk := make([]byte, 17)
+	binary.BigEndian.PutUint32(chunk[0:4], 13)
+	copy(chunk[4:8], "IHDR")
+	binary.BigEndian.PutUint32(chunk[8:12], width)
+	binary.BigEndian.PutUint32(chunk[12:16], height)
+	chunk[16] = 8
+	chunk = append(chunk, 6, 0, 0, 0)
+	crc := crc32.ChecksumIEEE(chunk[4:])
+	chunk = append(chunk, byte(crc>>24), byte(crc>>16), byte(crc>>8), byte(crc))
+	data = append(data, chunk...)
+	return data
+}
+
+func TestUpdateSlidePictureCropValidatesAndPreservesRevisionOnNoop(t *testing.T) {
+	original := encodeTestRaster(t, "png", color.NRGBA{G: 220, A: 255})
+	doc, _ := openPictureCropTestDocument(t, original, `l="10000" t="20000" r="30000" b="40000"`, false, false)
+	defer doc.Close()
+	before := doc.Snapshot()
+	initial := presentationElementByID(t, before.Slides[0], 7).Crop
+	if err := doc.UpdateSlidePictureCrop(0, 7, initial); err != nil {
+		t.Fatalf("no-op crop: %v", err)
+	}
+	if after := doc.Snapshot(); after.Revision != before.Revision || after.Dirty != before.Dirty {
+		t.Fatalf("no-op crop changed revision/dirty: before (%d,%t), after (%d,%t)", before.Revision, before.Dirty, after.Revision, after.Dirty)
+	}
+	for _, crop := range []document.PresentationCrop{
+		{Left: -1},
+		{Right: 100001},
+		{Left: 70000, Right: 30000},
+		{Top: 50000, Bottom: 50000},
+	} {
+		if err := doc.UpdateSlidePictureCrop(0, 7, crop); err == nil {
+			t.Fatalf("invalid crop %+v was accepted", crop)
+		}
+	}
+	after := doc.Snapshot()
+	if after.Revision != before.Revision || after.Dirty != before.Dirty || presentationElementByID(t, after.Slides[0], 7).Crop != initial {
+		t.Fatalf("invalid crops changed document: before %+v after %+v", before, after)
+	}
+	want := document.PresentationCrop{Left: 12000, Top: 8000, Right: 4000, Bottom: 10000}
+	if err := doc.UpdateSlidePictureCrop(0, 7, want); err != nil {
+		t.Fatalf("valid crop: %v", err)
+	}
+	changed := doc.Snapshot()
+	if got := presentationElementByID(t, changed.Slides[0], 7).Crop; got != want || !changed.Dirty || changed.Revision != before.Revision+1 {
+		t.Fatalf("updated crop/revision/dirty = %+v/%d/%t", got, changed.Revision, changed.Dirty)
+	}
+}
+
+func TestInvalidExistingPictureCropIsReadOnly(t *testing.T) {
+	original := encodeTestRaster(t, "png", color.NRGBA{B: 220, A: 255})
+	doc, _ := openPictureCropTestDocument(t, original, `l="70000" t="0" r="40000" b="0"`, false, false)
+	defer doc.Close()
+	before := doc.Snapshot()
+	elem := presentationElementByID(t, before.Slides[0], 7)
+	if elem.Kind != document.ElementKindPicture || elem.Image == nil || !bytes.Equal(elem.ImageBytes, original) || elem.CanEditPicture {
+		t.Fatalf("invalid-crop picture projection = %+v", elem)
+	}
+	if err := doc.UpdateSlidePictureCrop(0, 7, document.PresentationCrop{}); err == nil {
+		t.Fatal("crop edit accepted an invalid existing crop")
+	}
+	if err := doc.ReplaceSlidePicture(0, 7, "image/png", encodeTestRaster(t, "png", color.NRGBA{R: 220, A: 255})); err == nil {
+		t.Fatal("replacement accepted an invalid existing crop")
+	}
+	after := doc.Snapshot()
+	if after.Dirty != before.Dirty || after.Revision != before.Revision || !bytes.Equal(presentationElementByID(t, after.Slides[0], 7).ImageBytes, original) {
+		t.Fatal("invalid crop edit changed committed picture state")
+	}
+}
+
+func TestPictureCropOverridesTrackSlideAddDelete(t *testing.T) {
+	doc, _ := NewBlank()
+	defer doc.Close()
+	first := document.PresentationCrop{Left: 1000}
+	second := document.PresentationCrop{Right: 2000}
+	doc.slidePictureCropChanges = []map[uint32]document.PresentationCrop{{7: first}, {8: second}}
+	if err := doc.AddSlide(); err != nil {
+		t.Fatalf("AddSlide: %v", err)
+	}
+	if len(doc.slidePictureCropChanges) != 3 || doc.slidePictureCropChanges[0][7] != first || doc.slidePictureCropChanges[1][8] != second {
+		t.Fatalf("crop overrides after AddSlide = %+v", doc.slidePictureCropChanges)
+	}
+	if err := doc.DeleteSlide(0); err != nil {
+		t.Fatalf("DeleteSlide: %v", err)
+	}
+	if len(doc.slidePictureCropChanges) != 2 || doc.slidePictureCropChanges[0][8] != second {
+		t.Fatalf("crop overrides after deleting first slide = %+v", doc.slidePictureCropChanges)
+	}
+}
+
+func TestUpdateSlidePictureCropPersistsAndComposesWithTransform(t *testing.T) {
+	original := encodeTestRaster(t, "png", color.NRGBA{B: 220, A: 255})
+	doc, source := openPictureCropTestDocument(t, original, `l="10000" t="20000" r="30000" b="40000"`, true, false)
+	defer doc.Close()
+	sourceBefore, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read source before edits: %v", err)
+	}
+	wantCrop := document.PresentationCrop{Left: 12000, Top: 8000, Right: 4000, Bottom: 10000}
+	wantBounds := document.PresentationRect{X: 14.5, Y: 21.25, W: 83.5, H: 46.75}
+	if err := doc.UpdateSlidePictureCrop(0, 7, wantCrop); err != nil {
+		t.Fatalf("UpdateSlidePictureCrop: %v", err)
+	}
+	if err := doc.UpdateSlideElementTransform(0, 7, wantBounds, 42.25); err != nil {
+		t.Fatalf("UpdateSlideElementTransform: %v", err)
+	}
+	pictureOutline, pictureOutlineWidth := "#12ABEF", 2.0
+	if err := doc.UpdateSlideElementStyle(0, 7, document.PresentationElementStylePatch{BorderColor: &pictureOutline, BorderWidthPT: &pictureOutlineWidth}); err != nil {
+		t.Fatalf("UpdateSlideElementStyle picture outline: %v", err)
+	}
+	output := filepath.Join(t.TempDir(), "cropped-and-transformed.pptx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatalf("SaveAs: %v", err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatalf("reopen edited picture: %v", err)
+	}
+	defer reopened.Close()
+	got := presentationElementByID(t, reopened.Snapshot().Slides[0], 7)
+	if got.Crop != wantCrop || got.Bounds != wantBounds || got.RotationDeg != 42.25 || !bytes.Equal(got.ImageBytes, original) || got.AltText != "target alt text" || got.BorderColor != pictureOutline || math.Abs(got.BorderWidth-pictureOutlineWidth) > 1e-8 {
+		t.Fatalf("reopened picture = crop %+v, bounds %+v, rotation %v, outline %q/%.2f, bytes=%d alt=%q", got.Crop, got.Bounds, got.RotationDeg, got.BorderColor, got.BorderWidth, len(got.ImageBytes), got.AltText)
+	}
+	if after, err := os.ReadFile(source); err != nil || !bytes.Equal(sourceBefore, after) {
+		t.Fatalf("SaveAs modified source package: err=%v", err)
+	}
+}
+
+func TestPictureCropSnapshotBytesRetainsCrop(t *testing.T) {
+	original := encodeTestRaster(t, "png", color.NRGBA{G: 220, A: 255})
+	replacement := encodeTestRaster(t, "jpeg", color.NRGBA{R: 220, A: 255})
+	doc, _ := openPictureCropTestDocument(t, original, `l="10000" t="0" r="0" b="0"`, true, false)
+	defer doc.Close()
+	if err := doc.ReplaceSlidePicture(0, 7, "image/jpeg", replacement); err != nil {
+		t.Fatalf("ReplaceSlidePicture: %v", err)
+	}
+	wantCrop := document.PresentationCrop{Left: 15000, Top: 5000, Right: 10000, Bottom: 20000}
+	if err := doc.UpdateSlidePictureCrop(0, 7, wantCrop); err != nil {
+		t.Fatalf("UpdateSlidePictureCrop: %v", err)
+	}
+	data, err := doc.SnapshotBytes()
+	if err != nil {
+		t.Fatalf("SnapshotBytes: %v", err)
+	}
+	recovered, err := OpenBytes(data)
+	if err != nil {
+		t.Fatalf("OpenBytes: %v", err)
+	}
+	defer recovered.Close()
+	got := presentationElementByID(t, recovered.Snapshot().Slides[0], 7)
+	if got.Crop != wantCrop || !bytes.Equal(got.ImageBytes, replacement) || got.AltText != "target alt text" {
+		t.Fatalf("recovered picture = crop %+v bytes=%d alt=%q", got.Crop, len(got.ImageBytes), got.AltText)
+	}
+}
+
+func TestPictureCropPatchPreservesSharedMediaAndUntouchedParts(t *testing.T) {
+	original := encodeTestRaster(t, "png", color.NRGBA{B: 220, A: 255})
+	parts := pictureCropTestParts(original, `l="10000" t="0" r="0" b="0"`, true, false)
+	parts["ppt/custom/protected.bin"] = []byte{0, 1, 2, 0xfe, 0xff}
+	source := writePPTXFixture(t, parts)
+	doc, err := Open(source)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer doc.Close()
+	wantCrop := document.PresentationCrop{Left: 20000, Top: 5000, Right: 10000, Bottom: 5000}
+	if err := doc.UpdateSlidePictureCrop(0, 7, wantCrop); err != nil {
+		t.Fatalf("UpdateSlidePictureCrop: %v", err)
+	}
+	output := filepath.Join(t.TempDir(), "crop-preserves-package.pptx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatalf("SaveAs: %v", err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer reopened.Close()
+	slide := reopened.Snapshot().Slides[0]
+	target := presentationElementByID(t, slide, 7)
+	sibling := presentationElementByID(t, slide, 8)
+	if target.Crop != wantCrop || sibling.Crop != (document.PresentationCrop{}) || !bytes.Equal(target.ImageBytes, original) || !bytes.Equal(sibling.ImageBytes, original) {
+		t.Fatalf("shared picture results = target %+v, sibling %+v", target, sibling)
+	}
+	if got := readPPTXPartForTest(t, output, "ppt/custom/protected.bin"); !bytes.Equal(got, parts["ppt/custom/protected.bin"]) {
+		t.Fatalf("untouched package part changed: %v", got)
+	}
+	if got := readPPTXPartForTest(t, output, "ppt/slides/_rels/slide1.xml.rels"); !bytes.Equal(got, readPPTXPartForTest(t, source, "ppt/slides/_rels/slide1.xml.rels")) {
+		t.Fatal("crop patch changed picture relationships")
+	}
+}
+
+func TestPictureCropSaveFailurePreservesOriginalAndDirtyState(t *testing.T) {
+	original := encodeTestRaster(t, "png", color.NRGBA{G: 220, A: 255})
+	doc, source := openPictureCropTestDocument(t, original, `l="10000" t="0" r="0" b="0"`, false, false)
+	defer doc.Close()
+	before, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read source before edit: %v", err)
+	}
+	if err := doc.UpdateSlidePictureCrop(0, 7, document.PresentationCrop{Left: 15000, Right: 5000}); err != nil {
+		t.Fatalf("UpdateSlidePictureCrop: %v", err)
+	}
+	revision := doc.Revision()
+	blockedTarget := filepath.Join(t.TempDir(), "directory-target")
+	if err := os.Mkdir(blockedTarget, 0755); err != nil {
+		t.Fatalf("create directory target: %v", err)
+	}
+	if err := doc.SaveAs(blockedTarget); err == nil {
+		t.Fatal("SaveAs to a directory unexpectedly succeeded")
+	}
+	if after, err := os.ReadFile(source); err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("failed save changed source bytes: err=%v", err)
+	}
+	if !doc.IsDirty() || doc.Revision() != revision {
+		t.Fatalf("failed save lost dirty state or changed revision: dirty=%t revision=%d want %d", doc.IsDirty(), doc.Revision(), revision)
+	}
+}
+
+func openPictureCropTestDocument(t *testing.T, imageBytes []byte, srcRect string, shared, external bool) (*Document, string) {
+	t.Helper()
+	parts := pictureCropTestParts(imageBytes, srcRect, shared, external)
+	source := writePPTXFixture(t, parts)
+	doc, err := Open(source)
+	if err != nil {
+		t.Fatalf("Open picture crop fixture: %v", err)
+	}
+	return doc, source
+}
+
+func pictureCropTestParts(imageBytes []byte, srcRect string, shared, external bool) map[string][]byte {
+	refs := []testPictureRef{{id: 7, rid: "rId2"}}
+	if shared {
+		refs = append(refs, testPictureRef{id: 8, rid: "rId2"})
+	}
+	parts := pictureFixtureParts(refs, []testImageRel{{id: "rId2", target: "../media/picture.png", external: external}}, map[string][]byte{"ppt/media/picture.png": imageBytes})
+	slideXML := string(parts["ppt/slides/slide1.xml"])
+	if srcRect != "" {
+		slideXML = strings.Replace(slideXML,
+			`<p:blipFill><a:blip r:embed="rId2"/><a:stretch>`,
+			`<p:blipFill><a:blip r:embed="rId2"/><a:srcRect `+srcRect+`/><a:stretch>`, 1)
+	}
+	slideXML = strings.Replace(slideXML, `<p:cNvPr id="7" name="Picture 7"/>`, `<p:cNvPr id="7" name="Picture 7" descr="target alt text"/>`, 1)
+	slideXML = strings.Replace(slideXML, `<a:xfrm><a:off x="0" y="0"/>`, `<a:xfrm rot="19110000"><a:off x="0" y="0"/>`, 1)
+	parts["ppt/slides/slide1.xml"] = []byte(slideXML)
+	return parts
+}
+
+func TestUpdateSlideElementTransformNoopPreservesRevision(t *testing.T) {
+	doc, _ := openTransformTestDocument(t, transformTestShapeXML(7, `<a:xfrm rot="900000"><a:off x="139700" y="152400"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`))
+	defer doc.Close()
+
+	before := doc.Snapshot()
+	element := presentationElementByID(t, before.Slides[0], 7)
+	if err := doc.UpdateSlideElementTransform(0, 7, element.Bounds, element.RotationDeg); err != nil {
+		t.Fatalf("no-op UpdateSlideElementTransform: %v", err)
+	}
+	after := doc.Snapshot()
+	if after.Revision != before.Revision || after.Dirty != before.Dirty {
+		t.Fatalf("no-op changed revision/dirty: before (%d,%t), after (%d,%t)", before.Revision, before.Dirty, after.Revision, after.Dirty)
+	}
+}
+
+func TestUpdateSlideElementTransformRejectsInvalidGeometry(t *testing.T) {
+	doc, _ := openTransformTestDocument(t, transformTestShapeXML(7, `<a:xfrm><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`))
+	defer doc.Close()
+
+	before := doc.Snapshot()
+	valid := document.PresentationRect{X: 2, Y: 3, W: 40, H: 30}
+	for _, test := range []struct {
+		name   string
+		slide  int
+		id     int64
+		bounds document.PresentationRect
+		angle  float64
+	}{
+		{name: "nan x", slide: 0, id: 7, bounds: document.PresentationRect{X: math.NaN(), Y: 0, W: 20, H: 20}},
+		{name: "infinite rotation", slide: 0, id: 7, bounds: valid, angle: math.Inf(1)},
+		{name: "too narrow", slide: 0, id: 7, bounds: document.PresentationRect{W: 7.99, H: 20}},
+		{name: "stale shape id", slide: 0, id: 99, bounds: valid},
+		{name: "invalid slide", slide: 1, id: 7, bounds: valid},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := doc.UpdateSlideElementTransform(test.slide, test.id, test.bounds, test.angle); err == nil {
+				t.Fatal("invalid transform was accepted")
+			}
+		})
+	}
+	after := doc.Snapshot()
+	beforeElement := presentationElementByID(t, before.Slides[0], 7)
+	afterElement := presentationElementByID(t, after.Slides[0], 7)
+	if after.Revision != before.Revision || after.Dirty != before.Dirty || afterElement.Bounds != beforeElement.Bounds || afterElement.RotationDeg != beforeElement.RotationDeg {
+		t.Fatalf("rejected transforms changed document state: before %+v, after %+v", before, after)
+	}
+}
+
+func TestTransformPatchPreservesLocksAndFlips(t *testing.T) {
+	shape := transformTestShapeXML(7, `<a:xfrm rot="300000" flipH="1" flipV="1" extLst="preserve-me"><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`)
+	shape = strings.Replace(shape, `<p:cNvSpPr/>`, `<p:cNvSpPr><a:spLocks noChangeAspect="1"/></p:cNvSpPr>`, 1)
+	doc, _ := openTransformTestDocument(t, shape)
+	defer doc.Close()
+	element := presentationElementByID(t, doc.Snapshot().Slides[0], 7)
+	if !element.AspectRatioLocked {
+		t.Fatal("explicit noChangeAspect lock was not projected")
+	}
+	want := document.PresentationRect{X: 13.25, Y: 19.5, W: 80, H: 45}
+	if err := doc.UpdateSlideElementTransform(0, 7, want, 112.25); err != nil {
+		t.Fatalf("UpdateSlideElementTransform: %v", err)
+	}
+	output := filepath.Join(t.TempDir(), "preserved-flags.pptx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatalf("SaveAs: %v", err)
+	}
+	shapeNode := transformTestShapeNode(t, output, 7)
+	xfrm := shapeNode.child("spPr").child("xfrm")
+	if xfrm.attr("flipH") != "1" || xfrm.attr("flipV") != "1" || xfrm.attr("extLst") != "preserve-me" {
+		t.Fatalf("transform attributes were not preserved: %+v", xfrm.Attrs)
+	}
+	locks := shapeNode.child("nvSpPr").child("cNvSpPr").child("spLocks")
+	if locks == nil || locks.attr("noChangeAspect") != "1" {
+		t.Fatalf("aspect-ratio lock was not preserved: %+v", locks)
+	}
+}
+
+func TestTransformSnapshotBytesRetainsGeometry(t *testing.T) {
+	doc, _ := openTransformTestDocument(t, transformTestShapeXML(7, `<a:xfrm><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`))
+	defer doc.Close()
+	want := document.PresentationRect{X: 33.5, Y: -4.25, W: 77.5, H: 25.25}
+	if err := doc.UpdateSlideElementTransform(0, 7, want, 221.75); err != nil {
+		t.Fatalf("UpdateSlideElementTransform: %v", err)
+	}
+	data, err := doc.SnapshotBytes()
+	if err != nil {
+		t.Fatalf("SnapshotBytes: %v", err)
+	}
+	recovered, err := OpenBytes(data)
+	if err != nil {
+		t.Fatalf("OpenBytes: %v", err)
+	}
+	defer recovered.Close()
+	element := presentationElementByID(t, recovered.Snapshot().Slides[0], 7)
+	if element.Bounds != want || element.RotationDeg != 221.75 {
+		t.Fatalf("recovered transform = %+v, %v; want %+v, 221.75", element.Bounds, element.RotationDeg, want)
+	}
+}
+
+func TestTransformSaveFailurePreservesOriginal(t *testing.T) {
+	doc, source := openTransformTestDocument(t, transformTestShapeXML(7, `<a:xfrm><a:off x="127000" y="254000"/><a:ext cx="1016000" cy="635000"/></a:xfrm>`))
+	defer doc.Close()
+	before, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read source before edit: %v", err)
+	}
+	if err := doc.UpdateSlideElementTransform(0, 7, document.PresentationRect{X: 1, Y: 2, W: 20, H: 20}, 15); err != nil {
+		t.Fatalf("UpdateSlideElementTransform: %v", err)
+	}
+	revision := doc.Revision()
+	blockedTarget := filepath.Join(t.TempDir(), "directory-target")
+	if err := os.Mkdir(blockedTarget, 0755); err != nil {
+		t.Fatalf("create directory target: %v", err)
+	}
+	if err := doc.SaveAs(blockedTarget); err == nil {
+		t.Fatal("SaveAs to a directory unexpectedly succeeded")
+	}
+	after, err := os.ReadFile(source)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("failed save changed source bytes: err=%v", err)
+	}
+	if !doc.IsDirty() || doc.Revision() != revision {
+		t.Fatalf("failed save lost dirty state or changed revision: dirty=%t revision=%d want %d", doc.IsDirty(), doc.Revision(), revision)
+	}
+}
+
+func TestInheritedPlaceholderTransformMaterializesLocally(t *testing.T) {
+	slideXML := inheritedSlideXML("", inheritedEmptyPlaceholderXML(10, "title", "ctrTitle", ""))
+	layoutShape := inheritedPlaceholderXML(31, "layout title", "ctrTitle", "", `<a:xfrm rot="900000" flipH="1"><a:off x="1270000" y="1397000"/><a:ext cx="6350000" cy="1016000"/></a:xfrm>`)
+	parts := inheritedFixtureParts(slideXML, inheritedLayoutXML("", layoutShape), inheritedMasterXML(""), nil)
+	source := writePPTXFixture(t, parts)
+	layoutBefore := readPPTXPartForTest(t, source, "ppt/slideLayouts/slideLayout1.xml")
+	masterBefore := readPPTXPartForTest(t, source, "ppt/slideMasters/slideMaster1.xml")
+	doc, err := Open(source)
+	if err != nil {
+		t.Fatalf("Open placeholder fixture: %v", err)
+	}
+	defer doc.Close()
+	placeholder := presentationElementByID(t, doc.Snapshot().Slides[0], 10)
+	if placeholder.Bounds != (document.PresentationRect{X: 100, Y: 110, W: 500, H: 80}) || placeholder.RotationDeg != 15 {
+		t.Fatalf("inherited placeholder transform = %+v, %v", placeholder.Bounds, placeholder.RotationDeg)
+	}
+	want := document.PresentationRect{X: 85.5, Y: 42.25, W: 420, H: 73.5}
+	if err := doc.UpdateSlideElementTransform(0, 10, want, 42.75); err != nil {
+		t.Fatalf("UpdateSlideElementTransform: %v", err)
+	}
+	if err := doc.Save(); err != nil {
+		t.Fatalf("Save materialized placeholder transform: %v", err)
+	}
+	reopened, err := Open(source)
+	if err != nil {
+		t.Fatalf("reopen materialized placeholder: %v", err)
+	}
+	defer reopened.Close()
+	materialized := presentationElementByID(t, reopened.Snapshot().Slides[0], 10)
+	if materialized.Bounds != want || materialized.RotationDeg != 42.75 {
+		t.Fatalf("reopened placeholder transform = %+v, %v; want %+v, 42.75", materialized.Bounds, materialized.RotationDeg, want)
+	}
+	shapeNode := transformTestShapeNode(t, source, 10)
+	materializedXfrm := shapeNode.child("spPr").child("xfrm")
+	if materializedXfrm == nil {
+		t.Fatal("slide-local placeholder has no materialized transform")
+	}
+	if materializedXfrm.attr("flipH") != "1" {
+		t.Fatalf("materialized transform lost inherited horizontal flip: %+v", materializedXfrm.Attrs)
+	}
+	if !bytes.Equal(layoutBefore, readPPTXPartForTest(t, source, "ppt/slideLayouts/slideLayout1.xml")) || !bytes.Equal(masterBefore, readPPTXPartForTest(t, source, "ppt/slideMasters/slideMaster1.xml")) {
+		t.Fatal("materializing a placeholder modified its layout or master part")
+	}
+}
+
+func transformTestShapeXML(id int, transform string) string {
+	return fmt.Sprintf(`<p:sp><p:nvSpPr><p:cNvPr id="%d" name="editable shape"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>%s<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1800"/><a:t>content</a:t></a:r></a:p></p:txBody></p:sp>`, id, transform)
+}
+
+func openTransformTestDocument(t *testing.T, shape string) (*Document, string) {
+	t.Helper()
+	source := writePPTXFixture(t, inheritedFixtureParts(inheritedSlideXML("", shape), inheritedLayoutXML("", ""), inheritedMasterXML(""), nil))
+	doc, err := Open(source)
+	if err != nil {
+		t.Fatalf("Open transform fixture: %v", err)
+	}
+	return doc, source
+}
+
+func presentationElementByID(t *testing.T, slide document.PresentationSlide, id int64) document.PresentationElement {
+	t.Helper()
+	for _, element := range slide.Elements {
+		if element.ID == id {
+			return element
+		}
+	}
+	t.Fatalf("slide has no element with ID %d: %+v", id, slide.Elements)
+	return document.PresentationElement{}
+}
+
+func transformTestShapeNode(t *testing.T, path string, id uint32) pptxXMLNode {
+	t.Helper()
+	data := readPPTXPartForTest(t, path, "ppt/slides/slide1.xml")
+	var root pptxXMLNode
+	if err := xml.Unmarshal(data, &root); err != nil {
+		t.Fatalf("parse slide XML: %v", err)
+	}
+	tree := shapeTree(root)
+	if tree != nil {
+		for _, shape := range tree.Children {
+			if shape.XMLName.Local != "sp" && shape.XMLName.Local != "pic" {
+				continue
+			}
+			if actual := slideShapeID(shape); actual == id {
+				return shape
+			}
+		}
+	}
+	t.Fatalf("slide XML has no shape ID %d", id)
+	return pptxXMLNode{}
+}
+
+func slideShapeID(shape pptxXMLNode) uint32 {
+	nv := shape.child("nvSpPr")
+	if nv == nil {
+		nv = shape.child("nvPicPr")
+	}
+	if nv == nil {
+		return 0
+	}
+	cNvPr := nv.child("cNvPr")
+	if cNvPr == nil {
+		return 0
+	}
+	id, _ := strconv.ParseUint(cNvPr.attr("id"), 10, 32)
+	return uint32(id)
+}
+
+func readPPTXPartForTest(t *testing.T, path, name string) []byte {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open package %s: %v", path, err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		t.Fatalf("stat package %s: %v", path, err)
+	}
+	reader, err := zip.NewReader(file, info.Size())
+	if err != nil {
+		t.Fatalf("open package ZIP %s: %v", path, err)
+	}
+	for _, part := range reader.File {
+		if part.Name == name {
+			data, err := readOPCPart(part)
+			if err != nil {
+				t.Fatalf("read package part %s: %v", name, err)
+			}
+			return data
+		}
+	}
+	t.Fatalf("package %s is missing part %s", path, name)
+	return nil
 }
 
 func TestPPTXLayoutPictureUsesLayoutRelationship(t *testing.T) {

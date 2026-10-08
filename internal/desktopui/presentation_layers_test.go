@@ -80,7 +80,9 @@ func TestPresentationInheritedVisualsAreNotInteractive(t *testing.T) {
 	if _, ok := h.view.shapeClicks[-1000001]; ok {
 		t.Fatal("inherited visual has a slide interaction clickable")
 	}
-	h.click(h.textClickPoint(60, 10))
+	textPoint := h.textClickPoint(60, 10)
+	h.click(textPoint)
+	h.click(textPoint)
 	if h.view.editingShape != h.elem.ID {
 		t.Fatalf("clicking slide-local text did not enter edit mode: editing=%d want %d", h.view.editingShape, h.elem.ID)
 	}

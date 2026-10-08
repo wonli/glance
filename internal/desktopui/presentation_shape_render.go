@@ -152,6 +152,16 @@ func drawPresentationElementShape(gtx layout.Context, elem document.Presentation
 	}
 }
 
+func drawPresentationElementOutline(gtx layout.Context, elem document.PresentationElement, size image.Point, scale float64) {
+	if elem.BorderColor == "" {
+		return
+	}
+	outline := elem
+	outline.FillColorHex = ""
+	outline.FillGradient = nil
+	drawPresentationElementShape(gtx, outline, size, scale)
+}
+
 func drawPresentationLinearGradient(gtx layout.Context, shape clip.PathSpec, size image.Point, gradient *document.PresentationGradient) bool {
 	if gradient == nil || gradient.PathType != "" || len(gradient.Stops) < 2 || size.X <= 0 || size.Y <= 0 {
 		return false

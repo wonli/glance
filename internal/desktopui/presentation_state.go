@@ -30,9 +30,13 @@ type presentationViewState struct {
 	delSlideButton widget.Clickable
 
 	// Ribbon bar
-	activeRibbonTab  string // "home", "insert", "design", "slideshow", "view"
-	ribbonButtons    map[string]*widget.Clickable
-	ribbonActionList widget.List
+	activeRibbonTab     string // "home", "insert", "design", "slideshow", "view"
+	ribbonButtons       map[string]*widget.Clickable
+	ribbonActionList    widget.List
+	stylePopover        string
+	stylePopoverShapeID int64
+	styleOptionList     widget.List
+	styleOptionBtns     map[string]*widget.Clickable
 
 	// Canvas & Elements
 	canvasList       widget.List
@@ -45,6 +49,9 @@ type presentationViewState struct {
 	editingShape     int64
 	shapeClicks      map[int64]*widget.Clickable
 	shapeHitAreas    map[int64]presentationShapeHitArea
+	transformInputs  map[int64]*presentationShapeInteraction
+	transformGesture presentationTransformGesture
+	pictureCrop      presentationPictureCropState
 	shapeEditor      widget.Editor
 	shapeDraftText   string // Active text-box draft, committed on save or when leaving the shape.
 
@@ -80,13 +87,16 @@ func (a *App) ensurePresentationView() *presentationViewState {
 			slideClicks:     make(map[int]*widget.Clickable),
 			shapeClicks:     make(map[int64]*widget.Clickable),
 			shapeHitAreas:   make(map[int64]presentationShapeHitArea),
+			transformInputs: make(map[int64]*presentationShapeInteraction),
 			ribbonButtons:   make(map[string]*widget.Clickable),
+			styleOptionBtns: make(map[string]*widget.Clickable),
 			thumbAspect:     16.0 / 9.0,
 			lastNotesSlide:  -1,
 		}
 		a.pptxView.slideList.Axis = layout.Vertical
 		a.pptxView.canvasList.Axis = layout.Vertical
 		a.pptxView.ribbonActionList.Axis = layout.Horizontal
+		a.pptxView.styleOptionList.Axis = layout.Horizontal
 		a.pptxView.shapeEditor.SingleLine = false
 		a.pptxView.notesEditor.SingleLine = false
 	}

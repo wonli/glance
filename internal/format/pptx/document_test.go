@@ -93,6 +93,11 @@ func TestDeleteSlideKeepsAllPerSlideProjectionCachesAligned(t *testing.T) {
 
 	firstArtwork := document.PresentationElement{ID: -1, Name: "first slide master art", Kind: document.ElementKindShape, Bounds: document.PresentationRect{X: 1, Y: 1, W: 1, H: 1}}
 	secondArtwork := document.PresentationElement{ID: -2, Name: "second slide master art", Kind: document.ElementKindShape, Bounds: document.PresentationRect{X: 2, Y: 2, W: 2, H: 2}}
+	firstStyleSize, secondStyleSize := 18.0, 24.0
+	doc.slideStyleChanges = []map[uint32]document.PresentationElementStylePatch{
+		{placeholderID: {FontSizePT: &firstStyleSize}},
+		{placeholderID: {FontSizePT: &secondStyleSize}},
+	}
 	doc.slideBackgrounds = []pptxBackground{{ColorHex: "#AA0000"}, {ColorHex: "#00AA00"}}
 	doc.slideInherited = [][]document.PresentationElement{{firstArtwork}, {secondArtwork}}
 	doc.slidePlaceholderBounds = []map[uint32]document.PresentationRect{
@@ -128,6 +133,9 @@ func TestDeleteSlideKeepsAllPerSlideProjectionCachesAligned(t *testing.T) {
 	}
 	if len(remaining.InheritedElements) != 1 || remaining.InheritedElements[0].Name != "second slide master art" {
 		t.Errorf("remaining inherited artwork = %+v, want second slide artwork", remaining.InheritedElements)
+	}
+	if len(doc.slideStyleChanges) != 1 || doc.slideStyleChanges[0][placeholderID].FontSizePT == nil || *doc.slideStyleChanges[0][placeholderID].FontSizePT != secondStyleSize {
+		t.Errorf("remaining style cache = %+v, want second slide style", doc.slideStyleChanges)
 	}
 	var gotPlaceholder, gotPicture bool
 	for _, element := range remaining.Elements {

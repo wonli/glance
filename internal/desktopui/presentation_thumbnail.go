@@ -8,10 +8,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
-	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
-	"gioui.org/widget"
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
@@ -35,20 +33,19 @@ func (a *App) layoutPresentationThumbnail(gtx layout.Context, slide document.Pre
 	slideSize := image.Pt(max(1, int(slideW*scale)), max(1, int(slideH*scale)))
 	gtx.Constraints = layout.Exact(slideSize)
 
-	bounds := image.Rectangle{Max: slideSize}
 	drawPresentationBackground(gtx, slide, slideSize)
 
 	slideClip := clip.Rect{Max: slideSize}.Push(gtx.Ops)
 	defer slideClip.Pop()
-	a.drawPresentationStaticElements(gtx, slide.InheritedElements, scale, bounds)
+	a.drawPresentationStaticElements(gtx, slide.InheritedElements, scale)
 	for _, elem := range slide.Elements {
-		a.drawPresentationThumbnailElement(gtx, elem, scale, bounds)
+		a.drawPresentationThumbnailElement(gtx, elem, scale)
 	}
 
 	return layout.Dimensions{Size: slideSize}
 }
 
-func (a *App) drawPresentationThumbnailElement(gtx layout.Context, elem document.PresentationElement, scale float64, slideBounds image.Rectangle) {
+func (a *App) drawPresentationThumbnailElement(gtx layout.Context, elem document.PresentationElement, scale float64) {
 	box := elem.Bounds
 	isLine := presentationThumbnailIsLine(elem.ShapeType)
 	if box.W <= 0 && !isLine {
@@ -69,23 +66,19 @@ func (a *App) drawPresentationThumbnailElement(gtx layout.Context, elem document
 		return
 	}
 	shapeRect := image.Rectangle{Min: image.Pt(left, top), Max: image.Pt(right, bottom)}
+	rotation := pushPresentationElementRotation(gtx, shapeRect, elem.RotationDeg)
+	defer rotation.Pop()
 	shapeOffset := op.Offset(shapeRect.Min).Push(gtx.Ops)
 	drawPresentationElementShape(gtx, elem, shapeRect.Size(), scale)
 	shapeOffset.Pop()
 
 	if elem.Kind == document.ElementKindPicture && elem.Image != nil {
-		visible := shapeRect.Intersect(slideBounds)
-		clipStack := clip.Rect(visible).Push(gtx.Ops)
 		off := op.Offset(shapeRect.Min).Push(gtx.Ops)
-		imageGtx := gtx
-		imageGtx.Constraints = layout.Exact(shapeRect.Size())
-		widget.Image{
-			Src:      paint.NewImageOp(elem.Image),
-			Fit:      widget.Contain,
-			Position: layout.Center,
-		}.Layout(imageGtx)
+		drawPresentationPicture(gtx, elem, shapeRect.Size())
 		off.Pop()
-		clipStack.Pop()
+		outlineOffset := op.Offset(shapeRect.Min).Push(gtx.Ops)
+		drawPresentationElementOutline(gtx, elem, shapeRect.Size(), scale)
+		outlineOffset.Pop()
 	}
 
 	if len(elem.Paragraphs) > 0 || presentationElementHasPlaceholderPrompt(elem) {

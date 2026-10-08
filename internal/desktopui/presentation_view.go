@@ -53,11 +53,19 @@ var pptxHomeActions = []ribbonAction{
 	{id: "home_new_slide", label: "新建幻灯片", group: "幻灯片", icon: "gallery-horizontal-end"},
 	{id: "home_layout", label: "版式", group: "幻灯片", icon: "panels-top-left"},
 	{id: "home_font", label: "字体", group: "字体", icon: "type"},
+	{id: "home_font_size", label: "字号", group: "字体", icon: "type"},
 	{id: "home_bold", label: "加粗", group: "字体", icon: "bold"},
+	{id: "home_italic", label: "斜体", group: "字体", icon: "italic"},
+	{id: "home_underline", label: "下划线", group: "字体", icon: "underline"},
 	{id: "home_font_color", label: "字体颜色", group: "字体", icon: "baseline"},
 	{id: "home_bullets", label: "项目符号", group: "段落", icon: "list"},
 	{id: "home_align_left", label: "左对齐", group: "段落", icon: "format_align_left"},
 	{id: "home_align_center", label: "居中", group: "段落", icon: "format_align_center"},
+	{id: "home_align_right", label: "右对齐", group: "段落", icon: "align-right"},
+	{id: "home_align_justify", label: "两端对齐", group: "段落", icon: "align-justify"},
+	{id: "home_line_spacing", label: "行距", group: "段落", icon: "list"},
+	{id: "home_space_before", label: "段前距", group: "段落", icon: "move-up"},
+	{id: "home_space_after", label: "段后距", group: "段落", icon: "move-down"},
 	{id: "home_shapes", label: "形状", group: "绘图", icon: "shapes"},
 	{id: "home_fill", label: "填充颜色", group: "绘图", icon: "paint-bucket"},
 	{id: "home_align", label: "对齐", group: "排列", icon: "align-start-vertical"},
@@ -129,6 +137,67 @@ var pptxViewActions = []ribbonAction{
 	{id: "view_fit", label: "适应窗口", group: "缩放", icon: "maximize"},
 }
 
+var pptxPictureActions = []ribbonAction{
+	{id: "picture_replace", label: "替换图片", group: "图片", icon: "image"},
+	{id: "picture_crop", label: "裁剪", group: "图片", icon: "ratio"},
+	{id: "picture_outline", label: "图片轮廓", group: "图片样式", icon: "paint-bucket"},
+	{id: "picture_line_width", label: "轮廓宽度", group: "图片样式", icon: "sliders-horizontal"},
+}
+
+var pptxShapeActions = []ribbonAction{
+	{id: "shape_fill", label: "形状填充", group: "形状样式", icon: "paint-bucket"},
+	{id: "shape_no_fill", label: "无填充", group: "形状样式", icon: "x"},
+	{id: "shape_outline", label: "形状轮廓", group: "形状样式", icon: "baseline"},
+	{id: "shape_line_width", label: "轮廓宽度", group: "形状样式", icon: "sliders-horizontal"},
+}
+
+var pptxPictureCropActions = []ribbonAction{
+	{id: "picture_crop_done", label: "完成裁剪", group: "裁剪", icon: "check"},
+	{id: "picture_crop_cancel", label: "取消裁剪", group: "裁剪", icon: "x"},
+	{id: "picture_crop_reset", label: "重置裁剪", group: "裁剪", icon: "rotate-ccw"},
+}
+
+type presentationRibbonTab struct {
+	id    string
+	label string
+}
+
+func presentationRibbonTabs(v *presentationViewState) []presentationRibbonTab {
+	tabs := []presentationRibbonTab{
+		{id: "file", label: "文件"},
+		{id: "home", label: "开始"},
+		{id: "insert", label: "插入"},
+		{id: "design", label: "设计"},
+		{id: "transitions", label: "切换"},
+		{id: "animations", label: "动画"},
+		{id: "slideshow", label: "幻灯片放映"},
+		{id: "review", label: "审阅"},
+		{id: "view", label: "视图"},
+	}
+	if _, _, ok := presentationSelectedEditablePicture(v); ok {
+		tabs = append(tabs, presentationRibbonTab{id: "picture", label: "图片格式"})
+	} else if _, elem, ok := presentationSelectedStyleElement(v); ok && elem.Kind != document.ElementKindPicture {
+		tabs = append(tabs, presentationRibbonTab{id: "shape", label: "形状格式"})
+	}
+	return tabs
+}
+
+func presentationSelectedEditablePicture(v *presentationViewState) (int, document.PresentationElement, bool) {
+	if v == nil || v.selectedShape == 0 {
+		return 0, document.PresentationElement{}, false
+	}
+	slide := v.currentSlide()
+	if slide == nil {
+		return 0, document.PresentationElement{}, false
+	}
+	for _, elem := range slide.Elements {
+		if elem.ID == v.selectedShape && elem.Kind == document.ElementKindPicture && elem.CanEditPicture {
+			return v.activeSlide, elem, true
+		}
+	}
+	return 0, document.PresentationElement{}, false
+}
+
 func pptxActionsForTab(tab string) []ribbonAction {
 	switch tab {
 	case "file":
@@ -147,9 +216,23 @@ func pptxActionsForTab(tab string) []ribbonAction {
 		return pptxReviewActions
 	case "view":
 		return pptxViewActions
+	case "picture":
+		return pptxPictureActions
+	case "shape":
+		return pptxShapeActions
 	default:
 		return pptxHomeActions
 	}
+}
+
+func presentationActionsForView(v *presentationViewState) []ribbonAction {
+	if v != nil && v.activeRibbonTab == "picture" && v.pictureCrop.active {
+		return pptxPictureCropActions
+	}
+	if v == nil {
+		return nil
+	}
+	return pptxActionsForTab(v.activeRibbonTab)
 }
 
 // layoutPresentationDocument is the top-level presentation editor layout matching Pen frame C2TtCZ.
@@ -183,6 +266,13 @@ func (a *App) layoutPresentationDocument(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return a.layoutPresentationRibbon(gtx, v)
 		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if v.stylePopover != "" && v.stylePopoverShapeID != v.selectedShape {
+				v.stylePopover = ""
+				v.stylePopoverShapeID = 0
+			}
+			return a.layoutPresentationStylePopover(gtx, v)
+		}),
 		// 3. Main Workspace (Sidebar + Canvas + Notes)
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return a.layoutPresentationMainWorkspace(gtx, v)
@@ -202,19 +292,16 @@ func (a *App) layoutPresentationCategoryBar(gtx layout.Context, v *presentationV
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	paint.FillShape(gtx.Ops, pptxBorderColor, clip.Rect{Min: image.Pt(0, height-1), Max: gtx.Constraints.Max}.Op())
 
-	tabs := []struct {
-		id    string
-		label string
-	}{
-		{"file", "文件"},
-		{"home", "开始"},
-		{"insert", "插入"},
-		{"design", "设计"},
-		{"transitions", "切换"},
-		{"animations", "动画"},
-		{"slideshow", "幻灯片放映"},
-		{"review", "审阅"},
-		{"view", "视图"},
+	tabs := presentationRibbonTabs(v)
+	if v.activeRibbonTab == "picture" {
+		if _, _, ok := presentationSelectedEditablePicture(v); !ok {
+			v.activeRibbonTab = "home"
+		}
+	}
+	if v.activeRibbonTab == "shape" {
+		if _, elem, ok := presentationSelectedStyleElement(v); !ok || elem.Kind == document.ElementKindPicture {
+			v.activeRibbonTab = "home"
+		}
 	}
 
 	return layout.Inset{Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -224,6 +311,9 @@ func (a *App) layoutPresentationCategoryBar(gtx layout.Context, v *presentationV
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				btn := v.ribbonBtn("tab_" + t.id)
 				if btn.Clicked(gtx) {
+					if v.pictureCrop.active && t.id != "picture" {
+						a.cancelPresentationPictureCrop(v)
+					}
 					v.activeRibbonTab = t.id
 				}
 				selected := v.activeRibbonTab == t.id
@@ -244,8 +334,8 @@ func (a *App) layoutPresentationCategoryBar(gtx layout.Context, v *presentationV
 						if selected {
 							barH := gtx.Dp(unit.Dp(2))
 							paint.FillShape(gtx.Ops, pptxAccentColor, clip.Rect{
-								Min: image.Pt(0, dims.Size.Y + gtx.Dp(unit.Dp(4))),
-								Max: image.Pt(dims.Size.X, dims.Size.Y + gtx.Dp(unit.Dp(4)) + barH),
+								Min: image.Pt(0, dims.Size.Y+gtx.Dp(unit.Dp(4))),
+								Max: image.Pt(dims.Size.X, dims.Size.Y+gtx.Dp(unit.Dp(4))+barH),
 							}.Op())
 						}
 						return dims
@@ -262,7 +352,7 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 	height := gtx.Dp(unit.Dp(pptxRibbonHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 
-	actions := pptxActionsForTab(v.activeRibbonTab)
+	actions := presentationActionsForView(v)
 	iconSize := toolbarIconSize
 
 	paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
@@ -272,12 +362,13 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 		return v.ribbonActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
 			action := actions[index]
 			button := v.ribbonBtn(action.id)
-			if button.Clicked(gtx) {
+			enabled := a.presentationActionEnabled(v, action.id)
+			clicked := button.Clicked(gtx)
+			if enabled && clicked {
 				a.handlePresentationRibbonAction(v, action.id)
 			}
 
 			active := a.isPresentationActionActive(v, action.id)
-			enabled := true
 			iconColor, background := toolbarIconColor(enabled), contentSurface
 			if active {
 				background = toolbarActiveBackground
@@ -294,14 +385,61 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 	})
 }
 
+func (a *App) presentationActionEnabled(v *presentationViewState, actionID string) bool {
+	state := a.documentSessionState
+	busy := state == nil || state.formatRunning.Load() || a.isSaving()
+	switch actionID {
+	case "picture_replace":
+		if _, _, ok := presentationSelectedEditablePicture(v); !ok || busy || a.pptxPicPickerRunning || (v != nil && v.pictureCrop.active) {
+			return false
+		}
+		return a.pptxDoc != nil && state.pptxDoc == a.pptxDoc
+	case "picture_crop":
+		if _, _, ok := presentationSelectedEditablePicture(v); !ok || busy || a.pptxPicPickerRunning || (v != nil && v.pictureCrop.active) {
+			return false
+		}
+		return a.pptxDoc != nil && state.pptxDoc == a.pptxDoc
+	case "picture_crop_done", "picture_crop_reset", "picture_crop_cancel":
+		return v != nil && v.pictureCrop.active && !v.pictureCrop.committing && !busy && a.pptxDoc != nil && state.pptxDoc == a.pptxDoc
+	case "home_font", "home_font_size", "home_bold", "home_italic", "home_underline", "home_font_color", "home_align_left", "home_align_center", "home_align_right", "home_align_justify", "home_line_spacing", "home_space_before", "home_space_after":
+		if busy || v == nil || v.pictureCrop.active || a.pptxDoc == nil || state.pptxDoc != a.pptxDoc {
+			return false
+		}
+		_, elem, ok := presentationSelectedStyleElement(v)
+		return ok && elem.CanEditTextStyle
+	case "home_fill", "shape_fill", "shape_no_fill", "shape_outline", "shape_line_width":
+		if busy || v == nil || v.pictureCrop.active || a.pptxDoc == nil || state.pptxDoc != a.pptxDoc {
+			return false
+		}
+		_, elem, ok := presentationSelectedStyleElement(v)
+		return ok && elem.CanEditShapeStyle
+	case "picture_outline", "picture_line_width":
+		if busy || v == nil || v.pictureCrop.active || a.pptxDoc == nil || state.pptxDoc != a.pptxDoc {
+			return false
+		}
+		_, _, ok := presentationSelectedEditablePicture(v)
+		return ok
+	default:
+		return true
+	}
+}
+
 func (a *App) isPresentationActionActive(v *presentationViewState, actionID string) bool {
 	switch actionID {
 	case "home_notes", "view_notes":
 		return v.notesExpanded
 	case "view_fit":
 		return v.fitMode
+	case "picture_crop":
+		return v.pictureCrop.active
 	case "design_size":
 		return false
+	case "home_bold", "home_italic", "home_underline":
+		return presentationSelectedRunStyle(v, actionID)
+	case "home_align_left", "home_align_center", "home_align_right", "home_align_justify":
+		_, elem, ok := presentationSelectedStyleElement(v)
+		align := map[string]string{"home_align_left": "left", "home_align_center": "center", "home_align_right": "right", "home_align_justify": "justify"}[actionID]
+		return ok && presentationStyleOptionMatches(elem, document.PresentationElementStylePatch{ParagraphAlignment: &align})
 	case "view_normal":
 		return !v.slideshowMode
 	default:
@@ -310,6 +448,9 @@ func (a *App) isPresentationActionActive(v *presentationViewState, actionID stri
 }
 
 func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID string) {
+	if a.handlePresentationStyleAction(v, actionID) {
+		return
+	}
 	switch actionID {
 	case "file_new":
 		a.handlePresentationAddSlide(v)
@@ -353,22 +494,10 @@ func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID 
 		a.setStatus("背景格式设置")
 	case "design_size":
 		a.setStatus("幻灯片大小设置")
-	case "home_bold":
-		a.setStatus("字体样式：加粗 (B)")
-	case "home_font":
-		a.setStatus("字体选择")
-	case "home_font_color":
-		a.setStatus("字体颜色")
 	case "home_bullets":
 		a.setStatus("项目符号")
-	case "home_align_left":
-		a.setStatus("段落对齐：左对齐")
-	case "home_align_center":
-		a.setStatus("段落对齐：居中")
 	case "home_shapes", "insert_shapes":
 		a.setStatus("插入形状")
-	case "home_fill":
-		a.setStatus("填充颜色")
 	case "home_align":
 		a.setStatus("排列对齐")
 	case "home_group":
@@ -381,6 +510,18 @@ func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID 
 		a.setStatus("插入表格")
 	case "insert_picture":
 		a.startOpenFilePicker()
+	case "picture_replace":
+		a.startPresentationPicturePicker()
+	case "picture_crop":
+		if !a.beginPresentationPictureCrop(v) {
+			a.setStatus("无法裁剪当前图片")
+		}
+	case "picture_crop_done":
+		a.commitPresentationPictureCrop(v)
+	case "picture_crop_cancel":
+		a.cancelPresentationPictureCrop(v)
+	case "picture_crop_reset":
+		a.resetPresentationPictureCrop(v)
 	case "insert_chart":
 		a.setStatus("插入图表")
 	case "insert_video":
@@ -518,6 +659,9 @@ func (a *App) layoutSlideThumbnailItem(gtx layout.Context, v *presentationViewSt
 		if err := a.flushPresentationTextDraft(); err == nil {
 			v.activeSlide = index
 			v.selectedShape = 0
+			if v.activeRibbonTab == "picture" {
+				v.activeRibbonTab = "home"
+			}
 			v.editingShape = 0
 			v.shapeDraftText = ""
 			v.notesEditor.SetText(slide.Notes)
@@ -776,7 +920,7 @@ func (a *App) layoutPresentationSlideshow(gtx layout.Context, v *presentationVie
 		}),
 		// Bottom floating slideshow controls
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			shift := op.Offset(image.Pt(0, gtx.Constraints.Max.Y/2 - gtx.Dp(unit.Dp(40)))).Push(gtx.Ops)
+			shift := op.Offset(image.Pt(0, gtx.Constraints.Max.Y/2-gtx.Dp(unit.Dp(40)))).Push(gtx.Ops)
 			defer shift.Pop()
 
 			bg := color.NRGBA{R: 40, G: 44, B: 52, A: 230}
@@ -832,6 +976,9 @@ func (a *App) handlePresentationAddSlide(v *presentationViewState) {
 	v.snapshot = a.pptxDoc.Snapshot()
 	v.activeSlide = v.snapshot.SlideCount - 1
 	v.selectedShape = 0
+	if v.activeRibbonTab == "picture" {
+		v.activeRibbonTab = "home"
+	}
 	v.editingShape = 0
 	v.shapeDraftText = ""
 	if cur := v.currentSlide(); cur != nil {
@@ -857,6 +1004,9 @@ func (a *App) handlePresentationDeleteSlide(v *presentationViewState) {
 		v.activeSlide = v.snapshot.SlideCount - 1
 	}
 	v.selectedShape = 0
+	if v.activeRibbonTab == "picture" {
+		v.activeRibbonTab = "home"
+	}
 	v.editingShape = 0
 	v.shapeDraftText = ""
 	if cur := v.currentSlide(); cur != nil {

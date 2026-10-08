@@ -40,16 +40,23 @@ type Document struct {
 	revision    uint64
 
 	// Cached media images by target path (e.g. "ppt/media/image1.png")
-	mediaImages            map[string]image.Image
-	mediaBytes             map[string][]byte
-	slideBodyProps         map[int]map[uint32]shapeBodyProps
-	slidePictureTargets    map[int]map[uint32]string
-	slideBackgrounds       []pptxBackground
-	slideInherited         [][]document.PresentationElement
-	slidePlaceholderBounds []map[uint32]document.PresentationRect
-	slidePlaceholderTypes  []map[uint32]string
-	defaultSlideBackground pptxBackground
-	defaultSlideInherited  []document.PresentationElement
+	mediaImages              map[string]image.Image
+	mediaBytes               map[string][]byte
+	slideBodyProps           map[int]map[uint32]shapeBodyProps
+	slidePictureTargets      map[int]map[uint32]string
+	slideBackgrounds         []pptxBackground
+	slideInherited           [][]document.PresentationElement
+	slidePlaceholderBounds   []map[uint32]document.PresentationRect
+	slidePlaceholderTypes    []map[uint32]string
+	slideShapeTransforms     []map[uint32]presentationTransformMetadata
+	slidePlaceholderXfrms    []map[uint32]presentationTransformMetadata
+	slideTransformChanges    []map[uint32]presentationTransformOverride
+	slideStyleChanges        []map[uint32]document.PresentationElementStylePatch
+	slidePictureCropStates   []map[uint32]presentationPictureCropState
+	slidePictureCropChanges  []map[uint32]document.PresentationCrop
+	slidePictureImageChanges []map[uint32]presentationPictureImageOverride
+	defaultSlideBackground   pptxBackground
+	defaultSlideInherited    []document.PresentationElement
 }
 
 const (
@@ -67,15 +74,19 @@ func Open(path string) (*Document, error) {
 	}
 
 	doc := &Document{
-		path:                path,
-		pres:                pres,
-		widthPT:             defaultSlideWidthPT,
-		heightPT:            defaultSlideHeightPT,
-		mediaImages:         make(map[string]image.Image),
-		mediaBytes:          make(map[string][]byte),
-		slideBodyProps:      make(map[int]map[uint32]shapeBodyProps),
-		slidePictureTargets: make(map[int]map[uint32]string),
-		revision:            1,
+		path:                     path,
+		pres:                     pres,
+		widthPT:                  defaultSlideWidthPT,
+		heightPT:                 defaultSlideHeightPT,
+		mediaImages:              make(map[string]image.Image),
+		mediaBytes:               make(map[string][]byte),
+		slideBodyProps:           make(map[int]map[uint32]shapeBodyProps),
+		slidePictureTargets:      make(map[int]map[uint32]string),
+		slideTransformChanges:    make([]map[uint32]presentationTransformOverride, 0),
+		slideStyleChanges:        make([]map[uint32]document.PresentationElementStylePatch, 0),
+		slidePictureCropChanges:  make([]map[uint32]document.PresentationCrop, 0),
+		slidePictureImageChanges: make([]map[uint32]presentationPictureImageOverride, 0),
+		revision:                 1,
 	}
 
 	// Read slide dimensions and preload media from the zip package
@@ -99,15 +110,19 @@ func NewBlank() (*Document, error) {
 	}
 
 	doc := &Document{
-		pres:                pres,
-		widthPT:             defaultSlideWidthPT,
-		heightPT:            defaultSlideHeightPT,
-		mediaImages:         make(map[string]image.Image),
-		mediaBytes:          make(map[string][]byte),
-		slideBodyProps:      make(map[int]map[uint32]shapeBodyProps),
-		slidePictureTargets: make(map[int]map[uint32]string),
-		dirty:               true,
-		revision:            1,
+		pres:                     pres,
+		widthPT:                  defaultSlideWidthPT,
+		heightPT:                 defaultSlideHeightPT,
+		mediaImages:              make(map[string]image.Image),
+		mediaBytes:               make(map[string][]byte),
+		slideBodyProps:           make(map[int]map[uint32]shapeBodyProps),
+		slidePictureTargets:      make(map[int]map[uint32]string),
+		slideTransformChanges:    make([]map[uint32]presentationTransformOverride, 0),
+		slideStyleChanges:        make([]map[uint32]document.PresentationElementStylePatch, 0),
+		slidePictureCropChanges:  make([]map[uint32]document.PresentationCrop, 0),
+		slidePictureImageChanges: make([]map[uint32]presentationPictureImageOverride, 0),
+		dirty:                    true,
+		revision:                 1,
 	}
 
 	// Add an initial title slide if layouts exist
@@ -250,6 +265,13 @@ func (d *Document) AddSlide() error {
 	d.slideInherited = append(d.slideInherited, append([]document.PresentationElement(nil), d.defaultSlideInherited...))
 	d.slidePlaceholderBounds = append(d.slidePlaceholderBounds, make(map[uint32]document.PresentationRect))
 	d.slidePlaceholderTypes = append(d.slidePlaceholderTypes, make(map[uint32]string))
+	d.slideShapeTransforms = append(d.slideShapeTransforms, make(map[uint32]presentationTransformMetadata))
+	d.slidePlaceholderXfrms = append(d.slidePlaceholderXfrms, make(map[uint32]presentationTransformMetadata))
+	d.slideTransformChanges = append(d.slideTransformChanges, make(map[uint32]presentationTransformOverride))
+	d.slideStyleChanges = append(d.slideStyleChanges, make(map[uint32]document.PresentationElementStylePatch))
+	d.slidePictureCropStates = append(d.slidePictureCropStates, make(map[uint32]presentationPictureCropState))
+	d.slidePictureCropChanges = append(d.slidePictureCropChanges, make(map[uint32]document.PresentationCrop))
+	d.slidePictureImageChanges = append(d.slidePictureImageChanges, make(map[uint32]presentationPictureImageOverride))
 	slides, _ := d.pres.Slides()
 	d.activeSlide = len(slides) - 1
 	d.dirty = true
@@ -302,6 +324,41 @@ func (d *Document) ensureSlideProjectionCacheCount(count int) {
 	for len(d.slidePlaceholderTypes) < count {
 		d.slidePlaceholderTypes = append(d.slidePlaceholderTypes, make(map[uint32]string))
 	}
+	for len(d.slideShapeTransforms) < count {
+		d.slideShapeTransforms = append(d.slideShapeTransforms, make(map[uint32]presentationTransformMetadata))
+	}
+	for len(d.slidePlaceholderXfrms) < count {
+		d.slidePlaceholderXfrms = append(d.slidePlaceholderXfrms, make(map[uint32]presentationTransformMetadata))
+	}
+	for len(d.slideTransformChanges) < count {
+		d.slideTransformChanges = append(d.slideTransformChanges, make(map[uint32]presentationTransformOverride))
+	}
+	for len(d.slideStyleChanges) < count {
+		d.slideStyleChanges = append(d.slideStyleChanges, make(map[uint32]document.PresentationElementStylePatch))
+	}
+	for len(d.slidePictureCropStates) < count {
+		d.slidePictureCropStates = append(d.slidePictureCropStates, make(map[uint32]presentationPictureCropState))
+	}
+	for len(d.slidePictureCropChanges) < count {
+		d.slidePictureCropChanges = append(d.slidePictureCropChanges, make(map[uint32]document.PresentationCrop))
+	}
+	for len(d.slidePictureImageChanges) < count {
+		d.slidePictureImageChanges = append(d.slidePictureImageChanges, make(map[uint32]presentationPictureImageOverride))
+	}
+	for index := 0; index < count; index++ {
+		if d.slidePictureCropStates[index] == nil {
+			d.slidePictureCropStates[index] = make(map[uint32]presentationPictureCropState)
+		}
+		if d.slidePictureCropChanges[index] == nil {
+			d.slidePictureCropChanges[index] = make(map[uint32]document.PresentationCrop)
+		}
+		if d.slidePictureImageChanges[index] == nil {
+			d.slidePictureImageChanges[index] = make(map[uint32]presentationPictureImageOverride)
+		}
+		if d.slideStyleChanges[index] == nil {
+			d.slideStyleChanges[index] = make(map[uint32]document.PresentationElementStylePatch)
+		}
+	}
 }
 
 func (d *Document) removeSlideProjectionCaches(index, oldCount int) {
@@ -325,6 +382,41 @@ func (d *Document) removeSlideProjectionCaches(index, oldCount int) {
 		d.slidePlaceholderTypes[len(d.slidePlaceholderTypes)-1] = nil
 		d.slidePlaceholderTypes = d.slidePlaceholderTypes[:len(d.slidePlaceholderTypes)-1]
 	}
+	if index < len(d.slideShapeTransforms) {
+		copy(d.slideShapeTransforms[index:], d.slideShapeTransforms[index+1:])
+		d.slideShapeTransforms[len(d.slideShapeTransforms)-1] = nil
+		d.slideShapeTransforms = d.slideShapeTransforms[:len(d.slideShapeTransforms)-1]
+	}
+	if index < len(d.slidePlaceholderXfrms) {
+		copy(d.slidePlaceholderXfrms[index:], d.slidePlaceholderXfrms[index+1:])
+		d.slidePlaceholderXfrms[len(d.slidePlaceholderXfrms)-1] = nil
+		d.slidePlaceholderXfrms = d.slidePlaceholderXfrms[:len(d.slidePlaceholderXfrms)-1]
+	}
+	if index < len(d.slideTransformChanges) {
+		copy(d.slideTransformChanges[index:], d.slideTransformChanges[index+1:])
+		d.slideTransformChanges[len(d.slideTransformChanges)-1] = nil
+		d.slideTransformChanges = d.slideTransformChanges[:len(d.slideTransformChanges)-1]
+	}
+	if index < len(d.slideStyleChanges) {
+		copy(d.slideStyleChanges[index:], d.slideStyleChanges[index+1:])
+		d.slideStyleChanges[len(d.slideStyleChanges)-1] = nil
+		d.slideStyleChanges = d.slideStyleChanges[:len(d.slideStyleChanges)-1]
+	}
+	if index < len(d.slidePictureCropStates) {
+		copy(d.slidePictureCropStates[index:], d.slidePictureCropStates[index+1:])
+		d.slidePictureCropStates[len(d.slidePictureCropStates)-1] = nil
+		d.slidePictureCropStates = d.slidePictureCropStates[:len(d.slidePictureCropStates)-1]
+	}
+	if index < len(d.slidePictureCropChanges) {
+		copy(d.slidePictureCropChanges[index:], d.slidePictureCropChanges[index+1:])
+		d.slidePictureCropChanges[len(d.slidePictureCropChanges)-1] = nil
+		d.slidePictureCropChanges = d.slidePictureCropChanges[:len(d.slidePictureCropChanges)-1]
+	}
+	if index < len(d.slidePictureImageChanges) {
+		copy(d.slidePictureImageChanges[index:], d.slidePictureImageChanges[index+1:])
+		d.slidePictureImageChanges[len(d.slidePictureImageChanges)-1] = nil
+		d.slidePictureImageChanges = d.slidePictureImageChanges[:len(d.slidePictureImageChanges)-1]
+	}
 	delete(d.slideBodyProps, index)
 	delete(d.slidePictureTargets, index)
 	for slideIndex := index; slideIndex < oldCount-1; slideIndex++ {
@@ -339,6 +431,62 @@ func (d *Document) removeSlideProjectionCaches(index, oldCount int) {
 	}
 	delete(d.slideBodyProps, oldCount-1)
 	delete(d.slidePictureTargets, oldCount-1)
+}
+
+// UpdateSlideElementTransform records a slide-local geometry change. The
+// change is projected immediately and serialized by the PPTX adapter during
+// file saves and recovery snapshots.
+func (d *Document) UpdateSlideElementTransform(slideIndex int, shapeID int64, bounds document.PresentationRect, rotationDeg float64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if err := validatePresentationTransform(bounds, rotationDeg); err != nil {
+		return err
+	}
+	if shapeID <= 0 || uint64(shapeID) > uint64(^uint32(0)) {
+		return fmt.Errorf("形状 ID 无效: %d", shapeID)
+	}
+	slides, err := d.pres.Slides()
+	if err != nil || slideIndex < 0 || slideIndex >= len(slides) {
+		return fmt.Errorf("幻灯片序号无效: %d", slideIndex)
+	}
+	shapes, err := slides[slideIndex].Shapes()
+	if err != nil {
+		return fmt.Errorf("读取幻灯片形状失败: %w", err)
+	}
+	var selected gopptx.Shape
+	count := 0
+	for _, shape := range shapes {
+		if int64(shape.ID()) == shapeID {
+			selected = shape
+			count++
+		}
+	}
+	if count != 1 {
+		if count == 0 {
+			return fmt.Errorf("未找到幻灯片 %d 上的形状 ID %d", slideIndex, shapeID)
+		}
+		return fmt.Errorf("幻灯片 %d 上的形状 ID %d 不唯一", slideIndex, shapeID)
+	}
+	switch selected.(type) {
+	case *gopptx.AutoShape, *gopptx.PictureShape:
+	default:
+		return fmt.Errorf("不支持变换幻灯片 %d 上的形状 ID %d", slideIndex, shapeID)
+	}
+	current := d.projectShape(selected, slideIndex)
+	rotationDeg = normalizePresentationRotation(rotationDeg)
+	if current.Bounds == bounds && normalizePresentationRotation(current.RotationDeg) == rotationDeg {
+		return nil
+	}
+	d.ensureSlideProjectionCacheCount(len(slides))
+	id := uint32(shapeID)
+	if d.slideTransformChanges[slideIndex] == nil {
+		d.slideTransformChanges[slideIndex] = make(map[uint32]presentationTransformOverride)
+	}
+	d.slideTransformChanges[slideIndex][id] = presentationTransformOverride{Bounds: bounds, RotationDeg: rotationDeg}
+	d.dirty = true
+	d.revision++
+	return nil
 }
 
 // UpdateSlideText updates the text of a specific shape on a slide.
@@ -528,6 +676,10 @@ func (d *Document) SaveAs(targetPath string) error {
 }
 
 func (d *Document) saveAtomicLocked(targetPath string) error {
+	expected, err := d.presentationSaveExpectationsLocked()
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(targetPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建目录失败: %w", err)
@@ -545,16 +697,34 @@ func (d *Document) saveAtomicLocked(targetPath string) error {
 	if _, err := d.pres.Save(context.Background(), tmpPath, gopptx.WithSaveOverwrite(true)); err != nil {
 		return fmt.Errorf("写入演示文稿失败: %w", err)
 	}
+	validationPath := tmpPath
+	var transformedPath string
+	if hasPresentationPackageEdits(d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges) {
+		transformed, err := os.CreateTemp(dir, "glance-pptx-patched-*.tmp")
+		if err != nil {
+			return fmt.Errorf("创建几何校验文件失败: %w", err)
+		}
+		transformedPath = transformed.Name()
+		_ = transformed.Close()
+		defer os.Remove(transformedPath)
+		if err := patchPresentationEdits(tmpPath, transformedPath, d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges); err != nil {
+			return err
+		}
+		validationPath = transformedPath
+	}
+	if err := validateSavedPresentationEdits(validationPath, expected, d.slideStyleChanges); err != nil {
+		return err
+	}
 
 	// Verify reopening before replacement
-	checkPres, err := gopptx.Open(tmpPath)
+	checkPres, err := gopptx.Open(validationPath)
 	if err != nil {
 		return fmt.Errorf("校验保存后的演示文稿失败: %w", err)
 	}
 	_ = checkPres.Close()
 
 	// Atomic replace
-	if err := os.Rename(tmpPath, targetPath); err != nil {
+	if err := os.Rename(validationPath, targetPath); err != nil {
 		return fmt.Errorf("替换目标文件失败: %w", err)
 	}
 
@@ -570,6 +740,10 @@ func (d *Document) SnapshotBytes() ([]byte, error) {
 	if d.pres == nil {
 		return nil, fmt.Errorf("演示文稿已关闭")
 	}
+	expected, err := d.presentationSaveExpectationsLocked()
+	if err != nil {
+		return nil, err
+	}
 
 	tmpFile, err := os.CreateTemp("", "glance-pptx-snap-*.pptx")
 	if err != nil {
@@ -582,7 +756,26 @@ func (d *Document) SnapshotBytes() ([]byte, error) {
 	if _, err := d.pres.Save(context.Background(), tmpPath, gopptx.WithSaveOverwrite(true)); err != nil {
 		return nil, fmt.Errorf("生成演示文稿快照失败: %w", err)
 	}
-	return os.ReadFile(tmpPath)
+	if !hasPresentationPackageEdits(d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges) {
+		if err := validateSavedPresentationEdits(tmpPath, expected, d.slideStyleChanges); err != nil {
+			return nil, err
+		}
+		return os.ReadFile(tmpPath)
+	}
+	patchedFile, err := os.CreateTemp("", "glance-pptx-snap-patched-*.pptx")
+	if err != nil {
+		return nil, fmt.Errorf("创建几何快照文件失败: %w", err)
+	}
+	patchedPath := patchedFile.Name()
+	_ = patchedFile.Close()
+	defer os.Remove(patchedPath)
+	if err := patchPresentationEdits(tmpPath, patchedPath, d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges); err != nil {
+		return nil, err
+	}
+	if err := validateSavedPresentationEdits(patchedPath, expected, d.slideStyleChanges); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(patchedPath)
 }
 
 // OpenBytes loads a PPTX presentation from in-memory byte slice.
@@ -663,8 +856,17 @@ func (d *Document) Snapshot() document.PresentationSnapshot {
 
 		// Extract shapes
 		if shapes, err := sl.Shapes(); err == nil {
+			idCounts := make(map[uint32]int, len(shapes))
+			for _, sh := range shapes {
+				idCounts[uint32(sh.ID())]++
+			}
 			for _, sh := range shapes {
 				elem := d.projectShape(sh, i)
+				if idCounts[uint32(sh.ID())] != 1 {
+					elem.CanEditPicture = false
+					elem.CanEditTextStyle = false
+					elem.CanEditShapeStyle = false
+				}
 				pSlide.Elements = append(pSlide.Elements, elem)
 				if pSlide.Title == "" && len(elem.Paragraphs) > 0 {
 					pSlide.Title = elem.PlainText()
@@ -699,13 +901,37 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 			H: float64(bounds.H) / emuPerPoint,
 		}
 	}
+	shapeID := uint32(sh.ID())
+	if slideIdx < len(d.slideShapeTransforms) {
+		if metadata, ok := d.slideShapeTransforms[slideIdx][shapeID]; ok {
+			elem.RotationDeg = metadata.RotationDeg
+			elem.AspectRatioLocked = metadata.AspectRatioLocked
+		}
+	}
+	if slideIdx < len(d.slidePlaceholderXfrms) {
+		if metadata, ok := d.slidePlaceholderXfrms[slideIdx][shapeID]; ok {
+			elem.Bounds = metadata.Bounds
+			if slideIdx >= len(d.slideShapeTransforms) || !d.slideShapeTransforms[slideIdx][shapeID].HasXfrm {
+				elem.RotationDeg = metadata.RotationDeg
+				if metadata.HasAspectRatioLock {
+					elem.AspectRatioLocked = metadata.AspectRatioLocked
+				}
+			}
+		}
+	}
 	if slideIdx < len(d.slidePlaceholderBounds) {
-		if bounds, ok := d.slidePlaceholderBounds[slideIdx][uint32(sh.ID())]; ok {
+		if bounds, ok := d.slidePlaceholderBounds[slideIdx][shapeID]; ok {
 			elem.Bounds = bounds
 		}
 	}
 	if slideIdx < len(d.slidePlaceholderTypes) {
-		elem.PlaceholderType = d.slidePlaceholderTypes[slideIdx][uint32(sh.ID())]
+		elem.PlaceholderType = d.slidePlaceholderTypes[slideIdx][shapeID]
+	}
+	if slideIdx < len(d.slideTransformChanges) {
+		if override, ok := d.slideTransformChanges[slideIdx][shapeID]; ok {
+			elem.Bounds = override.Bounds
+			elem.RotationDeg = override.RotationDeg
+		}
 	}
 
 	// Geometry / shape kind
@@ -791,6 +1017,7 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 	// Text content
 	switch s := sh.(type) {
 	case *gopptx.AutoShape:
+		elem.CanEditShapeStyle = true
 		if tf, err := s.TextFrame(); err == nil && tf != nil {
 			if paras, err := tf.Paragraphs(); err == nil {
 				for _, para := range paras {
@@ -808,6 +1035,9 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 						default:
 							pPara.Align = props.Align
 						}
+						pPara.LineSpacing = projectPresentationSpacing(props.LineSpacing)
+						pPara.SpaceBefore = projectPresentationSpacing(props.SpaceBefore)
+						pPara.SpaceAfter = projectPresentationSpacing(props.SpaceAfter)
 					}
 					if runs, err := para.Runs(); err == nil {
 						for _, r := range runs {
@@ -836,6 +1066,7 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 							}
 							if advanced, _, err := r.AdvancedProps(); err == nil {
 								pRun.Baseline = advanced.Baseline
+								pRun.Underline = advanced.Underline != "" && advanced.Underline != "none"
 							}
 							if pRun.SizePT <= 0 {
 								pRun.SizePT = placeholderDefaultFontSize(elem.PlaceholderType)
@@ -848,7 +1079,7 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 							}
 						}
 					}
-					if len(pPara.Runs) > 0 {
+					if len(pPara.Runs) > 0 || pPara.LineSpacing != nil || pPara.SpaceBefore != nil || pPara.SpaceAfter != nil {
 						elem.Paragraphs = append(elem.Paragraphs, pPara)
 					}
 				}
@@ -860,17 +1091,58 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 		if isEditableTextPlaceholderType(elem.PlaceholderType) {
 			elem.Kind = document.ElementKindText
 		}
+		elem.CanEditTextStyle = len(elem.Paragraphs) > 0 && validateStyleTextTarget(s) == nil
 	case *gopptx.PictureShape:
 		elem.Kind = document.ElementKindPicture
 		elem.AltText = s.AltText()
 		if targets := d.slidePictureTargets[slideIdx]; targets != nil {
 			if target, ok := targets[uint32(s.ID())]; ok {
 				elem.Image = d.mediaImages[target]
+				elem.ImageBytes = append([]byte(nil), d.mediaBytes[target]...)
 			}
+		}
+		id := uint32(s.ID())
+		if slideIdx < len(d.slidePictureCropStates) {
+			if state, ok := d.slidePictureCropStates[slideIdx][id]; ok {
+				elem.Crop = state.Crop
+			}
+		}
+		if slideIdx < len(d.slidePictureCropChanges) {
+			if crop, ok := d.slidePictureCropChanges[slideIdx][id]; ok {
+				elem.Crop = crop
+			}
+		}
+		if slideIdx < len(d.slidePictureImageChanges) {
+			if override, ok := d.slidePictureImageChanges[slideIdx][id]; ok {
+				elem.ImageBytes = append([]byte(nil), override.Data...)
+				elem.Image = override.Image
+			}
+		}
+		elem.CanEditPicture = d.pictureCanEditLocked(slideIdx, id)
+	}
+	if slideIdx < len(d.slideStyleChanges) {
+		if patch, ok := d.slideStyleChanges[slideIdx][shapeID]; ok {
+			applyPresentationElementStyle(&elem, patch)
 		}
 	}
 
 	return elem
+}
+
+func projectPresentationSpacing(spacing *gopptx.Spacing) *document.PresentationSpacing {
+	if spacing == nil {
+		return nil
+	}
+	value := float64(spacing.Value)
+	switch spacing.Kind {
+	case "pct":
+		value /= 100000
+	case "pts":
+		value /= 100
+	default:
+		return nil
+	}
+	return &document.PresentationSpacing{Kind: spacing.Kind, Value: value}
 }
 
 func placeholderDefaultFontSize(placeholderType string) float64 {
@@ -936,6 +1208,13 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 		d.slideInherited = make([][]document.PresentationElement, len(orderedSlideFiles))
 		d.slidePlaceholderBounds = make([]map[uint32]document.PresentationRect, len(orderedSlideFiles))
 		d.slidePlaceholderTypes = make([]map[uint32]string, len(orderedSlideFiles))
+		d.slideShapeTransforms = make([]map[uint32]presentationTransformMetadata, len(orderedSlideFiles))
+		d.slidePlaceholderXfrms = make([]map[uint32]presentationTransformMetadata, len(orderedSlideFiles))
+		d.slideTransformChanges = make([]map[uint32]presentationTransformOverride, len(orderedSlideFiles))
+		d.slideStyleChanges = make([]map[uint32]document.PresentationElementStylePatch, len(orderedSlideFiles))
+		d.slidePictureCropStates = make([]map[uint32]presentationPictureCropState, len(orderedSlideFiles))
+		d.slidePictureCropChanges = make([]map[uint32]document.PresentationCrop, len(orderedSlideFiles))
+		d.slidePictureImageChanges = make([]map[uint32]presentationPictureImageOverride, len(orderedSlideFiles))
 		for idx, slidePath := range orderedSlideFiles {
 			layoutPart, _ := pkg.relatedPart(slidePath, pptxSlideLayoutRelationshipType)
 			masterPart, _ := pkg.relatedPart(layoutPart, pptxSlideMasterRelationshipType)
@@ -946,9 +1225,12 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 			if sf, ok := files[slidePath]; ok {
 				if data, err := readOPCPart(sf); err == nil {
 					d.slideBodyProps[idx] = parseSlideXML(data)
+					d.slideShapeTransforms[idx] = parseSlideTransformMetadata(data)
+					d.slidePictureCropStates[idx] = parseSlidePictureCropStates(data)
 					d.loadSlidePictureImages(pkg, idx, slidePath, data)
 				}
 			}
+			d.slidePlaceholderXfrms[idx] = pkg.placeholderTransforms(slidePath, layoutPart, masterPart)
 		}
 	} else {
 		// Fallback: parse all slide files matching ppt/slides/slide*.xml
@@ -957,12 +1239,19 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 			if strings.HasPrefix(f.Name, "ppt/slides/slide") && strings.HasSuffix(f.Name, ".xml") {
 				if data, err := readOPCPart(f); err == nil {
 					d.slideBodyProps[slideIdx] = parseSlideXML(data)
+					d.slideShapeTransforms = append(d.slideShapeTransforms, parseSlideTransformMetadata(data))
+					d.slidePictureCropStates = append(d.slidePictureCropStates, parseSlidePictureCropStates(data))
 					d.loadSlidePictureImages(pkg, slideIdx, f.Name, data)
 					layoutPart, _ := pkg.relatedPart(f.Name, pptxSlideLayoutRelationshipType)
 					masterPart, _ := pkg.relatedPart(layoutPart, pptxSlideMasterRelationshipType)
 					d.slideInherited = append(d.slideInherited, pkg.inheritedElements(f.Name, layoutPart, masterPart))
 					d.slidePlaceholderBounds = append(d.slidePlaceholderBounds, pkg.placeholderBounds(f.Name, layoutPart, masterPart))
 					d.slidePlaceholderTypes = append(d.slidePlaceholderTypes, pkg.placeholderTypes(f.Name))
+					d.slidePlaceholderXfrms = append(d.slidePlaceholderXfrms, pkg.placeholderTransforms(f.Name, layoutPart, masterPart))
+					d.slideTransformChanges = append(d.slideTransformChanges, make(map[uint32]presentationTransformOverride))
+					d.slideStyleChanges = append(d.slideStyleChanges, make(map[uint32]document.PresentationElementStylePatch))
+					d.slidePictureCropChanges = append(d.slidePictureCropChanges, make(map[uint32]document.PresentationCrop))
+					d.slidePictureImageChanges = append(d.slidePictureImageChanges, make(map[uint32]presentationPictureImageOverride))
 					if len(d.slideBackgrounds) <= slideIdx {
 						d.slideBackgrounds = append(d.slideBackgrounds, pptxBackground{})
 					}

@@ -297,6 +297,19 @@ func (a *App) processAsyncResults() {
 	default:
 	}
 	select {
+	case result := <-a.pptxPicPickerResults:
+		a.handlePresentationPicturePickerResult(result)
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	default:
+	}
+	select {
+	case result := <-a.pptxPicCommandResults:
+		a.applyPresentationPictureCommandResult(result)
+	default:
+	}
+	select {
 	case result := <-a.xlsxImagePickerResults:
 		a.handleSpreadsheetImagePickerResult(result)
 		if a.window != nil {

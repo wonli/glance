@@ -7,6 +7,11 @@ type PresentationRect struct {
 	X, Y, W, H float64
 }
 
+// PresentationCrop stores the visible-source margins in DrawingML's 0..100000 units.
+type PresentationCrop struct {
+	Left, Top, Right, Bottom int
+}
+
 // PresentationPath stores one custom DrawingML path in its local coordinate space.
 type PresentationPath struct {
 	Width, Height float64
@@ -63,9 +68,39 @@ type PresentationTextRun struct {
 
 // PresentationParagraph represents a paragraph of text runs.
 type PresentationParagraph struct {
-	Runs   []PresentationTextRun
-	Align  string // "left", "center", "right", "justify"
-	Bullet bool
+	Runs        []PresentationTextRun
+	Align       string // "left", "center", "right", "justify"
+	LineSpacing *PresentationSpacing
+	SpaceBefore *PresentationSpacing
+	SpaceAfter  *PresentationSpacing
+	Bullet      bool
+}
+
+// PresentationSpacing preserves explicit paragraph spacing without exposing
+// the PPTX adapter's library types. Percentage values are ratios (1.5 = 150%);
+// point values are points.
+type PresentationSpacing struct {
+	Kind  string // "pct" or "pts"
+	Value float64
+}
+
+// PresentationElementStylePatch contains only explicitly requested style
+// changes. Pointer fields preserve the distinction between an omitted field
+// and an explicit false, zero, or "none" value.
+type PresentationElementStylePatch struct {
+	FontFamily         *string
+	FontSizePT         *float64
+	Bold               *bool
+	Italic             *bool
+	Underline          *bool
+	TextColorHex       *string
+	ParagraphAlignment *string
+	LineSpacing        *PresentationSpacing
+	SpaceBefore        *PresentationSpacing
+	SpaceAfter         *PresentationSpacing
+	FillColorHex       *string
+	BorderColor        *string
+	BorderWidthPT      *float64
 }
 
 // PlainText returns the full text across all runs in the paragraph.
@@ -84,6 +119,8 @@ type PresentationElement struct {
 	Kind        PresentationElementKind
 	Bounds      PresentationRect
 	RotationDeg float64
+	// AspectRatioLocked reflects an explicit DrawingML noChangeAspect lock.
+	AspectRatioLocked bool
 	// PlaceholderType preserves the slide-local DrawingML placeholder role so
 	// the UI can show an empty-field prompt while keeping its actual text empty.
 	PlaceholderType string
@@ -100,11 +137,17 @@ type PresentationElement struct {
 	BorderWidth  float64
 	ShapeType    string // "rect", "roundRect", "ellipse", etc.
 	Paths        []PresentationPath
+	// Adapter-projected capabilities keep unsupported source structures out
+	// of the style controls without exposing format-library types to the UI.
+	CanEditTextStyle  bool
+	CanEditShapeStyle bool
 
 	// Image content (used by ElementKindPicture)
-	ImageBytes []byte
-	Image      image.Image
-	AltText    string
+	ImageBytes     []byte
+	Image          image.Image
+	AltText        string
+	Crop           PresentationCrop
+	CanEditPicture bool
 }
 
 // PlainText returns the combined plain text of all paragraphs in the element.

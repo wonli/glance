@@ -125,6 +125,10 @@ type App struct {
 	wordImagePickerResults  chan wordImagePickerResult
 	wordImagePickerRunning  bool
 	wordImageFilePicker     func() (string, error)
+	pptxPicPickerResults    chan presentationPicturePickerResult
+	pptxPicCommandResults   chan presentationPictureCommandResult
+	pptxPicPickerRunning    bool
+	pptxPicFilePicker       func() (string, error)
 	xlsxImagePickerResults  chan spreadsheetImagePickerResult
 	xlsxImagePickerRunning  bool
 	xlsxImageFilePicker     func() (string, error)
@@ -197,6 +201,8 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		wordCommandResults:           make(chan wordCommandResult, 8),
 		wordImageResults:             make(chan wordImageDecodeResult, 64),
 		wordImagePickerResults:       make(chan wordImagePickerResult, 1),
+		pptxPicPickerResults:         make(chan presentationPicturePickerResult, 1),
+		pptxPicCommandResults:        make(chan presentationPictureCommandResult, 1),
 		xlsxImagePickerResults:       make(chan spreadsheetImagePickerResult, 1),
 		saveResults:                  make(chan saveResult, 1),
 		openResults:                  make(chan openResult, 1),
