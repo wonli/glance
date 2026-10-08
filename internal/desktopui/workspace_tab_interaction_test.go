@@ -136,3 +136,87 @@ func TestSnapshotlessDocumentTabReopensItsSourceWhenSelected(t *testing.T) {
 	}
 	app.closeWorkspaceTabNow(id)
 }
+
+func TestCreateMenuDismissOnBlankClick(t *testing.T) {
+	app := New(nil, "")
+	app.clientTitlebar = false
+	app.showNewMenu = true
+
+	var router input.Router
+	var ops op.Ops
+	draw := func() {
+		ops.Reset()
+		gtx := layout.Context{
+			Ops:         &ops,
+			Source:      router.Source(),
+			Now:         time.Now(),
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Constraints{Min: image.Pt(1000, 700), Max: image.Pt(1000, 700)},
+		}
+		app.layoutWorkspaceBody(gtx)
+		router.Frame(&ops)
+	}
+
+	draw()
+	if !app.showNewMenu {
+		t.Fatal("expected showNewMenu to be true before click")
+	}
+
+	// 1. Click inside the menu card (e.g. at (200, 20), on the header area of the card):
+	cardPoint := f32.Pt(200, 20)
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Position: cardPoint, Buttons: pointer.ButtonPrimary})
+	draw()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: cardPoint})
+	draw()
+
+	if !app.showNewMenu {
+		t.Fatal("clicking inside create menu card unexpectedly dismissed the menu")
+	}
+
+	// 2. Click outside the menu in the blank area (e.g. at (700, 500) in workspace body):
+	blankPoint := f32.Pt(700, 500)
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 2, Position: blankPoint, Buttons: pointer.ButtonPrimary})
+	draw()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 2, Position: blankPoint})
+	draw()
+
+	if app.showNewMenu {
+		t.Fatal("clicking outside create menu in blank area did not dismiss the menu")
+	}
+}
+
+func TestCreateMenuDismissOnTabClick(t *testing.T) {
+	app := New(nil, "")
+	app.clientTitlebar = false
+	app.activeTabID = "doc-a"
+	app.tabMeta["doc-a"] = workspace.Tab{ID: "doc-a", Title: "doc-a.docx", Position: 0}
+	app.tabMeta["doc-b"] = workspace.Tab{ID: "doc-b", Title: "doc-b.docx", Position: 1}
+	app.showNewMenu = true
+
+	var router input.Router
+	var ops op.Ops
+	draw := func() {
+		ops.Reset()
+		gtx := layout.Context{
+			Ops:         &ops,
+			Source:      router.Source(),
+			Now:         time.Now(),
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Constraints{Min: image.Pt(800, 42), Max: image.Pt(800, 42)},
+		}
+		app.layoutWorkspaceTabs(gtx)
+		router.Frame(&ops)
+	}
+
+	draw()
+	// Click on Recent tab ("⌂ Glance") at (40, 20)
+	point := f32.Pt(40, 20)
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Position: point, Buttons: pointer.ButtonPrimary})
+	draw()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: point})
+	draw()
+
+	if app.showNewMenu {
+		t.Fatal("clicking recent tab did not dismiss the create menu")
+	}
+}

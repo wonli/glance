@@ -81,6 +81,8 @@ type App struct {
 	clientTitlebar          bool
 	windowDecorations       widget.Decorations
 	showNewMenu             bool
+	createMenuScrim         widget.Clickable
+	createMenuCardClick     widget.Clickable
 	modal                   modalDialog
 	wordSymbolPickerVisible bool
 	wordSymbolPickerScrim   widget.Clickable

@@ -28,14 +28,30 @@ const (
 )
 
 func (a *App) layoutCreateMenuPopover(gtx layout.Context) layout.Dimensions {
-	left := a.plusMenuOffset(gtx)
-	shift := op.Offset(image.Pt(left, 0)).Push(gtx.Ops)
-	dims := a.layoutCreateActions(gtx)
-	shift.Pop()
-	return dims
+	if a.createMenuScrim.Clicked(gtx) {
+		a.showNewMenu = false
+	}
+	return layout.Stack{Alignment: layout.NW}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return a.createMenuScrim.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				size := gtx.Constraints.Max
+				semantic.Button.Add(gtx.Ops)
+				semantic.DescriptionOp("关闭新建菜单").Add(gtx.Ops)
+				return layout.Dimensions{Size: size}
+			})
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			left := a.plusMenuOffset(gtx)
+			plusX := a.plusButtonOffset(gtx)
+			shift := op.Offset(image.Pt(left, 0)).Push(gtx.Ops)
+			dims := a.layoutCreateActions(gtx, plusX-left)
+			shift.Pop()
+			return dims
+		}),
+	)
 }
 
-func (a *App) plusMenuOffset(gtx layout.Context) int {
+func (a *App) plusButtonOffset(gtx layout.Context) int {
 	ids := a.workspaceTabIDs()
 	plusIndex := len(ids) + 1
 	x := -a.workspaceTabsList.Position.Offset
@@ -54,61 +70,144 @@ func (a *App) plusMenuOffset(gtx layout.Context) int {
 			x += gtx.Dp(unit.Dp(114))
 		}
 	}
-	maxX := gtx.Constraints.Max.X - createMenuWidthPx(gtx) - gtx.Dp(unit.Dp(8))
-	if maxX < gtx.Dp(unit.Dp(8)) {
-		maxX = gtx.Dp(unit.Dp(8))
+	return x
+}
+
+func (a *App) plusMenuOffset(gtx layout.Context) int {
+	x := a.plusButtonOffset(gtx)
+	menuWidth := createMenuWidthPx(gtx)
+	margin := gtx.Dp(unit.Dp(8))
+	maxX := gtx.Constraints.Max.X - menuWidth - margin
+	if maxX < margin {
+		maxX = margin
+	}
+	plusWidth := gtx.Dp(workspacePlusTabWidth)
+	if x+plusWidth > maxX+menuWidth {
+		neededLeft := x + plusWidth - menuWidth
+		windowMax := gtx.Constraints.Max.X - menuWidth
+		if neededLeft > windowMax {
+			neededLeft = windowMax
+		}
+		if neededLeft > maxX {
+			maxX = neededLeft
+		}
 	}
 	if x > maxX {
 		x = maxX
 	}
-	if x < gtx.Dp(unit.Dp(8)) {
-		x = gtx.Dp(unit.Dp(8))
+	if x < margin {
+		x = margin
 	}
 	return x
 }
 
-func (a *App) layoutCreateActions(gtx layout.Context) layout.Dimensions {
+type createMenuConnectorGeometry struct {
+	MinX int
+	MaxX int
+	NW   int
+	NE   int
+}
+
+func calculateCreateMenuConnector(bounds image.Rectangle, plusRelX, plusWidth, radius, seamCover int) createMenuConnectorGeometry {
+	menuWidth := bounds.Max.X
+	start := plusRelX
+	end := plusRelX + plusWidth
+
+	if start < 0 {
+		start = 0
+	}
+	if end > menuWidth {
+		end = menuWidth
+	}
+	if end < start {
+		end = start
+	}
+
+	nw := radius
+	if start <= 0 {
+		nw = 0
+	} else if start < radius {
+		nw = start
+	}
+
+	ne := radius
+	rightMargin := menuWidth - end
+	if rightMargin <= 0 {
+		ne = 0
+	} else if rightMargin < radius {
+		ne = rightMargin
+	}
+
+	minX := max(0, start)
+	maxX := min(menuWidth, end)
+	if start <= 0 {
+		maxX = min(menuWidth, end+seamCover)
+	} else if end >= menuWidth {
+		minX = max(0, start-seamCover)
+	}
+
+	return createMenuConnectorGeometry{
+		MinX: minX,
+		MaxX: maxX,
+		NW:   nw,
+		NE:   ne,
+	}
+}
+
+func (a *App) layoutCreateActions(gtx layout.Context, plusRelX int) layout.Dimensions {
 	width := createMenuWidthPx(gtx)
 	height := gtx.Dp(createMenuHeight)
 	gtx.Constraints.Min = image.Pt(width, height)
 	gtx.Constraints.Max = gtx.Constraints.Min
+	for a.createMenuCardClick.Clicked(gtx) {
+	}
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			bounds := image.Rectangle{Max: gtx.Constraints.Max}
 			radius := gtx.Dp(unit.Dp(12))
+			seamCover := gtx.Dp(unit.Dp(1))
+			plusWidth := gtx.Dp(workspacePlusTabWidth)
+			conn := calculateCreateMenuConnector(bounds, plusRelX, plusWidth, radius, seamCover)
+
 			shadowBounds := bounds.Add(image.Pt(0, gtx.Dp(unit.Dp(5))))
-			shadow := clip.RRect{Rect: shadowBounds, NE: radius, SE: radius, SW: radius}
+			shadow := clip.RRect{Rect: shadowBounds, NW: conn.NW, NE: conn.NE, SE: radius, SW: radius}
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 31, G: 41, B: 55, A: 28}, shadow.Op(gtx.Ops))
-			panel := clip.RRect{Rect: bounds, NE: radius, SE: radius, SW: radius}
+
+			panel := clip.RRect{Rect: bounds, NW: conn.NW, NE: conn.NE, SE: radius, SW: radius}
 			paint.FillShape(gtx.Ops, contentSurface, panel.Op(gtx.Ops))
 			paint.FillShape(gtx.Ops, homeBorder, clip.Stroke{Path: panel.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
-			seamCover := gtx.Dp(unit.Dp(1))
+
 			connector := clip.Rect{
-				Min: image.Pt(0, -seamCover),
-				Max: image.Pt(gtx.Dp(workspacePlusTabWidth)+seamCover, seamCover),
+				Min: image.Pt(conn.MinX, -seamCover),
+				Max: image.Pt(conn.MaxX, seamCover),
 			}
 			paint.FillShape(gtx.Ops, contentSurface, connector.Op())
 			return layout.Dimensions{Size: bounds.Max}
 		}),
-		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(18), Bottom: unit.Dp(18), Left: unit.Dp(18), Right: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return a.layoutCreateMenuHeader(gtx)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, a.layoutCreateMenuGrid)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, a.layoutCreateMenuDivider)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, a.layoutCreateMenuOpenActions)
-					}),
-				)
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return a.createMenuCardClick.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Dimensions{Size: gtx.Constraints.Min}
 			})
 		}),
-	)
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(18), Bottom: unit.Dp(18), Left: unit.Dp(18), Right: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return a.layoutCreateMenuHeader(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, a.layoutCreateMenuGrid)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, a.layoutCreateMenuDivider)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, a.layoutCreateMenuOpenActions)
+						}),
+					)
+				})
+			}),
+		)
 }
 
 func createMenuWidthPx(gtx layout.Context) int {

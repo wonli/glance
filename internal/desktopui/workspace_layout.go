@@ -225,6 +225,7 @@ func layoutWindowMoveAreaAfter(gtx layout.Context, w layout.Widget) layout.Dimen
 
 func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
 	if a.recentTabButton.Clicked(gtx) {
+		a.showNewMenu = false
 		a.persistActiveSession()
 		a.activateRecent()
 	}
@@ -268,9 +269,11 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 	meta := a.tabMeta[id]
 	tabButton, closeButton := a.documentTabWidgets(id)
 	if tabButton.Clicked(gtx) {
+		a.showNewMenu = false
 		a.activateWorkspaceTab(id)
 	}
 	if closeButton.Clicked(gtx) {
+		a.showNewMenu = false
 		a.closeWorkspaceTab(id)
 	}
 	label := meta.Title
