@@ -117,6 +117,52 @@ func TestWriteWordPDFReplaysParagraphBottomBorder(t *testing.T) {
 	}
 }
 
+func TestWriteWordPDFReplaysTableCellBorderEdges(t *testing.T) {
+	result := wordlayout.Result{CanPreview: true, Pages: []wordlayout.PageScene{{
+		Clip: wordlayout.Rect{WidthPT: 100, HeightPT: 100},
+		TableCells: []wordlayout.TableCellPlacement{
+			{
+				CellID: "middle-segment", Bounds: wordlayout.Rect{XPT: 20, YPT: 20, WidthPT: 40, HeightPT: 30},
+				DrawLeftBorder: true, DrawRightBorder: true,
+			},
+			{
+				CellID: "page-segment", FillColor: "AABBCC", Bounds: wordlayout.Rect{XPT: 20, YPT: 55, WidthPT: 40, HeightPT: 30},
+				DrawTopBorder: true, DrawBottomBorder: true, DrawLeftBorder: true, DrawRightBorder: true,
+			},
+		},
+	}}}
+	var output bytes.Buffer
+	if err := WriteWordPDF(context.Background(), &output, result, testResources{}, testResources{}); err != nil {
+		t.Fatalf("WriteWordPDF: %v", err)
+	}
+	reader, err := gopdf.NewReader(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, _, err := reader.RenderPageDetail(0, gopdf.RenderOpts{DPI: 72, IncludeVector: true})
+	if err != nil {
+		t.Fatalf("render generated PDF: %v", err)
+	}
+	assertBorder := func(x, y int, want bool) {
+		t.Helper()
+		pixel := color.NRGBAModel.Convert(rendered.At(x, y)).(color.NRGBA)
+		got := pixel.R < 220 && pixel.G < 220 && pixel.B < 220
+		if got != want {
+			t.Errorf("pixel (%d,%d) = %v; border=%v, want %v", x, y, pixel, got, want)
+		}
+	}
+	assertBorder(20, 35, true)
+	assertBorder(59, 35, true)
+	assertBorder(30, 20, false)
+	assertBorder(30, 49, false)
+	assertBorder(30, 55, true)
+	assertBorder(30, 84, true)
+	fill := color.NRGBAModel.Convert(rendered.At(30, 65)).(color.NRGBA)
+	if fill.R != 0xAA || fill.G != 0xBB || fill.B != 0xCC {
+		t.Fatalf("table-cell fill pixel = %v; want #AABBCC", fill)
+	}
+}
+
 func TestWriteWordPDFReplaysImageRectangle(t *testing.T) {
 	var encoded bytes.Buffer
 	fixture := image.NewRGBA(image.Rect(0, 0, 2, 1))

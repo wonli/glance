@@ -20,12 +20,16 @@ func cloneWordLayoutData(data document.WordLayoutData) document.WordLayoutData {
 	clone := data
 	clone.Sections = append([]document.WordSection(nil), data.Sections...)
 	clone.Styles = append([]document.WordStyle(nil), data.Styles...)
+	clone.Defaults.Paragraph.TabStops = append([]document.WordTabStop(nil), data.Defaults.Paragraph.TabStops...)
+	for index := range clone.Styles {
+		clone.Styles[index].Paragraph.TabStops = append([]document.WordTabStop(nil), data.Styles[index].Paragraph.TabStops...)
+	}
 	clone.Unsupported = append([]document.WordLayoutUnsupported(nil), data.Unsupported...)
 	return clone
 }
 
 func projectWordLayoutData(parts []part, partIndexes map[string]int, relationships map[string]wordRelationship, root *wordXMLNode) document.WordLayoutData {
-	data := document.WordLayoutData{Sections: make([]document.WordSection, 0, 1)}
+	data := document.WordLayoutData{Sections: make([]document.WordSection, 0, 1), DefaultTabStopPT: 36}
 	body := firstChild(root, "body")
 	if body == nil {
 		return data
@@ -47,6 +51,22 @@ func projectWordLayoutData(parts []part, partIndexes map[string]int, relationshi
 	} else if stylePart != "" {
 		appendLayoutUnsupported(&data.Unsupported, document.WordLayoutUnsupported{SourceID: stylePart, Code: "missing-styles", Description: "The DOCX package references a missing styles part; page layout cannot resolve style defaults."})
 	}
+	for _, relationship := range relationships {
+		if !relationship.settings || relationship.external {
+			continue
+		}
+		if index, ok := partIndexes[relationship.target]; ok {
+			settings, err := parseWordXML(parts[index].data)
+			if err == nil {
+				if stop := firstChild(settings, "defaultTabStop"); stop != nil {
+					if twips, parseErr := strconv.ParseFloat(attrValue(stop, "val"), 64); parseErr == nil && twips > 0 {
+						data.DefaultTabStopPT = twips / 20
+					}
+				}
+			}
+		}
+		break
+	}
 
 	contentBlock := 0
 	sectionStart := 0
@@ -54,22 +74,36 @@ func projectWordLayoutData(parts []part, partIndexes map[string]int, relationshi
 		blockID := "b" + strconv.Itoa(contentBlock)
 		switch child.name.Local {
 		case "p":
-			if properties := firstChild(child, "pPr"); properties != nil {
-				if indentation := firstChild(properties, "ind"); hasNonzeroCharacterIndent(indentation) {
-					appendLayoutUnsupported(&data.Unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "character-indent", Description: "Nonzero character-based paragraph indents are not supported by page layout yet."})
-				}
-				if sectionProperties := firstChild(properties, "sectPr"); sectionProperties != nil {
-					data.Sections = append(data.Sections, projectWordSection(sectionStart, sectionProperties, "section-"+strconv.Itoa(len(data.Sections)), &data.Unsupported))
-					sectionStart = contentBlock + 1
-				}
-			}
+			projectWordParagraphLayoutDiagnostics(child, blockID, contentBlock, &sectionStart, &data)
 			contentBlock++
 		case "tbl":
 			projectWordTableDiagnostics(child, blockID, &data.Unsupported)
 			contentBlock++
+		case "sdt":
+			content := firstChild(child, "sdtContent")
+			if content == nil {
+				contentBlock++
+				continue
+			}
+			for contentIndex, contentChild := range content.children {
+				if isWordRangeMarker(contentChild.name.Local) {
+					continue
+				}
+				contentBlockID := blockID + ".c" + strconv.Itoa(contentIndex)
+				switch contentChild.name.Local {
+				case "p":
+					projectWordParagraphLayoutDiagnostics(contentChild, contentBlockID, contentBlock, &sectionStart, &data)
+				case "tbl":
+					projectWordTableDiagnostics(contentChild, contentBlockID, &data.Unsupported)
+				}
+				contentBlock++
+			}
 		case "sectPr":
 			data.Sections = append(data.Sections, projectWordSection(sectionStart, child, "section-"+strconv.Itoa(len(data.Sections)), &data.Unsupported))
 			sectionStart = contentBlock
+		case "bookmarkStart", "bookmarkEnd", "proofErr", "commentRangeStart", "commentRangeEnd", "permStart", "permEnd":
+			// Range markers do not create body blocks in the content projection.
+			continue
 		default:
 			contentBlock++
 		}
@@ -84,6 +118,20 @@ func projectWordLayoutData(parts []part, partIndexes map[string]int, relationshi
 		})
 	}
 	return data
+}
+
+func projectWordParagraphLayoutDiagnostics(paragraph *wordXMLNode, sourceID string, blockIndex int, sectionStart *int, data *document.WordLayoutData) {
+	properties := firstChild(paragraph, "pPr")
+	if properties == nil {
+		return
+	}
+	if indentation := firstChild(properties, "ind"); hasNonzeroCharacterIndent(indentation) {
+		appendLayoutUnsupported(&data.Unsupported, document.WordLayoutUnsupported{SourceID: sourceID, Code: "character-indent", Description: "Nonzero character-based paragraph indents are not supported by page layout yet."})
+	}
+	if sectionProperties := firstChild(properties, "sectPr"); sectionProperties != nil {
+		data.Sections = append(data.Sections, projectWordSection(*sectionStart, sectionProperties, "section-"+strconv.Itoa(len(data.Sections)), &data.Unsupported))
+		*sectionStart = blockIndex + 1
+	}
 }
 
 func hasNonzeroCharacterIndent(indentation *wordXMLNode) bool {
@@ -336,6 +384,27 @@ func parseWordParagraphLayout(properties *wordXMLNode) document.WordParagraphLay
 			layout.Set |= document.WordParagraphBottomBorderSet
 		}
 	}
+	if tabs := firstChild(properties, "tabs"); tabs != nil {
+		layout.Set |= document.WordParagraphTabStopsSet
+		for _, tab := range tabs.children {
+			if tab.name.Local != "tab" {
+				continue
+			}
+			position, err := strconv.ParseFloat(attrValue(tab, "pos"), 64)
+			if err != nil || position < 0 {
+				continue
+			}
+			alignment := strings.ToLower(attrValue(tab, "val"))
+			if alignment == "" {
+				alignment = "left"
+			}
+			layout.TabStops = append(layout.TabStops, document.WordTabStop{
+				PositionPT: position / 20,
+				Alignment:  alignment,
+				Leader:     strings.ToLower(attrValue(tab, "leader")),
+			})
+		}
+	}
 	return layout
 }
 
@@ -358,6 +427,34 @@ func parseWordParagraphBorder(node *wordXMLNode) document.WordParagraphBorder {
 	return border
 }
 
+func projectedWordGridSpan(properties *wordXMLNode) int {
+	spanNode := firstChild(properties, "gridSpan")
+	if spanNode == nil {
+		return 0
+	}
+	value, present := attrValuePresent(spanNode, "val")
+	span, err := strconv.Atoi(strings.TrimSpace(value))
+	if !present || err != nil || span <= 0 {
+		return 0
+	}
+	return span
+}
+
+func projectedWordVerticalMerge(properties *wordXMLNode) document.WordTableVerticalMerge {
+	mergeNode := firstChild(properties, "vMerge")
+	if mergeNode == nil {
+		return document.WordTableVerticalMergeNone
+	}
+	value, present := attrValuePresent(mergeNode, "val")
+	if !present || strings.TrimSpace(value) == "" || strings.EqualFold(strings.TrimSpace(value), "continue") {
+		return document.WordTableVerticalMergeContinue
+	}
+	if strings.EqualFold(strings.TrimSpace(value), "restart") {
+		return document.WordTableVerticalMergeRestart
+	}
+	return document.WordTableVerticalMergeNone
+}
+
 func wordCellWidthEMU(width *wordXMLNode) int64 {
 	if width == nil || strings.ToLower(attrValue(width, "type")) == "pct" || strings.ToLower(attrValue(width, "type")) == "auto" {
 		return 0
@@ -374,20 +471,24 @@ func wordTwipsToPoints(value string) float64 {
 }
 
 func projectWordTableDiagnostics(table *wordXMLNode, blockID string, unsupported *[]document.WordLayoutUnsupported) {
-	for _, child := range table.children {
+	projectWordTableStructureDiagnostics(table, blockID, unsupported)
+	projectWordTableMergeDiagnostics(table, blockID, unsupported)
+}
+
+func projectWordTableStructureDiagnostics(node *wordXMLNode, blockID string, unsupported *[]document.WordLayoutUnsupported) {
+	if node == nil {
+		return
+	}
+	for _, child := range node.children {
 		switch child.name.Local {
 		case "tbl":
 			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "nested-table", Description: "Nested tables are retained but cannot be paginated faithfully yet."})
-			projectWordTableDiagnostics(child, blockID, unsupported)
-		case "gridSpan":
-			span, err := strconv.Atoi(attrValue(child, "val"))
-			if err != nil || span != 1 {
-				appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "table-grid-span", Description: "Merged table cells are retained but are not supported by page layout yet."})
-			}
+			projectWordTableStructureDiagnostics(child, blockID, unsupported)
+		case "gridSpan", "vMerge":
+			// The table-level validator below accepts valid merge geometry and
+			// reports malformed spans and continuations with located errors.
 		case "hMerge":
 			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "table-horizontal-merge", Description: "Horizontally merged table cells are retained but are not supported by page layout yet."})
-		case "vMerge":
-			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "table-vertical-merge", Description: "Vertically merged table cells are retained but are not supported by page layout yet."})
 		case "tcW":
 			if strings.EqualFold(attrValue(child, "type"), "pct") {
 				appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "table-percentage-width", Description: "Percentage-based table cell widths are not supported by page layout yet."})
@@ -395,9 +496,101 @@ func projectWordTableDiagnostics(table *wordXMLNode, blockID string, unsupported
 		case "tblHeader":
 			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "table-repeated-header", Description: "Repeating table header rows across pages is not supported yet."})
 		default:
-			projectWordTableDiagnostics(child, blockID, unsupported)
+			projectWordTableStructureDiagnostics(child, blockID, unsupported)
 		}
 	}
+}
+
+func projectWordTableMergeDiagnostics(table *wordXMLNode, blockID string, unsupported *[]document.WordLayoutUnsupported) {
+	gridColumns := 0
+	if grid := firstChild(table, "tblGrid"); grid != nil {
+		for _, child := range grid.children {
+			if child.name.Local == "gridCol" {
+				gridColumns++
+			}
+		}
+	}
+
+	activeMerges := make(map[int]int)
+	for _, row := range table.children {
+		if row.name.Local != "tr" {
+			continue
+		}
+		nextMerges := make(map[int]int)
+		gridColumn := 0
+		for _, cell := range row.children {
+			if cell.name.Local != "tc" {
+				continue
+			}
+			properties := firstChild(cell, "tcPr")
+			span := 1
+			spanNode := firstChild(properties, "gridSpan")
+			if spanNode != nil {
+				value, present := attrValuePresent(spanNode, "val")
+				parsed, err := strconv.Atoi(strings.TrimSpace(value))
+				if !present || err != nil || parsed <= 0 {
+					appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "table-grid-span", Description: "A table cell has an invalid grid span; page layout cannot place its columns faithfully."})
+				} else {
+					span = parsed
+				}
+			}
+			if gridColumns > 0 && gridColumn+span > gridColumns {
+				appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "table-grid-span", Description: "A table cell span extends beyond the declared table grid; page layout cannot place its columns faithfully."})
+			}
+
+			mergeNode := firstChild(properties, "vMerge")
+			merge := projectedWordVerticalMerge(properties)
+			if mergeNode != nil && merge == document.WordTableVerticalMergeNone {
+				appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "table-vertical-merge", Description: "A table cell has an invalid vertical-merge value; page layout cannot place its merge faithfully."})
+			}
+			switch merge {
+			case document.WordTableVerticalMergeRestart:
+				nextMerges[gridColumn] = span
+			case document.WordTableVerticalMergeContinue:
+				if activeSpan, ok := activeMerges[gridColumn]; !ok || activeSpan != span {
+					appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "table-vertical-merge", Description: "A vertical-merge continuation has no matching restart at the same grid columns; page layout cannot place the merge faithfully."})
+				}
+				if wordTableCellHasContent(cell) {
+					appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "table-vertical-merge", Description: "A vertical-merge continuation cell contains content; page layout cannot duplicate it faithfully."})
+				}
+				nextMerges[gridColumn] = span
+			}
+			gridColumn += span
+		}
+		activeMerges = nextMerges
+	}
+}
+
+func wordTableCellHasContent(cell *wordXMLNode) bool {
+	if cell == nil {
+		return false
+	}
+	var visit func(*wordXMLNode) bool
+	visit = func(node *wordXMLNode) bool {
+		switch node.name.Local {
+		case "t", "delText", "instrText":
+			if node.text != "" {
+				return true
+			}
+		case "drawing", "pict", "object", "tab", "br", "sym", "fldChar", "noBreakHyphen", "softHyphen":
+			return true
+		}
+		for _, child := range node.children {
+			if child.name.Local == "tcPr" {
+				continue
+			}
+			if visit(child) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, child := range cell.children {
+		if child.name.Local != "tcPr" && visit(child) {
+			return true
+		}
+	}
+	return false
 }
 
 func appendLayoutUnsupported(items *[]document.WordLayoutUnsupported, item document.WordLayoutUnsupported) {

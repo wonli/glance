@@ -113,11 +113,15 @@ type ImagePlacement struct {
 }
 
 type TableCellPlacement struct {
-	TableID   string
-	RowIndex  int
-	CellID    string
-	FillColor string
-	Bounds    Rect
+	TableID          string
+	RowIndex         int
+	CellID           string
+	FillColor        string
+	Bounds           Rect
+	DrawTopBorder    bool
+	DrawBottomBorder bool
+	DrawLeftBorder   bool
+	DrawRightBorder  bool
 }
 
 type Result struct {
@@ -504,14 +508,14 @@ func newLayoutCursor(result *Result, setup document.WordPageSetup, content Rect)
 		}
 	}
 	cursor := &layoutCursor{
-		result:             result,
-		setup:              setup,
-		content:            content,
-		columns:            cols,
-		columnWidth:        colWidth,
-		columnSpacing:      colSpacing,
-		glyphPaths:         make(map[glyphPathCacheKey][]GlyphPathCommand),
-		currentBlockIndex:  -1,
+		result:            result,
+		setup:             setup,
+		content:           content,
+		columns:           cols,
+		columnWidth:       colWidth,
+		columnSpacing:     colSpacing,
+		glyphPaths:        make(map[glyphPathCacheKey][]GlyphPathCommand),
+		currentBlockIndex: -1,
 	}
 	cursor.startPage()
 	return cursor
@@ -865,11 +869,16 @@ type styleResolver struct {
 	defaults                document.WordStyleDefaults
 	styles                  map[string]document.WordStyle
 	defaultParagraphStyleID string
+	defaultTabStopPT        float64
 	cursor                  *layoutCursor
 }
 
 func newStyleResolver(layout document.WordLayoutData, cursor *layoutCursor) *styleResolver {
-	resolver := &styleResolver{defaults: layout.Defaults, styles: make(map[string]document.WordStyle, len(layout.Styles)), cursor: cursor}
+	defaultTabStop := layout.DefaultTabStopPT
+	if defaultTabStop <= 0 || math.IsNaN(defaultTabStop) || math.IsInf(defaultTabStop, 0) {
+		defaultTabStop = 36
+	}
+	resolver := &styleResolver{defaults: layout.Defaults, styles: make(map[string]document.WordStyle, len(layout.Styles)), defaultTabStopPT: defaultTabStop, cursor: cursor}
 	for _, style := range layout.Styles {
 		if style.ID == "" {
 			continue
@@ -1069,6 +1078,9 @@ func mergeParagraphLayout(target *document.WordParagraphLayout, source document.
 		if source.BottomBorder != (document.WordParagraphBorder{}) {
 			mask |= document.WordParagraphBottomBorderSet
 		}
+		if source.TabStops != nil {
+			mask |= document.WordParagraphTabStopsSet
+		}
 	}
 	if mask&document.WordParagraphBeforeSet != 0 {
 		target.BeforePT = source.BeforePT
@@ -1107,6 +1119,9 @@ func mergeParagraphLayout(target *document.WordParagraphLayout, source document.
 	}
 	if mask&document.WordParagraphBottomBorderSet != 0 {
 		target.BottomBorder = source.BottomBorder
+	}
+	if mask&document.WordParagraphTabStopsSet != 0 {
+		target.TabStops = append([]document.WordTabStop(nil), source.TabStops...)
 	}
 	target.Set |= mask
 }

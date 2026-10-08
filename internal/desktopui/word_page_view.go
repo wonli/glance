@@ -104,7 +104,7 @@ func (a *App) drawWordPageScene(gtx layout.Context, state *documentSessionState,
 		drawWordPageCellBackground(gtx, origin, cell, pixelsPerPoint)
 	}
 	for _, cell := range page.TableCells {
-		drawWordPageCellBorder(gtx, origin, cell.Bounds, pixelsPerPoint)
+		drawWordPageCellBorder(gtx, origin, cell, pixelsPerPoint)
 	}
 	drawWordPageSelection(gtx, state, page, origin, pixelsPerPoint)
 	for _, fragment := range page.Text {
@@ -259,20 +259,33 @@ func wordPageTextColor(style document.WordTextStyle) color.NRGBA {
 	return color.NRGBA{A: 255}
 }
 
-func drawWordPageCellBorder(gtx layout.Context, origin image.Point, bounds wordlayout.Rect, pixelsPerPoint float64) {
+func drawWordPageCellBorder(gtx layout.Context, origin image.Point, cell wordlayout.TableCellPlacement, pixelsPerPoint float64) {
+	for _, line := range wordPageCellBorderRects(cell, origin, pixelsPerPoint) {
+		paint.FillShape(gtx.Ops, wordPageTableLine, clip.Rect{Min: line.Min, Max: line.Max}.Op())
+	}
+}
+
+func wordPageCellBorderRects(cell wordlayout.TableCellPlacement, origin image.Point, pixelsPerPoint float64) []image.Rectangle {
+	bounds := cell.Bounds
 	x := origin.X + int(math.Round(bounds.XPT*pixelsPerPoint))
 	y := origin.Y + int(math.Round(bounds.YPT*pixelsPerPoint))
 	width := max(1, int(math.Ceil(bounds.WidthPT*pixelsPerPoint)))
 	height := max(1, int(math.Ceil(bounds.HeightPT*pixelsPerPoint)))
 	thickness := max(1, int(math.Ceil(0.5*pixelsPerPoint)))
-	for _, line := range []image.Rectangle{
-		image.Rect(x, y, x+width, y+thickness),
-		image.Rect(x, y+height-thickness, x+width, y+height),
-		image.Rect(x, y, x+thickness, y+height),
-		image.Rect(x+width-thickness, y, x+width, y+height),
-	} {
-		paint.FillShape(gtx.Ops, wordPageTableLine, clip.Rect{Min: line.Min, Max: line.Max}.Op())
+	lines := make([]image.Rectangle, 0, 4)
+	if cell.DrawTopBorder {
+		lines = append(lines, image.Rect(x, y, x+width, y+thickness))
 	}
+	if cell.DrawBottomBorder {
+		lines = append(lines, image.Rect(x, y+height-thickness, x+width, y+height))
+	}
+	if cell.DrawLeftBorder {
+		lines = append(lines, image.Rect(x, y, x+thickness, y+height))
+	}
+	if cell.DrawRightBorder {
+		lines = append(lines, image.Rect(x+width-thickness, y, x+width, y+height))
+	}
+	return lines
 }
 
 func drawWordPageImage(gtx layout.Context, origin image.Point, decoded image.Image, placement wordlayout.ImagePlacement, pixelsPerPoint float64) {

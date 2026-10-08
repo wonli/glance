@@ -55,7 +55,15 @@ const (
 	WordParagraphKeepTogetherSet
 	WordParagraphPageBreakBeforeSet
 	WordParagraphBottomBorderSet
+	WordParagraphTabStopsSet
 )
+
+// WordTabStop describes one paragraph tab position in points.
+type WordTabStop struct {
+	PositionPT float64
+	Alignment  string
+	Leader     string
+}
 
 // WordParagraphBorder describes a neutral Word paragraph border. Size is in
 // points, while SpacePT is the gap between the text line and the border.
@@ -83,6 +91,7 @@ type WordParagraphLayout struct {
 	KeepTogether        bool
 	PageBreakBefore     bool
 	BottomBorder        WordParagraphBorder
+	TabStops            []WordTabStop
 	Set                 WordParagraphLayoutMask
 }
 
@@ -136,10 +145,11 @@ type WordLayoutUnsupported struct {
 // WordLayoutData contains page settings and styles projected from the DOCX
 // package. It is a read-only neutral view and exposes no OOXML or ZIP types.
 type WordLayoutData struct {
-	Sections    []WordSection
-	Defaults    WordStyleDefaults
-	Styles      []WordStyle
-	Unsupported []WordLayoutUnsupported
+	Sections         []WordSection
+	Defaults         WordStyleDefaults
+	Styles           []WordStyle
+	DefaultTabStopPT float64
+	Unsupported      []WordLayoutUnsupported
 }
 
 // WordLayoutReader is an optional DOCX capability for neutral layout metadata.

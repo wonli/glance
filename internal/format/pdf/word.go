@@ -77,7 +77,7 @@ func WriteWordPDF(ctx context.Context, dst io.Writer, result wordlayout.Result, 
 			if cell.Bounds.WidthPT <= 0 || cell.Bounds.HeightPT <= 0 {
 				return fmt.Errorf("Word page %d table cell %q has empty bounds", pageIndex+1, cell.CellID)
 			}
-			drawCellBorder(page, cell.Bounds)
+			drawCellBorder(page, cell)
 		}
 		for _, border := range scene.ParagraphBorders {
 			if err := validateParagraphBorder(border); err != nil {
@@ -430,14 +430,26 @@ func drawTextFragment(page *gopdf.Page, fragment wordlayout.TextFragment) {
 	}
 }
 
-func drawCellBorder(page *gopdf.Page, bounds wordlayout.Rect) {
+func drawCellBorder(page *gopdf.Page, cell wordlayout.TableCellPlacement) {
 	const thickness = 0.5
 	ink := gopdf.RGB(136, 143, 151)
+	if cell.FillColor != "" {
+		page.SetFillColor(textColor(cell.FillColor))
+		page.Rect(cell.Bounds.XPT, cell.Bounds.YPT, cell.Bounds.WidthPT, cell.Bounds.HeightPT, gopdf.Fill)
+	}
 	page.SetFillColor(ink)
-	page.Rect(bounds.XPT, bounds.YPT, bounds.WidthPT, thickness, gopdf.Fill)
-	page.Rect(bounds.XPT, bounds.YPT+bounds.HeightPT-thickness, bounds.WidthPT, thickness, gopdf.Fill)
-	page.Rect(bounds.XPT, bounds.YPT, thickness, bounds.HeightPT, gopdf.Fill)
-	page.Rect(bounds.XPT+bounds.WidthPT-thickness, bounds.YPT, thickness, bounds.HeightPT, gopdf.Fill)
+	if cell.DrawTopBorder {
+		page.Rect(cell.Bounds.XPT, cell.Bounds.YPT, cell.Bounds.WidthPT, thickness, gopdf.Fill)
+	}
+	if cell.DrawBottomBorder {
+		page.Rect(cell.Bounds.XPT, cell.Bounds.YPT+cell.Bounds.HeightPT-thickness, cell.Bounds.WidthPT, thickness, gopdf.Fill)
+	}
+	if cell.DrawLeftBorder {
+		page.Rect(cell.Bounds.XPT, cell.Bounds.YPT, thickness, cell.Bounds.HeightPT, gopdf.Fill)
+	}
+	if cell.DrawRightBorder {
+		page.Rect(cell.Bounds.XPT+cell.Bounds.WidthPT-thickness, cell.Bounds.YPT, thickness, cell.Bounds.HeightPT, gopdf.Fill)
+	}
 }
 
 func fragmentTextChunks(fragment wordlayout.TextFragment) ([]textChunk, error) {

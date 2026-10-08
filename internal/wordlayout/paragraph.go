@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"unicode"
 
 	"glance/internal/document"
@@ -17,6 +18,7 @@ const (
 	atomImage
 	atomPageBreak
 	atomLineBreak
+	atomTab
 )
 
 type paragraphAtom struct {
@@ -104,6 +106,7 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 		}
 		atoms = append(atoms, markerAtoms...)
 	}
+	fieldCodePresent := false
 	for _, inline := range paragraph.Inlines {
 		if err := ctx.Err(); err != nil {
 			return preparedParagraph{}, err
@@ -172,6 +175,23 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 				continue
 			}
 			atoms = append(atoms, paragraphAtom{kind: atomPageBreak, sourceID: inline.PageBreak.ID})
+		case document.WordTabInline:
+			if inline.Tab == nil || inline.Tab.ID == "" {
+				styles.cursor.diagnostic(DiagnosticError, sourceID, "invalid-tab-inline", "A tab inline has no source identity.")
+				continue
+			}
+			atoms = append(atoms, paragraphAtom{kind: atomTab, sourceID: inline.Tab.ID, breakBefore: true, breakAfter: true})
+			for _, stop := range prepared.style.paragraph.TabStops {
+				if stop.Leader != "" && stop.Leader != "none" {
+					styles.cursor.diagnostic(DiagnosticWarning, inline.Tab.ID, "tab-leader-omitted", "The tab leader is omitted from page layout; text and tab alignment are preserved.")
+					break
+				}
+			}
+		case document.WordFieldCodeInline:
+			// Field delimiters and instructions do not print; the cached field
+			// result is projected as adjacent read-only text.
+			fieldCodePresent = true
+			continue
 		case document.WordUnsupportedInline:
 			source := sourceID
 			detail := "This paragraph contains unsupported inline content."
@@ -216,6 +236,9 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 			styles.cursor.diagnostic(DiagnosticError, sourceID, "unknown-inline-kind", fmt.Sprintf("Unsupported Word inline kind %d.", inline.Kind))
 		}
 	}
+	if fieldCodePresent {
+		styles.cursor.diagnostic(DiagnosticWarning, sourceID, "cached-field-result", "Field instructions are retained but not recalculated; the stored field result is shown.")
+	}
 	if len(atoms) == 0 {
 		// Empty paragraphs still occupy one line, as in a Word document.
 		prepared.lines = []paragraphLine{{ascent: prepared.style.text.FontSize * 0.8, descent: prepared.style.text.FontSize * 0.2}}
@@ -230,7 +253,7 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 		styles.cursor.diagnostic(DiagnosticError, sourceID, "invalid-paragraph-width", "Paragraph indents leave no printable line width.")
 		maxWidth = 1
 	}
-	prepared.lines = wrapParagraphAtoms(atoms, maxWidth, prepared.style.paragraph)
+	prepared.lines = wrapParagraphAtoms(atoms, maxWidth, prepared.style.paragraph, styles.defaultTabStopPT)
 	if len(prepared.lines) == 0 {
 		prepared.lines = []paragraphLine{{ascent: prepared.style.text.FontSize * 0.8, descent: prepared.style.text.FontSize * 0.2}}
 		prepared.lines[0].height = lineHeight(prepared.lines[0], prepared.style.paragraph)
@@ -383,7 +406,7 @@ func preparedHasPageBreak(prepared preparedParagraph) bool {
 	return false
 }
 
-func wrapParagraphAtoms(atoms []paragraphAtom, maxWidth float64, paragraph document.WordParagraphLayout) []paragraphLine {
+func wrapParagraphAtoms(atoms []paragraphAtom, maxWidth float64, paragraph document.WordParagraphLayout, defaultTabStopPT float64) []paragraphLine {
 	lines := make([]paragraphLine, 0, 2)
 	current := make([]paragraphAtom, 0, 8)
 	pendingPageBreak := false
@@ -406,7 +429,7 @@ func wrapParagraphAtoms(atoms []paragraphAtom, maxWidth float64, paragraph docum
 		lines = append(lines, line)
 		current = current[:0]
 	}
-	for _, atom := range atoms {
+	for atomIndex, atom := range atoms {
 		if atom.kind == atomLineBreak {
 			flush(false)
 			continue
@@ -421,9 +444,15 @@ func wrapParagraphAtoms(atoms []paragraphAtom, maxWidth float64, paragraph docum
 			}
 			continue
 		}
+		if atom.kind == atomTab {
+			atom.advance = paragraphTabAdvance(sumAdvance(current), atoms[atomIndex+1:], paragraph.TabStops, defaultTabStopPT, maxWidth)
+		}
 		if len(current) > 0 && sumAdvance(current)+atom.advance > maxWidth+epsilonPT {
 			if atom.breakBefore {
 				flush(false)
+				if atom.kind == atomTab {
+					atom.advance = paragraphTabAdvance(0, atoms[atomIndex+1:], paragraph.TabStops, defaultTabStopPT, maxWidth)
+				}
 			} else {
 				breakAt := -1
 				for index := len(current) - 1; index >= 0; index-- {
@@ -449,6 +478,70 @@ func wrapParagraphAtoms(atoms []paragraphAtom, maxWidth float64, paragraph docum
 		lines[len(lines)-1].pageBreakAfter = true
 	}
 	return lines
+}
+
+func paragraphTabAdvance(currentWidth float64, following []paragraphAtom, stops []document.WordTabStop, defaultStopPT, maxWidth float64) float64 {
+	if defaultStopPT <= 0 || !finite(defaultStopPT) {
+		defaultStopPT = 36
+	}
+	if currentWidth <= epsilonPT {
+		for _, atom := range following {
+			if atom.kind == atomTab {
+				// Generated TOC paragraphs commonly start with a default indent
+				// tab and use a later explicit right tab for the page number.
+				return math.Min(defaultStopPT, maxWidth)
+			}
+			if atom.kind == atomPageBreak || atom.kind == atomLineBreak {
+				break
+			}
+		}
+	}
+	stopPosition := (math.Floor(currentWidth/defaultStopPT) + 1) * defaultStopPT
+	alignment := "left"
+	foundExplicitStop := false
+	for _, stop := range stops {
+		if stop.PositionPT <= currentWidth+epsilonPT || stop.PositionPT < 0 || !finite(stop.PositionPT) {
+			continue
+		}
+		if !foundExplicitStop || stop.PositionPT < stopPosition {
+			stopPosition = stop.PositionPT
+			alignment = stop.Alignment
+			foundExplicitStop = true
+		}
+	}
+	stopPosition = math.Min(stopPosition, maxWidth)
+	followingWidth := 0.0
+	decimalWidth := 0.0
+	decimalFound := false
+	for _, atom := range following {
+		if atom.kind == atomTab || atom.kind == atomPageBreak || atom.kind == atomLineBreak {
+			break
+		}
+		followingWidth += atom.advance
+		if !decimalFound && atom.kind == atomText {
+			for _, r := range atom.text {
+				if r == '.' || r == ',' {
+					decimalFound = true
+					break
+				}
+				decimalWidth += atom.advance / math.Max(1, float64(len([]rune(atom.text))))
+			}
+		}
+	}
+	anchorWidth := 0.0
+	switch strings.ToLower(alignment) {
+	case "right", "end":
+		anchorWidth = followingWidth
+	case "center":
+		anchorWidth = followingWidth / 2
+	case "decimal":
+		if decimalFound {
+			anchorWidth = decimalWidth
+		} else {
+			anchorWidth = followingWidth
+		}
+	}
+	return math.Max(0, stopPosition-currentWidth-anchorWidth)
 }
 
 func sumAdvance(atoms []paragraphAtom) float64 {
@@ -570,7 +663,7 @@ func placeParagraphLine(cursor *layoutCursor, sourceID, borderSourceID string, p
 	}
 	available := math.Max(0, area.WidthPT-left-right-firstOffset)
 	if line.width > available+epsilonPT {
-		cursor.diagnostic(DiagnosticError, sourceID, "paragraph-line-overflow", "A shaped text or inline object exceeds the available paragraph line width.")
+		cursor.diagnostic(DiagnosticError, sourceID, "paragraph-line-overflow", fmt.Sprintf("A shaped text or inline object exceeds the available paragraph line width (%.2fpt > %.2fpt).", line.width, available))
 	}
 	startX := area.XPT + left + firstOffset
 	switch paragraph.Alignment {

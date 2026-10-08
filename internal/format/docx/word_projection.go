@@ -33,6 +33,7 @@ type wordRelationship struct {
 	image     bool
 	numbering bool
 	styles    bool
+	settings  bool
 	external  bool
 }
 
@@ -199,15 +200,33 @@ func projectWordDocument(parts []part, documentIdx int) (wordProjection, error) 
 		paragraphInlines: make(map[string][]string), textTargets: make(map[string]wordTextTarget), paragraphTargets: make(map[string]*wordXMLNode), seenImageIDs: make(map[string]bool),
 	}
 	var blocks []document.WordBlock
-	for i, child := range body.children {
-		blockID := fmt.Sprintf("b%d", i)
+	contentBlock := 0
+	for _, child := range body.children {
+		blockID := fmt.Sprintf("b%d", contentBlock)
 		switch child.name.Local {
 		case "p":
-			paragraph := projector.paragraph(child, blockID+".p")
-			blocks = append(blocks, document.WordBlock{ID: blockID, Kind: document.WordParagraphBlock, Paragraph: &paragraph})
+			blocks = append(blocks, projector.projectBodyBlock(child, blockID))
+			contentBlock++
 		case "tbl":
-			table := projector.table(child, blockID)
-			blocks = append(blocks, document.WordBlock{ID: blockID, Kind: document.WordTableBlock, Table: &table})
+			blocks = append(blocks, projector.projectBodyBlock(child, blockID))
+			contentBlock++
+		case "sdt":
+			content := firstChild(child, "sdtContent")
+			if content == nil {
+				blocks = append(blocks, projector.projectBodyBlock(child, blockID))
+				contentBlock++
+				continue
+			}
+			for contentIndex, contentChild := range content.children {
+				if isWordRangeMarker(contentChild.name.Local) {
+					continue
+				}
+				contentBlockID := fmt.Sprintf("%s.c%d", blockID, contentIndex)
+				block := projector.projectBodyBlock(contentChild, contentBlockID)
+				makeWordBlockReadOnly(&block)
+				blocks = append(blocks, block)
+				contentBlock++
+			}
 		case "sectPr":
 			// Section properties affect layout metadata, not body content.
 		case "bookmarkStart", "bookmarkEnd", "proofErr", "commentRangeStart", "commentRangeEnd", "permStart", "permEnd":
@@ -217,10 +236,70 @@ func projectWordDocument(parts []part, documentIdx int) (wordProjection, error) 
 		default:
 			unsupported := &document.WordUnsupported{ID: blockID + ".unsupported", Description: "Unsupported body content: " + child.name.Local}
 			blocks = append(blocks, document.WordBlock{ID: blockID, Kind: document.WordUnsupportedBlock, Unsupported: unsupported})
+			contentBlock++
 		}
 	}
 	layout := projectWordLayoutData(parts, partIndexes, relationships, documentRoot)
 	return wordProjection{blocks: blocks, layout: layout, imageParts: projector.imageParts, imageTargets: projector.imageTargets, inlineTargets: projector.inlineTargets, paragraphInlines: projector.paragraphInlines, textTargets: projector.textTargets, paragraphTargets: projector.paragraphTargets}, nil
+}
+
+func (p *wordProjector) projectBodyBlock(node *wordXMLNode, id string) document.WordBlock {
+	switch node.name.Local {
+	case "p":
+		paragraph := p.paragraph(node, id+".p")
+		return document.WordBlock{ID: id, Kind: document.WordParagraphBlock, Paragraph: &paragraph}
+	case "tbl":
+		table := p.table(node, id)
+		return document.WordBlock{ID: id, Kind: document.WordTableBlock, Table: &table}
+	default:
+		return document.WordBlock{
+			ID: id, Kind: document.WordUnsupportedBlock,
+			Unsupported: &document.WordUnsupported{ID: id + ".unsupported", Description: "Unsupported body content: " + node.name.Local},
+		}
+	}
+}
+
+func isWordRangeMarker(name string) bool {
+	switch name {
+	case "bookmarkStart", "bookmarkEnd", "proofErr", "commentRangeStart", "commentRangeEnd", "permStart", "permEnd":
+		return true
+	default:
+		return false
+	}
+}
+
+func makeWordBlockReadOnly(block *document.WordBlock) {
+	if block == nil {
+		return
+	}
+	makeParagraphReadOnly := func(paragraph *document.WordParagraph) {
+		if paragraph == nil {
+			return
+		}
+		for inlineIndex := range paragraph.Inlines {
+			inline := &paragraph.Inlines[inlineIndex]
+			if inline.Text != nil {
+				inline.Text.Editable = false
+			}
+			if inline.Image != nil {
+				inline.Image.Editable = false
+			}
+		}
+	}
+	if block.Kind == document.WordParagraphBlock {
+		makeParagraphReadOnly(block.Paragraph)
+		return
+	}
+	if block.Kind == document.WordTableBlock && block.Table != nil {
+		for rowIndex := range block.Table.Rows {
+			for cellIndex := range block.Table.Rows[rowIndex].Cells {
+				cell := &block.Table.Rows[rowIndex].Cells[cellIndex]
+				for paragraphIndex := range cell.Paragraphs {
+					makeParagraphReadOnly(&cell.Paragraphs[paragraphIndex])
+				}
+			}
+		}
+	}
 }
 
 type wordProjector struct {
@@ -297,16 +376,7 @@ func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordPar
 			inlineIndex++
 		}
 	}
-	fieldContent := false
-	for _, inline := range paragraph.Inlines {
-		if inline.Unsupported == nil {
-			continue
-		}
-		if strings.Contains(inline.Unsupported.Description, "fldChar") || strings.Contains(inline.Unsupported.Description, "instrText") {
-			fieldContent = true
-			break
-		}
-	}
+	fieldContent := containsNode(node, "fldChar") || containsNode(node, "instrText")
 	if fieldContent {
 		for index := range paragraph.Inlines {
 			text := paragraph.Inlines[index].Text
@@ -497,7 +567,19 @@ func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, para
 				p.appendProjectedInline(paragraph, id, unsupportedInline(id, "Unsupported run content: "+child.name.Local), child, run)
 			}
 			*inlineIndex++
-		case "tab", "cr", "pict", "object", "fldChar", "instrText", "sym", "footnoteReference", "endnoteReference":
+		case "tab":
+			tab := &document.WordTab{ID: id}
+			p.appendProjectedInline(paragraph, id, document.WordInline{Kind: document.WordTabInline, Tab: tab}, child, run)
+			*inlineIndex++
+		case "fldChar", "instrText":
+			value := child.text
+			if child.name.Local == "fldChar" {
+				value = attrValue(child, "fldCharType")
+			}
+			fieldCode := &document.WordFieldCode{ID: id, Element: child.name.Local, Value: value}
+			p.appendProjectedInline(paragraph, id, document.WordInline{Kind: document.WordFieldCodeInline, FieldCode: fieldCode}, child, run)
+			*inlineIndex++
+		case "cr", "pict", "object", "sym", "footnoteReference", "endnoteReference":
 			p.appendProjectedInline(paragraph, id, unsupportedInline(id, "Unsupported run content: "+child.name.Local), child, run)
 			*inlineIndex++
 		default:
@@ -612,9 +694,11 @@ func (p *wordProjector) table(node *wordXMLNode, id string) document.WordTable {
 			cellID := fmt.Sprintf("%s.r%d.c%d", id, rowIndex, cellIndex)
 			cellProperties := firstChild(cellNode, "tcPr")
 			cell := document.WordTableCell{
-				ID:        cellID,
-				WidthEMU:  wordCellWidthEMU(firstChild(cellProperties, "tcW")),
-				FillColor: wordShadingFill(cellProperties),
+				ID:            cellID,
+				WidthEMU:      wordCellWidthEMU(firstChild(cellProperties, "tcW")),
+				GridSpan:      projectedWordGridSpan(cellProperties),
+				VerticalMerge: projectedWordVerticalMerge(cellProperties),
+				FillColor:     wordShadingFill(cellProperties),
 			}
 			if cell.FillColor == "" {
 				cell.FillColor = table.Layout.FillColor
@@ -775,6 +859,7 @@ func readDocumentRelationships(parts []part, partIndexes map[string]int) map[str
 			image:     strings.HasSuffix(relationType, "/image"),
 			numbering: strings.HasSuffix(relationType, "/numbering"),
 			styles:    strings.HasSuffix(relationType, "/styles"),
+			settings:  strings.HasSuffix(relationType, "/settings"),
 			external:  external,
 		}
 	}
@@ -1007,7 +1092,10 @@ func cloneWordBlocks(blocks []document.WordBlock) []document.WordBlock {
 			for rowIndex, row := range block.Table.Rows {
 				table.Rows[rowIndex].Cells = make([]document.WordTableCell, len(row.Cells))
 				for cellIndex, cell := range row.Cells {
-					table.Rows[rowIndex].Cells[cellIndex] = document.WordTableCell{ID: cell.ID, WidthEMU: cell.WidthEMU, FillColor: cell.FillColor, Paragraphs: make([]document.WordParagraph, len(cell.Paragraphs))}
+					table.Rows[rowIndex].Cells[cellIndex] = document.WordTableCell{
+						ID: cell.ID, WidthEMU: cell.WidthEMU, GridSpan: cell.GridSpan, VerticalMerge: cell.VerticalMerge,
+						FillColor: cell.FillColor, Paragraphs: make([]document.WordParagraph, len(cell.Paragraphs)),
+					}
 					for paragraphIndex, paragraph := range cell.Paragraphs {
 						table.Rows[rowIndex].Cells[cellIndex].Paragraphs[paragraphIndex] = cloneWordParagraph(paragraph)
 					}
@@ -1041,7 +1129,16 @@ func cloneWordParagraph(paragraph document.WordParagraph) document.WordParagraph
 			pageBreak := *inline.PageBreak
 			clone.Inlines[i].PageBreak = &pageBreak
 		}
+		if inline.Tab != nil {
+			tab := *inline.Tab
+			clone.Inlines[i].Tab = &tab
+		}
+		if inline.FieldCode != nil {
+			fieldCode := *inline.FieldCode
+			clone.Inlines[i].FieldCode = &fieldCode
+		}
 	}
+	clone.Layout.TabStops = append([]document.WordTabStop(nil), paragraph.Layout.TabStops...)
 	return clone
 }
 

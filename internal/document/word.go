@@ -17,6 +17,8 @@ const (
 	WordImageInline
 	WordUnsupportedInline
 	WordPageBreakInline
+	WordTabInline
+	WordFieldCodeInline
 )
 
 // WordAlignment is the neutral alignment subset supported by the desktop UI.
@@ -74,11 +76,21 @@ type WordTableRow struct {
 	Cells []WordTableCell
 }
 
+type WordTableVerticalMerge uint8
+
+const (
+	WordTableVerticalMergeNone WordTableVerticalMerge = iota
+	WordTableVerticalMergeRestart
+	WordTableVerticalMergeContinue
+)
+
 type WordTableCell struct {
-	ID         string
-	WidthEMU   int64
-	FillColor  string
-	Paragraphs []WordParagraph
+	ID            string
+	WidthEMU      int64
+	GridSpan      int
+	VerticalMerge WordTableVerticalMerge
+	FillColor     string
+	Paragraphs    []WordParagraph
 }
 
 // WordInline is a tagged union. Exactly one payload should match Kind.
@@ -88,6 +100,21 @@ type WordInline struct {
 	Image       *WordImage
 	Unsupported *WordUnsupported
 	PageBreak   *WordPageBreak
+	Tab         *WordTab
+	FieldCode   *WordFieldCode
+}
+
+// WordTab is a non-editable layout tab preserved from a DOCX run.
+type WordTab struct {
+	ID string
+}
+
+// WordFieldCode retains non-rendering field syntax while cached result text is
+// projected separately as read-only text.
+type WordFieldCode struct {
+	ID      string
+	Element string
+	Value   string
 }
 
 // WordTextRun exposes supported text and the formatting applied by its source run.
@@ -326,6 +353,7 @@ type WordTableInsertEditor interface {
 type WordCoverPageEditor interface {
 	InsertCoverPage(title, subtitle, author string) error
 }
+
 // WordLanguageEditor provides setting the proofing/document language tag.
 type WordLanguageEditor interface {
 	SetLanguage(runID, langCode string) error
