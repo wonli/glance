@@ -114,12 +114,30 @@ func TestPPTXLayoutMasterSamplesOpenAndRender(t *testing.T) {
 		}},
 		{name: "PPT_RealTest.pptx", slideCount: 1, verify: func(t *testing.T, snapshot document.PresentationSnapshot) {
 			t.Helper()
-			for _, elem := range snapshot.Slides[0].InheritedElements {
-				if elem.Kind == document.ElementKindPicture && elem.Image != nil && elem.Bounds.W > 0 && elem.Bounds.H > 0 {
-					return
+			placeholders := make(map[string]document.PresentationElement)
+			for _, elem := range snapshot.Slides[0].Elements {
+				if elem.PlaceholderType == "ctrTitle" || elem.PlaceholderType == "subTitle" {
+					placeholders[elem.PlaceholderType] = elem
 				}
 			}
-			t.Fatalf("selected layout image is missing or has no geometry: inherited=%+v", snapshot.Slides[0].InheritedElements)
+			for _, placeholderType := range []string{"ctrTitle", "subTitle"} {
+				elem, ok := placeholders[placeholderType]
+				if !ok || elem.Kind != document.ElementKindText || elem.PlainText() != "" || elem.Bounds.W <= 0 || elem.Bounds.H <= 0 {
+					t.Fatalf("editable blank %s placeholder is missing or has no inherited geometry: found=%t element=%+v", placeholderType, ok, elem)
+				}
+			}
+			var foundPicture bool
+			for _, elem := range snapshot.Slides[0].InheritedElements {
+				if elem.PlainText() == "‹#›" {
+					t.Fatal("inherited slide-number field leaked its raw placeholder marker")
+				}
+				if elem.Kind == document.ElementKindPicture && elem.Image != nil && elem.Bounds.W > 0 && elem.Bounds.H > 0 {
+					foundPicture = true
+				}
+			}
+			if !foundPicture {
+				t.Fatalf("selected layout image is missing or has no geometry: inherited=%+v", snapshot.Slides[0].InheritedElements)
+			}
 		}},
 		{name: "slidetemplate.pptx", slideCount: 3, verify: func(t *testing.T, snapshot document.PresentationSnapshot) {
 			t.Helper()
@@ -197,6 +215,67 @@ func TestPPTXLayoutMasterSamplesOpenAndRender(t *testing.T) {
 				t.Fatalf("opening/rendering %s modified the source bytes", sample.name)
 			}
 		})
+	}
+}
+
+func TestPPTXRealTestTitleAndSubtitleEditRoundTrip(t *testing.T) {
+	root := os.Getenv("GLANCE_PPTX_TEST_DIR")
+	if root == "" {
+		root = "/Users/mima1234/Downloads"
+	}
+	path := filepath.Join(root, "PPT_RealTest.pptx")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("missing sample file %s: %v", path, err)
+	}
+	doc, err := pptx.Open(path)
+	if err != nil {
+		t.Fatalf("open sample: %v", err)
+	}
+	defer doc.Close()
+	snapshot := doc.Snapshot()
+	ids := make(map[string]int64)
+	for _, elem := range snapshot.Slides[0].Elements {
+		if elem.PlaceholderType == "ctrTitle" || elem.PlaceholderType == "subTitle" {
+			ids[elem.PlaceholderType] = elem.ID
+		}
+	}
+	values := map[string]string{"ctrTitle": "可编辑标题", "subTitle": "可编辑副标题"}
+	for _, placeholderType := range []string{"ctrTitle", "subTitle"} {
+		id, ok := ids[placeholderType]
+		if !ok {
+			t.Fatalf("missing %s placeholder in source sample", placeholderType)
+		}
+		if err := doc.UpdateSlideText(0, id, values[placeholderType]); err != nil {
+			t.Fatalf("update %s placeholder: %v", placeholderType, err)
+		}
+	}
+	output := filepath.Join(t.TempDir(), "PPT_RealTest-edited.pptx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatalf("save edited sample copy: %v", err)
+	}
+	reopened, err := pptx.Open(output)
+	if err != nil {
+		t.Fatalf("reopen edited sample copy: %v", err)
+	}
+	defer reopened.Close()
+	got := make(map[string]document.PresentationElement)
+	for _, elem := range reopened.Snapshot().Slides[0].Elements {
+		if elem.PlaceholderType != "" {
+			got[elem.PlaceholderType] = elem
+		}
+	}
+	for placeholderType, want := range values {
+		elem := got[placeholderType]
+		if elem.PlainText() != want {
+			t.Errorf("reopened %s text = %q, want %q", placeholderType, elem.PlainText(), want)
+		}
+		if len(elem.Paragraphs) == 0 || len(elem.Paragraphs[0].Runs) == 0 || elem.Paragraphs[0].Runs[0].SizePT < 30 {
+			t.Errorf("reopened %s text did not inherit placeholder-sized typography: %+v", placeholderType, elem.Paragraphs)
+		}
+	}
+	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("editing sample placeholders changed the source file: err=%v", err)
 	}
 }
 

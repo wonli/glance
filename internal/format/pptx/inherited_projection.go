@@ -83,6 +83,32 @@ func (p *pptxPackage) placeholderBounds(slidePart, layoutPart, masterPart string
 	return result
 }
 
+// placeholderTypes returns the role of each slide-local placeholder keyed by
+// its non-visual shape ID. The layout/master versions supply appearance and
+// geometry, but only slide-local placeholders are editable.
+func (p *pptxPackage) placeholderTypes(slidePart string) map[uint32]string {
+	root, ok := p.xmlPart(slidePart)
+	if !ok {
+		return nil
+	}
+	tree := shapeTree(root)
+	if tree == nil {
+		return nil
+	}
+	result := make(map[uint32]string)
+	for _, shape := range tree.Children {
+		if shape.XMLName.Local != "sp" {
+			continue
+		}
+		record, ok := placeholderRecordForShape(shape)
+		if !ok || record.id == 0 {
+			continue
+		}
+		result[record.id] = record.key.typeName
+	}
+	return result
+}
+
 func uniquePlaceholderBounds(tree *pptxXMLNode, key placeholderKey) (document.PresentationRect, bool, bool) {
 	if tree == nil {
 		return document.PresentationRect{}, false, false
@@ -422,6 +448,11 @@ func projectInheritedText(textBody *pptxXMLNode, colorMap, theme map[string]stri
 		}
 		for _, child := range paragraphNode.Children {
 			if child.XMLName.Local != "r" && child.XMLName.Local != "fld" {
+				continue
+			}
+			// PowerPoint updates slide-number fields dynamically. The field's
+			// stored ‹#› placeholder is not user-visible slide content.
+			if child.XMLName.Local == "fld" && child.attr("type") == "slidenum" {
 				continue
 			}
 			text := child.child("t")

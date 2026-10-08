@@ -263,11 +263,12 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 		drawPresentationCornerHandles(gtx, edDims.Size)
 		v.shapeDraftText = v.shapeEditor.Text()
 		off.Pop()
-	} else if len(elem.Paragraphs) > 0 {
+	} else if len(elem.Paragraphs) > 0 || presentationElementHasPlaceholderPrompt(elem) {
 		// 5. Read-only formatted text rendering
+		displayParagraphs := presentationElementDisplayParagraphs(elem)
 		// Determine paragraph alignment
 		align := "left"
-		for _, p := range elem.Paragraphs {
+		for _, p := range displayParagraphs {
 			if p.Align != "" {
 				align = p.Align
 				break
@@ -288,7 +289,7 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 			Top: presentationTextInsetY, Bottom: presentationTextInsetY,
 		}.Layout(textGtx, func(gtx layout.Context) layout.Dimensions {
 			var paragraphs []layout.FlexChild
-			for _, p := range elem.Paragraphs {
+			for _, p := range displayParagraphs {
 				para := p
 				paragraphs = append(paragraphs, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					textStr := para.PlainText()
@@ -532,6 +533,14 @@ func presentationElementFontSize(elem document.PresentationElement) float64 {
 	if len(elem.Paragraphs) > 0 && len(elem.Paragraphs[0].Runs) > 0 && elem.Paragraphs[0].Runs[0].SizePT > 0 {
 		return elem.Paragraphs[0].Runs[0].SizePT
 	}
+	switch elem.PlaceholderType {
+	case "title", "ctrTitle":
+		return 44
+	case "subTitle":
+		return 32
+	case "body", "obj", "content":
+		return 24
+	}
 	return 14
 }
 
@@ -541,7 +550,53 @@ func presentationElementTextAlignment(elem document.PresentationElement) text.Al
 			return presentationParagraphTextAlignment(paragraph.Align)
 		}
 	}
+	if elem.PlaceholderType == "title" || elem.PlaceholderType == "ctrTitle" || elem.PlaceholderType == "subTitle" {
+		return text.Middle
+	}
 	return text.Start
+}
+
+func presentationElementDisplayParagraphs(elem document.PresentationElement) []document.PresentationParagraph {
+	if elem.PlaceholderType == "" || elem.PlainText() != "" {
+		return elem.Paragraphs
+	}
+	label := presentationPlaceholderPrompt(elem.PlaceholderType)
+	if label == "" {
+		return elem.Paragraphs
+	}
+	colorHex := "#888888"
+	align := "left"
+	switch elem.PlaceholderType {
+	case "title", "ctrTitle":
+		colorHex = "#111111"
+		align = "center"
+	case "subTitle":
+		label = "单击此处添加副标题"
+		align = "center"
+	}
+	return []document.PresentationParagraph{{
+		Align: align,
+		Runs: []document.PresentationTextRun{{
+			Text: label, SizePT: presentationElementFontSize(elem), ColorHex: colorHex,
+		}},
+	}}
+}
+
+func presentationElementHasPlaceholderPrompt(elem document.PresentationElement) bool {
+	return elem.PlainText() == "" && presentationPlaceholderPrompt(elem.PlaceholderType) != ""
+}
+
+func presentationPlaceholderPrompt(placeholderType string) string {
+	switch placeholderType {
+	case "title", "ctrTitle":
+		return "单击此处添加标题"
+	case "subTitle":
+		return "单击此处添加副标题"
+	case "body", "obj", "content", "vert", "vert270", "vertTitle", "vertBody":
+		return "单击此处添加文本"
+	default:
+		return ""
+	}
 }
 
 func presentationParagraphTextAlignment(align string) text.Alignment {

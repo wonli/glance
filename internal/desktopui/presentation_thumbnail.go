@@ -88,8 +88,10 @@ func (a *App) drawPresentationThumbnailElement(gtx layout.Context, elem document
 		clipStack.Pop()
 	}
 
-	if len(elem.Paragraphs) > 0 {
-		a.drawPresentationThumbnailText(gtx, elem, shapeRect, scale)
+	if len(elem.Paragraphs) > 0 || presentationElementHasPlaceholderPrompt(elem) {
+		displayElem := elem
+		displayElem.Paragraphs = presentationElementDisplayParagraphs(elem)
+		a.drawPresentationThumbnailText(gtx, displayElem, shapeRect, scale)
 	}
 }
 

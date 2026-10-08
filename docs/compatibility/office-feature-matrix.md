@@ -21,6 +21,13 @@
 | Workspace snapshot and blank draft | Supported, basic | `TestSnapshotRestoresEditedWorkbook`; package bytes preserve the current in-memory workbook for adapter restore. |
 | Formula calculation and full Excel fidelity | Unsupported | No calculation engine; common styles/merges are partial as listed in `office-support.md`. |
 
+## PPTX
+
+| Feature | Status | Evidence / limitation |
+|---|---|---|
+| Slide/layout/master backgrounds and inherited raster content | Supported, limited | `TestPPTXLayoutMasterSamplesOpenAndRender`, `internal/format/pptx/inherited_test.go`, and `internal/desktopui/presentation_layers_test.go`; relationship-linked raster media, selected placeholder geometry and supported inherited shapes render in layer order. EMF and other non-raster media, effects, and exact Office text shaping remain unsupported. |
+| Empty title/subtitle placeholders | Supported, fixture and sample verified | `TestEmptySlidePlaceholderProjectsAsTypedEditableText`, `TestEmptySlidePlaceholderShowsPromptAndCanBeEdited`, and `TestPPTXLayoutMasterSamplesOpenAndRender`; prompts are UI hints, empty slide text remains empty until edited, and a saved edit reopens with the new text. This does not establish full-fidelity rendering of the template's EMF footer cover or logo. |
+
 ## DOCX
 
 | Feature | Status | Evidence / limitation |

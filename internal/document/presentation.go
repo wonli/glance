@@ -84,6 +84,9 @@ type PresentationElement struct {
 	Kind        PresentationElementKind
 	Bounds      PresentationRect
 	RotationDeg float64
+	// PlaceholderType preserves the slide-local DrawingML placeholder role so
+	// the UI can show an empty-field prompt while keeping its actual text empty.
+	PlaceholderType string
 
 	// Text content (used by ElementKindText or shapes with text)
 	Paragraphs []PresentationParagraph

@@ -99,6 +99,10 @@ func TestDeleteSlideKeepsAllPerSlideProjectionCachesAligned(t *testing.T) {
 		{placeholderID: {X: 1, Y: 1, W: 11, H: 11}},
 		{placeholderID: {X: 22, Y: 23, W: 24, H: 25}},
 	}
+	doc.slidePlaceholderTypes = []map[uint32]string{
+		{placeholderID: "title"},
+		{placeholderID: "subTitle"},
+	}
 	doc.slideBodyProps = map[int]map[uint32]shapeBodyProps{
 		0: {placeholderID: {wrap: "square"}},
 		1: {placeholderID: {wrap: "none"}},
@@ -129,8 +133,8 @@ func TestDeleteSlideKeepsAllPerSlideProjectionCachesAligned(t *testing.T) {
 	for _, element := range remaining.Elements {
 		if uint32(element.ID) == placeholderID {
 			gotPlaceholder = true
-			if element.Bounds != (document.PresentationRect{X: 22, Y: 23, W: 24, H: 25}) || element.WrapText {
-				t.Errorf("remaining text projection = %+v, want slide 2 bounds and wrap mode", element)
+			if element.Bounds != (document.PresentationRect{X: 22, Y: 23, W: 24, H: 25}) || element.WrapText || element.PlaceholderType != "subTitle" {
+				t.Errorf("remaining text projection = %+v, want slide 2 bounds, type, and wrap mode", element)
 			}
 		}
 		if uint32(element.ID) == pictureID {

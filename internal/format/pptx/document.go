@@ -47,6 +47,7 @@ type Document struct {
 	slideBackgrounds       []pptxBackground
 	slideInherited         [][]document.PresentationElement
 	slidePlaceholderBounds []map[uint32]document.PresentationRect
+	slidePlaceholderTypes  []map[uint32]string
 	defaultSlideBackground pptxBackground
 	defaultSlideInherited  []document.PresentationElement
 }
@@ -248,6 +249,7 @@ func (d *Document) AddSlide() error {
 	d.slideBackgrounds = append(d.slideBackgrounds, d.defaultSlideBackground)
 	d.slideInherited = append(d.slideInherited, append([]document.PresentationElement(nil), d.defaultSlideInherited...))
 	d.slidePlaceholderBounds = append(d.slidePlaceholderBounds, make(map[uint32]document.PresentationRect))
+	d.slidePlaceholderTypes = append(d.slidePlaceholderTypes, make(map[uint32]string))
 	slides, _ := d.pres.Slides()
 	d.activeSlide = len(slides) - 1
 	d.dirty = true
@@ -297,6 +299,9 @@ func (d *Document) ensureSlideProjectionCacheCount(count int) {
 	for len(d.slidePlaceholderBounds) < count {
 		d.slidePlaceholderBounds = append(d.slidePlaceholderBounds, make(map[uint32]document.PresentationRect))
 	}
+	for len(d.slidePlaceholderTypes) < count {
+		d.slidePlaceholderTypes = append(d.slidePlaceholderTypes, make(map[uint32]string))
+	}
 }
 
 func (d *Document) removeSlideProjectionCaches(index, oldCount int) {
@@ -314,6 +319,11 @@ func (d *Document) removeSlideProjectionCaches(index, oldCount int) {
 		copy(d.slidePlaceholderBounds[index:], d.slidePlaceholderBounds[index+1:])
 		d.slidePlaceholderBounds[len(d.slidePlaceholderBounds)-1] = nil
 		d.slidePlaceholderBounds = d.slidePlaceholderBounds[:len(d.slidePlaceholderBounds)-1]
+	}
+	if index < len(d.slidePlaceholderTypes) {
+		copy(d.slidePlaceholderTypes[index:], d.slidePlaceholderTypes[index+1:])
+		d.slidePlaceholderTypes[len(d.slidePlaceholderTypes)-1] = nil
+		d.slidePlaceholderTypes = d.slidePlaceholderTypes[:len(d.slidePlaceholderTypes)-1]
 	}
 	delete(d.slideBodyProps, index)
 	delete(d.slidePictureTargets, index)
@@ -694,6 +704,9 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 			elem.Bounds = bounds
 		}
 	}
+	if slideIdx < len(d.slidePlaceholderTypes) {
+		elem.PlaceholderType = d.slidePlaceholderTypes[slideIdx][uint32(sh.ID())]
+	}
 
 	// Geometry / shape kind
 	if geom, _, err := sh.Geometry(); err == nil {
@@ -825,7 +838,7 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 								pRun.Baseline = advanced.Baseline
 							}
 							if pRun.SizePT <= 0 {
-								pRun.SizePT = 18.0 // default reasonable slide font size
+								pRun.SizePT = placeholderDefaultFontSize(elem.PlaceholderType)
 							}
 							if pRun.ColorHex == "" {
 								pRun.ColorHex = "#1F2937"
@@ -844,6 +857,9 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 		if len(elem.Paragraphs) > 0 {
 			elem.Kind = document.ElementKindText
 		}
+		if isEditableTextPlaceholderType(elem.PlaceholderType) {
+			elem.Kind = document.ElementKindText
+		}
 	case *gopptx.PictureShape:
 		elem.Kind = document.ElementKindPicture
 		elem.AltText = s.AltText()
@@ -855,6 +871,28 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 	}
 
 	return elem
+}
+
+func placeholderDefaultFontSize(placeholderType string) float64 {
+	switch placeholderType {
+	case "title", "ctrTitle":
+		return 44
+	case "subTitle":
+		return 32
+	case "body", "obj", "content":
+		return 24
+	default:
+		return 18
+	}
+}
+
+func isEditableTextPlaceholderType(placeholderType string) bool {
+	switch placeholderType {
+	case "title", "ctrTitle", "subTitle", "body", "obj", "content", "vert", "vert270", "vertTitle", "vertBody":
+		return true
+	default:
+		return false
+	}
 }
 
 // inspectZipPackage extracts presentation dimensions and preloads media.
@@ -897,12 +935,14 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 		d.slideBackgrounds = make([]pptxBackground, len(orderedSlideFiles))
 		d.slideInherited = make([][]document.PresentationElement, len(orderedSlideFiles))
 		d.slidePlaceholderBounds = make([]map[uint32]document.PresentationRect, len(orderedSlideFiles))
+		d.slidePlaceholderTypes = make([]map[uint32]string, len(orderedSlideFiles))
 		for idx, slidePath := range orderedSlideFiles {
 			layoutPart, _ := pkg.relatedPart(slidePath, pptxSlideLayoutRelationshipType)
 			masterPart, _ := pkg.relatedPart(layoutPart, pptxSlideMasterRelationshipType)
 			d.slideBackgrounds[idx] = pkg.resolveBackground(slidePath, layoutPart, masterPart)
 			d.slideInherited[idx] = pkg.inheritedElements(slidePath, layoutPart, masterPart)
 			d.slidePlaceholderBounds[idx] = pkg.placeholderBounds(slidePath, layoutPart, masterPart)
+			d.slidePlaceholderTypes[idx] = pkg.placeholderTypes(slidePath)
 			if sf, ok := files[slidePath]; ok {
 				if data, err := readOPCPart(sf); err == nil {
 					d.slideBodyProps[idx] = parseSlideXML(data)
@@ -922,6 +962,7 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 					masterPart, _ := pkg.relatedPart(layoutPart, pptxSlideMasterRelationshipType)
 					d.slideInherited = append(d.slideInherited, pkg.inheritedElements(f.Name, layoutPart, masterPart))
 					d.slidePlaceholderBounds = append(d.slidePlaceholderBounds, pkg.placeholderBounds(f.Name, layoutPart, masterPart))
+					d.slidePlaceholderTypes = append(d.slidePlaceholderTypes, pkg.placeholderTypes(f.Name))
 					if len(d.slideBackgrounds) <= slideIdx {
 						d.slideBackgrounds = append(d.slideBackgrounds, pptxBackground{})
 					}

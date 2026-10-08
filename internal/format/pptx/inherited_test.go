@@ -527,6 +527,52 @@ func TestPlaceholderGeometryUsesLocalThenUniqueTypeAndIndexFallback(t *testing.T
 
 }
 
+func TestEmptySlidePlaceholderProjectsAsTypedEditableText(t *testing.T) {
+	slideXML := inheritedSlideXML("", inheritedEmptyPlaceholderXML(10, "title", "ctrTitle", ""))
+	layoutXML := inheritedLayoutXML("", inheritedPlaceholderXML(31, "title layout", "ctrTitle", "", inheritedTransformXML(100, 110, 500, 80)))
+	parts := inheritedFixtureParts(slideXML, layoutXML, inheritedMasterXML(""), nil)
+	source := writePPTXFixture(t, parts)
+	sourceBytes, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read fixture before edit: %v", err)
+	}
+	doc, err := Open(source)
+	if err != nil {
+		t.Fatalf("open fixture: %v", err)
+	}
+	t.Cleanup(func() { _ = doc.Close() })
+	slide := doc.Snapshot().Slides[0]
+	if len(slide.Elements) != 1 {
+		t.Fatalf("slide elements = %d, want one empty title placeholder", len(slide.Elements))
+	}
+	elem := slide.Elements[0]
+	if elem.Kind != document.ElementKindText || elem.PlaceholderType != "ctrTitle" || elem.PlainText() != "" {
+		t.Fatalf("empty title placeholder projection = %+v, want editable empty ctrTitle text", elem)
+	}
+	wantBounds := document.PresentationRect{X: 100, Y: 110, W: 500, H: 80}
+	if elem.Bounds != wantBounds {
+		t.Fatalf("empty title placeholder bounds = %+v, want inherited bounds %+v", elem.Bounds, wantBounds)
+	}
+	if err := doc.UpdateSlideText(0, elem.ID, "新标题"); err != nil {
+		t.Fatalf("type into empty title placeholder: %v", err)
+	}
+	output := filepath.Join(t.TempDir(), "placeholder-edited.pptx")
+	if err := doc.SaveAs(output); err != nil {
+		t.Fatalf("save placeholder edit: %v", err)
+	}
+	reopened, err := Open(output)
+	if err != nil {
+		t.Fatalf("reopen edited placeholder: %v", err)
+	}
+	defer reopened.Close()
+	if got := reopened.Snapshot().Slides[0].Elements[0].PlainText(); got != "新标题" {
+		t.Fatalf("reopened placeholder text = %q, want %q", got, "新标题")
+	}
+	if after, err := os.ReadFile(source); err != nil || !bytes.Equal(sourceBytes, after) {
+		t.Fatalf("editing placeholder modified source package: err=%v", err)
+	}
+}
+
 func TestPPTXLayoutPictureUsesLayoutRelationship(t *testing.T) {
 	red := encodeTestRaster(t, "png", color.NRGBA{R: 245, A: 255})
 	blue := encodeTestRaster(t, "png", color.NRGBA{B: 245, A: 255})
@@ -600,6 +646,10 @@ func inheritedPlaceholderXML(id int, name, typ, idx, transform string) string {
 		index = ` idx="` + idx + `"`
 	}
 	return fmt.Sprintf(`<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s"/><p:cNvSpPr/><p:nvPr><p:ph%s%s/></p:nvPr></p:nvSpPr><p:spPr>%s<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US"/><a:t>placeholder</a:t></a:r></a:p></p:txBody></p:sp>`, id, name, typeAttribute, index, transform)
+}
+
+func inheritedEmptyPlaceholderXML(id int, name, typ, transform string) string {
+	return fmt.Sprintf(`<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s"/><p:cNvSpPr/><p:nvPr><p:ph type="%s"/></p:nvPr></p:nvSpPr><p:spPr>%s<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr/></a:p></p:txBody></p:sp>`, id, name, typ, transform)
 }
 
 func inheritedTransformXML(x, y, w, h int) string {

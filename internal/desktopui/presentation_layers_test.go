@@ -86,6 +86,51 @@ func TestPresentationInheritedVisualsAreNotInteractive(t *testing.T) {
 	}
 }
 
+func TestEmptySlidePlaceholderShowsPromptAndCanBeEdited(t *testing.T) {
+	h := newPresentationCanvasHarness(t)
+	placeholder := document.PresentationElement{
+		ID: 24680, Name: "title placeholder", Kind: document.ElementKindText, PlaceholderType: "ctrTitle",
+		Bounds: document.PresentationRect{X: 220, Y: 120, W: 500, H: 90}, WrapText: true,
+	}
+	h.view.currentSlide().Elements = append(h.view.currentSlide().Elements, placeholder)
+	h.frame()
+
+	window, err := headless.NewWindow(1200, 700)
+	if err != nil {
+		t.Skipf("headless GPU is unavailable: %v", err)
+	}
+	defer window.Release()
+	if err := window.Frame(h.ops); err != nil {
+		t.Fatalf("render placeholder prompt: %v", err)
+	}
+	screenshot := image.NewRGBA(image.Rect(0, 0, 1200, 700))
+	if err := window.Screenshot(screenshot); err != nil {
+		t.Fatal(err)
+	}
+	box := image.Rectangle{
+		Min: h.view.canvasCardOrigin.Add(image.Pt(int(placeholder.Bounds.X*h.view.canvasScale), int(placeholder.Bounds.Y*h.view.canvasScale))),
+		Max: h.view.canvasCardOrigin.Add(image.Pt(int((placeholder.Bounds.X+placeholder.Bounds.W)*h.view.canvasScale), int((placeholder.Bounds.Y+placeholder.Bounds.H)*h.view.canvasScale))),
+	}
+	var darkPixels int
+	for y := box.Min.Y; y < box.Max.Y; y++ {
+		for x := box.Min.X; x < box.Max.X; x++ {
+			c := color.NRGBAModel.Convert(screenshot.At(x, y)).(color.NRGBA)
+			if c.A > 200 && c.R < 180 && c.G < 180 && c.B < 180 {
+				darkPixels++
+			}
+		}
+	}
+	if darkPixels < 10 {
+		t.Fatalf("empty title placeholder has no visible prompt text in %v: dark pixels=%d", box, darkPixels)
+	}
+
+	point := h.view.canvasCardOrigin.Add(image.Pt(int(placeholder.Bounds.X*h.view.canvasScale+20), int(placeholder.Bounds.Y*h.view.canvasScale+20)))
+	h.click(f32Point(point))
+	if h.view.editingShape != placeholder.ID || h.view.shapeEditor.Text() != "" {
+		t.Fatalf("empty placeholder did not open an empty editor: editing=%d draft=%q", h.view.editingShape, h.view.shapeEditor.Text())
+	}
+}
+
 func presentationLayerTestImage() image.Image {
 	img := image.NewNRGBA(image.Rect(0, 0, 4, 4))
 	for y := 0; y < 2; y++ {
