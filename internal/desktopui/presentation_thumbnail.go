@@ -154,6 +154,7 @@ func (a *App) drawPresentationThumbnailText(gtx layout.Context, elem document.Pr
 			}
 
 			label := material.Label(a.theme, presentationCanvasFontSize(gtx, fontSize, scale), textValue)
+			label.LineHeightScale = 1.18
 			label.Font.Typeface = presentationTextTypeface(strings.Join(fontFamilies, ", "))
 			label.Color = textColor
 			if bold {

@@ -1,10 +1,20 @@
 package desktopui
 
 import (
+	"image"
+
+	"gioui.org/gesture"
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"glance/internal/document"
 )
+
+type presentationShapeHitArea struct {
+	elementOrigin image.Point
+	hitOrigin     image.Point
+	textOrigin    image.Point
+	size          image.Point
+}
 
 type presentationViewState struct {
 	snapshot      document.PresentationSnapshot
@@ -25,12 +35,18 @@ type presentationViewState struct {
 	ribbonActionList widget.List
 
 	// Canvas & Elements
-	canvasList     widget.List
-	selectedShape  int64
-	editingShape   int64
-	shapeClicks    map[int64]*widget.Clickable
-	shapeEditor    widget.Editor
-	shapeDraftText string
+	canvasList       widget.List
+	canvasBlankClick gesture.Click
+	canvasCardOrigin image.Point
+	canvasCardSize   image.Point
+	canvasScale      float64
+	editingArea      image.Rectangle
+	selectedShape    int64
+	editingShape     int64
+	shapeClicks      map[int64]*widget.Clickable
+	shapeHitAreas    map[int64]presentationShapeHitArea
+	shapeEditor      widget.Editor
+	shapeDraftText   string // Active text-box draft, committed on save or when leaving the shape.
 
 	// Notes panel
 	notesEditor    widget.Editor
@@ -63,6 +79,7 @@ func (a *App) ensurePresentationView() *presentationViewState {
 			activeRibbonTab: "home",
 			slideClicks:     make(map[int]*widget.Clickable),
 			shapeClicks:     make(map[int64]*widget.Clickable),
+			shapeHitAreas:   make(map[int64]presentationShapeHitArea),
 			ribbonButtons:   make(map[string]*widget.Clickable),
 			thumbAspect:     16.0 / 9.0,
 			lastNotesSlide:  -1,

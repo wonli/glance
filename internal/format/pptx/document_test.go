@@ -1,8 +1,11 @@
 package pptx
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
+
+	"glance/internal/document"
 )
 
 func TestNewBlankPresentation(t *testing.T) {
@@ -225,3 +228,106 @@ func TestInspectUserSample1(t *testing.T) {
 	}
 }
 
+func TestUserSampleTextEditSaveAsPreservesRunStyleAndUntouchedContent(t *testing.T) {
+	const sourcePath = "/Users/mima1234/Downloads/1.pptx"
+	sourceBefore, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Skipf("cannot read sample 1.pptx: %v", err)
+	}
+	doc, err := Open(sourcePath)
+	if err != nil {
+		t.Skipf("cannot open sample 1.pptx: %v", err)
+	}
+	defer doc.Close()
+
+	before := doc.Snapshot()
+	var target document.PresentationElement
+	var untouched document.PresentationElement
+	for _, elem := range before.Slides[0].Elements {
+		if elem.PlainText() == "Title" {
+			target = elem
+		}
+	}
+	if target.ID == 0 {
+		t.Fatal("sample slide 1 title was not found")
+	}
+	for _, elem := range before.Slides[1].Elements {
+		if elem.PlainText() != "" {
+			untouched = elem
+			break
+		}
+	}
+	if untouched.ID == 0 {
+		t.Fatal("sample slide 2 has no non-empty text element to check")
+	}
+	if len(target.Paragraphs) == 0 || len(target.Paragraphs[0].Runs) == 0 {
+		t.Fatal("sample title has no projected text run")
+	}
+	wantStyle := target.Paragraphs[0].Runs[0]
+	if err := doc.UpdateSlideText(0, target.ID, target.PlainText()+"\nsecond paragraph"); err == nil {
+		t.Fatal("text edit that changes paragraph count should be rejected")
+	}
+	if doc.IsDirty() {
+		t.Fatal("rejected paragraph-count edit changed the document dirty state")
+	}
+	var rejectedText string
+	for _, elem := range doc.Snapshot().Slides[0].Elements {
+		if elem.ID == target.ID {
+			rejectedText = elem.PlainText()
+			break
+		}
+	}
+	if rejectedText != target.PlainText() {
+		t.Fatalf("rejected paragraph-count edit changed source text: got %q, want %q", rejectedText, target.PlainText())
+	}
+	newText := target.PlainText() + " edited"
+	if err := doc.UpdateSlideText(0, target.ID, newText); err != nil {
+		t.Fatalf("UpdateSlideText failed: %v", err)
+	}
+
+	copyPath := filepath.Join(t.TempDir(), "edited-copy.pptx")
+	if err := doc.SaveAs(copyPath); err != nil {
+		t.Fatalf("SaveAs to disposable copy failed: %v", err)
+	}
+	reopened, err := Open(copyPath)
+	if err != nil {
+		t.Fatalf("reopen edited copy failed: %v", err)
+	}
+	defer reopened.Close()
+	after := reopened.Snapshot()
+
+	var edited document.PresentationElement
+	for _, elem := range after.Slides[0].Elements {
+		if elem.ID == target.ID {
+			edited = elem
+			break
+		}
+	}
+	if edited.PlainText() != newText {
+		t.Fatalf("reopened title = %q, want %q", edited.PlainText(), newText)
+	}
+	if len(edited.Paragraphs) == 0 || len(edited.Paragraphs[0].Runs) == 0 {
+		t.Fatal("reopened edited title has no text run")
+	}
+	gotStyle := edited.Paragraphs[0].Runs[0]
+	if gotStyle.Font != wantStyle.Font || gotStyle.SizePT != wantStyle.SizePT || gotStyle.Bold != wantStyle.Bold || gotStyle.Italic != wantStyle.Italic || gotStyle.Underline != wantStyle.Underline || gotStyle.ColorHex != wantStyle.ColorHex || gotStyle.Baseline != wantStyle.Baseline {
+		t.Fatalf("edited title run style changed: got %+v, want %+v", gotStyle, wantStyle)
+	}
+	var unchangedText string
+	for _, elem := range after.Slides[1].Elements {
+		if elem.ID == untouched.ID {
+			unchangedText = elem.PlainText()
+			break
+		}
+	}
+	if unchangedText != untouched.PlainText() {
+		t.Fatalf("untouched slide 2 text changed: got %q, want %q", unchangedText, untouched.PlainText())
+	}
+	sourceAfter, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(sourceAfter) != string(sourceBefore) {
+		t.Fatal("SaveAs modified the original sample file")
+	}
+}

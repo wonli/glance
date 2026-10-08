@@ -515,11 +515,14 @@ func (a *App) layoutPresentationSidebar(gtx layout.Context, v *presentationViewS
 func (a *App) layoutSlideThumbnailItem(gtx layout.Context, v *presentationViewState, index int, slide document.PresentationSlide) layout.Dimensions {
 	btn := v.slideClick(index)
 	if btn.Clicked(gtx) {
-		v.activeSlide = index
-		v.selectedShape = 0
-		v.editingShape = 0
-		v.notesEditor.SetText(slide.Notes)
-		v.lastNotesSlide = index
+		if err := a.flushPresentationTextDraft(); err == nil {
+			v.activeSlide = index
+			v.selectedShape = 0
+			v.editingShape = 0
+			v.shapeDraftText = ""
+			v.notesEditor.SetText(slide.Notes)
+			v.lastNotesSlide = index
+		}
 	}
 	isActive := v.activeSlide == index
 
@@ -819,6 +822,9 @@ func (a *App) handlePresentationAddSlide(v *presentationViewState) {
 	if a.pptxDoc == nil {
 		return
 	}
+	if err := a.flushPresentationTextDraft(); err != nil {
+		return
+	}
 	if err := a.pptxDoc.AddSlide(); err != nil {
 		a.setStatus("新建幻灯片失败: " + err.Error())
 		return
@@ -827,6 +833,7 @@ func (a *App) handlePresentationAddSlide(v *presentationViewState) {
 	v.activeSlide = v.snapshot.SlideCount - 1
 	v.selectedShape = 0
 	v.editingShape = 0
+	v.shapeDraftText = ""
 	if cur := v.currentSlide(); cur != nil {
 		v.notesEditor.SetText(cur.Notes)
 	}
@@ -851,6 +858,7 @@ func (a *App) handlePresentationDeleteSlide(v *presentationViewState) {
 	}
 	v.selectedShape = 0
 	v.editingShape = 0
+	v.shapeDraftText = ""
 	if cur := v.currentSlide(); cur != nil {
 		v.notesEditor.SetText(cur.Notes)
 	}

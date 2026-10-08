@@ -655,7 +655,15 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 		a.requestWordTextFlush(true)
 		return
 	}
-	if a.isSaving() || !a.isDirty() {
+	if a.isSaving() {
+		return
+	}
+	if a.pptxDoc != nil {
+		if err := a.flushPresentationTextDraft(); err != nil {
+			return
+		}
+	}
+	if !a.isDirty() {
 		return
 	}
 	state := a.documentSessionState
@@ -745,6 +753,11 @@ func (a *App) startSaveAs(path string) {
 			a.showCloseConfirmation(a.pendingCloseTabID, "保存失败", "文件扩展名不匹配。可以重试保存、不保存并关闭，或取消关闭。")
 		}
 		return
+	}
+	if a.pptxDoc != nil {
+		if err := a.flushPresentationTextDraft(); err != nil {
+			return
+		}
 	}
 	state := a.documentSessionState
 	if state == nil {
@@ -999,6 +1012,9 @@ func (a *App) save() error {
 			return err
 		}
 	case a.pptxDoc != nil:
+		if err := a.flushPresentationTextDraft(); err != nil {
+			return err
+		}
 		return a.pptxDoc.Save()
 	default:
 		return fmt.Errorf("没有打开的 Office 文件")
@@ -1007,7 +1023,7 @@ func (a *App) save() error {
 }
 
 func (a *App) isDirty() bool {
-	return markdownHasPendingDraft(a.documentSessionState) || sessionDirty(a.documentSessionState) || wordHasPendingTextDrafts(a.documentSessionState) || (a.documentSessionState != nil && (a.documentSessionState.wordParagraphSplitIntent != nil || a.documentSessionState.wordParagraphJoinIntent != nil))
+	return markdownHasPendingDraft(a.documentSessionState) || presentationTextDraftDirty(a.pptxView) || sessionDirty(a.documentSessionState) || wordHasPendingTextDrafts(a.documentSessionState) || (a.documentSessionState != nil && (a.documentSessionState.wordParagraphSplitIntent != nil || a.documentSessionState.wordParagraphJoinIntent != nil))
 }
 
 func (a *App) closeDocument() error {

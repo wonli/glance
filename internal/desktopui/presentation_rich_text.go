@@ -84,6 +84,7 @@ func layoutPresentationRichParagraph(gtx layout.Context, theme *material.Theme, 
 				sizeScale = 0.65
 			}
 			label := material.Label(theme, presentationCanvasFontSize(gtx, sizePT*sizeScale, scale), fragmentText)
+			label.LineHeightScale = 1.18
 			label.Font.Typeface = presentationTextTypeface(run.Font)
 			label.Color = parsePresentationHexColor(run.ColorHex, pptxTextDark)
 			if run.Bold {

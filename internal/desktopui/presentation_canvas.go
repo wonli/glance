@@ -3,10 +3,15 @@ package desktopui
 import (
 	"image"
 	"image/color"
+	"math"
 	"strconv"
 	"strings"
 
 	"gioui.org/font"
+	"gioui.org/gesture"
+	"gioui.org/io/key"
+	"gioui.org/io/pointer"
+	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -15,14 +20,45 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"golang.org/x/image/math/fixed"
 
 	"glance/internal/document"
+)
+
+const (
+	presentationEditorInsetX unit.Dp = 8
+	presentationEditorInsetY unit.Dp = 4
+	presentationTextInsetX   unit.Dp = 2
+	presentationTextInsetY   unit.Dp = 1
 )
 
 // layoutPresentationCanvas renders the center slide canvas on #E9ECF1 background matching Pen frame C2TtCZ.
 func (a *App) layoutPresentationCanvas(gtx layout.Context, v *presentationViewState) layout.Dimensions {
 	// Fill canvas background
 	paint.FillShape(gtx.Ops, pptxCanvasBg, clip.Rect{Max: gtx.Constraints.Max}.Op())
+	blankArea := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
+	pass := pointer.PassOp{}.Push(gtx.Ops)
+	v.canvasBlankClick.Add(gtx.Ops)
+	pass.Pop()
+	blankArea.Pop()
+	for event, ok := v.canvasBlankClick.Update(gtx.Source); ok; event, ok = v.canvasBlankClick.Update(gtx.Source) {
+		if event.Kind != gesture.KindClick || a.saving {
+			continue
+		}
+		if presentationCanvasPointHitsInteractive(v, event.Position) {
+			continue
+		}
+		if v.editingShape != 0 {
+			if err := a.flushPresentationTextDraft(); err != nil {
+				continue
+			}
+		}
+		v.editingShape = 0
+		v.selectedShape = 0
+		v.shapeDraftText = ""
+		v.editingArea = image.Rectangle{}
+		gtx.Execute(key.FocusCmd{Tag: &v.canvasBlankClick})
+	}
 
 	slide := v.currentSlide()
 	if slide == nil {
@@ -63,6 +99,9 @@ func (a *App) layoutPresentationCanvas(gtx layout.Context, v *presentationViewSt
 
 	cardW := int(slideW * scale)
 	cardH := int(slideH * scale)
+	v.canvasCardOrigin = image.Pt((gtx.Constraints.Max.X-cardW)/2, (gtx.Constraints.Max.Y-cardH)/2)
+	v.canvasCardSize = image.Pt(cardW, cardH)
+	v.canvasScale = scale
 
 	// Center the slide card in the available canvas space
 	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
@@ -115,17 +154,60 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 	}
 
 	btn := v.shapeClick(elem.ID)
-	if btn.Clicked(gtx) {
-		v.selectedShape = elem.ID
-		v.editingShape = elem.ID
-		v.shapeEditor.SetText(elem.PlainText())
-	}
-	isSelected := v.selectedShape == elem.ID
 	isEditing := v.editingShape == elem.ID
+	if isEditing {
+		if !a.saving && btn.Clicked(gtx) {
+			if history := btn.History(); len(history) > 0 && !history[len(history)-1].Cancelled {
+				editorOrigin := presentationEditorOrigin(gtx, elemX, elemY, v.shapeHitAreas[elem.ID])
+				point := v.canvasCardOrigin.Add(editorOrigin).Add(history[len(history)-1].Position)
+				presentationSetEditorCaretAtCanvasPoint(gtx, a.theme, v, point)
+			}
+		}
+	}
+	if !a.saving && !isEditing && btn.Clicked(gtx) {
+		var clickInElement image.Point
+		hitArea := v.shapeHitAreas[elem.ID]
+		hasClickPosition := false
+		if history := btn.History(); len(history) > 0 && !history[len(history)-1].Cancelled {
+			clickInElement = history[len(history)-1].Position.Add(hitArea.hitOrigin).Sub(hitArea.elementOrigin)
+			hasClickPosition = true
+		}
+		if v.editingShape != 0 {
+			if err := a.flushPresentationTextDraft(); err != nil {
+				return
+			}
+		}
+		v.selectedShape = elem.ID
+		if elem.Kind == document.ElementKindText {
+			v.editingShape = elem.ID
+			v.shapeDraftText = elem.PlainText()
+			v.shapeEditor.SetText(v.shapeDraftText)
+			v.shapeEditor.Alignment = presentationElementTextAlignment(elem)
+			if hasClickPosition {
+				fontSize := presentationElementFontSize(elem)
+				textMaxSize := presentationElementTextMaxSize(elemW, elem, scale)
+				textSize := presentationCanvasFontSize(gtx, fontSize, scale)
+				caret := presentationCaretOffsetAt(gtx, a.theme, presentationElementEditorFont(elem), v.shapeDraftText, clickInElement.Sub(hitArea.textOrigin), textSize, 0, max(1, textMaxSize.X))
+				v.shapeEditor.SetCaret(caret, caret)
+			}
+			gtx.Execute(key.FocusCmd{Tag: &v.shapeEditor})
+		} else {
+			v.editingShape = 0
+			v.shapeDraftText = ""
+		}
+	}
+	// The editor draws its own draft-sized boundary while editing. Keep the
+	// normal selection outline hidden so the two frames don't overlap.
+	isSelected := v.selectedShape == elem.ID && v.editingShape == 0
+	isEditing = v.editingShape == elem.ID
 
 	// 1. Draw the shape geometry and fill using the same renderer as thumbnails.
 	shapeOffset := op.Offset(image.Pt(elemX, elemY)).Push(gtx.Ops)
-	drawPresentationElementShape(gtx, elem, image.Pt(elemW, elemH), scale)
+	shapeToDraw := elem
+	if isEditing {
+		shapeToDraw.BorderColor = ""
+	}
+	drawPresentationElementShape(gtx, shapeToDraw, image.Pt(elemW, elemH), scale)
 	shapeOffset.Pop()
 
 	// 3. Render picture
@@ -143,27 +225,45 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 
 	// 4. In-place text editor
 	if isEditing {
-		edW := max(elemW, int(150*scale))
-		edH := max(elemH, int(30*scale))
-		off := op.Offset(image.Pt(elemX, elemY)).Push(gtx.Ops)
+		hitArea := v.shapeHitAreas[elem.ID]
+		editorOrigin := presentationEditorOrigin(gtx, elemX, elemY, hitArea)
+		off := op.Offset(editorOrigin).Push(gtx.Ops)
 		edGtx := gtx
-		edGtx.Constraints.Min = image.Pt(edW, edH)
-		edGtx.Constraints.Max = image.Pt(max(edW, gtx.Constraints.Max.X-elemX), 100000)
-
+		editorInset := layout.Inset{Left: presentationEditorInsetX, Right: presentationEditorInsetX, Top: presentationEditorInsetY, Bottom: presentationEditorInsetY}
+		textMaxSize := presentationElementTextMaxSize(elemW, elem, scale)
+		maxEditorSize := textMaxSize.Add(image.Pt(gtx.Dp(2*presentationEditorInsetX), gtx.Dp(2*presentationEditorInsetY)))
+		fontSize := presentationElementFontSize(elem)
+		textSize := presentationCanvasFontSize(gtx, fontSize, scale)
+		value := v.shapeEditor.Text()
+		editorSize := presentationTextEditorSize(gtx, a.theme, elem, value, scale, maxEditorSize)
+		edGtx.Constraints.Min = editorSize
+		edGtx.Constraints.Max = maxEditorSize
+		edGtx.Constraints.Min.X = min(edGtx.Constraints.Min.X, edGtx.Constraints.Max.X)
+		edGtx.Constraints.Min.Y = min(edGtx.Constraints.Min.Y, edGtx.Constraints.Max.Y)
 		ed := material.Editor(a.theme, &v.shapeEditor, "输入文本…")
-		fontSize := 14.0
-		if len(elem.Paragraphs) > 0 && len(elem.Paragraphs[0].Runs) > 0 && elem.Paragraphs[0].Runs[0].SizePT > 0 {
-			fontSize = elem.Paragraphs[0].Runs[0].SizePT
-		}
-		ed.TextSize = presentationCanvasFontSize(gtx, fontSize, scale)
+		v.shapeEditor.ReadOnly = a.saving
+		ed.Font = presentationElementEditorFont(elem)
+		ed.Editor.Alignment = presentationElementTextAlignment(elem)
+		ed.TextSize = textSize
+		ed.LineHeightScale = 1.18
 		ed.Color = pptxTextDark
 
-		if edText := v.shapeEditor.Text(); edText != elem.PlainText() && a.pptxDoc != nil {
-			_ = a.pptxDoc.UpdateSlideText(v.activeSlide, elem.ID, edText)
-			v.snapshot = a.pptxDoc.Snapshot()
-		}
-
-		layout.Inset{Left: unit.Dp(4), Right: unit.Dp(4), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(edGtx, ed.Layout)
+		semantic.DescriptionOp("幻灯片文本编辑框").Add(edGtx.Ops)
+		edDims := editorInset.Layout(edGtx, ed.Layout)
+		editorClip := clip.Rect{Max: edDims.Size}.Push(gtx.Ops)
+		btnGtx := gtx
+		btnGtx.Constraints = layout.Exact(edDims.Size)
+		btn.Layout(btnGtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: gtx.Constraints.Min}
+		})
+		editorClip.Pop()
+		v.editingArea = image.Rectangle{Min: editorOrigin, Max: editorOrigin.Add(edDims.Size)}
+		paint.FillShape(gtx.Ops, pptxAccentColor, clip.Stroke{
+			Path:  clip.Rect{Max: edDims.Size}.Path(),
+			Width: float32(gtx.Dp(unit.Dp(1.5))),
+		}.Op())
+		drawPresentationCornerHandles(gtx, edDims.Size)
+		v.shapeDraftText = v.shapeEditor.Text()
 		off.Pop()
 	} else if len(elem.Paragraphs) > 0 {
 		// 5. Read-only formatted text rendering
@@ -178,15 +278,16 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 
 		textGtx := gtx
 		textGtx.Constraints.Min = image.Pt(0, 0)
-		if elem.WrapText {
-			textGtx.Constraints.Max = image.Pt(max(elemW, int(40*scale)), 100000)
-		} else {
-			textGtx.Constraints.Max = image.Pt(100000, 100000)
-		}
+		textMaxSize := presentationElementTextMaxSize(elemW, elem, scale)
+		textGtx.Constraints.Max = textMaxSize.Add(image.Pt(
+			gtx.Dp(2*presentationTextInsetX),
+			gtx.Dp(2*presentationTextInsetY),
+		))
 
 		recorder := op.Record(gtx.Ops)
 		textDims := layout.Inset{
-			Left: unit.Dp(2), Right: unit.Dp(2), Top: unit.Dp(1), Bottom: unit.Dp(1),
+			Left: presentationTextInsetX, Right: presentationTextInsetX,
+			Top: presentationTextInsetY, Bottom: presentationTextInsetY,
 		}.Layout(textGtx, func(gtx layout.Context) layout.Dimensions {
 			var paragraphs []layout.FlexChild
 			for _, p := range elem.Paragraphs {
@@ -229,6 +330,7 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 					}
 
 					lbl := material.Label(a.theme, presentationCanvasFontSize(gtx, fontSize, scale), textStr)
+					lbl.LineHeightScale = 1.18
 					lbl.Font.Typeface = presentationTextTypeface(strings.Join(fontFamilies, ", "))
 					lbl.Color = col
 					if bold {
@@ -237,14 +339,7 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 					if italic {
 						lbl.Font.Style = font.Italic
 					}
-					switch para.Align {
-					case "center":
-						lbl.Alignment = text.Middle
-					case "right":
-						lbl.Alignment = text.End
-					default:
-						lbl.Alignment = text.Start
-					}
+					lbl.Alignment = presentationParagraphTextAlignment(para.Align)
 					return lbl.Layout(gtx)
 				}))
 			}
@@ -260,11 +355,11 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 		textH := textDims.Size.Y
 
 		var drawX int
-		switch align {
-		case "center":
+		switch presentationParagraphTextAlignment(align) {
+		case text.Middle:
 			centerX := elemX + elemW/2
 			drawX = centerX - textW/2
-		case "right":
+		case text.End:
 			rightX := elemX + elemW
 			drawX = rightX - textW
 		default: // "left"
@@ -290,6 +385,12 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 		}
 		if hitH < int(14*scale) {
 			hitH = int(14 * scale)
+		}
+		v.shapeHitAreas[elem.ID] = presentationShapeHitArea{
+			elementOrigin: image.Pt(elemX, elemY),
+			hitOrigin:     image.Pt(hitX, hitY),
+			textOrigin:    image.Pt(drawX-elemX+gtx.Dp(unit.Dp(2)), drawY-elemY+gtx.Dp(unit.Dp(1))),
+			size:          image.Pt(hitW, hitH),
 		}
 
 		btnGtx := gtx
@@ -332,6 +433,11 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 	hitY := elemY
 	hitW := elemW
 	hitH := elemH
+	v.shapeHitAreas[elem.ID] = presentationShapeHitArea{
+		elementOrigin: image.Pt(elemX, elemY),
+		hitOrigin:     image.Pt(hitX, hitY),
+		size:          image.Pt(hitW, hitH),
+	}
 	btnGtx := gtx
 	btnGtx.Constraints = layout.Exact(image.Pt(hitW, hitH))
 	hitOffset := op.Offset(image.Pt(hitX, hitY)).Push(gtx.Ops)
@@ -364,6 +470,56 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 	hitOffset.Pop()
 }
 
+func presentationCanvasPointHitsInteractive(v *presentationViewState, point image.Point) bool {
+	if v == nil {
+		return false
+	}
+	point = point.Sub(v.canvasCardOrigin)
+	if v.editingShape != 0 && point.In(v.editingArea) {
+		return true
+	}
+	slide := v.currentSlide()
+	if slide == nil {
+		return false
+	}
+	for _, elem := range slide.Elements {
+		area, ok := v.shapeHitAreas[elem.ID]
+		if !ok {
+			continue
+		}
+		bounds := image.Rectangle{Min: area.hitOrigin, Max: area.hitOrigin.Add(area.size)}
+		if point.In(bounds) {
+			return true
+		}
+	}
+	return false
+}
+
+func presentationSetEditorCaretAtCanvasPoint(gtx layout.Context, theme *material.Theme, v *presentationViewState, point image.Point) {
+	if v == nil || v.editingShape == 0 || v.canvasScale <= 0 || theme == nil {
+		return
+	}
+	var elem document.PresentationElement
+	found := false
+	if slide := v.currentSlide(); slide != nil {
+		for _, candidate := range slide.Elements {
+			if candidate.ID == v.editingShape && candidate.Kind == document.ElementKindText {
+				elem = candidate
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		return
+	}
+	maxTextW := max(1, v.editingArea.Dx()-gtx.Dp(2*presentationEditorInsetX))
+	textSize := presentationCanvasFontSize(gtx, presentationElementFontSize(elem), v.canvasScale)
+	textPoint := point.Sub(v.canvasCardOrigin).Sub(v.editingArea.Min).Sub(image.Pt(gtx.Dp(presentationEditorInsetX), gtx.Dp(presentationEditorInsetY)))
+	caret := presentationCaretOffsetAt(gtx, theme, presentationElementEditorFont(elem), v.shapeEditor.Text(), textPoint, textSize, 0, maxTextW)
+	v.shapeEditor.SetCaret(caret, caret)
+}
+
 func presentationCanvasFontSize(gtx layout.Context, sizePT, scale float64) unit.Sp {
 	// scale already converts slide points to physical pixels. Convert back to
 	// Gio scalable points so the display pixel density is not applied twice.
@@ -372,6 +528,184 @@ func presentationCanvasFontSize(gtx layout.Context, sizePT, scale float64) unit.
 		pxPerSp = 1
 	}
 	return unit.Sp(float32(sizePT * scale / pxPerSp))
+}
+
+func presentationElementFontSize(elem document.PresentationElement) float64 {
+	if len(elem.Paragraphs) > 0 && len(elem.Paragraphs[0].Runs) > 0 && elem.Paragraphs[0].Runs[0].SizePT > 0 {
+		return elem.Paragraphs[0].Runs[0].SizePT
+	}
+	return 14
+}
+
+func presentationElementTextAlignment(elem document.PresentationElement) text.Alignment {
+	for _, paragraph := range elem.Paragraphs {
+		if paragraph.Align != "" {
+			return presentationParagraphTextAlignment(paragraph.Align)
+		}
+	}
+	return text.Start
+}
+
+func presentationParagraphTextAlignment(align string) text.Alignment {
+	switch align {
+	case "center":
+		return text.Middle
+	case "right":
+		return text.End
+	default:
+		return text.Start
+	}
+}
+
+func presentationEditorOrigin(gtx layout.Context, elemX, elemY int, hitArea presentationShapeHitArea) image.Point {
+	return image.Pt(
+		elemX+hitArea.textOrigin.X-gtx.Dp(presentationEditorInsetX),
+		elemY+hitArea.textOrigin.Y-gtx.Dp(presentationEditorInsetY),
+	)
+}
+
+func presentationElementTextMaxSize(elemW int, elem document.PresentationElement, scale float64) image.Point {
+	maxW := 100000
+	if elem.WrapText {
+		maxW = max(elemW, int(40*scale))
+	}
+	return image.Pt(max(1, maxW), 100000)
+}
+
+func presentationCaretOffsetAt(gtx layout.Context, theme *material.Theme, face font.Font, value string, point image.Point, size unit.Sp, minWidth, maxWidth int) int {
+	if theme == nil || theme.Shaper == nil || value == "" {
+		return 0
+	}
+	if maxWidth < minWidth {
+		maxWidth = minWidth
+	}
+	theme.Shaper.LayoutString(text.Parameters{
+		Font:            face,
+		PxPerEm:         fixed.I(gtx.Sp(size)),
+		MinWidth:        minWidth,
+		MaxWidth:        maxWidth,
+		Locale:          gtx.Locale,
+		WrapPolicy:      text.WrapHeuristically,
+		LineHeightScale: 1.18,
+	}, value)
+
+	bestOffset := 0
+	bestScore := float64(1 << 62)
+	runeOffset := 0
+	clusterMinX, clusterMaxX := 0.0, 0.0
+	clusterHasGlyph := false
+	clusterY := 0.0
+	clusterAscent, clusterDescent := 0.0, 0.0
+	for glyph, ok := theme.Shaper.NextGlyph(); ok; glyph, ok = theme.Shaper.NextGlyph() {
+		x := float64(glyph.X) / 64
+		advance := float64(glyph.Advance) / 64
+		left, right := min(x, x+advance), max(x, x+advance)
+		if !clusterHasGlyph {
+			clusterMinX, clusterMaxX = left, right
+			clusterHasGlyph = true
+		} else {
+			clusterMinX = min(clusterMinX, left)
+			clusterMaxX = max(clusterMaxX, right)
+		}
+		clusterY = float64(glyph.Y)
+		clusterAscent = float64(glyph.Ascent) / 64
+		clusterDescent = float64(glyph.Descent) / 64
+		if glyph.Flags&text.FlagClusterBreak == 0 {
+			continue
+		}
+
+		clusterRunes := int(glyph.Runes)
+		if clusterRunes > 0 {
+			distanceX := math.Abs(float64(point.X) - max(clusterMinX, min(clusterMaxX, float64(point.X))))
+			lineTop, lineBottom := clusterY-clusterAscent, clusterY+clusterDescent
+			distanceY := math.Abs(float64(point.Y) - max(lineTop, min(lineBottom, float64(point.Y))))
+			score := distanceY*4 + distanceX
+			if score < bestScore {
+				bestScore = score
+				bestOffset = runeOffset
+				if float64(point.X) > (clusterMinX+clusterMaxX)/2 {
+					bestOffset += clusterRunes
+				}
+			}
+			runeOffset += clusterRunes
+		}
+		clusterHasGlyph = false
+	}
+	return min(max(0, bestOffset), len([]rune(value)))
+}
+
+func presentationElementEditorFont(elem document.PresentationElement) font.Font {
+	families := make([]string, 0)
+	seenFamilies := make(map[string]struct{})
+	var style font.Font
+	styleSet := false
+	for _, paragraph := range elem.Paragraphs {
+		for _, run := range paragraph.Runs {
+			family := strings.TrimSpace(run.Font)
+			if family != "" {
+				if _, exists := seenFamilies[family]; !exists {
+					seenFamilies[family] = struct{}{}
+					families = append(families, family)
+				}
+			}
+			if !styleSet && strings.TrimSpace(run.Text) != "" {
+				style.Weight = font.Normal
+				style.Style = font.Regular
+				if run.Bold {
+					style.Weight = font.Bold
+				}
+				if run.Italic {
+					style.Style = font.Italic
+				}
+				styleSet = true
+			}
+		}
+	}
+	style.Typeface = presentationTextTypeface(strings.Join(families, ", "))
+	return style
+}
+
+func presentationTextEditorSize(gtx layout.Context, theme *material.Theme, elem document.PresentationElement, value string, scale float64, maxSize image.Point) image.Point {
+	if value == "" {
+		value = "输入文本…"
+	}
+	hInset := gtx.Dp(2 * presentationEditorInsetX)
+	vInset := gtx.Dp(2 * presentationEditorInsetY)
+	maxTextSize := image.Pt(max(1, maxSize.X-hInset), max(1, maxSize.Y-vInset))
+	measureGtx := gtx
+	measureGtx.Constraints = layout.Constraints{Max: maxTextSize}
+	lbl := material.Label(theme, presentationCanvasFontSize(gtx, presentationElementFontSize(elem), scale), value)
+	lbl.Font = presentationElementEditorFont(elem)
+	lbl.Alignment = presentationElementTextAlignment(elem)
+	lbl.LineHeightScale = 1.18
+	measureOps := op.Record(measureGtx.Ops)
+	contentSize := lbl.Layout(measureGtx).Size
+	_ = measureOps.Stop()
+	return image.Pt(
+		min(maxSize.X, max(1, contentSize.X+hInset)),
+		min(maxSize.Y, max(1, contentSize.Y+vInset)),
+	)
+}
+
+func drawPresentationCornerHandles(gtx layout.Context, size image.Point) {
+	handleSize := min(gtx.Dp(unit.Dp(6)), min(size.X, size.Y))
+	if handleSize <= 0 {
+		return
+	}
+	corners := []image.Point{
+		{X: 0, Y: 0},
+		{X: size.X - handleSize, Y: 0},
+		{X: 0, Y: size.Y - handleSize},
+		{X: size.X - handleSize, Y: size.Y - handleSize},
+	}
+	for _, point := range corners {
+		rect := image.Rectangle{Min: point, Max: point.Add(image.Pt(handleSize, handleSize))}
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect(rect).Op())
+		paint.FillShape(gtx.Ops, pptxAccentColor, clip.Stroke{
+			Path:  clip.Rect(rect).Path(),
+			Width: 1,
+		}.Op())
+	}
 }
 
 func presentationTextTypeface(documentFamily string) font.Typeface {
