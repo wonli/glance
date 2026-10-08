@@ -1,7 +1,9 @@
 package desktopui
 
 import (
+	"bytes"
 	"image"
+	"image/color"
 	"math"
 	"os"
 	"path/filepath"
@@ -91,6 +93,110 @@ func TestPresentationOpenAndSnapshot(t *testing.T) {
 	}
 	if v.snapshot.WidthPT != 960 || v.snapshot.HeightPT != 540 {
 		t.Fatalf("expected 16:9 widescreen 960x540, got %.0fx%.0f", v.snapshot.WidthPT, v.snapshot.HeightPT)
+	}
+}
+
+func TestPPTXLayoutMasterSamplesOpenAndRender(t *testing.T) {
+	root := os.Getenv("GLANCE_PPTX_TEST_DIR")
+	if root == "" {
+		root = "/Users/mima1234/Downloads"
+	}
+	samples := []struct {
+		name       string
+		slideCount int
+		verify     func(*testing.T, document.PresentationSnapshot)
+	}{
+		{name: "1.pptx", slideCount: 30, verify: func(t *testing.T, snapshot document.PresentationSnapshot) {
+			t.Helper()
+			if snapshot.WidthPT <= 0 || snapshot.HeightPT <= 0 || len(snapshot.Slides[0].Elements) == 0 {
+				t.Fatalf("baseline deck lost dimensions or slide-local content: dimensions=%.1fx%.1f elements=%+v", snapshot.WidthPT, snapshot.HeightPT, snapshot.Slides[0].Elements)
+			}
+		}},
+		{name: "PPT_RealTest.pptx", slideCount: 1, verify: func(t *testing.T, snapshot document.PresentationSnapshot) {
+			t.Helper()
+			for _, elem := range snapshot.Slides[0].InheritedElements {
+				if elem.Kind == document.ElementKindPicture && elem.Image != nil && elem.Bounds.W > 0 && elem.Bounds.H > 0 {
+					return
+				}
+			}
+			t.Fatalf("selected layout image is missing or has no geometry: inherited=%+v", snapshot.Slides[0].InheritedElements)
+		}},
+		{name: "slidetemplate.pptx", slideCount: 3, verify: func(t *testing.T, snapshot document.PresentationSnapshot) {
+			t.Helper()
+			slide := snapshot.Slides[0]
+			if slide.BackgroundImage == nil {
+				t.Fatal("explicit slide background image is missing")
+			}
+			var inheritedPlaceholderBounds int
+			for _, elem := range slide.Elements {
+				if elem.Kind == document.ElementKindText && elem.Bounds.W > 0 && elem.Bounds.H > 0 {
+					inheritedPlaceholderBounds++
+				}
+			}
+			if inheritedPlaceholderBounds < 2 {
+				t.Fatalf("title/subtitle placeholder geometry was not inherited: %d text elements, all=%+v", inheritedPlaceholderBounds, slide.Elements)
+			}
+		}},
+		{name: "test-template.pptx", slideCount: 3, verify: func(t *testing.T, snapshot document.PresentationSnapshot) {
+			t.Helper()
+			background := parsePresentationHexColor(snapshot.Slides[0].BgColorHex, color.NRGBA{A: 255})
+			luminance := 0.2126*float64(background.R) + 0.7152*float64(background.G) + 0.0722*float64(background.B)
+			if luminance >= 100 {
+				t.Fatalf("master theme background is not dark: %s => %#v", snapshot.Slides[0].BgColorHex, background)
+			}
+		}},
+	}
+
+	for _, sample := range samples {
+		sample := sample
+		t.Run(sample.name, func(t *testing.T) {
+			path := filepath.Join(root, sample.name)
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Skipf("missing sample file %s: %v", sample.name, err)
+			}
+			loaded, err := loadDocument(path)
+			if err != nil {
+				t.Fatalf("loadDocument(%s): %v", sample.name, err)
+			}
+			app := newAppWithRuntime(nil, newDesktopRuntime())
+			app.theme = material.NewTheme()
+			t.Cleanup(func() {
+				if app.pptxDoc != nil {
+					_ = app.closeDocument()
+				}
+				close(app.shutdown)
+			})
+			if err := app.installDocument(loaded); err != nil {
+				t.Fatalf("installDocument(%s): %v", sample.name, err)
+			}
+			view := app.ensurePresentationView()
+			if view.snapshot.SlideCount != sample.slideCount {
+				t.Fatalf("slide count = %d, want %d", view.snapshot.SlideCount, sample.slideCount)
+			}
+			if len(view.snapshot.Slides) == 0 {
+				t.Fatal("snapshot has no first slide")
+			}
+			sample.verify(t, view.snapshot)
+
+			var ops op.Ops
+			gtx := layout.Context{
+				Ops:         &ops,
+				Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+				Constraints: layout.Exact(image.Pt(1200, 700)),
+			}
+			dims := app.layoutPresentationCanvas(gtx, view)
+			if dims.Size.X <= 0 || dims.Size.Y <= 0 {
+				t.Fatalf("first slide did not produce canvas layout: dims=%v", dims.Size)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read sample after open: %v", err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatalf("opening/rendering %s modified the source bytes", sample.name)
+			}
+		})
 	}
 }
 

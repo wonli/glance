@@ -118,14 +118,18 @@ func (e PresentationElement) PlainText() string {
 
 // PresentationSlide represents a single slide in the presentation.
 type PresentationSlide struct {
-	Index      int
-	ID         uint32
-	Title      string
-	Notes      string
-	Elements   []PresentationElement
-	WidthPT    float64
-	HeightPT   float64
-	BgColorHex string
+	Index    int
+	ID       uint32
+	Title    string
+	Notes    string
+	Elements []PresentationElement
+	// BackgroundImage is the resolved slide background image, if supported.
+	BackgroundImage image.Image
+	// InheritedElements are read-only visuals projected from the layout/master.
+	InheritedElements []PresentationElement
+	WidthPT           float64
+	HeightPT          float64
+	BgColorHex        string
 }
 
 // PresentationSnapshot represents an immutable view data snapshot for UI rendering.

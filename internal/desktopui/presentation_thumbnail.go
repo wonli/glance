@@ -2,7 +2,6 @@ package desktopui
 
 import (
 	"image"
-	"image/color"
 	"strings"
 
 	"gioui.org/font"
@@ -37,14 +36,11 @@ func (a *App) layoutPresentationThumbnail(gtx layout.Context, slide document.Pre
 	gtx.Constraints = layout.Exact(slideSize)
 
 	bounds := image.Rectangle{Max: slideSize}
-	bgColor := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	if slide.BgColorHex != "" {
-		bgColor = parsePresentationHexColor(slide.BgColorHex, bgColor)
-	}
-	paint.FillShape(gtx.Ops, bgColor, clip.Rect{Max: slideSize}.Op())
+	drawPresentationBackground(gtx, slide, slideSize)
 
 	slideClip := clip.Rect{Max: slideSize}.Push(gtx.Ops)
 	defer slideClip.Pop()
+	a.drawPresentationStaticElements(gtx, slide.InheritedElements, scale, bounds)
 	for _, elem := range slide.Elements {
 		a.drawPresentationThumbnailElement(gtx, elem, scale, bounds)
 	}

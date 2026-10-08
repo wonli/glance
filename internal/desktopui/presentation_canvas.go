@@ -119,17 +119,15 @@ func (a *App) layoutPresentationCanvas(gtx layout.Context, v *presentationViewSt
 				Width: float32(gtx.Dp(unit.Dp(1))),
 			}.Op())
 
-			// Background fill
-			bgColor := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-			if slide.BgColorHex != "" {
-				bgColor = parsePresentationHexColor(slide.BgColorHex, bgColor)
-			}
-			paint.FillShape(gtx.Ops, bgColor, shape.Op(gtx.Ops))
-
 			clipStack := shape.Push(gtx.Ops)
 			defer clipStack.Pop()
+			drawPresentationBackground(gtx, *slide, gtx.Constraints.Min)
 
-			// Render slide elements
+			// Read-only inherited artwork sits between the background and editable
+			// slide-local elements, matching PowerPoint layer order.
+			a.drawPresentationStaticElements(gtx, slide.InheritedElements, scale, image.Rectangle{Max: gtx.Constraints.Min})
+
+			// Render slide-local elements.
 			for _, elem := range slide.Elements {
 				a.layoutPresentationElement(gtx, v, elem, scale)
 			}

@@ -10,7 +10,6 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -41,9 +40,15 @@ type Document struct {
 	revision    uint64
 
 	// Cached media images by target path (e.g. "ppt/media/image1.png")
-	mediaImages    map[string]image.Image
-	mediaBytes     map[string][]byte
-	slideBodyProps map[int]map[uint32]shapeBodyProps
+	mediaImages            map[string]image.Image
+	mediaBytes             map[string][]byte
+	slideBodyProps         map[int]map[uint32]shapeBodyProps
+	slidePictureTargets    map[int]map[uint32]string
+	slideBackgrounds       []pptxBackground
+	slideInherited         [][]document.PresentationElement
+	slidePlaceholderBounds []map[uint32]document.PresentationRect
+	defaultSlideBackground pptxBackground
+	defaultSlideInherited  []document.PresentationElement
 }
 
 const (
@@ -61,14 +66,15 @@ func Open(path string) (*Document, error) {
 	}
 
 	doc := &Document{
-		path:           path,
-		pres:           pres,
-		widthPT:        defaultSlideWidthPT,
-		heightPT:       defaultSlideHeightPT,
-		mediaImages:    make(map[string]image.Image),
-		mediaBytes:     make(map[string][]byte),
-		slideBodyProps: make(map[int]map[uint32]shapeBodyProps),
-		revision:       1,
+		path:                path,
+		pres:                pres,
+		widthPT:             defaultSlideWidthPT,
+		heightPT:            defaultSlideHeightPT,
+		mediaImages:         make(map[string]image.Image),
+		mediaBytes:          make(map[string][]byte),
+		slideBodyProps:      make(map[int]map[uint32]shapeBodyProps),
+		slidePictureTargets: make(map[int]map[uint32]string),
+		revision:            1,
 	}
 
 	// Read slide dimensions and preload media from the zip package
@@ -92,14 +98,15 @@ func NewBlank() (*Document, error) {
 	}
 
 	doc := &Document{
-		pres:           pres,
-		widthPT:        defaultSlideWidthPT,
-		heightPT:       defaultSlideHeightPT,
-		mediaImages:    make(map[string]image.Image),
-		mediaBytes:     make(map[string][]byte),
-		slideBodyProps: make(map[int]map[uint32]shapeBodyProps),
-		dirty:          true,
-		revision:       1,
+		pres:                pres,
+		widthPT:             defaultSlideWidthPT,
+		heightPT:            defaultSlideHeightPT,
+		mediaImages:         make(map[string]image.Image),
+		mediaBytes:          make(map[string][]byte),
+		slideBodyProps:      make(map[int]map[uint32]shapeBodyProps),
+		slidePictureTargets: make(map[int]map[uint32]string),
+		dirty:               true,
+		revision:            1,
 	}
 
 	// Add an initial title slide if layouts exist
@@ -206,6 +213,10 @@ func (d *Document) SlideCount() int {
 func (d *Document) AddSlide() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	existingSlides, err := d.pres.Slides()
+	if err != nil {
+		return fmt.Errorf("读取幻灯片失败: %w", err)
+	}
 
 	layouts, err := d.pres.Layouts()
 	if err != nil || len(layouts) == 0 {
@@ -233,6 +244,10 @@ func (d *Document) AddSlide() error {
 		Text:   "• 点击添加正文文本\n• 支持多级要点与编辑",
 	})
 
+	d.ensureSlideProjectionCacheCount(len(existingSlides))
+	d.slideBackgrounds = append(d.slideBackgrounds, d.defaultSlideBackground)
+	d.slideInherited = append(d.slideInherited, append([]document.PresentationElement(nil), d.defaultSlideInherited...))
+	d.slidePlaceholderBounds = append(d.slidePlaceholderBounds, make(map[uint32]document.PresentationRect))
 	slides, _ := d.pres.Slides()
 	d.activeSlide = len(slides) - 1
 	d.dirty = true
@@ -257,13 +272,63 @@ func (d *Document) DeleteSlide(index int) error {
 	if err := d.pres.RemoveSlide(target.ID()); err != nil {
 		return fmt.Errorf("删除幻灯片失败: %w", err)
 	}
-
-	if d.activeSlide >= len(slides)-1 {
-		d.activeSlide = len(slides) - 2
+	d.removeSlideProjectionCaches(index, len(slides))
+	newCount := len(slides) - 1
+	if d.activeSlide > index {
+		d.activeSlide--
+	} else if d.activeSlide == index && index >= newCount {
+		d.activeSlide = newCount - 1
+	}
+	if d.activeSlide < 0 || d.activeSlide >= newCount {
+		d.activeSlide = 0
 	}
 	d.dirty = true
 	d.revision++
 	return nil
+}
+
+func (d *Document) ensureSlideProjectionCacheCount(count int) {
+	for len(d.slideBackgrounds) < count {
+		d.slideBackgrounds = append(d.slideBackgrounds, d.defaultSlideBackground)
+	}
+	for len(d.slideInherited) < count {
+		d.slideInherited = append(d.slideInherited, append([]document.PresentationElement(nil), d.defaultSlideInherited...))
+	}
+	for len(d.slidePlaceholderBounds) < count {
+		d.slidePlaceholderBounds = append(d.slidePlaceholderBounds, make(map[uint32]document.PresentationRect))
+	}
+}
+
+func (d *Document) removeSlideProjectionCaches(index, oldCount int) {
+	if index < len(d.slideBackgrounds) {
+		copy(d.slideBackgrounds[index:], d.slideBackgrounds[index+1:])
+		d.slideBackgrounds[len(d.slideBackgrounds)-1] = pptxBackground{}
+		d.slideBackgrounds = d.slideBackgrounds[:len(d.slideBackgrounds)-1]
+	}
+	if index < len(d.slideInherited) {
+		copy(d.slideInherited[index:], d.slideInherited[index+1:])
+		d.slideInherited[len(d.slideInherited)-1] = nil
+		d.slideInherited = d.slideInherited[:len(d.slideInherited)-1]
+	}
+	if index < len(d.slidePlaceholderBounds) {
+		copy(d.slidePlaceholderBounds[index:], d.slidePlaceholderBounds[index+1:])
+		d.slidePlaceholderBounds[len(d.slidePlaceholderBounds)-1] = nil
+		d.slidePlaceholderBounds = d.slidePlaceholderBounds[:len(d.slidePlaceholderBounds)-1]
+	}
+	delete(d.slideBodyProps, index)
+	delete(d.slidePictureTargets, index)
+	for slideIndex := index; slideIndex < oldCount-1; slideIndex++ {
+		if cached, ok := d.slideBodyProps[slideIndex+1]; ok {
+			d.slideBodyProps[slideIndex] = cached
+			delete(d.slideBodyProps, slideIndex+1)
+		}
+		if cached, ok := d.slidePictureTargets[slideIndex+1]; ok {
+			d.slidePictureTargets[slideIndex] = cached
+			delete(d.slidePictureTargets, slideIndex+1)
+		}
+	}
+	delete(d.slideBodyProps, oldCount-1)
+	delete(d.slidePictureTargets, oldCount-1)
 }
 
 // UpdateSlideText updates the text of a specific shape on a slide.
@@ -571,6 +636,16 @@ func (d *Document) Snapshot() document.PresentationSnapshot {
 			HeightPT:   d.heightPT,
 			BgColorHex: "#FFFFFF",
 		}
+		if i < len(d.slideBackgrounds) {
+			background := d.slideBackgrounds[i]
+			if background.ColorHex != "" {
+				pSlide.BgColorHex = background.ColorHex
+			}
+			pSlide.BackgroundImage = background.Image
+		}
+		if i < len(d.slideInherited) {
+			pSlide.InheritedElements = d.slideInherited[i]
+		}
 
 		if notes, err := sl.SpeakerNotesText(); err == nil {
 			pSlide.Notes = notes
@@ -612,6 +687,11 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 			Y: float64(bounds.Y) / emuPerPoint,
 			W: float64(bounds.W) / emuPerPoint,
 			H: float64(bounds.H) / emuPerPoint,
+		}
+	}
+	if slideIdx < len(d.slidePlaceholderBounds) {
+		if bounds, ok := d.slidePlaceholderBounds[slideIdx][uint32(sh.ID())]; ok {
+			elem.Bounds = bounds
 		}
 	}
 
@@ -767,10 +847,10 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 	case *gopptx.PictureShape:
 		elem.Kind = document.ElementKindPicture
 		elem.AltText = s.AltText()
-		// Try matching preloaded media images
-		for _, img := range d.mediaImages {
-			elem.Image = img
-			break
+		if targets := d.slidePictureTargets[slideIdx]; targets != nil {
+			if target, ok := targets[uint32(s.ID())]; ok {
+				elem.Image = d.mediaImages[target]
+			}
 		}
 	}
 
@@ -779,15 +859,24 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 
 // inspectZipPackage extracts presentation dimensions and preloads media.
 func (d *Document) inspectZipPackage(zr *zip.Reader) {
-	files := make(map[string]*zip.File)
+	pkg := newPPTXPackage(zr)
+	pkg.imageCache = d.mediaImages
+	if len(pkg.layoutParts) > 0 {
+		defaultLayout := pkg.layoutParts[0]
+		defaultMaster := pkg.layoutMasterParts[defaultLayout]
+		d.defaultSlideBackground = pkg.resolveBackground("", defaultLayout, defaultMaster)
+		d.defaultSlideInherited = pkg.inheritedElements("", defaultLayout, defaultMaster)
+	}
+	files := pkg.parts
 	for _, f := range zr.File {
-		files[f.Name] = f
 		// Preload images from ppt/media/
 		if strings.HasPrefix(f.Name, "ppt/media/") {
-			if rc, err := f.Open(); err == nil {
-				imgBytes, _ := io.ReadAll(rc)
-				rc.Close()
-				d.mediaBytes[f.Name] = imgBytes
+			imgBytes, err := readOPCPart(f)
+			if err != nil {
+				continue
+			}
+			d.mediaBytes[f.Name] = imgBytes
+			if d.mediaImages[f.Name] == nil {
 				if img, _, err := image.Decode(bytes.NewReader(imgBytes)); err == nil {
 					d.mediaImages[f.Name] = img
 				}
@@ -796,35 +885,28 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 	}
 
 	// Read presentation.xml to detect slide size and ordered slide IDs
-	var orderedSlideFiles []string
 	if presFile, ok := files["ppt/presentation.xml"]; ok {
-		if rc, err := presFile.Open(); err == nil {
-			data, _ := io.ReadAll(rc)
-			rc.Close()
+		if data, err := readOPCPart(presFile); err == nil {
 			d.parsePresentationXML(data)
-
-			// Parse relationships to map rId -> target slide file
-			var relsMap map[string]string
-			if relsFile, ok := files["ppt/_rels/presentation.xml.rels"]; ok {
-				if rrc, err := relsFile.Open(); err == nil {
-					rData, _ := io.ReadAll(rrc)
-					rrc.Close()
-					relsMap = parsePresentationRels(rData)
-				}
-			}
-
-			orderedSlideFiles = parsePresentationSlideFiles(data, relsMap)
 		}
 	}
+	orderedSlideFiles := pkg.slideParts
 
 	// Parse slide XMLs for shape text body properties (wrap, autoFit)
 	if len(orderedSlideFiles) > 0 {
+		d.slideBackgrounds = make([]pptxBackground, len(orderedSlideFiles))
+		d.slideInherited = make([][]document.PresentationElement, len(orderedSlideFiles))
+		d.slidePlaceholderBounds = make([]map[uint32]document.PresentationRect, len(orderedSlideFiles))
 		for idx, slidePath := range orderedSlideFiles {
+			layoutPart, _ := pkg.relatedPart(slidePath, pptxSlideLayoutRelationshipType)
+			masterPart, _ := pkg.relatedPart(layoutPart, pptxSlideMasterRelationshipType)
+			d.slideBackgrounds[idx] = pkg.resolveBackground(slidePath, layoutPart, masterPart)
+			d.slideInherited[idx] = pkg.inheritedElements(slidePath, layoutPart, masterPart)
+			d.slidePlaceholderBounds[idx] = pkg.placeholderBounds(slidePath, layoutPart, masterPart)
 			if sf, ok := files[slidePath]; ok {
-				if rc, err := sf.Open(); err == nil {
-					data, _ := io.ReadAll(rc)
-					rc.Close()
+				if data, err := readOPCPart(sf); err == nil {
 					d.slideBodyProps[idx] = parseSlideXML(data)
+					d.loadSlidePictureImages(pkg, idx, slidePath, data)
 				}
 			}
 		}
@@ -833,14 +915,41 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 		slideIdx := 0
 		for _, f := range zr.File {
 			if strings.HasPrefix(f.Name, "ppt/slides/slide") && strings.HasSuffix(f.Name, ".xml") {
-				if rc, err := f.Open(); err == nil {
-					data, _ := io.ReadAll(rc)
-					rc.Close()
+				if data, err := readOPCPart(f); err == nil {
 					d.slideBodyProps[slideIdx] = parseSlideXML(data)
+					d.loadSlidePictureImages(pkg, slideIdx, f.Name, data)
+					layoutPart, _ := pkg.relatedPart(f.Name, pptxSlideLayoutRelationshipType)
+					masterPart, _ := pkg.relatedPart(layoutPart, pptxSlideMasterRelationshipType)
+					d.slideInherited = append(d.slideInherited, pkg.inheritedElements(f.Name, layoutPart, masterPart))
+					d.slidePlaceholderBounds = append(d.slidePlaceholderBounds, pkg.placeholderBounds(f.Name, layoutPart, masterPart))
+					if len(d.slideBackgrounds) <= slideIdx {
+						d.slideBackgrounds = append(d.slideBackgrounds, pptxBackground{})
+					}
+					d.slideBackgrounds[slideIdx] = pkg.resolveBackground(f.Name, layoutPart, masterPart)
 					slideIdx++
 				}
 			}
 		}
+	}
+}
+
+func (d *Document) resolveSlideBackground(pkg *pptxPackage, slidePart string) pptxBackground {
+	layoutPart, _ := pkg.relatedPart(slidePart, pptxSlideLayoutRelationshipType)
+	masterPart, _ := pkg.relatedPart(layoutPart, pptxSlideMasterRelationshipType)
+	return pkg.resolveBackground(slidePart, layoutPart, masterPart)
+}
+
+func (d *Document) loadSlidePictureImages(pkg *pptxPackage, slideIndex int, slidePart string, data []byte) {
+	for shapeID, relID := range parseSlidePictureRelIDs(data) {
+		target, ok := pkg.imagePartForRelationship(slidePart, relID)
+		if !ok {
+			continue
+		}
+		if d.slidePictureTargets[slideIndex] == nil {
+			d.slidePictureTargets[slideIndex] = make(map[uint32]string)
+		}
+		d.slidePictureTargets[slideIndex][shapeID] = target
+		_ = pkg.image(target)
 	}
 }
 
@@ -874,24 +983,9 @@ func (d *Document) parsePresentationXML(data []byte) {
 // parsePresentationRels maps relationship IDs to target paths.
 func parsePresentationRels(data []byte) map[string]string {
 	rels := make(map[string]string)
-	decoder := xml.NewDecoder(bytes.NewReader(data))
-	for {
-		tok, err := decoder.Token()
-		if err != nil {
-			break
-		}
-		if se, ok := tok.(xml.StartElement); ok && se.Name.Local == "Relationship" {
-			var id, target string
-			for _, a := range se.Attr {
-				if a.Name.Local == "Id" {
-					id = a.Value
-				} else if a.Name.Local == "Target" {
-					target = a.Value
-				}
-			}
-			if id != "" && target != "" {
-				rels[id] = target
-			}
+	for id, rel := range parseOPCRelationships(data) {
+		if rel.Target != "" {
+			rels[id] = rel.Target
 		}
 	}
 	return rels
@@ -900,30 +994,10 @@ func parsePresentationRels(data []byte) map[string]string {
 // parsePresentationSlideFiles extracts ordered slide file paths from presentation.xml.
 func parsePresentationSlideFiles(data []byte, rels map[string]string) []string {
 	var files []string
-	decoder := xml.NewDecoder(bytes.NewReader(data))
-	for {
-		tok, err := decoder.Token()
-		if err != nil {
-			break
-		}
-		if se, ok := tok.(xml.StartElement); ok && se.Name.Local == "sldId" {
-			var rId string
-			for _, a := range se.Attr {
-				if a.Name.Local == "id" && strings.HasPrefix(a.Value, "rId") {
-					rId = a.Value
-				} else if a.Name.Local == "rId" {
-					rId = a.Value
-				}
-			}
-			if rId != "" {
-				if tgt, ok := rels[rId]; ok {
-					if !strings.HasPrefix(tgt, "/") {
-						tgt = "ppt/" + tgt
-					} else {
-						tgt = strings.TrimPrefix(tgt, "/")
-					}
-					files = append(files, tgt)
-				}
+	for _, relID := range presentationSlideRelationshipIDs(data) {
+		if target, ok := rels[relID]; ok {
+			if part, ok := resolveOPCTarget("ppt/presentation.xml", target); ok {
+				files = append(files, part)
 			}
 		}
 	}

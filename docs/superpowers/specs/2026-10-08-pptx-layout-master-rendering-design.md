@@ -1,6 +1,6 @@
 # PPTX Layout and Master Rendering
 
-**Status:** Design direction approved on 2026-10-08. Implementation is not yet approved.
+**Status:** Approved for implementation and implemented on 2026-10-08.
 
 ## Problem
 
@@ -34,7 +34,7 @@ Build the rendered slide in this order:
 3. Master decorative shapes and pictures, then layout decorative shapes and pictures, when the relevant OOXML visibility flags allow them.
 4. Slide-local elements in their existing z-order.
 
-Resolve both `p:bgPr` and `p:bgRef` backgrounds. Map theme colors through the master color map and its related theme, including the sample-required `tx1` and `bg1` entries and only the color transforms supported by the adapter. Resolve picture data through the exact `r:embed` relationship belonging to the part that contains the picture or background fill. Do not guess by media iteration order.
+Resolve both `p:bgPr` and `p:bgRef` backgrounds. Map theme colors through the master color map and its related theme, including the sample-required `tx1` and `bg1` entries and only the color transforms supported by the adapter. For `p:bgRef`, resolve the indexed fill style first, substitute the reference color for `phClr`, treat index zero as no-fill, and support solid-color and relationship-linked raster fills. Resolve picture data through the exact `r:embed` relationship belonging to the part that contains the picture or background fill. Do not guess by media iteration order.
 
 For each slide placeholder, use a locally declared transform when available. If absent, match by normalized placeholder `(type, idx)` on the selected layout and then the master; absent `type` and `idx` use the OOXML defaults `obj` and `0`. Do not match by shape name, coordinate, or document order. Keep slide-local text and formatting as the content source; inherited placeholder geometry and supported default presentation properties supply its visual placement. Missing or malformed relationships should produce a safe omission or the existing open error rather than a panic.
 
@@ -45,7 +45,7 @@ Add neutral fields for a slide background image and inherited read-only visuals.
 The initial implementation covers:
 
 - Slide, layout, and master relationship traversal and visual layer ordering.
-- Slide/layout/master `p:bgPr` and `p:bgRef` backgrounds, including the sample-required theme colors `tx1` and `bg1`.
+- Slide/layout/master `p:bgPr` and `p:bgRef` backgrounds, including the sample-required theme colors `tx1` and `bg1`, indexed theme solid/image fill styles, and `phClr` substitution.
 - Raster pictures (PNG, JPEG, and GIF) referenced from slide backgrounds or inherited visual shapes, with exact relationship resolution.
 - Placeholder transform fallback by `(type, idx)` from slide to layout to master.
 - Existing supported neutral text, shape, fill, custom path, gradient, and raster image rendering.
@@ -83,4 +83,4 @@ Unsupported media such as EMF, unsupported theme transforms, effects, SmartArt, 
 
 ## Verification approach
 
-Add adapter tests that construct minimal PPTX packages with explicit and inherited backgrounds, relationships to multiple media parts, and placeholders whose transforms live on the layout or master. Add desktop rendering tests for the background/layer order and the read-only inherited layer. Run the relevant package tests and the full Go test suite, then use the four original Downloads samples for end-to-end open/layout/render checks without modifying them. Update the compatibility documentation from observed test evidence only.
+Add adapter tests that construct minimal PPTX packages with explicit and inherited backgrounds, indexed theme fill styles, theme-owned image relationships, relationships to multiple media parts, and placeholders whose transforms live on the layout or master. Cover per-slide cache alignment when deleting slides and inherited projection when adding a slide. Add desktop rendering tests for the background/layer order and the read-only inherited layer. Run the relevant package tests and the full Go test suite, then use the four original Downloads samples for end-to-end open/layout/render checks without modifying them. Update the compatibility documentation from observed test evidence only.

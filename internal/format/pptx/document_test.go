@@ -1,10 +1,14 @@
 package pptx
 
 import (
+	"context"
+	"image"
+	"image/color"
 	"os"
 	"path/filepath"
 	"testing"
 
+	gopptx "github.com/F31/go-pptx/v2/pptx"
 	"glance/internal/document"
 )
 
@@ -58,6 +62,101 @@ func TestSlideAddAndDelete(t *testing.T) {
 	if err := doc.DeleteSlide(0); err == nil {
 		t.Fatalf("expected error deleting the last slide, but succeeded")
 	}
+}
+
+func TestDeleteSlideKeepsAllPerSlideProjectionCachesAligned(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatalf("NewBlank failed: %v", err)
+	}
+	defer doc.Close()
+	if err := doc.AddSlide(); err != nil {
+		t.Fatalf("AddSlide failed: %v", err)
+	}
+
+	slides, err := doc.pres.Slides()
+	if err != nil {
+		t.Fatalf("Slides: %v", err)
+	}
+	secondShapes, err := slides[1].Shapes()
+	if err != nil || len(secondShapes) == 0 {
+		t.Fatalf("second slide shapes = %v, err %v", secondShapes, err)
+	}
+	placeholderID := uint32(secondShapes[0].ID())
+	picture, err := slides[1].AddPicture(context.Background(), gopptx.BytesMedia(encodeTestRaster(t, "png", color.NRGBA{R: 230, A: 255}), "image/png"), gopptx.PictureSpec{
+		X: 0, Y: 0, Width: 127000, Height: 127000, Fit: gopptx.FitStretch,
+	})
+	if err != nil {
+		t.Fatalf("AddPicture: %v", err)
+	}
+	pictureID := uint32(picture.ID())
+
+	firstArtwork := document.PresentationElement{ID: -1, Name: "first slide master art", Kind: document.ElementKindShape, Bounds: document.PresentationRect{X: 1, Y: 1, W: 1, H: 1}}
+	secondArtwork := document.PresentationElement{ID: -2, Name: "second slide master art", Kind: document.ElementKindShape, Bounds: document.PresentationRect{X: 2, Y: 2, W: 2, H: 2}}
+	doc.slideBackgrounds = []pptxBackground{{ColorHex: "#AA0000"}, {ColorHex: "#00AA00"}}
+	doc.slideInherited = [][]document.PresentationElement{{firstArtwork}, {secondArtwork}}
+	doc.slidePlaceholderBounds = []map[uint32]document.PresentationRect{
+		{placeholderID: {X: 1, Y: 1, W: 11, H: 11}},
+		{placeholderID: {X: 22, Y: 23, W: 24, H: 25}},
+	}
+	doc.slideBodyProps = map[int]map[uint32]shapeBodyProps{
+		0: {placeholderID: {wrap: "square"}},
+		1: {placeholderID: {wrap: "none"}},
+	}
+	doc.slidePictureTargets = map[int]map[uint32]string{
+		0: {pictureID: "first-slide.png"},
+		1: {pictureID: "second-slide.png"},
+	}
+	doc.mediaImages["first-slide.png"] = colorImage(color.NRGBA{R: 240, A: 255})
+	doc.mediaImages["second-slide.png"] = colorImage(color.NRGBA{G: 240, A: 255})
+	doc.activeSlide = 1
+
+	if err := doc.DeleteSlide(0); err != nil {
+		t.Fatalf("DeleteSlide(0): %v", err)
+	}
+	snapshot := doc.Snapshot()
+	if len(snapshot.Slides) != 1 {
+		t.Fatalf("slides after delete = %d, want 1", len(snapshot.Slides))
+	}
+	remaining := snapshot.Slides[0]
+	if remaining.BgColorHex != "#00AA00" {
+		t.Errorf("remaining background = %q, want second slide background", remaining.BgColorHex)
+	}
+	if len(remaining.InheritedElements) != 1 || remaining.InheritedElements[0].Name != "second slide master art" {
+		t.Errorf("remaining inherited artwork = %+v, want second slide artwork", remaining.InheritedElements)
+	}
+	var gotPlaceholder, gotPicture bool
+	for _, element := range remaining.Elements {
+		if uint32(element.ID) == placeholderID {
+			gotPlaceholder = true
+			if element.Bounds != (document.PresentationRect{X: 22, Y: 23, W: 24, H: 25}) || element.WrapText {
+				t.Errorf("remaining text projection = %+v, want slide 2 bounds and wrap mode", element)
+			}
+		}
+		if uint32(element.ID) == pictureID {
+			gotPicture = true
+			if element.Image == nil {
+				t.Errorf("remaining picture image is nil")
+			} else {
+				pixel := color.NRGBAModel.Convert(element.Image.At(0, 0)).(color.NRGBA)
+				if pixel.G < 220 || pixel.R > 20 {
+					t.Errorf("remaining picture pixel = %#v, want second slide green image", pixel)
+				}
+			}
+		}
+	}
+	if !gotPlaceholder || !gotPicture {
+		t.Errorf("remaining elements missing projected placeholder (%t) or picture (%t): %+v", gotPlaceholder, gotPicture, remaining.Elements)
+	}
+	if snapshot.ActiveSlide != 0 {
+		t.Errorf("active slide after deleting preceding slide = %d, want 0", snapshot.ActiveSlide)
+	}
+}
+
+func colorImage(c color.NRGBA) image.Image {
+	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	img.SetNRGBA(0, 0, c)
+	return img
 }
 
 func TestUpdateSlideTextAndNotes(t *testing.T) {
