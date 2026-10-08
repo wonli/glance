@@ -286,13 +286,25 @@ func (p *pptxPackage) image(partPath string) image.Image {
 	if part == nil {
 		return nil
 	}
-	data, err := readOPCPart(part)
-	if err != nil {
-		return nil
-	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil
+	var img image.Image
+	if strings.HasSuffix(strings.ToLower(partPath), ".emf") {
+		data, err := readOPCPartLimited(part, maxEMFBytes)
+		if err != nil {
+			return nil
+		}
+		img, err = decodeEMFImage(data)
+		if err != nil {
+			return nil
+		}
+	} else {
+		data, err := readOPCPart(part)
+		if err != nil {
+			return nil
+		}
+		img, _, err = image.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil
+		}
 	}
 	if p.imageCache != nil {
 		p.imageCache[partPath] = img

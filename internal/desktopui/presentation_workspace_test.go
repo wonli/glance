@@ -126,17 +126,24 @@ func TestPPTXLayoutMasterSamplesOpenAndRender(t *testing.T) {
 					t.Fatalf("editable blank %s placeholder is missing or has no inherited geometry: found=%t element=%+v", placeholderType, ok, elem)
 				}
 			}
-			var foundPicture bool
+			pictures := make(map[string]bool)
 			for _, elem := range snapshot.Slides[0].InheritedElements {
 				if elem.PlainText() == "‹#›" {
 					t.Fatal("inherited slide-number field leaked its raw placeholder marker")
 				}
 				if elem.Kind == document.ElementKindPicture && elem.Image != nil && elem.Bounds.W > 0 && elem.Bounds.H > 0 {
-					foundPicture = true
+					pictures[elem.AltText] = true
 				}
 			}
-			if !foundPicture {
-				t.Fatalf("selected layout image is missing or has no geometry: inherited=%+v", snapshot.Slides[0].InheritedElements)
+			for _, altText := range []string{
+				"090512_118_tk_sr.jpg",
+				"vcu-ppt-footer-cover-4-3.eps",
+				"bm_UnivRelations_RF_hz_rgb.eps",
+				"vcu-ppt-footer-gray.eps",
+			} {
+				if !pictures[altText] {
+					t.Fatalf("inherited picture %q is missing or undecoded; pictures=%v elements=%+v", altText, pictures, snapshot.Slides[0].InheritedElements)
+				}
 			}
 		}},
 		{name: "slidetemplate.pptx", slideCount: 3, verify: func(t *testing.T, snapshot document.PresentationSnapshot) {
@@ -207,6 +214,53 @@ func TestPPTXLayoutMasterSamplesOpenAndRender(t *testing.T) {
 			if dims.Size.X <= 0 || dims.Size.Y <= 0 {
 				t.Fatalf("first slide did not produce canvas layout: dims=%v", dims.Size)
 			}
+			if sample.name == "PPT_RealTest.pptx" {
+				slide := view.currentSlide()
+				var cover document.PresentationElement
+				for _, elem := range slide.InheritedElements {
+					if elem.AltText == "vcu-ppt-footer-cover-4-3.eps" {
+						cover = elem
+						break
+					}
+				}
+				if cover.Image == nil {
+					t.Fatal("footer cover EMF did not decode before canvas rendering")
+				}
+				withCover := renderPresentationTestOps(t, &ops, image.Pt(1200, 700))
+				original := slide.InheritedElements
+				slide.InheritedElements = make([]document.PresentationElement, 0, len(original)-1)
+				for _, elem := range original {
+					if elem.AltText != cover.AltText {
+						slide.InheritedElements = append(slide.InheritedElements, elem)
+					}
+				}
+				var withoutCoverOps op.Ops
+				withoutCoverContext := layout.Context{
+					Ops:         &withoutCoverOps,
+					Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+					Constraints: layout.Exact(image.Pt(1200, 700)),
+				}
+				app.layoutPresentationCanvas(withoutCoverContext, view)
+				withoutCover := renderPresentationTestOps(t, &withoutCoverOps, image.Pt(1200, 700))
+				slide.InheritedElements = original
+				box := image.Rect(
+					view.canvasCardOrigin.X+int(cover.Bounds.X*view.canvasScale),
+					view.canvasCardOrigin.Y+int(cover.Bounds.Y*view.canvasScale),
+					view.canvasCardOrigin.X+int((cover.Bounds.X+cover.Bounds.W)*view.canvasScale),
+					view.canvasCardOrigin.Y+int((cover.Bounds.Y+cover.Bounds.H)*view.canvasScale),
+				).Intersect(withCover.Bounds())
+				var changedPixels int
+				for y := box.Min.Y; y < box.Max.Y; y++ {
+					for x := box.Min.X; x < box.Max.X; x++ {
+						if withCover.RGBAAt(x, y) != withoutCover.RGBAAt(x, y) {
+							changedPixels++
+						}
+					}
+				}
+				if changedPixels < 500 {
+					t.Fatalf("footer cover EMF changed only %d canvas pixels in %v", changedPixels, box)
+				}
+			}
 			after, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatalf("read sample after open: %v", err)
@@ -276,6 +330,96 @@ func TestPPTXRealTestTitleAndSubtitleEditRoundTrip(t *testing.T) {
 	}
 	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
 		t.Fatalf("editing sample placeholders changed the source file: err=%v", err)
+	}
+}
+
+func TestPPTXRealTestPlaceholdersRenderPromptsAndAcceptText(t *testing.T) {
+	root := os.Getenv("GLANCE_PPTX_TEST_DIR")
+	if root == "" {
+		root = "/Users/mima1234/Downloads"
+	}
+	path := filepath.Join(root, "PPT_RealTest.pptx")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("missing sample file %s: %v", path, err)
+	}
+	h := newPresentationCanvasHarnessFromPath(t, path)
+	placeholders := make(map[string]document.PresentationElement)
+	for _, elem := range h.view.currentSlide().Elements {
+		if elem.PlaceholderType == "ctrTitle" || elem.PlaceholderType == "subTitle" {
+			placeholders[elem.PlaceholderType] = elem
+		}
+	}
+	wantPrompts := map[string]string{
+		"ctrTitle": "单击此处添加标题",
+		"subTitle": "单击此处添加副标题",
+	}
+	for placeholderType := range wantPrompts {
+		if _, ok := placeholders[placeholderType]; !ok {
+			t.Fatalf("real sample has no %s placeholder", placeholderType)
+		}
+	}
+
+	h.frame()
+	withPrompts := renderPresentationTestOps(t, h.ops, image.Pt(1200, 700))
+	for placeholderType, label := range wantPrompts {
+		elem := placeholders[placeholderType]
+		if got := presentationElementDisplayParagraphs(elem)[0].Runs[0].Text; got != label {
+			t.Fatalf("%s prompt = %q, want %q", placeholderType, got, label)
+		}
+		for i := range h.view.currentSlide().Elements {
+			if h.view.currentSlide().Elements[i].ID == elem.ID {
+				h.view.currentSlide().Elements[i].PlaceholderType = ""
+			}
+		}
+	}
+	h.frame()
+	withoutPrompts := renderPresentationTestOps(t, h.ops, image.Pt(1200, 700))
+	for placeholderType, elem := range placeholders {
+		box := image.Rect(
+			h.view.canvasCardOrigin.X+int(elem.Bounds.X*h.view.canvasScale),
+			h.view.canvasCardOrigin.Y+int(elem.Bounds.Y*h.view.canvasScale),
+			h.view.canvasCardOrigin.X+int((elem.Bounds.X+elem.Bounds.W)*h.view.canvasScale),
+			h.view.canvasCardOrigin.Y+int((elem.Bounds.Y+elem.Bounds.H)*h.view.canvasScale),
+		).Intersect(withPrompts.Bounds())
+		var changed int
+		for y := box.Min.Y; y < box.Max.Y; y++ {
+			for x := box.Min.X; x < box.Max.X; x++ {
+				if withPrompts.RGBAAt(x, y) != withoutPrompts.RGBAAt(x, y) {
+					changed++
+				}
+			}
+		}
+		if changed < 10 {
+			t.Fatalf("%s prompt changed only %d rendered pixels in %v", placeholderType, changed, box)
+		}
+		for i := range h.view.currentSlide().Elements {
+			if h.view.currentSlide().Elements[i].ID == elem.ID {
+				h.view.currentSlide().Elements[i].PlaceholderType = placeholderType
+			}
+		}
+	}
+	h.frame()
+
+	for placeholderType, text := range map[string]string{"ctrTitle": "真实封面标题", "subTitle": "真实封面副标题"} {
+		elem := placeholders[placeholderType]
+		area := h.view.shapeHitAreas[elem.ID]
+		point := h.view.canvasCardOrigin.Add(area.elementOrigin).Add(area.textOrigin).Add(image.Pt(12, 12))
+		h.click(f32Point(point))
+		if h.view.editingShape != elem.ID || h.view.shapeEditor.Text() != "" {
+			t.Fatalf("clicking real %s placeholder did not open its empty editor: editing=%d draft=%q", placeholderType, h.view.editingShape, h.view.shapeEditor.Text())
+		}
+		h.view.shapeEditor.SetText(text)
+		h.frame()
+	}
+	h.click(f32.Pt(1050, 650))
+	gotText := make(map[string]string)
+	for _, elem := range h.view.currentSlide().Elements {
+		if elem.PlaceholderType == "ctrTitle" || elem.PlaceholderType == "subTitle" {
+			gotText[elem.PlaceholderType] = elem.PlainText()
+		}
+	}
+	if gotText["ctrTitle"] != "真实封面标题" || gotText["subTitle"] != "真实封面副标题" {
+		t.Fatalf("real placeholder text after canvas edits = %v", gotText)
 	}
 }
 
@@ -623,8 +767,6 @@ type presentationCanvasHarness struct {
 
 func newPresentationCanvasHarness(t *testing.T) presentationCanvasHarness {
 	t.Helper()
-	app := newAppWithRuntime(nil, newDesktopRuntime())
-	app.theme = material.NewTheme()
 	tmpPath := filepath.Join(t.TempDir(), "editable-copy.pptx")
 	seed, err := pptx.NewBlank()
 	if err != nil {
@@ -634,7 +776,14 @@ func newPresentationCanvasHarness(t *testing.T) presentationCanvasHarness {
 		t.Fatal(err)
 	}
 	_ = seed.Close()
-	loaded, err := loadDocument(tmpPath)
+	return newPresentationCanvasHarnessFromPath(t, tmpPath)
+}
+
+func newPresentationCanvasHarnessFromPath(t *testing.T, path string) presentationCanvasHarness {
+	t.Helper()
+	app := newAppWithRuntime(nil, newDesktopRuntime())
+	app.theme = material.NewTheme()
+	loaded, err := loadDocument(path)
 	if err != nil {
 		t.Fatal(err)
 	}

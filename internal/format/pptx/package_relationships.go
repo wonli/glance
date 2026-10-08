@@ -326,3 +326,22 @@ func readOPCPart(part *zip.File) ([]byte, error) {
 	defer rc.Close()
 	return io.ReadAll(rc)
 }
+
+func readOPCPartLimited(part *zip.File, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 || part.UncompressedSize64 > uint64(maxBytes) {
+		return nil, fmt.Errorf("package part exceeds %d bytes", maxBytes)
+	}
+	rc, err := part.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(io.LimitReader(rc, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("package part exceeds %d bytes", maxBytes)
+	}
+	return data, nil
+}

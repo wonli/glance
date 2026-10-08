@@ -598,6 +598,106 @@ func TestPPTXLayoutPictureUsesLayoutRelationship(t *testing.T) {
 	}
 }
 
+func TestPPTXInheritedEMFPictureIsDecoded(t *testing.T) {
+	picture := inheritedPictureXML(35, "layout EMF", "rId9", 0, 0, 10, 10)
+	parts := inheritedFixtureParts(
+		inheritedSlideXML("", ""),
+		inheritedLayoutXML("", picture),
+		inheritedMasterXML(""),
+		map[string][]byte{
+			"ppt/slideLayouts/_rels/slideLayout1.xml.rels": []byte(`<Relationships xmlns="` + testPackageRelNS + `"><Relationship Id="rId1" Type="` + testOfficeRelNS + `/slideMaster" Target="../slideMasters/slideMaster1.xml"/><Relationship Id="rId9" Type="` + testOfficeRelNS + `/image" Target="../assets/layout-picture.emf"/></Relationships>`),
+			"ppt/assets/layout-picture.emf":                testEMFRectangle(),
+		},
+	)
+	slide := openFirstPPTXSlide(t, parts)
+	if len(slide.InheritedElements) != 1 || slide.InheritedElements[0].Kind != document.ElementKindPicture {
+		t.Fatalf("inherited EMF picture = %+v, want one decoded picture", slide.InheritedElements)
+	}
+	img := slide.InheritedElements[0].Image
+	if img == nil {
+		t.Fatal("decoded EMF picture has no image")
+	}
+	if img.Bounds().Dx() != 11 || img.Bounds().Dy() != 11 {
+		t.Fatalf("decoded EMF image bounds = %v, want 11x11", img.Bounds())
+	}
+	got := color.NRGBAModel.Convert(img.At(5, 5)).(color.NRGBA)
+	if got.R < 200 || got.G > 30 || got.B > 30 || got.A < 200 {
+		t.Fatalf("decoded EMF center pixel = %#v, want opaque red", got)
+	}
+}
+
+func TestEMFValidationRejectsOversizedPointCounts(t *testing.T) {
+	badPolyline := testEMFRecord(emfPolylineTo16, testEMFWords(0, 0, 0, 0, ^uint32(0)))
+	data := testEMFFile(badPolyline, testEMFRecord(emfEndRecord, testEMFWords(0, 0, 20)))
+	if _, err := decodeEMFImage(data); err == nil {
+		t.Fatal("EMF with a point count larger than its record was accepted")
+	}
+}
+
+func TestEMFValidationRejectsOversizedBounds(t *testing.T) {
+	data := testEMFRectangle()
+	data[16], data[17], data[18], data[19] = 0xff, 0xff, 0xff, 0x7f
+	if _, err := decodeEMFImage(data); err == nil {
+		t.Fatal("EMF with oversized image bounds was accepted")
+	}
+}
+
+func testEMFRectangle() []byte {
+	brush := testEMFRecord(39, testEMFWords(1, 0, 255, 0))
+	selectBrush := testEMFRecord(37, testEMFWords(1))
+	rectangle := testEMFRecord(43, testEMFWords(0, 0, 10, 10))
+	eof := testEMFRecord(14, testEMFWords(0, 0, 20))
+	return testEMFFile(brush, selectBrush, rectangle, eof)
+}
+
+func testEMFRecord(recordType uint32, payload []byte) []byte {
+	record := make([]byte, 8+len(payload))
+	for i, word := range []uint32{recordType, uint32(len(record))} {
+		record[i*4] = byte(word)
+		record[i*4+1] = byte(word >> 8)
+		record[i*4+2] = byte(word >> 16)
+		record[i*4+3] = byte(word >> 24)
+	}
+	copy(record[8:], payload)
+	return record
+}
+
+func testEMFWords(words ...uint32) []byte {
+	data := make([]byte, len(words)*4)
+	for i, word := range words {
+		data[i*4] = byte(word)
+		data[i*4+1] = byte(word >> 8)
+		data[i*4+2] = byte(word >> 16)
+		data[i*4+3] = byte(word >> 24)
+	}
+	return data
+}
+
+func testEMFFile(records ...[]byte) []byte {
+	const headerSize = 108
+	totalSize := headerSize
+	for _, record := range records {
+		totalSize += len(record)
+	}
+	header := make([]byte, headerSize)
+	for offset, word := range map[int]uint32{
+		0: 1, 4: headerSize, 16: 10, 20: 10,
+		40: 0x464d4520, 44: 0x00010000, 48: uint32(totalSize), 52: uint32(1 + len(records)),
+		72: 100, 76: 100, 80: 26, 84: 26,
+	} {
+		header[offset] = byte(word)
+		header[offset+1] = byte(word >> 8)
+		header[offset+2] = byte(word >> 16)
+		header[offset+3] = byte(word >> 24)
+	}
+	header[56] = 2 // handle count
+	data := append([]byte(nil), header...)
+	for _, record := range records {
+		data = append(data, record...)
+	}
+	return data
+}
+
 func inheritedFixtureParts(slideXML, layoutXML, masterXML []byte, extras map[string][]byte) map[string][]byte {
 	parts := map[string][]byte{
 		"ppt/slides/slide1.xml":                        slideXML,

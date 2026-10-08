@@ -5,11 +5,13 @@ go 1.27.0
 require (
 	codeberg.org/go-latex/latex v0.3.0
 	gioui.org v0.10.2
+	github.com/F31/go-pptx/v2 v2.0.3
 	github.com/SalvioniDigitalSolutions/gopdf v0.0.0-20260922202729-55a8f5fed5f5
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/extrame/xls v0.0.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-text/typesetting v0.3.4
+	github.com/iEvan-lhr/emfToPng v0.0.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
@@ -17,7 +19,7 @@ require (
 	github.com/wonli/aqi v1.11.0
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yuin/goldmark v1.7.13
-	golang.org/x/image v0.40.0
+	golang.org/x/image v0.41.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
 	gorm.io/gen v0.3.29
@@ -29,12 +31,12 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	gioui.org/shader v1.0.9 // indirect
 	git.sr.ht/~sbinet/gg v0.7.0 // indirect
-	github.com/F31/go-pptx/v2 v2.0.3 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic v1.15.4 // indirect
 	github.com/bytedance/sonic/loader v0.5.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect
+	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/extrame/ole2 v0.0.0-20160812065207-d69429661ad7 // indirect
@@ -63,6 +65,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/leodido/go-urn v1.5.0 // indirect
 	github.com/libtnb/sqlite v1.2.2 // indirect
+	github.com/llgcode/draw2d v0.0.0-20260422081035-c4331ac66734 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/microsoft/go-mssqldb v1.11.2 // indirect
