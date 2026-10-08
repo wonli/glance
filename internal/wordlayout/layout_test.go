@@ -657,8 +657,10 @@ func TestLayoutReusesScaledGlyphOutlineWithinDocument(t *testing.T) {
 
 func TestLayoutUnsupportedSectionsBlockOutput(t *testing.T) {
 	input := layoutTestInput(100, 70, 5, paragraphBlock("p0", "text", document.WordTextStyle{FontSize: 10}))
-	input.Layout.Sections = []document.WordSection{{StartBlock: 0}, {StartBlock: 1}}
-	input.Layout.Unsupported = []document.WordLayoutUnsupported{{SourceID: "section-1", Code: "multiple-sections", Description: "multiple sections"}}
+	input.Layout.Sections = []document.WordSection{
+		{StartBlock: 0, PageSetup: document.WordPageSetup{WidthPT: 100, HeightPT: 70, MarginTopPT: 5, MarginRightPT: 5, MarginBottomPT: 5, MarginLeftPT: 5}},
+		{StartBlock: 1, PageSetup: document.WordPageSetup{WidthPT: 120, HeightPT: 70, MarginTopPT: 5, MarginRightPT: 5, MarginBottomPT: 5, MarginLeftPT: 5}},
+	}
 	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
@@ -674,6 +676,30 @@ func TestLayoutUnsupportedSectionsBlockOutput(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("diagnostics = %+v; want located multiple-section error", result.Diagnostics)
+	}
+}
+
+func TestLayoutEquivalentSectionsDoNotBlockOutput(t *testing.T) {
+	pageSetup := document.WordPageSetup{
+		WidthPT: 100, HeightPT: 70, Orientation: "portrait",
+		MarginTopPT: 5, MarginRightPT: 5, MarginBottomPT: 5, MarginLeftPT: 5,
+		Columns: 1, ColumnSpacingPT: 36,
+		Set: document.WordPageWidthSet | document.WordPageHeightSet | document.WordPageOrientationSet | document.WordPageMarginTopSet | document.WordPageMarginRightSet | document.WordPageMarginBottomSet | document.WordPageMarginLeftSet | document.WordPageColumnsSet | document.WordPageColumnSpacingSet,
+	}
+	input := layoutTestInput(100, 70, 5,
+		paragraphBlock("p0", "cover", document.WordTextStyle{FontSize: 10}),
+		paragraphBlock("p1", "body", document.WordTextStyle{FontSize: 10}),
+	)
+	input.Layout.Sections = []document.WordSection{
+		{StartBlock: 0, PageSetup: pageSetup},
+		{StartBlock: 1, PageSetup: pageSetup},
+	}
+	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.CanPreview {
+		t.Fatalf("equivalent section page setups blocked preview: %+v", result.Diagnostics)
 	}
 }
 
@@ -827,4 +853,3 @@ func TestMultiColumnLayout(t *testing.T) {
 		t.Errorf("p2 X = %f (found=%v), want ~10 on page 1", p2X, p2Found)
 	}
 }
-

@@ -236,6 +236,40 @@ func TestWordLayoutProjectionProjectsColumns(t *testing.T) {
 	}
 }
 
+func TestWordLayoutProjectionAllowsSectionsWithEquivalentPageSetup(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+	<w:p><w:r><w:t>cover</w:t></w:r><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/><w:cols w:num="1" w:space="720"/></w:sectPr></w:pPr></w:p>
+	<w:p><w:r><w:t>contents</w:t></w:r><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/><w:cols w:num="1" w:space="720"/></w:sectPr></w:pPr></w:p>
+	<w:p><w:r><w:t>body</w:t></w:r></w:p>
+	<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/><w:cols w:num="1" w:space="720"/></w:sectPr>
+	</w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+	data := requireWordLayoutReader(t, doc).WordLayoutData()
+	if len(data.Sections) != 3 || data.Sections[0].StartBlock != 0 || data.Sections[1].StartBlock != 1 || data.Sections[2].StartBlock != 2 {
+		t.Fatalf("section boundaries = %+v; want three sections at blocks 0, 1, and 2", data.Sections)
+	}
+	for _, item := range data.Unsupported {
+		if item.Code == "multiple-sections" {
+			t.Fatalf("equivalent page setups reported as unsupported: %+v", item)
+		}
+	}
+}
+
+func TestWordLayoutProjectionIgnoresZeroCharacterIndent(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:ind w:firstLine="0" w:firstLineChars="0"/></w:pPr><w:r><w:t>text</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+	data := requireWordLayoutReader(t, doc).WordLayoutData()
+	for _, item := range data.Unsupported {
+		if item.Code == "character-indent" {
+			t.Fatalf("zero character indent reported as unsupported: %+v", item)
+		}
+	}
+	paragraph := doc.WordBlocks()[0].Paragraph
+	if paragraph.Layout.FirstLineIndentEMU != 0 || paragraph.Layout.Set&document.WordParagraphFirstLineIndentSet == 0 {
+		t.Fatalf("zero first-line indent = %+v; want an explicitly set zero indent", paragraph.Layout)
+	}
+}
+
 func TestWordLayoutProjectionReportsMalformedStylesPart(t *testing.T) {
 	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>text</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`
 	stylesXML := `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault></w:styles>`

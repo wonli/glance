@@ -55,8 +55,8 @@ func projectWordLayoutData(parts []part, partIndexes map[string]int, relationshi
 		switch child.name.Local {
 		case "p":
 			if properties := firstChild(child, "pPr"); properties != nil {
-				if indentation := firstChild(properties, "ind"); indentation != nil && (attrValue(indentation, "firstLineChars") != "" || attrValue(indentation, "hangingChars") != "") {
-					appendLayoutUnsupported(&data.Unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "character-indent", Description: "Character-based paragraph indents are not supported by page layout yet."})
+				if indentation := firstChild(properties, "ind"); hasNonzeroCharacterIndent(indentation) {
+					appendLayoutUnsupported(&data.Unsupported, document.WordLayoutUnsupported{SourceID: blockID, Code: "character-indent", Description: "Nonzero character-based paragraph indents are not supported by page layout yet."})
 				}
 				if sectionProperties := firstChild(properties, "sectPr"); sectionProperties != nil {
 					data.Sections = append(data.Sections, projectWordSection(sectionStart, sectionProperties, "section-"+strconv.Itoa(len(data.Sections)), &data.Unsupported))
@@ -77,13 +77,43 @@ func projectWordLayoutData(parts []part, partIndexes map[string]int, relationshi
 	if len(data.Sections) == 0 {
 		data.Sections = append(data.Sections, document.WordSection{StartBlock: 0})
 	}
-	if len(data.Sections) > 1 {
+	if sectionPageSetupsDiffer(data.Sections) {
 		appendLayoutUnsupported(&data.Unsupported, document.WordLayoutUnsupported{
 			SourceID: "section-1", Code: "multiple-sections",
 			Description: "This document has multiple sections; section-specific pagination is not supported yet.",
 		})
 	}
 	return data
+}
+
+func hasNonzeroCharacterIndent(indentation *wordXMLNode) bool {
+	if indentation == nil {
+		return false
+	}
+	for _, name := range []string{"firstLineChars", "hangingChars"} {
+		value, present := attrValuePresent(indentation, name)
+		if !present {
+			continue
+		}
+		amount, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || amount != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func sectionPageSetupsDiffer(sections []document.WordSection) bool {
+	if len(sections) < 2 {
+		return false
+	}
+	first := sections[0].PageSetup
+	for _, section := range sections[1:] {
+		if section.PageSetup != first {
+			return true
+		}
+	}
+	return false
 }
 
 func projectWordSection(startBlock int, node *wordXMLNode, sourceID string, unsupported *[]document.WordLayoutUnsupported) document.WordSection {
@@ -250,7 +280,17 @@ func parseWordParagraphLayout(properties *wordXMLNode) document.WordParagraphLay
 		}
 	}
 	if indentation := firstChild(properties, "ind"); indentation != nil {
-		if value := attrValue(indentation, "firstLine"); value != "" {
+		if value, present := attrValuePresent(indentation, "firstLineChars"); present {
+			if amount, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil && amount == 0 {
+				layout.FirstLineIndentEMU = 0
+				layout.Set |= document.WordParagraphFirstLineIndentSet
+			}
+		} else if value, present := attrValuePresent(indentation, "hangingChars"); present {
+			if amount, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil && amount == 0 {
+				layout.HangingIndentEMU = 0
+				layout.Set |= document.WordParagraphHangingIndentSet
+			}
+		} else if value := attrValue(indentation, "firstLine"); value != "" {
 			layout.FirstLineIndentEMU = parseWordIndentEMU(value)
 			layout.Set |= document.WordParagraphFirstLineIndentSet
 		} else if value := attrValue(indentation, "hanging"); value != "" {

@@ -31,8 +31,8 @@ type WordPageSetup struct {
 }
 
 // WordSection maps one section's page settings to the first body block using
-// those settings. The MVP layout service diagnoses documents with more than
-// one section rather than guessing section transitions.
+// those settings. Pagination accepts multiple sections when their effective
+// page setups match; section-specific geometry remains unsupported.
 type WordSection struct {
 	StartBlock int
 	PageSetup  WordPageSetup

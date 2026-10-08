@@ -201,7 +201,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 	if content.WidthPT <= 0 || content.HeightPT <= 0 {
 		cursor.diagnostic(DiagnosticError, "document", "invalid-page-area", "Page dimensions and margins leave no printable area.")
 	}
-	if len(input.Layout.Sections) > 1 {
+	if sectionPageSetupsDiffer(input.Layout.Sections, input.DefaultPageSetup) {
 		cursor.diagnostic(DiagnosticError, "section-1", "multiple-sections", "Section-specific page layouts are not supported yet.")
 	}
 	for _, unsupported := range input.Layout.Unsupported {
@@ -420,6 +420,20 @@ func resolvePageSetup(layout document.WordLayoutData, fallback document.WordPage
 		setup.WidthPT, setup.HeightPT = setup.HeightPT, setup.WidthPT
 	}
 	return setup
+}
+
+func sectionPageSetupsDiffer(sections []document.WordSection, fallback document.WordPageSetup) bool {
+	if len(sections) < 2 {
+		return false
+	}
+	first := resolvePageSetup(document.WordLayoutData{Sections: sections[:1]}, fallback)
+	for _, section := range sections[1:] {
+		current := resolvePageSetup(document.WordLayoutData{Sections: []document.WordSection{section}}, fallback)
+		if current != first {
+			return true
+		}
+	}
+	return false
 }
 
 func usesDefaultPageSetup(layout document.WordLayoutData, fallback document.WordPageSetup) bool {
