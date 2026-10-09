@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"strings"
 	"testing"
 
 	"glance/internal/document"
@@ -152,11 +153,17 @@ func TestDOCXProjectionResolvesImageBytesAndKeepsFloatingObjectsReadOnly(t *test
 		t.Fatal("resolved image bytes differ from the relationship target")
 	}
 	last := blocks[2].Paragraph
-	if last == nil || len(last.Inlines) != 2 || last.Inlines[0].Text == nil || last.Inlines[1].Kind != document.WordUnsupportedInline || last.Inlines[1].Unsupported == nil {
-		t.Fatalf("floating drawing projection = %#v; want text plus read-only placeholder", last)
+	if last == nil || len(last.Inlines) != 2 || last.Inlines[0].Text == nil || last.Inlines[1].Kind != document.WordTextInline || last.Inlines[1].Text == nil || last.Inlines[1].Text.Editable || last.Inlines[1].Text.Text != "[Drawing preview unavailable]" {
+		t.Fatalf("floating drawing projection = %#v; want text plus a visible read-only fallback", last)
 	}
-	if last.Inlines[1].Unsupported.Description == "" {
-		t.Fatal("floating drawing placeholder has no explanation")
+	if !strings.Contains(last.PreviewWarning, "no image reference") {
+		t.Fatalf("floating drawing warning = %q; want the missing image explanation", last.PreviewWarning)
+	}
+	if err := requireWordTextEditor(t, doc).ReplaceTextRun(last.Inlines[1].Text.ID, "edited fallback"); err == nil {
+		t.Fatal("floating drawing fallback text must not be editable")
+	}
+	if doc.Dirty() {
+		t.Fatal("editing the read-only fallback changed dirty state")
 	}
 }
 
@@ -178,16 +185,27 @@ func TestDOCXProjectionMarksMissingAndUnsupportedImageRelationships(t *testing.T
 		relID     string
 		target    string
 		mediaType string
+		warning   string
 	}{
-		{name: "missing relationship", relID: "missing", target: "media/missing.png", mediaType: "image/png"},
-		{name: "unsupported media", relID: "rIdSvg", target: "media/picture.svg", mediaType: "image/svg+xml"},
+		{name: "missing relationship", relID: "missing", target: "media/missing.png", mediaType: "image/png", warning: "missing or external"},
+		{name: "unsupported media", relID: "rIdSvg", target: "media/picture.svg", mediaType: "image/svg+xml", warning: "image/svg+xml"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			doc := makeImageDocument(test.relID, test.target, test.mediaType)
 			reader := requireWordContentReader(t, doc)
-			inline := reader.WordBlocks()[0].Paragraph.Inlines[0]
-			if inline.Kind != document.WordUnsupportedInline || inline.Unsupported == nil || inline.Unsupported.Description == "" {
-				t.Fatalf("unsupported image = %#v; want visible read-only placeholder", inline)
+			paragraph := reader.WordBlocks()[0].Paragraph
+			inline := paragraph.Inlines[0]
+			if inline.Kind != document.WordTextInline || inline.Text == nil || inline.Text.Editable || !strings.Contains(inline.Text.Text, "preview unavailable") {
+				t.Fatalf("unsupported image = %#v; want visible read-only fallback text", inline)
+			}
+			if !strings.Contains(paragraph.PreviewWarning, test.warning) {
+				t.Fatalf("unsupported image warning = %q; want %q", paragraph.PreviewWarning, test.warning)
+			}
+			if err := requireWordTextEditor(t, doc).ReplaceTextRun(inline.Text.ID, "edited fallback"); err == nil {
+				t.Fatal("unsupported image fallback text must not be editable")
+			}
+			if doc.Dirty() {
+				t.Fatal("editing fallback text changed dirty state")
 			}
 			if _, err := doc.Snapshot(); err != nil {
 				t.Fatalf("snapshot after projection: %v", err)

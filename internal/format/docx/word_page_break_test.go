@@ -2,6 +2,7 @@ package docx
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,6 +11,52 @@ import (
 
 type wordPageBreakTestCapability interface {
 	InsertPageBreakAtRange(runID, value string, start, end int) (paragraphID, caretRunID string, err error)
+}
+
+func TestDOCXCorpusLineBreaksAndRenderedPageHintsProjectSafely(t *testing.T) {
+	cases := []struct {
+		name          string
+		wantLineBreak int
+		wantPageBreak int
+	}{
+		{name: "page-breaks", wantLineBreak: 1, wantPageBreak: 2},
+		{name: "sample", wantPageBreak: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join("..", "..", "..", "testdata", "office-corpus", "docx", tc.name+".docx")
+			doc, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer doc.Close()
+
+			lineBreaks, pageBreaks := 0, 0
+			for _, block := range doc.WordBlocks() {
+				if block.Paragraph == nil {
+					continue
+				}
+				for _, inline := range block.Paragraph.Inlines {
+					if inline.Text != nil && inline.Text.Text == "\n" && !inline.Text.Editable {
+						lineBreaks++
+						continue
+					}
+					if inline.PageBreak != nil && inline.PageBreak.Type == document.WordBreakPage {
+						pageBreaks++
+					}
+					if inline.Unsupported != nil {
+						t.Errorf("unsupported inline %q: %s", inline.Unsupported.ID, inline.Unsupported.Description)
+					}
+				}
+			}
+			if lineBreaks != tc.wantLineBreak {
+				t.Errorf("soft line breaks = %d, want %d", lineBreaks, tc.wantLineBreak)
+			}
+			if pageBreaks != tc.wantPageBreak {
+				t.Errorf("explicit page breaks = %d, want %d", pageBreaks, tc.wantPageBreak)
+			}
+		})
+	}
 }
 
 func requireWordPageBreakEditor(t *testing.T, doc *Document) wordPageBreakTestCapability {
@@ -288,4 +335,3 @@ func TestInsertWordBlankPageAndUndo(t *testing.T) {
 		t.Fatalf("expected text 'bold' restored, got %q", undoBlocks[0].Paragraph.Inlines[0].Text.Text)
 	}
 }
-

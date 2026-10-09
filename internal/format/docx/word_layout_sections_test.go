@@ -1,0 +1,231 @@
+package docx
+
+import (
+	"bytes"
+	"glance/internal/document"
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
+func TestWordLayoutProjectionReadsSectionPageSetupAndStyleDefaults(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+	<w:p><w:pPr><w:pStyle w:val="Normal"/><w:spacing w:before="240" w:after="120" w:line="360" w:lineRule="exact"/><w:ind w:firstLine="360"/><w:keepNext/><w:keepLines/></w:pPr><w:r><w:rPr><w:b w:val="0"/><w:sz w:val="28"/></w:rPr><w:t>content</w:t></w:r></w:p>
+	<w:tbl><w:tblGrid><w:gridCol w:w="4320"/><w:gridCol w:w="4320"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="4320" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:ind w:hanging="240"/></w:pPr><w:r><w:t>cell</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="4320" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell 2</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+	<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800" w:header="720" w:footer="720"/></w:sectPr>
+	</w:body></w:document>`
+	stylesXML := `<?xml version="1.0" encoding="UTF-8"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+	<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Noto Sans CJK SC"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="240" w:line="360" w:lineRule="exact"/></w:pPr></w:pPrDefault></w:docDefaults>
+	<w:style w:type="paragraph" w:styleId="Base"><w:pPr><w:spacing w:before="120"/></w:pPr><w:rPr><w:color w:val="336699"/></w:rPr></w:style>
+	<w:style w:type="paragraph" w:styleId="Normal"><w:basedOn w:val="Base"/><w:pPr><w:keepNext/></w:pPr><w:rPr><w:b/></w:rPr></w:style>
+	</w:styles>`
+	doc := wordLayoutProjectionFixture(t, documentXML, stylesXML)
+	before, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data := requireWordLayoutReader(t, doc).WordLayoutData()
+	if len(data.Sections) != 1 {
+		t.Fatalf("section count = %d; want 1", len(data.Sections))
+	}
+	section := data.Sections[0]
+	if section.StartBlock != 0 || section.PageSetup.WidthPT != 841.9 || section.PageSetup.HeightPT != 595.3 || section.PageSetup.Orientation != "landscape" {
+		t.Fatalf("section geometry = %+v; want landscape 841.9×595.3pt starting at block 0", section)
+	}
+	pageSetupSet := document.WordPageWidthSet | document.WordPageHeightSet | document.WordPageOrientationSet | document.WordPageMarginTopSet | document.WordPageMarginRightSet | document.WordPageMarginBottomSet | document.WordPageMarginLeftSet
+	if section.PageSetup.Set&pageSetupSet != pageSetupSet {
+		t.Fatalf("page setup presence mask = %b; want all geometry/margin values explicitly present", section.PageSetup.Set)
+	}
+	if section.PageSetup.MarginTopPT != 72 || section.PageSetup.MarginRightPT != 90 || section.PageSetup.MarginBottomPT != 72 || section.PageSetup.MarginLeftPT != 90 {
+		t.Fatalf("section margins = %+v; want top/bottom 72pt and left/right 90pt", section.PageSetup)
+	}
+	if data.Defaults.Text.FontFamily != "Noto Sans CJK SC" || data.Defaults.Text.FontSize != 11 || data.Defaults.TextSet&document.WordTextFontFamilySet == 0 || data.Defaults.TextSet&document.WordTextFontSizeSet == 0 {
+		t.Fatalf("docDefaults text = %+v mask=%b; want CJK 11pt and explicit masks", data.Defaults.Text, data.Defaults.TextSet)
+	}
+	if data.Defaults.Paragraph.AfterPT != 12 || data.Defaults.Paragraph.LineSpacingPT != 18 || data.Defaults.Paragraph.LineSpacingRule != "exact" {
+		t.Fatalf("docDefaults paragraph = %+v; want after 12pt and exact 18pt line spacing", data.Defaults.Paragraph)
+	}
+	foundNormal := false
+	for _, style := range data.Styles {
+		if style.ID == "Normal" {
+			foundNormal = true
+			if style.BasedOn != "Base" || style.TextSet&document.WordTextBoldSet == 0 || !style.Text.Bold || style.Paragraph.Set&document.WordParagraphKeepWithNextSet == 0 || !style.Paragraph.KeepWithNext {
+				t.Fatalf("Normal style = %+v; want Base inheritance and explicit bold/keepNext", style)
+			}
+		}
+	}
+	if !foundNormal {
+		t.Fatal("style inheritance input Normal was not projected")
+	}
+
+	blocks := doc.WordBlocks()
+	if len(blocks) != 2 || blocks[0].Paragraph == nil || blocks[1].Table == nil {
+		t.Fatalf("projected body blocks = %#v; want paragraph then table", blocks)
+	}
+	paragraph := blocks[0].Paragraph
+	layout := paragraph.Layout
+	if layout.BeforePT != 12 || layout.AfterPT != 6 || layout.LineSpacingPT != 18 || layout.FirstLineIndentEMU != 228600 || !layout.KeepWithNext || !layout.KeepTogether {
+		t.Fatalf("paragraph layout = %+v; want direct spacing, 360-twip indent, and keep flags", layout)
+	}
+	run := paragraph.Inlines[0].Text
+	if run == nil || run.Style.Bold || run.Style.FontSize != 14 || run.StyleSet&document.WordTextBoldSet == 0 || run.StyleSet&document.WordTextFontSizeSet == 0 {
+		t.Fatalf("direct run style = %#v; explicit bold-off and 14pt masks must survive", run)
+	}
+	table := blocks[1].Table
+	if !slices.Equal(table.Layout.GridColumnsEMU, []int64{2743200, 2743200}) || len(table.Rows) != 1 || table.Rows[0].Cells[0].WidthEMU != 2743200 {
+		t.Fatalf("table geometry = %+v; want grid/cell widths converted from 4320 twips", table)
+	}
+	cellParagraph := table.Rows[0].Cells[0].Paragraphs[0].Layout
+	if cellParagraph.HangingIndentEMU != 152400 || cellParagraph.Set&document.WordParagraphHangingIndentSet == 0 {
+		t.Fatalf("table-cell hanging indent = %+v; want 240 twips preserved", cellParagraph)
+	}
+	if len(data.Unsupported) != 0 {
+		t.Fatalf("supported one-section fixture produced unsupported diagnostics: %+v", data.Unsupported)
+	}
+	after, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) || doc.Dirty() {
+		t.Fatal("layout projection modified the package snapshot or dirty state")
+	}
+	data.Sections[0].PageSetup.WidthPT = 1
+	data.Styles[0].ID = "mutated"
+	table.Layout.GridColumnsEMU[0] = 1
+	if reloaded := requireWordLayoutReader(t, doc).WordLayoutData(); reloaded.Sections[0].PageSetup.WidthPT != 841.9 || reloaded.Styles[0].ID == "mutated" {
+		t.Fatalf("caller mutation leaked back into the DOCX layout projection: %+v", reloaded)
+	}
+	if reloaded := doc.WordBlocks(); reloaded[1].Table.Layout.GridColumnsEMU[0] != 2743200 {
+		t.Fatalf("caller mutation leaked back into the DOCX table projection: %+v", reloaded[1].Table.Layout)
+	}
+}
+
+func TestWordLayoutProjectionMapsCorpusHeadersToTheirSections(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "testdata", "office-corpus", "docx", "headers.docx")
+	doc, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	data := doc.WordLayoutData()
+	if len(data.Sections) != 3 {
+		t.Fatalf("sections = %d; want the sample's three sections", len(data.Sections))
+	}
+	for index, want := range []string{"Section 1", "Section 2", "Section 3"} {
+		section := data.Sections[index]
+		if !section.HeaderSet || section.HeaderText != want {
+			t.Errorf("section %d header = %+v; want %q", index+1, section, want)
+		}
+	}
+	for _, unsupported := range data.Unsupported {
+		if unsupported.Code == "multiple-sections" {
+			t.Fatalf("rounding-only section geometry was rejected: %+v", unsupported)
+		}
+	}
+}
+
+func TestWordLayoutProjectionInheritsDefaultHeaderAcrossSections(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>
+	<w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rHeader"/></w:sectPr></w:pPr><w:r><w:t>first section</w:t></w:r></w:p>
+	<w:p><w:r><w:t>second section</w:t></w:r></w:p>
+	<w:sectPr/>
+	</w:body></w:document>`
+	relationships := `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>`
+	header := `<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Shared header</w:t></w:r></w:p></w:hdr>`
+	doc := projectionFixture(t, documentXML, relationships, map[string][]byte{"word/header1.xml": []byte(header)})
+	sections := doc.WordLayoutData().Sections
+	if len(sections) != 2 || sections[0].HeaderText != "Shared header" || sections[1].HeaderText != "Shared header" || !sections[1].HeaderSet {
+		t.Fatalf("section headers = %+v; want the second section to inherit its preceding default header", sections)
+	}
+}
+
+func TestWordLayoutProjectionDoesNotRejectOmittedPageOrientation(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>content</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="13500" w:h="9000"/><w:pgMar w:top="1000" w:right="1350" w:bottom="1000" w:left="1350"/></w:sectPr></w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+
+	section := requireWordLayoutReader(t, doc).WordLayoutData().Sections[0]
+	if section.PageSetup.Orientation != "" || section.PageSetup.Set&document.WordPageOrientationSet != 0 {
+		t.Fatalf("omitted orientation was projected as explicit: %+v", section.PageSetup)
+	}
+	if section.PageSetup.WidthPT != 675 || section.PageSetup.HeightPT != 450 {
+		t.Fatalf("page size = %.2f×%.2fpt; want 675×450pt", section.PageSetup.WidthPT, section.PageSetup.HeightPT)
+	}
+	if data := requireWordLayoutReader(t, doc).WordLayoutData(); len(data.Unsupported) != 0 {
+		t.Fatalf("valid page size with omitted orientation produced unsupported diagnostics: %+v", data.Unsupported)
+	}
+}
+
+func TestWordLayoutProjectionRejectsExplicitEmptyPageOrientation(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>content</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840" w:orient=""/></w:sectPr></w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+
+	for _, item := range requireWordLayoutReader(t, doc).WordLayoutData().Unsupported {
+		if item.Code == "unknown-orientation" && item.SourceID == "section-0" {
+			return
+		}
+	}
+	t.Fatal("explicit empty orientation was not reported as unsupported")
+}
+
+func TestWordLayoutProjectionProjectsColumns(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+	<w:p><w:r><w:t>hello</w:t></w:r></w:p>
+	<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:cols w:num="2" w:space="720"/></w:sectPr>
+	</w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+	data := requireWordLayoutReader(t, doc).WordLayoutData()
+	if len(data.Sections) != 1 {
+		t.Fatalf("sections count = %d", len(data.Sections))
+	}
+	setup := data.Sections[0].PageSetup
+	if setup.Columns != 2 {
+		t.Errorf("got columns %d, want 2", setup.Columns)
+	}
+	if setup.ColumnSpacingPT != 36.0 {
+		t.Errorf("got column spacing %f, want 36.0", setup.ColumnSpacingPT)
+	}
+	for _, item := range data.Unsupported {
+		if item.Code == "columns" {
+			t.Errorf("unexpected columns unsupported diagnostic: %+v", item)
+		}
+	}
+}
+
+func TestWordLayoutProjectionAllowsSectionsWithEquivalentPageSetup(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+	<w:p><w:r><w:t>cover</w:t></w:r><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/><w:cols w:num="1" w:space="720"/></w:sectPr></w:pPr></w:p>
+	<w:p><w:r><w:t>contents</w:t></w:r><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/><w:cols w:num="1" w:space="720"/></w:sectPr></w:pPr></w:p>
+	<w:p><w:r><w:t>body</w:t></w:r></w:p>
+	<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/><w:cols w:num="1" w:space="720"/></w:sectPr>
+	</w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+	data := requireWordLayoutReader(t, doc).WordLayoutData()
+	if len(data.Sections) != 3 || data.Sections[0].StartBlock != 0 || data.Sections[1].StartBlock != 1 || data.Sections[2].StartBlock != 2 {
+		t.Fatalf("section boundaries = %+v; want three sections at blocks 0, 1, and 2", data.Sections)
+	}
+	for _, item := range data.Unsupported {
+		if item.Code == "multiple-sections" {
+			t.Fatalf("equivalent page setups reported as unsupported: %+v", item)
+		}
+	}
+}
+
+func TestWordLayoutProjectionPreservesSectionStartType(t *testing.T) {
+	doc := wordLayoutProjectionFixture(t, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+ <w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>cover</w:t></w:r></w:p>
+ <w:p><w:pPr><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr><w:r><w:t>continuous</w:t></w:r></w:p>
+ <w:p><w:r><w:t>body</w:t></w:r></w:p>
+ <w:sectPr><w:type w:val="oddPage"/></w:sectPr>
+ </w:body></w:document>`, "")
+	sections := doc.WordLayoutData().Sections
+	if len(sections) != 3 {
+		t.Fatalf("sections = %+v", sections)
+	}
+	for i, want := range []string{"nextpage", "continuous", "oddpage"} {
+		if sections[i].StartBlock != i || sections[i].StartType != want {
+			t.Errorf("section %d = %+v; want start=%d type=%s", i, sections[i], i, want)
+		}
+	}
+}

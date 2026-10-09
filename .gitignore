@@ -1,6 +1,7 @@
 dist/**
 **.txt
 **.xlsx
+!testdata/office-corpus/**/*.xlsx
 **.DS_Store
 .idea/
 .worktrees/
@@ -11,3 +12,4 @@ trashDir
 go.work*
 
 .superpowers/sdd/
+/artifacts/render-run/

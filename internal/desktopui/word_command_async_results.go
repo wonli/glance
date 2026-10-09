@@ -1,0 +1,161 @@
+package desktopui
+
+import "glance/internal/document"
+
+func (a *App) processWordCommandAsyncResult() bool {
+	select {
+	case result := <-a.wordCommandResults:
+		if result.state == nil {
+			return true
+		}
+		if result.operationToken.generation != 0 && (!result.state.acceptsResult(result.operationToken) || result.state.wordRevisionAtomic.Load() != result.revision) {
+			return true
+		}
+		if result.state != nil {
+			if result.operation == "调整段落缩进" {
+				result.state.wordRulerIndentIntent = nil
+			}
+			if result.bodyParagraphInsert {
+				result.state.wordInsertionRunning = false
+			}
+		}
+		activeResult := result.generation == a.documentGeneration && result.state == a.documentSessionState
+		if result.pageBreak {
+			a.completeWordPageBreak(result, activeResult)
+		} else if result.paragraphJoin {
+			a.completeWordParagraphJoin(result, activeResult)
+		} else if result.textDraft && result.state.pendingWordRestoreAfterDrafts() != 0 {
+			if result.err != nil {
+				message := "恢复历史版本已取消，" + wordCommandError(result.operation, result.err)
+				a.publishWordRestoreNotice(result.state, message)
+				result.state.wordFlushRequested.Store(false)
+				result.state.wordFlushAllDrafts.Store(false)
+				result.state.wordForceDraftFlush.Store(false)
+				result.state.clearPendingWordRestore()
+			} else {
+				result.state.setCommittedWordTextAndClearDraft(result.runID, result.runText)
+				reconcileWordSelection(result.state, false)
+				if activeResult {
+					a.setStatus("正在编辑 Word 正文")
+					a.persistActiveSession()
+				}
+				if result.state.wordFlushRequested.Load() {
+					a.startNextWordTextCommitFor(result.state)
+				}
+			}
+		} else if activeResult {
+			if result.paragraphSplit {
+				a.completeWordParagraphSplit(result)
+			} else if result.textDraft {
+				if result.err != nil {
+					a.setStatus(wordCommandError(result.operation, result.err))
+					result.state.wordFlushRequested.Store(false)
+					result.state.wordFlushAllDrafts.Store(false)
+					result.state.wordForceDraftFlush.Store(false)
+					result.state.clearPendingWordRestore()
+					result.state.wordParagraphSplitIntent = nil
+					result.state.wordParagraphJoinIntent = nil
+					result.state.wordPageBreakIntent = nil
+					result.state.wordPDFExportAfterDrafts = false
+					result.state.wordPrintAfterDrafts = false
+					if result.state.wordDeferredToolbarAction == "ruler-indents" {
+						result.state.wordDeferredToolbarAction = ""
+						result.state.wordRulerIndentIntent = nil
+					} else if result.state.wordDeferredToolbarAction == "export-pdf" || result.state.wordDeferredToolbarAction == "share" {
+						result.state.wordDeferredToolbarAction = ""
+					} else if result.state.wordDeferredToolbarAction == "insert-symbol" || result.state.wordDeferredToolbarAction == "layout-before" || result.state.wordDeferredToolbarAction == "layout-after" {
+						result.state.wordDeferredToolbarAction = ""
+					} else if result.state.wordDeferredToolbarAction == "apply-format-painter" {
+						result.state.wordDeferredToolbarAction = ""
+						result.state.wordFormatPainterSourceRunID = ""
+						result.state.wordFormatPainterTargetRunID = ""
+						result.state.wordFormatPainterTargetParagraphID = ""
+					}
+				} else {
+					result.state.setCommittedWordTextAndClearDraft(result.runID, result.runText)
+					if result.blocks != nil && result.revision == 0 {
+						result.state.setWordBlocks(result.blocks)
+						a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, result.state.wordRevisionAtomic.Load())
+					}
+					reconcileWordSelection(result.state, false)
+					a.setStatus("正在编辑 Word 正文")
+					a.persistActiveSession()
+				}
+				if result.err == nil && result.state.wordFlushRequested.Load() {
+					a.startNextWordTextCommit()
+				}
+			} else if result.wordRangeReplacement {
+				a.completeWordRangeReplacement(result)
+			} else if result.wordSymbolInsertion {
+				a.completeWordSymbolInsertion(result)
+			} else if result.err != nil {
+				a.setStatus(wordCommandError(result.operation, result.err))
+			} else if !result.history || result.applied {
+				if result.blocks != nil && result.revision == 0 {
+					result.state.setWordBlocks(result.blocks)
+					a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, result.state.wordRevisionAtomic.Load())
+				}
+				if result.history {
+					invalidateAllWordImagePreviews(result.state)
+				} else if result.imageID != "" && (result.operation == "替换图片" || result.operation == "删除图片") {
+					invalidateWordImagePreview(result.state, result.imageID)
+				}
+				reconcileWordSelection(result.state, result.history)
+				if result.operation == "开启限制编辑" {
+					result.state.wordProtected = true
+				} else if result.operation == "解除限制编辑" {
+					result.state.wordProtected = false
+				}
+				if result.history {
+					if result.undo {
+						a.setStatus("已撤销 Word 编辑")
+					} else {
+						a.setStatus("已重做 Word 编辑")
+					}
+					if ed, ok := any(result.state.word).(document.WordDocumentProtectionEditor); ok {
+						result.state.wordProtected, _ = ed.GetWordDocumentProtection()
+					}
+				} else {
+					a.setStatus(wordCommandError(result.operation, nil))
+				}
+				if result.clearImageSelection && result.state.selectedWordImageID == result.imageID {
+					result.state.selectedWordImageID = ""
+					result.state.wordImageFocusRequestID = ""
+				}
+				if result.selectInsertedImage && result.imageID != "" {
+					result.state.selectedWordRunID = ""
+					result.state.selectedWordImageID = result.imageID
+					result.state.wordImageFocusRequestID = result.imageID
+					result.state.selectedBlock = -1
+					result.state.selectedBlockEditable = false
+					result.state.wordToolbarTab = wordTabPicture
+					for _, paragraph := range allWordParagraphs(wordBlocksForState(result.state)) {
+						for _, inline := range paragraph.Inlines {
+							if inline.Image != nil && inline.Image.ID == result.imageID {
+								result.state.selectedWordParagraphID = paragraph.ID
+							}
+						}
+					}
+				}
+				a.persistActiveSession()
+				if result.insertedParagraphID != "" {
+					a.focusInsertedWordParagraph(result.state, result.insertedParagraphID)
+				}
+			}
+			if result.imageID != "" && (result.operation == "调整图片" || result.operation == "旋转图片") {
+				finishWordImagePreviewCommand(result.state, result.imageID)
+			}
+			if result.state.wordFlushRequested.Load() && !result.state.formatRunning.Load() {
+				a.startNextWordTextCommit()
+			}
+			if activeResult && result.err == nil && !result.state.formatRunning.Load() && !result.state.wordFlushRequested.Load() {
+				a.maybeAutoSaveWord(result.state)
+			}
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		}
+	default:
+	}
+	return false
+}

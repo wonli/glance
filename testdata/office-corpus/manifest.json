@@ -1,0 +1,419 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "xlsx-formula",
+      "path": "xlsx/formula-example.xlsx",
+      "format": "xlsx",
+      "features": ["formulas", "worksheet-grid"],
+      "expected": "rendered",
+      "notes": "Formula cells in a compact worksheet.",
+      "baselines": {"worksheet-1": "baselines/xlsx-formula-worksheet-1.png"}
+    },
+    {
+      "id": "xlsx-table",
+      "path": "xlsx/table-example.xlsx",
+      "format": "xlsx",
+      "features": ["table", "worksheet-grid"],
+      "expected": "rendered",
+      "notes": "Structured table and formatted worksheet cells."
+    },
+    {
+      "id": "xlsx-conditional-formatting",
+      "path": "xlsx/conditional-formatting.xlsx",
+      "format": "xlsx",
+      "features": ["conditional-formatting", "worksheet-grid"],
+      "expected": "rendered",
+      "notes": "Conditional formatting in a compact worksheet."
+    },
+    {
+      "id": "docx-sample",
+      "path": "docx/sample.docx",
+      "format": "docx",
+      "features": ["paragraphs", "text-styles", "multiple-pages"],
+      "expected": "rendered",
+      "notes": "Sample retains its visible text and actual page break; stale last-rendered pagination hints are ignored."
+    },
+    {
+      "id": "docx-numbered-lists",
+      "path": "docx/numbered-lists.docx",
+      "format": "docx",
+      "features": ["numbering", "nested-lists"],
+      "expected": "rendered",
+      "notes": "Nested decimal and alphabetic numbering markers are projected read-only."
+    },
+    {
+      "id": "docx-table-width",
+      "path": "docx/table-width.docx",
+      "format": "docx",
+      "features": ["tables", "column-widths"],
+      "expected": "rendered",
+      "notes": "Table width and column layout."
+    },
+    {
+      "id": "docx-styled-text",
+      "path": "docx/test-document.docx",
+      "format": "docx",
+      "features": ["paragraphs", "text-styles", "hyperlinks"],
+      "expected": "rendered",
+      "notes": "Styled paragraphs, colors, and a hyperlink.",
+      "baselines": {"viewport-1": "baselines/docx-styled-text-viewport-1.png"}
+    },
+    {
+      "id": "pptx-sample-show",
+      "path": "pptx/sample-show.pptx",
+      "format": "pptx",
+      "features": ["multiple-slides", "text", "shapes"],
+      "expected": "rendered",
+      "notes": "Multi-slide presentation for per-slide render targets.",
+      "baselines": {"slide-1": "baselines/pptx-sample-show-slide-1.png"}
+    },
+    {
+      "id": "pptx-shapes",
+      "path": "pptx/shapes.pptx",
+      "format": "pptx",
+      "features": ["multiple-slides", "shapes", "text"],
+      "expected": "rendered",
+      "notes": "Presentation with multiple slides and shape content."
+    },
+    {
+      "id": "xlsx-cell-comments",
+      "path": "xlsx/cell-comments.xlsx",
+      "format": "xlsx",
+      "features": ["cell-comments", "worksheet-grid"],
+      "expected": "rendered",
+      "notes": "Cell comments alongside compact worksheet values."
+    },
+    {
+      "id": "xlsx-cell-styles",
+      "path": "xlsx/cell-styles.xlsx",
+      "format": "xlsx",
+      "features": ["cell-styles", "font-styles", "fills"],
+      "expected": "rendered",
+      "notes": "Mixed styled text and cell fills."
+    },
+    {
+      "id": "xlsx-chart-worksheet",
+      "path": "xlsx/chart-worksheet.xlsx",
+      "format": "xlsx",
+      "features": ["charts", "multiple-worksheets"],
+      "expected": "rendered",
+      "notes": "Chart-bearing workbook used as an open/render smoke case; chart drawing is not visually verified by the current renderer."
+    },
+    {
+      "id": "xlsx-conditional-formatting-ranges",
+      "path": "xlsx/conditional-formatting-ranges.xlsx",
+      "format": "xlsx",
+      "features": ["conditional-formatting", "cell-ranges"],
+      "expected": "rendered",
+      "notes": "Several conditional-formatting ranges and rule descriptions."
+    },
+    {
+      "id": "xlsx-data-validation",
+      "path": "xlsx/data-validation.xlsx",
+      "format": "xlsx",
+      "features": ["data-validation", "numeric-constraints"],
+      "expected": "rendered",
+      "notes": "List and numeric validation cases with visible example values."
+    },
+    {
+      "id": "xlsx-drawings-and-images",
+      "path": "xlsx/drawings-and-images.xlsx",
+      "format": "xlsx",
+      "features": ["embedded-images", "drawings"],
+      "expected": "rendered",
+      "notes": "Embedded worksheet images currently render visible unsupported-image placeholders."
+    },
+    {
+      "id": "xlsx-general-formatting",
+      "path": "xlsx/general-formatting.xlsx",
+      "format": "xlsx",
+      "features": ["number-formats", "cell-styles"],
+      "expected": "rendered",
+      "notes": "General numeric and date formatting examples."
+    },
+    {
+      "id": "xlsx-multiple-tables",
+      "path": "xlsx/multiple-tables.xlsx",
+      "format": "xlsx",
+      "features": ["tables", "multiple-worksheets", "cell-styles"],
+      "expected": "rendered",
+      "notes": "Several structured financial tables across worksheets."
+    },
+    {
+      "id": "xlsx-multiple-worksheets",
+      "path": "xlsx/multiple-worksheets.xlsx",
+      "format": "xlsx",
+      "features": ["multiple-worksheets", "active-worksheet"],
+      "expected": "rendered",
+      "notes": "Workbook with multiple worksheet tabs and a minimal active sheet."
+    },
+    {
+      "id": "xlsx-number-formats",
+      "path": "xlsx/number-formats.xlsx",
+      "format": "xlsx",
+      "features": ["number-formats", "worksheet-grid"],
+      "expected": "rendered",
+      "notes": "Workbook with formatting test metadata and category flags."
+    },
+    {
+      "id": "xlsx-right-to-left",
+      "path": "xlsx/right-to-left.xlsx",
+      "format": "xlsx",
+      "features": ["right-to-left", "worksheet-grid"],
+      "expected": "rendered",
+      "notes": "Right-to-left worksheet content and tab labels."
+    },
+    {
+      "id": "xlsx-row-column-dimensions",
+      "path": "xlsx/row-column-dimensions.xlsx",
+      "format": "xlsx",
+      "features": ["row-heights", "column-widths"],
+      "expected": "rendered",
+      "notes": "Worksheet with varied row heights and column widths."
+    },
+    {
+      "id": "xlsx-scatter-chart",
+      "path": "xlsx/scatter-chart.xlsx",
+      "format": "xlsx",
+      "features": ["charts", "scatter-chart"],
+      "expected": "rendered",
+      "notes": "Scatter-chart workbook used as an open/render smoke case; chart drawing is not visually verified by the current renderer."
+    },
+    {
+      "id": "xlsx-workbook-theme",
+      "path": "xlsx/workbook-theme.xlsx",
+      "format": "xlsx",
+      "features": ["workbook-theme", "theme-colors"],
+      "expected": "rendered",
+      "notes": "Workbook theme color names and hyperlink theme entries."
+    },
+    {
+      "id": "docx-document-properties",
+      "path": "docx/document-properties.docx",
+      "format": "docx",
+      "features": ["paragraphs", "document-properties"],
+      "expected": "rendered",
+      "notes": "Minimal one-page document with a short greeting."
+    },
+    {
+      "id": "docx-drop-caps",
+      "path": "docx/drop-caps.docx",
+      "format": "docx",
+      "features": ["drop-caps", "paragraphs", "text-styles"],
+      "expected": "rendered",
+      "notes": "Long text with several decorative drop caps."
+    },
+    {
+      "id": "docx-drawing-shapes",
+      "path": "docx/drawing-shapes.docx",
+      "format": "docx",
+      "features": ["drawing-shapes", "nested-tables", "percentage-widths", "vml", "text-boxes", "embedded-ole"],
+      "expected": "completed_with_diagnostics",
+      "expected_diagnostics": ["warning:content-preview-fallback", "warning:floating-image-inline-fallback", "warning:image-scaled-to-page", "warning:table-percentage-width-fallback"],
+      "notes": "Readable content is shown; nested tables are flattened, percentage widths use grid geometry, and unsupported OLE/VML/drawing details have visible fallbacks."
+    },
+    {
+      "id": "docx-endnotes",
+      "path": "docx/endnotes.docx",
+      "format": "docx",
+      "features": ["endnotes", "paragraphs"],
+      "expected": "rendered",
+      "notes": "Referenced endnote text is shown read-only at the end of the document."
+    },
+    {
+      "id": "docx-field-codes",
+      "path": "docx/field-codes.docx",
+      "format": "docx",
+      "features": ["field-codes", "paragraphs"],
+      "expected": "completed_with_diagnostics",
+      "expected_diagnostics": ["warning:cached-field-result"],
+      "notes": "Cached field results display read-only; field recalculation is not supported."
+    },
+    {
+      "id": "docx-floating-image-wrap",
+      "path": "docx/floating-image-wrap.docx",
+      "format": "docx",
+      "features": ["floating-images", "text-wrapping"],
+      "expected": "rendered",
+      "notes": "The current file remains previewable; the pinned floating-image-wrap-vml fixture verifies the bounded VML tight-wrap implementation."
+    },
+    {
+      "id": "docx-floating-image-wrap-vml",
+      "path": "docx/floating-image-wrap-vml.docx",
+      "format": "docx",
+      "features": ["floating-images", "text-wrapping", "vml"],
+      "expected": "rendered",
+      "notes": "Paragraph-leading absolute-positioned VML with text anchors and a tight polygon wraps body paragraphs on the anchor page; other float modes remain fallback-only."
+    },
+    {
+      "id": "docx-footnotes",
+      "path": "docx/footnotes.docx",
+      "format": "docx",
+      "features": ["footnotes", "paragraphs"],
+      "expected": "rendered",
+      "notes": "Referenced footnote text is shown read-only at the end of the document."
+    },
+    {
+      "id": "docx-headers",
+      "path": "docx/headers.docx",
+      "format": "docx",
+      "features": ["headers", "section-layout"],
+      "expected": "rendered",
+      "notes": "Each section header is rendered on its own page scene; equivalent page geometry tolerates one-twip rounding."
+    },
+    {
+      "id": "docx-long-table",
+      "path": "docx/long-table.docx",
+      "format": "docx",
+      "features": ["grouped-drawings", "text-boxes", "embedded-chart", "alternate-content"],
+      "expected": "completed_with_diagnostics",
+      "expected_diagnostics": ["warning:content-preview-fallback"],
+      "notes": "The fixture is a floating group with a textbox and chart; textbox text remains visible with a read-only graphic fallback."
+    },
+    {
+      "id": "docx-paragraph-styles",
+      "path": "docx/paragraph-styles.docx",
+      "format": "docx",
+      "features": ["paragraph-styles", "headings"],
+      "expected": "rendered",
+      "notes": "Heading 1-3 and standard paragraph styles."
+    },
+    {
+      "id": "docx-page-breaks",
+      "path": "docx/page-breaks.docx",
+      "format": "docx",
+      "features": ["page-breaks", "paragraphs"],
+      "expected": "rendered",
+      "notes": "Soft line breaks and explicit page breaks are both projected."
+    },
+    {
+      "id": "docx-rotated-inline-image",
+      "path": "docx/rotated-inline-image.docx",
+      "format": "docx",
+      "features": ["inline-images", "rotated-images", "text-wrapping"],
+      "expected": "rendered",
+      "notes": "Text flows around a rotated inline image placeholder."
+    },
+    {
+      "id": "docx-table-columns",
+      "path": "docx/table-columns.docx",
+      "format": "docx",
+      "features": ["tables", "column-widths", "empty-cells"],
+      "expected": "rendered",
+      "notes": "Tables with uneven column widths and empty cells."
+    },
+    {
+      "id": "pptx-backgrounds",
+      "path": "pptx/backgrounds.pptx",
+      "format": "pptx",
+      "features": ["slide-backgrounds", "master-slides", "multiple-slides"],
+      "expected": "rendered",
+      "notes": "Solid, gradient, master, and texture background examples."
+    },
+    {
+      "id": "pptx-bar-chart",
+      "path": "pptx/bar-chart.pptx",
+      "format": "pptx",
+      "features": ["charts", "bar-chart", "text"],
+      "expected": "rendered",
+      "notes": "Chart-bearing slide used as an open/render smoke case; chart drawing is not visually verified by the current renderer."
+    },
+    {
+      "id": "pptx-chart-picture-background",
+      "path": "pptx/chart-with-picture-background.pptx",
+      "format": "pptx",
+      "features": ["charts", "picture-backgrounds"],
+      "expected": "rendered",
+      "notes": "Chart and picture-background combination used as an open/render smoke case."
+    },
+    {
+      "id": "pptx-cropped-picture",
+      "path": "pptx/cropped-picture.pptx",
+      "format": "pptx",
+      "features": ["pictures", "picture-cropping", "multiple-slides"],
+      "expected": "rendered",
+      "notes": "Slides containing cropped raster pictures."
+    },
+    {
+      "id": "pptx-embedded-audio",
+      "path": "pptx/embedded-audio.pptx",
+      "format": "pptx",
+      "features": ["embedded-audio", "media"],
+      "expected": "rendered",
+      "notes": "Embedded audio package with slide content."
+    },
+    {
+      "id": "pptx-grouped-shapes",
+      "path": "pptx/grouped-shapes.pptx",
+      "format": "pptx",
+      "features": ["grouped-shapes", "shape-fills", "shape-lines"],
+      "expected": "rendered",
+      "notes": "Grouped shapes with overlapping fills and lines."
+    },
+    {
+      "id": "pptx-japanese-text",
+      "path": "pptx/japanese-text.pptx",
+      "format": "pptx",
+      "features": ["multilingual-text", "japanese", "cjk-fonts"],
+      "expected": "rendered",
+      "notes": "Mixed Latin and Japanese text with several placeholder types."
+    },
+    {
+      "id": "pptx-layouts",
+      "path": "pptx/layouts.pptx",
+      "format": "pptx",
+      "features": ["slide-layouts", "placeholders", "multiple-slides"],
+      "expected": "rendered",
+      "notes": "Ten-slide presentation exercising title, content, and section layouts."
+    },
+    {
+      "id": "pptx-line-chart",
+      "path": "pptx/line-chart.pptx",
+      "format": "pptx",
+      "features": ["charts", "line-chart"],
+      "expected": "rendered",
+      "notes": "Line-chart slide used as an open/render smoke case."
+    },
+    {
+      "id": "pptx-master-placeholders",
+      "path": "pptx/master-placeholders.pptx",
+      "format": "pptx",
+      "features": ["master-slides", "placeholders", "theme-colors"],
+      "expected": "rendered",
+      "notes": "Master-provided placeholder and theme color content."
+    },
+    {
+      "id": "pptx-multi-slide-design",
+      "path": "pptx/multi-slide-design.pptx",
+      "format": "pptx",
+      "features": ["many-slides", "text", "shapes", "performance"],
+      "expected": "rendered",
+      "notes": "Forty-eight-slide presentation for multi-target rendering and performance smoke coverage."
+    },
+    {
+      "id": "pptx-pie-chart",
+      "path": "pptx/pie-chart.pptx",
+      "format": "pptx",
+      "features": ["charts", "pie-chart"],
+      "expected": "rendered",
+      "notes": "Pie-chart slide used as an open/render smoke case."
+    },
+    {
+      "id": "pptx-shapes-and-text",
+      "path": "pptx/shapes-and-text.pptx",
+      "format": "pptx",
+      "features": ["shapes", "text", "pictures"],
+      "expected": "rendered",
+      "notes": "Presentation with text and image-bearing shapes."
+    },
+    {
+      "id": "pptx-text-highlight",
+      "path": "pptx/text-highlight.pptx",
+      "format": "pptx",
+      "features": ["text-highlight", "text-styles"],
+      "expected": "rendered",
+      "notes": "Slide with highlighted text and varied text styles."
+    }
+  ]
+}

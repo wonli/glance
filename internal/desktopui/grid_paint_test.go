@@ -89,7 +89,7 @@ func TestCellEditorUsesRenderedStyleAndKeepsSingleCellGeometry(t *testing.T) {
 	if editor.Alignment != text.End || editor.SingleLine || !editor.Submit {
 		t.Fatalf("editor alignment/singleline/submit=%v/%v/%v", editor.Alignment, editor.SingleLine, editor.Submit)
 	}
-	if got.TextSize != theme.TextSize*14.0/16.0 {
+	if got.TextSize != unit.Sp(gridCellTextSize) {
 		t.Fatalf("editor text size=%v; want the rendered cell text size", got.TextSize)
 	}
 }

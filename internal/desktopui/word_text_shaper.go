@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,7 +14,7 @@ import (
 
 	"github.com/go-text/typesetting/di"
 	"github.com/go-text/typesetting/font"
-	ot "github.com/go-text/typesetting/font/opentype"
+
 	"github.com/go-text/typesetting/fontscan"
 	"github.com/go-text/typesetting/language"
 	"github.com/go-text/typesetting/shaping"
@@ -23,11 +22,6 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/wordlayout"
-)
-
-const (
-	wordGlyphOutlineCacheLimit = int64(16 << 20)
-	wordGlyphOutlineCacheItems = 128
 )
 
 var wordFontFallbackFamilies = []string{
@@ -58,12 +52,6 @@ type wordTextShaper struct {
 	pathBytes int64
 }
 
-type cachedWordGlyphOutline struct {
-	key     string
-	outline wordlayout.GlyphOutline
-	weight  int64
-}
-
 func newWordTextShaper() (*wordTextShaper, error) {
 	return newWordTextShaperWithCacheDir("")
 }
@@ -72,28 +60,6 @@ var processWordFontCache struct {
 	once sync.Once
 	dir  string
 	err  error
-}
-
-func defaultWordFontCacheDir() (string, error) {
-	processWordFontCache.once.Do(func() {
-		preferred := ""
-		if userCache, err := os.UserCacheDir(); err == nil {
-			preferred = filepath.Join(userCache, "glance", "fonts")
-		}
-		processWordFontCache.dir, processWordFontCache.err = writableWordFontCacheDir(preferred)
-	})
-	return processWordFontCache.dir, processWordFontCache.err
-}
-
-func prepareWordFontScanner() error {
-	cacheDir, err := defaultWordFontCacheDir()
-	if err != nil {
-		return fmt.Errorf("prepare Word font cache: %w", err)
-	}
-	if _, err := fontscan.SystemFonts(nil, cacheDir); err != nil {
-		return fmt.Errorf("initialize system font scanner: %w", err)
-	}
-	return nil
 }
 
 func newWordTextShaperWithCacheDir(cacheDir string) (*wordTextShaper, error) {
@@ -114,32 +80,6 @@ func newWordTextShaperWithCacheDir(cacheDir string) (*wordTextShaper, error) {
 		paths:     make(map[string]*list.Element),
 		pathLRU:   list.New(),
 	}, nil
-}
-
-func writableWordFontCacheDir(preferred string) (string, error) {
-	if preferred != "" {
-		if err := ensureWordFontCacheWritable(preferred); err == nil {
-			return preferred, nil
-		}
-	}
-	return os.MkdirTemp("", "glance-word-fonts-")
-}
-
-func ensureWordFontCacheWritable(directory string) error {
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
-	}
-	probe, err := os.CreateTemp(directory, ".write-probe-*")
-	if err != nil {
-		return err
-	}
-	name := probe.Name()
-	closeErr := probe.Close()
-	removeErr := os.Remove(name)
-	if closeErr != nil {
-		return closeErr
-	}
-	return removeErr
 }
 
 func (s *wordTextShaper) Shape(value string, style document.WordTextStyle) (wordlayout.ShapedText, error) {
@@ -267,142 +207,6 @@ func (s *wordTextShaper) ResolveSpreadsheetFont(style document.CellStyle, text s
 	return "", wordlayout.ErrUnknownFont
 }
 
-func (s *wordTextShaper) GlyphOutline(fontKey string, glyphID uint32) (wordlayout.GlyphOutline, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.loadSystemFonts(); err != nil {
-		return wordlayout.GlyphOutline{}, err
-	}
-	cacheKey := fontKey + "#glyph=" + strconv.FormatUint(uint64(glyphID), 10)
-	if outline, ok := s.cachedGlyphOutline(cacheKey); ok {
-		return outline, nil
-	}
-	var face *font.Face
-	for location, candidate := range s.facesByID {
-		if wordFontKey(location) == fontKey {
-			face = candidate
-			break
-		}
-	}
-	if face == nil {
-		for _, footprint := range s.fonts {
-			if wordFontKey(footprint.Location) == fontKey {
-				face = s.loadFace(footprint.Location)
-				break
-			}
-		}
-	}
-	if face == nil {
-		return wordlayout.GlyphOutline{}, fmt.Errorf("font key %q: %w", fontKey, wordlayout.ErrUnknownFont)
-	}
-	unitsPerEm := float64(face.Upem())
-	data := face.GlyphData(font.GID(glyphID))
-	var source font.GlyphOutline
-	switch value := data.(type) {
-	case font.GlyphOutline:
-		source = value
-	case font.GlyphSVG:
-		source = value.Outline
-	case nil:
-		if extents, ok := face.GlyphExtents(font.GID(glyphID)); ok && extents.Width == 0 && extents.Height == 0 {
-			outline := wordlayout.GlyphOutline{UnitsPerEm: unitsPerEm}
-			s.cacheGlyphOutline(cacheKey, outline)
-			return cloneGlyphOutline(outline), nil
-		}
-		return wordlayout.GlyphOutline{}, fmt.Errorf("glyph %d in %q has no vector outline", glyphID, fontKey)
-	default:
-		return wordlayout.GlyphOutline{}, fmt.Errorf("glyph %d in %q uses an unsupported color or bitmap outline", glyphID, fontKey)
-	}
-	outline := wordlayout.GlyphOutline{UnitsPerEm: unitsPerEm, Commands: fontOutlineCommands(source.Segments)}
-	s.cacheGlyphOutline(cacheKey, outline)
-	return cloneGlyphOutline(outline), nil
-}
-
-func (s *wordTextShaper) cachedGlyphOutline(cacheKey string) (wordlayout.GlyphOutline, bool) {
-	if s == nil {
-		return wordlayout.GlyphOutline{}, false
-	}
-	item := s.paths[cacheKey]
-	if item == nil {
-		return wordlayout.GlyphOutline{}, false
-	}
-	s.pathLRU.MoveToFront(item)
-	entry := item.Value.(cachedWordGlyphOutline)
-	return cloneGlyphOutline(entry.outline), true
-}
-
-func (s *wordTextShaper) cacheGlyphOutline(cacheKey string, outline wordlayout.GlyphOutline) {
-	if s == nil {
-		return
-	}
-	if s.paths == nil {
-		s.paths = make(map[string]*list.Element)
-	}
-	if s.pathLRU == nil {
-		s.pathLRU = list.New()
-	}
-	if current := s.paths[cacheKey]; current != nil {
-		entry := current.Value.(cachedWordGlyphOutline)
-		s.pathBytes -= entry.weight
-		delete(s.paths, cacheKey)
-		s.pathLRU.Remove(current)
-	}
-	// Path commands dominate the retained size. The fixed per-command weight
-	// also accounts for slice and map/list overhead without keeping an
-	// unbounded number of outlines from documents opened earlier in the process.
-	weight := int64(len(cacheKey)) + int64(len(outline.Commands))*64
-	if weight > wordGlyphOutlineCacheLimit {
-		return
-	}
-	for len(s.paths) >= wordGlyphOutlineCacheItems || s.pathBytes+weight > wordGlyphOutlineCacheLimit {
-		oldest := s.pathLRU.Back()
-		if oldest == nil {
-			break
-		}
-		entry := oldest.Value.(cachedWordGlyphOutline)
-		delete(s.paths, entry.key)
-		s.pathBytes -= entry.weight
-		s.pathLRU.Remove(oldest)
-	}
-	entry := cachedWordGlyphOutline{key: cacheKey, outline: cloneGlyphOutline(outline), weight: weight}
-	s.paths[cacheKey] = s.pathLRU.PushFront(entry)
-	s.pathBytes += weight
-}
-
-func fontOutlineCommands(segments []font.Segment) []wordlayout.GlyphOutlineCommand {
-	commands := make([]wordlayout.GlyphOutlineCommand, 0, len(segments))
-	var current wordlayout.GlyphOutlinePoint
-	point := func(value font.SegmentPoint) wordlayout.GlyphOutlinePoint {
-		return wordlayout.GlyphOutlinePoint{X: float64(value.X), Y: float64(value.Y)}
-	}
-	for _, segment := range segments {
-		switch segment.Op {
-		case ot.SegmentOpMoveTo:
-			current = point(segment.Args[0])
-			commands = append(commands, wordlayout.GlyphOutlineCommand{Op: wordlayout.GlyphPathMoveTo, Points: [3]wordlayout.GlyphOutlinePoint{current}})
-		case ot.SegmentOpLineTo:
-			current = point(segment.Args[0])
-			commands = append(commands, wordlayout.GlyphOutlineCommand{Op: wordlayout.GlyphPathLineTo, Points: [3]wordlayout.GlyphOutlinePoint{current}})
-		case ot.SegmentOpQuadTo:
-			control, end := point(segment.Args[0]), point(segment.Args[1])
-			c1 := wordlayout.GlyphOutlinePoint{X: current.X + 2.0/3.0*(control.X-current.X), Y: current.Y + 2.0/3.0*(control.Y-current.Y)}
-			c2 := wordlayout.GlyphOutlinePoint{X: end.X + 2.0/3.0*(control.X-end.X), Y: end.Y + 2.0/3.0*(control.Y-end.Y)}
-			commands = append(commands, wordlayout.GlyphOutlineCommand{Op: wordlayout.GlyphPathCurveTo, Points: [3]wordlayout.GlyphOutlinePoint{c1, c2, end}})
-			current = end
-		case ot.SegmentOpCubeTo:
-			points := [3]wordlayout.GlyphOutlinePoint{point(segment.Args[0]), point(segment.Args[1]), point(segment.Args[2])}
-			commands = append(commands, wordlayout.GlyphOutlineCommand{Op: wordlayout.GlyphPathCurveTo, Points: points})
-			current = points[2]
-		}
-	}
-	return commands
-}
-
-func cloneGlyphOutline(outline wordlayout.GlyphOutline) wordlayout.GlyphOutline {
-	outline.Commands = append([]wordlayout.GlyphOutlineCommand(nil), outline.Commands...)
-	return outline
-}
-
 func (s *wordTextShaper) loadSystemFonts() error {
 	if s.loaded {
 		return s.loadErr
@@ -446,8 +250,7 @@ func (s *wordTextShaper) orderedFonts(style document.WordTextStyle) []fontscan.F
 		}
 	}
 	sort.SliceStable(remaining, func(i, j int) bool {
-		// macOS LastResort claims every rune but paints generic fallback boxes.
-		// Prefer a real symbol font before this final fallback.
+
 		leftLast := strings.Contains(strings.ToLower(remaining[i].Location.File), "lastresort")
 		rightLast := strings.Contains(strings.ToLower(remaining[j].Location.File), "lastresort")
 		if leftLast != rightLast {

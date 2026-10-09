@@ -33,9 +33,12 @@ type WordPageSetup struct {
 // WordSection maps one section's page settings and start behavior to the first
 // body block using those settings. Section-specific geometry remains unsupported.
 type WordSection struct {
-	StartBlock int
-	StartType  string
-	PageSetup  WordPageSetup
+	StartBlock       int
+	StartType        string
+	PageSetup        WordPageSetup
+	HeaderText       string
+	HeaderDistancePT float64
+	HeaderSet        bool
 }
 
 // WordParagraphLayoutMask records which values were explicitly supplied, so

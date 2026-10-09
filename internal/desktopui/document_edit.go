@@ -1,0 +1,201 @@
+package desktopui
+
+import (
+	"fmt"
+	"glance/internal/document"
+	"strings"
+)
+
+func (a *App) loadSheet() error {
+	if a.book == nil {
+		return nil
+	}
+	unlock := lockSessionAdapterRead(a.documentSessionState)
+	rows, err := a.book.Range(a.sheet, maxPreviewRows, maxPreviewColumns)
+	unlock()
+	if err != nil {
+		return err
+	}
+	a.grid = rows
+	a.gridList.Position.First = 0
+	nonEmpty := 0
+	for _, row := range rows {
+		for _, cell := range row {
+			if cell.Value != "" {
+				nonEmpty++
+			}
+		}
+	}
+	if len(rows) == 0 {
+		a.setStatus(fmt.Sprintf("工作表「%s」为空（未读到单元格内容）", a.sheet))
+	} else if len(rows) == maxPreviewRows {
+		a.setStatus(fmt.Sprintf("工作表「%s」：已读入前 %d 行，%d 个非空单元格", a.sheet, len(rows), nonEmpty))
+	} else {
+		a.setStatus(fmt.Sprintf("工作表「%s」：已读入 %d 行，%d 个非空单元格", a.sheet, len(rows), nonEmpty))
+	}
+	return nil
+}
+
+func (a *App) applyCellEdit() error {
+	if a.book == nil || a.selectedCell == "" {
+		return fmt.Errorf("请先选择单元格")
+	}
+	state := a.documentSessionState
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return fmt.Errorf("表格正在处理其他操作")
+	}
+	unlock := lockSessionAdapterWrite(state)
+	err := a.book.SetCellText(a.sheet, a.selectedCell, a.cellEditor.Text())
+	_, isGridReader := a.book.(document.GridReader)
+	unlock()
+	a.completeSessionOperation(state, token, err, err == nil)
+	if err != nil {
+		return err
+	}
+	if isGridReader {
+		if a.virtualGrid != nil {
+			a.virtualGrid.invalidateWindow()
+		}
+		return nil
+	}
+	if err := a.loadSheet(); err != nil {
+		return err
+	}
+	a.persistActiveSession()
+	return nil
+}
+
+func (a *App) commitGridCell(value string) error {
+	if a.isSaving() {
+		return fmt.Errorf("正在保存，请稍后再编辑单元格")
+	}
+	if a.book == nil || a.cellEdit.Address == "" {
+		return fmt.Errorf("请先选择单元格")
+	}
+	state := a.documentSessionState
+	a.cellEdit.setDraft(value)
+	changed := a.cellEdit.Draft != a.cellEdit.Original
+	formulaTargetSheet := a.sheet
+	formulaReference := state.formulaReference
+	if formulaReference.Active && formulaReference.TargetCell == a.cellEdit.Address {
+		formulaTargetSheet = formulaReference.TargetSheet
+	}
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return fmt.Errorf("表格正在处理其他操作")
+	}
+	err := a.cellEdit.commit(func(address, value string) error {
+		unlock := lockSessionAdapterWrite(state)
+		defer unlock()
+		if strings.HasPrefix(strings.TrimSpace(value), "=") {
+			editor, ok := a.book.(document.SpreadsheetFormulaEditor)
+			if !ok {
+				return fmt.Errorf("当前工作簿不支持公式编辑")
+			}
+			return editor.SetCellFormula(formulaTargetSheet, address, value)
+		}
+		return a.book.SetCellText(formulaTargetSheet, address, value)
+	})
+	a.completeSessionOperation(state, token, err, err == nil && changed)
+	if err != nil {
+		return err
+	}
+	a.selectedCell = a.cellEdit.Address
+	if formulaReference.Active {
+		state.formulaReference = formulaReference
+		a.restoreFormulaReferenceTarget()
+	}
+	if changed && a.virtualGrid != nil {
+		a.virtualGrid.invalidateWindow()
+	}
+	a.cellEditor.SetText(a.cellEdit.Original)
+	a.formulaEditor.SetText(a.cellEdit.Original)
+	if changed {
+		a.setStatus(fmt.Sprintf("%s 已修改；点击保存写入原文件", a.selectedCell))
+		a.persistActiveSession()
+	}
+	return nil
+}
+
+func (a *App) applyWordEdit() error {
+	if a.word == nil || a.selectedBlock < 0 {
+		return fmt.Errorf("请先选择一个段落")
+	}
+	if !a.selectedBlockEditable {
+		return fmt.Errorf("该段落包含多个格式片段，暂不支持编辑")
+	}
+	state := a.documentSessionState
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return fmt.Errorf("Word 文档正在处理其他操作")
+	}
+	unlock := lockSessionAdapterWrite(state)
+	err := a.word.ReplaceParagraph(a.selectedBlock, a.wordEditor.Text())
+	var blocks []document.WordBlock
+	if err == nil {
+		blocks = cloneWordBlockSnapshot(a.word.WordBlocks())
+	}
+	unlock()
+	if err != nil {
+		state.finishOperation(token)
+		return err
+	}
+	state.setWordBlocks(blocks)
+	a.ensureDesktopRuntime().publishSessionRevision(state.documentID, max(token.revision+1, state.wordRevisionAtomic.Load()))
+	state.finishOperation(token)
+	a.startWordPagination(state)
+	a.persistActiveSession()
+	return nil
+}
+
+func (a *App) isDirty() bool {
+	return markdownHasPendingDraft(a.documentSessionState) || presentationTextDraftDirty(a.pptxView) || sessionDirty(a.documentSessionState) || wordHasPendingTextDrafts(a.documentSessionState) || (a.documentSessionState != nil && (a.documentSessionState.wordParagraphSplitIntent != nil || a.documentSessionState.wordParagraphJoinIntent != nil))
+}
+
+func (a *App) closeDocument() error {
+	a.prepareMarkdownDeparture()
+	a.documentGeneration++
+	unlock := lockSessionAdapterWrite(a.documentSessionState)
+	defer unlock()
+	var err error
+	if a.book != nil {
+		err = a.book.Close()
+		a.book = nil
+	}
+	if a.word != nil {
+		if closeErr := a.word.Close(); err == nil {
+			err = closeErr
+		}
+		a.word = nil
+	}
+	if a.pdfDoc != nil {
+		err = a.pdfDoc.Close()
+		a.pdfDoc = nil
+	}
+	if a.markdownDoc != nil {
+		err = a.markdownDoc.Close()
+		a.markdownDoc = nil
+	}
+	if a.jsonDoc != nil {
+		if closeErr := a.jsonDoc.Close(); err == nil {
+			err = closeErr
+		}
+		a.jsonDoc = nil
+	}
+	if a.pptxDoc != nil {
+		if closeErr := a.pptxDoc.Close(); err == nil {
+			err = closeErr
+		}
+		a.pptxDoc = nil
+	}
+	a.pptxView = nil
+	a.sheets, a.sheet, a.grid = nil, "", nil
+	a.virtualGrid = nil
+	a.cellEdit = cellEditState{}
+	a.selectedCell = ""
+	a.nameBox.SetText("")
+	a.formulaEditor.SetText("")
+	a.path = ""
+	return err
+}

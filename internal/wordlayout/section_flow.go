@@ -2,10 +2,14 @@ package wordlayout
 
 import "strings"
 
-func (c *layoutCursor) beginSection(sourceID, startType string) {
+func (c *layoutCursor) beginSection(sectionIndex int, sourceID, startType string) {
+	c.sectionIndex = sectionIndex
 	startType = strings.ToLower(startType)
 	switch startType {
 	case "continuous":
+		if !c.used && c.pageIndex >= 0 && c.pageIndex < len(c.result.Pages) {
+			c.result.Pages[c.pageIndex].SectionIndex = sectionIndex
+		}
 		return
 	case "nextpage", "evenpage", "oddpage":
 		if c.pendingBreak {
@@ -32,6 +36,9 @@ func (c *layoutCursor) beginSection(sourceID, startType string) {
 		} else if c.used && !c.reuseEmptySectionPage() {
 			c.nextPage()
 		}
+	}
+	if c.pageIndex >= 0 && c.pageIndex < len(c.result.Pages) {
+		c.result.Pages[c.pageIndex].SectionIndex = sectionIndex
 	}
 }
 

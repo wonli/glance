@@ -54,6 +54,7 @@ type WordBlock struct {
 // WordParagraph preserves the ordered inline contents of one paragraph.
 type WordParagraph struct {
 	ID             string
+	PreviewWarning string
 	Style          string
 	Alignment      WordAlignment
 	LeftIndentEMU  int64
@@ -88,6 +89,7 @@ const (
 type WordTableCell struct {
 	ID            string
 	WidthEMU      int64
+	WidthFallback bool
 	GridSpan      int
 	VerticalMerge WordTableVerticalMerge
 	FillColor     string
@@ -140,7 +142,7 @@ type WordTextStyle struct {
 	Highlight  string
 }
 
-// WordImage describes an inline image without exposing package relationships.
+// WordImage describes an image without exposing package relationships.
 type WordImage struct {
 	ID              string
 	MediaType       string
@@ -149,6 +151,26 @@ type WordImage struct {
 	RotationDegrees float64
 	Resolved        bool
 	Editable        bool
+	InlineFallback  bool
+	Floating        *WordImageFloating
+}
+
+// WordImageFloating describes text-relative placement and wrapping without
+// exposing any particular document format's shape or relationship types.
+type WordImageFloating struct {
+	XOffsetEMU           int64
+	YOffsetEMU           int64
+	WrapType             string
+	WrapDistanceLeftEMU  int64
+	WrapDistanceRightEMU int64
+	WrapPolygon          []WordImageWrapPoint
+}
+
+// WordImageWrapPoint is a point normalized to the floating image's local
+// coordinate space. Values may extend slightly outside [0, 1].
+type WordImageWrapPoint struct {
+	X float64
+	Y float64
 }
 
 // WordBreakType identifies the type of break to insert (e.g. "page", "column").

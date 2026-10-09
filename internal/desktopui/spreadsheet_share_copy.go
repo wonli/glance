@@ -2,9 +2,6 @@ package desktopui
 
 import (
 	"errors"
-	"fmt"
-	"path/filepath"
-	"strings"
 
 	"glance/internal/format/xlsx"
 )
@@ -69,12 +66,10 @@ func (a *App) startSpreadsheetShareCopyFile(request *spreadsheetShareCopyPickerR
 		a.setStatus("工作簿在选择位置期间已更改，未导出共享副本；请重试")
 		return
 	}
+	path = ensureShareCopyExtension(path, "xlsx")
 	if sameDocumentPath(path, state.path) {
 		a.setStatus("共享副本不能覆盖当前 XLSX")
 		return
-	}
-	if !strings.EqualFold(filepath.Ext(path), ".xlsx") {
-		path += ".xlsx"
 	}
 
 	book := state.book
@@ -98,42 +93,42 @@ func (a *App) startSpreadsheetShareCopyFile(request *spreadsheetShareCopyPickerR
 	go func() {
 		defer state.finishOperation(token)
 		result := spreadsheetShareCopyResult{state: state, path: path}
-		unlock := lockSessionAdapterRead(state)
-		snapshot, err := snapshooter.Snapshot()
-		unlock()
-		if err == nil && (state.closed.Load() || (func() bool {
-			if h, ok := book.(interface{ HistoryState() uint64 }); ok && h.HistoryState() != histState {
-				return true
-			}
-			return false
-		})()) {
-			err = errors.New("工作簿在准备共享副本时已更改")
-		}
-		if err == nil {
-			copyBook, openErr := xlsx.OpenSnapshot(snapshot)
-			if openErr != nil {
-				err = fmt.Errorf("校验 XLSX 副本：%w", openErr)
-			} else {
-				err = copyBook.SaveAsWithCommitGuard(path, func() (func(), error) {
-					state.spreadsheetExportCommitMu.Lock()
-					release := state.spreadsheetExportCommitMu.Unlock
-					if state.closed.Load() || (func() bool {
-						if h, ok := book.(interface{ HistoryState() uint64 }); ok && h.HistoryState() != histState {
-							return true
-						}
-						return false
-					})() {
-						release()
-						return nil, errors.New("工作簿在导出期间已更改，未覆盖目标文件")
+		result.err = saveShareCopySnapshot(
+			path,
+			"XLSX",
+			func() ([]byte, error) {
+				unlock := lockSessionAdapterRead(state)
+				snapshot, err := snapshooter.Snapshot()
+				unlock()
+				return snapshot, err
+			},
+			func() error {
+				if state.closed.Load() || (func() bool {
+					if h, ok := book.(interface{ HistoryState() uint64 }); ok && h.HistoryState() != histState {
+						return true
 					}
-					return release, nil
-				})
-				if closeErr := copyBook.Close(); err == nil && closeErr != nil {
-					err = closeErr
+					return false
+				})() {
+					return errors.New("工作簿在准备共享副本时已更改")
 				}
-			}
-		}
-		result.err = err
+				return nil
+			},
+			xlsx.OpenSnapshot,
+			func() (func(), error) {
+				state.spreadsheetExportCommitMu.Lock()
+				release := state.spreadsheetExportCommitMu.Unlock
+				if state.closed.Load() || (func() bool {
+					if h, ok := book.(interface{ HistoryState() uint64 }); ok && h.HistoryState() != histState {
+						return true
+					}
+					return false
+				})() {
+					release()
+					return nil, errors.New("工作簿在导出期间已更改，未覆盖目标文件")
+				}
+				return release, nil
+			},
+		)
 		select {
 		case results <- result:
 			if window != nil {
@@ -146,17 +141,5 @@ func (a *App) startSpreadsheetShareCopyFile(request *spreadsheetShareCopyPickerR
 }
 
 func (a *App) applySpreadsheetShareCopyResult(result spreadsheetShareCopyResult) {
-	state := result.state
-	if state == nil || state.closed.Load() {
-		return
-	}
-	if result.err != nil {
-		if state == a.documentSessionState {
-			a.setStatus("导出共享副本失败：" + result.err.Error())
-		}
-		return
-	}
-	if state == a.documentSessionState {
-		a.setStatus("共享 XLSX 副本已导出：" + filepath.Base(result.path))
-	}
+	a.applyShareCopyResult(result.state, result.path, result.err, "XLSX")
 }

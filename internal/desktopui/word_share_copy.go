@@ -2,9 +2,6 @@ package desktopui
 
 import (
 	"errors"
-	"fmt"
-	"path/filepath"
-	"strings"
 
 	"glance/internal/format/docx"
 )
@@ -77,12 +74,10 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 		a.setStatus("文档在选择位置期间已更改，未导出共享副本；请重试")
 		return
 	}
+	path = ensureShareCopyExtension(path, "docx")
 	if sameDocumentPath(path, state.path) {
 		a.setStatus("共享副本不能覆盖当前 DOCX")
 		return
-	}
-	if !strings.EqualFold(filepath.Ext(path), ".docx") {
-		path += ".docx"
 	}
 
 	word := state.word
@@ -101,32 +96,32 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 	go func() {
 		defer state.finishOperation(token)
 		result := wordShareCopyResult{state: state, path: path}
-		unlock := lockSessionAdapterRead(state)
-		snapshot, err := word.Snapshot()
-		unlock()
-		if err == nil && (state.closed.Load() || state.wordRevisionAtomic.Load() != revision || state.wordDraftEpoch.Load() != draftEpoch) {
-			err = errors.New("Word 文档在准备共享副本时已更改")
-		}
-		if err == nil {
-			copyDocument, openErr := docx.OpenSnapshot(snapshot)
-			if openErr != nil {
-				err = fmt.Errorf("校验 DOCX 副本：%w", openErr)
-			} else {
-				err = copyDocument.SaveAsWithCommitGuard(path, func() (func(), error) {
-					state.wordExportCommitMu.Lock()
-					release := state.wordExportCommitMu.Unlock
-					if state.closed.Load() || state.wordRevisionAtomic.Load() != revision || state.wordDraftEpoch.Load() != draftEpoch {
-						release()
-						return nil, errors.New("Word 文档在导出期间已更改，未覆盖目标文件")
-					}
-					return release, nil
-				})
-				if closeErr := copyDocument.Close(); err == nil && closeErr != nil {
-					err = closeErr
+		result.err = saveShareCopySnapshot(
+			path,
+			"DOCX",
+			func() ([]byte, error) {
+				unlock := lockSessionAdapterRead(state)
+				snapshot, err := word.Snapshot()
+				unlock()
+				return snapshot, err
+			},
+			func() error {
+				if state.closed.Load() || state.wordRevisionAtomic.Load() != revision || state.wordDraftEpoch.Load() != draftEpoch {
+					return errors.New("Word 文档在准备共享副本时已更改")
 				}
-			}
-		}
-		result.err = err
+				return nil
+			},
+			docx.OpenSnapshot,
+			func() (func(), error) {
+				state.wordExportCommitMu.Lock()
+				release := state.wordExportCommitMu.Unlock
+				if state.closed.Load() || state.wordRevisionAtomic.Load() != revision || state.wordDraftEpoch.Load() != draftEpoch {
+					release()
+					return nil, errors.New("Word 文档在导出期间已更改，未覆盖目标文件")
+				}
+				return release, nil
+			},
+		)
 		select {
 		case results <- result:
 			if window != nil {
@@ -139,20 +134,5 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 }
 
 func (a *App) applyWordShareCopyResult(result wordShareCopyResult) {
-	state := result.state
-	if state == nil {
-		return
-	}
-	if state.closed.Load() {
-		return
-	}
-	if result.err != nil {
-		if state == a.documentSessionState {
-			a.setStatus("导出共享副本失败：" + result.err.Error())
-		}
-		return
-	}
-	if state == a.documentSessionState {
-		a.setStatus("共享 DOCX 副本已导出：" + filepath.Base(result.path))
-	}
+	a.applyShareCopyResult(result.state, result.path, result.err, "DOCX")
 }

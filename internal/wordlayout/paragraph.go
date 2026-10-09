@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 	"unicode"
 
 	"glance/internal/document"
@@ -23,6 +22,7 @@ const (
 
 type paragraphAtom struct {
 	kind            paragraphAtomKind
+	sourceIndex     int
 	sourceID        string
 	runID           string
 	text            string
@@ -53,15 +53,31 @@ type paragraphLine struct {
 	height          float64
 	pageBreakBefore bool
 	pageBreakAfter  bool
+	nextAtomIndex   int
+	rangeXPT        float64
+	rangeWidthPT    float64
+	hasRange        bool
 }
 
 type preparedParagraph struct {
-	sourceID       string
-	borderSourceID string
-	uiBeforePT     float64
-	uiAfterPT      float64
-	style          resolvedParagraphStyle
-	lines          []paragraphLine
+	sourceID         string
+	borderSourceID   string
+	uiBeforePT       float64
+	uiAfterPT        float64
+	style            resolvedParagraphStyle
+	defaultTabStopPT float64
+	atoms            []paragraphAtom
+	maxWidth         float64
+	floatingImages   []preparedFloatingImage
+	lines            []paragraphLine
+}
+
+type preparedFloatingImage struct {
+	id       string
+	width    float64
+	height   float64
+	rotation float64
+	geometry document.WordImageFloating
 }
 
 func (p preparedParagraph) totalHeight() float64 {
@@ -81,7 +97,10 @@ func paragraphBottomBorderExtent(paragraph document.WordParagraphLayout) float64
 }
 
 func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResolver, paragraph document.WordParagraph, sourceID string, availableWidth float64, inCell, editorInsets bool) (preparedParagraph, error) {
-	prepared := preparedParagraph{sourceID: sourceID, borderSourceID: sourceID, style: styles.paragraphStyle(paragraph, sourceID)}
+	if paragraph.PreviewWarning != "" {
+		styles.cursor.diagnostic(DiagnosticWarning, sourceID, "content-preview-fallback", paragraph.PreviewWarning)
+	}
+	prepared := preparedParagraph{sourceID: sourceID, borderSourceID: sourceID, style: styles.paragraphStyle(paragraph, sourceID), defaultTabStopPT: styles.defaultTabStopPT}
 	if editorInsets {
 		prepared.uiBeforePT, prepared.uiAfterPT = 3.75, 4.5
 		if inCell {
@@ -139,6 +158,9 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 				continue
 			}
 			image := inline.Image
+			if image.InlineFallback && image.Floating == nil {
+				styles.cursor.diagnostic(DiagnosticWarning, image.ID, "floating-image-inline-fallback", "A floating image is shown in the text flow because exact Word text wrapping is unavailable.")
+			}
 			if !image.Resolved {
 				styles.cursor.diagnostic(DiagnosticError, image.ID, "unresolved-image", "The inline image bytes are unavailable, so the page cannot be rendered faithfully.")
 				continue
@@ -148,6 +170,22 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 			if width <= 0 || height <= 0 || !finite(width) || !finite(height) {
 				styles.cursor.diagnostic(DiagnosticError, image.ID, "invalid-image-size", "The inline image has missing or invalid dimensions.")
 				continue
+			}
+			if image.Floating != nil {
+				switch {
+				case inCell:
+					styles.cursor.diagnostic(DiagnosticWarning, image.ID, "floating-image-table-fallback", "A floating image in a table cell is shown inline because table text flow has no polygon exclusion layout.")
+				case !validWordImageFloating(image):
+					styles.cursor.diagnostic(DiagnosticWarning, image.ID, "floating-image-geometry-fallback", "Floating-image geometry is outside the supported tight-wrap subset; the image is shown inline.")
+				case len(atoms) > 0:
+					styles.cursor.diagnostic(DiagnosticWarning, image.ID, "floating-image-inline-order-fallback", "A floating image after other paragraph content is shown inline to preserve source order.")
+				default:
+					prepared.floatingImages = append(prepared.floatingImages, preparedFloatingImage{
+						id: image.ID, width: width, height: height, rotation: image.RotationDegrees,
+						geometry: *image.Floating,
+					})
+					continue
+				}
 			}
 			if width > imageWidth && imageWidth > 0 {
 				ratio := imageWidth / width
@@ -243,6 +281,7 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 		// Empty paragraph marks obey the same line-spacing rule as text.
 		prepared.lines = []paragraphLine{{ascent: prepared.style.text.FontSize * 0.8, descent: prepared.style.text.FontSize * 0.2}}
 		prepared.lines[0].height = lineHeight(prepared.lines[0], prepared.style.paragraph)
+		prepared.atoms = atoms
 		return prepared, nil
 	}
 	maxWidth := availableWidth - leftIndent - rightIndent
@@ -252,6 +291,11 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 	if maxWidth <= 0 {
 		styles.cursor.diagnostic(DiagnosticError, sourceID, "invalid-paragraph-width", "Paragraph indents leave no printable line width.")
 		maxWidth = 1
+	}
+	prepared.atoms = atoms
+	prepared.maxWidth = maxWidth
+	for index := range prepared.atoms {
+		prepared.atoms[index].sourceIndex = index
 	}
 	prepared.lines = wrapParagraphAtoms(atoms, maxWidth, prepared.style.paragraph, styles.defaultTabStopPT)
 	if len(prepared.lines) == 0 {
@@ -392,416 +436,6 @@ func shapeTextAtoms(ctx context.Context, shaper TextShaper, pathCache map[glyphP
 		})
 	}
 	return atoms, nil
-}
-
-func preparedHasPageBreak(prepared preparedParagraph) bool {
-	if prepared.style.paragraph.PageBreakBefore {
-		return true
-	}
-	for _, line := range prepared.lines {
-		if line.pageBreakBefore || line.pageBreakAfter {
-			return true
-		}
-	}
-	return false
-}
-
-func wrapParagraphAtoms(atoms []paragraphAtom, maxWidth float64, paragraph document.WordParagraphLayout, defaultTabStopPT float64) []paragraphLine {
-	lines := make([]paragraphLine, 0, 2)
-	current := make([]paragraphAtom, 0, 8)
-	pendingPageBreak := false
-	flush := func(pageBreakAfter bool) {
-		if len(current) == 0 {
-			return
-		}
-		line := paragraphLine{atoms: append([]paragraphAtom(nil), current...), pageBreakBefore: pendingPageBreak, pageBreakAfter: pageBreakAfter}
-		pendingPageBreak = false
-		for _, atom := range current {
-			line.width += atom.advance
-			if atom.ascent > line.ascent {
-				line.ascent = atom.ascent
-			}
-			if atom.descent > line.descent {
-				line.descent = atom.descent
-			}
-		}
-		line.height = lineHeight(line, paragraph)
-		lines = append(lines, line)
-		current = current[:0]
-	}
-	for atomIndex, atom := range atoms {
-		if atom.kind == atomLineBreak {
-			flush(false)
-			continue
-		}
-		if atom.kind == atomPageBreak {
-			if len(current) > 0 {
-				flush(true)
-			} else if len(lines) > 0 {
-				lines[len(lines)-1].pageBreakAfter = true
-			} else {
-				pendingPageBreak = true
-			}
-			continue
-		}
-		if atom.kind == atomTab {
-			atom.advance = paragraphTabAdvance(sumAdvance(current), atoms[atomIndex+1:], paragraph.TabStops, defaultTabStopPT, maxWidth)
-		}
-		if len(current) > 0 && sumAdvance(current)+atom.advance > maxWidth+epsilonPT {
-			if atom.breakBefore {
-				flush(false)
-				if atom.kind == atomTab {
-					atom.advance = paragraphTabAdvance(0, atoms[atomIndex+1:], paragraph.TabStops, defaultTabStopPT, maxWidth)
-				}
-			} else {
-				breakAt := -1
-				for index := len(current) - 1; index >= 0; index-- {
-					if current[index].breakAfter {
-						breakAt = index + 1
-						break
-					}
-				}
-				if breakAt > 0 && breakAt < len(current) {
-					carry := append([]paragraphAtom(nil), current[breakAt:]...)
-					current = current[:breakAt]
-					flush(false)
-					current = append(current, carry...)
-				} else {
-					flush(false)
-				}
-			}
-		}
-		current = append(current, atom)
-	}
-	flush(false)
-	if pendingPageBreak && len(lines) > 0 {
-		lines[len(lines)-1].pageBreakAfter = true
-	}
-	return lines
-}
-
-func paragraphTabAdvance(currentWidth float64, following []paragraphAtom, stops []document.WordTabStop, defaultStopPT, maxWidth float64) float64 {
-	if defaultStopPT <= 0 || !finite(defaultStopPT) {
-		defaultStopPT = 36
-	}
-	if currentWidth <= epsilonPT {
-		for _, atom := range following {
-			if atom.kind == atomTab {
-				// Generated TOC paragraphs commonly start with a default indent
-				// tab and use a later explicit right tab for the page number.
-				return math.Min(defaultStopPT, maxWidth)
-			}
-			if atom.kind == atomPageBreak || atom.kind == atomLineBreak {
-				break
-			}
-		}
-	}
-	stopPosition := (math.Floor(currentWidth/defaultStopPT) + 1) * defaultStopPT
-	alignment := "left"
-	foundExplicitStop := false
-	for _, stop := range stops {
-		if stop.PositionPT <= currentWidth+epsilonPT || stop.PositionPT < 0 || !finite(stop.PositionPT) {
-			continue
-		}
-		if !foundExplicitStop || stop.PositionPT < stopPosition {
-			stopPosition = stop.PositionPT
-			alignment = stop.Alignment
-			foundExplicitStop = true
-		}
-	}
-	stopPosition = math.Min(stopPosition, maxWidth)
-	followingWidth := 0.0
-	decimalWidth := 0.0
-	decimalFound := false
-	for _, atom := range following {
-		if atom.kind == atomTab || atom.kind == atomPageBreak || atom.kind == atomLineBreak {
-			break
-		}
-		followingWidth += atom.advance
-		if !decimalFound && atom.kind == atomText {
-			for _, r := range atom.text {
-				if r == '.' || r == ',' {
-					decimalFound = true
-					break
-				}
-				decimalWidth += atom.advance / math.Max(1, float64(len([]rune(atom.text))))
-			}
-		}
-	}
-	anchorWidth := 0.0
-	switch strings.ToLower(alignment) {
-	case "right", "end":
-		anchorWidth = followingWidth
-	case "center":
-		anchorWidth = followingWidth / 2
-	case "decimal":
-		if decimalFound {
-			anchorWidth = decimalWidth
-		} else {
-			anchorWidth = followingWidth
-		}
-	}
-	return math.Max(0, stopPosition-currentWidth-anchorWidth)
-}
-
-func sumAdvance(atoms []paragraphAtom) float64 {
-	width := 0.0
-	for _, atom := range atoms {
-		width += atom.advance
-	}
-	return width
-}
-
-func lineHeight(line paragraphLine, paragraph document.WordParagraphLayout) float64 {
-	base := line.ascent + line.descent
-	if base <= 0 {
-		base = 11
-	}
-	switch paragraph.LineSpacingRule {
-	case "exact":
-		if paragraph.LineSpacingPT > 0 {
-			return paragraph.LineSpacingPT
-		}
-	case "atleast":
-		return math.Max(base, paragraph.LineSpacingPT)
-	case "auto", "":
-		if paragraph.LineSpacingMultiple > 0 {
-			return base * paragraph.LineSpacingMultiple
-		}
-	default:
-		if paragraph.LineSpacingPT > 0 {
-			return math.Max(base, paragraph.LineSpacingPT)
-		}
-	}
-	return base
-}
-
-func (c *layoutCursor) placePreparedParagraph(ctx context.Context, prepared preparedParagraph, area Rect, allowPageFlow bool, fixedPageIndex int, fixedY float64) error {
-	if len(prepared.lines) == 0 {
-		return nil
-	}
-	if prepared.style.paragraph.PageBreakBefore {
-		c.pendingBreak = true
-	}
-	canCollapseSpacing := allowPageFlow && c.hasPreviousParagraph && !c.pendingBreak && !preparedHasPageBreak(prepared)
-	beforePT := prepared.style.paragraph.BeforePT
-	if canCollapseSpacing {
-		beforePT = paragraphLeadingAdjustment(c.previousParagraphAfterPT, c.previousParagraphLineGapPT, prepared)
-	}
-	firstHeight := beforePT + prepared.uiBeforePT + prepared.lines[0].height
-	if len(prepared.lines) == 1 {
-		firstHeight += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
-	}
-	totalHeight := prepared.totalHeight()
-	if canCollapseSpacing {
-		totalHeight += beforePT - prepared.style.paragraph.BeforePT
-	}
-	keepTogether := prepared.style.paragraph.KeepTogether || prepared.style.paragraph.KeepWithNext
-	if allowPageFlow && keepTogether && totalHeight <= c.content.HeightPT+epsilonPT && c.used && c.y+totalHeight > c.content.YPT+c.content.HeightPT+epsilonPT {
-		c.advanceColumn()
-		canCollapseSpacing = false
-		beforePT = prepared.style.paragraph.BeforePT
-		firstHeight = beforePT + prepared.uiBeforePT + prepared.lines[0].height
-		if len(prepared.lines) == 1 {
-			firstHeight += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
-		}
-	}
-	if allowPageFlow {
-		// Collapsing a large trailing gap may reclaim more space than the
-		// next line occupies. Rebase the cursor before checking the line;
-		// the line itself must never be passed as a negative-height item.
-		if beforePT < 0 {
-			c.y += beforePT
-			firstHeight -= beforePT
-			beforePT = 0
-		}
-		oldPage, oldColumn := c.pageIndex, c.currentCol
-		if !c.ensureSpace(firstHeight, prepared.sourceID) {
-			return nil
-		}
-		if canCollapseSpacing && (c.pageIndex != oldPage || c.currentCol != oldColumn) {
-			beforePT = prepared.style.paragraph.BeforePT
-			firstHeight = beforePT + prepared.uiBeforePT + prepared.lines[0].height
-			if len(prepared.lines) == 1 {
-				firstHeight += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
-			}
-			if !c.ensureSpace(firstHeight, prepared.sourceID) {
-				return nil
-			}
-		}
-		c.y += beforePT + prepared.uiBeforePT
-		fixedY = c.y
-		fixedPageIndex = c.pageIndex
-	} else {
-		fixedY += beforePT + prepared.uiBeforePT
-	}
-	y := fixedY
-	for lineIndex, line := range prepared.lines {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if line.pageBreakBefore && allowPageFlow {
-			c.pendingBreak = true
-		}
-		if allowPageFlow {
-			lineHeightWithBorder := line.height
-			if lineIndex == len(prepared.lines)-1 {
-				lineHeightWithBorder += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
-			}
-			if !c.ensureSpace(lineHeightWithBorder, prepared.sourceID) {
-				return nil
-			}
-			y, fixedPageIndex = c.y, c.pageIndex
-		}
-		borderSourceID := prepared.borderSourceID
-		if borderSourceID == "" {
-			borderSourceID = prepared.sourceID
-		}
-		currentArea := area
-		if allowPageFlow {
-			currentArea = c.currentColumnRect()
-		}
-		placeParagraphLine(c, prepared.sourceID, borderSourceID, fixedPageIndex, y, currentArea, prepared.style.paragraph, line, lineIndex == 0, lineIndex == len(prepared.lines)-1)
-		y += line.height
-		if allowPageFlow {
-			c.y = y
-			c.used = true
-			if line.pageBreakAfter {
-				c.pendingBreak = true
-			}
-		}
-	}
-	if allowPageFlow {
-		c.y += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
-	} else {
-		y += prepared.uiAfterPT + paragraphBottomBorderExtent(prepared.style.paragraph)
-	}
-	if allowPageFlow {
-		c.y += prepared.style.paragraph.AfterPT
-		c.hasPreviousParagraph = !preparedHasPageBreak(prepared)
-		c.previousParagraphAfterPT = prepared.style.paragraph.AfterPT
-		c.previousParagraphLineGapPT = paragraphLineGap(prepared, true)
-	} else {
-		y += prepared.style.paragraph.AfterPT
-	}
-	return nil
-}
-
-func placeParagraphLine(cursor *layoutCursor, sourceID, borderSourceID string, pageIndex int, y float64, area Rect, paragraph document.WordParagraphLayout, line paragraphLine, firstLine, lastLine bool) {
-	if pageIndex < 0 || pageIndex >= len(cursor.result.Pages) {
-		return
-	}
-	left := emuToPoints(paragraph.LeftIndentEMU)
-	right := emuToPoints(paragraph.RightIndentEMU)
-	firstOffset := 0.0
-	if firstLine {
-		firstOffset = emuToPoints(paragraph.FirstLineIndentEMU - paragraph.HangingIndentEMU)
-	}
-	available := math.Max(0, area.WidthPT-left-right-firstOffset)
-	if line.width > available+epsilonPT {
-		cursor.diagnostic(DiagnosticError, sourceID, "paragraph-line-overflow", fmt.Sprintf("A shaped text or inline object exceeds the available paragraph line width (%.2fpt > %.2fpt).", line.width, available))
-	}
-	startX := area.XPT + left + firstOffset
-	switch paragraph.Alignment {
-	case document.WordAlignCenter:
-		startX += math.Max(0, (available-line.width)/2)
-	case document.WordAlignRight:
-		startX += math.Max(0, available-line.width)
-	}
-	spaceCount := 0
-	if paragraph.Alignment == document.WordAlignJustified && !lastLine {
-		for _, atom := range line.atoms {
-			if atom.breakAfter {
-				spaceCount++
-			}
-		}
-	}
-	extraPerSpace := 0.0
-	if spaceCount > 0 && line.width < available {
-		extraPerSpace = (available - line.width) / float64(spaceCount)
-	}
-	baseline := y + line.ascent
-	x := startX
-	for _, atom := range line.atoms {
-		switch atom.kind {
-		case atomText:
-			fragment := TextFragment{
-				RunID: atom.runID, Text: atom.text, RuneStart: atom.runeStart, RuneEnd: atom.runeEnd,
-				Editable: atom.editable, Style: atom.style, XPT: x, BaselineYPT: baseline, Synthetic: atom.synthetic,
-			}
-			glyphPen := 0.0
-			for glyphIndex, glyph := range atom.glyphs {
-				fragment.Glyphs = append(fragment.Glyphs, PositionedGlyph{
-					FontKey: glyph.FontKey, GlyphID: glyph.GlyphID, RuneStart: glyph.RuneStart + atom.glyphRuneOffset,
-					RuneEnd: glyph.RuneEnd + atom.glyphRuneOffset, XPT: x + glyphPen + glyph.OffsetXPT,
-					YPT: baseline - glyph.OffsetYPT, AdvanceXPT: glyph.AdvanceXPT,
-					Outline: atom.outlines[glyphIndex],
-				})
-				glyphPen += glyph.AdvanceXPT
-			}
-			cursor.result.Pages[pageIndex].Text = append(cursor.result.Pages[pageIndex].Text, fragment)
-			if !atom.synthetic && atom.runID != "" {
-				for offset := atom.runeStart; offset < atom.runeEnd; offset++ {
-					position := SourcePosition{RunID: atom.runID, RuneOffset: offset}
-					cursor.result.Locations[position] = Position{PageIndex: pageIndex, XPT: x, YPT: baseline}
-				}
-				position := SourcePosition{RunID: atom.runID, RuneOffset: atom.runeEnd}
-				cursor.result.Locations[position] = Position{PageIndex: pageIndex, XPT: x + atom.advance, YPT: baseline}
-			}
-		case atomImage:
-			bounds := Rect{XPT: x, YPT: baseline - atom.imageHeight, WidthPT: atom.imageWidth, HeightPT: atom.imageHeight}
-			cursor.result.Pages[pageIndex].Images = append(cursor.result.Pages[pageIndex].Images, ImagePlacement{ImageID: atom.imageID, Bounds: bounds, RotationDegrees: atom.imageRotation})
-		}
-		x += atom.advance
-		if atom.breakAfter {
-			x += extraPerSpace
-		}
-	}
-	if lastLine {
-		border := paragraph.BottomBorder
-		style := border.Style
-		if style == "" {
-			style = "single"
-		}
-		if border.SizePT > 0 && style != "none" && style != "nil" {
-			cursor.result.Pages[pageIndex].ParagraphBorders = append(cursor.result.Pages[pageIndex].ParagraphBorders, ParagraphBorderPlacement{
-				SourceID: borderSourceID,
-				Style:    style,
-				Color:    border.Color,
-				Bounds: Rect{
-					XPT:      area.XPT + left,
-					YPT:      y + line.height + border.SpacePT,
-					WidthPT:  math.Max(0, area.WidthPT-left-right),
-					HeightPT: border.SizePT,
-				},
-			})
-		}
-	}
-}
-
-func scaleGlyphOutline(outline GlyphOutline, fontSize float64) []GlyphPathCommand {
-	if outline.UnitsPerEm <= 0 || fontSize <= 0 || len(outline.Commands) == 0 {
-		return nil
-	}
-	scale := fontSize / outline.UnitsPerEm
-	point := func(input GlyphOutlinePoint) GlyphPathPoint {
-		return GlyphPathPoint{XPT: input.X * scale, YPT: -input.Y * scale}
-	}
-	commands := make([]GlyphPathCommand, 0, len(outline.Commands))
-	for _, command := range outline.Commands {
-		switch command.Op {
-		case GlyphPathMoveTo:
-			p := point(command.Points[0])
-			commands = append(commands, GlyphPathCommand{Op: GlyphPathMoveTo, Points: [3]GlyphPathPoint{p}})
-		case GlyphPathLineTo:
-			p := point(command.Points[0])
-			commands = append(commands, GlyphPathCommand{Op: GlyphPathLineTo, Points: [3]GlyphPathPoint{p}})
-		case GlyphPathCurveTo:
-			points := [3]GlyphPathPoint{point(command.Points[0]), point(command.Points[1]), point(command.Points[2])}
-			commands = append(commands, GlyphPathCommand{Op: GlyphPathCurveTo, Points: points})
-		}
-	}
-	return commands
 }
 
 func emuToPoints(value int64) float64 { return float64(value) / emuPerPoint }
