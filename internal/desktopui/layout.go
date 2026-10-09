@@ -11,6 +11,7 @@ import (
 
 	"gioui.org/font"
 	"gioui.org/gesture"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
@@ -823,7 +824,8 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 					if a.documentSessionState.valueFilter != nil {
 						a.clearValueFilter(a.documentSessionState)
 					}
-					if a.cellEdit.Editing {
+					formulaReferenceActive := a.documentSessionState.formulaReference.Active
+					if a.cellEdit.Editing && !formulaReferenceActive {
 						if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
 							a.setStatus("修改失败：" + err.Error())
 							a.window.Invalidate()
@@ -837,17 +839,28 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 							a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn = 1, 1
 							a.virtualGrid.PendingSelectionLoad = true
 						}
-						a.selectedCell = "A1"
 						a.documentSessionState.selection = CellSelection{}
+						if formulaReferenceActive {
+							a.documentSessionState.selection = CellSelection{Anchor: CellPosition{}, Active: CellPosition{}}
+						} else {
+							a.selectedCell = "A1"
+							a.documentSessionState.selection = CellSelection{}
+						}
 						a.documentSessionState.selectionSet = true
 						a.documentSessionState.selectionDragging = false
-						a.documentSessionState.cellEdit.selectCell("A1", "")
-						a.nameBox.SetText("A1")
-						a.formulaEditor.SetText("")
+						if !formulaReferenceActive {
+							a.documentSessionState.cellEdit.selectCell("A1", "")
+							a.nameBox.SetText("A1")
+							a.formulaEditor.SetText("")
+						} else if editor := a.formulaReferenceEditor(); editor != nil {
+							gtx.Execute(key.FocusCmd{Tag: editor})
+						}
 					} else if err := a.loadSheet(); err != nil {
 						a.setStatus(err.Error())
 					}
-					a.persistViewState()
+					if !formulaReferenceActive {
+						a.persistViewState()
+					}
 				}
 				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

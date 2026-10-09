@@ -29,13 +29,30 @@ func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 			a.goToCell()
 		}
 	}
+	if ev, ok := gtx.Event(key.Filter{Focus: &a.formulaEditor, Name: key.NameEscape}); ok {
+		if ke, yes := ev.(key.Event); yes && ke.State == key.Press && a.documentSessionState.formulaReference.Active {
+			a.restoreFormulaReferenceTarget()
+			if a.virtualGrid != nil {
+				gtx.Execute(key.FocusCmd{Tag: &a.virtualGrid.PointerTag})
+			}
+		}
+	}
+	formulaCommitted := false
 	for ev, ok := a.formulaEditor.Update(gtx); ok; ev, ok = a.formulaEditor.Update(gtx) {
 		if _, submit := ev.(widget.SubmitEvent); submit {
 			if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
 				a.setStatus("修改失败：" + err.Error())
 				a.window.Invalidate()
+			} else {
+				formulaCommitted = true
+				if a.virtualGrid != nil {
+					gtx.Execute(key.FocusCmd{Tag: &a.virtualGrid.PointerTag})
+				}
 			}
 		}
+	}
+	if !formulaCommitted {
+		a.syncFormulaReferenceInput(gtx)
 	}
 	if a.goToCellButton.Clicked(gtx) {
 		a.goToCell()
@@ -44,6 +61,8 @@ func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 		if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
 			a.setStatus("修改失败：" + err.Error())
 			a.window.Invalidate()
+		} else if a.virtualGrid != nil {
+			gtx.Execute(key.FocusCmd{Tag: &a.virtualGrid.PointerTag})
 		}
 	}
 	height := gtx.Dp(unit.Dp(56))
@@ -174,8 +193,11 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 	}
 	if v.PendingSelectionLoad && v.SelectedRow >= v.WindowRange.StartRow && v.SelectedRow <= v.WindowRange.EndRow && v.SelectedColumn >= v.WindowRange.StartColumn && v.SelectedColumn <= v.WindowRange.EndColumn {
 		cell := windowCell(v.Window, v.SelectedRow, v.SelectedColumn)
-		a.cellEdit.selectCell(a.selectedCell, cell.Value)
-		a.formulaEditor.SetText(cell.Value)
+		if !a.documentSessionState.formulaReference.Active {
+			value := cellEditorText(cell)
+			a.cellEdit.selectCell(a.selectedCell, value)
+			a.formulaEditor.SetText(value)
+		}
 		v.PendingSelectionLoad = false
 	}
 	for {
@@ -198,23 +220,36 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		if a.cellEdit.Editing {
 			if ev, ok := gtx.Event(key.Filter{Focus: &a.cellEditor, Name: key.NameEscape}); ok {
 				if ke, yes := ev.(key.Event); yes && ke.State == key.Press {
-					a.cellEdit.cancel()
-					a.cellEditor.SetText(a.cellEdit.Original)
-					a.formulaEditor.SetText(a.cellEdit.Original)
+					if a.documentSessionState.formulaReference.Active {
+						a.restoreFormulaReferenceTarget()
+					} else {
+						a.cellEdit.cancel()
+						a.cellEditor.SetText(a.cellEdit.Original)
+						a.formulaEditor.SetText(a.cellEdit.Original)
+					}
 					gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
 					a.window.Invalidate()
 				}
 			}
 			for ev, ok := a.cellEditor.Update(gtx); ok; ev, ok = a.cellEditor.Update(gtx) {
+				if _, changed := ev.(widget.ChangeEvent); changed {
+					a.cellEdit.setDraft(a.cellEditor.Text())
+					start, end := a.cellEditor.Selection()
+					a.formulaEditor.SetText(a.cellEditor.Text())
+					a.formulaEditor.SetCaret(start, end)
+				}
 				if _, submit := ev.(widget.SubmitEvent); submit {
 					if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
 						a.setStatus("修改失败：" + err.Error())
 						a.window.Invalidate()
+						gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
+					} else {
+						gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
 					}
-					gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
 				}
 			}
 		}
+		a.syncFormulaReferenceInput(gtx)
 		ev, ok := gtx.Event(key.Filter{Focus: &v.PointerTag})
 		if !ok {
 			break
@@ -289,16 +324,22 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			if a.cellEdit.Editing {
 				editRect := editingCellRect(v, a.cellEdit.Address, rowHeaderPx, columnHeaderPx)
 				point := image.Pt(int(pe.Position.X), int(pe.Position.Y))
-				if point.In(editRect) {
+				formulaReference := a.documentSessionState.formulaReference
+				if formulaReference.Active && formulaReference.InCell && formulaReference.TargetSheet == a.sheet && point.In(editRect) {
+					continue
+				}
+				if point.In(editRect) && (!formulaReference.Active || formulaReference.TargetSheet == a.sheet) {
 					// The editor's own pointer handler places the caret. Let it consume
 					// the event without changing the selected cell or ending editing.
 					continue
 				}
-				if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-					a.setStatus("修改失败：" + err.Error())
-					gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
-					a.window.Invalidate()
-					continue
+				if !a.documentSessionState.formulaReference.Active {
+					if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
+						a.setStatus("修改失败：" + err.Error())
+						gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
+						a.window.Invalidate()
+						continue
+					}
 				}
 			}
 			axis, index, edge, sizePx, resizeHit := gridResizeHandleAt(v, int(pe.Position.X), int(pe.Position.Y), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
@@ -342,17 +383,27 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			row, col, hit := cellAtPoint(v.Rows, v.Columns, v.X, v.Y, image.Pt(int(pe.Position.X), int(pe.Position.Y)), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
 			if hit {
 				position := selectionAnchor(v.Window.Merges, CellPosition{Row: row - 1, Column: col - 1})
+				extend := pe.Modifiers.Contain(key.ModShift)
+				if a.beginFormulaReferenceDrag(position, extend) {
+					a.selectionDragging = false
+					gtx.Execute(pointer.GrabCmd{Tag: &v.PointerTag, ID: pe.PointerID})
+					if editor := a.formulaReferenceEditor(); editor != nil {
+						gtx.Execute(key.FocusCmd{Tag: editor})
+					}
+					v.LastClickTime = 0
+					a.window.Invalidate()
+					break
+				}
 				row, col = position.Row+1, position.Column+1
 				previousAddress := a.selectedCell
 				address := xlsx.CellName(col, row)
-				extend := pe.Modifiers.Contain(key.ModShift)
 				a.updateGridSelection(v, position, extend, false)
 				a.selectionDragging = true
 				gtx.Execute(pointer.GrabCmd{Tag: &v.PointerTag, ID: pe.PointerID})
 				if !extend && pe.Time-v.LastClickTime <= 500*time.Millisecond && v.LastClickAddress == address && previousAddress == address && (state == nil || !state.excelFormatPainterActive) {
 					cell := windowCell(v.Window, row, col)
 					a.cellEdit.begin()
-					a.cellEditor.SetText(cell.Value)
+					a.cellEditor.SetText(cellEditorText(cell))
 					gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
 				} else {
 					gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
@@ -378,6 +429,12 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					v.PictureMoveCursor = true
 				}
 				a.window.Invalidate()
+			} else if a.documentSessionState.formulaReference.Active && a.documentSessionState.formulaReference.Dragging {
+				if position, hit := selectionAtPointWithHeaders(v, image.Pt(int(pe.Position.X), int(pe.Position.Y)), rowHeaderPx, columnHeaderPx); hit {
+					position = selectionAnchor(v.Window.Merges, position)
+					a.extendFormulaReferenceDrag(position)
+					a.window.Invalidate()
+				}
 			} else if a.selectionDragging {
 				if position, hit := selectionAtPointWithHeaders(v, image.Pt(int(pe.Position.X), int(pe.Position.Y)), rowHeaderPx, columnHeaderPx); hit {
 					position = selectionAnchor(v.Window.Merges, position)
@@ -436,6 +493,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					}
 				}
 				a.window.Invalidate()
+			} else if a.documentSessionState.formulaReference.Active && a.documentSessionState.formulaReference.Dragging {
+				a.documentSessionState.formulaReference.Dragging = false
+				a.window.Invalidate()
 			} else if a.selectionDragging {
 				a.selectionDragging = false
 				a.persistViewState()
@@ -454,6 +514,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				v.PictureResizeCursor, v.PictureMoveCursor = false, false
 				a.window.Invalidate()
 			} else {
+				a.documentSessionState.formulaReference.Dragging = false
 				a.selectionDragging = false
 			}
 		}
@@ -506,9 +567,10 @@ func (a *App) updateGridSelection(v *gridViewport, position CellPosition, extend
 	} else {
 		v.PendingSelectionLoad = true
 	}
-	a.cellEdit.selectCell(a.selectedCell, cell.Value)
+	value := cellEditorText(cell)
+	a.cellEdit.selectCell(a.selectedCell, value)
 	a.nameBox.SetText(a.selectedCell)
-	a.formulaEditor.SetText(cell.Value)
+	a.formulaEditor.SetText(value)
 	if persist {
 		a.persistViewState()
 	}

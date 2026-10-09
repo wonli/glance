@@ -19,7 +19,7 @@
 | Open and render virtualized worksheet | Supported, sample verified | `internal/format/xlsx/workbook_test.go`, `internal/desktopui/grid_*_test.go`; see `docs/office-support.md` for style/merge limits. |
 | Edit constants and resize dimensions | Supported, fixture scope | `internal/desktopui/grid_edit_test.go`, `grid_resize_test.go`; saves use sibling temporary files. |
 | Workspace snapshot and blank draft | Supported, basic | `TestSnapshotRestoresEditedWorkbook`; package bytes preserve the current in-memory workbook for adapter restore. |
-| Formula calculation and full Excel fidelity | Unsupported | No calculation engine; common styles/merges are partial as listed in `office-support.md`. |
+| Formula result display and full Excel fidelity | Partial | Visible formula cells use Excelize `CalcCellValue` where supported; calculation errors fall back to cached values. This is not full-workbook recalculation or cache persistence. Common styles/merges remain partial as listed in `office-support.md`. |
 
 ## PPTX
 

@@ -241,6 +241,15 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 			if err != nil {
 				return document.SheetWindow{}, fmt.Errorf("read cell %s: %w", cellRef, err)
 			}
+			formula, err := w.file.GetCellFormula(sheet, cellRef)
+			if err != nil {
+				return document.SheetWindow{}, fmt.Errorf("read cell %s formula: %w", cellRef, err)
+			}
+			if formula != "" {
+				if calculated, calcErr := w.file.CalcCellValue(sheet, cellRef); calcErr == nil {
+					value = calculated
+				}
+			}
 			styleID, err := w.file.GetCellStyle(sheet, cellRef)
 			if err != nil {
 				return document.SheetWindow{}, fmt.Errorf("read cell %s style: %w", cellRef, err)
@@ -253,7 +262,7 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 				}
 				styleCache[styleID] = style
 			}
-			window.Cells[r][c] = document.Cell{Value: value, StyleID: styleID, Style: style}
+			window.Cells[r][c] = document.Cell{Value: value, Formula: formula, StyleID: styleID, Style: style}
 		}
 	}
 	for c := 0; c < columnCount; c++ {
@@ -292,6 +301,15 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 		if err != nil {
 			return document.SheetWindow{}, fmt.Errorf("read merged anchor %s: %w", anchorRef, err)
 		}
+		formula, err := w.file.GetCellFormula(sheet, anchorRef)
+		if err != nil {
+			return document.SheetWindow{}, fmt.Errorf("read merged anchor %s formula: %w", anchorRef, err)
+		}
+		if formula != "" {
+			if calculated, calcErr := w.file.CalcCellValue(sheet, anchorRef); calcErr == nil {
+				value = calculated
+			}
+		}
 		styleID, err := w.file.GetCellStyle(sheet, anchorRef)
 		if err != nil {
 			return document.SheetWindow{}, fmt.Errorf("read merged anchor %s style: %w", anchorRef, err)
@@ -306,7 +324,7 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 		}
 		window.Merges = append(window.Merges, document.MergeRegion{
 			Range:  document.CellRange{StartRow: anchorRow, StartColumn: anchorColumn, EndRow: endRow, EndColumn: endColumn},
-			Anchor: document.Cell{Value: value, StyleID: styleID, Style: style},
+			Anchor: document.Cell{Value: value, Formula: formula, StyleID: styleID, Style: style},
 		})
 	}
 	return window, nil
@@ -673,6 +691,7 @@ func (w *Workbook) SetCellFormula(sheet, cell, formula string) error {
 	if cleanFormula == "" {
 		return errors.New("formula expression cannot be empty")
 	}
+	cleanFormula = normalizeFormulaFunctionNames(cleanFormula)
 	column, row, err := excelize.CellNameToCoordinates(cell)
 	if err != nil {
 		return fmt.Errorf("invalid cell reference %q: %w", cell, err)
@@ -715,4 +734,3 @@ func (w *Workbook) GetCellFormula(sheet, cell string) (string, error) {
 	}
 	return w.file.GetCellFormula(sheet, cell)
 }
-

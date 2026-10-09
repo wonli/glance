@@ -95,6 +95,7 @@ type documentSessionState struct {
 	wordRulerIndentIntent               *wordParagraphIndentIntent
 	cellEditor                          widget.Editor
 	formulaEditor                       widget.Editor
+	formulaReference                    formulaReferenceState
 	nameBox                             widget.Editor
 	sheetNameEditor                     widget.Editor
 	sheetCreateButton                   widget.Clickable

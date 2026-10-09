@@ -32,6 +32,8 @@ const (
 	gridCellTextSize    = 12.0
 )
 
+var activeCellBorder = color.NRGBA{R: 33, G: 115, B: 70, A: 255}
+
 type cellPaintKey struct {
 	Value     string
 	Source    document.CellStyle
@@ -75,6 +77,10 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(rowHead, 0), Max: image.Pt(rowHead+1, size.Y)}.Op())
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(0, colHead), Max: image.Pt(size.X, colHead+1)}.Op())
 	selection, hasSelection := a.selection, a.selectionSet
+	var formulaReferences []document.CellRange
+	if hasSelection && !a.cellEdit.Editing && !a.documentSessionState.formulaReference.Active && v.WindowSheet == a.sheet {
+		formulaReferences = formulaDependencyRanges(a.formulaEditor.Text(), a.sheet)
+	}
 	gridlines := true
 	if a != nil && a.documentSessionState != nil && a.documentSessionState.spreadsheetGridlinesHidden {
 		gridlines = false
@@ -130,6 +136,9 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 						style.Font = color.NRGBA{R: 62, G: 111, B: 169, A: 255}
 					}
 				}
+				if formulaReferenceContains(formulaReferences, rr, cc) || merged && formulaReferenceContains(formulaReferences, mr, mc) {
+					style.Fill = selectedFill
+				}
 				paintCachedCellWithGridlines(gtx, v, a.theme, cell, fullRect, visibleRect, style, gridlines)
 			}
 		}
@@ -137,13 +146,38 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	paintGridPictures(gtx, a, v)
 	if hasSelection {
 		selectionViewport := image.Rect(rowHead, colHead, size.X, size.Y)
-		outline := color.NRGBA{R: 190, G: 211, B: 237, A: 255}
+		outline := color.NRGBA{R: 91, G: 139, B: 188, A: 255}
+		for _, reference := range formulaReferences {
+			referenceRect := selectionRectWithHeaders(v, CellSelection{
+				Anchor: CellPosition{Row: reference.StartRow - 1, Column: reference.StartColumn - 1},
+				Active: CellPosition{Row: reference.EndRow - 1, Column: reference.EndColumn - 1},
+			}, rowHead, colHead).Intersect(selectionViewport)
+			for _, edge := range selectionBorderRects(referenceRect, max(1, gtx.Dp(unit.Dp(1)))) {
+				if !edge.Empty() {
+					paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
+				}
+			}
+		}
 		for _, edge := range selectionBorderRects(selectionRectWithHeaders(v, selection, rowHead, colHead), max(1, gtx.Dp(unit.Dp(1)))) {
 			edge = edge.Intersect(selectionViewport)
 			if !edge.Empty() {
 				paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
 			}
 		}
+		activeCell := selection.Active
+		activeRange := document.CellRange{
+			StartRow: activeCell.Row + 1, StartColumn: activeCell.Column + 1,
+			EndRow: activeCell.Row + 1, EndColumn: activeCell.Column + 1,
+		}
+		for _, merge := range v.Window.Merges {
+			if activeRange.StartRow >= merge.Range.StartRow && activeRange.StartRow <= merge.Range.EndRow &&
+				activeRange.StartColumn >= merge.Range.StartColumn && activeRange.StartColumn <= merge.Range.EndColumn {
+				activeRange = merge.Range
+				break
+			}
+		}
+		activeRect := cellRect(v.Rows, v.Columns, activeRange, v.X, v.Y).Add(image.Pt(rowHead, colHead)).Intersect(selectionViewport)
+		paintActiveCellBorder(gtx, activeRect)
 	}
 	startCol := v.Columns.IndexAt(v.X)
 	if startCol < 0 {
@@ -161,7 +195,11 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 		paintTextBox(gtx, a.theme, columnName(c+1), image.Rect(x0, 0, x1, colHead), mutedText, gridHeaderFill, false)
 	}
 	paintGridPictureSelection(gtx, a, v)
-	if a.cellEdit.Editing {
+	showCellEditor := a.cellEdit.Editing
+	if fr := a.documentSessionState.formulaReference; fr.Active && fr.InCell && fr.TargetSheet != a.sheet {
+		showCellEditor = false
+	}
+	if showCellEditor {
 		if row, col, ok := parseCellAddress(a.cellEdit.Address); ok {
 			rng := document.CellRange{StartRow: row, StartColumn: col, EndRow: row, EndColumn: col}
 			for _, m := range v.Window.Merges {
@@ -198,6 +236,15 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	return layout.Dimensions{Size: size}
 }
 
+func formulaReferenceContains(ranges []document.CellRange, row, column int) bool {
+	for _, cellRange := range ranges {
+		if row >= cellRange.StartRow && row <= cellRange.EndRow && column >= cellRange.StartColumn && column <= cellRange.EndColumn {
+			return true
+		}
+	}
+	return false
+}
+
 func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.Editor, rect, visible image.Rectangle, cellStyle document.CellStyle, style gridPaintStyle, zoom ...float64) {
 	area := clip.Rect(visible).Push(gtx.Ops)
 	defer area.Pop()
@@ -205,7 +252,6 @@ func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.E
 	defer t.Pop()
 	sz := rect.Size()
 	paint.FillShape(gtx.Ops, style.Fill, clip.Rect{Max: sz}.Op())
-	border := color.NRGBA{R: 35, G: 105, B: 190, A: 255}
 	gtx.Constraints = layout.Constraints{Min: sz, Max: sz}
 	editorStyle := cellEditorStyle(theme, editor, cellStyle, style, zoom...)
 	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -219,8 +265,14 @@ func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.E
 		)
 	})
 	paintCellBorders(gtx, sz, cellStyle.Borders)
-	for _, edge := range selectionBorderRects(image.Rectangle{Max: sz}, max(1, gtx.Dp(unit.Dp(1)))) {
-		paint.FillShape(gtx.Ops, border, clip.Rect(edge).Op())
+	paintActiveCellBorder(gtx, image.Rectangle{Max: sz})
+}
+
+func paintActiveCellBorder(gtx layout.Context, rect image.Rectangle) {
+	for _, edge := range selectionBorderRects(rect, max(1, gtx.Dp(unit.Dp(2)))) {
+		if !edge.Empty() {
+			paint.FillShape(gtx.Ops, activeCellBorder, clip.Rect(edge).Op())
+		}
 	}
 }
 

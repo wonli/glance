@@ -6,6 +6,7 @@ var ErrReadOnly = errors.New("document is read-only")
 
 type Cell struct {
 	Value   string
+	Formula string
 	StyleID int
 	Style   CellStyle
 }

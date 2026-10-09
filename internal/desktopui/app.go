@@ -936,6 +936,11 @@ func (a *App) commitGridCell(value string) error {
 	state := a.documentSessionState
 	a.cellEdit.setDraft(value)
 	changed := a.cellEdit.Draft != a.cellEdit.Original
+	formulaTargetSheet := a.sheet
+	formulaReference := state.formulaReference
+	if formulaReference.Active && formulaReference.TargetCell == a.cellEdit.Address {
+		formulaTargetSheet = formulaReference.TargetSheet
+	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
 		return fmt.Errorf("表格正在处理其他操作")
@@ -943,13 +948,24 @@ func (a *App) commitGridCell(value string) error {
 	err := a.cellEdit.commit(func(address, value string) error {
 		unlock := lockSessionAdapterWrite(state)
 		defer unlock()
-		return a.book.SetCellText(a.sheet, address, value)
+		if strings.HasPrefix(strings.TrimSpace(value), "=") {
+			editor, ok := a.book.(document.SpreadsheetFormulaEditor)
+			if !ok {
+				return fmt.Errorf("当前工作簿不支持公式编辑")
+			}
+			return editor.SetCellFormula(formulaTargetSheet, address, value)
+		}
+		return a.book.SetCellText(formulaTargetSheet, address, value)
 	})
 	a.completeSessionOperation(state, token, err, err == nil && changed)
 	if err != nil {
 		return err
 	}
 	a.selectedCell = a.cellEdit.Address
+	if formulaReference.Active {
+		state.formulaReference = formulaReference
+		a.restoreFormulaReferenceTarget()
+	}
 	if changed && a.virtualGrid != nil {
 		a.virtualGrid.invalidateWindow()
 	}
