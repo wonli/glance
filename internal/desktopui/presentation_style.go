@@ -95,6 +95,12 @@ func (a *App) handlePresentationStyleAction(v *presentationViewState, actionID s
 		return a.applyPresentationStylePatch(v, document.PresentationElementStylePatch{Italic: styleBool(!presentationSelectedRunStyle(v, actionID))})
 	case "home_underline":
 		return a.applyPresentationStylePatch(v, document.PresentationElementStylePatch{Underline: styleBool(!presentationSelectedRunStyle(v, actionID))})
+	case "home_bullets":
+		_, elem, ok := presentationSelectedStyleElement(v)
+		if !ok || !elem.CanEditTextStyle || len(elem.Paragraphs) != 1 {
+			return false
+		}
+		return a.applyPresentationStylePatch(v, document.PresentationElementStylePatch{Bullet: styleBool(!elem.Paragraphs[0].Bullet)})
 	case "home_align_left":
 		return a.applyPresentationStylePatch(v, document.PresentationElementStylePatch{ParagraphAlignment: styleString("left")})
 	case "home_align_center":
@@ -134,7 +140,32 @@ func (a *App) applyPresentationStylePatch(v *presentationViewState, patch docume
 	if !ok {
 		return false
 	}
-	if err := a.pptxDoc.UpdateSlideElementStyle(v.activeSlide, elem.ID, patch); err != nil {
+	slide := v.currentSlide()
+	if slide == nil || slide.ID == 0 {
+		return false
+	}
+	var err error
+	state := a.documentSessionState
+	if state != nil && state.pptxDoc == a.pptxDoc && a.applicationSessionRegistered(state.documentID) {
+		token, ok := state.beginOperation(sessionOperationMutation)
+		if !ok {
+			a.setStatus("演示文稿正在处理其他操作")
+			return false
+		}
+		_, err = a.executeRibbonApplicationCommand(token, "presentation.element.style.set", "presentation_element", strconv.FormatInt(elem.ID, 10), "", presentationStyleArguments(slide.ID, elem.ID, patch))
+		state.finishOperation(token)
+	} else if state == nil || state.pptxDoc != a.pptxDoc {
+		err = a.pptxDoc.UpdateSlideElementStyleByID(slide.ID, elem.ID, patch)
+	} else {
+		before := a.pptxDoc.Snapshot().Revision
+		unlock := lockSessionAdapterWrite(state)
+		err = a.pptxDoc.UpdateSlideElementStyleByID(slide.ID, elem.ID, patch)
+		unlock()
+		if err == nil && a.pptxDoc.Snapshot().Revision != before {
+			a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load()+1)
+		}
+	}
+	if err != nil {
 		a.setStatus("样式修改失败：" + err.Error())
 		return false
 	}
@@ -147,6 +178,53 @@ func (a *App) applyPresentationStylePatch(v *presentationViewState, patch docume
 		a.window.Invalidate()
 	}
 	return true
+}
+
+func presentationStyleArguments(slideID uint32, elementID int64, patch document.PresentationElementStylePatch) map[string]any {
+	arguments := map[string]any{"slide_id": slideID, "element_id": elementID}
+	if patch.FontFamily != nil {
+		arguments["font_family"] = *patch.FontFamily
+	}
+	if patch.FontSizePT != nil {
+		arguments["font_size_pt"] = *patch.FontSizePT
+	}
+	if patch.Bold != nil {
+		arguments["bold"] = *patch.Bold
+	}
+	if patch.Italic != nil {
+		arguments["italic"] = *patch.Italic
+	}
+	if patch.Underline != nil {
+		arguments["underline"] = *patch.Underline
+	}
+	if patch.TextColorHex != nil {
+		arguments["text_color_hex"] = *patch.TextColorHex
+	}
+	if patch.ParagraphAlignment != nil {
+		arguments["paragraph_alignment"] = *patch.ParagraphAlignment
+	}
+	if patch.Bullet != nil {
+		arguments["bullet"] = *patch.Bullet
+	}
+	if patch.LineSpacing != nil {
+		arguments["line_spacing"] = patch.LineSpacing
+	}
+	if patch.SpaceBefore != nil {
+		arguments["space_before"] = patch.SpaceBefore
+	}
+	if patch.SpaceAfter != nil {
+		arguments["space_after"] = patch.SpaceAfter
+	}
+	if patch.FillColorHex != nil {
+		arguments["fill_color_hex"] = *patch.FillColorHex
+	}
+	if patch.BorderColor != nil {
+		arguments["border_color"] = *patch.BorderColor
+	}
+	if patch.BorderWidthPT != nil {
+		arguments["border_width_pt"] = *patch.BorderWidthPT
+	}
+	return arguments
 }
 
 func (a *App) presentationStyleOptions(v *presentationViewState) []presentationStyleOption {
@@ -272,7 +350,7 @@ func (a *App) layoutPresentationStylePopover(gtx layout.Context, v *presentation
 
 func presentationStyleOptionMatches(elem document.PresentationElement, p document.PresentationElementStylePatch) bool {
 	hasRunStyle := p.FontFamily != nil || p.FontSizePT != nil || p.Bold != nil || p.Italic != nil || p.Underline != nil || p.TextColorHex != nil
-	hasParagraphStyle := p.ParagraphAlignment != nil || p.LineSpacing != nil || p.SpaceBefore != nil || p.SpaceAfter != nil
+	hasParagraphStyle := p.ParagraphAlignment != nil || p.Bullet != nil || p.LineSpacing != nil || p.SpaceBefore != nil || p.SpaceAfter != nil
 	if !hasRunStyle && !hasParagraphStyle && p.FillColorHex == nil && p.BorderColor == nil && p.BorderWidthPT == nil {
 		return false
 	}
@@ -283,6 +361,9 @@ func presentationStyleOptionMatches(elem document.PresentationElement, p documen
 			align = "left"
 		}
 		if p.ParagraphAlignment != nil && align != *p.ParagraphAlignment {
+			return false
+		}
+		if p.Bullet != nil && paragraph.Bullet != *p.Bullet {
 			return false
 		}
 		for _, pair := range []struct {

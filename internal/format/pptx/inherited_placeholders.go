@@ -197,6 +197,15 @@ func shapeIDFromXML(shape pptxXMLNode) uint32 {
 		nv = shape.child("nvPicPr")
 	}
 	if nv == nil {
+		nv = shape.child("nvGraphicFramePr")
+	}
+	if nv == nil {
+		nv = shape.child("nvCxnSpPr")
+	}
+	if nv == nil {
+		nv = shape.child("nvGrpSpPr")
+	}
+	if nv == nil {
 		return 0
 	}
 	cNvPr := nv.child("cNvPr")

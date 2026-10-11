@@ -55,7 +55,7 @@ func newNativePrintTestApp(t *testing.T, printer *testWordPrinter) (*App, *docum
 	app := &App{
 		documentSessionState: state,
 		activeTabID:          "native-print-test",
-		wordPrinter:          printer,
+		nativePrinter:        printer,
 		wordPrintResults:     make(chan wordPrintResult, 1),
 		shutdown:             make(chan struct{}),
 	}

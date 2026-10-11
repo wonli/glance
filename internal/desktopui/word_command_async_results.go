@@ -20,6 +20,25 @@ func (a *App) processWordCommandAsyncResult() bool {
 			}
 		}
 		activeResult := result.generation == a.documentGeneration && result.state == a.documentSessionState
+		if result.wordCommentList {
+			if activeResult {
+				if result.err != nil {
+					a.setStatus(wordCommandError(result.operation, result.err))
+				} else if len(result.wordComments) == 0 {
+					a.setStatus("当前文档没有可删除的批注")
+				} else {
+					a.showWordDeleteCommentPrompt(result.wordComments, result.wordCommentTotal, result.revision)
+				}
+				if a.window != nil {
+					a.window.Invalidate()
+				}
+			}
+			return false
+		}
+		if activeResult && result.applicationCommand && !result.viewOnly && result.err == nil && result.blocks != nil {
+			result.state.setWordBlocks(result.blocks)
+			reconcileWordSelection(result.state, false)
+		}
 		if result.pageBreak {
 			a.completeWordPageBreak(result, activeResult)
 		} else if result.paragraphJoin {
@@ -42,6 +61,12 @@ func (a *App) processWordCommandAsyncResult() bool {
 				if result.state.wordFlushRequested.Load() {
 					a.startNextWordTextCommitFor(result.state)
 				}
+			}
+		} else if activeResult && result.viewOnly {
+			if result.err != nil {
+				a.setStatus(wordCommandError(result.operation, result.err))
+			} else if result.operation == "设置 Word 自动保存" {
+				a.maybeAutoSaveWord(result.state)
 			}
 		} else if activeResult {
 			if result.paragraphSplit {
@@ -88,9 +113,14 @@ func (a *App) processWordCommandAsyncResult() bool {
 				a.completeWordRangeReplacement(result)
 			} else if result.wordSymbolInsertion {
 				a.completeWordSymbolInsertion(result)
+			} else if result.confirmationPending {
+				a.setStatus("操作已送交人工确认；请在 AI 助手中检查目标并批准或拒绝。")
 			} else if result.err != nil {
 				a.setStatus(wordCommandError(result.operation, result.err))
 			} else if !result.history || result.applied {
+				if result.wordTrackRevisions != nil {
+					result.state.wordTrackRevisions = *result.wordTrackRevisions
+				}
 				if result.blocks != nil && result.revision == 0 {
 					result.state.setWordBlocks(result.blocks)
 					a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, result.state.wordRevisionAtomic.Load())
@@ -148,7 +178,7 @@ func (a *App) processWordCommandAsyncResult() bool {
 			if result.state.wordFlushRequested.Load() && !result.state.formatRunning.Load() {
 				a.startNextWordTextCommit()
 			}
-			if activeResult && result.err == nil && !result.state.formatRunning.Load() && !result.state.wordFlushRequested.Load() {
+			if activeResult && !result.viewOnly && result.err == nil && !result.confirmationPending && !result.state.formatRunning.Load() && !result.state.wordFlushRequested.Load() {
 				a.maybeAutoSaveWord(result.state)
 			}
 			if a.window != nil {

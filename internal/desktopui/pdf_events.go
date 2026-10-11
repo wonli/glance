@@ -59,7 +59,7 @@ func (a *App) handlePDFEvents(gtx layout.Context) {
 				v.selectEnd = hit
 				if v.tool == "highlight" && v.selected >= 0 {
 					a.handlePDFAction(gtx, "highlight")
-					v.tool = ""
+					a.runPDFViewAction("clear annotation tool", map[string]any{"operation": "set_tool", "tool": ""})
 				} else if v.mode == "edit" && v.selected >= 0 {
 					a.pdfTextDialog("replace")
 				}

@@ -34,7 +34,7 @@ func patchParagraphStyleFragment(fragment []byte, patch document.PresentationEle
 			break
 		}
 	}
-	if patch.ParagraphAlignment != nil || patch.LineSpacing != nil || patch.SpaceBefore != nil || patch.SpaceAfter != nil {
+	if patch.ParagraphAlignment != nil || patch.Bullet != nil || patch.LineSpacing != nil || patch.SpaceBefore != nil || patch.SpaceAfter != nil {
 		var pPr []byte
 		if pPrIndex >= 0 {
 			span := nodes[pPrIndex]
@@ -195,7 +195,38 @@ func patchParagraphProperties(fragment []byte, patch document.PresentationElemen
 			return nil, err
 		}
 	}
+	if patch.Bullet != nil {
+		fragment, err = patchParagraphBullet(fragment, prefix, *patch.Bullet)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return fragment, nil
+}
+
+func patchParagraphBullet(fragment []byte, prefix string, enabled bool) ([]byte, error) {
+	nodes, err := scanStyleXML(fragment)
+	if err != nil {
+		return nil, err
+	}
+	if len(nodes) == 0 || nodes[0].local != "pPr" {
+		return nil, fmt.Errorf("项目符号段落属性目标无效")
+	}
+	bulletKinds := map[string]bool{"buNone": true, "buChar": true, "buAutoNum": true, "buBlip": true}
+	var removals []shapeXMLReplacement
+	for _, child := range styleNodeChildren(nodes, 0) {
+		if bulletKinds[nodes[child].local] {
+			removals = append(removals, shapeXMLReplacement{start: nodes[child].start, end: nodes[child].end})
+		}
+	}
+	fragment = applyXMLReplacements(fragment, removals)
+	childName, childXML := "buNone", []byte("<"+prefix+"buNone/>")
+	if enabled {
+		childName = "buChar"
+		childXML = []byte("<" + prefix + "buChar char=\"•\"/>")
+	}
+	return upsertStyleChild(fragment, []string{childName}, childXML,
+		[]string{"lnSpc", "spcBef", "spcAft", "buClr", "buSz", "buFont", "buNone", "buChar", "buAutoNum", "buBlip", "tabLst", "defRPr", "extLst"})
 }
 
 func presentationSpacingXML(prefix, name string, spacing document.PresentationSpacing) []byte {
@@ -210,7 +241,7 @@ func presentationSpacingXML(prefix, name string, spacing document.PresentationSp
 
 func patchShapePresentationStyle(fragment []byte, patch document.PresentationElementStylePatch) ([]byte, error) {
 	if patch.FontFamily == nil && patch.FontSizePT == nil && patch.Bold == nil && patch.Italic == nil && patch.Underline == nil &&
-		patch.TextColorHex == nil && patch.ParagraphAlignment == nil && patch.LineSpacing == nil && patch.SpaceBefore == nil && patch.SpaceAfter == nil {
+		patch.TextColorHex == nil && patch.ParagraphAlignment == nil && patch.Bullet == nil && patch.LineSpacing == nil && patch.SpaceBefore == nil && patch.SpaceAfter == nil {
 
 		return patchShapeFillAndLine(fragment, patch)
 	}

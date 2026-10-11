@@ -197,6 +197,14 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 	if app.status != "已隐藏网格线" {
 		t.Fatalf("expected status '已隐藏网格线', got %q", app.status)
 	}
+	select {
+	case result := <-app.formatResults:
+		if result.err != nil {
+			t.Fatalf("hide gridlines failed: %v", result.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for hide-gridlines formatResult")
+	}
 	state.toolbarActionButtons[toolbarActionViewGridlines].Click()
 	app.handleSpreadsheetToolbarEvents(gtx)
 	if state.spreadsheetGridlinesHidden {
@@ -204,6 +212,14 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 	}
 	if app.status != "已显示网格线" {
 		t.Fatalf("expected status '已显示网格线', got %q", app.status)
+	}
+	select {
+	case result := <-app.formatResults:
+		if result.err != nil {
+			t.Fatalf("show gridlines failed: %v", result.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for show-gridlines formatResult")
 	}
 
 	// 7. Layout Gridlines Toggle
@@ -216,6 +232,14 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 	if !state.spreadsheetGridlinesHidden {
 		t.Fatal("expected gridlines to be hidden after layout gridlines toggle")
 	}
+	select {
+	case result := <-app.formatResults:
+		if result.err != nil {
+			t.Fatalf("hide layout gridlines failed: %v", result.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for hide-layout-gridlines formatResult")
+	}
 	gridlines, err := wb.GetSheetGridlines(state.sheet)
 	if err != nil || gridlines {
 		t.Fatalf("expected workbook gridlines to be false, got %v (err=%v)", gridlines, err)
@@ -224,6 +248,14 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 	app.handleSpreadsheetToolbarEvents(gtx)
 	if state.spreadsheetGridlinesHidden {
 		t.Fatal("expected gridlines to be visible after second layout toggle")
+	}
+	select {
+	case result := <-app.formatResults:
+		if result.err != nil {
+			t.Fatalf("show layout gridlines failed: %v", result.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for show-layout-gridlines formatResult")
 	}
 	gridlines, err = wb.GetSheetGridlines(state.sheet)
 	if err != nil || !gridlines {

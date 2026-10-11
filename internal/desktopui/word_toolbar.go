@@ -195,9 +195,9 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "version-history":
 		return canonicalSessionPath(sessionPath(state)) != ""
 	case "print":
-		return a.wordPrinter != nil && a.wordPrinter.Available()
+		return a.nativePrinter != nil && a.nativePrinter.Available()
 	case "autosave":
-		return true
+		return a.applicationSessionRegistered(state.documentID)
 	case "doc-info":
 		_, supported := any(state.word).(document.WordDocumentPropertiesEditor)
 		return supported
@@ -366,8 +366,15 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
 	case "review-compare":
 		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
-	case "layout-align", "layout-wrap", "layout-position":
+	case "layout-position":
+		image := findWordImage(wordBlocksForState(state), state.selectedWordImageID)
+		_, editable := any(state.word).(document.WordImageEditor)
+		return editable && image != nil && image.Editable
+	case "layout-align":
 		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+	case "layout-wrap":
+		image := findWordImage(wordBlocksForState(state), state.selectedWordImageID)
+		return image != nil && image.WrapEditable && image.WrapMode != "inline" && !state.formatRunning.Load() && !a.isSaving()
 	case "insert-wordart", "insert-shapes":
 		_, ok := any(state.word).(document.WordTextBoxEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
@@ -376,8 +383,13 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "insert-chart":
 		_, ok := any(state.word).(document.WordTableInsertEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
-	case "review-new-comment", "review-delete-comment":
-		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+	case "review-new-comment":
+		_, editor := any(state.word).(document.WordCommentEditor)
+		run, selected := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		return editor && selected && run.Editable && wordBodyRunEditable(wordBlocksForState(state), run.ID) && a.applicationSessionRegistered(state.documentID)
+	case "review-delete-comment":
+		_, reader := any(state.word).(document.WordCommentReader)
+		return reader && a.applicationSessionRegistered(state.documentID)
 	case "design-themes":
 		_, ok := any(state.word).(document.WordParagraphSpacingEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
@@ -388,7 +400,8 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, ok := any(state.word).(document.WordTextFontFamilyEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case "design-effects":
-		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+		editor, ok := any(state.word).(document.WordThemeEffectsEditor)
+		return ok && editor.CanSetWordThemeEffects() && !state.formatRunning.Load() && !a.isSaving()
 	case "designer", "dictate", "add-ins":
 		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
 	case "view-macros":

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -311,6 +312,45 @@ func (s *Store) SaveRecents(recents []Recent) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// ListRecents returns a bounded, newest-first page of recent files. The query
+// is a literal substring match against the stored path; SQL wildcard
+// characters supplied by the caller do not change its meaning.
+func (s *Store) ListRecents(limit, offset int, kind, query string) ([]Recent, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("workspace store is not open")
+	}
+	if limit < 1 || limit > 101 || offset < 0 || offset > 10000 {
+		return nil, errors.New("recent list bounds are invalid")
+	}
+	pattern := "%"
+	if query != "" {
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query)
+		pattern = "%" + escaped + "%"
+	}
+	rows, err := s.db.Query(`SELECT path, kind, opened_at FROM recents
+		WHERE (? = '' OR kind = ?)
+		AND (? = '' OR path COLLATE NOCASE LIKE ? ESCAPE '\')
+		ORDER BY opened_at DESC, path ASC LIMIT ? OFFSET ?`, kind, kind, query, pattern, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]Recent, 0, limit)
+	for rows.Next() {
+		var recent Recent
+		var openedAt int64
+		if err := rows.Scan(&recent.Path, &recent.Kind, &openedAt); err != nil {
+			return nil, err
+		}
+		recent.OpenedAt = time.Unix(0, openedAt).UTC()
+		items = append(items, recent)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func (s *Store) LoadDocument(id string) (Document, bool, error) {

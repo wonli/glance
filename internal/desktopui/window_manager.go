@@ -86,6 +86,13 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 	if a == nil || a.window == nil {
 		return
 	}
+	var unregisterView func()
+	if applicationRuntime := a.ensureDesktopRuntime().applicationRuntime; applicationRuntime != nil {
+		unregisterView = applicationRuntime.RegisterViewIntentHandler(a.windowID, a)
+	}
+	if unregisterView != nil {
+		defer unregisterView()
+	}
 	for {
 		e := a.window.Event()
 		switch e := e.(type) {
@@ -103,12 +110,15 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 				}
 			}
 			a.shutdownOnce.Do(func() { close(a.shutdown) })
+			a.closeAgentSubscription()
+			a.stopAndWaitManagedBackground()
 			a.closeWorkspace()
 			return
 		case app.ConfigEvent:
 			a.applyWindowConfig(e.Config)
 			a.window.Invalidate()
 		case app.FrameEvent:
+			a.processViewIntentRequests()
 			gtx := app.NewContext(&a.ops, e)
 			a.layout(gtx)
 			e.Frame(gtx.Ops)

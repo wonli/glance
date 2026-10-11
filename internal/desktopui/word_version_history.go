@@ -70,7 +70,7 @@ func (a *App) openWordVersionHistory() {
 	a.wordVersionHistoryRowButtons = make(map[int64]*widget.Clickable)
 	runtime := a.ensureDesktopRuntime()
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		versions, err := runtime.listWordVersions(pathKey)
 		result := wordVersionHistoryResult{
 			state: state, token: token, generation: generation, pathKey: pathKey,
@@ -87,7 +87,7 @@ func (a *App) openWordVersionHistory() {
 			}
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) applyWordVersionHistoryResult(result wordVersionHistoryResult) {
@@ -388,7 +388,7 @@ func (a *App) startRestoreWordVersionInternal(state *documentSessionState, versi
 	if state == a.documentSessionState {
 		a.setStatus("正在恢复历史版本")
 	}
-	go func() {
+	if !a.launchManagedBackground(func() {
 		result := wordVersionRestoreResult{
 			state: state, token: token, generation: generation, pathKey: pathKey,
 		}
@@ -471,6 +471,9 @@ func (a *App) startRestoreWordVersionInternal(state *documentSessionState, versi
 		runtime.publishSessionRevision(token.documentID, max(token.revision+1, state.wordRevisionAtomic.Load()))
 		result.applied = true
 		finish()
-	}()
+	}) {
+		state.finishOperation(token)
+		return false
+	}
 	return true
 }

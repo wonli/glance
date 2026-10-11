@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -12,16 +13,23 @@ import (
 const maxClipboardCellsUI = 10000
 
 func encodeTSV(cells [][]document.Cell) string {
+	values := make([][]string, len(cells))
+	for rowIndex, row := range cells {
+		values[rowIndex] = make([]string, len(row))
+		for columnIndex, cell := range row {
+			values[rowIndex][columnIndex] = cell.Value
+		}
+	}
+	return encodeTSVValues(values)
+}
+
+func encodeTSVValues(rows [][]string) string {
 	var output strings.Builder
 	w := csv.NewWriter(&output)
 	w.Comma = '\t'
 	w.UseCRLF = false
-	for _, row := range cells {
-		record := make([]string, len(row))
-		for i, cell := range row {
-			record[i] = cell.Value
-		}
-		_ = w.Write(record)
+	for _, row := range rows {
+		_ = w.Write(row)
 	}
 	w.Flush()
 	return output.String()
@@ -95,6 +103,27 @@ func (a *App) copySelection() (string, error) {
 	reader, ok := state.book.(document.SpreadsheetRangeReader)
 	if !ok {
 		return "", fmt.Errorf("当前表格不支持区域复制")
+	}
+	if a.applicationSessionRegistered(state.documentID) {
+		token, ok := state.beginOperation(sessionOperationRead)
+		if !ok {
+			return "", fmt.Errorf("表格正在处理其他操作")
+		}
+		bounds := state.selection.Bounds()
+		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.range.copy", "spreadsheet_range", "clipboard", state.sheet, map[string]any{
+			"sheet": state.sheet, "bounds": bounds,
+		})
+		a.completeSessionOperation(state, token, err, false)
+		if err != nil {
+			return "", err
+		}
+		var copied struct {
+			Rows [][]string `json:"rows"`
+		}
+		if err := json.Unmarshal(result.Data, &copied); err != nil {
+			return "", err
+		}
+		return encodeTSVValues(copied.Rows), nil
 	}
 	unlock := lockSessionAdapterRead(state)
 	cells, err := reader.ReadRange(state.sheet, state.selection.Bounds())

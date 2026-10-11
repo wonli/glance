@@ -25,7 +25,7 @@ type wordPrintResult struct {
 
 func (a *App) requestWordPrint() {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || a.wordPrinter == nil || !a.wordPrinter.Available() {
+	if state == nil || state.word == nil || a.nativePrinter == nil || !a.nativePrinter.Available() {
 		a.setStatus("当前平台不支持原生打印")
 		return
 	}
@@ -45,7 +45,7 @@ func (a *App) requestWordPrint() {
 }
 
 func (a *App) beginWordPrint(state *documentSessionState) {
-	if state == nil || state.word == nil || state.closed.Load() || a.documentSessionState != state || a.wordPrinter == nil || !a.wordPrinter.Available() {
+	if state == nil || state.word == nil || state.closed.Load() || a.documentSessionState != state || a.nativePrinter == nil || !a.nativePrinter.Available() {
 		return
 	}
 	if state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning || state.wordPrintPreparing || state.wordPrintRunning {
@@ -158,7 +158,7 @@ func (a *App) startWordPrintPreparation(state *documentSessionState, key wordLay
 		return
 	}
 	stateCopy := state
-	go func() {
+	a.launchManagedBackground(func() {
 		defer stateCopy.finishOperation(token)
 		result := wordPrintResult{state: stateCopy, key: key, prepared: true}
 		unlock := lockSessionAdapterRead(stateCopy)
@@ -193,16 +193,20 @@ func (a *App) startWordPrintPreparation(state *documentSessionState, key wordLay
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 	a.setStatus("正在生成打印页面…")
 }
 
 func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKey, data []byte) {
-	if state == nil || state.word == nil || state.closed.Load() || a.documentSessionState != state || a.wordPrinter == nil || !a.wordPrinter.Available() {
+	if state == nil || state.word == nil || state.closed.Load() || a.documentSessionState != state || a.nativePrinter == nil || !a.nativePrinter.Available() {
 		return
 	}
 	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
 		a.setStatus("文档已更改，打印已取消；请重新打印")
+		return
+	}
+	if a.applicationSessionRegistered(state.documentID) {
+		a.beginWordApplicationPrint(state, key)
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -215,7 +219,7 @@ func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKe
 		state.wordPrintRunning = false
 		return
 	}
-	printer := a.wordPrinter
+	printer := a.nativePrinter
 	results, shutdown, window := a.wordPrintResults, a.shutdown, a.window
 	if results == nil {
 		state.finishOperation(token)
@@ -226,7 +230,7 @@ func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKe
 		return
 	}
 	stateCopy := state
-	go func() {
+	a.launchManagedBackground(func() {
 		defer stateCopy.finishOperation(token)
 		result := wordPrintResult{state: stateCopy, key: key}
 		result.err = printer.Print(ctx, data, printservice.Options{Copies: 1})
@@ -237,8 +241,41 @@ func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKe
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 	a.setStatus("正在打开系统打印面板…")
+}
+
+func (a *App) beginWordApplicationPrint(state *documentSessionState, key wordLayoutKey) {
+	ctx, cancel := context.WithCancel(context.Background())
+	token, ok := state.beginOperation(sessionOperationRead)
+	if !ok {
+		cancel()
+		return
+	}
+	state.wordPrintCancel = cancel
+	state.wordPrintRunning = true
+	results, shutdown, window := a.wordPrintResults, a.shutdown, a.window
+	if results == nil {
+		state.finishOperation(token)
+		cancel()
+		state.wordPrintCancel = nil
+		state.wordPrintRunning = false
+		a.setStatus("打印服务不可用")
+		return
+	}
+	a.launchManagedBackground(func() {
+		defer state.finishOperation(token)
+		result := wordPrintResult{state: state, key: key}
+		_, result.err = a.executeRibbonApplicationCommandWithContext(ctx, token, "word.document.print", "word_document", state.documentID, "", map[string]any{})
+		select {
+		case results <- result:
+			if window != nil {
+				window.Invalidate()
+			}
+		case <-shutdown:
+		}
+	})
+	a.setStatus("正在把当前 Word 修订版本发送到系统打印面板…")
 }
 
 func (a *App) applyWordPrintResult(result wordPrintResult) {

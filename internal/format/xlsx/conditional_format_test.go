@@ -14,13 +14,16 @@ func TestConditionalFormat_SetAndUndo(t *testing.T) {
 	cellRange := document.CellRange{StartColumn: 1, StartRow: 1, EndColumn: 2, EndRow: 10}
 
 	// 1. Set Data Bar conditional formatting
-	err := wb.SetConditionalFormat(document.SpreadsheetConditionalFormatSpec{
+	changed, err := wb.SetConditionalFormat(document.SpreadsheetConditionalFormatSpec{
 		Sheet: sheet,
 		Range: cellRange,
 		Type:  document.ConditionalFormatDataBar,
 	})
 	if err != nil {
 		t.Fatalf("SetConditionalFormat data bar failed: %v", err)
+	}
+	if !changed {
+		t.Fatal("SetConditionalFormat data bar reported unchanged")
 	}
 
 	cfMap, err := wb.file.GetConditionalFormats(sheet)
@@ -56,9 +59,12 @@ func TestConditionalFormat_SetAndUndo(t *testing.T) {
 	}
 
 	// 4. Clear conditional format
-	err = wb.ClearConditionalFormat(sheet, cellRange)
+	changed, err = wb.ClearConditionalFormat(sheet, cellRange)
 	if err != nil {
 		t.Fatalf("ClearConditionalFormat failed: %v", err)
+	}
+	if !changed {
+		t.Fatal("ClearConditionalFormat reported unchanged")
 	}
 	cfMap, err = wb.file.GetConditionalFormats(sheet)
 	if err != nil {

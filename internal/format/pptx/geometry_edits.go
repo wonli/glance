@@ -2,6 +2,7 @@ package pptx
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"glance/internal/document"
@@ -9,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 )
 
 func hasPresentationTransformOverrides(overrides []map[uint32]presentationTransformOverride) bool {
@@ -29,11 +32,37 @@ func hasPresentationCropOverrides(overrides []map[uint32]document.PresentationCr
 	return false
 }
 
-func hasPresentationPackageEdits(transforms []map[uint32]presentationTransformOverride, crops []map[uint32]document.PresentationCrop, styles []map[uint32]document.PresentationElementStylePatch) bool {
+func hasPresentationBackgroundOverrides(overrides []presentationBackgroundOverride) bool {
+	for _, override := range overrides {
+		if override.Set {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPresentationPackageEdits(transforms []map[uint32]presentationTransformOverride, crops []map[uint32]document.PresentationCrop, styles []map[uint32]document.PresentationElementStylePatch, placeholders []map[uint32]string, backgrounds []presentationBackgroundOverride, slideSize presentationSlideSizeOverride, slideLayouts map[int]string, slideTimings map[int][]byte, packageEdits map[string][]byte) bool {
+	if len(packageEdits) > 0 {
+		return true
+	}
+	if len(slideLayouts) > 0 {
+		return true
+	}
+	if len(slideTimings) > 0 {
+		return true
+	}
 	if hasPresentationTransformOverrides(transforms) || hasPresentationCropOverrides(crops) {
 		return true
 	}
+	if hasPresentationBackgroundOverrides(backgrounds) || slideSize.Set {
+		return true
+	}
 	for _, slide := range styles {
+		if len(slide) > 0 {
+			return true
+		}
+	}
+	for _, slide := range placeholders {
 		if len(slide) > 0 {
 			return true
 		}
@@ -43,7 +72,7 @@ func hasPresentationPackageEdits(transforms []map[uint32]presentationTransformOv
 
 // patchPresentationEdits applies adapter-owned geometry and picture crops to a
 // serialized package. Other package entries are copied without modification.
-func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint32]presentationTransformOverride, crops []map[uint32]document.PresentationCrop, styles []map[uint32]document.PresentationElementStylePatch) error {
+func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint32]presentationTransformOverride, crops []map[uint32]document.PresentationCrop, styles []map[uint32]document.PresentationElementStylePatch, placeholders []map[uint32]string, backgrounds []presentationBackgroundOverride, slideSize presentationSlideSizeOverride, slideLayouts map[int]string, slideTimings map[int][]byte, packageEdits map[string][]byte) error {
 	if filepath.Clean(sourcePath) == filepath.Clean(targetPath) {
 		return fmt.Errorf("PPTX 几何补丁的源和目标路径不能相同")
 	}
@@ -61,8 +90,55 @@ func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint
 		return fmt.Errorf("读取 PPTX 几何补丁源失败: %w", err)
 	}
 	pkg := newPPTXPackage(reader)
-	patchedSlides := make(map[string][]byte)
-	slideCount := max(len(transforms), len(crops), len(styles))
+	patchedParts := make(map[string][]byte)
+	if slideSize.Set {
+		part := pkg.parts["ppt/presentation.xml"]
+		if part == nil {
+			return fmt.Errorf("PPTX 缺少演示文稿部件 ppt/presentation.xml")
+		}
+		data, err := readOPCPart(part)
+		if err != nil {
+			return fmt.Errorf("读取演示文稿尺寸失败: %w", err)
+		}
+		patched, err := patchPresentationSlideSize(data, slideSize)
+		if err != nil {
+			return fmt.Errorf("更新演示文稿尺寸失败: %w", err)
+		}
+		patchedParts["ppt/presentation.xml"] = patched
+	}
+	for name, data := range packageEdits {
+		patchedParts[strings.TrimPrefix(name, "/")] = data
+	}
+	for slideIndex, layoutPart := range slideLayouts {
+		if slideIndex < 0 || slideIndex >= len(pkg.slideParts) {
+			return fmt.Errorf("版式补丁的幻灯片序号无效: %d", slideIndex)
+		}
+		if pkg.parts[layoutPart] == nil || pkg.layoutMasterParts[layoutPart] == "" {
+			return fmt.Errorf("版式补丁目标不在当前文稿中: %s", layoutPart)
+		}
+		slidePart := pkg.slideParts[slideIndex]
+		relsPart := relationshipPartPath(slidePart)
+		relsData, exists := packageEditPart(packageEdits, relsPart)
+		if !exists {
+			relsData, err = readPackagePartForEdit(pkg, relsPart)
+			if err != nil {
+				return err
+			}
+		}
+		target := relativeOPCTarget(slidePart, layoutPart)
+		patched, err := patchOPCRelationshipTarget(relsData, pptxSlideLayoutRelationshipType, target)
+		if err != nil {
+			return fmt.Errorf("更新幻灯片 %d 的版式关系失败: %w", slideIndex+1, err)
+		}
+		if err := setPPTXPackageRelationshipTarget(pkg, slidePart, pptxSlideLayoutRelationshipType, target); err != nil {
+			return err
+		}
+		patchedParts[relsPart] = patched
+	}
+	slideCount := max(len(transforms), len(crops), len(styles), len(placeholders), len(backgrounds))
+	for slideIndex := range slideTimings {
+		slideCount = max(slideCount, slideIndex+1)
+	}
 	for slideIndex := 0; slideIndex < slideCount; slideIndex++ {
 		var slideTransforms map[uint32]presentationTransformOverride
 		if slideIndex < len(transforms) {
@@ -76,7 +152,16 @@ func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint
 		if slideIndex < len(styles) {
 			slideStyles = styles[slideIndex]
 		}
-		if len(slideTransforms) == 0 && len(slideCrops) == 0 && len(slideStyles) == 0 {
+		var slidePlaceholders map[uint32]string
+		if slideIndex < len(placeholders) {
+			slidePlaceholders = placeholders[slideIndex]
+		}
+		var slideBackground presentationBackgroundOverride
+		if slideIndex < len(backgrounds) {
+			slideBackground = backgrounds[slideIndex]
+		}
+		slideTiming := slideTimings[slideIndex]
+		if len(slideTransforms) == 0 && len(slideCrops) == 0 && len(slideStyles) == 0 && len(slidePlaceholders) == 0 && !slideBackground.Set && len(slideTiming) == 0 {
 			continue
 		}
 		if slideIndex < 0 || slideIndex >= len(pkg.slideParts) {
@@ -91,13 +176,24 @@ func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint
 		if err != nil {
 			return fmt.Errorf("读取幻灯片部件 %s 失败: %w", slidePart, err)
 		}
-		patched, err := patchSlidePresentationData(data, slidePart, slideIndex, pkg, slideTransforms, slideCrops, slideStyles)
+		patched, err := patchSlidePresentationData(data, slidePart, slideIndex, pkg, slideTransforms, slideCrops, slideStyles, slidePlaceholders)
 		if err != nil {
 			return fmt.Errorf("更新幻灯片 %d 对象失败: %w", slideIndex, err)
 		}
-		patchedSlides[slidePart] = patched
+		if slideBackground.Set {
+			patched, err = patchSlideBackground(patched, slideBackground.ColorHex)
+			if err != nil {
+				return fmt.Errorf("更新幻灯片 %d 背景失败: %w", slideIndex, err)
+			}
+		}
+		if len(slideTiming) > 0 {
+			patched, err = patchSlideTiming(patched, slideTiming)
+			if err != nil {
+				return fmt.Errorf("更新幻灯片 %d 动画时序失败: %w", slideIndex+1, err)
+			}
+		}
+		patchedParts[slidePart] = patched
 	}
-
 	dir := filepath.Dir(targetPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建几何补丁目录失败: %w", err)
@@ -109,6 +205,7 @@ func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath)
 	writer := zip.NewWriter(tmpFile)
+	written := make(map[string]bool, len(patchedParts))
 	for _, part := range reader.File {
 		header := part.FileHeader
 		out, err := writer.CreateHeader(&header)
@@ -117,12 +214,14 @@ func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint
 			_ = tmpFile.Close()
 			return fmt.Errorf("创建 PPTX 部件 %s 失败: %w", part.Name, err)
 		}
-		if data, ok := patchedSlides[part.Name]; ok {
+		partName := strings.TrimPrefix(part.Name, "/")
+		if data, ok := patchedParts[partName]; ok {
 			if _, err := out.Write(data); err != nil {
 				_ = writer.Close()
 				_ = tmpFile.Close()
 				return fmt.Errorf("写入已更新的 PPTX 部件 %s 失败: %w", part.Name, err)
 			}
+			written[partName] = true
 			continue
 		}
 		in, err := part.Open()
@@ -142,6 +241,29 @@ func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint
 			return fmt.Errorf("关闭 PPTX 部件 %s 失败: %w", part.Name, closeErr)
 		}
 	}
+	partNames := make([]string, 0, len(patchedParts))
+	for name := range patchedParts {
+		if !written[name] {
+			partNames = append(partNames, name)
+		}
+	}
+	sort.Strings(partNames)
+	for _, name := range partNames {
+		header := &zip.FileHeader{Name: name, Method: zip.Deflate}
+		header.SetMode(0644)
+		header.Modified = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
+		out, err := writer.CreateHeader(header)
+		if err != nil {
+			_ = writer.Close()
+			_ = tmpFile.Close()
+			return fmt.Errorf("创建新增 PPTX 部件 %s 失败: %w", name, err)
+		}
+		if _, err := out.Write(patchedParts[name]); err != nil {
+			_ = writer.Close()
+			_ = tmpFile.Close()
+			return fmt.Errorf("写入新增 PPTX 部件 %s 失败: %w", name, err)
+		}
+	}
 	if err := writer.Close(); err != nil {
 		_ = tmpFile.Close()
 		return fmt.Errorf("完成 PPTX 几何补丁失败: %w", err)
@@ -159,13 +281,22 @@ func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint
 	return nil
 }
 
-func patchSlidePresentationData(data []byte, slidePart string, slideIndex int, pkg *pptxPackage, transforms map[uint32]presentationTransformOverride, crops map[uint32]document.PresentationCrop, styles map[uint32]document.PresentationElementStylePatch) ([]byte, error) {
+func packageEditPart(edits map[string][]byte, partName string) ([]byte, bool) {
+	for name, data := range edits {
+		if strings.TrimPrefix(name, "/") == partName {
+			return data, true
+		}
+	}
+	return nil, false
+}
+
+func patchSlidePresentationData(data []byte, slidePart string, slideIndex int, pkg *pptxPackage, transforms map[uint32]presentationTransformOverride, crops map[uint32]document.PresentationCrop, styles map[uint32]document.PresentationElementStylePatch, placeholders map[uint32]string) ([]byte, error) {
 	shapes, err := slideShapeSpans(data)
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]uint32, 0, len(transforms)+len(crops)+len(styles))
-	seen := make(map[uint32]bool, len(transforms)+len(crops)+len(styles))
+	ids := make([]uint32, 0, len(transforms)+len(crops)+len(styles)+len(placeholders))
+	seen := make(map[uint32]bool, len(transforms)+len(crops)+len(styles)+len(placeholders))
 	for id := range transforms {
 		ids = append(ids, id)
 		seen[id] = true
@@ -176,6 +307,12 @@ func patchSlidePresentationData(data []byte, slidePart string, slideIndex int, p
 		}
 	}
 	for id := range styles {
+		if !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	for id := range placeholders {
 		if !seen[id] {
 			ids = append(ids, id)
 		}
@@ -245,6 +382,15 @@ func patchSlidePresentationData(data []byte, slidePart string, slideIndex int, p
 				return nil, fmt.Errorf("形状 ID %d 样式: %w", id, err)
 			}
 		}
+		if placeholderType, ok := placeholders[id]; ok {
+			if span.Kind != "sp" {
+				return nil, fmt.Errorf("占位符 ID %d 不是文本形状", id)
+			}
+			fragment, err = patchShapePlaceholderTypeFragment(fragment, placeholderType)
+			if err != nil {
+				return nil, fmt.Errorf("形状 ID %d 占位符: %w", id, err)
+			}
+		}
 		replacements = append(replacements, shapeXMLReplacement{start: span.Start, end: span.End, data: fragment})
 	}
 	sort.Slice(replacements, func(i, j int) bool { return replacements[i].start > replacements[j].start })
@@ -253,6 +399,76 @@ func patchSlidePresentationData(data []byte, slidePart string, slideIndex int, p
 		result = append(result[:replacement.start], append(replacement.data, result[replacement.end:]...)...)
 	}
 	return result, nil
+}
+
+func patchShapePlaceholderTypeFragment(fragment []byte, placeholderType string) ([]byte, error) {
+	switch placeholderType {
+	case "title", "ctrTitle", "subTitle", "body":
+	default:
+		return nil, fmt.Errorf("不支持的占位符类型 %q", placeholderType)
+	}
+	var shape pptxXMLNode
+	if err := xml.Unmarshal(fragment, &shape); err != nil {
+		return nil, fmt.Errorf("解析文本形状 XML 失败: %w", err)
+	}
+	if shape.XMLName.Local != "sp" {
+		return nil, fmt.Errorf("对象不是文本形状")
+	}
+	nvSpPr := shape.child("nvSpPr")
+	if nvSpPr == nil {
+		return nil, fmt.Errorf("文本形状缺少 p:nvSpPr")
+	}
+	nvPr := nvSpPr.child("nvPr")
+	if nvPr == nil {
+		return nil, fmt.Errorf("文本形状缺少 p:nvPr")
+	}
+	if existing := nvPr.child("ph"); existing != nil {
+		existingType := existing.attr("type")
+		if existingType == "" {
+			existingType = "obj"
+		}
+		if existingType != placeholderType {
+			return nil, fmt.Errorf("已有占位符类型 %q 与目标类型 %q 不符", existingType, placeholderType)
+		}
+		return fragment, nil
+	}
+
+	const nvPrStart = "<p:nvPr"
+	start := bytes.Index(fragment, []byte(nvPrStart))
+	if start < 0 {
+		return nil, fmt.Errorf("文本形状 XML 缺少 p:nvPr 起始标签")
+	}
+	end, err := xmlStartTagEnd(fragment, start)
+	if err != nil {
+		return nil, fmt.Errorf("读取 p:nvPr 起始标签失败: %w", err)
+	}
+	opening := fragment[start:end]
+	trimmedOpening := bytes.TrimRight(opening, " \t\r\n")
+	if bytes.HasSuffix(trimmedOpening, []byte("/>")) {
+		prefix := bytes.TrimSuffix(trimmedOpening, []byte("/>"))
+		updated := make([]byte, 0, len(fragment)+len(placeholderType)+24)
+		updated = append(updated, fragment[:start]...)
+		updated = append(updated, prefix...)
+		updated = append(updated, '>')
+		updated = append(updated, `<p:ph type="`...)
+		updated = append(updated, placeholderType...)
+		updated = append(updated, `"/></p:nvPr>`...)
+		updated = append(updated, fragment[end:]...)
+		return updated, nil
+	}
+	const nvPrEnd = "</p:nvPr>"
+	close := bytes.Index(fragment[end:], []byte(nvPrEnd))
+	if close < 0 {
+		return nil, fmt.Errorf("文本形状 XML 缺少 p:nvPr 结束标签")
+	}
+	insertAt := end + close
+	updated := make([]byte, 0, len(fragment)+len(placeholderType)+24)
+	updated = append(updated, fragment[:insertAt]...)
+	updated = append(updated, `<p:ph type="`...)
+	updated = append(updated, placeholderType...)
+	updated = append(updated, `"/>`...)
+	updated = append(updated, fragment[insertAt:]...)
+	return updated, nil
 }
 
 func pictureEmbedRelationship(fragment []byte) (string, error) {

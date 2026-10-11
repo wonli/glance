@@ -2,7 +2,6 @@ package desktopui
 
 import (
 	"encoding/hex"
-	"glance/internal/document"
 	"image"
 	"image/color"
 	"math"
@@ -16,6 +15,9 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget/material"
 	"golang.org/x/image/math/fixed"
+
+	"glance/internal/document"
+	"glance/internal/wordfont"
 )
 
 type wordInlineLayoutChild struct {
@@ -212,7 +214,7 @@ func wordRunLabel(theme *material.Theme, paragraph document.WordParagraph, run d
 }
 
 func wordRunTypeface(documentFamily string) font.Typeface {
-	families := append(splitWordFontFamilies(documentFamily), wordFontFallbackFamilies...)
+	families := append(wordfont.SplitFamilies(documentFamily), wordfont.FallbackFamilies()...)
 	seen := make(map[string]struct{}, len(families))
 	ordered := make([]string, 0, len(families))
 	for _, family := range families {

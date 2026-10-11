@@ -124,7 +124,7 @@ func newWordPageTextSelection(result *wordlayout.Result, anchor wordPageCaretPos
 	if result == nil {
 		return nil
 	}
-	return &wordPageTextSelection{anchor: anchor, focus: anchor}
+	return &wordPageTextSelection{scope: "range", anchor: anchor, focus: anchor}
 }
 
 func populateWordPageRunOrder(selection *wordPageTextSelection, result *wordlayout.Result) {

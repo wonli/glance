@@ -1,13 +1,85 @@
 package desktopui
 
 import (
+	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"glance/internal/application"
 	"glance/internal/format/docx"
 	"glance/internal/workspace"
 )
+
+type wordAutosaveViewIntentTestHandler struct {
+	app      *App
+	requests chan application.ViewIntent
+}
+
+func (h wordAutosaveViewIntentTestHandler) HandleViewIntent(_ context.Context, intent application.ViewIntent) (json.RawMessage, error) {
+	h.requests <- intent
+	return h.app.applyDesktopViewIntent(intent)
+}
+
+func newWordAutosaveTestApp(t *testing.T, path string, word *docx.Document) (*App, *documentSessionState) {
+	t.Helper()
+	runtime := newDesktopRuntime()
+	runtime.workspaceStore = openWordHistoryTestStore(t)
+	shared := newSharedDocumentSession(path)
+	shared.documentID = "autosave-test-session"
+	shared.word = word
+	shared.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	runtime.registerSession(shared)
+	state := newDocumentSessionView(shared, 1)
+	state.documentID = shared.documentID
+	state.word = word
+	state.setWordBlocks(shared.wordBlocks)
+	app := newAppWithRuntimeAndWindowID(nil, "", runtime, 1)
+	app.documentSessionState = state
+	app.sessions = map[string]*documentSessionState{shared.documentID: state}
+	app.activeTabID = shared.documentID
+	app.tabMeta = map[string]workspace.Tab{shared.documentID: {
+		ID: shared.documentID, DocumentID: shared.documentID, Kind: "document",
+		Title: filepath.Base(path), SourcePath: path,
+	}}
+	runtime.attachWindow(1, app)
+	runtime.applicationRuntime.RegisterViewIntentHandler(1, wordAutosaveViewIntentTestHandler{app: app, requests: make(chan application.ViewIntent, 1)})
+	t.Cleanup(func() { _ = runtime.applicationRuntime.Close(context.Background()) })
+	return app, state
+}
+
+func TestWordAutosaveRibbonUsesMCPCapabilityHandler(t *testing.T) {
+	fixture := newWindowViewFixture(t)
+	app, state := fixture.apps[0], fixture.states[0]
+	state.wordAutoSave = false
+	requests := make(chan application.ViewIntent, 1)
+	app.ensureDesktopRuntime().applicationRuntime.RegisterViewIntentHandler(app.windowID, wordAutosaveViewIntentTestHandler{app: app, requests: requests})
+
+	app.executeWordToolbarAction("autosave")
+	var intent application.ViewIntent
+	select {
+	case intent = <-requests:
+	case <-time.After(2 * time.Second):
+		t.Fatal("AutoSave Ribbon action did not use the registered application capability")
+	}
+	var arguments map[string]any
+	if intent.Action != "word.autosave.set" || json.Unmarshal(intent.Arguments, &arguments) != nil || arguments["enabled"] != true {
+		t.Fatalf("AutoSave capability intent = %+v", intent)
+	}
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("AutoSave capability result: %v", result.err)
+		}
+		app.processWordCommandAsyncResult()
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for AutoSave capability result")
+	}
+	if !state.wordAutoSave {
+		t.Fatal("AutoSave capability did not update the active document view")
+	}
+}
 
 type wordFileCommandTestInjector interface {
 	setWordFileCommandRunner(func(fileCommandKind, string) fileCommandResult)
@@ -163,28 +235,25 @@ func TestWordFileAutosavePersistsToggleAndSavesCommittedEdits(t *testing.T) {
 	word.SetDirty(false)
 	paragraph := word.WordBlocks()[0].Paragraph
 	runID := paragraph.Inlines[0].Text.ID
-	state := newDocumentSessionState(path)
-	state.word = word
-	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
-	runtime := newDesktopRuntime()
-	runtime.workspaceStore = openWordHistoryTestStore(t)
+	app, state := newWordAutosaveTestApp(t, path, word)
 	state.selectedWordParagraphID = paragraph.ID
 	state.selectedWordRunID = runID
-	app := &App{
-		desktopRuntime:       runtime,
-		documentSessionState: state,
-		activeTabID:          "current",
-		sessions:             map[string]*documentSessionState{"current": state},
-		tabMeta:              map[string]workspace.Tab{"current": {ID: "current", DocumentID: "current", Kind: "document", Title: filepath.Base(path), SourcePath: path}},
-		wordCommandResults:   make(chan wordCommandResult, 1),
-		saveResults:          make(chan saveResult, 1),
-		shutdown:             make(chan struct{}),
-	}
+	app.saveResults = make(chan saveResult, 1)
 	autosave := findWordFileTestAction(t, "autosave")
 	if !app.wordToolbarActionEnabled(autosave) {
 		t.Fatal("Word File > AutoSave should be available for an active DOCX")
 	}
 	app.executeWordToolbarAction("autosave")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("enable AutoSave: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the AutoSave capability")
+	}
 	if !state.wordAutoSave || !wordToolbarActionActive(state, autosave) {
 		t.Fatal("AutoSave toggle did not become active")
 	}
@@ -249,10 +318,18 @@ func TestWordFileAutosaveOnDraftWaitsForSaveAs(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer word.Close()
-	state := newDocumentSessionState("")
-	state.word = word
-	app := &App{documentSessionState: state}
+	app, state := newWordAutosaveTestApp(t, "", word)
 	app.executeWordToolbarAction("autosave")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("enable AutoSave on draft: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for draft AutoSave capability")
+	}
 	if !state.wordAutoSave || app.status != "自动保存将在文档另存为后启用" {
 		t.Fatalf("draft AutoSave state: enabled=%v status=%q", state.wordAutoSave, app.status)
 	}

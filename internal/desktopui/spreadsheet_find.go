@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
@@ -28,7 +29,31 @@ func (a *App) showSpreadsheetFindDialog() {
 			return
 		}
 		state.excelFindQuery = query
-		matches, err := searcher.SearchSheet(state.sheet, query)
+		var matches []document.CellMatch
+		var truncated bool
+		var err error
+		if a.applicationSessionRegistered(state.documentID) {
+			token, ok := state.beginOperation(sessionOperationRead)
+			if !ok {
+				a.setStatus("表格正在处理其他操作")
+				return
+			}
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.range.search", "spreadsheet_sheet", state.sheet, state.sheet, map[string]any{
+				"sheet": state.sheet, "query": query, "max_results": 1000,
+			})
+			err = commandErr
+			a.completeSessionOperation(state, token, err, false)
+			if err == nil {
+				var outcome struct {
+					Matches   []document.CellMatch `json:"matches"`
+					Truncated bool                 `json:"truncated"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				matches, truncated = outcome.Matches, outcome.Truncated
+			}
+		} else {
+			matches, err = searcher.SearchSheet(state.sheet, query)
+		}
 		if err != nil {
 			a.setStatus("查找失败：" + err.Error())
 			return
@@ -47,6 +72,10 @@ func (a *App) showSpreadsheetFindDialog() {
 			}
 		}
 		a.navigateToCell(target.Row, target.Column)
-		a.setStatus(fmt.Sprintf("已定位至 %s（共 %d 处匹配）", xlsx.CellName(target.Column, target.Row), len(matches)))
+		countSuffix := fmt.Sprintf("共 %d 处匹配", len(matches))
+		if truncated {
+			countSuffix = fmt.Sprintf("至少 %d 处匹配，结果已截断", len(matches))
+		}
+		a.setStatus(fmt.Sprintf("已定位至 %s（%s）", xlsx.CellName(target.Column, target.Row), countSuffix))
 	}, modalDialogActionSpec{ID: "confirm", Label: "查找下一个"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
 }

@@ -3,6 +3,7 @@ package xlsx
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -22,34 +23,39 @@ type sortRow struct {
 }
 
 func (w *Workbook) SortRange(request document.SortRequest) error {
+	_, err := w.SortRangeChanged(request)
+	return err
+}
+
+func (w *Workbook) SortRangeChanged(request document.SortRequest) (bool, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if err := w.checkOpen(); err != nil {
-		return err
+		return false, err
 	}
 	b := request.Bounds
 	if err := validateRange(request.Sheet, b, w.file.GetSheetList()); err != nil {
-		return err
+		return false, err
 	}
 	if request.KeyColumn < b.StartColumn || request.KeyColumn > b.EndColumn {
-		return errors.New("sort key column is outside the selected range")
+		return false, errors.New("sort key column is outside the selected range")
 	}
 	rows, cols := b.EndRow-b.StartRow+1, b.EndColumn-b.StartColumn+1
 	if rows < 2 {
-		return nil
+		return false, nil
 	}
 	if rows*cols > maxClipboardCells {
-		return fmt.Errorf("sort range exceeds %d cells", maxClipboardCells)
+		return false, fmt.Errorf("sort range exceeds %d cells", maxClipboardCells)
 	}
 	merges, err := w.file.GetMergeCells(request.Sheet)
 	if err != nil {
-		return err
+		return false, err
 	}
 	for _, merge := range merges {
 		r1, c1, _ := excelize.CellNameToCoordinates(merge.GetStartAxis())
 		r2, c2, _ := excelize.CellNameToCoordinates(merge.GetEndAxis())
 		if r1 <= b.EndRow && r2 >= b.StartRow && c1 <= b.EndColumn && c2 >= b.StartColumn {
-			return errors.New("cannot sort a range containing merged cells")
+			return false, errors.New("cannot sort a range containing merged cells")
 		}
 	}
 	data := make([]sortRow, rows)
@@ -59,18 +65,18 @@ func (w *Workbook) SortRange(request document.SortRequest) error {
 			ref, _ := excelize.CoordinatesToCellName(b.StartColumn+c, b.StartRow+r)
 			formula, err := w.file.GetCellFormula(request.Sheet, ref)
 			if err != nil {
-				return err
+				return false, err
 			}
 			if formula != "" {
-				return fmt.Errorf("cannot sort range containing formula at %s", ref)
+				return false, fmt.Errorf("cannot sort range containing formula at %s", ref)
 			}
 			raw, err := w.file.GetCellValue(request.Sheet, ref, excelize.Options{RawCellValue: true})
 			if err != nil {
-				return err
+				return false, err
 			}
 			cellType, err := w.file.GetCellType(request.Sheet, ref)
 			if err != nil {
-				return err
+				return false, err
 			}
 			var value any
 			switch cellType {
@@ -80,14 +86,14 @@ func (w *Workbook) SortRange(request document.SortRequest) error {
 				} else {
 					n, parseErr := parseFiniteNumber(raw)
 					if parseErr != nil {
-						return fmt.Errorf("cannot safely sort untyped cell %s", ref)
+						return false, fmt.Errorf("cannot safely sort untyped cell %s", ref)
 					}
 					value = n
 				}
 			case excelize.CellTypeNumber, excelize.CellTypeDate:
 				n, parseErr := parseFiniteNumber(raw)
 				if parseErr != nil {
-					return fmt.Errorf("cannot safely sort numeric cell %s", ref)
+					return false, fmt.Errorf("cannot safely sort numeric cell %s", ref)
 				}
 				value = n
 			case excelize.CellTypeBool:
@@ -95,11 +101,11 @@ func (w *Workbook) SortRange(request document.SortRequest) error {
 			case excelize.CellTypeInlineString, excelize.CellTypeSharedString:
 				value = raw
 			default:
-				return fmt.Errorf("cannot safely sort cell %s with type %d", ref, cellType)
+				return false, fmt.Errorf("cannot safely sort cell %s with type %d", ref, cellType)
 			}
 			style, err := w.file.GetCellStyle(request.Sheet, ref)
 			if err != nil {
-				return err
+				return false, err
 			}
 			data[r].cells[c] = sortCell{value: value, style: style}
 			if b.StartColumn+c == request.KeyColumn {
@@ -107,10 +113,17 @@ func (w *Workbook) SortRange(request document.SortRequest) error {
 			}
 		}
 	}
+	original := make([]sortRow, len(data))
+	for index, row := range data {
+		original[index] = sortRow{key: row.key, cells: append([]sortCell(nil), row.cells...)}
+	}
 	sort.SliceStable(data, func(i, j int) bool { return compareSortValues(data[i].key, data[j].key, request.Descending) < 0 })
+	if reflect.DeepEqual(data, original) {
+		return false, nil
+	}
 	before, err := w.snapshotLocked()
 	if err != nil {
-		return err
+		return false, err
 	}
 	for r, row := range data {
 		for c, cell := range row.cells {
@@ -123,20 +136,20 @@ func (w *Workbook) SortRange(request document.SortRequest) error {
 			}
 			if err != nil {
 				_ = w.restoreSnapshotLocked(before)
-				return err
+				return false, err
 			}
 			if err := w.file.SetCellStyle(request.Sheet, ref, ref, cell.style); err != nil {
 				_ = w.restoreSnapshotLocked(before)
-				return err
+				return false, err
 			}
 		}
 	}
 	if err := w.recordHistoryLocked(before); err != nil {
 		_ = w.restoreSnapshotLocked(before)
-		return err
+		return false, err
 	}
 	w.dirty = true
-	return nil
+	return true, nil
 }
 
 func compareSortValues(a, b string, descending bool) int {

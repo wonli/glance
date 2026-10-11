@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"bytes"
+	gioapp "gioui.org/app"
 	"gioui.org/gpu/headless"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -244,6 +245,7 @@ func TestPDFRibbonIconsResolutionAndSolidGlyphs(t *testing.T) {
 
 func TestPDFZoomSyncAndInteractions(t *testing.T) {
 	a := New(nil, "")
+	a.window = &gioapp.Window{}
 	defer close(a.shutdown)
 	d, err := pdfdoc.OpenSnapshot(pdfTestBytes(t))
 	if err != nil {

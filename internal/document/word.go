@@ -152,6 +152,8 @@ type WordImage struct {
 	Resolved        bool
 	Editable        bool
 	InlineFallback  bool
+	WrapMode        string
+	WrapEditable    bool
 	Floating        *WordImageFloating
 }
 
@@ -200,6 +202,11 @@ type WordContentReader interface {
 	WordImageBytes(imageID string) ([]byte, error)
 }
 
+// WordBlockWindowReader returns a defensive copy of a bounded body-block page.
+type WordBlockWindowReader interface {
+	WordBlockWindow(start, limit int) (blocks []WordBlock, total int, err error)
+}
+
 // WordTextFormatPatch changes only explicitly supplied text properties.
 type WordTextFormatPatch struct {
 	Bold      *bool
@@ -233,7 +240,7 @@ type WordTextRangeEditor interface {
 // WordFormatPainter copies the supported direct text and paragraph formatting
 // from one editable text run to another within the same document.
 type WordFormatPainter interface {
-	ApplyWordFormatting(sourceRunID, targetRunID string) error
+	ApplyWordFormatting(sourceRunID, targetRunID string) (bool, error)
 }
 
 // WordParagraphListEditor exposes safe direct paragraph bullet and numbering edits.
@@ -256,6 +263,12 @@ type WordTextFontFamilyEditor interface {
 type WordBodyEditor interface {
 	InsertBodyParagraph() (paragraphID string, err error)
 	InsertParagraphAfter(afterParagraphID string) (paragraphID string, err error)
+}
+
+// WordBodyTextEditor appends a body paragraph containing plain text and returns
+// stable identities for the paragraph and its editable text run.
+type WordBodyTextEditor interface {
+	AppendBodyTextParagraph(text string) (paragraphID, runID string, err error)
 }
 
 // WordPageBreakEditor inserts a page or column break, or a blank page, at a Unicode text range in an
@@ -305,14 +318,27 @@ type WordImageRotator interface {
 	SetInlineImageRotation(imageID string, degrees float64) error
 }
 
+// WordImageWrapEditor converts a supported floating DrawingML image to inline
+// flow while preserving its image payload and dimensions.
+type WordImageWrapEditor interface {
+	SetWordImageWrap(imageID, wrapMode string) error
+}
+
+// WordThemeEffectsEditor applies a bounded effect preset to the theme effects
+// used by objects that reference the document theme.
+type WordThemeEffectsEditor interface {
+	CanSetWordThemeEffects() bool
+	SetWordThemeEffects(profile string) (previous string, changed bool, err error)
+}
+
 // WordDocumentProperties is the safe, format-neutral core-properties subset
 // exposed by Word documents.
 type WordDocumentProperties struct {
-	Title       string
-	Subject     string
-	Creator     string
-	Keywords    string
-	Description string
+	Title       string `json:"title"`
+	Subject     string `json:"subject"`
+	Creator     string `json:"creator"`
+	Keywords    string `json:"keywords"`
+	Description string `json:"description"`
 }
 
 // WordDocumentPropertiesEditor reads and updates supported document metadata.
@@ -395,6 +421,26 @@ type WordHyperlinkEditor interface {
 // WordTextBoxEditor provides inserting a stylized callout text box into the Word document.
 type WordTextBoxEditor interface {
 	InsertTextBox(afterParagraphID, text string) error
+}
+
+// WordComment is a native review comment anchored to a supported text run.
+// RunID is empty when a comment covers multiple or unsupported runs.
+type WordComment struct {
+	ID     string
+	Author string
+	Text   string
+	RunID  string
+}
+
+// WordCommentReader reads native comments without exposing package XML.
+type WordCommentReader interface {
+	WordComments() ([]WordComment, error)
+}
+
+// WordCommentEditor creates and deletes native comments by stable IDs.
+type WordCommentEditor interface {
+	AddWordComment(runID, author, text string) (commentID string, changed bool, err error)
+	DeleteWordComment(commentID string) (bool, error)
 }
 
 // WordHeaderFooterEditor provides configuring document header, footer, or page numbers.

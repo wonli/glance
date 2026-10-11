@@ -1,9 +1,12 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"glance/internal/application"
 )
 
 type shareCopyDocument interface {
@@ -59,4 +62,39 @@ func (a *App) applyShareCopyResult(state *documentSessionState, path string, err
 	if state == a.documentSessionState {
 		a.setStatus("共享 " + format + " 副本已导出：" + filepath.Base(path))
 	}
+}
+
+func (a *App) startDocumentExportCopy(state *documentSessionState, path string, revision uint64, publish func(string, error)) bool {
+	if state == nil || publish == nil {
+		return false
+	}
+	token, ok := state.beginOperation(sessionOperationSnapshot)
+	if !ok || token.revision != revision {
+		if ok {
+			state.finishOperation(token)
+		}
+		publish(path, application.ErrRevisionConflict)
+		return true
+	}
+	window := a.window
+	a.launchManagedBackground(func() {
+		result, err := a.executeRibbonApplicationCommand(token, "document.export_copy", "document_file", path, "", map[string]any{"path": path})
+		outputPath := path
+		if err == nil {
+			var output struct {
+				Path string `json:"path"`
+			}
+			if decodeErr := json.Unmarshal(result.Data, &output); decodeErr != nil || output.Path == "" {
+				err = application.ErrInvalidCommandResult
+			} else {
+				outputPath = output.Path
+			}
+		}
+		a.completeSessionOperation(state, token, err, false)
+		publish(outputPath, err)
+		if window != nil {
+			window.Invalidate()
+		}
+	})
+	return true
 }

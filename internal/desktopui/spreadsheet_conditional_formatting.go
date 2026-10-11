@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 	"strings"
@@ -57,20 +58,37 @@ func (a *App) showSpreadsheetConditionalFormatDialog() {
 		if !ok {
 			return
 		}
-		go func() {
-			unlock := lockSessionAdapterWrite(state)
+		a.launchManagedBackground(func() {
+			commandRouted := a.applicationSessionRegistered(token.documentID)
+			changed := true
 			var err error
-			if clear {
-				err = editor.ClearConditionalFormat(sheet, bounds)
+			if commandRouted {
+				operation, args := "set", map[string]any{"sheet": sheet, "bounds": bounds}
+				if clear {
+					operation = "clear"
+				} else {
+					args["type"] = string(ruleType)
+				}
+				args["operation"] = operation
+				result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.conditional_format.set", "spreadsheet_cell_range", "selection", sheet, args)
+				err = commandErr
+				if err == nil {
+					var outcome struct {
+						Changed bool `json:"changed"`
+					}
+					err = json.Unmarshal(result.Data, &outcome)
+					changed = outcome.Changed
+				}
 			} else {
-				err = editor.SetConditionalFormat(document.SpreadsheetConditionalFormatSpec{
-					Sheet: sheet,
-					Range: bounds,
-					Type:  ruleType,
-				})
+				unlock := lockSessionAdapterWrite(state)
+				if clear {
+					changed, err = editor.ClearConditionalFormat(sheet, bounds)
+				} else {
+					changed, err = editor.SetConditionalFormat(document.SpreadsheetConditionalFormatSpec{Sheet: sheet, Range: bounds, Type: ruleType})
+				}
+				unlock()
 			}
-			unlock()
-			a.completeSessionOperation(state, token, err, true)
+			a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 			if err == nil {
 				if clear {
 					a.setStatus("已清除条件格式")
@@ -79,10 +97,10 @@ func (a *App) showSpreadsheetConditionalFormatDialog() {
 				}
 			}
 			select {
-			case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "条件格式"}:
+			case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "条件格式", applied: changed}:
 			case <-a.shutdown:
 			}
-		}()
+		})
 	},
 		modalDialogActionSpec{ID: "data_bar", Label: "渐变数据条"},
 		modalDialogActionSpec{ID: "3_color", Label: "三色色阶"},

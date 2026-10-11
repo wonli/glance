@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 	"strings"
@@ -45,13 +46,34 @@ func (a *App) applyCellEdit() error {
 	if !ok {
 		return fmt.Errorf("表格正在处理其他操作")
 	}
-	unlock := lockSessionAdapterWrite(state)
-	err := a.book.SetCellText(a.sheet, a.selectedCell, a.cellEditor.Text())
+	var changed bool
+	var err error
+	commandRouted := a.applicationSessionRegistered(token.documentID)
+	if commandRouted {
+		result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.cell.set", "spreadsheet.cell", a.selectedCell, a.sheet, map[string]string{
+			"sheet": a.sheet, "cell": a.selectedCell, "value": a.cellEditor.Text(),
+		})
+		err = commandErr
+		if err == nil {
+			var outcome struct {
+				Changed bool `json:"changed"`
+			}
+			err = json.Unmarshal(result.Data, &outcome)
+			changed = outcome.Changed
+		}
+	} else {
+		unlock := lockSessionAdapterWrite(state)
+		err = a.book.SetCellText(a.sheet, a.selectedCell, a.cellEditor.Text())
+		unlock()
+		changed = err == nil
+	}
 	_, isGridReader := a.book.(document.GridReader)
-	unlock()
-	a.completeSessionOperation(state, token, err, err == nil)
+	a.completeSessionOperation(state, token, err, err == nil && !commandRouted)
 	if err != nil {
 		return err
+	}
+	if !changed {
+		return nil
 	}
 	if isGridReader {
 		if a.virtualGrid != nil {
@@ -85,19 +107,57 @@ func (a *App) commitGridCell(value string) error {
 	if !ok {
 		return fmt.Errorf("表格正在处理其他操作")
 	}
+	var commandChanged bool
+	var commandRouted bool
 	err := a.cellEdit.commit(func(address, value string) error {
-		unlock := lockSessionAdapterWrite(state)
-		defer unlock()
 		if strings.HasPrefix(strings.TrimSpace(value), "=") {
 			editor, ok := a.book.(document.SpreadsheetFormulaEditor)
 			if !ok {
 				return fmt.Errorf("当前工作簿不支持公式编辑")
 			}
+			if a.applicationSessionRegistered(token.documentID) {
+				commandRouted = true
+				result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.formula.set", "spreadsheet.cell", address, formulaTargetSheet, map[string]string{
+					"sheet": formulaTargetSheet, "cell": address, "formula": value,
+				})
+				if err != nil {
+					return err
+				}
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				if err := json.Unmarshal(result.Data, &outcome); err != nil {
+					return err
+				}
+				commandChanged = outcome.Changed
+				return nil
+			}
+			unlock := lockSessionAdapterWrite(state)
+			defer unlock()
 			return editor.SetCellFormula(formulaTargetSheet, address, value)
 		}
-		return a.book.SetCellText(formulaTargetSheet, address, value)
+		if !a.applicationSessionRegistered(token.documentID) {
+			unlock := lockSessionAdapterWrite(state)
+			defer unlock()
+			return a.book.SetCellText(formulaTargetSheet, address, value)
+		}
+		commandRouted = true
+		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.cell.set", "spreadsheet.cell", address, formulaTargetSheet, map[string]string{
+			"sheet": formulaTargetSheet, "cell": address, "value": value,
+		})
+		if err != nil {
+			return err
+		}
+		var outcome struct {
+			Changed bool `json:"changed"`
+		}
+		if err := json.Unmarshal(result.Data, &outcome); err != nil {
+			return err
+		}
+		commandChanged = outcome.Changed
+		return nil
 	})
-	a.completeSessionOperation(state, token, err, err == nil && changed)
+	a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 	if err != nil {
 		return err
 	}
@@ -106,6 +166,7 @@ func (a *App) commitGridCell(value string) error {
 		state.formulaReference = formulaReference
 		a.restoreFormulaReferenceTarget()
 	}
+	changed = changed && (!commandRouted || commandChanged)
 	if changed && a.virtualGrid != nil {
 		a.virtualGrid.invalidateWindow()
 	}
@@ -192,7 +253,9 @@ func (a *App) closeDocument() error {
 	a.pptxView = nil
 	a.sheets, a.sheet, a.grid = nil, "", nil
 	a.virtualGrid = nil
-	a.cellEdit = cellEditState{}
+	shared := a.cellEdit.session
+	a.cellEdit.cancel()
+	a.cellEdit = cellEditState{session: shared}
 	a.selectedCell = ""
 	a.nameBox.SetText("")
 	a.formulaEditor.SetText("")

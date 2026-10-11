@@ -175,6 +175,7 @@ func TestPresentationSlideOperations(t *testing.T) {
 
 	// Add slide
 	app.handlePresentationAddSlide(v)
+	waitPresentationCommandResult(t, app, v)
 	if v.snapshot.SlideCount != initialCount+1 {
 		t.Fatalf("expected slide count %d, got %d", initialCount+1, v.snapshot.SlideCount)
 	}
@@ -184,6 +185,7 @@ func TestPresentationSlideOperations(t *testing.T) {
 
 	// Delete slide
 	app.handlePresentationDeleteSlide(v)
+	waitPresentationCommandResult(t, app, v)
 	if v.snapshot.SlideCount != initialCount {
 		t.Fatalf("expected slide count %d after deletion, got %d", initialCount, v.snapshot.SlideCount)
 	}

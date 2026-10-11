@@ -21,7 +21,7 @@ func (a *App) startWordParagraphInsertAfter(afterParagraphID string) {
 	}
 	state.wordInsertionRunning = true
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		var paragraphID string
 		blocks, err := runWordMutation(state, func() error {
 			var insertErr error
@@ -33,7 +33,7 @@ func (a *App) startWordParagraphInsertAfter(afterParagraphID string) {
 			return insertErr
 		})
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "插入段落", err: err, blocks: blocks, insertedParagraphID: paragraphID, bodyParagraphInsert: true})
-	}()
+	})
 }
 
 func (a *App) queueWordParagraphInsert(state *documentSessionState, afterParagraphID string) {

@@ -50,6 +50,21 @@ func (d *Document) WordBlocks() []document.WordBlock {
 	return cloneWordBlocks(d.wordBlocks)
 }
 
+func (d *Document) WordBlockWindow(start, limit int) ([]document.WordBlock, int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return nil, 0, err
+	}
+	if start < 0 || limit < 0 {
+		return nil, 0, errors.New("Word block window bounds must be non-negative")
+	}
+	total := len(d.wordBlocks)
+	start = min(start, total)
+	end := min(start+limit, total)
+	return cloneWordBlocks(d.wordBlocks[start:end]), total, nil
+}
+
 func (d *Document) WordImageBytes(imageID string) ([]byte, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

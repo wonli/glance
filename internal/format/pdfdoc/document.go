@@ -111,27 +111,56 @@ func (d *Document) Close() error {
 func (d *Document) Page(index int) (document.PDFPage, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.page(index)
+	p, _, err := d.pageWindow(index, 0, int(^uint(0)>>1))
+	return p, err
+}
+
+// PageWindow returns bounded page text and annotation data for Agent queries.
+// The boolean reports whether any text runs or annotations were omitted.
+func (d *Document) PageWindow(index, start, limit int) (document.PDFPage, bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.pageWindow(index, start, limit)
 }
 func (d *Document) page(index int) (document.PDFPage, error) {
+	p, _, err := d.pageWindow(index, 0, int(^uint(0)>>1))
+	return p, err
+}
+func (d *Document) pageWindow(index, start, limit int) (document.PDFPage, bool, error) {
 	if d.closed || d.reader == nil {
-		return document.PDFPage{}, errors.New("PDF 已关闭")
+		return document.PDFPage{}, false, errors.New("PDF 已关闭")
 	}
 	size, e := d.reader.PageSize(index)
 	if e != nil {
-		return document.PDFPage{}, e
+		return document.PDFPage{}, false, e
 	}
 	p := document.PDFPage{Index: index, Revision: d.revision, Width: size.W, Height: size.H, Rotation: rotation(d.reader, index)}
 	u := gopdf.Update(d.reader)
 	page, e := u.Page(index)
 	if e != nil {
-		return p, e
+		return p, false, e
 	}
 	frags, e := d.reader.PageTextFragments(index)
 	if e != nil {
-		return p, e
+		return p, false, e
 	}
-	for i, r := range page.Runs() {
+	runs := page.Runs()
+	if start < 0 {
+		start = 0
+	}
+	if start > len(runs) {
+		start = len(runs)
+	}
+	itemLimit := limit
+	if itemLimit < 0 {
+		itemLimit = 0
+	}
+	if limit < 0 || limit > len(runs)-start {
+		limit = len(runs) - start
+	}
+	end := start + limit
+	for i := start; i < end; i++ {
+		r := runs[i]
 		editable := !d.reader.HasSignatures() && safeTextResources(d.reader, index) && i < len(frags) && !frags[i].Invisible() && r.Text == frags[i].Text
 		// Outlined/invisible and transformed text remains selectable, never guessed editable.
 		box := document.PDFRect{X: r.X, Y: r.Y - r.FontSize, W: r.Width, H: r.FontSize * 1.25}
@@ -139,12 +168,19 @@ func (d *Document) page(index int) (document.PDFPage, error) {
 	}
 	anns, e := d.reader.Annotations(index)
 	if e != nil {
-		return p, e
+		return p, false, e
 	}
-	for i, a := range anns {
+	annotationLimit := itemLimit - len(p.Text)
+	if annotationLimit < 0 {
+		annotationLimit = 0
+	}
+	if annotationLimit > len(anns) {
+		annotationLimit = len(anns)
+	}
+	for i, a := range anns[:annotationLimit] {
 		p.Annotations = append(p.Annotations, document.PDFAnnotation{Index: i, Kind: string(a.Type), Text: a.Contents, Author: a.Author, Bounds: displayRect(document.PDFRect{X: a.Rect[0], Y: a.Rect[1], W: a.Rect[2] - a.Rect[0], H: a.Rect[3] - a.Rect[1]}, p)})
 	}
-	return p, nil
+	return p, end < len(runs) || annotationLimit < len(anns), nil
 }
 func rotation(r *gopdf.Reader, index int) int {
 	v := r.InheritedPageValue(index, gopdf.Name("Rotate"))
@@ -215,12 +251,12 @@ func (d *Document) Apply(c document.PDFCommand) error {
 			if c.Text == "" {
 				return nil
 			}
-			target.AddNote(c.X, c.Y, c.Text, gopdf.NoteOptions{Author: "我"})
+			target.AddNote(c.X, c.Y, c.Text, gopdf.NoteOptions{Author: pdfAnnotationAuthor(c.Author)})
 		case "highlight":
 			if c.W <= 0 || c.H <= 0 || !validPoint(c.X+c.W, c.Y+c.H, p) {
 				return errors.New("请先选择文字")
 			}
-			target.AddHighlight(c.X, c.Y, c.W, c.H, c.Text, gopdf.NoteOptions{Author: "我"})
+			target.AddHighlight(c.X, c.Y, c.W, c.H, c.Text, gopdf.NoteOptions{Author: pdfAnnotationAuthor(c.Author)})
 		case "ink":
 			if len(c.Points) < 2 {
 				return nil
@@ -264,6 +300,14 @@ func (d *Document) Apply(c document.PDFCommand) error {
 	d.publishInfo()
 	return nil
 }
+
+func pdfAnnotationAuthor(author string) string {
+	if author == "" {
+		return "我"
+	}
+	return author
+}
+
 func (d *Document) Undo() bool { d.mu.Lock(); defer d.mu.Unlock(); return d.history(&d.undo, &d.redo) }
 func (d *Document) Redo() bool { d.mu.Lock(); defer d.mu.Unlock(); return d.history(&d.redo, &d.undo) }
 func (d *Document) history(from, to *[][]byte) bool {

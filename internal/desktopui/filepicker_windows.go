@@ -54,3 +54,12 @@ func chooseOfficeImageFile() (string, error) {
 	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = 'PNG or JPEG images (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }"
 	return windowsPicker(command)
 }
+
+func choosePresentationMediaFile(kind string) (string, error) {
+	filter := "Audio files (*.mp3;*.wav)|*.mp3;*.wav"
+	if kind == "video" {
+		filter = "Video files (*.mp4;*.webm)|*.mp4;*.webm"
+	}
+	command := fmt.Sprintf("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = '%s'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }", filter)
+	return windowsPicker(command)
+}

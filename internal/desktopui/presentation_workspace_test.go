@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	gioapp "gioui.org/app"
 	"gioui.org/f32"
 
 	"gioui.org/io/input"
@@ -27,6 +28,7 @@ import (
 
 func TestPresentationTextShapeClickEntersFocusedEditorAndAcceptsTyping(t *testing.T) {
 	app := newAppWithRuntime(nil, newDesktopRuntime())
+	app.window = &gioapp.Window{}
 	app.theme = material.NewTheme()
 	tmpPath := filepath.Join(t.TempDir(), "editable-copy.pptx")
 	seed, err := pptx.NewBlank()
@@ -151,8 +153,8 @@ func TestPresentationTextShapeClickPlacesCaretAtClickedText(t *testing.T) {
 	h := newPresentationCanvasHarness(t)
 	h.frame()
 
-	// The blank deck's title starts at this slide coordinate. Click well inside
-	// the visible glyph run rather than in the much wider placeholder box.
+	// The seeded title starts at this slide coordinate. Click well inside the
+	// visible glyph run rather than in the much wider placeholder box.
 	point := h.textClickPoint(110, 10)
 	h.click(point)
 	h.click(point)
@@ -232,6 +234,13 @@ func newPresentationCanvasHarness(t *testing.T) presentationCanvasHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	snapshot := seed.Snapshot()
+	if len(snapshot.Slides) == 0 || len(snapshot.Slides[0].Elements) == 0 {
+		t.Fatal("new presentation has no title placeholder to seed")
+	}
+	if err := seed.UpdateSlideTextByID(snapshot.Slides[0].ID, snapshot.Slides[0].Elements[0].ID, "标题字"); err != nil {
+		t.Fatalf("seed editable title placeholder: %v", err)
+	}
 	if err := seed.SaveAs(tmpPath); err != nil {
 		t.Fatal(err)
 	}
@@ -242,6 +251,7 @@ func newPresentationCanvasHarness(t *testing.T) presentationCanvasHarness {
 func newPresentationCanvasHarnessFromPath(t *testing.T, path string) presentationCanvasHarness {
 	t.Helper()
 	app := newAppWithRuntime(nil, newDesktopRuntime())
+	app.window = &gioapp.Window{}
 	app.theme = material.NewTheme()
 	loaded, err := loadDocument(path)
 	if err != nil {
@@ -276,6 +286,20 @@ func newPresentationCanvasHarnessFromPath(t *testing.T, path string) presentatio
 		close(app.shutdown)
 	})
 	return presentationCanvasHarness{app: app, view: view, elem: slide.Elements[0], router: router, ops: &ops, frame: frame}
+}
+
+func waitPresentationCommandResult(t *testing.T, app *App, view *presentationViewState) {
+	t.Helper()
+	select {
+	case result := <-view.commandResults:
+		if result.err != nil {
+			t.Fatalf("presentation command failed: %v", result.err)
+		}
+		view.commandResults <- result
+		app.pollPresentationCommandResult(view)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for presentation command result")
+	}
 }
 
 func (h presentationCanvasHarness) click(point f32.Point) {

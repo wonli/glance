@@ -1,6 +1,7 @@
 package docx
 
 import (
+	"bytes"
 	"fmt"
 
 	"glance/internal/document"
@@ -13,30 +14,30 @@ var (
 	wordParagraphPropertyOrder         = []string{"pStyle", "keepNext", "keepLines", "pageBreakBefore", "framePr", "widowControl", "numPr", "suppressLineNumbers", "pBdr", "shd", "tabs", "suppressAutoHyphens", "kinsoku", "wordWrap", "overflowPunct", "topLinePunct", "autoSpaceDE", "autoSpaceDN", "bidi", "adjustRightInd", "snapToGrid", "spacing", "ind", "contextualSpacing", "mirrorIndents", "suppressOverlap", "jc", "textDirection", "textAlignment", "textboxTightWrap", "outlineLvl", "divId", "cnfStyle", "rPr", "sectPr", "pPrChange"}
 )
 
-func (d *Document) ApplyWordFormatting(sourceRunID, targetRunID string) error {
+func (d *Document) ApplyWordFormatting(sourceRunID, targetRunID string) (bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.checkOpen(); err != nil {
-		return err
+		return false, err
 	}
 	if sourceRunID == targetRunID {
-		return nil
+		return false, nil
 	}
 	source, sourceOK := d.wordTextTargets[sourceRunID]
 	target, targetOK := d.wordTextTargets[targetRunID]
 	if !sourceOK || source.run == nil || source.text == nil {
-		return fmt.Errorf("Word source run %q is not editable", sourceRunID)
+		return false, fmt.Errorf("Word source run %q is not editable", sourceRunID)
 	}
 	if !targetOK || target.run == nil || target.text == nil {
-		return fmt.Errorf("Word target run %q is not editable", targetRunID)
+		return false, fmt.Errorf("Word target run %q is not editable", targetRunID)
 	}
 	sourceParagraph := d.wordParagraphTargets[source.paragraphID]
 	targetParagraph := d.wordParagraphTargets[target.paragraphID]
 	if sourceParagraph == nil || targetParagraph == nil {
-		return fmt.Errorf("Word paragraph for format painting is unavailable")
+		return false, fmt.Errorf("Word paragraph for format painting is unavailable")
 	}
 	if sourceModel, targetModel := findWordParagraph(d.wordBlocks, source.paragraphID), findWordParagraph(d.wordBlocks, target.paragraphID); sourceModel == nil || targetModel == nil || sourceModel.ListKind == document.WordListUnsupported || targetModel.ListKind == document.WordListUnsupported {
-		return fmt.Errorf("format painting does not modify paragraphs with unsupported numbering")
+		return false, fmt.Errorf("format painting does not modify paragraphs with unsupported numbering")
 	}
 
 	data := d.parts[d.documentIdx].data
@@ -44,19 +45,23 @@ func (d *Document) ApplyWordFormatting(sourceRunID, targetRunID string) error {
 	var err error
 	replacements, err = appendWordFormatProperties(data, replacements, source.run, target.run, "rPr", wordRunFormatPaintProperties, wordRunPropertyOrder)
 	if err != nil {
-		return fmt.Errorf("copy Word text formatting: %w", err)
+		return false, fmt.Errorf("copy Word text formatting: %w", err)
 	}
 	if source.paragraphID != target.paragraphID {
 		replacements, err = appendWordFormatProperties(data, replacements, sourceParagraph, targetParagraph, "pPr", wordParagraphFormatPaintProperties, wordParagraphPropertyOrder)
 		if err != nil {
-			return fmt.Errorf("copy Word paragraph formatting: %w", err)
+			return false, fmt.Errorf("copy Word paragraph formatting: %w", err)
 		}
 	}
 	patched, err := applyXMLReplacements(data, replacements)
 	if err != nil {
-		return fmt.Errorf("apply Word format painting: %w", err)
+		return false, fmt.Errorf("apply Word format painting: %w", err)
 	}
-	return d.applyWordDocumentXMLLocked(patched)
+	changed := !bytes.Equal(data, patched)
+	if err := d.applyWordDocumentXMLLocked(patched); err != nil {
+		return false, err
+	}
+	return changed, nil
 }
 
 func appendWordFormatProperties(data []byte, replacements []xmlReplacement, source, target *wordXMLNode, parentName string, supported, order []string) ([]xmlReplacement, error) {

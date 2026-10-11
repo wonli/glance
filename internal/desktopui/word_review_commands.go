@@ -1,32 +1,9 @@
 package desktopui
 
 import (
-	"fmt"
 	"glance/internal/document"
 	"strings"
 )
-
-func (a *App) runWordRevisionCommand(operation string, edit func(document.WordTrackRevisionsEditor) error) {
-	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
-		return
-	}
-	editor, ok := any(state.word).(document.WordTrackRevisionsEditor)
-	if !ok {
-		return
-	}
-	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
-		return
-	}
-	generation := a.documentGeneration
-	go func() {
-		blocks, err := runWordMutation(state, func() error { return edit(editor) })
-		if err == nil {
-			state.invalidateWordLayoutAfterBlocksChange()
-		}
-		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
-	}()
-}
 
 func (a *App) runWordWatermarkCommand(operation string, edit func(document.WordWatermarkEditor) error) {
 	state := a.documentSessionState
@@ -41,13 +18,13 @@ func (a *App) runWordWatermarkCommand(operation string, edit func(document.WordW
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		if err == nil {
 			state.invalidateWordLayoutAfterBlocksChange()
 		}
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
-	}()
+	})
 }
 
 func (a *App) toggleWordTrackRevisions() {
@@ -66,18 +43,9 @@ func (a *App) toggleWordTrackRevisions() {
 	if !next {
 		label = "关闭修订跟踪"
 	}
-	a.runWordRevisionCommand(label, func(ed document.WordTrackRevisionsEditor) error {
-		if err := ed.SetTrackRevisions(next); err != nil {
-			return err
-		}
-		state.wordTrackRevisions = next
-		if next {
-			a.setStatus("已开启修订跟踪")
-		} else {
-			a.setStatus("已关闭修订跟踪")
-		}
-		return nil
-	})
+	if !a.runWordApplicationCommand(label, "word.review.track.set", map[string]any{"enabled": next}) {
+		a.setStatus("当前文档的应用命令运行时不可用，未修改修订跟踪状态")
+	}
 }
 
 func (a *App) acceptWordRevisions() {
@@ -93,14 +61,9 @@ func (a *App) acceptWordRevisions() {
 	a.modal.Show("接受全部修订", "将接受文档中的所有插入并移除所有删除标记。是否继续？", func(action string) {
 		a.modal.Hide()
 		if action == "confirm" {
-			a.runWordRevisionCommand("接受全部修订", func(ed document.WordTrackRevisionsEditor) error {
-				count, err := ed.AcceptAllRevisions()
-				if err != nil {
-					return err
-				}
-				a.setStatus(fmt.Sprintf("已接受全部修订（处理 %d 处）", count))
-				return nil
-			})
+			if !a.runWordApplicationCommand("接受全部修订", "word.review.revisions.apply", map[string]any{"action": "accept_all"}) {
+				a.setStatus("当前文档的应用命令运行时不可用，未接受修订")
+			}
 		}
 	},
 		modalDialogActionSpec{ID: "confirm", Label: "接受修订"},
@@ -121,14 +84,9 @@ func (a *App) rejectWordRevisions() {
 	a.modal.Show("拒绝全部修订", "将放弃文档中的所有插入并恢复所有已删除内容。是否继续？", func(action string) {
 		a.modal.Hide()
 		if action == "confirm" {
-			a.runWordRevisionCommand("拒绝全部修订", func(ed document.WordTrackRevisionsEditor) error {
-				count, err := ed.RejectAllRevisions()
-				if err != nil {
-					return err
-				}
-				a.setStatus(fmt.Sprintf("已拒绝全部修订（处理 %d 处）", count))
-				return nil
-			})
+			if !a.runWordApplicationCommand("拒绝全部修订", "word.review.revisions.apply", map[string]any{"action": "reject_all"}) {
+				a.setStatus("当前文档的应用命令运行时不可用，未拒绝修订")
+			}
 		}
 	},
 		modalDialogActionSpec{ID: "confirm", Label: "拒绝修订"},

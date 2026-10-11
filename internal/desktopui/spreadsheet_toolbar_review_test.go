@@ -5,30 +5,29 @@ import (
 	"testing"
 	"time"
 
-	"gioui.org/widget/material"
-
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
 )
 
 func TestSpreadsheetToolbar_SpellCheckAndTranslate(t *testing.T) {
+	desktop := newDesktopRuntime()
+	t.Cleanup(desktop.shutdown)
+	app := newAppWithRuntime(nil, desktop)
 	wb := xlsx.NewBlank()
-	defer wb.Close()
+	t.Cleanup(func() { _ = wb.Close() })
 
 	sheet := wb.SheetNames()[0]
-	_ = wb.SetCellText(sheet, "A1", "Hello World")
-
-	state := newDocumentSessionState("test_review.xlsx")
-	state.book = wb
-	state.sheets = wb.SheetNames()
-	state.sheet = sheet
+	_ = wb.SetCellText(sheet, "A1", "Hello  World")
+	if err := app.installDocument(loadedDocument{book: wb, sheets: wb.SheetNames()}); err != nil {
+		t.Fatalf("install workbook: %v", err)
+	}
+	state := app.documentSessionState
 	state.virtualGrid = newGridViewport()
 	state.selection = CellSelection{
 		Anchor: CellPosition{Row: 0, Column: 0},
 		Active: CellPosition{Row: 0, Column: 0},
 	}
 	state.selectionSet = true
-	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
 
 	// 1. Spell Check
 	if unimplementedSpreadsheetToolbarAction(toolbarActionSpellCheck) {
@@ -38,11 +37,19 @@ func TestSpreadsheetToolbar_SpellCheckAndTranslate(t *testing.T) {
 		t.Fatal("toolbarActionSpellCheck should be enabled")
 	}
 	app.showSpreadsheetSpellCheckDialog()
+	deadline := time.Now().Add(2 * time.Second)
+	for !app.modal.Visible && time.Now().Before(deadline) {
+		app.processSpreadsheetFormatResult()
+		time.Sleep(time.Millisecond)
+	}
 	if !app.modal.Visible || app.modal.Title != "拼写检查" {
 		t.Fatalf("expected 拼写检查 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
 	}
+	if !strings.Contains(app.modal.Message, "连续 ASCII 空格") || !strings.Contains(app.modal.Message, "未提供词典") {
+		t.Fatalf("spell-check dialog overstates results or omits the bounded findings: %q", app.modal.Message)
+	}
 	app.modal.OnAction("confirm")
-	if !strings.Contains(app.status, "拼写检查完成") {
+	if !strings.Contains(app.status, "文本检查完成") {
 		t.Fatalf("unexpected status after spell check: %q", app.status)
 	}
 

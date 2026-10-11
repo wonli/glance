@@ -106,7 +106,12 @@ func (a *App) initializeWorkspace() {
 			a.setStatus("工作区数据库不可用：" + err.Error())
 			return
 		}
-		store, err := workspace.Open(path)
+		var store *workspace.Store
+		if runtime.applicationRuntime != nil {
+			store, err = runtime.applicationRuntime.OpenWorkspace(path)
+		} else {
+			store, err = workspace.Open(path)
+		}
 		if err != nil {
 			a.workspaceError = err.Error()
 			a.setStatus("工作区数据库不可用：" + err.Error())

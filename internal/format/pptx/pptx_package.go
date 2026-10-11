@@ -58,9 +58,11 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 	// Parse slide XMLs for shape text body properties (wrap, autoFit)
 	if len(orderedSlideFiles) > 0 {
 		d.slideBackgrounds = make([]pptxBackground, len(orderedSlideFiles))
+		d.slideBackgroundChanges = make([]presentationBackgroundOverride, len(orderedSlideFiles))
 		d.slideInherited = make([][]document.PresentationElement, len(orderedSlideFiles))
 		d.slidePlaceholderBounds = make([]map[uint32]document.PresentationRect, len(orderedSlideFiles))
 		d.slidePlaceholderTypes = make([]map[uint32]string, len(orderedSlideFiles))
+		d.slidePlaceholderChanges = make([]map[uint32]string, len(orderedSlideFiles))
 		d.slideShapeTransforms = make([]map[uint32]presentationTransformMetadata, len(orderedSlideFiles))
 		d.slidePlaceholderXfrms = make([]map[uint32]presentationTransformMetadata, len(orderedSlideFiles))
 		d.slideTransformChanges = make([]map[uint32]presentationTransformOverride, len(orderedSlideFiles))
@@ -75,6 +77,7 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 			d.slideInherited[idx] = pkg.inheritedElements(slidePath, layoutPart, masterPart)
 			d.slidePlaceholderBounds[idx] = pkg.placeholderBounds(slidePath, layoutPart, masterPart)
 			d.slidePlaceholderTypes[idx] = pkg.placeholderTypes(slidePath)
+			d.slidePlaceholderChanges[idx] = make(map[uint32]string)
 			if sf, ok := files[slidePath]; ok {
 				if data, err := readOPCPart(sf); err == nil {
 					d.slideBodyProps[idx] = parseSlideXML(data)
@@ -100,6 +103,7 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 					d.slideInherited = append(d.slideInherited, pkg.inheritedElements(f.Name, layoutPart, masterPart))
 					d.slidePlaceholderBounds = append(d.slidePlaceholderBounds, pkg.placeholderBounds(f.Name, layoutPart, masterPart))
 					d.slidePlaceholderTypes = append(d.slidePlaceholderTypes, pkg.placeholderTypes(f.Name))
+					d.slidePlaceholderChanges = append(d.slidePlaceholderChanges, make(map[uint32]string))
 					d.slidePlaceholderXfrms = append(d.slidePlaceholderXfrms, pkg.placeholderTransforms(f.Name, layoutPart, masterPart))
 					d.slideTransformChanges = append(d.slideTransformChanges, make(map[uint32]presentationTransformOverride))
 					d.slideStyleChanges = append(d.slideStyleChanges, make(map[uint32]document.PresentationElementStylePatch))
@@ -109,6 +113,7 @@ func (d *Document) inspectZipPackage(zr *zip.Reader) {
 						d.slideBackgrounds = append(d.slideBackgrounds, pptxBackground{})
 					}
 					d.slideBackgrounds[slideIdx] = pkg.resolveBackground(f.Name, layoutPart, masterPart)
+					d.slideBackgroundChanges = append(d.slideBackgroundChanges, presentationBackgroundOverride{})
 					slideIdx++
 				}
 			}

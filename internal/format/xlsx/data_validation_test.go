@@ -13,7 +13,7 @@ func TestDataValidation_ListAndNumber(t *testing.T) {
 	sheet := wb.SheetNames()[0]
 
 	// 1. Add dropdown list validation
-	err := wb.AddDataValidation(document.SpreadsheetDataValidationSpec{
+	changed, err := wb.AddDataValidation(document.SpreadsheetDataValidationSpec{
 		Sheet:    sheet,
 		Range:    document.CellRange{StartColumn: 1, StartRow: 1, EndColumn: 1, EndRow: 5},
 		Type:     document.DataValidationTypeList,
@@ -21,6 +21,9 @@ func TestDataValidation_ListAndNumber(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("AddDataValidation list failed: %v", err)
+	}
+	if !changed {
+		t.Fatal("AddDataValidation list reported unchanged")
 	}
 
 	dvs, err := wb.file.GetDataValidations(sheet)
@@ -37,7 +40,7 @@ func TestDataValidation_ListAndNumber(t *testing.T) {
 	// 2. Add number validation on B1:B10
 	minVal := 10.0
 	maxVal := 100.0
-	err = wb.AddDataValidation(document.SpreadsheetDataValidationSpec{
+	changed, err = wb.AddDataValidation(document.SpreadsheetDataValidationSpec{
 		Sheet:     sheet,
 		Range:     document.CellRange{StartColumn: 2, StartRow: 1, EndColumn: 2, EndRow: 10},
 		Type:      document.DataValidationTypeNumber,
@@ -46,6 +49,9 @@ func TestDataValidation_ListAndNumber(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("AddDataValidation number failed: %v", err)
+	}
+	if !changed {
+		t.Fatal("AddDataValidation number reported unchanged")
 	}
 
 	dvs, err = wb.file.GetDataValidations(sheet)
@@ -81,9 +87,12 @@ func TestDataValidation_ListAndNumber(t *testing.T) {
 	}
 
 	// 5. Delete data validation
-	err = wb.DeleteDataValidation(sheet, document.CellRange{StartColumn: 1, StartRow: 1, EndColumn: 1, EndRow: 5})
+	changed, err = wb.DeleteDataValidation(sheet, document.CellRange{StartColumn: 1, StartRow: 1, EndColumn: 1, EndRow: 5})
 	if err != nil {
 		t.Fatalf("DeleteDataValidation failed: %v", err)
+	}
+	if !changed {
+		t.Fatal("DeleteDataValidation reported unchanged")
 	}
 	dvs, err = wb.file.GetDataValidations(sheet)
 	if err != nil {

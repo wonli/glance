@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 )
@@ -24,7 +25,7 @@ func (a *App) showSpreadsheetPivotTableDialog() {
 		columnName(bounds.StartColumn), bounds.StartRow,
 		columnName(bounds.EndColumn), bounds.EndRow)
 
-	a.modal.Show("插入数据透视表", fmt.Sprintf("基于选区创建数据透视表：\n数据源范围：%s\n\n将在工作表右侧生成透视表报表。是否继续？", rangeStr), func(action string) {
+	a.modal.Show("插入数据透视表", fmt.Sprintf("基于选区创建数据透视表：\n数据源范围：%s\n\n将在工作表右侧生成透视表报表。若标题行有空白单元格，会自动补上“字段N”名称。是否继续？", rangeStr), func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
@@ -34,22 +35,42 @@ func (a *App) showSpreadsheetPivotTableDialog() {
 		if !ok {
 			return
 		}
-		go func() {
-			unlock := lockSessionAdapterWrite(state)
-			err := editor.AddPivotTable(document.SpreadsheetPivotTableSpec{
+		a.launchManagedBackground(func() {
+			spec := document.SpreadsheetPivotTableSpec{
 				Sheet:     sheet,
 				DataRange: bounds,
-			})
-			unlock()
-			a.completeSessionOperation(state, token, err, true)
+			}
+			commandRouted := a.applicationSessionRegistered(token.documentID)
+			changed := true
+			var err error
+			if commandRouted {
+				result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.pivot.create", "spreadsheet_cell_range", "selection", sheet, map[string]any{
+					"sheet": sheet, "bounds": bounds,
+				})
+				err = commandErr
+				if err == nil {
+					var outcome struct {
+						Changed bool `json:"changed"`
+					}
+					err = json.Unmarshal(result.Data, &outcome)
+					changed = outcome.Changed
+				}
+			} else {
+				unlock := lockSessionAdapterWrite(state)
+				err = editor.AddPivotTable(spec)
+				unlock()
+			}
+			a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 			if err == nil {
 				a.setStatus("已成功插入数据透视表")
 			}
-			select {
-			case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "插入数据透视表"}:
-			case <-a.shutdown:
+			if a.formatResults != nil {
+				select {
+				case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "插入数据透视表", applied: changed}:
+				case <-a.shutdown:
+				}
 			}
-		}()
+		})
 	},
 		modalDialogActionSpec{ID: "confirm", Label: "创建透视表"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},

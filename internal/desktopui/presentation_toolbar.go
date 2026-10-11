@@ -1,6 +1,8 @@
 package desktopui
 
 import (
+	"errors"
+	"glance/internal/application"
 	"glance/internal/document"
 	"image"
 	"image/color"
@@ -22,16 +24,10 @@ func (a *App) layoutPresentationDocument(gtx layout.Context) layout.Dimensions {
 		return a.layoutPresentationSlideshow(gtx, v)
 	}
 
-	// Synchronize notes editor text when active slide changes
-	if curSlide := v.currentSlide(); curSlide != nil {
-		if v.lastNotesSlide != v.activeSlide {
-			v.notesEditor.SetText(curSlide.Notes)
-			v.lastNotesSlide = v.activeSlide
-		} else if notesText := v.notesEditor.Text(); notesText != curSlide.Notes {
-			if a.pptxDoc != nil {
-				_ = a.pptxDoc.UpdateSlideNotes(v.activeSlide, notesText)
-				v.snapshot = a.pptxDoc.Snapshot()
-			}
+	a.syncPresentationNotesDraft(v)
+	if !v.notesDraftConflict {
+		if err := a.flushPresentationNotesDraft(v); err != nil && !errors.Is(err, application.ErrPresentationNotesConflict) {
+			a.setStatus("备注更新失败：" + err.Error())
 		}
 	}
 
@@ -53,6 +49,9 @@ func (a *App) layoutPresentationDocument(gtx layout.Context) layout.Dimensions {
 		}),
 		// 3. Main Workspace (Sidebar + Canvas + Notes)
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if v.sorterMode {
+				return a.layoutPresentationSorter(gtx, v)
+			}
 			return a.layoutPresentationMainWorkspace(gtx, v)
 		}),
 		// 4. Status Bar (34dp)
@@ -127,6 +126,7 @@ func (a *App) layoutPresentationCategoryBar(gtx layout.Context, v *presentationV
 
 // layoutPresentationRibbon renders the 68dp command bar referencing Excel's ribbon icon implementation.
 func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewState) layout.Dimensions {
+	a.handlePresentationClipboardEvents(gtx, v)
 	height := gtx.Dp(unit.Dp(pptxRibbonHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 
@@ -143,7 +143,14 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 			enabled := a.presentationActionEnabled(v, action.id)
 			clicked := button.Clicked(gtx)
 			if enabled && clicked {
-				a.handlePresentationRibbonAction(v, action.id)
+				switch action.id {
+				case "home_copy":
+					a.startPresentationTextCopy(v)
+				case "home_paste":
+					a.startPresentationClipboardPaste(gtx, v)
+				default:
+					a.handlePresentationRibbonAction(v, action.id)
+				}
 			}
 
 			active := a.isPresentationActionActive(v, action.id)
@@ -167,6 +174,16 @@ func (a *App) presentationActionEnabled(v *presentationViewState, actionID strin
 	state := a.documentSessionState
 	busy := state == nil || state.formatRunning.Load() || a.isSaving()
 	switch actionID {
+	case "design_theme", "design_colors":
+		return !busy && v != nil && !v.commandPending && a.pptxDoc != nil && state.pptxDoc == a.pptxDoc && a.applicationSessionRegistered(state.documentID)
+	case "home_group":
+		return !busy && v != nil && !v.commandPending && len(presentationSelectedIDs(v)) >= 2 && a.pptxDoc != nil && state.pptxDoc == a.pptxDoc && a.applicationSessionRegistered(state.documentID)
+	case "home_copy", "home_paste":
+		if busy || v == nil || v.commandPending || v.clipboardReadPending || a.pptxDoc == nil || state.pptxDoc != a.pptxDoc || !a.applicationSessionRegistered(state.documentID) {
+			return false
+		}
+		_, _, ok := presentationTextElement(v)
+		return ok
 	case "picture_replace":
 		if _, _, ok := presentationSelectedEditablePicture(v); !ok || busy || a.pptxPicPickerRunning || (v != nil && v.pictureCrop.active) {
 			return false
@@ -179,7 +196,9 @@ func (a *App) presentationActionEnabled(v *presentationViewState, actionID strin
 		return a.pptxDoc != nil && state.pptxDoc == a.pptxDoc
 	case "picture_crop_done", "picture_crop_reset", "picture_crop_cancel":
 		return v != nil && v.pictureCrop.active && !v.pictureCrop.committing && !busy && a.pptxDoc != nil && state.pptxDoc == a.pptxDoc
-	case "home_font", "home_font_size", "home_bold", "home_italic", "home_underline", "home_font_color", "home_align_left", "home_align_center", "home_align_right", "home_align_justify", "home_line_spacing", "home_space_before", "home_space_after":
+	case "insert_table", "insert_chart", "insert_video", "insert_audio":
+		return !busy && v != nil && !v.commandPending && !a.pptxMediaPickerRunning && a.pptxDoc != nil && state.pptxDoc == a.pptxDoc && a.applicationSessionRegistered(state.documentID)
+	case "home_font", "home_font_size", "home_bold", "home_italic", "home_underline", "home_font_color", "home_bullets", "home_align_left", "home_align_center", "home_align_right", "home_align_justify", "home_line_spacing", "home_space_before", "home_space_after":
 		if busy || v == nil || v.pictureCrop.active || a.pptxDoc == nil || state.pptxDoc != a.pptxDoc {
 			return false
 		}
@@ -197,6 +216,17 @@ func (a *App) presentationActionEnabled(v *presentationViewState, actionID strin
 		}
 		_, _, ok := presentationSelectedEditablePicture(v)
 		return ok
+	case "review_access", "review_spell":
+		if busy || v == nil || v.commandPending || a.pptxDoc == nil || state.pptxDoc != a.pptxDoc {
+			return false
+		}
+		return a.applicationSessionRegistered(state.documentID)
+	case "trans_fade", "trans_push", "trans_options", "trans_duration", "trans_apply_all":
+		return !busy && v != nil && !v.commandPending && a.pptxDoc != nil && state.pptxDoc == a.pptxDoc && a.applicationSessionRegistered(state.documentID)
+	case "design_size":
+		return !busy && v != nil && !v.commandPending && !v.pictureCrop.active && a.pptxDoc != nil && state.pptxDoc == a.pptxDoc && a.applicationSessionRegistered(state.documentID)
+	case "home_align":
+		return !busy && v != nil && v.selectedShape != 0 && !v.commandPending && !v.pictureCrop.active && a.pptxDoc != nil && state.pptxDoc == a.pptxDoc && a.applicationSessionRegistered(state.documentID)
 	default:
 		return true
 	}
@@ -214,18 +244,31 @@ func (a *App) isPresentationActionActive(v *presentationViewState, actionID stri
 		return false
 	case "home_bold", "home_italic", "home_underline":
 		return presentationSelectedRunStyle(v, actionID)
+	case "home_bullets":
+		_, elem, ok := presentationSelectedStyleElement(v)
+		return ok && len(elem.Paragraphs) == 1 && elem.Paragraphs[0].Bullet
 	case "home_align_left", "home_align_center", "home_align_right", "home_align_justify":
 		_, elem, ok := presentationSelectedStyleElement(v)
 		align := map[string]string{"home_align_left": "left", "home_align_center": "center", "home_align_right": "right", "home_align_justify": "justify"}[actionID]
 		return ok && presentationStyleOptionMatches(elem, document.PresentationElementStylePatch{ParagraphAlignment: &align})
 	case "view_normal":
-		return !v.slideshowMode
+		return !v.slideshowMode && !v.sorterMode
+	case "view_sorter":
+		return v.sorterMode
+	case "view_ruler":
+		return v.rulerVisible
 	default:
 		return false
 	}
 }
 
 func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID string) {
+	if a.runPresentationTransitionAction(v, actionID) {
+		return
+	}
+	if a.runPresentationViewRibbonAction(v, actionID) {
+		return
+	}
 	if a.handlePresentationStyleAction(v, actionID) {
 		return
 	}
@@ -239,11 +282,15 @@ func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID 
 	case "file_saveas":
 		a.startSaveAsPicker("pptx")
 	case "file_export":
-		a.startSaveAsPicker("pdf")
+		a.requestPresentationPDFExport()
 	case "file_print":
-		a.setStatus("打印功能就绪")
+		a.requestPresentationPDFPrint()
 	case "home_new_slide":
 		a.handlePresentationAddSlide(v)
+	case "home_layout":
+		if !a.startPresentationLayoutList(v) {
+			a.setStatus("无法读取演示文稿版式目录")
+		}
 	case "home_textbox", "insert_textbox":
 		a.handlePresentationAddTextBox(v)
 	case "home_notes", "view_notes":
@@ -255,39 +302,31 @@ func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID 
 		v.slideshowMode = true
 	case "show_rehearse":
 		a.setStatus("排练计时就绪")
-	case "show_presenter":
-		a.setStatus("演讲者视图就绪")
 	case "view_fit":
 		v.fitMode = true
 		v.zoom = 1.0
 	case "view_sorter":
 		a.setStatus("幻灯片浏览视图")
-	case "view_ruler":
-		a.setStatus("标尺显示")
 	case "design_theme":
-		a.setStatus("主题选择")
+		a.showPresentationThemeOptions(v)
 	case "design_colors":
-		a.setStatus("配色方案")
+		a.showPresentationPaletteOptions(v)
 	case "design_bg":
-		a.setStatus("背景格式设置")
+		a.showPresentationBackgroundOptions(v)
 	case "design_size":
-		a.setStatus("幻灯片大小设置")
+		a.showPresentationSlideSizeOptions(v)
 	case "home_bullets":
 		a.setStatus("项目符号")
 	case "home_shapes", "insert_shapes":
-		a.setStatus("插入形状")
+		a.handlePresentationAddShape(v)
 	case "home_align":
-		a.setStatus("排列对齐")
+		a.showPresentationAlignmentOptions(v)
 	case "home_group":
-		a.setStatus("组合")
-	case "home_copy":
-		a.setStatus("已复制内容")
-	case "home_paste":
-		a.setStatus("已粘贴内容")
+		a.startPresentationGroup(v)
 	case "insert_table":
-		a.setStatus("插入表格")
+		a.showPresentationTableInsertOptions(v)
 	case "insert_picture":
-		a.startOpenFilePicker()
+		a.startPresentationPictureInsertPicker()
 	case "picture_replace":
 		a.startPresentationPicturePicker()
 	case "picture_crop":
@@ -301,23 +340,49 @@ func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID 
 	case "picture_crop_reset":
 		a.resetPresentationPictureCrop(v)
 	case "insert_chart":
-		a.setStatus("插入图表")
+		a.showPresentationChartInsertOptions(v)
 	case "insert_video":
-		a.setStatus("插入视频")
+		if !a.startPresentationMediaInsertPicker(v, "video") {
+			a.setStatus("无法启动视频插入")
+		}
 	case "insert_audio":
-		a.setStatus("插入音频")
+		if !a.startPresentationMediaInsertPicker(v, "audio") {
+			a.setStatus("无法启动音频插入")
+		}
 	case "review_spell":
-		a.setStatus("拼写检查就绪")
+		if !a.startPresentationProofread(v) {
+			a.setStatus("无法启动演示文稿文本检查")
+		}
 	case "review_new_comment":
-		a.setStatus("新建批注")
+		a.showPresentationNewCommentDialog(v)
 	case "review_del_comment":
-		a.setStatus("删除批注")
+		if !a.startPresentationDeleteComment(v) {
+			a.setStatus("无法启动批注读取")
+		}
 	case "review_access":
-		a.setStatus("辅助功能检查就绪")
-	case "trans_fade", "trans_push", "trans_options", "trans_duration", "trans_apply_all":
-		a.setStatus("切换效果设置")
-	case "anim_appear", "anim_fadein", "anim_flyin", "anim_add", "anim_pane", "anim_duration":
-		a.setStatus("动画效果设置")
+		if !a.startPresentationAccessibilityReview(v) {
+			a.setStatus("无法启动演示文稿辅助功能检查")
+		}
+	case "anim_pane":
+		if !a.startPresentationAnimationPane(v) {
+			a.setStatus("无法启动动画窗格")
+		}
+	case "anim_appear":
+		if !a.startPresentationElementAnimation(v, "appear", 1) {
+			a.setStatus("无法启动出现动画")
+		}
+	case "anim_fadein":
+		if !a.startPresentationElementAnimation(v, "fade", 500) {
+			a.setStatus("无法启动淡入动画")
+		}
+	case "anim_flyin":
+		if !a.startPresentationElementAnimation(v, "fly_in", 500) {
+			a.setStatus("无法启动飞入动画")
+		}
+	case "anim_add":
+		a.showPresentationAnimationAddOptions(v)
+	case "anim_duration":
+		a.showPresentationAnimationDurationOptions(v)
 	default:
 		a.setStatus("功能已就绪")
 	}

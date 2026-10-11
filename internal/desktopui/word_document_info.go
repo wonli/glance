@@ -27,7 +27,7 @@ func (a *App) startWordDocumentInfoLoad() {
 	}
 	a.setStatus("正在读取文档信息")
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		unlock := lockSessionAdapterRead(state)
 		properties, err := reader.GetWordDocumentProperties()
 		unlock()
@@ -42,7 +42,7 @@ func (a *App) startWordDocumentInfoLoad() {
 			}
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) showWordDocumentInfoDialog(properties document.WordDocumentProperties) {
@@ -80,8 +80,8 @@ func (a *App) runWordDocumentInfoCommand(properties document.WordDocumentPropert
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		blocks, err := runWordMutation(state, func() error { return editor.SetWordDocumentProperties(properties) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "更新文档信息", err: err, blocks: blocks})
-	}()
+	})
 }

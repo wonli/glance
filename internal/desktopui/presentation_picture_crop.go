@@ -1,6 +1,8 @@
 package desktopui
 
 import (
+	"encoding/json"
+	"fmt"
 	"image"
 	"math"
 
@@ -13,17 +15,20 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 
+	"glance/internal/application"
 	"glance/internal/document"
 )
 
 type presentationPictureCropState struct {
-	active     bool
-	committing bool
-	slideIndex int
-	shapeID    int64
-	original   document.PresentationCrop
-	preview    document.PresentationCrop
-	gesture    presentationPictureCropGesture
+	active          bool
+	committing      bool
+	slideIndex      int
+	baseRevision    uint64
+	baseRevisionSet bool
+	shapeID         int64
+	original        document.PresentationCrop
+	preview         document.PresentationCrop
+	gesture         presentationPictureCropGesture
 }
 
 type presentationPictureCropGestureMode uint8
@@ -56,10 +61,16 @@ func (a *App) beginPresentationPictureCrop(v *presentationViewState) bool {
 	if v.pictureCrop.active {
 		return v.pictureCrop.shapeID == picture.ID && v.pictureCrop.slideIndex == slideIndex
 	}
+	baseRevision, baseRevisionSet := uint64(0), false
+	if a.documentSessionState != nil {
+		baseRevision = a.documentSessionState.wordRevisionAtomic.Load()
+		baseRevisionSet = true
+	}
 	v.pictureCrop = presentationPictureCropState{
-		active: true, slideIndex: slideIndex, shapeID: picture.ID,
+		active: true, slideIndex: slideIndex, baseRevision: baseRevision, baseRevisionSet: baseRevisionSet, shapeID: picture.ID,
 		original: picture.Crop, preview: picture.Crop,
 	}
+	a.markPresentationCropDraft(v, true)
 	v.activeRibbonTab = "picture"
 	a.setStatus("拖动图片边缘调整裁剪，拖动画面平移图片")
 	if a.window != nil {
@@ -73,6 +84,7 @@ func (a *App) cancelPresentationPictureCrop(v *presentationViewState) {
 		return
 	}
 	v.pictureCrop = presentationPictureCropState{}
+	a.markPresentationCropDraft(v, false)
 	a.setStatus("已取消图片裁剪")
 	if a.window != nil {
 		a.window.Invalidate()
@@ -85,10 +97,18 @@ func (a *App) resetPresentationPictureCrop(v *presentationViewState) {
 	}
 	v.pictureCrop.preview = document.PresentationCrop{}
 	v.pictureCrop.gesture = presentationPictureCropGesture{}
+	a.markPresentationCropDraft(v, true)
 	a.setStatus("已预览原始图片范围；完成裁剪后写入")
 	if a.window != nil {
 		a.window.Invalidate()
 	}
+}
+
+func (a *App) markPresentationCropDraft(v *presentationViewState, dirty bool) {
+	if a == nil || v == nil || a.documentSessionState == nil || a.documentSessionState.pptxDoc != a.pptxDoc {
+		return
+	}
+	a.documentSessionState.setPresentationDraftDirty(a.windowID, presentationCropDraft, dirty)
 }
 
 func (a *App) commitPresentationPictureCrop(v *presentationViewState) {
@@ -100,6 +120,12 @@ func (a *App) commitPresentationPictureCrop(v *presentationViewState) {
 	if cropState.slideIndex != v.activeSlide || cropState.shapeID != v.selectedShape || state.pptxDoc != doc || state.closed.Load() || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
+	if cropState.baseRevisionSet && state.wordRevisionAtomic.Load() != cropState.baseRevision {
+		v.pictureCrop = presentationPictureCropState{}
+		a.markPresentationCropDraft(v, false)
+		a.setStatus("图片裁剪期间文档已被其他操作修改；请重新进入裁剪")
+		return
+	}
 	if cropState.preview == cropState.original {
 		a.cancelPresentationPictureCrop(v)
 		a.setStatus("图片裁剪没有变化")
@@ -109,7 +135,23 @@ func (a *App) commitPresentationPictureCrop(v *presentationViewState) {
 	if !ok {
 		return
 	}
+	if cropState.baseRevisionSet && token.revision != cropState.baseRevision {
+		state.finishOperation(token)
+		v.pictureCrop = presentationPictureCropState{}
+		a.markPresentationCropDraft(v, false)
+		a.setStatus("图片裁剪期间文档已被其他操作修改；请重新进入裁剪")
+		return
+	}
+	if cropState.slideIndex < 0 || cropState.slideIndex >= len(v.snapshot.Slides) {
+		state.finishOperation(token)
+		v.pictureCrop = presentationPictureCropState{}
+		a.markPresentationCropDraft(v, false)
+		a.setStatus("图片裁剪目标已不存在")
+		return
+	}
+	slideID := v.snapshot.Slides[cropState.slideIndex].ID
 	v.pictureCrop.committing = true
+	a.markPresentationCropDraft(v, false)
 	if a.pptxPicCommandResults == nil {
 		a.pptxPicCommandResults = make(chan presentationPictureCommandResult, 1)
 	}
@@ -120,17 +162,35 @@ func (a *App) commitPresentationPictureCrop(v *presentationViewState) {
 	}
 	results, shutdown, window := a.pptxPicCommandResults, a.shutdown, a.window
 	a.setStatus("正在完成图片裁剪…")
-	go func() {
+	a.launchManagedBackground(func() {
 		beforeRevision := doc.Revision()
-		unlock := lockSessionAdapterWrite(state)
-		result.err = doc.UpdateSlidePictureCrop(result.slideIndex, result.shapeID, result.crop)
+		if a.applicationSessionRegistered(token.documentID) {
+			commandResult, err := a.executeRibbonApplicationCommand(token, "presentation.element.picture.crop.set", "presentation_picture", fmt.Sprint(result.shapeID), "", map[string]any{
+				"slide_id": slideID, "element_id": result.shapeID,
+				"left": result.crop.Left, "top": result.crop.Top,
+				"right": result.crop.Right, "bottom": result.crop.Bottom,
+			})
+			result.err = err
+			if err == nil {
+				var payload struct {
+					SlideID   uint32 `json:"slide_id"`
+					ElementID int64  `json:"element_id"`
+					Changed   bool   `json:"changed"`
+				}
+				if json.Unmarshal(commandResult.Data, &payload) != nil || payload.SlideID != slideID || payload.ElementID != result.shapeID {
+					result.err = application.ErrInvalidCommandResult
+				} else {
+					result.mutated = payload.Changed
+				}
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			result.err = doc.UpdateSlidePictureCrop(result.slideIndex, result.shapeID, result.crop)
+			unlock()
+		}
 		if result.err == nil {
 			result.snapshot = doc.Snapshot()
-			result.mutated = doc.Revision() != beforeRevision
-		}
-		unlock()
-		if result.mutated {
-			a.ensureDesktopRuntime().publishSessionRevision(token.documentID, token.revision+1)
+			result.mutated = result.mutated || doc.Revision() != beforeRevision
 		}
 		state.finishOperation(token)
 		result.revision = state.wordRevisionAtomic.Load()
@@ -141,7 +201,7 @@ func (a *App) commitPresentationPictureCrop(v *presentationViewState) {
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 }
 
 func presentationCropLocalPointerDelta(start, current f32.Point, rotationDeg, scale float64) document.PresentationPoint {

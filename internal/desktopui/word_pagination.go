@@ -37,10 +37,7 @@ type wordLayoutResult struct {
 	err    error
 }
 
-var defaultWordPageSetup = document.WordPageSetup{
-	WidthPT: 595.28, HeightPT: 841.89, Orientation: "portrait",
-	MarginTopPT: 72, MarginRightPT: 72, MarginBottomPT: 72, MarginLeftPT: 72,
-}
+var defaultWordPageSetup = wordlayout.DefaultPageSetup()
 
 func (state *documentSessionState) setWordBlocks(blocks []document.WordBlock) {
 	if state == nil {
@@ -366,7 +363,7 @@ func (a *App) startWordPagination(state *documentSessionState) {
 	state.wordLayoutWarningConfirmed = false
 	session.wordLayoutCancelMu.Unlock()
 	results, shutdown, window := a.wordLayoutResults, a.shutdown, a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		result, err := engine.Layout(ctx, input)
 		if ctx.Err() != nil || session.finalized.Load() || session.wordLayoutReleased.Load() {
 			return
@@ -379,7 +376,7 @@ func (a *App) startWordPagination(state *documentSessionState) {
 		case <-ctx.Done():
 		case <-shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) applyWordLayoutResult(result wordLayoutResult) {

@@ -109,10 +109,10 @@ func (a *App) runWordSpacingCommand(operation string, edit func(document.WordPar
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
-	}()
+	})
 }
 
 func (a *App) showWordParagraphIndentDialog() {

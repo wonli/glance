@@ -43,11 +43,12 @@ func (d *Document) InsertBookmark(runID, name string) error {
 	// Find target run or fallback to first available run
 	var targetRun *wordXMLNode
 	if runID != "" {
-		if t, ok := d.wordTextTargets[runID]; ok && t.run != nil {
-			targetRun = t.run
+		target, ok := d.wordTextTargets[runID]
+		if !ok || target.run == nil {
+			return fmt.Errorf("bookmark target text run %q not found", runID)
 		}
-	}
-	if targetRun == nil {
+		targetRun = target.run
+	} else {
 		for _, t := range d.wordTextTargets {
 			if t.run != nil {
 				targetRun = t.run

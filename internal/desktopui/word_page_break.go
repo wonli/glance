@@ -102,7 +102,7 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 	} else if intent.breakType == document.WordBreakColumn {
 		operation = "插入分栏符"
 	}
-	go func() {
+	a.launchManagedBackground(func() {
 		var paragraphID, caretRunID string
 		blocks, err := runWordMutation(state, func() error {
 			var insertErr error
@@ -124,7 +124,7 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 			pageBreakParagraphID:  paragraphID,
 			pageBreakCaretRunID:   caretRunID,
 		})
-	}()
+	})
 }
 
 func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {

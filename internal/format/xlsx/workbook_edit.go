@@ -76,8 +76,10 @@ func (w *Workbook) SetColumnWidth(sheet string, column int, widthChars float64) 
 	return nil
 }
 
-// SetCellText edits a cell as a literal string. Formula entry is deliberately
-// deferred until calculation and round-trip behavior are defined.
+// SetCellText preserves the spreadsheet editor's existing input behavior:
+// finite numeric strings and true/false become typed cell values, while other
+// strings remain text. Agent commands use SetCellValueChanged when the caller
+// supplied an explicit JSON value type.
 func (w *Workbook) SetCellText(sheet, cell, value string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -142,7 +144,10 @@ func (w *Workbook) RecalculateFormulas() error {
 	if err := w.checkOpen(); err != nil {
 		return err
 	}
-	_ = w.file.UpdateLinkedValue()
+	if err := w.file.UpdateLinkedValue(); err != nil {
+		return err
+	}
+	w.dirty = true
 	return nil
 }
 

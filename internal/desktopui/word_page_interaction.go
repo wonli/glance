@@ -46,6 +46,7 @@ type wordPageCaretPosition struct {
 }
 
 type wordPageTextSelection struct {
+	scope    string
 	anchor   wordPageCaretPosition
 	focus    wordPageCaretPosition
 	runOrder map[string]int

@@ -262,14 +262,14 @@ func (a *App) runWordRangeReplacement(match wordTextMatch, query, replacement st
 		return false
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		blocks, err := runWordMutation(state, func() error { return editor.ReplaceTextRange(match.RunID, match.Start, match.End, replacement) })
 		a.publishWordCommand(wordCommandResult{
 			state: state, generation: generation, operation: "替换文字", err: err, blocks: blocks,
 			wordRangeReplacement: true, replaceRunID: match.RunID, replaceParagraphID: match.ParagraphID, replaceStart: match.Start,
 			replaceText: replacement, replaceQuery: query,
 		})
-	}()
+	})
 	return true
 }
 

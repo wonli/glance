@@ -15,10 +15,10 @@ func (a *App) runWordCommand(operation string, edit func(document.WordTextEditor
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
-	}()
+	})
 }
 
 func (a *App) runWordListCommand(operation string, edit func(document.WordParagraphListEditor) error) {
@@ -34,10 +34,10 @@ func (a *App) runWordListCommand(operation string, edit func(document.WordParagr
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
-	}()
+	})
 }
 
 func (a *App) runWordImageCommand(operation, imageID string, edit func(document.WordImageEditor) error, clearSelection bool) bool {
@@ -53,10 +53,53 @@ func (a *App) runWordImageCommand(operation, imageID string, edit func(document.
 		return false
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, clearImageSelection: clearSelection && err == nil, imageID: imageID, blocks: blocks})
-	}()
+	})
+	return true
+}
+
+func (a *App) runWordImageWrapCommand(operation, imageID, wrapMode string) bool {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
+		return false
+	}
+	editor, ok := any(state.word).(document.WordImageWrapEditor)
+	if !ok {
+		return false
+	}
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return false
+	}
+	generation := a.documentGeneration
+	a.launchManagedBackground(func() {
+		blocks, err := runWordMutation(state, func() error { return editor.SetWordImageWrap(imageID, wrapMode) })
+		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
+	})
+	return true
+}
+
+func (a *App) runWordThemeEffectsCommand(operation, profile string) bool {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
+		return false
+	}
+	editor, ok := any(state.word).(document.WordThemeEffectsEditor)
+	if !ok || !editor.CanSetWordThemeEffects() {
+		return false
+	}
+	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+		return false
+	}
+	generation := a.documentGeneration
+	a.launchManagedBackground(func() {
+		blocks, err := runWordMutation(state, func() error {
+			_, _, err := editor.SetWordThemeEffects(profile)
+			return err
+		})
+		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
+	})
 	return true
 }
 
@@ -88,6 +131,11 @@ type wordCommandResult struct {
 	history               bool
 	applied               bool
 	textDraft             bool
+	applicationCommand    bool
+	viewOnly              bool
+	skipOperationTracking bool
+	confirmationPending   bool
+	wordTrackRevisions    *bool
 	paragraphSplit        bool
 	paragraphJoin         bool
 	runID                 string
@@ -104,6 +152,9 @@ type wordCommandResult struct {
 	bodyParagraphInsert   bool
 	wordRangeReplacement  bool
 	wordSymbolInsertion   bool
+	wordCommentList       bool
+	wordComments          []document.WordComment
+	wordCommentTotal      int
 	pageBreak             bool
 	replaceRunID          string
 	replaceParagraphID    string
@@ -117,25 +168,31 @@ type wordCommandResult struct {
 }
 
 func (a *App) publishWordCommand(result wordCommandResult) {
-	if result.state != nil && result.operationToken.generation == 0 {
+	if result.state != nil && result.operationToken.generation == 0 && !result.skipOperationTracking {
 		result.operationToken, _ = result.state.currentOperationToken()
 	}
 	if result.state != nil && result.operationToken.generation != 0 {
-		if result.err == nil && (!result.history || result.applied) {
-			if result.blocks != nil {
-				if result.history {
-					result.state.setWordBlocksAndTextState(result.blocks, false)
-				} else {
-					result.state.setWordBlocks(result.blocks)
+		if result.applicationCommand {
+			if result.revision == 0 {
+				result.revision = result.state.wordRevisionAtomic.Load()
+			}
+		} else {
+			if result.err == nil && (!result.history || result.applied) {
+				if result.blocks != nil {
+					if result.history {
+						result.state.setWordBlocksAndTextState(result.blocks, false)
+					} else {
+						result.state.setWordBlocks(result.blocks)
+					}
+				}
+				result.revision = result.operationToken.revision + 1
+				if !a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, max(result.revision, result.state.wordRevisionAtomic.Load())) {
+					result.state.advanceRevision(result.revision)
 				}
 			}
-			result.revision = result.operationToken.revision + 1
-			if !a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, max(result.revision, result.state.wordRevisionAtomic.Load())) {
-				result.state.advanceRevision(result.revision)
+			if result.revision == 0 {
+				result.revision = result.state.wordRevisionAtomic.Load()
 			}
-		}
-		if result.revision == 0 {
-			result.revision = result.state.wordRevisionAtomic.Load()
 		}
 		result.state.finishOperation(result.operationToken)
 	}
@@ -164,7 +221,7 @@ func (a *App) applyWordHistory(undo bool) {
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		var applied bool
 		blocks, err := runWordMutation(state, func() error {
 			var operationErr error
@@ -176,5 +233,5 @@ func (a *App) applyWordHistory(undo bool) {
 			return operationErr
 		})
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "编辑", err: err, history: true, applied: applied, undo: undo, blocks: blocks})
-	}()
+	})
 }

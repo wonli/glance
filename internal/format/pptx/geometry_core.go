@@ -141,15 +141,22 @@ func parseSlideTransformMetadata(data []byte) map[uint32]presentationTransformMe
 		return nil
 	}
 	result := make(map[uint32]presentationTransformMetadata)
+	var visit func(pptxXMLNode)
+	visit = func(shape pptxXMLNode) {
+		switch shape.XMLName.Local {
+		case "sp", "pic":
+			id := shapeIDFromXML(shape)
+			if id != 0 {
+				result[id] = shapeTransformMetadataFromXML(shape)
+			}
+		case "grpSp":
+			for _, child := range shape.Children {
+				visit(child)
+			}
+		}
+	}
 	for _, shape := range tree.Children {
-		if shape.XMLName.Local != "sp" && shape.XMLName.Local != "pic" {
-			continue
-		}
-		id := shapeIDFromXML(shape)
-		if id == 0 {
-			continue
-		}
-		result[id] = shapeTransformMetadataFromXML(shape)
+		visit(shape)
 	}
 	return result
 }

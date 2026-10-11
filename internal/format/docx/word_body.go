@@ -32,9 +32,11 @@ func (d *Document) InsertParagraphAfter(afterParagraphID string) (string, error)
 		}
 	}
 	if afterParagraphID != "" {
-		if target, ok := d.wordParagraphTargets[afterParagraphID]; ok && target != nil {
-			insertAt = target.end
+		target, ok := d.wordParagraphTargets[afterParagraphID]
+		if !ok || target == nil {
+			return "", fmt.Errorf("Word paragraph %q is unavailable", afterParagraphID)
 		}
+		insertAt = target.end
 	}
 	prefix := elementPrefix(body.rawName)
 	run := wrapWordElement(prefix, "r", wrapWordElement(prefix, "t", nil))

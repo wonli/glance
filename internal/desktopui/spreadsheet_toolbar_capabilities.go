@@ -124,7 +124,7 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	case toolbarActionSaveAs:
 		return state.book != nil && !a.isSaving()
 	case toolbarActionPrint:
-		return state.book != nil && a.wordPrinter != nil && a.wordPrinter.Available() && !state.formatRunning.Load() && !a.isSaving()
+		return state.book != nil && a.nativePrinter != nil && a.nativePrinter.Available() && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionExport:
 		return state.book != nil && !state.formatRunning.Load() && !a.isSaving() && !state.spreadsheetPDFExportRunning
 	case toolbarActionShare:

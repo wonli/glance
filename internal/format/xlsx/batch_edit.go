@@ -46,19 +46,24 @@ func (w *Workbook) ReadRange(sheet string, bounds document.CellRange) ([][]docum
 }
 
 func (w *Workbook) SetCells(sheet string, edits []document.CellEdit) error {
+	_, err := w.SetCellsChanged(sheet, edits)
+	return err
+}
+
+func (w *Workbook) SetCellsChanged(sheet string, edits []document.CellEdit) (bool, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if err := w.checkOpen(); err != nil {
-		return err
+		return false, err
 	}
 	if !contains(w.file.GetSheetList(), sheet) {
-		return fmt.Errorf("worksheet %q does not exist", sheet)
+		return false, fmt.Errorf("worksheet %q does not exist", sheet)
 	}
 	if len(edits) == 0 {
-		return nil
+		return false, nil
 	}
 	if len(edits) > maxClipboardCells {
-		return fmt.Errorf("clipboard edit exceeds %d cells", maxClipboardCells)
+		return false, fmt.Errorf("clipboard edit exceeds %d cells", maxClipboardCells)
 	}
 	type valueEdit struct {
 		ref   string
@@ -68,57 +73,132 @@ func (w *Workbook) SetCells(sheet string, edits []document.CellEdit) error {
 	seen := map[string]bool{}
 	for i, e := range edits {
 		if e.Row < 1 || e.Column < 1 || e.Row > maxXLSXRows || e.Column > maxXLSXColumns {
-			return errors.New("clipboard edit exceeds XLSX worksheet limits")
-		}
-		if strings.HasPrefix(strings.TrimSpace(e.Value), "=") {
-			return errors.New("formula input is not supported")
+			return false, errors.New("clipboard edit exceeds XLSX worksheet limits")
 		}
 		ref, _ := excelize.CoordinatesToCellName(e.Column, e.Row)
 		if seen[ref] {
-			return fmt.Errorf("duplicate clipboard destination %s", ref)
+			return false, fmt.Errorf("duplicate clipboard destination %s", ref)
 		}
 		seen[ref] = true
-		var val any = e.Value
-		trimmed := strings.TrimSpace(e.Value)
-		if strings.EqualFold(trimmed, "true") {
-			val = true
-		} else if strings.EqualFold(trimmed, "false") {
-			val = false
-		} else if n, err := parseFiniteNumber(trimmed); err == nil {
-			val = n
+		val, err := spreadsheetEditValue(e)
+		if err != nil {
+			return false, fmt.Errorf("invalid value for %s: %w", ref, err)
 		}
 		prepared[i] = valueEdit{ref: ref, value: val}
 	}
 	changed := false
-	for _, e := range prepared {
+	for i, e := range prepared {
 		value, err := w.file.GetCellValue(sheet, e.ref)
 		if err != nil {
-			return err
+			return false, err
 		}
-		if value != fmt.Sprint(e.value) {
+		if edits[i].TypedValue != nil {
+			value, err = w.file.GetCellValue(sheet, e.ref, excelize.Options{RawCellValue: true})
+			if err != nil {
+				return false, err
+			}
+		}
+		if !editValueMatchesCell(w.file, sheet, e.ref, edits[i], e.value, value) {
 			changed = true
 			break
 		}
 	}
 	if !changed {
-		return nil
+		return false, nil
 	}
 	before, err := w.snapshotLocked()
 	if err != nil {
-		return err
+		return false, err
 	}
 	for _, e := range prepared {
 		if err := w.file.SetCellValue(sheet, e.ref, e.value); err != nil {
 			w.restoreSnapshotLocked(before)
-			return fmt.Errorf("write %s: %w", e.ref, err)
+			return false, fmt.Errorf("write %s: %w", e.ref, err)
 		}
 	}
 	if err := w.recordHistoryLocked(before); err != nil {
 		w.restoreSnapshotLocked(before)
-		return err
+		return false, err
 	}
 	w.dirty = true
-	return nil
+	return true, nil
+}
+
+func spreadsheetEditValue(edit document.CellEdit) (any, error) {
+	if edit.TypedValue != nil {
+		switch edit.TypedValue.Kind {
+		case document.CellValueText:
+			if strings.HasPrefix(strings.TrimSpace(edit.TypedValue.Text), "=") {
+				return nil, errors.New("formula input is not supported")
+			}
+			return edit.TypedValue.Text, nil
+		case document.CellValueNumber:
+			if !finiteNumber(edit.TypedValue.Number) {
+				return nil, errors.New("numeric cell values must be finite")
+			}
+			return edit.TypedValue.Number, nil
+		case document.CellValueBoolean:
+			return edit.TypedValue.Boolean, nil
+		default:
+			return nil, errors.New("unsupported explicit cell value type")
+		}
+	}
+	if strings.HasPrefix(strings.TrimSpace(edit.Value), "=") {
+		return nil, errors.New("formula input is not supported")
+	}
+	var value any = edit.Value
+	trimmed := strings.TrimSpace(edit.Value)
+	if strings.EqualFold(trimmed, "true") {
+		value = true
+	} else if strings.EqualFold(trimmed, "false") {
+		value = false
+	} else if n, err := parseFiniteNumber(trimmed); err == nil {
+		value = n
+	}
+	return value, nil
+}
+
+func editValueMatchesCell(file *excelize.File, sheet, cell string, edit document.CellEdit, value any, current string) bool {
+	if edit.TypedValue == nil {
+		return current == displayCellValue(value)
+	}
+	cellType, err := file.GetCellType(sheet, cell)
+	if err != nil {
+		return false
+	}
+	switch edit.TypedValue.Kind {
+	case document.CellValueText:
+		if edit.TypedValue.Text == "" && cellType == excelize.CellTypeUnset && current == "" {
+			return true
+		}
+		return (cellType == excelize.CellTypeInlineString || cellType == excelize.CellTypeSharedString) && current == edit.TypedValue.Text
+	case document.CellValueNumber:
+		return (cellType == excelize.CellTypeNumber || cellType == excelize.CellTypeUnset) && current == displayCellValue(value)
+	case document.CellValueBoolean:
+		if cellType != excelize.CellTypeBool {
+			return false
+		}
+		boolean, _ := value.(bool)
+		return strings.EqualFold(current, displayCellValue(value)) || (boolean && current == "1") || (!boolean && current == "0")
+	default:
+		return false
+	}
+}
+
+func displayCellValue(value any) string {
+	if boolean, ok := value.(bool); ok {
+		return strings.ToUpper(strconv.FormatBool(boolean))
+	}
+	return fmt.Sprint(value)
+}
+
+func (w *Workbook) SetCellValueChanged(sheet, cell string, value document.CellValue) (bool, error) {
+	column, row, err := excelize.CellNameToCoordinates(cell)
+	if err != nil {
+		return false, fmt.Errorf("invalid cell reference %q: %w", cell, err)
+	}
+	edit := document.CellEdit{Row: row, Column: column, TypedValue: &value}
+	return w.SetCellsChanged(sheet, []document.CellEdit{edit})
 }
 
 func parseFiniteNumber(s string) (float64, error) {

@@ -209,7 +209,7 @@ func (a *App) requestPDFPage(index int) {
 	window := a.window
 	shutdown := a.shutdown
 	done := v.workerSignal()
-	go func() {
+	a.launchManagedBackground(func() {
 		pixels, p, w, e := d.Render(index, 144)
 		p.Index = index
 		r := pdfPageResult{page: p, pixels: pixels, warning: w, err: e, info: d.Info()}
@@ -221,7 +221,7 @@ func (a *App) requestPDFPage(index int) {
 		case <-done:
 		case <-shutdown:
 		}
-	}()
+	})
 }
 
 func (v *pdfViewState) syncInfo(info document.PDFInfo) {

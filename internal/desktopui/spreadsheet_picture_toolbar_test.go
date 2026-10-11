@@ -196,24 +196,21 @@ func TestSpreadsheetPicturePickerInsertSavesAndReopens(t *testing.T) {
 	if err := book.SaveAsDocument(path); err != nil {
 		t.Fatal(err)
 	}
-	defer book.Close()
 	imagePath := filepath.Join(directory, "picked.png")
 	data := pngImageBytes(t, image.NewNRGBA(image.Rect(0, 0, 4, 2)))
 	if err := os.WriteFile(imagePath, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	state := newDocumentSessionState(path)
-	state.book, state.sheet = book, book.SheetNames()[0]
+	runtime := newDesktopRuntime()
+	t.Cleanup(runtime.shutdown)
+	app := newAppWithRuntime(nil, runtime)
+	if err := app.installDocument(loadedDocument{path: path, book: book, sheets: book.SheetNames()}); err != nil {
+		t.Fatalf("install workbook: %v", err)
+	}
+	state := app.documentSessionState
 	state.selectionSet = true
 	state.selection.Active = CellPosition{Row: 0, Column: 0}
-	app := &App{
-		documentSessionState:   state,
-		documentGeneration:     3,
-		xlsxImagePickerResults: make(chan spreadsheetImagePickerResult, 1),
-		gridPictureCommands:    make(chan gridPictureCommandResult, 1),
-		shutdown:               make(chan struct{}),
-		xlsxImageFilePicker:    func() (string, error) { return imagePath, nil },
-	}
+	app.xlsxImageFilePicker = func() (string, error) { return imagePath, nil }
 	app.startSpreadsheetImagePicker(spreadsheetImageInsert)
 	var picker spreadsheetImagePickerResult
 	select {

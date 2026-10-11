@@ -145,9 +145,15 @@ func TestSpreadsheetToolbar_PivotTableAndPrint(t *testing.T) {
 	_ = wb.SetCellText(sheet, "B1", "Dept")
 	_ = wb.SetCellText(sheet, "C1", "100")
 
-	state := newDocumentSessionState("test_pivot_print.xlsx")
-	state.book = wb
-	state.sheets = wb.SheetNames()
+	desktop := newDesktopRuntimeWithPrinter(&darwinTestPrinter{})
+	t.Cleanup(desktop.shutdown)
+	app := newAppWithRuntime(nil, desktop)
+	app.theme = material.NewTheme()
+	app.formatResults = make(chan spreadsheetFormatResult, 10)
+	if err := app.installDocument(loadedDocument{book: wb, sheets: wb.SheetNames()}); err != nil {
+		t.Fatalf("install workbook: %v", err)
+	}
+	state := app.documentSessionState
 	state.sheet = sheet
 	state.virtualGrid = newGridViewport()
 	state.selection = CellSelection{
@@ -155,12 +161,6 @@ func TestSpreadsheetToolbar_PivotTableAndPrint(t *testing.T) {
 		Active: CellPosition{Row: 2, Column: 2},
 	}
 	state.selectionSet = true
-	app := &App{
-		documentSessionState: state,
-		theme:                material.NewTheme(),
-		formatResults:        make(chan spreadsheetFormatResult, 10),
-		wordPrinter:          &darwinTestPrinter{},
-	}
 
 	// 1. Pivot Table
 	if unimplementedSpreadsheetToolbarAction(toolbarActionPivotTable) {
@@ -195,7 +195,15 @@ func TestSpreadsheetToolbar_PivotTableAndPrint(t *testing.T) {
 		t.Fatalf("expected 打印工作表 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
 	}
 	app.modal.OnAction("print")
-	if !strings.Contains(app.status, "打印任务") {
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		app.processAsyncResults()
+		if strings.Contains(app.status, "系统打印服务") || strings.Contains(app.status, "打印失败") {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !strings.Contains(app.status, "系统打印服务") {
 		t.Fatalf("unexpected status after print: %q", app.status)
 	}
 }

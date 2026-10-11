@@ -40,6 +40,14 @@ func (d *Document) saveAtomicLocked(targetPath string) error {
 	if err != nil {
 		return err
 	}
+	slideLayouts, err := d.presentationLayoutOverridesByIndexLocked()
+	if err != nil {
+		return err
+	}
+	slideTimings, err := d.presentationAnimationOverridesByIndexLocked()
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(targetPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建目录失败: %w", err)
@@ -59,7 +67,11 @@ func (d *Document) saveAtomicLocked(targetPath string) error {
 	}
 	validationPath := tmpPath
 	var transformedPath string
-	if hasPresentationPackageEdits(d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges) {
+	var packageEdits map[string][]byte
+	if d.presentationComments != nil {
+		packageEdits = d.presentationComments.PackageEdits
+	}
+	if hasPresentationPackageEdits(d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges, d.slidePlaceholderChanges, d.slideBackgroundChanges, d.slideSizeChange, slideLayouts, slideTimings, packageEdits) {
 		transformed, err := os.CreateTemp(dir, "glance-pptx-patched-*.tmp")
 		if err != nil {
 			return fmt.Errorf("创建几何校验文件失败: %w", err)
@@ -67,12 +79,21 @@ func (d *Document) saveAtomicLocked(targetPath string) error {
 		transformedPath = transformed.Name()
 		_ = transformed.Close()
 		defer os.Remove(transformedPath)
-		if err := patchPresentationEdits(tmpPath, transformedPath, d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges); err != nil {
+		if err := patchPresentationEdits(tmpPath, transformedPath, d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges, d.slidePlaceholderChanges, d.slideBackgroundChanges, d.slideSizeChange, slideLayouts, slideTimings, packageEdits); err != nil {
 			return err
 		}
 		validationPath = transformedPath
 	}
-	if err := validateSavedPresentationEdits(validationPath, expected, d.slideStyleChanges); err != nil {
+	if err := validateSavedPresentationEdits(validationPath, expected, d.slideStyleChanges, d.slideBackgroundChanges, d.slideSizeChange); err != nil {
+		return err
+	}
+	if err := validatePPTXCommentEdits(validationPath, packageEdits); err != nil {
+		return err
+	}
+	if err := validatePPTXSlideLayoutEdits(validationPath, slideLayouts); err != nil {
+		return err
+	}
+	if err := validatePPTXAnimationEdits(validationPath, slideTimings); err != nil {
 		return err
 	}
 
@@ -97,10 +118,22 @@ func (d *Document) saveAtomicLocked(targetPath string) error {
 func (d *Document) SnapshotBytes() ([]byte, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+	return d.snapshotBytesLocked()
+}
+
+func (d *Document) snapshotBytesLocked() ([]byte, error) {
 	if d.pres == nil {
 		return nil, fmt.Errorf("演示文稿已关闭")
 	}
 	expected, err := d.presentationSaveExpectationsLocked()
+	if err != nil {
+		return nil, err
+	}
+	slideLayouts, err := d.presentationLayoutOverridesByIndexLocked()
+	if err != nil {
+		return nil, err
+	}
+	slideTimings, err := d.presentationAnimationOverridesByIndexLocked()
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +149,12 @@ func (d *Document) SnapshotBytes() ([]byte, error) {
 	if _, err := d.pres.Save(context.Background(), tmpPath, gopptx.WithSaveOverwrite(true)); err != nil {
 		return nil, fmt.Errorf("生成演示文稿快照失败: %w", err)
 	}
-	if !hasPresentationPackageEdits(d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges) {
-		if err := validateSavedPresentationEdits(tmpPath, expected, d.slideStyleChanges); err != nil {
+	var packageEdits map[string][]byte
+	if d.presentationComments != nil {
+		packageEdits = d.presentationComments.PackageEdits
+	}
+	if !hasPresentationPackageEdits(d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges, d.slidePlaceholderChanges, d.slideBackgroundChanges, d.slideSizeChange, slideLayouts, slideTimings, packageEdits) {
+		if err := validateSavedPresentationEdits(tmpPath, expected, d.slideStyleChanges, d.slideBackgroundChanges, d.slideSizeChange); err != nil {
 			return nil, err
 		}
 		return os.ReadFile(tmpPath)
@@ -129,10 +166,19 @@ func (d *Document) SnapshotBytes() ([]byte, error) {
 	patchedPath := patchedFile.Name()
 	_ = patchedFile.Close()
 	defer os.Remove(patchedPath)
-	if err := patchPresentationEdits(tmpPath, patchedPath, d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges); err != nil {
+	if err := patchPresentationEdits(tmpPath, patchedPath, d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges, d.slidePlaceholderChanges, d.slideBackgroundChanges, d.slideSizeChange, slideLayouts, slideTimings, packageEdits); err != nil {
 		return nil, err
 	}
-	if err := validateSavedPresentationEdits(patchedPath, expected, d.slideStyleChanges); err != nil {
+	if err := validateSavedPresentationEdits(patchedPath, expected, d.slideStyleChanges, d.slideBackgroundChanges, d.slideSizeChange); err != nil {
+		return nil, err
+	}
+	if err := validatePPTXCommentEdits(patchedPath, packageEdits); err != nil {
+		return nil, err
+	}
+	if err := validatePPTXSlideLayoutEdits(patchedPath, slideLayouts); err != nil {
+		return nil, err
+	}
+	if err := validatePPTXAnimationEdits(patchedPath, slideTimings); err != nil {
 		return nil, err
 	}
 	return os.ReadFile(patchedPath)

@@ -166,7 +166,7 @@ func (a *App) startNextWordTextCommitFor(state *documentSessionState) {
 	sort.Strings(runIDs)
 	runID := runIDs[0]
 	value, _ := state.wordDraft(runID)
-	editor, ok := any(state.word).(document.WordTextEditor)
+	_, ok := any(state.word).(document.WordTextEditor)
 	if !ok {
 		state.wordFlushRequested.Store(false)
 		state.wordFlushAllDrafts.Store(false)
@@ -175,14 +175,33 @@ func (a *App) startNextWordTextCommitFor(state *documentSessionState) {
 		a.setStatus("当前 DOCX 适配器不支持原位文字编辑")
 		return
 	}
-	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
-		blocks, err := runWordMutation(state, func() error { return editor.ReplaceTextRun(runID, value) })
-		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "编辑文字", err: err, blocks: blocks, textDraft: true, runID: runID, runText: value})
-	}()
+	applicationCommand := a.applicationSessionRegistered(token.documentID)
+	a.launchManagedBackground(func() {
+		if !applicationCommand {
+			blocks, err := runWordMutation(state, func() error { return state.word.ReplaceTextRun(runID, value) })
+			a.publishWordCommand(wordCommandResult{
+				state: state, operationToken: token, generation: generation, operation: "编辑文字",
+				err: err, blocks: blocks, textDraft: true, runID: runID, runText: value,
+			})
+			return
+		}
+		result, err := a.executeRibbonApplicationCommand(token, "word.text_run.replace", "word.text_run", runID, "", map[string]string{
+			"run_id": runID, "value": value,
+		})
+		revision := uint64(0)
+		if err == nil {
+			revision = result.Revision
+		}
+		a.publishWordCommand(wordCommandResult{
+			state: state, operationToken: token, revision: revision, applicationCommand: true,
+			generation: generation, operation: "编辑文字", err: err, textDraft: true, runID: runID, runText: value,
+		})
+	})
 }
 
 func (a *App) finishWordTextFlush(state *documentSessionState) {
@@ -268,7 +287,7 @@ func (a *App) startWordParagraphJoin(state *documentSessionState) {
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		var joined document.WordParagraphJoinResult
 		blocks, err := runWordMutation(state, func() error {
 			var joinErr error
@@ -286,7 +305,7 @@ func (a *App) startWordParagraphJoin(state *documentSessionState) {
 			joinRunID:       joined.RunID,
 			joinCaret:       joined.Caret,
 		})
-	}()
+	})
 }
 
 func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
@@ -359,7 +378,7 @@ func (a *App) startWordParagraphSplit(state *documentSessionState) {
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		var paragraphID, runID string
 		blocks, err := runWordMutation(state, func() error {
 			var splitErr error
@@ -379,7 +398,7 @@ func (a *App) startWordParagraphSplit(state *documentSessionState) {
 			splitRunID:       runID,
 			splitRunText:     suffix,
 		})
-	}()
+	})
 }
 
 func wordTextAroundSelection(value string, selectionStart, selectionEnd int) (prefix, suffix string, valid bool) {

@@ -161,7 +161,7 @@ func (a *App) runWordSymbolInsertion(runID, paragraphID string, start, end int, 
 		return false
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		blocks, err := runWordMutation(state, func() error {
 			return editor.ReplaceTextRange(runID, start, end, choice.value)
 		})
@@ -170,7 +170,7 @@ func (a *App) runWordSymbolInsertion(runID, paragraphID string, start, end int, 
 			wordSymbolInsertion: true, replaceRunID: runID, replaceParagraphID: paragraphID, replaceStart: start,
 			insertedSymbol: choice.value,
 		})
-	}()
+	})
 	return true
 }
 

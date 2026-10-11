@@ -1,12 +1,13 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 	"strings"
 )
 
-func (a *App) runSpreadsheetFormulaCommand(operation string, edit func(document.SpreadsheetFormulaEditor) error) {
+func (a *App) runSpreadsheetFormulaCommand(operation, sheet, cell, formula string) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
@@ -15,24 +16,41 @@ func (a *App) runSpreadsheetFormulaCommand(operation string, edit func(document.
 	if !ok {
 		return
 	}
-	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	generation, activeSheet, window := a.documentGeneration, state.sheet, state.virtualGrid
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
 		return
 	}
-	go func() {
-		unlock := lockSessionAdapterWrite(state)
-		err := edit(editor)
-		unlock()
-		a.completeSessionOperation(state, token, err, true)
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		changed := true
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.formula.set", "spreadsheet_cell", cell, sheet, map[string]string{
+				"sheet": sheet, "cell": cell, "formula": formula,
+			})
+			err = commandErr
+			if err == nil {
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				changed = outcome.Changed
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			err = editor.SetCellFormula(sheet, cell, formula)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		if err == nil {
 			a.setStatus("已设置公式")
 		}
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: activeSheet, window: window, err: err, operation: operation, applied: changed}:
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) showSpreadsheetInsertFunctionDialog(category string) {
@@ -86,10 +104,54 @@ func (a *App) showSpreadsheetInsertFunctionDialog(category string) {
 		if action != "confirm" || formula == "" {
 			return
 		}
-		a.runSpreadsheetFormulaCommand("插入公式", func(ed document.SpreadsheetFormulaEditor) error {
-			return ed.SetCellFormula(state.sheet, cellName, formula)
-		})
+		a.runSpreadsheetFormulaCommand("插入公式", state.sheet, cellName, formula)
 	}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+}
+
+func (a *App) runSpreadsheetDefinedNameCommand(name document.SpreadsheetDefinedName) {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetDefinedNameEditor)
+	if !ok {
+		return
+	}
+	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		changed := true
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.defined_names.set", "spreadsheet_workbook", token.documentID, sheet, name)
+			err = commandErr
+			if err == nil {
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				changed = outcome.Changed
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			err = editor.SetDefinedName(name)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
+		if err != nil {
+			a.setStatus("创建定义名称失败：" + err.Error())
+		} else {
+			a.setStatus(fmt.Sprintf("已创建定义名称：“%s” -> %s", name.Name, name.Ref))
+		}
+		select {
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "名称管理器", applied: changed}:
+		case <-a.shutdown:
+		}
+	})
 }
 
 func (a *App) showSpreadsheetNameManagerDialog() {
@@ -114,18 +176,10 @@ func (a *App) showSpreadsheetNameManagerDialog() {
 		if action != "confirm" || name == "" {
 			return
 		}
-		err := ed.SetDefinedName(document.SpreadsheetDefinedName{
+		a.runSpreadsheetDefinedNameCommand(document.SpreadsheetDefinedName{
 			Name: name,
 			Ref:  defaultRef,
 		})
-		if err != nil {
-			a.setStatus("创建定义名称失败：" + err.Error())
-			return
-		}
-		a.setStatus(fmt.Sprintf("已创建定义名称：“%s” -> %s", name, defaultRef))
-		if a.window != nil {
-			a.window.Invalidate()
-		}
 	}, modalDialogActionSpec{ID: "confirm", Label: "新建名称"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
 }
 
@@ -145,17 +199,28 @@ func (a *App) applySpreadsheetFlashFill() {
 		return
 	}
 	bounds := state.selection.Bounds()
-	go func() {
-		unlock := lockSessionAdapterWrite(state)
-		res, err := editor.FlashFill(sheet, bounds)
-		unlock()
-		a.completeSessionOperation(state, token, err, true)
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		var res document.SpreadsheetFlashFillResult
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.flash_fill.apply", "spreadsheet_cell_range", "selection", sheet, map[string]any{"sheet": sheet, "bounds": bounds})
+			err = commandErr
+			if err == nil {
+				err = json.Unmarshal(result.Data, &res)
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			res, err = editor.FlashFill(sheet, bounds)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && res.RowsFilled > 0 && !commandRouted)
 		if err == nil {
 			a.setStatus(fmt.Sprintf("快速填充完成，已自动填充 %d 个单元格", res.RowsFilled))
 		}
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "快速填充"}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "快速填充", applied: res.RowsFilled > 0}:
 		case <-a.shutdown:
 		}
-	}()
+	})
 }

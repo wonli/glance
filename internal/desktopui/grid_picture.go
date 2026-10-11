@@ -87,7 +87,7 @@ func (a *App) requestGridPictureMetadata(state *documentSessionState, reader doc
 	generation := a.documentGeneration
 	results := a.gridPictureMetaResults
 	shutdown, window := a.shutdown, a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		unlock := lockSessionAdapterRead(state)
 		images, err := reader.SpreadsheetImages(sheet)
 		unlock()
@@ -99,7 +99,7 @@ func (a *App) requestGridPictureMetadata(state *documentSessionState, reader doc
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 }
 
 func invalidateGridPicturePreviews(state *documentSessionState) {
@@ -242,7 +242,7 @@ func (a *App) requestGridPicturePreview(state *documentSessionState, picture doc
 	}
 	generation, sheet, window := a.documentGeneration, state.gridPicturesSheet, a.window
 	shutdown := a.shutdown
-	go func() {
+	a.launchManagedBackground(func() {
 		unlock := lockSessionAdapterRead(state)
 		data, err := reader.SpreadsheetImageBytes(picture.ID)
 		unlock()
@@ -262,7 +262,7 @@ func (a *App) requestGridPicturePreview(state *documentSessionState, picture doc
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 }
 
 func decodeSpreadsheetPicturePreview(data []byte) (image.Image, error) {

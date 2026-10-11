@@ -32,6 +32,7 @@ type PDFCommand struct {
 	Page, Run  int
 	Revision   uint64
 	Text       string
+	Author     string
 	X, Y, W, H float64
 	Points     []PDFPoint
 }

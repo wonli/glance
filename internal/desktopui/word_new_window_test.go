@@ -1,11 +1,21 @@
 package desktopui
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
+	"glance/internal/application"
 	"glance/internal/format/docx"
 )
+
+type wordNewWindowTestViewHandler struct{ app *App }
+
+func (h wordNewWindowTestViewHandler) HandleViewIntent(_ context.Context, intent application.ViewIntent) (json.RawMessage, error) {
+	return h.app.applyDesktopViewIntent(intent)
+}
 
 func TestWordNewWindowActionOpensSharedDocumentView(t *testing.T) {
 	fixture := newWindowViewFixture(t)
@@ -35,17 +45,25 @@ func TestWordNewWindowActionOpensSharedDocumentView(t *testing.T) {
 	var launched bool
 	var gotDocumentID string
 	var gotSnapshot windowViewSnapshot
+	launchRequested := make(chan struct{}, 1)
 	fixture.runtime.windowLauncher = func(documentID string, snapshot windowViewSnapshot) error {
 		launched = true
 		gotDocumentID = documentID
 		gotSnapshot = snapshot
+		launchRequested <- struct{}{}
 		return nil
 	}
+	app.ensureDesktopRuntime().applicationRuntime.RegisterViewIntentHandler(app.windowID, wordNewWindowTestViewHandler{app: app})
 	if !app.wordToolbarActionEnabled(findWordViewTestAction(t, "view-new-window")) {
 		t.Fatal("New Window should remain available while shared format work is pending")
 	}
 	beforeTabs, beforeSessions := len(fixture.runtime.collection.Tabs()), len(fixture.runtime.sessions)
 	app.executeWordToolbarAction("view-new-window")
+	select {
+	case <-launchRequested:
+	case <-time.After(2 * time.Second):
+		t.Fatal("New Window capability did not reach the attached view")
+	}
 	if !launched || gotDocumentID != fixture.ids[0] {
 		t.Fatalf("launch request = %v for document %q; want %q", launched, gotDocumentID, fixture.ids[0])
 	}

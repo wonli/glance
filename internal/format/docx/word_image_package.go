@@ -92,6 +92,10 @@ func escapeXMLString(value string) string {
 }
 
 func (d *Document) addWordRelationship(id, target string) (*part, error) {
+	return d.addWordRelationshipType(id, target, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image")
+}
+
+func (d *Document) addWordRelationshipType(id, target, relationshipType string) (*part, error) {
 	const name = "word/_rels/document.xml.rels"
 	partValue, exists := findPackagePart(d.parts, name)
 	if !exists {
@@ -102,7 +106,7 @@ func (d *Document) addWordRelationship(id, target string) (*part, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse DOCX relationships: %w", err)
 	}
-	child := fmt.Sprintf(`<Relationship Id="%s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="%s"/>`, escapeXMLString(id), escapeXMLString(target))
+	child := fmt.Sprintf(`<Relationship Id="%s" Type="%s" Target="%s"/>`, escapeXMLString(id), escapeXMLString(relationshipType), escapeXMLString(target))
 	patched, err := insertElementContent(partValue.data, root, []byte(child))
 	if err != nil {
 		return nil, err

@@ -261,12 +261,14 @@ func (d *HeadlessDocument) Close() error {
 	}
 	app := d.app
 	d.app = nil
+	app.shutdownOnce.Do(func() { close(app.shutdown) })
+	app.closeAgentSubscription()
+	app.stopAndWaitManagedBackground()
 	if app.documentSessionState != nil && app.documentSessionState.documentID != "" && app.desktopRuntime != nil {
 		app.desktopRuntime.removeSession(app.documentSessionState.documentID)
 	} else {
 		_ = app.closeDocument()
 	}
-	app.shutdownOnce.Do(func() { close(app.shutdown) })
 	return nil
 }
 

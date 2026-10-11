@@ -94,6 +94,29 @@ func TestInsertParagraphAfterSpecificParagraphAndUndo(t *testing.T) {
 	}
 }
 
+func TestInsertParagraphAfterUnknownExplicitTargetDoesNotFallBackOrMutate(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	before := append([]byte(nil), doc.parts[doc.documentIdx].data...)
+	dirtyBefore := doc.Dirty()
+	if _, err := requireWordBodyEditor(t, doc).InsertParagraphAfter("missing-paragraph"); err == nil {
+		t.Fatal("InsertParagraphAfter accepted an unknown explicit paragraph ID")
+	}
+	if after := doc.parts[doc.documentIdx].data; !bytes.Equal(after, before) {
+		t.Fatalf("unknown paragraph target changed document XML: before=%s after=%s", before, after)
+	}
+	if dirtyAfter := doc.Dirty(); dirtyAfter != dirtyBefore {
+		t.Fatalf("unknown paragraph target changed dirty state from %v to %v", dirtyBefore, dirtyAfter)
+	}
+	if history := requireWordHistory(t, doc); history.CanUndo() {
+		t.Fatal("unknown paragraph target created an undo record")
+	}
+}
+
 func TestReplaceTextRunEditsSelectedRunAndTableCellAndRoundTrips(t *testing.T) {
 	doc := textEditingFixture(t)
 	blocks := doc.WordBlocks()

@@ -35,6 +35,7 @@ type Document struct {
 	slideInherited           [][]document.PresentationElement
 	slidePlaceholderBounds   []map[uint32]document.PresentationRect
 	slidePlaceholderTypes    []map[uint32]string
+	slidePlaceholderChanges  []map[uint32]string
 	slideShapeTransforms     []map[uint32]presentationTransformMetadata
 	slidePlaceholderXfrms    []map[uint32]presentationTransformMetadata
 	slideTransformChanges    []map[uint32]presentationTransformOverride
@@ -42,6 +43,11 @@ type Document struct {
 	slidePictureCropStates   []map[uint32]presentationPictureCropState
 	slidePictureCropChanges  []map[uint32]document.PresentationCrop
 	slidePictureImageChanges []map[uint32]presentationPictureImageOverride
+	slideBackgroundChanges   []presentationBackgroundOverride
+	slideSizeChange          presentationSlideSizeOverride
+	presentationComments     *pptxCommentState
+	slideLayoutChanges       map[uint32]string
+	slideAnimationChanges    map[uint32][]byte
 	defaultSlideBackground   pptxBackground
 	defaultSlideInherited    []document.PresentationElement
 }
@@ -67,12 +73,16 @@ func Open(path string) (*Document, error) {
 		heightPT:                 defaultSlideHeightPT,
 		mediaImages:              make(map[string]image.Image),
 		mediaBytes:               make(map[string][]byte),
+		presentationComments:     newPPTXCommentState(),
+		slideLayoutChanges:       make(map[uint32]string),
+		slideAnimationChanges:    make(map[uint32][]byte),
 		slideBodyProps:           make(map[int]map[uint32]shapeBodyProps),
 		slidePictureTargets:      make(map[int]map[uint32]string),
 		slideTransformChanges:    make([]map[uint32]presentationTransformOverride, 0),
 		slideStyleChanges:        make([]map[uint32]document.PresentationElementStylePatch, 0),
 		slidePictureCropChanges:  make([]map[uint32]document.PresentationCrop, 0),
 		slidePictureImageChanges: make([]map[uint32]presentationPictureImageOverride, 0),
+		slidePlaceholderChanges:  make([]map[uint32]string, 0),
 		revision:                 1,
 	}
 
@@ -82,6 +92,7 @@ func Open(path string) (*Document, error) {
 		if fi, err := f.Stat(); err == nil {
 			if zr, err := zip.NewReader(f, fi.Size()); err == nil {
 				doc.inspectZipPackage(zr)
+				doc.loadPPTXCommentState(zr)
 			}
 		}
 	}
@@ -102,6 +113,9 @@ func NewBlank() (*Document, error) {
 		heightPT:                 defaultSlideHeightPT,
 		mediaImages:              make(map[string]image.Image),
 		mediaBytes:               make(map[string][]byte),
+		presentationComments:     newPPTXCommentState(),
+		slideLayoutChanges:       make(map[uint32]string),
+		slideAnimationChanges:    make(map[uint32][]byte),
 		slideBodyProps:           make(map[int]map[uint32]shapeBodyProps),
 		slidePictureTargets:      make(map[int]map[uint32]string),
 		slideTransformChanges:    make([]map[uint32]presentationTransformOverride, 0),
@@ -120,21 +134,32 @@ func NewBlank() (*Document, error) {
 			// Title: 960 pt width, centered horizontally
 			// In EMU: 960 pt * 12700 = 12192000 EMU
 			// Title at X: 1.5 in (1371600 EMU), Y: 2.0 in (1828800 EMU), Width: 10.33 in, Height: 1.5 in
-			_, _ = slide.AddTextBox(gopptx.TextBoxSpec{
+			title, err := slide.AddTextBox(gopptx.TextBoxSpec{
 				X:      1371600,
 				Y:      1828800,
 				Width:  9448800,
 				Height: 1371600,
-				Text:   "点击添加演示文稿标题",
+				Text:   "",
 			})
+			if err != nil {
+				_ = pres.Close()
+				return nil, fmt.Errorf("创建标题占位符失败: %w", err)
+			}
 			// Subtitle at Y: 3.8 in
-			_, _ = slide.AddTextBox(gopptx.TextBoxSpec{
+			subtitle, err := slide.AddTextBox(gopptx.TextBoxSpec{
 				X:      1371600,
 				Y:      3474720,
 				Width:  9448800,
 				Height: 914400,
-				Text:   "点击添加副标题",
+				Text:   "",
 			})
+			if err != nil {
+				_ = pres.Close()
+				return nil, fmt.Errorf("创建副标题占位符失败: %w", err)
+			}
+			titleID, subtitleID := uint32(title.ID()), uint32(subtitle.ID())
+			doc.slidePlaceholderTypes = []map[uint32]string{{titleID: "ctrTitle", subtitleID: "subTitle"}}
+			doc.slidePlaceholderChanges = []map[uint32]string{{titleID: "ctrTitle", subtitleID: "subTitle"}}
 		}
 	}
 

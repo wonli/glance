@@ -220,10 +220,13 @@ func (a *App) startWordFormatPainter() {
 	}
 	a.setStatus("正在应用格式刷")
 	generation := a.documentGeneration
-	go func() {
-		blocks, err := runWordMutation(state, func() error { return painter.ApplyWordFormatting(sourceRunID, targetRunID) })
+	a.launchManagedBackground(func() {
+		blocks, err := runWordMutation(state, func() error {
+			_, err := painter.ApplyWordFormatting(sourceRunID, targetRunID)
+			return err
+		})
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "格式刷", err: err, blocks: blocks})
-	}()
+	})
 }
 
 func (a *App) setWordAlignment(actionID string) {

@@ -84,18 +84,18 @@ func (a *App) updateMarkdownPDFOrientation(orientation string) {
 		setup.WidthPT, setup.HeightPT = setup.HeightPT, setup.WidthPT
 	}
 	view, shutdown, window := a.markdownView, a.shutdown, a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		done := make(chan struct{})
 		defer close(done)
-		go func() {
+		a.launchManagedBackground(func() {
 			select {
 			case <-shutdown:
 				cancel()
 			case <-done:
 			}
-		}()
+		})
 		prepared.scene, result.err = wordlayout.NewEngine(prepared.shaper).Layout(ctx, wordlayout.Input{DocumentID: "markdown-pdf", Blocks: prepared.blocks, DefaultPageSetup: setup})
 		for _, d := range prepared.scene.Diagnostics {
 			if d.Severity == wordlayout.DiagnosticError {
@@ -113,7 +113,7 @@ func (a *App) updateMarkdownPDFOrientation(orientation string) {
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) applyMarkdownPDFOrientation(result markdownFileResult) {

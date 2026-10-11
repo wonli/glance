@@ -1,11 +1,12 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 )
 
-func (a *App) runSpreadsheetTextToColumnsCommand(operation string, edit func(document.SpreadsheetTextToColumnsEditor) (document.SpreadsheetTextToColumnsResult, error)) {
+func (a *App) runSpreadsheetTextToColumnsCommand(operation string, arguments any, edit func(document.SpreadsheetTextToColumnsEditor) (document.SpreadsheetTextToColumnsResult, error)) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
@@ -19,11 +20,22 @@ func (a *App) runSpreadsheetTextToColumnsCommand(operation string, edit func(doc
 	if !ok {
 		return
 	}
-	go func() {
-		unlock := lockSessionAdapterWrite(state)
-		res, err := edit(editor)
-		unlock()
-		a.completeSessionOperation(state, token, err, true)
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		var res document.SpreadsheetTextToColumnsResult
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.text_to_columns.split", "spreadsheet_cell_range", "selection", sheet, arguments)
+			err = commandErr
+			if err == nil {
+				err = json.Unmarshal(result.Data, &res)
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			res, err = edit(editor)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && res.RowsSplit > 0 && !commandRouted)
 		if err == nil {
 			a.setStatus(fmt.Sprintf("已完成分列：处理 %d 行，最多拆分为 %d 列", res.RowsSplit, res.MaxCols))
 		}
@@ -31,7 +43,7 @@ func (a *App) runSpreadsheetTextToColumnsCommand(operation string, edit func(doc
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) showSpreadsheetTextToColumnsDialog() {
@@ -54,7 +66,7 @@ func (a *App) showSpreadsheetTextToColumnsDialog() {
 	msg := fmt.Sprintf("将在选区 %s 中对 %s 列进行文本分列。\n选择预设分隔符或输入自定义字符向右拆分数据：", rangeRef, activeColName)
 
 	splitWith := func(delim, label string) {
-		a.runSpreadsheetTextToColumnsCommand("文本分列 ("+label+")", func(ed document.SpreadsheetTextToColumnsEditor) (document.SpreadsheetTextToColumnsResult, error) {
+		a.runSpreadsheetTextToColumnsCommand("文本分列 ("+label+")", map[string]any{"sheet": sheet, "bounds": bounds, "key_column": keyCol, "delimiter": delim}, func(ed document.SpreadsheetTextToColumnsEditor) (document.SpreadsheetTextToColumnsResult, error) {
 			return ed.SplitTextToColumns(sheet, bounds, keyCol, delim)
 		})
 	}

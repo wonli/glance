@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 	"strings"
@@ -26,49 +27,66 @@ func (a *App) showSpreadsheetDataValidationDialog() {
 			return
 		}
 		generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+		clear := input == ""
+		var items []string
+		if !clear {
+			normalized := strings.ReplaceAll(input, "，", ",")
+			for _, part := range strings.Split(normalized, ",") {
+				if item := strings.TrimSpace(part); item != "" {
+					items = append(items, item)
+				}
+			}
+			clear = len(items) == 0
+		}
 		token, ok := state.beginOperation(sessionOperationMutation)
 		if !ok {
 			return
 		}
-		go func() {
-			unlock := lockSessionAdapterWrite(state)
+		a.launchManagedBackground(func() {
+			commandRouted := a.applicationSessionRegistered(token.documentID)
+			changed := true
 			var err error
-			if input == "" {
-				err = editor.DeleteDataValidation(sheet, bounds)
-			} else {
-				normalized := strings.ReplaceAll(input, "，", ",")
-				parts := strings.Split(normalized, ",")
-				var items []string
-				for _, p := range parts {
-					p = strings.TrimSpace(p)
-					if p != "" {
-						items = append(items, p)
-					}
-				}
-				if len(items) > 0 {
-					err = editor.AddDataValidation(document.SpreadsheetDataValidationSpec{
-						Sheet:    sheet,
-						Range:    bounds,
-						Type:     document.DataValidationTypeList,
-						DropList: items,
-					})
+			if commandRouted {
+				operation := "list"
+				arguments := map[string]any{"sheet": sheet, "bounds": bounds}
+				if clear {
+					operation = "clear"
 				} else {
-					err = editor.DeleteDataValidation(sheet, bounds)
+					arguments["items"] = items
 				}
+				arguments["operation"] = operation
+				result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.data_validation.set", "spreadsheet_cell_range", "selection", sheet, arguments)
+				err = commandErr
+				if err == nil {
+					var outcome struct {
+						Changed bool `json:"changed"`
+					}
+					err = json.Unmarshal(result.Data, &outcome)
+					changed = outcome.Changed
+				}
+			} else {
+				unlock := lockSessionAdapterWrite(state)
+				if clear {
+					changed, err = editor.DeleteDataValidation(sheet, bounds)
+				} else {
+					changed, err = editor.AddDataValidation(document.SpreadsheetDataValidationSpec{
+						Sheet: sheet, Range: bounds, Type: document.DataValidationTypeList, DropList: items,
+					})
+				}
+				unlock()
 			}
-			unlock()
-			a.completeSessionOperation(state, token, err, true)
+			a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 			if err == nil {
-				if input == "" {
+				if clear {
 					a.setStatus("已清除数据验证")
 				} else {
 					a.setStatus("已设置数据验证下拉列表")
 				}
 			}
 			select {
-			case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "数据验证"}:
+			case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "数据验证", applied: changed}:
 			case <-a.shutdown:
 			}
-		}()
+		})
 	}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
 }

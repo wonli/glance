@@ -28,6 +28,8 @@ const (
 type jsonWorkspaceView struct {
 	mode                                      jsonViewMode
 	toolPending                               bool
+	clipboardWritePending                     bool
+	clipboardWriteText                        string
 	toolResults                               chan jsonToolResult
 	toolMessage                               string
 	tree                                      *document.JSONTree
@@ -92,6 +94,11 @@ func (a *App) handleJSONWorkspaceEvents(gtx layout.Context) {
 	}
 	a.commitJSONSourceDraft()
 	a.pollJSONToolResults()
+	if v.clipboardWritePending {
+		writeJSONClipboard(gtx, v.clipboardWriteText)
+		v.clipboardWriteText = ""
+		v.clipboardWritePending = false
+	}
 	text := a.jsonDoc.Text()
 	if v.sourceSynced != text {
 		if len(text) <= jsonSourceEditLimit {
@@ -246,24 +253,38 @@ func (a *App) handleJSONWorkspaceAction(gtx layout.Context, id string) {
 		v.mode = jsonModeCompare
 	case "expand-all", "level-all", "collapse-all", "level-1", "level-2", "level-3", "expand-level":
 		level := 3
+		operation := "expand_level"
 		switch id {
 		case "expand-all", "level-all":
 			level = -1
+			operation = "expand_all"
 		case "collapse-all":
 			level = 0
+			operation = "collapse_all"
 		case "level-1":
 			level = 1
 		case "level-2":
 			level = 2
 		}
+		if a.startJSONViewApplicationTool(v, operation, level) {
+			return
+		}
 		v.expandedLevel = level
 		v.collapsed = make(map[int]bool)
 		v.rebuildRows()
 	case "search":
-		gtx.Execute(key.FocusCmd{Tag: &v.search})
+		if state := a.documentSessionState; state != nil && strings.TrimSpace(v.search.Text()) != "" && a.applicationSessionRegistered(state.documentID) {
+			a.startJSONTool("search")
+		} else {
+			gtx.Execute(key.FocusCmd{Tag: &v.search})
+		}
 	case "copy":
-		writeJSONClipboard(gtx, a.jsonDraftText())
-		a.setStatus("已复制 JSON")
+		if state := a.documentSessionState; state != nil && a.applicationSessionRegistered(state.documentID) {
+			a.startJSONTool("copy")
+		} else {
+			writeJSONClipboard(gtx, a.jsonDraftText())
+			a.setStatus("已复制 JSON")
+		}
 	case "paste":
 		gtx.Execute(clipboard.ReadCmd{Tag: &v.clipboardTarget})
 	case "import":

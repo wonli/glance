@@ -234,4 +234,3 @@ func TestWordInsertBlankPageToolbar(t *testing.T) {
 		t.Fatalf("expected status '已插入空白页', got %q", app.status)
 	}
 }
-

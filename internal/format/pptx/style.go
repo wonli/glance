@@ -18,6 +18,33 @@ func (d *Document) UpdateSlideElementStyle(slideIndex int, shapeID int64, patch 
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.updateSlideElementStyleLocked(slideIndex, shapeID, patch)
+}
+
+// UpdateSlideElementStyleByID resolves a stable slide ID and applies the patch
+// under the same document lock, so callers never need a UI's active slide.
+func (d *Document) UpdateSlideElementStyleByID(slideID uint32, shapeID int64, patch document.PresentationElementStylePatch) error {
+	if presentationStylePatchEmpty(patch) {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pres == nil {
+		return fmt.Errorf("演示文稿已关闭")
+	}
+	slides, err := d.pres.Slides()
+	if err != nil {
+		return fmt.Errorf("读取幻灯片失败: %w", err)
+	}
+	for index, slide := range slides {
+		if uint32(slide.ID()) == slideID {
+			return d.updateSlideElementStyleLocked(index, shapeID, patch)
+		}
+	}
+	return fmt.Errorf("未找到幻灯片 ID %d", slideID)
+}
+
+func (d *Document) updateSlideElementStyleLocked(slideIndex int, shapeID int64, patch document.PresentationElementStylePatch) error {
 	if d.pres == nil {
 		return fmt.Errorf("演示文稿已关闭")
 	}
@@ -129,13 +156,13 @@ func validateStyleTextTarget(shape *gopptx.AutoShape) error {
 
 func presentationStylePatchEmpty(p document.PresentationElementStylePatch) bool {
 	return p.FontFamily == nil && p.FontSizePT == nil && p.Bold == nil && p.Italic == nil && p.Underline == nil &&
-		p.TextColorHex == nil && p.ParagraphAlignment == nil && p.LineSpacing == nil && p.SpaceBefore == nil &&
+		p.TextColorHex == nil && p.ParagraphAlignment == nil && p.Bullet == nil && p.LineSpacing == nil && p.SpaceBefore == nil &&
 		p.SpaceAfter == nil && p.FillColorHex == nil && p.BorderColor == nil && p.BorderWidthPT == nil
 }
 
 func presentationStylePatchHasText(p document.PresentationElementStylePatch) bool {
 	return p.FontFamily != nil || p.FontSizePT != nil || p.Bold != nil || p.Italic != nil || p.Underline != nil ||
-		p.TextColorHex != nil || p.ParagraphAlignment != nil || p.LineSpacing != nil || p.SpaceBefore != nil || p.SpaceAfter != nil
+		p.TextColorHex != nil || p.ParagraphAlignment != nil || p.Bullet != nil || p.LineSpacing != nil || p.SpaceBefore != nil || p.SpaceAfter != nil
 }
 
 func presentationStylePatchHasTextOrFill(p document.PresentationElementStylePatch) bool {
@@ -252,6 +279,9 @@ func mergePresentationStylePatch(base, update document.PresentationElementStyleP
 	if update.ParagraphAlignment != nil {
 		merged.ParagraphAlignment = cloneString(update.ParagraphAlignment)
 	}
+	if update.Bullet != nil {
+		merged.Bullet = cloneBool(update.Bullet)
+	}
 	if update.LineSpacing != nil {
 		merged.LineSpacing = cloneSpacing(update.LineSpacing)
 	}
@@ -282,6 +312,7 @@ func clonePresentationStylePatch(p document.PresentationElementStylePatch) docum
 		Underline:          cloneBool(p.Underline),
 		TextColorHex:       cloneString(p.TextColorHex),
 		ParagraphAlignment: cloneString(p.ParagraphAlignment),
+		Bullet:             cloneBool(p.Bullet),
 		LineSpacing:        cloneSpacing(p.LineSpacing),
 		SpaceBefore:        cloneSpacing(p.SpaceBefore),
 		SpaceAfter:         cloneSpacing(p.SpaceAfter),
@@ -294,7 +325,7 @@ func clonePresentationStylePatch(p document.PresentationElementStylePatch) docum
 func presentationStylePatchesEqual(a, b document.PresentationElementStylePatch) bool {
 	return equalStringPtr(a.FontFamily, b.FontFamily) && equalFloatPtr(a.FontSizePT, b.FontSizePT) &&
 		equalBoolPtr(a.Bold, b.Bold) && equalBoolPtr(a.Italic, b.Italic) && equalBoolPtr(a.Underline, b.Underline) &&
-		equalStringPtr(a.TextColorHex, b.TextColorHex) && equalStringPtr(a.ParagraphAlignment, b.ParagraphAlignment) &&
+		equalStringPtr(a.TextColorHex, b.TextColorHex) && equalStringPtr(a.ParagraphAlignment, b.ParagraphAlignment) && equalBoolPtr(a.Bullet, b.Bullet) &&
 		equalSpacingPtr(a.LineSpacing, b.LineSpacing) && equalSpacingPtr(a.SpaceBefore, b.SpaceBefore) &&
 		equalSpacingPtr(a.SpaceAfter, b.SpaceAfter) && equalStringPtr(a.FillColorHex, b.FillColorHex) &&
 		equalStringPtr(a.BorderColor, b.BorderColor) && equalFloatPtr(a.BorderWidthPT, b.BorderWidthPT)
@@ -314,6 +345,9 @@ func applyPresentationElementStyle(elem *document.PresentationElement, p documen
 		}
 		if p.SpaceAfter != nil {
 			para.SpaceAfter = cloneSpacing(p.SpaceAfter)
+		}
+		if p.Bullet != nil {
+			para.Bullet = *p.Bullet
 		}
 		for runIndex := range para.Runs {
 			run := &para.Runs[runIndex]

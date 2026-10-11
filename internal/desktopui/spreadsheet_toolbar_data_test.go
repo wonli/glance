@@ -263,7 +263,13 @@ func TestSpreadsheetRecalculateAndRefreshAll(t *testing.T) {
 	state.sheets = wb.SheetNames()
 	state.sheet = sheet
 	state.virtualGrid = newGridViewport()
-	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	app := &App{
+		documentSessionState: state,
+		theme:                material.NewTheme(),
+		formatResults:        make(chan spreadsheetFormatResult, 2),
+		shutdown:             make(chan struct{}),
+	}
+	app.sheet = state.sheet
 
 	if !app.toolbarActionEnabled(toolbarActionRecalculate) {
 		t.Fatal("toolbarActionRecalculate should be enabled")
@@ -272,15 +278,21 @@ func TestSpreadsheetRecalculateAndRefreshAll(t *testing.T) {
 		t.Fatal("toolbarActionRefreshAll should be enabled")
 	}
 
-	app.recalculateSpreadsheet()
-	if app.status != "已重新计算工作簿公式" {
-		t.Fatalf("unexpected status after recalculate: %q", app.status)
+	apply := func(run func(), operation, wantStatus string) {
+		t.Helper()
+		run()
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			app.processSpreadsheetFormatResult()
+			if app.status == wantStatus {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatalf("%s did not publish status %q; last status %q", operation, wantStatus, app.status)
 	}
-
-	app.refreshAllSpreadsheet()
-	if app.status != "已刷新全部工作表数据" {
-		t.Fatalf("unexpected status after refresh all: %q", app.status)
-	}
+	apply(app.recalculateSpreadsheet, "重新计算公式", "已刷新公式结果（不包含外部数据连接）")
+	apply(app.refreshAllSpreadsheet, "刷新全部工作表", "已刷新全部工作表公式结果（不包含外部数据连接）")
 }
 
 func TestSpreadsheetFormulaAndNameManagerAndFlashFill(t *testing.T) {
@@ -343,6 +355,14 @@ func TestSpreadsheetFormulaAndNameManagerAndFlashFill(t *testing.T) {
 	}
 	app.modal.Input.SetText("TestTotal")
 	app.modal.OnAction("confirm")
+	select {
+	case res := <-app.formatResults:
+		if res.err != nil {
+			t.Fatalf("create defined name failed: %v", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for defined-name formatResult")
+	}
 
 	names, err := wb.GetDefinedNames()
 	if err != nil {

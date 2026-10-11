@@ -1,7 +1,9 @@
 package desktopui
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"glance/internal/workspace"
@@ -116,6 +118,21 @@ func (r *desktopRuntime) shutdown() {
 		return
 	}
 	r.shutdownOnce.Do(func() {
+		if r.applicationEventCancel != nil {
+			r.applicationEventCancel()
+			r.applicationEventCancel = nil
+		}
+		r.mu.Lock()
+		r.shuttingDown = true
+		mcpEndpoint := r.mcpEndpoint
+		r.mcpEndpoint = nil
+		r.mu.Unlock()
+		if mcpEndpoint != nil {
+			if err := mcpEndpoint.Close(); err != nil {
+				log.Printf("stop desktop MCP endpoint: %v", err)
+			}
+		}
+		r.closeAgent()
 		r.workspaceWriterStopOnce.Do(func() {
 			r.workspaceQueueMu.Lock()
 			r.workspaceWriterStopped = true
@@ -138,13 +155,21 @@ func (r *desktopRuntime) shutdown() {
 		r.sessions = make(map[string]*sharedDocumentSession)
 		r.sessionsByCanonicalPath = make(map[string]string)
 		store := r.workspaceStore
+		applicationRuntime := r.applicationRuntime
+		r.applicationRuntime = nil
 		r.workspaceStore = nil
 		r.collection = nil
 		r.mu.Unlock()
 		for _, session := range sessions {
 			closeSharedDocumentSession(session)
 		}
-		if store != nil {
+		if applicationRuntime != nil {
+			applicationStore := applicationRuntime.WorkspaceStore()
+			_ = applicationRuntime.Close(context.Background())
+			if store != nil && store != applicationStore {
+				_ = store.Close()
+			}
+		} else if store != nil {
 			_ = store.Close()
 		}
 		r.completionOnce.Do(func() {

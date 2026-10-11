@@ -9,22 +9,7 @@ func (a *App) processSpreadsheetFormatResult() bool {
 			return true
 		}
 		if result.err == nil && result.filter != nil {
-			if result.state.valueFilter != nil {
-				a.clearValueFilter(result.state)
-			}
-			result.filter.OriginalHeights = make(map[int]float64)
-			if result.state.virtualGrid != nil {
-				for row := result.filter.Bounds.StartRow; row <= result.filter.Bounds.EndRow; row++ {
-					index := row - 1
-					base := result.state.virtualGrid.Rows.sizeAt(index)
-					if offset := row - result.filter.Bounds.StartRow; offset >= 0 && offset < len(result.filter.RowHeightsPoints) && result.filter.RowHeightsPoints[offset] > 0 {
-						base = pointsToGridPixels(result.filter.RowHeightsPoints[offset]) * result.state.virtualGrid.Scale
-					}
-					result.filter.OriginalHeights[index] = base
-				}
-			}
-			result.state.valueFilter = result.filter
-			a.applyValueFilterWindow(result.state, result.state.virtualGrid)
+			a.installSpreadsheetValueFilter(result.state, result.filter)
 		}
 		if result.err == nil && result.structure != nil {
 			a.refreshAfterStructure(result.state, *result.structure)
@@ -39,6 +24,13 @@ func (a *App) processSpreadsheetFormatResult() bool {
 				a.setStatus("已应用单元格格式")
 				if result.operation != "" {
 					a.setStatus("已完成" + result.operation)
+				}
+				switch result.operation {
+				case "重新计算公式":
+					a.setStatus("已刷新公式结果（不包含外部数据连接）")
+				case "刷新全部工作表":
+					result.state.sheets = result.state.book.SheetNames()
+					a.setStatus("已刷新全部工作表公式结果（不包含外部数据连接）")
 				}
 				switch result.operation {
 				case "保护工作表":
@@ -71,8 +63,39 @@ func (a *App) processSpreadsheetFormatResult() bool {
 			if a.window != nil {
 				a.window.Invalidate()
 			}
+			if result.err == nil && result.operation == "拼写检查" {
+				a.modal.Show("拼写检查", result.details, func(action string) {
+					a.modal.Hide()
+					a.setStatus("文本检查完成；未使用词典判断拼写")
+					if a.window != nil {
+						a.window.Invalidate()
+					}
+				}, modalDialogActionSpec{ID: "confirm", Label: "完成"})
+			}
 		}
 	default:
 	}
 	return false
+}
+
+func (a *App) installSpreadsheetValueFilter(state *documentSessionState, filter *ValueFilter) {
+	if state == nil || filter == nil {
+		return
+	}
+	if state.valueFilter != nil {
+		a.clearValueFilter(state)
+	}
+	filter.OriginalHeights = make(map[int]float64)
+	if state.virtualGrid != nil {
+		for row := filter.Bounds.StartRow; row <= filter.Bounds.EndRow; row++ {
+			index := row - 1
+			base := state.virtualGrid.Rows.sizeAt(index)
+			if offset := row - filter.Bounds.StartRow; offset >= 0 && offset < len(filter.RowHeightsPoints) && filter.RowHeightsPoints[offset] > 0 {
+				base = pointsToGridPixels(filter.RowHeightsPoints[offset]) * state.virtualGrid.Scale
+			}
+			filter.OriginalHeights[index] = base
+		}
+	}
+	state.valueFilter = filter
+	a.applyValueFilterWindow(state, state.virtualGrid)
 }

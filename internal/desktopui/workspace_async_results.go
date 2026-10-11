@@ -7,8 +7,21 @@ import (
 
 func (a *App) processAsyncResults() {
 	a.ensureDesktopRuntime()
+	a.processAgentSettingsResult()
+	a.processAgentApplicationEvents()
+	a.processAgentChatEvents()
 	a.processPrimaryPromotion()
 	a.surfacePendingWordRestoreError(a.documentSessionState)
+	select {
+	case result := <-a.wordEditorReviewResults:
+		a.applyWordEditorReviewResult(result)
+	default:
+	}
+	select {
+	case result := <-a.wordCompareResults:
+		a.applyWordCompareResult(result)
+	default:
+	}
 	select {
 	case result := <-a.wordVersionHistoryResults:
 		a.applyWordVersionHistoryResult(result)
@@ -39,6 +52,15 @@ func (a *App) processAsyncResults() {
 		a.applySpreadsheetPDFPreviewResult(result)
 	case result := <-a.wordPDFPreviewResults:
 		a.applyWordPDFPreviewResult(result)
+	case result := <-a.presentationPDFPreviewResults:
+		a.applyPresentationPDFPreviewResult(result)
+	case result := <-a.presentationPDFExportResults:
+		a.applyPresentationPDFExportResult(result)
+	default:
+	}
+	select {
+	case result := <-a.spreadsheetPrintResults:
+		a.applySpreadsheetPrintResult(result)
 	default:
 	}
 	select {
@@ -77,6 +99,7 @@ func (a *App) processAsyncResults() {
 			if result.kind == commandExportPDF {
 				a.wordPDFPickerRequest = nil
 				a.spreadsheetPDFPickerRequest = nil
+				a.presentationPDFPickerRequest = nil
 			}
 			if result.kind == commandShareCopy {
 				a.wordShareCopyRequest = nil
@@ -118,14 +141,18 @@ func (a *App) processAsyncResults() {
 			case commandExportPDF:
 				wordReq := a.wordPDFPickerRequest
 				sheetReq := a.spreadsheetPDFPickerRequest
+				presentationReq := a.presentationPDFPickerRequest
 				a.wordPDFPickerRequest = nil
 				a.spreadsheetPDFPickerRequest = nil
+				a.presentationPDFPickerRequest = nil
 				if result.path == "" {
 					a.setStatus("已取消导出 PDF")
 				} else if wordReq != nil {
 					a.startWordPDFFileExport(wordReq.state, wordReq.key, result.path, wordReq.orientation)
 				} else if sheetReq != nil {
 					a.startSpreadsheetPDFFileExport(sheetReq.state, sheetReq.sheet, result.path, sheetReq.orientation)
+				} else if presentationReq != nil {
+					a.startPresentationPDFFileExport(presentationReq, result.path)
 				} else {
 					a.setStatus("PDF 导出状态已过期，请重新导出")
 				}
@@ -164,6 +191,14 @@ func (a *App) processAsyncResults() {
 	default:
 	}
 	select {
+	case result := <-a.pptxMediaPickerResults:
+		a.handlePresentationMediaPickerResult(result)
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	default:
+	}
+	select {
 	case result := <-a.pptxPicCommandResults:
 		a.applyPresentationPictureCommandResult(result)
 	default:
@@ -191,6 +226,11 @@ func (a *App) processAsyncResults() {
 				a.window.Invalidate()
 			}
 		}
+	default:
+	}
+	select {
+	case result := <-a.wordMacrosInspectionResults:
+		a.applyWordMacrosInspectionResult(result)
 	default:
 	}
 	select {

@@ -2,6 +2,7 @@ package docx
 
 import (
 	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,14 +13,14 @@ import (
 var _ document.WordHeaderFooterEditor = (*Document)(nil)
 
 const (
-	wordHeaderPath             = "word/header1.xml"
-	wordFooterPath             = "word/footer1.xml"
-	wordHeaderRelID            = "rIdHeader1"
-	wordFooterRelID            = "rIdFooter1"
-	wordHeaderRelType          = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"
-	wordFooterRelType          = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"
-	wordHeaderContentType      = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"
-	wordFooterContentType      = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"
+	wordHeaderPath        = "word/header1.xml"
+	wordFooterPath        = "word/footer1.xml"
+	wordHeaderRelID       = "rIdHeader1"
+	wordFooterRelID       = "rIdFooter1"
+	wordHeaderRelType     = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"
+	wordFooterRelType     = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"
+	wordHeaderContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"
+	wordFooterContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"
 )
 
 // SetHeader configures the top page header text across the document sections.
@@ -39,6 +40,9 @@ func (d *Document) SetHeader(text string) error {
 	}
 
 	headerXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="666666"/></w:rPr><w:t>%s</w:t></w:r></w:p></w:hdr>`, escapeXMLString(text))
+	if existing, ok := findPackagePart(d.parts, wordHeaderPath); ok && bytes.Equal(existing.data, []byte(headerXML)) {
+		return nil
+	}
 
 	return d.applyHeaderFooterLocked(wordHeaderPath, wordHeaderRelID, wordHeaderRelType, wordHeaderContentType, "headerReference", []byte(headerXML))
 }
@@ -60,6 +64,9 @@ func (d *Document) SetFooter(text string) error {
 	}
 
 	footerXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="666666"/></w:rPr><w:t>%s</w:t></w:r></w:p></w:ftr>`, escapeXMLString(text))
+	if existing, ok := findPackagePart(d.parts, wordFooterPath); ok && bytes.Equal(existing.data, []byte(footerXML)) {
+		return nil
+	}
 
 	return d.applyHeaderFooterLocked(wordFooterPath, wordFooterRelID, wordFooterRelType, wordFooterContentType, "footerReference", []byte(footerXML))
 }
@@ -79,10 +86,106 @@ func (d *Document) SetPageNumber(align string) error {
 	if align == "" {
 		align = "center"
 	}
+	if align != "left" && align != "center" && align != "right" {
+		return fmt.Errorf("page number alignment must be left, center, or right")
+	}
 
-	pageNumberXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="%s"/></w:pPr><w:fldSimple w:instr="PAGE"><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="666666"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>`, escapeXMLString(align))
+	footerXML := []byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:ftr>`)
+	existingFooter, hasExistingFooter := findPackagePart(d.parts, wordFooterPath)
+	if hasExistingFooter {
+		footerXML = existingFooter.data
+	}
+	root, err := parseWordXML(footerXML)
+	if err != nil {
+		return fmt.Errorf("parse DOCX footer before inserting page number: %w", err)
+	}
+	if root.name.Local != "ftr" {
+		return errors.New("DOCX footer part has an unexpected root element")
+	}
 
-	return d.applyHeaderFooterLocked(wordFooterPath, wordFooterRelID, wordFooterRelType, wordFooterContentType, "footerReference", []byte(pageNumberXML))
+	if paragraph := wordPageNumberParagraph(root, nil); paragraph != nil {
+		footerXML, err = setWordParagraphXMLAlignment(footerXML, paragraph, align)
+		if err != nil {
+			return fmt.Errorf("align existing DOCX page number: %w", err)
+		}
+	} else {
+		prefix := elementPrefix(root.rawName)
+		if prefix == "" {
+			prefix = "w"
+		}
+		pageNumberParagraph := fmt.Sprintf(`<%[1]s:p><%[1]s:pPr><%[1]s:jc %[1]s:val="%[2]s"/></%[1]s:pPr><%[1]s:fldSimple %[1]s:instr="PAGE"><%[1]s:r><%[1]s:rPr><%[1]s:sz %[1]s:val="18"/><%[1]s:color %[1]s:val="666666"/></%[1]s:rPr><%[1]s:t>1</%[1]s:t></%[1]s:r></%[1]s:fldSimple></%[1]s:p>`, prefix, escapeXMLString(align))
+		footerXML, err = insertElementContent(footerXML, root, []byte(pageNumberParagraph))
+		if err != nil {
+			return fmt.Errorf("insert DOCX page number: %w", err)
+		}
+	}
+	if hasExistingFooter && bytes.Equal(existingFooter.data, footerXML) {
+		return nil
+	}
+
+	return d.applyHeaderFooterLocked(wordFooterPath, wordFooterRelID, wordFooterRelType, wordFooterContentType, "footerReference", footerXML)
+}
+
+func wordPageNumberParagraph(node, paragraph *wordXMLNode) *wordXMLNode {
+	if node == nil {
+		return nil
+	}
+	if node.name.Local == "p" {
+		paragraph = node
+	}
+	if node.name.Local == "fldSimple" && strings.EqualFold(strings.TrimSpace(attrValue(node, "instr")), "PAGE") {
+		return paragraph
+	}
+	for _, child := range node.children {
+		if found := wordPageNumberParagraph(child, paragraph); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func setWordParagraphXMLAlignment(data []byte, paragraph *wordXMLNode, alignment string) ([]byte, error) {
+	if paragraph == nil || paragraph.name.Local != "p" {
+		return nil, errors.New("page number field is not inside a paragraph")
+	}
+	pPr := firstChild(paragraph, "pPr")
+	if pPr == nil {
+		prefix := elementPrefix(paragraph.rawName)
+		if prefix == "" {
+			prefix = "w"
+		}
+		return insertElementContentAtStart(data, paragraph, []byte(fmt.Sprintf(`<%[1]s:pPr><%[1]s:jc %[1]s:val="%[2]s"/></%[1]s:pPr>`, prefix, escapeXMLString(alignment))))
+	}
+	if jc := firstChild(pPr, "jc"); jc != nil {
+		return patchElementAttribute(data, jc, "val", alignment)
+	}
+
+	propertyOrder := map[string]int{
+		"pStyle": 1, "keepNext": 2, "keepLines": 3, "pageBreakBefore": 4, "framePr": 5,
+		"widowControl": 6, "numPr": 7, "suppressLineNumbers": 8, "pBdr": 9, "shd": 10,
+		"tabs": 11, "suppressAutoHyphens": 12, "kinsoku": 13, "wordWrap": 14,
+		"overflowPunct": 15, "topLinePunct": 16, "autoSpaceDE": 17, "autoSpaceDN": 18,
+		"bidi": 19, "adjustRightInd": 20, "snapToGrid": 21, "spacing": 22, "ind": 23,
+		"contextualSpacing": 24, "mirrorIndents": 25, "suppressOverlap": 26, "jc": 27,
+		"textDirection": 28, "textAlignment": 29, "textboxTightWrap": 30, "outlineLvl": 31,
+		"divId": 32, "cnfStyle": 33, "rPr": 34, "sectPr": 35,
+	}
+	prefix := elementPrefix(pPr.rawName)
+	if prefix == "" {
+		prefix = "w"
+	}
+	markup := []byte(fmt.Sprintf(`<%[1]s:jc %[1]s:val="%[2]s"/>`, prefix, escapeXMLString(alignment)))
+	insertAt := pPr.contentEnd
+	for _, child := range pPr.children {
+		if order, known := propertyOrder[child.name.Local]; known && order > propertyOrder["jc"] {
+			insertAt = child.start
+			break
+		}
+	}
+	if pPr.selfClosing {
+		return insertElementContent(data, pPr, markup)
+	}
+	return applyXMLReplacements(data, []xmlReplacement{{start: insertAt, end: insertAt, value: markup}})
 }
 
 func (d *Document) applyHeaderFooterLocked(partPath, relID, relType, contentType, refTag string, content []byte) error {

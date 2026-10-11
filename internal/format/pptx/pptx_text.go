@@ -1,16 +1,46 @@
 package pptx
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	gopptx "github.com/F31/go-pptx/v2/pptx"
 )
 
+var ErrSpeakerNotesConflict = errors.New("演讲者备注已被其他操作修改")
+
 // UpdateSlideText updates the text of a specific shape on a slide.
 func (d *Document) UpdateSlideText(slideIndex int, shapeID int64, newText string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.updateSlideTextLocked(slideIndex, shapeID, newText)
+}
+
+// UpdateSlideTextByID updates an element using the stable slide ID returned by
+// the neutral presentation snapshot.
+func (d *Document) UpdateSlideTextByID(slideID uint32, shapeID int64, newText string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pres == nil {
+		return fmt.Errorf("演示文稿已关闭")
+	}
+	slides, err := d.pres.Slides()
+	if err != nil {
+		return fmt.Errorf("读取幻灯片失败: %w", err)
+	}
+	for index, slide := range slides {
+		if uint32(slide.ID()) == slideID {
+			return d.updateSlideTextLocked(index, shapeID, newText)
+		}
+	}
+	return fmt.Errorf("未找到幻灯片 ID %d", slideID)
+}
+
+func (d *Document) updateSlideTextLocked(slideIndex int, shapeID int64, newText string) error {
+	if d.pres == nil {
+		return fmt.Errorf("演示文稿已关闭")
+	}
 
 	oldText, err := slideShapeText(d.pres, slideIndex, shapeID)
 	if err != nil {
@@ -153,10 +183,77 @@ func updateShapeText(pres *gopptx.Presentation, slideIndex int, shapeID int64, n
 func (d *Document) UpdateSlideNotes(slideIndex int, notes string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.updateSlideNotesLocked(slideIndex, notes)
+}
 
+// UpdateSlideNotesByID resolves a stable slide ID before replacing its notes.
+func (d *Document) UpdateSlideNotesByID(slideID uint32, notes string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pres == nil {
+		return fmt.Errorf("演示文稿已关闭")
+	}
+	slides, err := d.pres.Slides()
+	if err != nil {
+		return fmt.Errorf("读取幻灯片失败: %w", err)
+	}
+	for index, slide := range slides {
+		if uint32(slide.ID()) == slideID {
+			return d.updateSlideNotesLocked(index, notes)
+		}
+	}
+	return fmt.Errorf("未找到幻灯片 ID %d", slideID)
+}
+
+// UpdateSlideNotesByIDIfCurrent writes notes only if the current text matches
+// expectedNotes. It gives concurrent desktop and Agent edits compare-and-set
+// semantics instead of silently replacing one another.
+func (d *Document) UpdateSlideNotesByIDIfCurrent(slideID uint32, expectedNotes, notes string) (bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pres == nil {
+		return false, fmt.Errorf("演示文稿已关闭")
+	}
+	slides, err := d.pres.Slides()
+	if err != nil {
+		return false, fmt.Errorf("读取幻灯片失败: %w", err)
+	}
+	for index, slide := range slides {
+		if uint32(slide.ID()) != slideID {
+			continue
+		}
+		current, err := presentationSlideNotesText(slide)
+		if err != nil {
+			return false, err
+		}
+		if current != expectedNotes {
+			return false, ErrSpeakerNotesConflict
+		}
+		if current == notes {
+			return false, nil
+		}
+		if err := d.updateSlideNotesLocked(index, notes); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, fmt.Errorf("未找到幻灯片 ID %d", slideID)
+}
+
+func (d *Document) updateSlideNotesLocked(slideIndex int, notes string) error {
+	if d.pres == nil {
+		return fmt.Errorf("演示文稿已关闭")
+	}
 	slides, err := d.pres.Slides()
 	if err != nil || slideIndex < 0 || slideIndex >= len(slides) {
 		return fmt.Errorf("幻灯片序号无效: %d", slideIndex)
+	}
+	current, err := presentationSlideNotesText(slides[slideIndex])
+	if err != nil {
+		return err
+	}
+	if current == notes {
+		return nil
 	}
 
 	if err := slides[slideIndex].SetSpeakerNotes(notes); err != nil {
@@ -165,4 +262,27 @@ func (d *Document) UpdateSlideNotes(slideIndex int, notes string) error {
 	d.dirty = true
 	d.revision++
 	return nil
+}
+
+func presentationSlideNotesText(slide *gopptx.Slide) (string, error) {
+	frame, err := slide.SpeakerNotes()
+	if err != nil {
+		if errors.Is(err, gopptx.ErrNotFound) {
+			return "", nil
+		}
+		return "", fmt.Errorf("读取备注失败: %w", err)
+	}
+	paragraphs, err := frame.Paragraphs()
+	if err != nil {
+		return "", fmt.Errorf("读取备注失败: %w", err)
+	}
+	lines := make([]string, 0, len(paragraphs))
+	for _, paragraph := range paragraphs {
+		line, err := paragraph.Text()
+		if err != nil {
+			return "", fmt.Errorf("读取备注失败: %w", err)
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n"), nil
 }

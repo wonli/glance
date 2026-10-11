@@ -125,16 +125,17 @@ func (a *App) layoutPresentationSidebar(gtx layout.Context, v *presentationViewS
 func (a *App) layoutSlideThumbnailItem(gtx layout.Context, v *presentationViewState, index int, slide document.PresentationSlide) layout.Dimensions {
 	btn := v.slideClick(index)
 	if btn.Clicked(gtx) {
-		if err := a.flushPresentationTextDraft(); err == nil {
-			v.activeSlide = index
-			v.selectedShape = 0
-			if v.activeRibbonTab == "picture" {
-				v.activeRibbonTab = "home"
+		if err := a.flushPresentationNotesDraft(v); err == nil {
+			if err := a.flushPresentationTextDraft(); err == nil {
+				v.activeSlide = index
+				clearPresentationSelection(v)
+				if v.activeRibbonTab == "picture" {
+					v.activeRibbonTab = "home"
+				}
+				v.editingShape = 0
+				v.shapeDraftText = ""
+				a.resetPresentationNotesEditor(v, &slide)
 			}
-			v.editingShape = 0
-			v.shapeDraftText = ""
-			v.notesEditor.SetText(slide.Notes)
-			v.lastNotesSlide = index
 		}
 	}
 	isActive := v.activeSlide == index
@@ -211,6 +212,41 @@ func (a *App) layoutPresentationNotesPanel(gtx layout.Context, v *presentationVi
 						return lbl.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !v.notesDraftConflict {
+							return layout.Dimensions{}
+						}
+						if v.notesReloadButton.Clicked(gtx) {
+							a.resetPresentationNotesEditor(v, v.currentSlide())
+							a.setStatus("已加载最新演讲者备注")
+						}
+						return v.notesReloadButton.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Label(a.theme, unit.Sp(11), "加载最新")
+							lbl.Color = pptxAccentColor
+							return lbl.Layout(gtx)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !v.notesDraftConflict {
+							return layout.Dimensions{}
+						}
+						if v.notesKeepButton.Clicked(gtx) {
+							if slide := v.currentSlide(); slide != nil {
+								v.notesEditorBase = slide.Notes
+								v.notesEditorSlideID = slide.ID
+								v.notesDraftConflict = false
+								if a.documentSessionState != nil && a.documentSessionState.pptxDoc == a.pptxDoc {
+									a.documentSessionState.setPresentationDraftDirty(a.windowID, presentationNotesDraft, v.notesEditor.Text() != v.notesEditorBase)
+								}
+								a.setStatus("将保留本地演讲者备注草稿")
+							}
+						}
+						return v.notesKeepButton.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Label(a.theme, unit.Sp(11), "保留我的修改")
+							lbl.Color = pptxAccentColor
+							return lbl.Layout(gtx)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if v.notesToggleBtn.Clicked(gtx) {
 							v.notesExpanded = false
 						}
@@ -223,10 +259,13 @@ func (a *App) layoutPresentationNotesPanel(gtx layout.Context, v *presentationVi
 				)
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				v.notesEditor.ReadOnly = a.saving
 				ed := material.Editor(a.theme, &v.notesEditor, "单击此处添加演讲者备注…")
 				ed.TextSize = unit.Sp(12)
 				ed.Color = pptxTextDark
-				return ed.Layout(gtx)
+				dims := ed.Layout(gtx)
+				a.syncPresentationNotesDraft(v)
+				return dims
 			}),
 		)
 	})

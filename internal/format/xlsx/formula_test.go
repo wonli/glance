@@ -6,6 +6,35 @@ import (
 	"glance/internal/document"
 )
 
+func TestWorkbookRecalculateUpdatesFormulaCacheAndMarksDirty(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	sheet := wb.SheetNames()[0]
+	if err := wb.SetCellText(sheet, "A1", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.SetCellText(sheet, "A2", "2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.SetCellFormula(sheet, "B1", "=SUM(A1:A2)"); err != nil {
+		t.Fatal(err)
+	}
+	wb.SetDirty(false)
+	if err := wb.SetCellText(sheet, "A1", "5"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.RecalculateFormulas(); err != nil {
+		t.Fatalf("RecalculateFormulas: %v", err)
+	}
+	value, err := wb.Value(sheet, "B1")
+	if err != nil || value != "7" {
+		t.Fatalf("recalculated formula value = %q, %v; want 7", value, err)
+	}
+	if !wb.Dirty() {
+		t.Fatal("recalculating cached formula values did not mark the workbook dirty")
+	}
+}
+
 func TestWorkbookSetCellFormulaAndUndo(t *testing.T) {
 	wb := NewBlank()
 	defer wb.Close()

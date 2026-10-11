@@ -11,8 +11,7 @@ func (a *App) showWordWordArtDialog() {
 	if state == nil || state.word == nil {
 		return
 	}
-	textBoxEditor, ok := any(state.word).(document.WordTextBoxEditor)
-	if !ok {
+	if _, ok := any(state.word).(document.WordTextBoxEditor); !ok {
 		a.setStatus("当前文档不支持插入艺术字")
 		return
 	}
@@ -43,17 +42,12 @@ func (a *App) showWordWordArtDialog() {
 			}
 			afterPID := state.selectedWordParagraphID
 			content := fmt.Sprintf("%s %s", stylePrefix, text)
-			if err := textBoxEditor.InsertTextBox(afterPID, content); err != nil {
-				a.setStatus("插入艺术字失败：" + err.Error())
+			if !a.runWordApplicationCommand("插入艺术字", "word.text_box.insert", map[string]any{
+				"after_paragraph_id": afterPID,
+				"text":               content,
+			}) {
+				a.setStatus("当前会话无法通过能力目录插入艺术字")
 				return
-			}
-			if state.word != nil {
-				state.setWordBlocks(state.word.WordBlocks())
-				a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
-			}
-			a.setStatus("已成功插入艺术字：" + text)
-			if a.window != nil {
-				a.window.Invalidate()
 			}
 		},
 		modalDialogActionSpec{ID: "confirm", Label: "默认样式"},
@@ -71,7 +65,7 @@ func (a *App) showWordEquationDialog() {
 	}
 	a.modal.ShowInput(
 		"插入公式",
-		"请选择或输入数学公式（支持标准 Unicode 数学符号与 LaTeX 记法）：",
+		"输入公式表达式；当前将公式作为可编辑文本插入，不创建 Office 数学公式对象：",
 		"x = (-b ± √(b² - 4ac)) / (2a)",
 		"输入或编辑数学公式",
 		func(action string) {
@@ -93,31 +87,21 @@ func (a *App) showWordEquationDialog() {
 				return
 			}
 			run, hasRun := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+			arguments := map[string]any{}
 			if hasRun && run.Editable {
-				target := run.ID
-				newVal := formula
+				expression := formula
 				if run.Text != "" {
-					newVal = run.Text + " " + formula
+					expression = run.Text + " " + formula
 				}
-				a.runWordCommand("插入公式", func(editor document.WordTextEditor) error {
-					return editor.ReplaceTextRun(target, newVal)
-				})
-			} else if textBoxEditor, hasTB := any(state.word).(document.WordTextBoxEditor); hasTB {
-				afterPID := state.selectedWordParagraphID
-				if err := textBoxEditor.InsertTextBox(afterPID, "【公式】"+formula); err != nil {
-					a.setStatus("插入公式失败：" + err.Error())
-					return
-				}
-				if state.word != nil {
-					state.setWordBlocks(state.word.WordBlocks())
-					a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
-				}
-				a.setStatus("已成功插入公式")
-				if a.window != nil {
-					a.window.Invalidate()
-				}
+				arguments = map[string]any{"target": "run", "run_id": run.ID, "expression": expression}
+			} else if _, hasTextBox := any(state.word).(document.WordTextBoxEditor); hasTextBox {
+				arguments = map[string]any{"target": "textbox", "after_paragraph_id": state.selectedWordParagraphID, "expression": "【公式】" + formula}
 			} else {
 				a.setStatus("请先选择可编辑的文字段落以插入公式")
+				return
+			}
+			if !a.runWordApplicationCommand("插入公式文本", "word.equation.insert", arguments) {
+				a.setStatus("当前会话无法通过能力目录插入公式文本")
 			}
 		},
 		modalDialogActionSpec{ID: "confirm", Label: "插入输入内容"},
@@ -133,8 +117,7 @@ func (a *App) showWordShapesDialog() {
 	if state == nil || state.word == nil {
 		return
 	}
-	textBoxEditor, ok := any(state.word).(document.WordTextBoxEditor)
-	if !ok {
+	if _, ok := any(state.word).(document.WordTextBoxEditor); !ok {
 		a.setStatus("当前文档不支持插入形状容器")
 		return
 	}
@@ -167,17 +150,12 @@ func (a *App) showWordShapesDialog() {
 			}
 			afterPID := state.selectedWordParagraphID
 			content := fmt.Sprintf("【形状·%s】%s", shapeType, text)
-			if err := textBoxEditor.InsertTextBox(afterPID, content); err != nil {
-				a.setStatus("插入形状失败：" + err.Error())
+			if !a.runWordApplicationCommand("插入形状", "word.text_box.insert", map[string]any{
+				"after_paragraph_id": afterPID,
+				"text":               content,
+			}) {
+				a.setStatus("当前会话无法通过能力目录插入形状文本框")
 				return
-			}
-			if state.word != nil {
-				state.setWordBlocks(state.word.WordBlocks())
-				a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
-			}
-			a.setStatus("已成功插入形状：" + shapeType)
-			if a.window != nil {
-				a.window.Invalidate()
 			}
 		},
 		modalDialogActionSpec{ID: "rect", Label: "矩形框"},
@@ -193,7 +171,7 @@ func (a *App) showWordChartDialog() {
 	if state == nil || state.word == nil {
 		return
 	}
-	tblEditor, ok := any(state.word).(document.WordTableInsertEditor)
+	_, ok := any(state.word).(document.WordTableInsertEditor)
 	if !ok {
 		a.setStatus("当前文档不支持插入图表数据表")
 		return
@@ -218,8 +196,15 @@ func (a *App) showWordChartDialog() {
 			default:
 				return
 			}
-			a.insertWordTable(tblEditor, rows, cols)
-			a.setStatus(fmt.Sprintf("已成功插入 %s 基础数据表格（%d行%d列）", chartName, rows, cols))
+			if !a.runWordApplicationCommand("插入图表基础数据表", "word.table.insert", map[string]any{
+				"after_paragraph_id": state.selectedWordParagraphID,
+				"rows":               rows,
+				"columns":            cols,
+			}) {
+				a.setStatus("当前会话无法通过能力目录插入图表数据表")
+				return
+			}
+			a.setStatus(fmt.Sprintf("正在插入 %s 基础数据表格（%d 行 × %d 列）", chartName, rows, cols))
 		},
 		modalDialogActionSpec{ID: "column", Label: "柱形图"},
 		modalDialogActionSpec{ID: "line", Label: "折线图"},

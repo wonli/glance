@@ -23,17 +23,17 @@ func (a *App) requestMarkdownParse() {
 	generation := v.parseGeneration
 	v.pending = true
 	window := a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		defer cancel()
 		done := make(chan struct{})
 		defer close(done)
-		go func() {
+		a.launchManagedBackground(func() {
 			select {
 			case <-a.shutdown:
 				cancel()
 			case <-done:
 			}
-		}()
+		})
 		publish := func(result markdownParseResult) bool {
 			select {
 			case <-ctx.Done():
@@ -58,5 +58,5 @@ func (a *App) requestMarkdownParse() {
 		result.images, result.errors = markdowndoc.PreviewResourcesContext(ctx, snapshot, path)
 		result.resourcesPending = false
 		publish(result)
-	}()
+	})
 }

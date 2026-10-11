@@ -27,26 +27,40 @@ func (d *Document) AddSlide() error {
 	}
 
 	// Add default title and content placeholders
-	_, _ = slide.AddTextBox(gopptx.TextBoxSpec{
+	title, err := slide.AddTextBox(gopptx.TextBoxSpec{
 		X:      914400,
 		Y:      731520,
 		Width:  10363200,
 		Height: 1097280,
-		Text:   "点击添加标题",
+		Text:   "",
 	})
-	_, _ = slide.AddTextBox(gopptx.TextBoxSpec{
+	if err != nil {
+		return fmt.Errorf("创建标题占位符失败: %w", err)
+	}
+	body, err := slide.AddTextBox(gopptx.TextBoxSpec{
 		X:      914400,
 		Y:      2011680,
 		Width:  10363200,
 		Height: 4114800,
-		Text:   "• 点击添加正文文本\n• 支持多级要点与编辑",
+		Text:   "",
 	})
+	if err != nil {
+		return fmt.Errorf("创建正文占位符失败: %w", err)
+	}
 
 	d.ensureSlideProjectionCacheCount(len(existingSlides))
 	d.slideBackgrounds = append(d.slideBackgrounds, d.defaultSlideBackground)
+	d.slideBackgroundChanges = append(d.slideBackgroundChanges, presentationBackgroundOverride{})
 	d.slideInherited = append(d.slideInherited, append([]document.PresentationElement(nil), d.defaultSlideInherited...))
 	d.slidePlaceholderBounds = append(d.slidePlaceholderBounds, make(map[uint32]document.PresentationRect))
-	d.slidePlaceholderTypes = append(d.slidePlaceholderTypes, make(map[uint32]string))
+	d.slidePlaceholderTypes = append(d.slidePlaceholderTypes, map[uint32]string{
+		uint32(title.ID()): "title",
+		uint32(body.ID()):  "body",
+	})
+	d.slidePlaceholderChanges = append(d.slidePlaceholderChanges, map[uint32]string{
+		uint32(title.ID()): "title",
+		uint32(body.ID()):  "body",
+	})
 	d.slideShapeTransforms = append(d.slideShapeTransforms, make(map[uint32]presentationTransformMetadata))
 	d.slidePlaceholderXfrms = append(d.slidePlaceholderXfrms, make(map[uint32]presentationTransformMetadata))
 	d.slideTransformChanges = append(d.slideTransformChanges, make(map[uint32]presentationTransformOverride))
@@ -65,7 +79,32 @@ func (d *Document) AddSlide() error {
 func (d *Document) DeleteSlide(index int) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.deleteSlideLocked(index)
+}
 
+// DeleteSlideByID resolves a stable slide ID before deleting the slide.
+func (d *Document) DeleteSlideByID(slideID uint32) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pres == nil {
+		return fmt.Errorf("演示文稿已关闭")
+	}
+	slides, err := d.pres.Slides()
+	if err != nil {
+		return fmt.Errorf("读取幻灯片失败: %w", err)
+	}
+	for index, slide := range slides {
+		if uint32(slide.ID()) == slideID {
+			return d.deleteSlideLocked(index)
+		}
+	}
+	return fmt.Errorf("未找到幻灯片 ID %d", slideID)
+}
+
+func (d *Document) deleteSlideLocked(index int) error {
+	if d.pres == nil {
+		return fmt.Errorf("演示文稿已关闭")
+	}
 	slides, err := d.pres.Slides()
 	if err != nil || index < 0 || index >= len(slides) {
 		return fmt.Errorf("幻灯片序号无效: %d", index)
@@ -78,6 +117,8 @@ func (d *Document) DeleteSlide(index int) error {
 	if err := d.pres.RemoveSlide(target.ID()); err != nil {
 		return fmt.Errorf("删除幻灯片失败: %w", err)
 	}
+	delete(d.slideLayoutChanges, uint32(target.ID()))
+	delete(d.slideAnimationChanges, uint32(target.ID()))
 	d.removeSlideProjectionCaches(index, len(slides))
 	newCount := len(slides) - 1
 	if d.activeSlide > index {
@@ -97,6 +138,9 @@ func (d *Document) ensureSlideProjectionCacheCount(count int) {
 	for len(d.slideBackgrounds) < count {
 		d.slideBackgrounds = append(d.slideBackgrounds, d.defaultSlideBackground)
 	}
+	for len(d.slideBackgroundChanges) < count {
+		d.slideBackgroundChanges = append(d.slideBackgroundChanges, presentationBackgroundOverride{})
+	}
 	for len(d.slideInherited) < count {
 		d.slideInherited = append(d.slideInherited, append([]document.PresentationElement(nil), d.defaultSlideInherited...))
 	}
@@ -105,6 +149,9 @@ func (d *Document) ensureSlideProjectionCacheCount(count int) {
 	}
 	for len(d.slidePlaceholderTypes) < count {
 		d.slidePlaceholderTypes = append(d.slidePlaceholderTypes, make(map[uint32]string))
+	}
+	for len(d.slidePlaceholderChanges) < count {
+		d.slidePlaceholderChanges = append(d.slidePlaceholderChanges, make(map[uint32]string))
 	}
 	for len(d.slideShapeTransforms) < count {
 		d.slideShapeTransforms = append(d.slideShapeTransforms, make(map[uint32]presentationTransformMetadata))
@@ -149,6 +196,11 @@ func (d *Document) removeSlideProjectionCaches(index, oldCount int) {
 		d.slideBackgrounds[len(d.slideBackgrounds)-1] = pptxBackground{}
 		d.slideBackgrounds = d.slideBackgrounds[:len(d.slideBackgrounds)-1]
 	}
+	if index < len(d.slideBackgroundChanges) {
+		copy(d.slideBackgroundChanges[index:], d.slideBackgroundChanges[index+1:])
+		d.slideBackgroundChanges[len(d.slideBackgroundChanges)-1] = presentationBackgroundOverride{}
+		d.slideBackgroundChanges = d.slideBackgroundChanges[:len(d.slideBackgroundChanges)-1]
+	}
 	if index < len(d.slideInherited) {
 		copy(d.slideInherited[index:], d.slideInherited[index+1:])
 		d.slideInherited[len(d.slideInherited)-1] = nil
@@ -163,6 +215,11 @@ func (d *Document) removeSlideProjectionCaches(index, oldCount int) {
 		copy(d.slidePlaceholderTypes[index:], d.slidePlaceholderTypes[index+1:])
 		d.slidePlaceholderTypes[len(d.slidePlaceholderTypes)-1] = nil
 		d.slidePlaceholderTypes = d.slidePlaceholderTypes[:len(d.slidePlaceholderTypes)-1]
+	}
+	if index < len(d.slidePlaceholderChanges) {
+		copy(d.slidePlaceholderChanges[index:], d.slidePlaceholderChanges[index+1:])
+		d.slidePlaceholderChanges[len(d.slidePlaceholderChanges)-1] = nil
+		d.slidePlaceholderChanges = d.slidePlaceholderChanges[:len(d.slidePlaceholderChanges)-1]
 	}
 	if index < len(d.slideShapeTransforms) {
 		copy(d.slideShapeTransforms[index:], d.slideShapeTransforms[index+1:])

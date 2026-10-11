@@ -285,13 +285,13 @@ func (a *App) runWordPageSetupCommand(operation string, edit func(document.WordP
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		blocks, err := runWordMutation(state, func() error { return edit(editor) })
 		if err == nil {
 			state.invalidateWordLayoutAfterBlocksChange()
 		}
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
-	}()
+	})
 }
 
 func (a *App) showWordCountDetails() {

@@ -1,8 +1,10 @@
 package desktopui
 
 import (
-	"glance/internal/document"
+	"encoding/json"
 	"strings"
+
+	"glance/internal/document"
 )
 
 func cellStyleToFormatPatch(style document.CellStyle) document.CellFormatPatch {
@@ -101,14 +103,50 @@ func (a *App) applySpreadsheetFormatPainter() {
 		return
 	}
 	patch := *state.excelFormatPainterPatch
+	sourceCell := state.excelFormatPainterSourceCell
+	targetBounds := state.selection.Bounds()
 	state.excelFormatPainterActive = false
 	state.excelFormatPainterPatch = nil
 	state.excelFormatPainterSourceCell = ""
+	if sourceCell != "" && a.applicationSessionRegistered(state.documentID) {
+		a.runSpreadsheetFormatPaintIntent(sourceCell, targetBounds)
+		return
+	}
 	a.applyCellFormat(patch)
 	a.setStatus("格式刷已应用至所选区域")
 	if a.window != nil {
 		a.window.Invalidate()
 	}
+}
+
+func (a *App) runSpreadsheetFormatPaintIntent(sourceCell string, targetBounds document.CellRange) {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || state.formatRunning.Load() {
+		return
+	}
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
+	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	a.launchManagedBackground(func() {
+		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.format.paint", "spreadsheet_range", "selection", sheet, map[string]any{
+			"sheet": sheet, "source_cell": sourceCell, "target_bounds": targetBounds,
+		})
+		var changed bool
+		if err == nil {
+			var outcome struct {
+				Changed bool `json:"changed"`
+			}
+			err = json.Unmarshal(result.Data, &outcome)
+			changed = outcome.Changed
+		}
+		a.completeSessionOperation(state, token, err, false)
+		select {
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "格式刷", applied: changed}:
+		case <-a.shutdown:
+		}
+	})
 }
 
 func (a *App) showSpreadsheetFontFamilyDialog() {

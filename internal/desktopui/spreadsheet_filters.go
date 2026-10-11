@@ -1,7 +1,9 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
+
 	"glance/internal/document"
 )
 
@@ -11,7 +13,11 @@ func (a *App) toggleValueFilter() {
 		return
 	}
 	if state.valueFilter != nil {
-		a.clearValueFilter(state)
+		if a.applicationSessionRegistered(state.documentID) {
+			a.runSpreadsheetFilterIntent(map[string]any{"operation": "clear", "sheet": state.sheet})
+		} else {
+			a.clearValueFilter(state)
+		}
 		return
 	}
 	if !state.selectionSet {
@@ -19,17 +25,28 @@ func (a *App) toggleValueFilter() {
 	}
 	bounds := state.selection.Bounds()
 	pos := state.selection.Active
+	sheet := state.sheet
+	if pos.Row+1 <= bounds.StartRow {
+		return
+	}
+	if a.applicationSessionRegistered(state.documentID) {
+		a.runSpreadsheetFilterIntent(map[string]any{
+			"operation": "set_from_row", "sheet": sheet, "bounds": bounds,
+			"column": pos.Column + 1, "source_row": pos.Row + 1,
+		})
+		return
+	}
 	reader, ok := state.book.(document.SpreadsheetRangeReader)
-	if !ok || pos.Row+1 <= bounds.StartRow {
+	if !ok {
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
 		return
 	}
-	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	generation, window := a.documentGeneration, state.virtualGrid
 	column := pos.Column + 1
-	go func() {
+	a.launchManagedBackground(func() {
 		unlock := lockSessionAdapterRead(state)
 		cells, err := reader.ReadRange(sheet, bounds)
 		var filter *ValueFilter
@@ -55,7 +72,35 @@ func (a *App) toggleValueFilter() {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "筛选", filter: filter}:
 		case <-a.shutdown:
 		}
-	}()
+	})
+}
+
+func (a *App) runSpreadsheetFilterIntent(arguments any) {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || state.formatRunning.Load() {
+		return
+	}
+	token, ok := state.beginOperation(sessionOperationRead)
+	if !ok {
+		return
+	}
+	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	a.launchManagedBackground(func() {
+		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.filter.apply", "attached_window", fmt.Sprint(a.windowID), sheet, arguments)
+		var changed bool
+		if err == nil {
+			var outcome struct {
+				Changed bool `json:"changed"`
+			}
+			err = json.Unmarshal(result.Data, &outcome)
+			changed = outcome.Changed
+		}
+		a.completeSessionOperation(state, token, err, false)
+		select {
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "筛选", applied: changed}:
+		case <-a.shutdown:
+		}
+	})
 }
 
 func filterMatchingRows(cells [][]document.Cell, firstRow, column int, value string) map[int]bool {

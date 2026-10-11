@@ -56,7 +56,20 @@ func (w *Workbook) Value(sheet, cell string) (string, error) {
 	if err := w.checkOpen(); err != nil {
 		return "", err
 	}
-	return w.file.GetCellValue(sheet, cell)
+	value, err := w.file.GetCellValue(sheet, cell)
+	if err != nil {
+		return "", err
+	}
+	formula, err := w.file.GetCellFormula(sheet, cell)
+	if err != nil {
+		return "", err
+	}
+	if formula != "" {
+		if calculated, calcErr := w.file.CalcCellValue(sheet, cell); calcErr == nil {
+			value = calculated
+		}
+	}
+	return value, nil
 }
 
 // Range returns a bounded, rectangular preview beginning at A1. Large sheets
@@ -99,7 +112,17 @@ func (w *Workbook) Range(sheet string, maxRows, maxColumns int) ([][]document.Ce
 				_ = rows.Close()
 				return nil, err
 			}
-			previewRow[c] = document.Cell{Value: value, StyleID: styleID}
+			formula, err := w.file.GetCellFormula(sheet, ref)
+			if err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("read cell %s formula: %w", ref, err)
+			}
+			if formula != "" {
+				if calculated, calcErr := w.file.CalcCellValue(sheet, ref); calcErr == nil {
+					value = calculated
+				}
+			}
+			previewRow[c] = document.Cell{Value: value, Formula: formula, StyleID: styleID}
 		}
 		result = append(result, previewRow)
 	}

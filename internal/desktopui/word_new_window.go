@@ -33,21 +33,26 @@ func wordNewWindowAvailability(state *documentSessionState, runtime *desktopRunt
 }
 
 func (a *App) requestWordNewWindow() {
+	if err := a.openWordNewWindow(); err != nil {
+		a.setStatus(err.Error())
+	}
+}
+
+func (a *App) openWordNewWindow() error {
 	state := a.documentSessionState
 	enabled, reason := wordNewWindowAvailability(state, a.desktopRuntime)
 	if !enabled {
-		a.setStatus(reason)
-		return
+		return fmt.Errorf("%s", reason)
 	}
 	documentID := state.documentID
 	if documentID == "" {
 		documentID = state.sharedDocumentSession.documentID
 	}
 	if documentID == "" {
-		a.setStatus("创建新窗口失败：Word 文档会话没有 ID")
-		return
+		return fmt.Errorf("创建新窗口失败：Word 文档会话没有 ID")
 	}
 	if err := a.desktopRuntime.openDocumentWindow(documentID, captureWindowView(a), a); err != nil {
-		a.setStatus(fmt.Sprintf("创建新窗口失败：%v", err))
+		return fmt.Errorf("创建新窗口失败：%w", err)
 	}
+	return nil
 }

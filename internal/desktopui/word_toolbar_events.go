@@ -30,7 +30,7 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			continue
 		}
 		if action.id == "view-new-window" {
-			a.requestWordNewWindow()
+			a.executeWordToolbarAction(action.id)
 			continue
 		}
 		if wordHasPendingTextDrafts(state) && action.id == "paste" {
@@ -143,7 +143,9 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 		case "insert-symbol":
 			a.openWordSymbolPicker()
 		case "select":
-			a.selectAllWordText()
+			if !a.runWordViewRibbonAction("select") {
+				a.selectAllWordText()
+			}
 		case "design-page-color":
 			a.showWordPageColorDialog()
 		case "design-page-border":
@@ -165,7 +167,7 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 		case "insert-page-number":
 			a.showWordPageNumberDialog()
 		case "view-side-by-side":
-			a.toggleWordSideBySideView()
+			a.executeWordToolbarAction(action.id)
 		case "review-language":
 			a.showWordLanguageDialog()
 		case "review-word-count":

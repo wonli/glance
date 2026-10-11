@@ -2,6 +2,10 @@ package desktopui
 
 import "glance/internal/document"
 
+import (
+	"context"
+)
+
 type sessionOperationKind uint8
 
 const (
@@ -212,6 +216,9 @@ func (r *desktopRuntime) publishSessionRevision(documentID string, revision uint
 	if !ok || !session.advanceRevision(revision) {
 		return false
 	}
+	if r.applicationRuntime != nil {
+		_ = r.applicationRuntime.SyncDocumentRevision(context.Background(), documentID, revision)
+	}
 	for _, app := range r.viewsForSession(documentID) {
 		if state := app.documentSessionState; state != nil && state.sharedDocumentSession == session {
 			state.observedSessionRevision.Store(revision)
@@ -221,6 +228,30 @@ func (r *desktopRuntime) publishSessionRevision(documentID string, revision uint
 		}
 	}
 	return true
+}
+
+// publishCommandRevision refreshes views for a revision already committed by
+// application.Runtime. CommandBus owns the revision and publishes its event.
+func (r *desktopRuntime) publishCommandRevision(documentID string, revision uint64) {
+	if r == nil {
+		return
+	}
+	session, ok := r.session(documentID)
+	if !ok {
+		return
+	}
+	session.advanceRevision(revision)
+	for _, app := range r.viewsForSession(documentID) {
+		if state := app.documentSessionState; state != nil && state.sharedDocumentSession == session {
+			state.observedSessionRevision.Store(revision)
+			if state.virtualGrid != nil {
+				state.virtualGrid.invalidateWindow()
+			}
+		}
+		if app.window != nil {
+			app.window.Invalidate()
+		}
+	}
 }
 
 func (a *App) activeSessionID() string {

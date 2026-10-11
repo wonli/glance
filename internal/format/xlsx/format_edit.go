@@ -19,22 +19,27 @@ type cellStyleChange struct {
 }
 
 func (w *Workbook) SetCellFormats(sheet string, bounds document.CellRange, patch document.CellFormatPatch) error {
+	_, err := w.SetCellFormatsChanged(sheet, bounds, patch)
+	return err
+}
+
+func (w *Workbook) SetCellFormatsChanged(sheet string, bounds document.CellRange, patch document.CellFormatPatch) (bool, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if err := w.checkOpen(); err != nil {
-		return err
+		return false, err
 	}
 	if err := validateCellFormatPatch(patch); err != nil {
-		return err
+		return false, err
 	}
 	if !contains(w.file.GetSheetList(), sheet) {
-		return fmt.Errorf("worksheet %q does not exist", sheet)
+		return false, fmt.Errorf("worksheet %q does not exist", sheet)
 	}
 	if bounds.StartRow < 1 || bounds.StartColumn < 1 || bounds.EndRow < bounds.StartRow || bounds.EndColumn < bounds.StartColumn || bounds.EndRow > maxXLSXRows || bounds.EndColumn > maxXLSXColumns {
-		return errors.New("cell format range is outside XLSX worksheet limits")
+		return false, errors.New("cell format range is outside XLSX worksheet limits")
 	}
 	if (bounds.EndRow-bounds.StartRow+1)*(bounds.EndColumn-bounds.StartColumn+1) > maxClipboardCells {
-		return fmt.Errorf("format range exceeds %d cells", maxClipboardCells)
+		return false, fmt.Errorf("format range exceeds %d cells", maxClipboardCells)
 	}
 
 	styleCache := make(map[int]*excelize.Style)
@@ -45,13 +50,13 @@ func (w *Workbook) SetCellFormats(sheet string, bounds document.CellRange, patch
 			cell := CellName(column, row)
 			before, err := w.file.GetCellStyle(sheet, cell)
 			if err != nil {
-				return fmt.Errorf("read style for %s: %w", cell, err)
+				return false, fmt.Errorf("read style for %s: %w", cell, err)
 			}
 			base, ok := styleCache[before]
 			if !ok {
 				base, err = w.file.GetStyle(before)
 				if err != nil {
-					return fmt.Errorf("read style %d: %w", before, err)
+					return false, fmt.Errorf("read style %d: %w", before, err)
 				}
 				styleCache[before] = base
 			}
@@ -69,26 +74,31 @@ func (w *Workbook) SetCellFormats(sheet string, bounds document.CellRange, patch
 			}
 			keyBytes, err := json.Marshal(updated)
 			if err != nil {
-				return fmt.Errorf("encode style for %s: %w", cell, err)
+				return false, fmt.Errorf("encode style for %s: %w", cell, err)
 			}
 			key := string(keyBytes)
 			after, ok := styleIDs[key]
 			if !ok {
 				after, err = w.file.NewStyle(&updated)
 				if err != nil {
-					return fmt.Errorf("create style for %s: %w", cell, err)
+					return false, fmt.Errorf("create style for %s: %w", cell, err)
 				}
 				styleIDs[key] = after
+			}
+			// Excelize may canonicalize a rebuilt style back to the current ID even
+			// when its in-memory representation is not deeply equal to the source.
+			if after == before {
+				continue
 			}
 			changes = append(changes, cellStyleChange{cell: cell, from: before, to: after})
 		}
 	}
 	if len(changes) == 0 {
-		return nil
+		return false, nil
 	}
 	beforeSnapshot, err := w.snapshotLocked()
 	if err != nil {
-		return fmt.Errorf("capture format history: %w", err)
+		return false, fmt.Errorf("capture format history: %w", err)
 	}
 	for index, change := range changes {
 		if err := w.file.SetCellStyle(sheet, change.cell, change.cell, change.to); err != nil {
@@ -96,17 +106,17 @@ func (w *Workbook) SetCellFormats(sheet string, bounds document.CellRange, patch
 				previous := changes[rollback]
 				_ = w.file.SetCellStyle(sheet, previous.cell, previous.cell, previous.from)
 			}
-			return fmt.Errorf("set style for %s: %w", change.cell, err)
+			return false, fmt.Errorf("set style for %s: %w", change.cell, err)
 		}
 	}
 	if err := w.recordHistoryLocked(beforeSnapshot); err != nil {
 		for _, previous := range changes {
 			_ = w.file.SetCellStyle(sheet, previous.cell, previous.cell, previous.from)
 		}
-		return fmt.Errorf("record format history: %w", err)
+		return false, fmt.Errorf("record format history: %w", err)
 	}
 	w.dirty = true
-	return nil
+	return true, nil
 }
 
 func validateCellFormatPatch(patch document.CellFormatPatch) error {

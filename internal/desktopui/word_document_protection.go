@@ -2,23 +2,15 @@ package desktopui
 
 import "glance/internal/document"
 
-func (a *App) runWordProtectionCommand(operation string, edit func(document.WordDocumentProtectionEditor) error) {
+func (a *App) runWordProtectionApplicationCommand(operation string, enabled bool) bool {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
-		return
+	if state == nil || state.word == nil || !a.applicationSessionRegistered(state.documentID) {
+		return false
 	}
-	editor, ok := any(state.word).(document.WordDocumentProtectionEditor)
-	if !ok {
-		return
+	if !a.runWordApplicationCommand(operation, "word.document.protection.set", map[string]any{"enabled": enabled}) {
+		a.setStatus("Word 文档正在处理其他操作")
 	}
-	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
-		return
-	}
-	generation := a.documentGeneration
-	go func() {
-		blocks, err := runWordMutation(state, func() error { return edit(editor) })
-		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: operation, err: err, blocks: blocks})
-	}()
+	return true
 }
 
 func (a *App) showWordDocumentProtectionDialog() {
@@ -40,9 +32,9 @@ func (a *App) showWordDocumentProtectionDialog() {
 		a.modal.Show("限制编辑", "当前文档已开启编辑限制（只读保护）。\n是否解除编辑限制以允许修改？", func(action string) {
 			a.modal.Hide()
 			if action == "unprotect" {
-				a.runWordProtectionCommand("解除限制编辑", func(ed document.WordDocumentProtectionEditor) error {
-					return ed.SetWordDocumentProtection(false)
-				})
+				if !a.runWordProtectionApplicationCommand("解除限制编辑", false) {
+					a.setStatus("当前文档的应用命令运行时不可用，未解除编辑限制")
+				}
 			}
 		},
 			modalDialogActionSpec{ID: "unprotect", Label: "解除限制"},
@@ -52,9 +44,9 @@ func (a *App) showWordDocumentProtectionDialog() {
 		a.modal.Show("限制编辑", "开启编辑限制后，文档将被标记为受保护（只读模式），防止误修改正文内容。\n是否开启限制编辑？", func(action string) {
 			a.modal.Hide()
 			if action == "protect" {
-				a.runWordProtectionCommand("开启限制编辑", func(ed document.WordDocumentProtectionEditor) error {
-					return ed.SetWordDocumentProtection(true)
-				})
+				if !a.runWordProtectionApplicationCommand("开启限制编辑", true) {
+					a.setStatus("当前文档的应用命令运行时不可用，未开启编辑限制")
+				}
 			}
 		},
 			modalDialogActionSpec{ID: "protect", Label: "开启限制"},

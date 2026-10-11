@@ -2,22 +2,22 @@
 
 ## Goal
 
-Build a local desktop document viewer/editor for basic Excel and Word workflows. The UI is rendered with Gio. Keep format libraries replaceable and keep their types out of UI state.
+Build a local document workspace for people and Agents. Gio provides the desktop UI, and MCP provides a protocol entry point; both attach to the same application runtime and live document sessions. Keep format libraries replaceable and keep their types out of UI state.
 
-Markdown uses `internal/format/markdowndoc` as an exact UTF-8 source adapter. Its neutral `document.MarkdownSnapshot` carries headings with rune offsets, semantic spans and table cells. Gio owns stable editors, outline/preview lists and ribbon buttons; source transforms run through the session mutation path. Completed drafts are synchronized before saving or leaving a tab; active IME composition stays transient. Parsing, bounded local-image decoding, formula rasterization and PDF pagination run in background workers. Preview results match source and path; PDF replacement additionally checks the owning session revision and draft epoch under the adapter lock. PDF export reuses the Word layout/font pipeline without exposing Markdown parser types to widgets. The view caches text and source-line offsets by Gio text version, so unchanged frames avoid copying the whole source.
+Markdown uses `internal/format/markdowndoc` as an exact UTF-8 source adapter. Its neutral `document.MarkdownSnapshot` carries headings with rune offsets, semantic spans and table cells. Gio owns stable editors, outline/preview lists and ribbon buttons; source transforms run through the session mutation path. Completed drafts are synchronized before saving or leaving a tab; active IME composition stays transient. Parsing, bounded local-image decoding, formula rasterization and PDF pagination run in background workers. Preview results match source and path; PDF replacement additionally checks the owning session revision and draft epoch under the adapter lock. PDF export reuses the Word layout/font pipeline without exposing Markdown parser types to widgets. `internal/format/markdownpdf` turns exact Markdown snapshots and bounded resources into a neutral paginated scene, then shares `internal/format/wordpdf` PDF validation and exclusive new-file creation with the MCP workflow; the final commit checks the live revision and rejects transient editor drafts. The view caches text and source-line offsets by Gio text version, so unchanged frames avoid copying the whole source.
 
 This architecture borrows the format-adapter, normalized-document, session, and compatibility boundaries used by the sibling `tools` project, and applies Gio interaction lessons from `mysql-ai`. Reuse the boundaries and proven interaction patterns; do not copy their Rust/Tauri/Svelte or database-specific implementation.
 
 ## Layers and ownership
 
 ```text
-Gio window and widgets
-        ↓ user intents / immutable view data
-Desktop UI session collection (`internal/desktopui`, `internal/workspace`)
+Gio UI / MCP client / built-in Agent
+        ↓ view intents or registered capabilities
+Application Runtime and live sessions (`internal/application`)
         ↓ format-neutral requests
-Document adapter interface
+Document adapters (`internal/format/*`)
         ↓ library-specific operations
-XLSX / DOCX libraries and local filesystem
+Office libraries and local filesystem
 ```
 
 ### Desktop UI (`internal/desktopui`)
@@ -27,11 +27,15 @@ XLSX / DOCX libraries and local filesystem
 - Do not hold Excelize, DOCX, OOXML, ZIP, or XML library objects in Gio widgets.
 - Keep rendering/layout helpers separate from event handling and file/session logic. Avoid growing one all-purpose `App` file; use focused view, interaction, and widget-state files as the UI grows.
 
-### Application/session layer (`internal/workspace`, `internal/desktopui`)
+### Application/session layer (`internal/application`, `internal/workspace`, `internal/desktopui`)
 
-- Own the active document identity, path, format, loading/error state, capabilities, selection, dirty state, and save/close lifecycle.
-- Expose snapshots or narrowly scoped state operations to the UI. Keep the session as the source of truth for committed document data; widget editors are only transient drafts.
+- `internal/application.Runtime` owns live session identity, path, format, revision, capability registration, command execution, events, Agent workflows, and save/close lifecycle. A session adapter is the source of truth for committed document data.
+- Register capabilities once with stable IDs, usage descriptions, JSON input/output schemas, format requirements, and risk. MCP tools are generated from this catalog; the protocol server does not implement document behavior itself.
+- Host side effects use narrow injected interfaces. The native print service accepts PDF bytes captured from the requested live document revision; headless runtimes without that service report printing as unsupported. Agent print requests use the existing high-risk human confirmation flow.
+- Gio attaches its existing sessions to the Runtime and sends registered capabilities or view intents. Widget editors remain transient drafts; adapters reject snapshots or edits while a relevant draft is pending.
+- `internal/mcpserver` exposes the same catalog over MCP. Stdio creates an independent no-window Runtime; the desktop endpoint attaches to the desktop Runtime and therefore sees its current unsaved sessions.
 - Perform file/library work away from the Gio frame layout path. Report completion through synchronized state and request a redraw using the established Gio event-loop mechanism.
+- Start App-owned background work through `launchManagedBackground`; window destruction closes the App shutdown signal and waits for those tasks before releasing session state. Runtime-owned workers such as the workspace snapshot writer keep their own explicit stop and completion boundary. Avoid adding untracked goroutines to App methods.
 - Validate edits and capabilities here and in the adapter. A UI control being disabled is not validation.
 - `internal/workspace` owns versioned SQLite metadata, recents, ordered tabs, active-tab ID, byte snapshots, dirty flags, and opaque per-tab view state. Format snapshots remain owned by the adapters; Gio widget instances stay in each in-memory document session.
 - The workspace tab strip sits flush at the top edge of the full-height client area: recent/document tabs and the `+` tab share one horizontal list. File, folder, create, save, and save-as actions live in the `+` menu; the document canvas receives the space previously used by the path toolbar. On platforms where Gio reports client-side decorations, the tab strip occupies the transparent titlebar area; custom window controls and a dedicated drag strip preserve window actions. If the platform retains native decorations (currently X11), keep the system titlebar and place tabs directly below it rather than disabling move/resize behavior.
@@ -55,6 +59,7 @@ XLSX / DOCX libraries and local filesystem
 - Keep formulas as formula text plus cached result when available. Do not claim recalculation unless a calculation engine is separately integrated and verified.
 - DOCX text mutation must preserve unrelated package parts and formatting in the supported corpus. If a library cannot do that reliably, limit the first release to read-only DOCX or narrowly scoped text replacement.
 - XLSX and DOCX snapshots are self-contained Office package bytes; JSON snapshots preserve current editor text, including invalid intermediate JSON. Snapshot payloads are not interchange DTOs and must only be interpreted by their matching adapter.
+- Shared Word pagination and system-font shaping live outside Gio in `internal/wordlayout` and `internal/wordfont`. `internal/format/wordpdf` renders the neutral page scene for desktop PDF output and the `word.document.export_pdf` MCP workflow. It validates the completed PDF, creates only a new output path, returns layout diagnostics, and checks the live revision and pending drafts before committing the file.
 
 ### Platform and file access
 

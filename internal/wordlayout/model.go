@@ -14,6 +14,15 @@ type Input struct {
 	EditorParagraphInsets bool
 }
 
+// DefaultPageSetup returns Glance's product default for documents without
+// complete source page geometry.
+func DefaultPageSetup() document.WordPageSetup {
+	return document.WordPageSetup{
+		WidthPT: 595.28, HeightPT: 841.89, Orientation: "portrait",
+		MarginTopPT: 72, MarginRightPT: 72, MarginBottomPT: 72, MarginLeftPT: 72,
+	}
+}
+
 type SourcePosition struct {
 	RunID      string
 	RuneOffset int

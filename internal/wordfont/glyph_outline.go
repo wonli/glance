@@ -1,4 +1,4 @@
-package desktopui
+package wordfont
 
 import (
 	"container/list"
@@ -22,7 +22,7 @@ type cachedWordGlyphOutline struct {
 	weight  int64
 }
 
-func (s *wordTextShaper) GlyphOutline(fontKey string, glyphID uint32) (wordlayout.GlyphOutline, error) {
+func (s *Shaper) GlyphOutline(fontKey string, glyphID uint32) (wordlayout.GlyphOutline, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.loadSystemFonts(); err != nil {
@@ -73,7 +73,7 @@ func (s *wordTextShaper) GlyphOutline(fontKey string, glyphID uint32) (wordlayou
 	return cloneGlyphOutline(outline), nil
 }
 
-func (s *wordTextShaper) cachedGlyphOutline(cacheKey string) (wordlayout.GlyphOutline, bool) {
+func (s *Shaper) cachedGlyphOutline(cacheKey string) (wordlayout.GlyphOutline, bool) {
 	if s == nil {
 		return wordlayout.GlyphOutline{}, false
 	}
@@ -86,7 +86,7 @@ func (s *wordTextShaper) cachedGlyphOutline(cacheKey string) (wordlayout.GlyphOu
 	return cloneGlyphOutline(entry.outline), true
 }
 
-func (s *wordTextShaper) cacheGlyphOutline(cacheKey string, outline wordlayout.GlyphOutline) {
+func (s *Shaper) cacheGlyphOutline(cacheKey string, outline wordlayout.GlyphOutline) {
 	if s == nil {
 		return
 	}

@@ -68,6 +68,10 @@ func TestNewBlankDraftContainsEditableParagraph(t *testing.T) {
 	if len(blocks) != 1 || !blocks[0].Editable {
 		t.Fatalf("blank draft blocks = %#v", blocks)
 	}
+	wordBlocks := doc.WordBlocks()
+	if len(wordBlocks) != 1 || wordBlocks[0].Paragraph == nil || len(wordBlocks[0].Paragraph.Inlines) != 1 || wordBlocks[0].Paragraph.Inlines[0].Text == nil || !wordBlocks[0].Paragraph.Inlines[0].Text.Editable {
+		t.Fatalf("blank draft neutral Word projection = %#v; want one editable text run", wordBlocks)
+	}
 	if err := doc.ReplaceParagraph(0, "Draft text"); err != nil {
 		t.Fatal(err)
 	}

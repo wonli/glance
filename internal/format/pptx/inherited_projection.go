@@ -305,6 +305,9 @@ func projectInheritedText(textBody *pptxXMLNode, colorMap, theme map[string]stri
 		}
 		paragraph := document.PresentationParagraph{}
 		if props := paragraphNode.child("pPr"); props != nil {
+			pNone, pChar := props.child("buNone"), props.child("buChar")
+			pAutoNum, pBlip := props.child("buAutoNum"), props.child("buBlip")
+			paragraph.Bullet = pNone == nil && (pChar != nil || pAutoNum != nil || pBlip != nil)
 			switch props.attr("algn") {
 			case "ctr":
 				paragraph.Align = "center"

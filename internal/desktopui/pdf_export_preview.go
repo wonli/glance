@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"strings"
 
 	"gioui.org/widget"
@@ -15,7 +16,7 @@ import (
 
 type pdfExportPreviewState struct {
 	Active           bool
-	Format           string // "word", "spreadsheet", "markdown"
+	Format           string // "word", "spreadsheet", "markdown", "presentation"
 	markdownResult   markdownFileResult
 	resourceWarnings widget.List
 	Orientation      string // "portrait", "landscape"
@@ -35,6 +36,16 @@ type pdfExportPreviewState struct {
 	wordBlocks         []document.WordBlock
 	wordLayout         document.WordLayoutData
 	wordPreviewPending bool
+
+	// Presentation data is an immutable snapshot shared by the preview and export.
+	presentationState          *documentSessionState
+	presentationSnapshot       document.PresentationSnapshot
+	presentationPreviewImage   image.Image
+	presentationPreviewPending bool
+	presentationPreviewError   string
+	presentationPreviewIndex   int
+	presentationPreviewGen     uint64
+	presentationPrintMode      bool
 
 	// Interactive widgets (persistent in state)
 	portraitBtn  widget.Clickable
@@ -79,7 +90,7 @@ func (a *App) openSpreadsheetPDFExportPreview(state *documentSessionState, sheet
 		a.spreadsheetPDFPreviewResults = make(chan spreadsheetPDFPreviewResult, 1)
 	}
 	results, shutdown, appWindow := a.spreadsheetPDFPreviewResults, a.shutdown, a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		result := spreadsheetPDFPreviewResult{state: state, sheet: sheet}
 		unlock := lockSessionAdapterRead(state)
 		var images []document.SpreadsheetImage
@@ -96,7 +107,7 @@ func (a *App) openSpreadsheetPDFExportPreview(state *documentSessionState, sheet
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 	a.setStatus("正在准备 PDF 预览…")
 }
 
@@ -295,7 +306,7 @@ func (a *App) updateWordPreviewOrientation(orientation string) error {
 	blocks := prev.wordBlocks
 	fonts := a.wordPDFFontSource
 	results, shutdown, appWindow := a.wordPDFPreviewResults, a.shutdown, a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		var shaper wordlayout.TextShaper
 		if existing, ok := fonts.(wordlayout.TextShaper); ok {
 			shaper = existing
@@ -322,7 +333,7 @@ func (a *App) updateWordPreviewOrientation(orientation string) error {
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 	return nil
 }
 

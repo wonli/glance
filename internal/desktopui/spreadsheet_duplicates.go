@@ -1,11 +1,12 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 )
 
-func (a *App) runSpreadsheetDuplicatesCommand(operation string, edit func(document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error)) {
+func (a *App) runSpreadsheetDuplicatesCommand(operation string, arguments any, edit func(document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error)) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
@@ -19,11 +20,22 @@ func (a *App) runSpreadsheetDuplicatesCommand(operation string, edit func(docume
 	if !ok {
 		return
 	}
-	go func() {
-		unlock := lockSessionAdapterWrite(state)
-		res, err := edit(editor)
-		unlock()
-		a.completeSessionOperation(state, token, err, true)
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		var res document.SpreadsheetDuplicatesResult
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.duplicates.remove", "spreadsheet_cell_range", "selection", sheet, arguments)
+			err = commandErr
+			if err == nil {
+				err = json.Unmarshal(result.Data, &res)
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			res, err = edit(editor)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && res.RemovedCount > 0 && !commandRouted)
 		if err == nil {
 			a.setStatus(fmt.Sprintf("已删除 %d 个重复项，保留 %d 个唯一项", res.RemovedCount, res.RemainingCount))
 		}
@@ -31,7 +43,7 @@ func (a *App) runSpreadsheetDuplicatesCommand(operation string, edit func(docume
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) showSpreadsheetRemoveDuplicatesDialog() {
@@ -60,11 +72,11 @@ func (a *App) showSpreadsheetRemoveDuplicatesDialog() {
 		a.modal.Hide()
 		switch action {
 		case "col":
-			a.runSpreadsheetDuplicatesCommand("按列删除重复项", func(ed document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error) {
+			a.runSpreadsheetDuplicatesCommand("按列删除重复项", map[string]any{"sheet": sheet, "bounds": bounds, "key_column": keyCol}, func(ed document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error) {
 				return ed.RemoveDuplicates(sheet, bounds, keyCol)
 			})
 		case "all":
-			a.runSpreadsheetDuplicatesCommand("按整行删除重复项", func(ed document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error) {
+			a.runSpreadsheetDuplicatesCommand("按整行删除重复项", map[string]any{"sheet": sheet, "bounds": bounds, "key_column": 0}, func(ed document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error) {
 				return ed.RemoveDuplicates(sheet, bounds, 0)
 			})
 		}

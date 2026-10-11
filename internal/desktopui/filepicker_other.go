@@ -57,3 +57,21 @@ func chooseOfficeImageFile() (string, error) {
 	}
 	return strings.TrimSpace(string(output)), nil
 }
+
+func choosePresentationMediaFile(kind string) (string, error) {
+	if _, err := exec.LookPath("zenity"); err != nil {
+		return "", fmt.Errorf("请安装 zenity，或在文件选择器中选择媒体文件")
+	}
+	filter := "Audio | *.mp3 *.wav"
+	if kind == "video" {
+		filter = "Video | *.mp4 *.webm"
+	}
+	output, err := exec.Command("zenity", "--file-selection", "--file-filter="+filter).Output()
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}

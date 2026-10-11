@@ -1,6 +1,7 @@
 package docx
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -46,6 +47,34 @@ func TestWordBookmark_InsertAndUndo(t *testing.T) {
 	xmlAfterUndo := string(doc.parts[doc.documentIdx].data)
 	if strings.Contains(xmlAfterUndo, "Section_One") {
 		t.Fatal("expected bookmark removed after undo")
+	}
+}
+
+func TestWordBookmark_UnknownExplicitRunDoesNotFallBackOrMutate(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	editor, ok := any(doc).(document.WordBookmarkEditor)
+	if !ok {
+		t.Fatal("doc does not implement WordBookmarkEditor")
+	}
+	before := append([]byte(nil), doc.parts[doc.documentIdx].data...)
+	err = editor.InsertBookmark("missing-run", "Ghost")
+	if err == nil {
+		t.Fatal("InsertBookmark accepted an unknown explicit run ID")
+	}
+	if after := doc.parts[doc.documentIdx].data; !bytes.Equal(after, before) {
+		t.Fatalf("unknown bookmark target changed document XML: before=%s after=%s", before, after)
+	}
+	history, ok := any(doc).(document.WordHistory)
+	if !ok {
+		t.Fatal("doc does not implement WordHistory")
+	}
+	if history.CanUndo() {
+		t.Fatal("unknown bookmark target created an undo record")
 	}
 }
 
@@ -107,6 +136,34 @@ func TestWordHyperlink_InsertAndUndo(t *testing.T) {
 	}
 }
 
+func TestWordHyperlink_UnknownExplicitRunDoesNotFallBackOrMutate(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	editor, ok := any(doc).(document.WordHyperlinkEditor)
+	if !ok {
+		t.Fatal("doc does not implement WordHyperlinkEditor")
+	}
+	before := append([]byte(nil), doc.parts[doc.documentIdx].data...)
+	err = editor.InsertHyperlink("missing-run", "Ghost", "https://example.com")
+	if err == nil {
+		t.Fatal("InsertHyperlink accepted an unknown explicit run ID")
+	}
+	if after := doc.parts[doc.documentIdx].data; !bytes.Equal(after, before) {
+		t.Fatalf("unknown hyperlink target changed document XML: before=%s after=%s", before, after)
+	}
+	history, ok := any(doc).(document.WordHistory)
+	if !ok {
+		t.Fatal("doc does not implement WordHistory")
+	}
+	if history.CanUndo() {
+		t.Fatal("unknown hyperlink target created an undo record")
+	}
+}
+
 func TestWordTextBox_InsertAndUndo(t *testing.T) {
 	doc, err := NewBlank()
 	if err != nil {
@@ -146,5 +203,36 @@ func TestWordTextBox_InsertAndUndo(t *testing.T) {
 	xmlAfterUndo := string(doc.parts[doc.documentIdx].data)
 	if strings.Contains(xmlAfterUndo, "这是一个重要提示文本框") {
 		t.Fatal("expected textbox text removed after undo")
+	}
+}
+
+func TestWordTextBox_UnknownExplicitParagraphDoesNotFallBackOrMutate(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	editor, ok := any(doc).(document.WordTextBoxEditor)
+	if !ok {
+		t.Fatal("doc does not implement WordTextBoxEditor")
+	}
+	before := append([]byte(nil), doc.parts[doc.documentIdx].data...)
+	dirtyBefore := doc.Dirty()
+	if err := editor.InsertTextBox("missing-paragraph", "不会插入"); err == nil {
+		t.Fatal("InsertTextBox accepted an unknown explicit paragraph ID")
+	}
+	if after := doc.parts[doc.documentIdx].data; !bytes.Equal(after, before) {
+		t.Fatalf("unknown text box target changed document XML: before=%s after=%s", before, after)
+	}
+	history, ok := any(doc).(document.WordHistory)
+	if !ok {
+		t.Fatal("doc does not implement WordHistory")
+	}
+	if history.CanUndo() {
+		t.Fatal("unknown text box target created an undo record")
+	}
+	if dirtyAfter := doc.Dirty(); dirtyAfter != dirtyBefore {
+		t.Fatalf("unknown text box target changed dirty state from %v to %v", dirtyBefore, dirtyAfter)
 	}
 }

@@ -169,7 +169,7 @@ func (a *App) requestJSONTree() {
 		a.documentSessionState.jsonLarge.Store(true)
 	}
 	results, window, baseline, done := v.results, a.window, v.baseline, v.done
-	go func() {
+	a.launchManagedBackground(func() {
 		defer releaseClosedJSONWorkerMemory(done, len(text) > jsonSourceEditLimit)
 		tree, err := jsondoc.ParseTree(text)
 		segments := jsonSourceSegments(text)
@@ -193,7 +193,7 @@ func (a *App) requestJSONTree() {
 		if window != nil {
 			window.Invalidate()
 		}
-	}()
+	})
 }
 
 func (a *App) layoutJSONTree(gtx layout.Context) layout.Dimensions {

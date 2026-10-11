@@ -39,6 +39,7 @@ func (w *Workbook) FlashFill(sheet string, selection document.CellRange) (docume
 		value interface{}
 	}
 	var fills []cellFill
+	hasSourcePattern := false
 
 	for col := minCol; col <= maxCol; col++ {
 		type rowVal struct {
@@ -77,6 +78,7 @@ func (w *Workbook) FlashFill(sheet string, selection document.CellRange) (docume
 		if len(present) == 0 {
 			continue
 		}
+		hasSourcePattern = true
 
 		firstRow := present[0].row
 		firstVal := present[0].val
@@ -153,6 +155,9 @@ func (w *Workbook) FlashFill(sheet string, selection document.CellRange) (docume
 	}
 
 	if len(fills) == 0 {
+		if hasSourcePattern {
+			return document.SpreadsheetFlashFillResult{RowsFilled: 0}, nil
+		}
 		return document.SpreadsheetFlashFillResult{RowsFilled: 0}, errors.New("no pattern or source data found to fill")
 	}
 

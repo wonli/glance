@@ -1,11 +1,16 @@
 package pptx
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"image"
 	"image/color"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	gopptx "github.com/F31/go-pptx/v2/pptx"
@@ -30,6 +35,93 @@ func TestNewBlankPresentation(t *testing.T) {
 	if snap.WidthPT != 960 || snap.HeightPT != 540 {
 		t.Fatalf("expected 960x540 pt dimensions, got %fx%f", snap.WidthPT, snap.HeightPT)
 	}
+}
+
+func TestNewAndAddedSlidesUseEmptyPlaceholders(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatalf("NewBlank: %v", err)
+	}
+	defer doc.Close()
+	if err := doc.AddSlide(); err != nil {
+		t.Fatalf("AddSlide: %v", err)
+	}
+
+	snapshot := doc.Snapshot()
+	wantTypes := [][]string{{"ctrTitle", "subTitle"}, {"title", "body"}}
+	for slideIndex, slide := range snapshot.Slides {
+		if len(slide.Elements) != len(wantTypes[slideIndex]) {
+			t.Fatalf("slide %d elements = %d, want %d", slideIndex+1, len(slide.Elements), len(wantTypes[slideIndex]))
+		}
+		gotTypes := make(map[string]bool)
+		for _, elem := range slide.Elements {
+			if elem.Kind != document.ElementKindText || elem.PlainText() != "" {
+				t.Errorf("slide %d placeholder %q has persisted text %q", slideIndex+1, elem.Name, elem.PlainText())
+			}
+			gotTypes[elem.PlaceholderType] = true
+		}
+		for _, want := range wantTypes[slideIndex] {
+			if !gotTypes[want] {
+				t.Errorf("slide %d missing empty %q placeholder: %+v", slideIndex+1, want, slide.Elements)
+			}
+		}
+	}
+
+	payload, err := doc.SnapshotBytes()
+	if err != nil {
+		t.Fatalf("SnapshotBytes: %v", err)
+	}
+	slideXML := pptxSlideXMLParts(t, payload)
+	if len(slideXML) != 2 {
+		t.Fatalf("serialized slide parts = %d, want 2", len(slideXML))
+	}
+	wantMarkers := [][]string{{`<p:ph type="ctrTitle"`, `<p:ph type="subTitle"`}, {`<p:ph type="title"`, `<p:ph type="body"`}}
+	for slideIndex, data := range slideXML {
+		for _, marker := range wantMarkers[slideIndex] {
+			if !bytes.Contains(data, []byte(marker)) {
+				t.Errorf("slide %d XML missing native placeholder marker %q", slideIndex+1, marker)
+			}
+		}
+		for _, prompt := range []string{"点击添加演示文稿标题", "点击添加副标题", "点击添加标题", "点击添加正文文本", "支持多级要点与编辑"} {
+			if strings.Contains(string(data), prompt) {
+				t.Errorf("slide %d XML contains UI prompt %q", slideIndex+1, prompt)
+			}
+		}
+	}
+}
+
+func pptxSlideXMLParts(t *testing.T, payload []byte) [][]byte {
+	t.Helper()
+	reader, err := zip.NewReader(bytes.NewReader(payload), int64(len(payload)))
+	if err != nil {
+		t.Fatalf("open PPTX snapshot: %v", err)
+	}
+	type namedPart struct {
+		name string
+		data []byte
+	}
+	var parts []namedPart
+	for _, file := range reader.File {
+		if !strings.HasPrefix(file.Name, "ppt/slides/slide") || !strings.HasSuffix(file.Name, ".xml") {
+			continue
+		}
+		input, err := file.Open()
+		if err != nil {
+			t.Fatalf("open %s: %v", file.Name, err)
+		}
+		data, readErr := io.ReadAll(input)
+		closeErr := input.Close()
+		if readErr != nil || closeErr != nil {
+			t.Fatalf("read %s: read error %v, close error %v", file.Name, readErr, closeErr)
+		}
+		parts = append(parts, namedPart{name: file.Name, data: data})
+	}
+	sort.Slice(parts, func(i, j int) bool { return parts[i].name < parts[j].name })
+	result := make([][]byte, len(parts))
+	for index := range parts {
+		result[index] = parts[index].data
+	}
+	return result
 }
 
 func TestSlideAddAndDelete(t *testing.T) {

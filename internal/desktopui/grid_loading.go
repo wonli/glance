@@ -15,7 +15,7 @@ func (a *App) requestGridWindow(v *gridViewport, reader document.GridReader, she
 	v.RequestedSheet = sheet
 	generation := a.documentGeneration
 	rows, cols := r.EndRow-r.StartRow+1, r.EndColumn-r.StartColumn+1
-	go func() {
+	a.launchManagedBackground(func() {
 		unlock := lockSessionAdapterRead(a.documentSessionState)
 		w, err := reader.Window(sheet, r.StartRow, r.StartColumn, rows, cols)
 		unlock()
@@ -24,7 +24,7 @@ func (a *App) requestGridWindow(v *gridViewport, reader document.GridReader, she
 			a.window.Invalidate()
 		case <-a.shutdown:
 		}
-	}()
+	})
 	a.setStatus(fmt.Sprintf("正在读取工作表「%s」的可见单元格…", sheet))
 	a.window.Invalidate()
 }

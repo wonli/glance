@@ -62,8 +62,10 @@ func TestSpreadsheetPDFExportToolbarActionEnabled(t *testing.T) {
 }
 
 func TestSpreadsheetPDFExportWritesValidatedPDFWithoutChangingWorkbook(t *testing.T) {
+	desktop := newDesktopRuntime()
+	t.Cleanup(desktop.shutdown)
+	app := newAppWithRuntime(nil, desktop)
 	book := xlsx.NewBlank()
-	defer book.Close()
 
 	sheet := book.SheetNames()[0]
 	if err := book.SetCellText(sheet, "A1", "导出测试"); err != nil {
@@ -72,6 +74,10 @@ func TestSpreadsheetPDFExportWritesValidatedPDFWithoutChangingWorkbook(t *testin
 	if err := book.SetCellText(sheet, "B1", "123.45"); err != nil {
 		t.Fatal(err)
 	}
+	if err := app.installDocument(loadedDocument{book: book, sheets: book.SheetNames()}); err != nil {
+		t.Fatalf("install workbook: %v", err)
+	}
+	state := app.documentSessionState
 	book.SetDirty(true)
 
 	before, err := book.Snapshot()
@@ -79,20 +85,7 @@ func TestSpreadsheetPDFExportWritesValidatedPDFWithoutChangingWorkbook(t *testin
 		t.Fatal(err)
 	}
 
-	state := newDocumentSessionState("test.xlsx")
-	state.book = book
-	state.sheets = book.SheetNames()
-	state.sheet = sheet
-	state.documentID = "sheet-export-test"
-
 	outPath := filepath.Join(t.TempDir(), "export.pdf")
-
-	app := &App{
-		documentSessionState:        state,
-		activeTabID:                 "sheet-export-test",
-		spreadsheetPDFExportResults: make(chan spreadsheetPDFExportResult, 1),
-		shutdown:                    make(chan struct{}),
-	}
 
 	app.startSpreadsheetPDFFileExport(state, sheet, outPath, "portrait")
 

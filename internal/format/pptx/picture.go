@@ -205,19 +205,48 @@ func (d *Document) ReplaceSlidePicture(slideIndex int, shapeID int64, mediaType 
 	imageCopy := append([]byte(nil), data...)
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	_, err = d.replaceSlidePictureLocked(slideIndex, shapeID, mediaType, imageCopy, decoded)
+	return err
+}
+
+// ReplaceSlidePictureByID replaces a slide-local picture using stable IDs.
+func (d *Document) ReplaceSlidePictureByID(slideID uint32, shapeID int64, mediaType string, data []byte) (bool, error) {
+	decoded, err := validatePresentationPictureData(data, mediaType)
+	if err != nil {
+		return false, err
+	}
+	imageCopy := append([]byte(nil), data...)
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.pres == nil {
-		return fmt.Errorf("演示文稿已关闭")
+		return false, fmt.Errorf("演示文稿已关闭")
+	}
+	slides, err := d.pres.Slides()
+	if err != nil {
+		return false, fmt.Errorf("读取幻灯片失败: %w", err)
+	}
+	for slideIndex, slide := range slides {
+		if uint32(slide.ID()) == slideID {
+			return d.replaceSlidePictureLocked(slideIndex, shapeID, mediaType, imageCopy, decoded)
+		}
+	}
+	return false, fmt.Errorf("未找到幻灯片 ID %d", slideID)
+}
+
+func (d *Document) replaceSlidePictureLocked(slideIndex int, shapeID int64, mediaType string, imageCopy []byte, decoded image.Image) (bool, error) {
+	if d.pres == nil {
+		return false, fmt.Errorf("演示文稿已关闭")
 	}
 	picture, err := d.findSlidePictureLocked(slideIndex, shapeID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	elem := d.projectShape(picture, slideIndex)
-	if bytes.Equal(elem.ImageBytes, data) {
-		return nil
+	if bytes.Equal(elem.ImageBytes, imageCopy) {
+		return false, nil
 	}
 	if err := picture.ReplaceImage(context.Background(), gopptx.BytesMedia(imageCopy, mediaType)); err != nil {
-		return fmt.Errorf("替换图片失败: %w", err)
+		return false, fmt.Errorf("替换图片失败: %w", err)
 	}
 	slides, _ := d.pres.Slides()
 	d.ensureSlideProjectionCacheCount(len(slides))
@@ -227,7 +256,77 @@ func (d *Document) ReplaceSlidePicture(slideIndex int, shapeID int64, mediaType 
 	delete(d.slidePictureCropChanges[slideIndex], id)
 	d.dirty = true
 	d.revision++
-	return nil
+	return true, nil
+}
+
+// AddSlidePictureByID inserts a PNG/JPEG into an explicitly identified slide.
+// Geometry is expressed in points and fit is one of stretch, contain or cover.
+func (d *Document) AddSlidePictureByID(slideID uint32, bounds document.PresentationRect, mediaType string, data []byte, fit, altText string, decorative bool) (int64, document.PresentationRect, error) {
+	decoded, err := validatePresentationPictureData(data, mediaType)
+	if err != nil {
+		return 0, document.PresentationRect{}, err
+	}
+	if err := validatePresentationTransform(bounds, 0); err != nil {
+		return 0, document.PresentationRect{}, err
+	}
+	if len([]rune(altText)) > 1000 || (decorative && altText != "") {
+		return 0, document.PresentationRect{}, fmt.Errorf("图片替代文本最多 1000 个字符，装饰性图片不能同时设置替代文本")
+	}
+	var fitMode gopptx.PictureFitMode
+	switch fit {
+	case "stretch":
+		fitMode = gopptx.FitStretch
+	case "contain":
+		fitMode = gopptx.FitContain
+	case "cover":
+		fitMode = gopptx.FitCover
+	default:
+		return 0, document.PresentationRect{}, fmt.Errorf("不支持的图片适配方式: %q", fit)
+	}
+	imageCopy := append([]byte(nil), data...)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pres == nil {
+		return 0, document.PresentationRect{}, fmt.Errorf("演示文稿已关闭")
+	}
+	slides, err := d.pres.Slides()
+	if err != nil {
+		return 0, document.PresentationRect{}, fmt.Errorf("读取幻灯片失败: %w", err)
+	}
+	for index, slide := range slides {
+		if uint32(slide.ID()) != slideID {
+			continue
+		}
+		picture, err := slide.AddPicture(context.Background(), gopptx.BytesMedia(imageCopy, mediaType), gopptx.PictureSpec{
+			X: pointToEMU(bounds.X), Y: pointToEMU(bounds.Y),
+			Width: pointToEMU(bounds.W), Height: pointToEMU(bounds.H), Fit: fitMode,
+			AltText: altText, IsDecorative: decorative,
+		})
+		if err != nil {
+			return 0, document.PresentationRect{}, fmt.Errorf("插入图片失败: %w", err)
+		}
+		d.ensureSlideProjectionCacheCount(len(slides))
+		id := uint32(picture.ID())
+		if d.slidePictureTargets[index] == nil {
+			d.slidePictureTargets[index] = make(map[uint32]string)
+		}
+		extension := ".png"
+		if mediaType == "image/jpeg" {
+			extension = ".jpg"
+		}
+		// The target path is used only to classify this live, newly inserted
+		// picture. Its bytes and decoded image are held in the override until
+		// the next package reopen rebuilds the real relationship map.
+		d.slidePictureTargets[index][id] = fmt.Sprintf("ppt/media/live-%d%s", id, extension)
+		d.slidePictureImageChanges[index][id] = presentationPictureImageOverride{Data: imageCopy, Image: decoded}
+		d.slidePictureCropStates[index][id] = presentationPictureCropState{Valid: true}
+		d.activeSlide = index
+		d.dirty = true
+		d.revision++
+		return int64(id), d.projectShape(picture, index).Bounds, nil
+	}
+	return 0, document.PresentationRect{}, fmt.Errorf("未找到幻灯片 ID %d", slideID)
 }
 
 // UpdateSlidePictureCrop stores a slide-local crop override for a supported picture.
@@ -237,11 +336,38 @@ func (d *Document) UpdateSlidePictureCrop(slideIndex int, shapeID int64, crop do
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	_, err := d.updateSlidePictureCropLocked(slideIndex, shapeID, crop)
+	return err
+}
+
+// UpdateSlidePictureCropByID stores a crop using stable slide and element IDs.
+func (d *Document) UpdateSlidePictureCropByID(slideID uint32, shapeID int64, crop document.PresentationCrop) (bool, error) {
+	if err := validatePresentationCrop(crop); err != nil {
+		return false, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.pres == nil {
-		return fmt.Errorf("演示文稿已关闭")
+		return false, fmt.Errorf("演示文稿已关闭")
+	}
+	slides, err := d.pres.Slides()
+	if err != nil {
+		return false, fmt.Errorf("读取幻灯片失败: %w", err)
+	}
+	for slideIndex, slide := range slides {
+		if uint32(slide.ID()) == slideID {
+			return d.updateSlidePictureCropLocked(slideIndex, shapeID, crop)
+		}
+	}
+	return false, fmt.Errorf("未找到幻灯片 ID %d", slideID)
+}
+
+func (d *Document) updateSlidePictureCropLocked(slideIndex int, shapeID int64, crop document.PresentationCrop) (bool, error) {
+	if d.pres == nil {
+		return false, fmt.Errorf("演示文稿已关闭")
 	}
 	if _, err := d.findSlidePictureLocked(slideIndex, shapeID); err != nil {
-		return err
+		return false, err
 	}
 	var current document.PresentationCrop
 	if slideIndex < len(d.slidePictureCropStates) {
@@ -253,14 +379,14 @@ func (d *Document) UpdateSlidePictureCrop(slideIndex int, shapeID int64, crop do
 		}
 	}
 	if current == crop {
-		return nil
+		return false, nil
 	}
 	slides, _ := d.pres.Slides()
 	d.ensureSlideProjectionCacheCount(len(slides))
 	d.slidePictureCropChanges[slideIndex][uint32(shapeID)] = crop
 	d.dirty = true
 	d.revision++
-	return nil
+	return true, nil
 }
 
 func (d *Document) presentationSaveExpectationsLocked() (map[int]map[uint32]document.PresentationElement, error) {
@@ -323,8 +449,8 @@ func (d *Document) presentationSaveExpectationsLocked() (map[int]map[uint32]docu
 	return expectations, nil
 }
 
-func validateSavedPresentationEdits(path string, expected map[int]map[uint32]document.PresentationElement, styles []map[uint32]document.PresentationElementStylePatch) error {
-	if len(expected) == 0 {
+func validateSavedPresentationEdits(path string, expected map[int]map[uint32]document.PresentationElement, styles []map[uint32]document.PresentationElementStylePatch, backgrounds []presentationBackgroundOverride, slideSize presentationSlideSizeOverride) error {
+	if len(expected) == 0 && !hasPresentationBackgroundOverrides(backgrounds) && !slideSize.Set {
 		return nil
 	}
 	reopened, err := Open(path)
@@ -333,6 +459,13 @@ func validateSavedPresentationEdits(path string, expected map[int]map[uint32]doc
 	}
 	defer reopened.Close()
 	snapshot := reopened.Snapshot()
+	if slideSize.Set {
+		wantWidthPT := float64(slideSize.WidthEMU) / emuPerPoint
+		wantHeightPT := float64(slideSize.HeightEMU) / emuPerPoint
+		if math.Abs(snapshot.WidthPT-wantWidthPT) > 0.5/emuPerPoint+1e-9 || math.Abs(snapshot.HeightPT-wantHeightPT) > 0.5/emuPerPoint+1e-9 {
+			return fmt.Errorf("重开后演示文稿尺寸与请求不一致")
+		}
+	}
 	for slideIndex, elements := range expected {
 		if slideIndex < 0 || slideIndex >= len(snapshot.Slides) {
 			return fmt.Errorf("重开后缺少幻灯片 %d", slideIndex)
@@ -366,6 +499,17 @@ func validateSavedPresentationEdits(path string, expected map[int]map[uint32]doc
 			}
 		}
 	}
+	for slideIndex, background := range backgrounds {
+		if !background.Set {
+			continue
+		}
+		if slideIndex < 0 || slideIndex >= len(snapshot.Slides) {
+			return fmt.Errorf("重开后缺少设置背景的幻灯片 %d", slideIndex)
+		}
+		if normalizedRGB(snapshot.Slides[slideIndex].BgColorHex) != normalizedRGB(background.ColorHex) || snapshot.Slides[slideIndex].BackgroundImage != nil {
+			return fmt.Errorf("重开后幻灯片 %d 的背景颜色与请求不一致", slideIndex)
+		}
+	}
 	return nil
 }
 
@@ -381,13 +525,16 @@ func validateProjectedPresentationStyle(actual document.PresentationElement, pat
 	if patch.BorderWidthPT != nil && math.Abs(actual.BorderWidth-*patch.BorderWidthPT) > 0.5/emuPerPoint+1e-9 {
 		return fmt.Errorf("轮廓宽度不同")
 	}
-	if patch.ParagraphAlignment != nil || patch.LineSpacing != nil || patch.SpaceBefore != nil || patch.SpaceAfter != nil {
+	if patch.ParagraphAlignment != nil || patch.Bullet != nil || patch.LineSpacing != nil || patch.SpaceBefore != nil || patch.SpaceAfter != nil {
 		if len(actual.Paragraphs) == 0 {
 			return fmt.Errorf("缺少文字段落")
 		}
 		for _, paragraph := range actual.Paragraphs {
 			if patch.ParagraphAlignment != nil && paragraph.Align != *patch.ParagraphAlignment {
 				return fmt.Errorf("段落对齐方式不同")
+			}
+			if patch.Bullet != nil && paragraph.Bullet != *patch.Bullet {
+				return fmt.Errorf("项目符号状态不同")
 			}
 			if patch.LineSpacing != nil && !samePresentationSpacing(paragraph.LineSpacing, patch.LineSpacing) {
 				return fmt.Errorf("行距不同")

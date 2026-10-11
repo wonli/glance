@@ -1,4 +1,4 @@
-package desktopui
+package wordfont
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 )
 
 func TestWordFontFallbackUsesRealSymbolsBeforeLastResort(t *testing.T) {
-	s := &wordTextShaper{fonts: []fontscan.Footprint{
+	s := &Shaper{fonts: []fontscan.Footprint{
 		{Family: ".lastresort", Location: fontscan.Location{File: "/fonts/LastResort.otf"}},
 		{Family: "symbol", Location: fontscan.Location{File: "/fonts/Symbol.ttf"}},
 	}}

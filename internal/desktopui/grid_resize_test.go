@@ -126,21 +126,46 @@ func TestGridResizePreviewIsTransientAndReleaseCommits(t *testing.T) {
 }
 
 func TestGridResizeCancelAndFailureRestoreGeometry(t *testing.T) {
-	for _, fail := range []bool{false, true} {
-		v := newGridViewport()
-		before := v.Rows.TotalSize()
-		v.beginResize(resizeRows, 4, 100, 128)
-		v.updateResize(150)
-		if fail {
-			r := &resizeTestReader{fail: true}
-			if err := v.completeResize(r, "Sheet1"); err == nil {
-				t.Fatal("expected failure")
-			}
-		} else {
-			v.cancelResize()
-		}
-		if v.Rows.TotalSize() != before || v.Resize != nil {
-			t.Fatalf("failed/cancelled resize left preview geometry, fail=%v", fail)
+	for _, axis := range []struct {
+		name string
+		kind resizeAxis
+	}{
+		{name: "rows", kind: resizeRows},
+		{name: "columns", kind: resizeColumns},
+	} {
+		for _, fail := range []bool{false, true} {
+			t.Run(axis.name+map[bool]string{false: "/cancel", true: "/write-failure"}[fail], func(t *testing.T) {
+				v := newGridViewport()
+				beforeRows, beforeColumns := v.Rows.TotalSize(), v.Columns.TotalSize()
+				v.beginResize(axis.kind, 4, 100, 128)
+				v.updateResize(150)
+				if v.Rows.TotalSize() == beforeRows && v.Columns.TotalSize() == beforeColumns {
+					t.Fatal("resize preview did not change either axis")
+				}
+
+				reader := &resizeTestReader{fail: fail}
+				if fail {
+					if err := v.completeResize(reader, "Sheet1"); err == nil {
+						t.Fatal("expected write failure")
+					}
+				} else {
+					v.cancelResize()
+				}
+
+				if v.Rows.TotalSize() != beforeRows || v.Columns.TotalSize() != beforeColumns || v.Resize != nil {
+					t.Fatalf("resize left preview geometry: rows=%v/%v columns=%v/%v resize=%v", v.Rows.TotalSize(), beforeRows, v.Columns.TotalSize(), beforeColumns, v.Resize)
+				}
+				wantRows, wantColumns := 0, 0
+				if fail && axis.kind == resizeRows {
+					wantRows = 1
+				}
+				if fail && axis.kind == resizeColumns {
+					wantColumns = 1
+				}
+				if reader.rows != wantRows || reader.cols != wantColumns {
+					t.Fatalf("resize writes rows=%d columns=%d, want rows=%d columns=%d", reader.rows, reader.cols, wantRows, wantColumns)
+				}
+			})
 		}
 	}
 }

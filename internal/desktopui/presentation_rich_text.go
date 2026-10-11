@@ -178,7 +178,17 @@ func layoutPresentationRichParagraph(gtx layout.Context, theme *material.Theme, 
 		line = presentationRichLine{}
 	}
 
-	for _, run := range paragraph.Runs {
+	runs := paragraph.Runs
+	if paragraph.Bullet {
+		bullet := document.PresentationTextRun{Text: "• ", SizePT: metrics.fontSizePT, ColorHex: "#1F2937"}
+		if len(runs) > 0 {
+			bullet.Font = runs[0].Font
+			bullet.SizePT = runs[0].SizePT
+			bullet.ColorHex = runs[0].ColorHex
+		}
+		runs = append([]document.PresentationTextRun{bullet}, runs...)
+	}
+	for _, run := range runs {
 		for _, fragmentText := range splitPresentationText(run.Text) {
 			if fragmentText == "\n" {
 				finishLine()

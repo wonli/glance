@@ -1,7 +1,11 @@
 package desktopui
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"glance/internal/application"
 	"glance/internal/document"
 	"glance/internal/workspace"
 	"path/filepath"
@@ -57,6 +61,9 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 		return
 	}
 	if a.pptxDoc != nil {
+		if err := a.flushPresentationNotesDraft(a.pptxView); err != nil {
+			return
+		}
 		if err := a.flushPresentationTextDraft(); err != nil {
 			return
 		}
@@ -75,43 +82,44 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 	book, word, pptxDocument, jsonDocument, markdownDocument, pdfDocument, tabID := a.book, a.word, a.pptxDoc, a.jsonDoc, a.markdownDoc, a.pdfDoc, a.activeTabID
 	path := sessionPath(state)
 	a.saving = true
-	go func() {
-		unlock := lockSessionAdapterWrite(state)
+	a.launchManagedBackground(func() {
 		var err error
 		var historyErr error
-		if book != nil {
-			err = book.Save()
-		} else if word != nil {
-			var snapshot []byte
-			if saver, ok := any(word).(document.WordPackageSnapshotSaver); ok {
-				snapshot, err = saver.SaveWithSnapshot()
-			} else {
-				err = word.Save()
+		var snapshot []byte
+		applicationRuntime := a.ensureDesktopRuntime().applicationRuntime
+		if applicationRuntime != nil {
+			_, snapshot, err = applicationRuntime.SaveDocumentWithSnapshot(context.Background(), state.documentID)
+			if errors.Is(err, application.ErrDocumentNotFound) || errors.Is(err, application.ErrInvalidDocumentID) {
+				err = nil
+				applicationRuntime = nil
+			}
+		}
+		if applicationRuntime == nil {
+			unlock := lockSessionAdapterWrite(state)
+			switch {
+			case book != nil:
+				err = book.Save()
+			case word != nil:
+				if saver, ok := any(word).(document.WordPackageSnapshotSaver); ok {
+					snapshot, err = saver.SaveWithSnapshot()
+				} else {
+					err = word.Save()
+				}
+			case pptxDocument != nil:
+				err = pptxDocument.Save()
+			case pdfDocument != nil:
+				err = pdfDocument.Save()
+			case markdownDocument != nil:
+				err = markdownDocument.Save()
+			case jsonDocument != nil:
+				err = jsonDocument.Save()
 			}
 			unlock()
-			state.finishOperation(token)
-			if err == nil && snapshot != nil {
-				historyErr = a.ensureDesktopRuntime().addWordSnapshot(path, reason.historySource(), snapshot)
-			}
-			select {
-			case a.saveResults <- saveResult{path: path, tabID: tabID, token: token, err: err, historyErr: historyErr}:
-				if a.window != nil {
-					a.window.Invalidate()
-				}
-			case <-a.shutdown:
-			}
-			return
-		} else if pptxDocument != nil {
-			err = pptxDocument.Save()
-		} else if pdfDocument != nil {
-			err = pdfDocument.Save()
-		} else if markdownDocument != nil {
-			err = markdownDocument.Save()
-		} else if jsonDocument != nil {
-			err = jsonDocument.Save()
 		}
-		unlock()
 		state.finishOperation(token)
+		if err == nil && word != nil && snapshot != nil {
+			historyErr = a.ensureDesktopRuntime().addWordSnapshot(path, reason.historySource(), snapshot)
+		}
 		select {
 		case a.saveResults <- saveResult{path: path, tabID: tabID, token: token, err: err, historyErr: historyErr}:
 			if a.window != nil {
@@ -119,7 +127,7 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 			}
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) startSaveAs(path string) {
@@ -153,6 +161,9 @@ func (a *App) startSaveAs(path string) {
 		return
 	}
 	if a.pptxDoc != nil {
+		if err := a.flushPresentationNotesDraft(a.pptxView); err != nil {
+			return
+		}
 		if err := a.flushPresentationTextDraft(); err != nil {
 			return
 		}
@@ -168,7 +179,19 @@ func (a *App) startSaveAs(path string) {
 	}
 	book, word, pptxDocument, jsonDocument, markdownDocument, pdfDocument, tabID := a.book, a.word, a.pptxDoc, a.jsonDoc, a.markdownDoc, a.pdfDoc, a.activeTabID
 	a.saving = true
-	go func() {
+	a.launchManagedBackground(func() {
+		if pdfDocument != nil {
+			err := a.savePDFAsThroughRuntime(state, token, path)
+			state.finishOperation(token)
+			select {
+			case a.saveResults <- saveResult{path: path, tabID: tabID, saveAs: true, token: token, err: err}:
+				if a.window != nil {
+					a.window.Invalidate()
+				}
+			case <-a.shutdown:
+			}
+			return
+		}
 		unlock := lockSessionAdapterWrite(state)
 		var err error
 		var historyErr error
@@ -217,8 +240,6 @@ func (a *App) startSaveAs(path string) {
 			case <-a.shutdown:
 			}
 			return
-		case pdfDocument != nil:
-			err = pdfDocument.SaveAs(path)
 		case markdownDocument != nil:
 			err = markdownDocument.SaveAs(path)
 		case jsonDocument != nil:
@@ -235,7 +256,30 @@ func (a *App) startSaveAs(path string) {
 			}
 		case <-a.shutdown:
 		}
-	}()
+	})
+}
+
+func (a *App) savePDFAsThroughRuntime(state *documentSessionState, token sessionOperationToken, path string) error {
+	runtime := a.ensureDesktopRuntime()
+	if runtime.applicationRuntimeErr != nil {
+		return runtime.applicationRuntimeErr
+	}
+	if runtime.applicationRuntime == nil {
+		return application.ErrRuntimeClosed
+	}
+	arguments, err := json.Marshal(struct {
+		Path string `json:"path"`
+	}{path})
+	if err != nil {
+		return err
+	}
+	_, err = runtime.applicationRuntime.InvokeCapability(context.Background(), application.CapabilityRequest{
+		RequestID:  fmt.Sprintf("pdf-save-as-%s-%d", token.documentID, token.generation),
+		DocumentID: token.documentID, CapabilityID: "document.save_as", ExpectedRevision: token.revision,
+		Operator:  application.Operator{ID: fmt.Sprintf("window-%d", a.windowID), Kind: application.OperatorHuman},
+		Arguments: arguments,
+	})
+	return err
 }
 
 func validateSaveAsExtension(format, path string) error {

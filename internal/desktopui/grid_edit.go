@@ -13,16 +13,19 @@ type cellEditState struct {
 	Original string
 	Draft    string
 	Editing  bool
+	session  *sharedDocumentSession
 }
 
 func (s *cellEditState) selectCell(address, value string) {
-	s.Address, s.Original, s.Draft, s.Editing = address, value, value, false
+	s.setEditing(false)
+	s.Address, s.Original, s.Draft = address, value, value
 }
 func (s *cellEditState) begin() bool {
 	if s.Address == "" {
 		return false
 	}
-	s.Draft, s.Editing = s.Original, true
+	s.Draft = s.Original
+	s.setEditing(true)
 	return true
 }
 func (s *cellEditState) setDraft(value string) { s.Draft = value }
@@ -31,16 +34,35 @@ func (s *cellEditState) commit(apply func(address, value string) error) error {
 		return errNoSelectedCell
 	}
 	if s.Draft == s.Original {
-		s.Editing = false
+		s.setEditing(false)
 		return nil
 	}
 	if err := apply(s.Address, s.Draft); err != nil {
 		return err
 	}
-	s.Original, s.Editing = s.Draft, false
+	s.Original = s.Draft
+	s.setEditing(false)
 	return nil
 }
-func (s *cellEditState) cancel() { s.Draft = s.Original; s.Editing = false }
+func (s *cellEditState) cancel() {
+	s.Draft = s.Original
+	s.setEditing(false)
+}
+
+func (s *cellEditState) setEditing(editing bool) {
+	if s.Editing == editing {
+		return
+	}
+	s.Editing = editing
+	if s.session == nil {
+		return
+	}
+	if editing {
+		s.session.spreadsheetDraftViews.Add(1)
+	} else {
+		s.session.spreadsheetDraftViews.Add(-1)
+	}
+}
 
 func parseCellAddress(address string) (row, column int, ok bool) {
 	a := strings.ToUpper(strings.TrimSpace(address))

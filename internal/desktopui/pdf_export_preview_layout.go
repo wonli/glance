@@ -18,6 +18,7 @@ import (
 
 func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
 	prev := &a.pdfExportPreview
+	previousOrientation, previousPage := prev.Orientation, prev.CurrentPageIndex
 
 	// Handle Orientation Toggle Click Events
 	if prev.portraitBtn.Clicked(gtx) && prev.Orientation != "portrait" {
@@ -80,6 +81,9 @@ func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
 			a.window.Invalidate()
 		}
 	}
+	if prev.Format == "presentation" && (previousOrientation != prev.Orientation || previousPage != prev.CurrentPageIndex) {
+		a.requestPresentationPDFPreviewPage(prev.CurrentPageIndex, prev.Orientation)
+	}
 
 	height := gtx.Dp(unit.Dp(320))
 	if height > gtx.Constraints.Max.Y {
@@ -107,6 +111,10 @@ func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
 
 func (a *App) layoutPDFExportOrientationSelector(gtx layout.Context) layout.Dimensions {
 	prev := &a.pdfExportPreview
+	portraitSubtitle, landscapeSubtitle := "适合高表格与标准文本", "适合宽表格"
+	if prev.Format == "presentation" {
+		portraitSubtitle, landscapeSubtitle = "幻灯片完整适配到 A4 纵向页面", "幻灯片完整适配到 A4 横向页面"
+	}
 	card := func(gtx layout.Context, title, subtitle string, landscape, active bool, btn *widget.Clickable) layout.Dimensions {
 		height := gtx.Dp(unit.Dp(64))
 		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
@@ -114,11 +122,11 @@ func (a *App) layoutPDFExportOrientationSelector(gtx layout.Context) layout.Dime
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return card(gtx, "纵向 (Portrait)", "适合高表格与标准文本", false, prev.Orientation == "portrait", &prev.portraitBtn)
+			return card(gtx, "纵向 (Portrait)", portraitSubtitle, false, prev.Orientation == "portrait", &prev.portraitBtn)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return card(gtx, "横向 (Landscape)", "适合宽表格", true, prev.Orientation == "landscape", &prev.landscapeBtn)
+			return card(gtx, "横向 (Landscape)", landscapeSubtitle, true, prev.Orientation == "landscape", &prev.landscapeBtn)
 		}),
 	)
 }
@@ -197,6 +205,14 @@ func (a *App) layoutPDFExportSummaryRow(gtx layout.Context) layout.Dimensions {
 	hintColor := color.NRGBA{R: 71, G: 85, B: 105, A: 255}
 	if (prev.Format == "word" || prev.Format == "markdown") && prev.wordPreviewPending {
 		hintText = "正在按所选方向重新排版…"
+	}
+	if prev.Format == "presentation" {
+		hintText = "幻灯片按原宽高比缩放并居中放入 A4 页面"
+		if prev.presentationPreviewPending {
+			hintText = "正在生成当前幻灯片预览…"
+		} else if prev.presentationPreviewError != "" {
+			hintText = "预览失败：" + prev.presentationPreviewError
+		}
 	}
 	if prev.Format == "spreadsheet" {
 		if prev.Orientation == "landscape" && prev.TotalPages == 1 {

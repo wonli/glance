@@ -163,7 +163,13 @@ func (p *wordProjector) drawingInline(drawing *wordXMLNode, fallbackID, paragrap
 			}
 		}
 	}
-	image := &document.WordImage{ID: id, MediaType: mediaType, WidthEMU: width, HeightEMU: height, RotationDegrees: rotation, Resolved: true, Editable: !floating, InlineFallback: floating}
+	wrapMode := "inline"
+	wrapEditable := true
+	if floating {
+		wrapMode = drawingWrapMode(container)
+		wrapEditable = wordAnchorCanConvertToInline(container) && strings.HasPrefix(id, "img-")
+	}
+	image := &document.WordImage{ID: id, MediaType: mediaType, WidthEMU: width, HeightEMU: height, RotationDegrees: rotation, Resolved: true, Editable: !floating, InlineFallback: floating, WrapMode: wrapMode, WrapEditable: wrapEditable}
 	p.imageParts[id] = partIndex
 	if !floating {
 		p.imageTargets[id] = wordImageTarget{drawing: drawing, extent: extent, blip: blip, transform: transform, paragraphID: paragraphID, relationshipID: relID}

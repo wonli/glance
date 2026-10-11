@@ -14,6 +14,7 @@ type wordRelationship struct {
 	styles    bool
 	settings  bool
 	header    bool
+	comments  bool
 	footnotes bool
 	endnotes  bool
 	external  bool
@@ -58,6 +59,7 @@ func readDocumentRelationships(parts []part, partIndexes map[string]int) map[str
 			styles:    strings.HasSuffix(relationType, "/styles"),
 			settings:  strings.HasSuffix(relationType, "/settings"),
 			header:    strings.HasSuffix(relationType, "/header"),
+			comments:  strings.HasSuffix(relationType, "/comments"),
 			footnotes: strings.HasSuffix(relationType, "/footnotes"),
 			endnotes:  strings.HasSuffix(relationType, "/endnotes"),
 			external:  external,

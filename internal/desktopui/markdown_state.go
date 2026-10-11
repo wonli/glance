@@ -27,6 +27,15 @@ type markdownImagePickResult struct {
 	err   error
 	epoch uint64
 }
+type markdownEditResult struct {
+	state      *documentSessionState
+	view       *markdownViewState
+	source     string
+	action     string
+	data       []byte
+	err        error
+	generation uint64
+}
 type markdownViewState struct {
 	tasks                                  map[string]int
 	formulas                               map[string]document.MarkdownSpan
@@ -35,6 +44,7 @@ type markdownViewState struct {
 	imagePicks                             chan markdownImagePickResult
 	dialogEpoch                            uint64
 	imagePickPending                       bool
+	editPending                            bool
 	cachedText                             string
 	sourceLines                            []int
 	cachedVersion                          uint64
@@ -56,13 +66,16 @@ type markdownViewState struct {
 	err                                    error
 	results                                chan markdownParseResult
 	exports                                chan markdownFileResult
+	editResults                            chan markdownEditResult
 	exportPending                          bool
 	exportMessage, lastPDFPath             string
 	focus                                  bool
+	draftPending                           atomic.Bool
+	compositionPending                     atomic.Bool
 }
 
 func newMarkdownView(source string) *markdownViewState {
-	v := &markdownViewState{sourceSynced: source, observedDraft: source, buttons: map[string]*widget.Clickable{}, links: map[string]string{}, results: make(chan markdownParseResult, 1), exports: make(chan markdownFileResult, 1), toolbar: widget.List{List: layout.List{Axis: layout.Horizontal}}, outline: widget.List{List: layout.List{Axis: layout.Vertical}}, preview: widget.List{List: layout.List{Axis: layout.Vertical}}}
+	v := &markdownViewState{sourceSynced: source, observedDraft: source, buttons: map[string]*widget.Clickable{}, links: map[string]string{}, results: make(chan markdownParseResult, 1), exports: make(chan markdownFileResult, 1), editResults: make(chan markdownEditResult, 1), toolbar: widget.List{List: layout.List{Axis: layout.Horizontal}}, outline: widget.List{List: layout.List{Axis: layout.Vertical}}, preview: widget.List{List: layout.List{Axis: layout.Vertical}}}
 	v.tasks = map[string]int{}
 	v.formulas = map[string]document.MarkdownSpan{}
 	v.imagePicks = make(chan markdownImagePickResult, 1)
@@ -116,20 +129,7 @@ func (v *markdownViewState) headings() []document.MarkdownHeading {
 // Gio 0.10.2 does not expose composition state publicly. Read its range without
 // unsafe access; this compatibility shim is confined to the input boundary.
 func markdownEditorComposing(e *widget.Editor) bool {
-	value := reflect.ValueOf(e).Elem().FieldByName("ime")
-	if !value.IsValid() {
-		return true
-	}
-	state := value.FieldByName("imeState")
-	if !state.IsValid() {
-		return true
-	}
-	rng := state.FieldByName("composition")
-	if !rng.IsValid() {
-		return true
-	}
-	start, end := rng.FieldByName("Start"), rng.FieldByName("End")
-	return start.IsValid() && end.IsValid() && end.Int() > start.Int()
+	return editorHasActiveComposition(e)
 }
 func markdownAssetKey(span document.MarkdownSpan) string {
 	return markdowndoc.ResourceKey(span)

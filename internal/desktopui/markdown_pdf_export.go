@@ -149,18 +149,18 @@ func (a *App) requestMarkdownPDFExport() {
 	if !view.pending && view.snapshot.Source == source && view.parsedPath == a.path && view.images != nil {
 		resources, diagnostics = maps.Clone(view.images), maps.Clone(view.errors)
 	}
-	go func() {
+	a.launchManagedBackground(func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		done := make(chan struct{})
 		defer close(done)
-		go func() {
+		a.launchManagedBackground(func() {
 			select {
 			case <-shutdown:
 				cancel()
 			case <-done:
 			}
-		}()
+		})
 		snapshot, err := markdowndoc.Parse(source)
 		if err == nil {
 			if resources == nil {
@@ -177,7 +177,7 @@ func (a *App) requestMarkdownPDFExport() {
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 	a.setMarkdownExportStatus("正在检查 PDF 资源和排版…")
 }
 
@@ -191,7 +191,7 @@ func (a *App) startMarkdownPDFPicker(result markdownFileResult) {
 	result.preflight, result.picker = false, true
 	view.exportPending = true
 	runner, shutdown, window := a.fileCommandRunner, a.shutdown, a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		if runner != nil {
 			picked := runner(commandExportPDF, "pdf")
 			result.path, result.err = picked.path, picked.err
@@ -205,7 +205,7 @@ func (a *App) startMarkdownPDFPicker(result markdownFileResult) {
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 	a.setMarkdownExportStatus("选择 PDF 保存位置…")
 }
 
@@ -284,18 +284,18 @@ func (a *App) pollMarkdownFileResults() {
 		result.picker = false
 		shutdown, window := a.shutdown, a.window
 		doc := a.markdownDoc
-		go func() {
+		a.launchManagedBackground(func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan struct{})
 			defer close(done)
-			go func() {
+			a.launchManagedBackground(func() {
 				select {
 				case <-shutdown:
 					cancel()
 				case <-done:
 				}
-			}()
+			})
 			err := exportPreparedMarkdownPDF(ctx, result.prepared, result.sourcePath, result.path, func() (func(), error) {
 				release := lockSessionAdapterRead(result.state)
 				if ctx.Err() != nil {
@@ -316,7 +316,7 @@ func (a *App) pollMarkdownFileResults() {
 				}
 			case <-shutdown:
 			}
-		}()
+		})
 		a.setMarkdownExportStatus("正在生成 PDF…")
 	default:
 	}

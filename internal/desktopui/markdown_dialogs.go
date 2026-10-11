@@ -45,7 +45,7 @@ func (a *App) showMarkdownInsertDialog(kind string) {
 				choose = chooseOfficeImageFile
 			}
 			window, shutdown := a.window, a.shutdown
-			go func() {
+			a.launchManagedBackground(func() {
 				path, err := choose()
 				result := markdownImagePickResult{path: path, err: err, epoch: epoch}
 				select {
@@ -55,7 +55,7 @@ func (a *App) showMarkdownInsertDialog(kind string) {
 					}
 				case <-shutdown:
 				}
-			}()
+			})
 			return
 		}
 		if id == "cancel" {

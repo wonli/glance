@@ -22,7 +22,7 @@ func (a *App) open(path string) error {
 		return fmt.Errorf("正在保存当前文件，请稍后再打开")
 	}
 	runtime := a.ensureDesktopRuntime()
-	shared, openedFromDisk, err := runtime.openDocumentSessionWithStatus(path)
+	shared, openedFromDisk, err := runtime.openLiveDocument(path)
 	if err != nil {
 		return err
 	}
@@ -333,9 +333,9 @@ func (a *App) startOpen(path string) {
 	}
 	a.opening = true
 	a.setStatus("正在打开 " + strings.TrimSpace(path))
-	go func() {
+	a.launchManagedBackground(func() {
 		runtime := a.ensureDesktopRuntime()
-		shared, openedFromDisk, err := runtime.openDocumentSessionWithStatus(path)
+		shared, openedFromDisk, err := runtime.openLiveDocument(path)
 		var historyErr error
 		if err == nil && openedFromDisk {
 			historyErr = runtime.recordOpenedWord(shared)
@@ -353,5 +353,5 @@ func (a *App) startOpen(path string) {
 			}
 		case <-a.shutdown:
 		}
-	}()
+	})
 }

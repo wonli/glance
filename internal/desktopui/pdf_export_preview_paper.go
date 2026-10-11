@@ -70,6 +70,9 @@ func (a *App) layoutPDFExportPaperCanvas(gtx layout.Context) layout.Dimensions {
 						if prev.Format == "spreadsheet" {
 							return a.layoutMiniatureSpreadsheetPaper(gtx)
 						}
+						if prev.Format == "presentation" {
+							return a.layoutMiniaturePresentationPaper(gtx)
+						}
 						return a.layoutMiniatureWordPaper(gtx)
 					})
 				}),

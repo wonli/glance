@@ -48,7 +48,7 @@ func (a *App) requestWordImageDecode(state *documentSessionState, imageID string
 	shutdown := a.shutdown
 	results := a.wordImageResults
 	window := a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		resultSent := false
 		defer func() {
 			if !resultSent {
@@ -81,7 +81,7 @@ func (a *App) requestWordImageDecode(state *documentSessionState, imageID string
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 }
 
 func invalidateWordImagePreview(state *documentSessionState, imageID string) {

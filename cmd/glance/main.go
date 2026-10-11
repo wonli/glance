@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"glance/internal/desktopui"
+	"glance/internal/mcpserver"
 	"glance/internal/officeqa"
 
 	"gioui.org/app"
@@ -27,5 +28,8 @@ func main() {
 }
 
 func dispatchBeforeDesktop(args []string, stdout, stderr io.Writer) (bool, int) {
+	if handled, exitCode := mcpserver.DispatchCLI(args, stdout, stderr); handled {
+		return true, exitCode
+	}
 	return officeqa.DispatchCLI(args, headlessOfficeRenderer{}, stdout, stderr)
 }

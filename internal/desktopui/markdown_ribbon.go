@@ -31,7 +31,7 @@ func (a *App) layoutMarkdownRibbon(gtx layout.Context) layout.Dimensions {
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return v.toolbar.Layout(gtx, len(markdownToolbarActions), func(gtx layout.Context, index int) layout.Dimensions {
 						action := markdownToolbarActions[index]
-						enabled := !a.isSaving() && !v.exportPending
+						enabled := !a.isSaving() && !v.exportPending && !v.editPending
 						icon, _ := markdownToolbarIcon(action, enabled)
 						return layoutToolbarActionItem(gtx, action, index, markdownToolbarActions, func(gtx layout.Context) layout.Dimensions {
 							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))

@@ -57,11 +57,13 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 	}
 	r.mu.Unlock()
 	for _, session := range sessions {
+		session.clearPresentationDrafts(windowID)
 		session.viewsMu.Lock()
 		view := session.views[windowID]
 		delete(session.views, windowID)
 		session.viewsMu.Unlock()
 		if view != nil {
+			releaseMarkdownDraftState(view)
 			view.releaseJSONViewResources()
 			view.releaseWordViewResources()
 			view.releasePDFViewResources()
@@ -77,6 +79,7 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 		}
 	}
 	if app.documentSessionState != nil {
+		releaseMarkdownDraftState(app.documentSessionState)
 		app.documentSessionState.releaseJSONViewResources()
 		app.documentSessionState.releaseWordViewResources()
 		app.documentSessionState.releasePDFViewResources()

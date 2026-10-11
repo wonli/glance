@@ -35,6 +35,7 @@ func (a *App) handleMarkdownEvents(gtx layout.Context) {
 	}
 	a.pollMarkdownFileResults()
 	a.pollMarkdownImagePicker()
+	a.pollMarkdownEditResult(v)
 	a.requestMarkdownParse()
 	select {
 	case result := <-v.results:
@@ -48,7 +49,7 @@ func (a *App) handleMarkdownEvents(gtx layout.Context) {
 		v.focus = true
 	}
 	for id, b := range v.buttons {
-		if b.Clicked(gtx) && !a.isSaving() && !v.exportPending {
+		if b.Clicked(gtx) && !a.isSaving() && !v.exportPending && !v.editPending {
 			a.handleMarkdownAction(gtx, id)
 		}
 	}

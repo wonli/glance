@@ -1,13 +1,14 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 	"strconv"
 	"strings"
 )
 
-func (a *App) runSpreadsheetPageLayoutCommand(operation string, edit func(document.SpreadsheetPageLayoutEditor) error) {
+func (a *App) runSpreadsheetPageLayoutCommand(operation string, arguments any, edit func(document.SpreadsheetPageLayoutEditor) error) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() || a.isSaving() {
 		return
@@ -21,16 +22,31 @@ func (a *App) runSpreadsheetPageLayoutCommand(operation string, edit func(docume
 	if !ok {
 		return
 	}
-	go func() {
-		unlock := lockSessionAdapterWrite(state)
-		err := edit(editor)
-		unlock()
-		a.completeSessionOperation(state, token, err, true)
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		changed := true
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.page_layout.set", "spreadsheet_sheet", sheet, sheet, arguments)
+			err = commandErr
+			if err == nil {
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				changed = outcome.Changed
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			err = edit(editor)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed}:
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) showSpreadsheetOrientationDialog() {
@@ -55,7 +71,7 @@ func (a *App) showSpreadsheetOrientationDialog() {
 	a.modal.Show("纸张方向", message, func(action string) {
 		a.modal.Hide()
 		if action == "portrait" || action == "landscape" {
-			a.runSpreadsheetPageLayoutCommand("修改纸张方向", func(ed document.SpreadsheetPageLayoutEditor) error {
+			a.runSpreadsheetPageLayoutCommand("修改纸张方向", map[string]any{"sheet": sheet, "operation": "orientation", "orientation": action}, func(ed document.SpreadsheetPageLayoutEditor) error {
 				return ed.SetSheetPageOrientation(sheet, action)
 			})
 		}
@@ -105,17 +121,17 @@ func (a *App) showSpreadsheetMarginsDialog() {
 			switch action {
 			case "normal":
 				a.modal.Hide()
-				a.runSpreadsheetPageLayoutCommand("设置普通页边距", func(ed document.SpreadsheetPageLayoutEditor) error {
+				a.runSpreadsheetPageLayoutCommand("设置普通页边距", map[string]any{"sheet": sheet, "operation": "margins", "margin_top": 0.75, "margin_right": 0.7, "margin_bottom": 0.75, "margin_left": 0.7}, func(ed document.SpreadsheetPageLayoutEditor) error {
 					return ed.SetSheetPageMargins(sheet, 0.75, 0.7, 0.75, 0.7)
 				})
 			case "wide":
 				a.modal.Hide()
-				a.runSpreadsheetPageLayoutCommand("设置宽页边距", func(ed document.SpreadsheetPageLayoutEditor) error {
+				a.runSpreadsheetPageLayoutCommand("设置宽页边距", map[string]any{"sheet": sheet, "operation": "margins", "margin_top": 1.0, "margin_right": 1.0, "margin_bottom": 1.0, "margin_left": 1.0}, func(ed document.SpreadsheetPageLayoutEditor) error {
 					return ed.SetSheetPageMargins(sheet, 1.0, 1.0, 1.0, 1.0)
 				})
 			case "narrow":
 				a.modal.Hide()
-				a.runSpreadsheetPageLayoutCommand("设置窄页边距", func(ed document.SpreadsheetPageLayoutEditor) error {
+				a.runSpreadsheetPageLayoutCommand("设置窄页边距", map[string]any{"sheet": sheet, "operation": "margins", "margin_top": 0.75, "margin_right": 0.25, "margin_bottom": 0.75, "margin_left": 0.25}, func(ed document.SpreadsheetPageLayoutEditor) error {
 					return ed.SetSheetPageMargins(sheet, 0.75, 0.25, 0.75, 0.25)
 				})
 			case "confirm":
@@ -133,7 +149,7 @@ func (a *App) showSpreadsheetMarginsDialog() {
 					return
 				}
 				a.modal.Hide()
-				a.runSpreadsheetPageLayoutCommand("设置页边距", func(ed document.SpreadsheetPageLayoutEditor) error {
+				a.runSpreadsheetPageLayoutCommand("设置页边距", map[string]any{"sheet": sheet, "operation": "margins", "margin_top": tVal, "margin_right": rVal, "margin_bottom": bVal, "margin_left": lVal}, func(ed document.SpreadsheetPageLayoutEditor) error {
 					return ed.SetSheetPageMargins(sheet, tVal, rVal, bVal, lVal)
 				})
 			case "cancel":
@@ -182,7 +198,7 @@ func (a *App) showSpreadsheetPageSizeDialog() {
 		default:
 			return
 		}
-		a.runSpreadsheetPageLayoutCommand("设置纸张大小", func(ed document.SpreadsheetPageLayoutEditor) error {
+		a.runSpreadsheetPageLayoutCommand("设置纸张大小", map[string]any{"sheet": sheet, "operation": "paper_size", "paper_size": paperSize}, func(ed document.SpreadsheetPageLayoutEditor) error {
 			return ed.SetSheetPageSize(sheet, paperSize)
 		})
 	},
@@ -233,12 +249,12 @@ func (a *App) showSpreadsheetPrintAreaDialog() {
 			if selRef == "" {
 				return
 			}
-			a.runSpreadsheetPageLayoutCommand("设置打印区域", func(ed document.SpreadsheetPageLayoutEditor) error {
+			a.runSpreadsheetPageLayoutCommand("设置打印区域", map[string]any{"sheet": sheet, "operation": "print_area", "print_area": selRef}, func(ed document.SpreadsheetPageLayoutEditor) error {
 				return ed.SetSheetPrintArea(sheet, selRef)
 			})
 			a.setStatus("已设置打印区域：" + selRef)
 		case "clear":
-			a.runSpreadsheetPageLayoutCommand("清除打印区域", func(ed document.SpreadsheetPageLayoutEditor) error {
+			a.runSpreadsheetPageLayoutCommand("清除打印区域", map[string]any{"sheet": sheet, "operation": "print_area", "print_area": ""}, func(ed document.SpreadsheetPageLayoutEditor) error {
 				return ed.SetSheetPrintArea(sheet, "")
 			})
 			a.setStatus("已清除打印区域")
@@ -286,12 +302,12 @@ func (a *App) showSpreadsheetPrintTitlesDialog() {
 			if selRowsRef == "" {
 				return
 			}
-			a.runSpreadsheetPageLayoutCommand("设置打印标题行", func(ed document.SpreadsheetPageLayoutEditor) error {
+			a.runSpreadsheetPageLayoutCommand("设置打印标题行", map[string]any{"sheet": sheet, "operation": "print_titles", "print_titles": selRowsRef}, func(ed document.SpreadsheetPageLayoutEditor) error {
 				return ed.SetSheetPrintTitles(sheet, selRowsRef)
 			})
 			a.setStatus("已设置打印标题行：" + selRowsRef)
 		case "clear":
-			a.runSpreadsheetPageLayoutCommand("清除打印标题行", func(ed document.SpreadsheetPageLayoutEditor) error {
+			a.runSpreadsheetPageLayoutCommand("清除打印标题行", map[string]any{"sheet": sheet, "operation": "print_titles", "print_titles": ""}, func(ed document.SpreadsheetPageLayoutEditor) error {
 				return ed.SetSheetPrintTitles(sheet, "")
 			})
 			a.setStatus("已清除打印标题行")

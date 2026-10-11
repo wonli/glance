@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestMarkdownImagePickerRetainsDialogAndRejectsStaleResult(t *testing.T) {
@@ -82,6 +83,16 @@ func TestMarkdownDraftFlush(t *testing.T) {
 	v.editor.SetCaret(0, 2)
 	if err := a.applyMarkdownEdit("bold", markdowndoc.EditArgs{}); err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case result := <-v.editResults:
+		if result.err != nil {
+			t.Fatalf("Markdown command failed: %v", result.err)
+		}
+		v.editResults <- result
+		a.pollMarkdownEditResult(v)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for Markdown command result")
 	}
 	if v.editor.Text() != "**中文**" || a.markdownDoc.Text() != "**中文**" {
 		t.Fatal("command lost source")

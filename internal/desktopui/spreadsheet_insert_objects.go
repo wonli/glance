@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
@@ -12,7 +13,7 @@ func (a *App) showSpreadsheetInsertShapeDialog() {
 	if state == nil || state.book == nil {
 		return
 	}
-	editor, ok := state.book.(document.SpreadsheetShapeEditor)
+	_, ok := state.book.(document.SpreadsheetShapeEditor)
 	if !ok {
 		a.setStatus("当前工作簿不支持插入形状")
 		return
@@ -45,30 +46,9 @@ func (a *App) showSpreadsheetInsertShapeDialog() {
 			shapeType = "roundRect"
 		}
 
-		generation, window := a.documentGeneration, state.virtualGrid
-		token, ok := state.beginOperation(sessionOperationMutation)
-		if !ok {
-			return
-		}
-		go func() {
-			unlock := lockSessionAdapterWrite(state)
-			err := editor.AddShape(document.SpreadsheetShapeSpec{
-				Sheet:  sheet,
-				Cell:   cellName,
-				Type:   shapeType,
-				Width:  180,
-				Height: 90,
-			})
-			unlock()
-			a.completeSessionOperation(state, token, err, true)
-			if err == nil {
-				a.setStatus("已成功插入形状")
-			}
-			select {
-			case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "插入形状"}:
-			case <-a.shutdown:
-			}
-		}()
+		a.runSpreadsheetShapeCommand(state, "插入形状", document.SpreadsheetShapeSpec{
+			Sheet: sheet, Cell: cellName, Type: shapeType, Width: 180, Height: 90,
+		})
 	},
 		modalDialogActionSpec{ID: "roundRect", Label: "圆角矩形"},
 		modalDialogActionSpec{ID: "rect", Label: "标准矩形"},
@@ -84,7 +64,7 @@ func (a *App) showSpreadsheetInsertTextBoxDialog() {
 	if state == nil || state.book == nil {
 		return
 	}
-	editor, ok := state.book.(document.SpreadsheetShapeEditor)
+	_, ok := state.book.(document.SpreadsheetShapeEditor)
 	if !ok {
 		a.setStatus("当前工作簿不支持插入文本框")
 		return
@@ -104,35 +84,61 @@ func (a *App) showSpreadsheetInsertTextBoxDialog() {
 			text = "文本框内容"
 		}
 
-		generation, window := a.documentGeneration, state.virtualGrid
-		token, ok := state.beginOperation(sessionOperationMutation)
-		if !ok {
-			return
-		}
-		go func() {
-			unlock := lockSessionAdapterWrite(state)
-			err := editor.AddShape(document.SpreadsheetShapeSpec{
-				Sheet:  sheet,
-				Cell:   cellName,
-				Type:   "rect",
-				Width:  200,
-				Height: 80,
-				Text:   text,
-			})
-			unlock()
-			a.completeSessionOperation(state, token, err, true)
-			if err == nil {
-				a.setStatus("已成功插入文本框")
-			}
-			select {
-			case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "插入文本框"}:
-			case <-a.shutdown:
-			}
-		}()
+		a.runSpreadsheetShapeCommand(state, "插入文本框", document.SpreadsheetShapeSpec{
+			Sheet: sheet, Cell: cellName, Type: "rect", Width: 200, Height: 80, Text: text,
+		})
 	},
 		modalDialogActionSpec{ID: "confirm", Label: "插入文本框"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+func (a *App) runSpreadsheetShapeCommand(state *documentSessionState, operation string, spec document.SpreadsheetShapeSpec) {
+	if state == nil || state != a.documentSessionState || state.book == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	editor, ok := state.book.(document.SpreadsheetShapeEditor)
+	if !ok {
+		return
+	}
+	generation, sheet, window := a.documentGeneration, spec.Sheet, state.virtualGrid
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return
+	}
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		changed := true
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.shape.create", "spreadsheet_cell", spec.Cell, spec.Sheet, map[string]any{
+				"sheet": spec.Sheet, "cell": spec.Cell, "type": spec.Type,
+				"width_px": spec.Width, "height_px": spec.Height, "text": spec.Text,
+			})
+			err = commandErr
+			if err == nil {
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				changed = outcome.Changed
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			err = editor.AddShape(spec)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
+		if err == nil {
+			a.setStatus("已成功" + operation)
+		}
+		if a.formatResults != nil {
+			select {
+			case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed}:
+			case <-a.shutdown:
+			}
+		}
+	})
 }
 
 func (a *App) showSpreadsheetInsertChartDialog(kind document.SpreadsheetChartKind) {
@@ -186,25 +192,45 @@ func (a *App) showSpreadsheetInsertChartDialog(kind document.SpreadsheetChartKin
 			if !ok {
 				return
 			}
-			go func() {
-				unlock := lockSessionAdapterWrite(state)
-				err := editor.AddChart(document.SpreadsheetChartSpec{
+			a.launchManagedBackground(func() {
+				spec := document.SpreadsheetChartSpec{
 					Sheet: sheet,
 					Cell:  cellName,
 					Kind:  kind,
 					Title: title,
 					Range: bounds,
-				})
-				unlock()
-				a.completeSessionOperation(state, token, err, true)
+				}
+				commandRouted := a.applicationSessionRegistered(token.documentID)
+				changed := true
+				var err error
+				if commandRouted {
+					result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.chart.create", "spreadsheet_cell_range", "chart-source", sheet, map[string]any{
+						"sheet": sheet, "kind": kind, "bounds": bounds, "cell": cellName, "title": title,
+					})
+					err = commandErr
+					if err == nil {
+						var outcome struct {
+							Changed bool `json:"changed"`
+						}
+						err = json.Unmarshal(result.Data, &outcome)
+						changed = outcome.Changed
+					}
+				} else {
+					unlock := lockSessionAdapterWrite(state)
+					err = editor.AddChart(spec)
+					unlock()
+				}
+				a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 				if err == nil {
 					a.setStatus("已成功插入" + chartName)
 				}
-				select {
-				case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "插入" + chartName}:
-				case <-a.shutdown:
+				if a.formatResults != nil {
+					select {
+					case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "插入" + chartName, applied: changed}:
+					case <-a.shutdown:
+					}
 				}
-			}()
+			})
 		},
 	)
 }

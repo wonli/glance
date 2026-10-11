@@ -252,7 +252,7 @@ func homeTableColumns(gtx layout.Context, theme *material.Theme, header bool, ro
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Right: unit.Dp(16 * scale)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return homeIconButton(gtx, row.favorite, "star", unit.Dp(18*scale), color.NRGBA{R: 185, G: 192, B: 200, A: 255}, row.app.homeFavorites[row.item.Path])
+						return homeIconButton(gtx, row.favorite, "star", unit.Dp(18*scale), color.NRGBA{R: 136, G: 145, B: 156, A: 255}, row.app.homeFavorites[row.item.Path])
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {

@@ -1,9 +1,11 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
+	"time"
 
 	"gioui.org/font"
 	"gioui.org/layout"
@@ -146,12 +148,17 @@ func (a *App) layoutPresentationStatusBar(gtx layout.Context, v *presentationVie
 
 // layoutPresentationSlideshow renders the full presentation mode overlay.
 func (a *App) layoutPresentationSlideshow(gtx layout.Context, v *presentationViewState) layout.Dimensions {
+	if v.presenterMode {
+		return a.layoutPresentationPresenter(gtx, v)
+	}
 	darkBg := color.NRGBA{R: 24, G: 26, B: 30, A: 255}
 	paint.FillShape(gtx.Ops, darkBg, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
 	// Handle controls
 	if v.exitShowBtn.Clicked(gtx) {
-		v.slideshowMode = false
+		if _, err := a.applyPresentationViewIntent("presentation.view.set", json.RawMessage(`{"operation":"set_mode","mode":"normal"}`)); err != nil {
+			a.setStatus("退出放映失败：" + err.Error())
+		}
 	}
 	if v.prevSlideBtn.Clicked(gtx) {
 		if v.activeSlide > 0 {
@@ -175,7 +182,7 @@ func (a *App) layoutPresentationSlideshow(gtx layout.Context, v *presentationVie
 			defer shift.Pop()
 
 			bg := color.NRGBA{R: 40, G: 44, B: 52, A: 230}
-			shape := clip.UniformRRect(image.Rectangle{Max: image.Pt(gtx.Dp(unit.Dp(320)), gtx.Dp(unit.Dp(44)))}, gtx.Dp(unit.Dp(22)))
+			shape := clip.UniformRRect(image.Rectangle{Max: image.Pt(gtx.Dp(unit.Dp(420)), gtx.Dp(unit.Dp(44)))}, gtx.Dp(unit.Dp(22)))
 			paint.FillShape(gtx.Ops, bg, shape.Op(gtx.Ops))
 
 			return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Top: unit.Dp(10), Bottom: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -191,6 +198,18 @@ func (a *App) layoutPresentationSlideshow(gtx layout.Context, v *presentationVie
 						txt := fmt.Sprintf("%d / %d", v.activeSlide+1, v.snapshot.SlideCount)
 						lbl := material.Label(a.theme, unit.Sp(12), txt)
 						lbl.Color = color.NRGBA{R: 200, G: 205, B: 215, A: 255}
+						return lbl.Layout(gtx)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if v.rehearsalElapsed == 0 && !v.rehearsalRunning() {
+							return layout.Dimensions{}
+						}
+						label := "计时 " + formatPresentationRehearsalDuration(v.rehearsalDuration(time.Now()))
+						if !v.rehearsalRunning() {
+							label += " 已停止"
+						}
+						lbl := material.Label(a.theme, unit.Sp(12), label)
+						lbl.Color = color.NRGBA{R: 255, G: 211, B: 125, A: 255}
 						return lbl.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {

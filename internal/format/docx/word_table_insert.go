@@ -53,9 +53,11 @@ func (d *Document) InsertTable(afterParagraphID string, rows, cols int) (string,
 		}
 	}
 	if afterParagraphID != "" {
-		if target, ok := d.wordParagraphTargets[afterParagraphID]; ok && target != nil {
-			insertAt = target.end
+		target, ok := d.wordParagraphTargets[afterParagraphID]
+		if !ok || target == nil {
+			return "", fmt.Errorf("Word paragraph %q is unavailable", afterParagraphID)
 		}
+		insertAt = target.end
 	}
 
 	// Compute cell and column widths in dxa (~8640 dxa = 6 inches)

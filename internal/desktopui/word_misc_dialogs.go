@@ -1,6 +1,11 @@
 package desktopui
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"glance/internal/application"
 	"glance/internal/document"
 	"strings"
 )
@@ -26,18 +31,17 @@ func (a *App) showWordDictateDialog() {
 				return
 			}
 			if hasRun && run.Editable {
-				newVal := run.Text
-				if newVal != "" {
-					newVal += " " + text
-				} else {
-					newVal = text
+				if !a.runWordApplicationCommand("语音听写录入", "word.text.insert", map[string]any{
+					"target": "run", "run_id": run.ID, "text": text,
+				}) {
+					a.setStatus("无法启动 Word 听写插入操作")
 				}
-				a.runWordCommand("语音听写录入", func(editor document.WordTextEditor) error {
-					return editor.ReplaceTextRun(run.ID, newVal)
-				})
-			} else if tbEditor, ok := any(state.word).(document.WordTextBoxEditor); ok {
-				_ = tbEditor.InsertTextBox(state.selectedWordParagraphID, text)
-				a.setStatus("已插入听写内容文本块")
+			} else if _, ok := any(state.word).(document.WordTextBoxEditor); ok {
+				if !a.runWordApplicationCommand("语音听写录入", "word.text.insert", map[string]any{
+					"target": "textbox", "after_paragraph_id": state.selectedWordParagraphID, "text": text,
+				}) {
+					a.setStatus("无法启动 Word 听写插入操作")
+				}
 			} else {
 				a.setStatus("请先选择文字段落以插入听写内容")
 			}
@@ -48,37 +52,56 @@ func (a *App) showWordDictateDialog() {
 }
 
 func (a *App) showWordAddInsDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.closed.Load() {
+		return
+	}
+	runtime := a.ensureDesktopRuntime()
+	if runtime.applicationRuntimeErr != nil || runtime.applicationRuntime == nil {
+		a.setStatus("Word Agent 能力目录不可用")
+		return
+	}
+	arguments, _ := json.Marshal(map[string]any{})
+	result, err := runtime.applicationRuntime.InvokeCapability(context.Background(), application.CapabilityRequest{
+		RequestID:  fmt.Sprintf("word-capabilities-%s-%d", state.documentID, a.applicationRequestSeq.Add(1)),
+		DocumentID: state.documentID, CapabilityID: "word.addins.list", ExpectedRevision: state.wordRevisionAtomic.Load(),
+		Operator:  application.Operator{ID: fmt.Sprintf("window-%d", a.windowID), Kind: application.OperatorHuman},
+		Arguments: arguments,
+	})
+	if err != nil {
+		a.setStatus("读取 Word Agent 能力失败：" + err.Error())
+		return
+	}
+	var catalog struct {
+		Capabilities []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Category    string `json:"category"`
+		} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(result.Data, &catalog); err != nil {
+		a.setStatus("读取 Word Agent 能力失败：" + application.ErrInvalidCommandResult.Error())
+		return
+	}
+	categoryCounts := map[string]int{}
+	var rows strings.Builder
+	for index, capability := range catalog.Capabilities {
+		categoryCounts[capability.Category]++
+		if index < 12 {
+			fmt.Fprintf(&rows, "· %s（%s）\n", capability.Name, capability.ID)
+		}
+	}
+	if len(catalog.Capabilities) > 12 {
+		fmt.Fprintf(&rows, "· 另有 %d 项能力；完整目录和调用参数由 MCP 工具列表提供。\n", len(catalog.Capabilities)-12)
+	}
 	a.modal.Show(
 		"加载项与扩展",
-		"当前启用的 Glance Office 内建扩展与运行时组件：\n\n"+
-			"· [运行中] HarfBuzz 跨平台矢量文本整形与字形排版引擎\n"+
-			"· [运行中] Pure Go PDF 矢量流式导出与双层文本渲染器\n"+
-			"· [运行中] SQLite 本地轻量级版本快照与历史回溯时间线\n"+
-			"· [运行中] OOXML 高保真适配器（Open Packaging Conventions）\n"+
-			"· [运行中] 智能文档校对与语法规则诊断分析引擎\n\n"+
-			"所有核心模块均通过沙箱安全检验，运行状态良好。",
+		fmt.Sprintf("当前文档注册了 %d 项 Agent 能力（查询 %d、命令 %d、工作流 %d）。\n\n%s\n使用 MCP 工具列表可以读取完整用途说明和 JSON Schema。",
+			len(catalog.Capabilities), categoryCounts["query"], categoryCounts["command"], categoryCounts["workflow"], rows.String()),
 		func(action string) {
 			a.modal.Hide()
 		},
 		modalDialogActionSpec{ID: "close", Label: "关闭"},
-	)
-}
-
-func (a *App) showWordMacrosDialog() {
-	a.modal.Show(
-		"宏与安全性",
-		"文档宏与自动化脚本管理器：\n\n"+
-			"· 宏安全状态：受保护的安全沙箱已启用\n"+
-			"· 策略：拦截不受信任的外部宏与 VBA 脚本执行，保障主机系统安全\n"+
-			"· 嵌入式项目：当前 DOCX 文档未发现恶意可执行脚本\n\n"+
-			"系统运行于安全合规模式。",
-		func(action string) {
-			a.modal.Hide()
-			if action == "enable_alert" {
-				a.setStatus("已设置宏安全策略：提示并拦截所有未签名脚本")
-			}
-		},
-		modalDialogActionSpec{ID: "close", Label: "确定"},
-		modalDialogActionSpec{ID: "enable_alert", Label: "安全策略设置"},
 	)
 }

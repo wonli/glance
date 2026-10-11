@@ -75,3 +75,26 @@ func chooseOfficeImageFile() (string, error) {
 	}
 	return strings.TrimSpace(string(output)), nil
 }
+
+func choosePresentationMediaFile(kind string) (string, error) {
+	prompt, types := "选择 MP3 或 WAV 音频", `{"mp3", "wav"}`
+	if kind == "video" {
+		prompt, types = "选择 MP4 或 WebM 视频", `{"mp4", "webm"}`
+	}
+	script := fmt.Sprintf("set pickedFile to choose file with prompt %q of type %s\nPOSIX path of pickedFile", prompt, types)
+	cmd := exec.Command("osascript", "-e", script)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if strings.Contains(message, "User canceled") {
+			return "", nil
+		}
+		if message == "" {
+			message = err.Error()
+		}
+		return "", errors.New(message)
+	}
+	return strings.TrimSpace(string(output)), nil
+}

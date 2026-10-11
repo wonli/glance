@@ -10,7 +10,7 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
-	wordpdf "glance/internal/format/pdf"
+	"glance/internal/format/wordpdf"
 	"glance/internal/wordlayout"
 )
 
@@ -253,39 +253,42 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		return
 	}
 	stateCopy := state
-	go func() {
-		defer stateCopy.finishOperation(token)
-		result := wordPDFExportResult{state: stateCopy, key: key, path: path}
-		unlock := lockSessionAdapterRead(stateCopy)
-		snapshot, err := doc.Snapshot()
-		unlock()
-		if err != nil {
-			result.err = fmt.Errorf("读取 DOCX 导出快照：%w", err)
-		} else {
-			snapshotDoc, openErr := docx.OpenSnapshot(snapshot)
-			if openErr != nil {
-				result.err = fmt.Errorf("校验 DOCX 导出快照：%w", openErr)
+	a.launchManagedBackground(func() {
+		result := func() wordPDFExportResult {
+			defer stateCopy.finishOperation(token)
+			result := wordPDFExportResult{state: stateCopy, key: key, path: path}
+			unlock := lockSessionAdapterRead(stateCopy)
+			snapshot, err := doc.Snapshot()
+			unlock()
+			if err != nil {
+				result.err = fmt.Errorf("读取 DOCX 导出快照：%w", err)
 			} else {
-				if !reflect.DeepEqual(snapshotDoc.WordBlocks(), blocks) || !reflect.DeepEqual(snapshotDoc.WordLayoutData(), layoutData) {
-					result.err = errors.New("DOCX 快照与当前分页场景不一致，请重新导出")
+				snapshotDoc, openErr := docx.OpenSnapshot(snapshot)
+				if openErr != nil {
+					result.err = fmt.Errorf("校验 DOCX 导出快照：%w", openErr)
 				} else {
-					result.err = wordpdf.ExportWordPDFFileWithCommitGuard(ctx, path, pageResult, fontSource, wordPDFImageSource{document: snapshotDoc}, func() (func(), error) {
-						stateCopy.wordExportCommitMu.Lock()
-						release := stateCopy.wordExportCommitMu.Unlock
-						if ctx.Err() != nil {
-							release()
-							return nil, ctx.Err()
-						}
-						if stateCopy.closed.Load() || stateCopy.wordRevisionAtomic.Load() != revision || stateCopy.wordDraftEpoch.Load() != draftEpoch {
-							release()
-							return nil, errors.New("Word 文档在 PDF 导出期间已更改，未覆盖目标文件")
-						}
-						return release, nil
-					})
+					if !reflect.DeepEqual(snapshotDoc.WordBlocks(), blocks) || !reflect.DeepEqual(snapshotDoc.WordLayoutData(), layoutData) {
+						result.err = errors.New("DOCX 快照与当前分页场景不一致，请重新导出")
+					} else {
+						_, result.err = wordpdf.ExportScene(ctx, path, pageResult, fontSource, wordPDFImageSource{document: snapshotDoc}, func() (func(), error) {
+							stateCopy.wordExportCommitMu.Lock()
+							release := stateCopy.wordExportCommitMu.Unlock
+							if ctx.Err() != nil {
+								release()
+								return nil, ctx.Err()
+							}
+							if stateCopy.closed.Load() || stateCopy.wordRevisionAtomic.Load() != revision || stateCopy.wordDraftEpoch.Load() != draftEpoch {
+								release()
+								return nil, errors.New("Word 文档在 PDF 导出期间已更改，未覆盖目标文件")
+							}
+							return release, nil
+						})
+					}
+					_ = snapshotDoc.Close()
 				}
-				_ = snapshotDoc.Close()
 			}
-		}
+			return result
+		}()
 		select {
 		case results <- result:
 			if window != nil {
@@ -293,7 +296,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 	a.setStatus("正在生成 PDF…")
 }
 

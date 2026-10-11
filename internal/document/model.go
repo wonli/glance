@@ -28,21 +28,39 @@ type CellStyle struct {
 	Borders             [4]CellBorder
 }
 
+type CellValueKind string
+
+const (
+	CellValueText    CellValueKind = "text"
+	CellValueNumber  CellValueKind = "number"
+	CellValueBoolean CellValueKind = "boolean"
+)
+
+// CellValue preserves the JSON value type supplied by an Agent. Desktop
+// editing keeps its existing text inference path and does not set an explicit
+// kind.
+type CellValue struct {
+	Kind    CellValueKind
+	Text    string
+	Number  float64
+	Boolean bool
+}
+
 // CellFormatPatch represents changes to a subset of cell formatting. Nil
 // fields leave the existing property untouched; ClearFormat resets all style.
 type CellFormatPatch struct {
-	Bold                *bool
-	Italic              *bool
-	Underline           *bool
-	FontColor           *string
-	FillColor           *string
-	HorizontalAlignment *string
-	NumberFormat        *string
-	BorderPreset        *string
-	WrapText            *bool
-	FontSize            *float64
-	FontFamily          *string
-	ClearFormat         bool
+	Bold                *bool    `json:"bold,omitempty"`
+	Italic              *bool    `json:"italic,omitempty"`
+	Underline           *bool    `json:"underline,omitempty"`
+	FontColor           *string  `json:"font_color,omitempty"`
+	FillColor           *string  `json:"fill_color,omitempty"`
+	HorizontalAlignment *string  `json:"horizontal_alignment,omitempty"`
+	NumberFormat        *string  `json:"number_format,omitempty"`
+	BorderPreset        *string  `json:"border_preset,omitempty"`
+	WrapText            *bool    `json:"wrap_text,omitempty"`
+	FontSize            *float64 `json:"font_size,omitempty"`
+	FontFamily          *string  `json:"font_family,omitempty"`
+	ClearFormat         bool     `json:"clear_format,omitempty"`
 }
 
 // CellBorder describes one cell edge. Borders are ordered top, right,
@@ -54,10 +72,10 @@ type CellBorder struct {
 
 // CellRange uses one-based inclusive worksheet coordinates.
 type CellRange struct {
-	StartRow    int
-	StartColumn int
-	EndRow      int
-	EndColumn   int
+	StartRow    int `json:"start_row"`
+	StartColumn int `json:"start_column"`
+	EndRow      int `json:"end_row"`
+	EndColumn   int `json:"end_column"`
 }
 
 // MergeRegion includes the anchor value/style even when the anchor is outside
@@ -145,6 +163,10 @@ type SpreadsheetFormatter interface {
 	SetCellFormats(sheet string, bounds CellRange, patch CellFormatPatch) error
 }
 
+type SpreadsheetFormatChangeEditor interface {
+	SetCellFormatsChanged(sheet string, bounds CellRange, patch CellFormatPatch) (bool, error)
+}
+
 type SpreadsheetHistory interface {
 	Undo() (bool, error)
 	Redo() (bool, error)
@@ -152,12 +174,25 @@ type SpreadsheetHistory interface {
 }
 
 type CellEdit struct {
-	Row, Column int
-	Value       string
+	Row        int        `json:"row"`
+	Column     int        `json:"column"`
+	Value      string     `json:"value"`
+	TypedValue *CellValue `json:"-"`
+}
+
+type SpreadsheetCellValueEditor interface {
+	SetCellValueChanged(sheet, cell string, value CellValue) (bool, error)
 }
 
 type SpreadsheetBatchEditor interface {
 	SetCells(sheet string, edits []CellEdit) error
+}
+
+// SpreadsheetBatchChangeEditor reports whether a bounded batch changed the
+// workbook. Adapters use it to advance the shared document revision only when
+// content actually changed.
+type SpreadsheetBatchChangeEditor interface {
+	SetCellsChanged(sheet string, edits []CellEdit) (bool, error)
 }
 type SpreadsheetRangeReader interface {
 	ReadRange(sheet string, bounds CellRange) ([][]Cell, error)
@@ -165,9 +200,9 @@ type SpreadsheetRangeReader interface {
 
 // CellMatch represents a cell matched by a search query. Coordinates are 1-based.
 type CellMatch struct {
-	Row    int
-	Column int
-	Value  string
+	Row    int    `json:"row"`
+	Column int    `json:"column"`
+	Value  string `json:"value"`
 }
 
 // SpreadsheetSearcher is an optional capability for searching cell values in a worksheet.
@@ -197,25 +232,29 @@ type SpreadsheetStructureEditor interface {
 }
 
 type SortRequest struct {
-	Sheet      string
-	Bounds     CellRange
-	KeyColumn  int
-	Descending bool
+	Sheet      string    `json:"sheet"`
+	Bounds     CellRange `json:"bounds"`
+	KeyColumn  int       `json:"key_column"`
+	Descending bool      `json:"descending"`
 }
 type SpreadsheetSorter interface {
 	SortRange(request SortRequest) error
 }
 
+type SpreadsheetSortChangeEditor interface {
+	SortRangeChanged(request SortRequest) (bool, error)
+}
+
 // SpreadsheetPageLayout describes the format-neutral print page setup for a worksheet.
 type SpreadsheetPageLayout struct {
-	Orientation  string  // "portrait" or "landscape"
-	PaperSize    int     // 1=Letter, 9=A4, 8=A3, 5=Legal
-	MarginTop    float64 // in inches (e.g. 0.75)
-	MarginRight  float64 // in inches (e.g. 0.7)
-	MarginBottom float64 // in inches (e.g. 0.75)
-	MarginLeft   float64 // in inches (e.g. 0.7)
-	PrintArea    string  // e.g. "$A$1:$D$10" or empty
-	PrintTitles  string  // e.g. "$1:$1" or empty
+	Orientation  string  `json:"orientation"`   // "portrait" or "landscape"
+	PaperSize    int     `json:"paper_size"`    // 1=Letter, 9=A4, 8=A3, 5=Legal
+	MarginTop    float64 `json:"margin_top"`    // in inches (e.g. 0.75)
+	MarginRight  float64 `json:"margin_right"`  // in inches (e.g. 0.7)
+	MarginBottom float64 `json:"margin_bottom"` // in inches (e.g. 0.75)
+	MarginLeft   float64 `json:"margin_left"`   // in inches (e.g. 0.7)
+	PrintArea    string  `json:"print_area"`    // e.g. "$A$1:$D$10" or empty
+	PrintTitles  string  `json:"print_titles"`  // e.g. "$1:$1" or empty
 }
 
 // SpreadsheetPageLayoutEditor is an optional capability for editing worksheet page setup.
@@ -236,8 +275,8 @@ type SpreadsheetGridlinesEditor interface {
 
 // CellHyperlink describes a hyperlink attached to a worksheet cell.
 type CellHyperlink struct {
-	Target  string // e.g. "https://example.com" or "Sheet2!A1"
-	Tooltip string // optional hover text
+	Target  string `json:"target"`  // e.g. "https://example.com" or "Sheet2!A1"
+	Tooltip string `json:"tooltip"` // optional hover text
 }
 
 // SpreadsheetHyperlinkEditor is an optional capability for managing worksheet hyperlinks.
@@ -249,9 +288,9 @@ type SpreadsheetHyperlinkEditor interface {
 
 // SpreadsheetPaneFreeze describes frozen rows and columns in a worksheet.
 type SpreadsheetPaneFreeze struct {
-	Frozen bool
-	XSplit int // number of frozen columns on the left (0 = none)
-	YSplit int // number of frozen rows at the top (0 = none)
+	Frozen bool `json:"frozen"`
+	XSplit int  `json:"x_split"` // number of frozen columns on the left (0 = none)
+	YSplit int  `json:"y_split"` // number of frozen rows at the top (0 = none)
 }
 
 // SpreadsheetPanesEditor is an optional capability for configuring frozen panes.
@@ -262,8 +301,8 @@ type SpreadsheetPanesEditor interface {
 
 // SpreadsheetDuplicatesResult reports the outcome of a duplicate row removal operation.
 type SpreadsheetDuplicatesResult struct {
-	RemovedCount   int
-	RemainingCount int
+	RemovedCount   int `json:"removed_count"`
+	RemainingCount int `json:"remaining_count"`
 }
 
 // SpreadsheetDuplicatesEditor is an optional capability for deduplicating rows in a range.
@@ -273,8 +312,8 @@ type SpreadsheetDuplicatesEditor interface {
 
 // SpreadsheetSheetView describes the view mode and element visibility for a worksheet.
 type SpreadsheetSheetView struct {
-	ViewMode  string // "normal", "pageBreakPreview", "pageLayout"
-	ShowRuler bool
+	ViewMode  string `json:"view_mode"` // "normal", "pageBreakPreview", "pageLayout"
+	ShowRuler bool   `json:"show_ruler"`
 }
 
 // SpreadsheetViewsEditor is an optional capability for configuring worksheet views and ruler.
@@ -300,8 +339,8 @@ type SpreadsheetWorkbookProtectionEditor interface {
 
 // SpreadsheetTextToColumnsResult reports the outcome of a text-to-columns split operation.
 type SpreadsheetTextToColumnsResult struct {
-	RowsSplit int
-	MaxCols   int
+	RowsSplit int `json:"rows_split"`
+	MaxCols   int `json:"max_columns"`
 }
 
 // SpreadsheetTextToColumnsEditor is an optional capability for splitting text in a column into adjacent columns.
@@ -335,10 +374,10 @@ type SpreadsheetFormulaEditor interface {
 
 // SpreadsheetDefinedName represents a named range or formula in a workbook.
 type SpreadsheetDefinedName struct {
-	Name    string
-	Ref     string
-	Scope   string
-	Comment string
+	Name    string `json:"name"`
+	Ref     string `json:"ref"`
+	Scope   string `json:"scope"`
+	Comment string `json:"comment"`
 }
 
 // SpreadsheetDefinedNameEditor provides reading, adding, and deleting defined names.
@@ -350,7 +389,7 @@ type SpreadsheetDefinedNameEditor interface {
 
 // SpreadsheetFlashFillResult describes the result of a flash fill / series fill operation.
 type SpreadsheetFlashFillResult struct {
-	RowsFilled int
+	RowsFilled int `json:"rows_filled"`
 }
 
 // SpreadsheetFlashFillEditor supports filling down series or repeating patterns into selection.
@@ -378,15 +417,15 @@ type SpreadsheetDataValidationSpec struct {
 
 // SpreadsheetDataValidationEditor provides adding and removing cell data validations.
 type SpreadsheetDataValidationEditor interface {
-	AddDataValidation(spec SpreadsheetDataValidationSpec) error
-	DeleteDataValidation(sheet string, bounds CellRange) error
+	AddDataValidation(spec SpreadsheetDataValidationSpec) (changed bool, err error)
+	DeleteDataValidation(sheet string, bounds CellRange) (changed bool, err error)
 }
 
 // SpreadsheetComment represents a cell note/comment.
 type SpreadsheetComment struct {
-	Author string
-	Cell   string
-	Text   string
+	Author string `json:"author"`
+	Cell   string `json:"cell"`
+	Text   string `json:"text"`
 }
 
 // SpreadsheetCommentEditor provides adding, reading, and deleting cell comments.
@@ -415,8 +454,8 @@ type SpreadsheetConditionalFormatSpec struct {
 
 // SpreadsheetConditionalFormatEditor provides adding and clearing conditional formatting.
 type SpreadsheetConditionalFormatEditor interface {
-	SetConditionalFormat(spec SpreadsheetConditionalFormatSpec) error
-	ClearConditionalFormat(sheet string, bounds CellRange) error
+	SetConditionalFormat(spec SpreadsheetConditionalFormatSpec) (changed bool, err error)
+	ClearConditionalFormat(sheet string, bounds CellRange) (changed bool, err error)
 }
 
 // SpreadsheetShapeSpec defines parameters for adding a shape or text box to a worksheet.

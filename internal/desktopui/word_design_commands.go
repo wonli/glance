@@ -12,7 +12,7 @@ func (a *App) showWordThemesDialog() {
 	}
 	a.modal.Show(
 		"文档主题",
-		"选择整体文档格式主题：\n\n"+
+		"为全文正文和表格段落应用间距预设：\n\n"+
 			"· Office 默认：标准排版，平衡段落间距（段后 6 pt）\n"+
 			"· 商务经典：正式严谨，宽松段落间距（段后 10 pt）\n"+
 			"· 学术紧凑：紧凑版式，节省版面（段前 0 pt，段后 3 pt）\n"+
@@ -33,9 +33,12 @@ func (a *App) showWordThemesDialog() {
 			default:
 				return
 			}
-			a.runWordSpacingCommand("应用文档主题："+themeName, func(editor document.WordParagraphSpacingEditor) error {
-				return editor.SetAllParagraphsSpacing(before, after)
-			})
+			if !a.runWordApplicationCommand("应用文档主题："+themeName, "word.paragraph.spacing_all.set", map[string]any{
+				"before_points": float64(before) / 20,
+				"after_points":  float64(after) / 20,
+			}) {
+				a.setStatus("无法启动 Word 文档主题操作")
+			}
 		},
 		modalDialogActionSpec{ID: "theme_office", Label: "Office 默认"},
 		modalDialogActionSpec{ID: "theme_business", Label: "商务经典"},
@@ -50,19 +53,18 @@ func (a *App) showWordColorsDialog() {
 	if state == nil || state.word == nil {
 		return
 	}
-	bgEditor, ok := any(state.word).(document.WordPageBackgroundEditor)
+	_, ok := any(state.word).(document.WordPageBackgroundEditor)
 	if !ok {
 		a.setStatus("当前文档不支持主题配色切换")
 		return
 	}
 	a.modal.Show(
 		"主题配色",
-		"选择文档主题色彩方案（背景与基调配色）：\n\n"+
+		"设置文档页面底色：\n\n"+
 			"· 经典白底（#FFFFFF，标准打印）\n"+
 			"· 雅致米黄（#FAF8F5，羊皮纸护眼风格）\n"+
 			"· 护眼薄荷（#E8F5E9，柔和阅读风格）\n"+
-			"· 商务湛蓝（#E3F2FD，冷色调现代风格）\n"+
-			"· 暗色夜间（#263238，低眩光暗调风格）",
+			"· 商务湛蓝（#E3F2FD，冷色调现代风格）",
 		func(action string) {
 			a.modal.Hide()
 			var colorHex, schemeName string
@@ -80,13 +82,10 @@ func (a *App) showWordColorsDialog() {
 			default:
 				return
 			}
-			if err := bgEditor.SetPageBackgroundColor(colorHex); err != nil {
-				a.setStatus("应用主题配色失败：" + err.Error())
-				return
-			}
-			a.setStatus("已成功应用主题配色：" + schemeName)
-			if a.window != nil {
-				a.window.Invalidate()
+			if !a.runWordApplicationCommand("应用主题配色："+schemeName, "word.page.background.set", map[string]any{
+				"color": colorHex,
+			}) {
+				a.setStatus("无法启动 Word 主题配色操作")
 			}
 		},
 		modalDialogActionSpec{ID: "scheme_white", Label: "经典白底"},
@@ -102,14 +101,14 @@ func (a *App) showWordFontsDialog() {
 	if state == nil || state.word == nil {
 		return
 	}
-	fontEditor, ok := any(state.word).(document.WordTextFontFamilyEditor)
+	_, ok := any(state.word).(document.WordTextFontFamilyEditor)
 	if !ok {
 		a.setStatus("当前文档不支持主题字体配置")
 		return
 	}
 	a.modal.Show(
 		"主题字体",
-		"选择全文档主题字体搭配：\n\n"+
+		"选择正文文本运行的字体（选中正文文本时应用于该文本；无选区时应用于首个可编辑正文文本）：\n\n"+
 			"· 现代无衬线：微软雅黑 / Arial\n"+
 			"· 经典宋体：宋体 / SimSun\n"+
 			"· 仿宋公文：仿宋 / FangSong\n"+
@@ -146,15 +145,14 @@ func (a *App) showWordFontsDialog() {
 					}
 				}
 			}
-			if runID != "" {
-				if err := fontEditor.SetTextRunFontFamily(runID, fontName); err != nil {
-					a.setStatus("设置主题字体失败：" + err.Error())
-					return
-				}
+			if runID == "" {
+				a.setStatus("未找到可设置字体的正文文本")
+				return
 			}
-			a.setStatus("已成功应用主题字体方案：" + label)
-			if a.window != nil {
-				a.window.Invalidate()
+			if !a.runWordApplicationCommand("设置主题字体："+label, "word.text_run.font_family.set", map[string]any{
+				"run_id": runID, "font_family": fontName,
+			}) {
+				a.setStatus("无法启动 Word 主题字体操作")
 			}
 		},
 		modalDialogActionSpec{ID: "font_yahei", Label: "微软雅黑"},
@@ -166,17 +164,29 @@ func (a *App) showWordFontsDialog() {
 }
 
 func (a *App) showWordEffectsDialog() {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
 	a.modal.Show(
 		"主题效果",
-		"当前文档对象图形效果集：\n\n"+
-			"· 微妙（Subtle）：平滑边缘，微柔和投影\n"+
-			"· 适中（Moderate）：标准阴影与浅轮廓高亮\n"+
-			"· 强烈（Intense）：深景深立体光泽投影\n\n"+
-			"文档已默认启用与 OpenXML 规范兼容的“微妙”适中效果集。",
+		"为使用主题效果引用的对象设置阴影强度。直接写入对象的效果不会改变；Glance 当前不预览这些主题阴影。\n\n"+
+			"· 微妙：柔和、短距离阴影\n"+
+			"· 适中：清晰的中等阴影\n"+
+			"· 强烈：较深、较远的阴影",
 		func(action string) {
 			a.modal.Hide()
-			if action != "cancel" {
-				a.setStatus("已应用主题效果集")
+			if action == "cancel" {
+				return
+			}
+			if a.applicationSessionRegistered(state.documentID) {
+				if !a.runWordApplicationCommand("设置主题效果", "word.theme.effects.set", map[string]any{"effect_profile": action}) {
+					a.setStatus("无法启动主题效果设置")
+				}
+				return
+			}
+			if !a.runWordThemeEffectsCommand("设置主题效果", action) {
+				a.setStatus("当前文档不支持主题效果设置")
 			}
 		},
 		modalDialogActionSpec{ID: "subtle", Label: "微妙（默认）"},
@@ -194,8 +204,8 @@ func (a *App) showWordDesignerDialog() {
 	stats := wordTextStatisticsForState(state)
 	a.modal.Show(
 		"设计器",
-		fmt.Sprintf("AI 智能版式设计器已分析当前文档（%d 段落，%d 字符）：\n\n"+
-			"推荐版式方案：\n"+
+		fmt.Sprintf("当前文档包含 %d 个段落、%d 个字符。选择一个版式预设：\n\n"+
+			"版式预设：\n"+
 			"1. 【公文红头规范】：严谨宋体/仿宋，规范 1.5 倍行距，适合正式报告与通知\n"+
 			"2. 【现代商务企划】：两端对齐，段后 8 pt 间距，适合企划案与项目总结\n"+
 			"3. 【精简学术排版】：紧凑段间距，适合论文草稿与学术归档",
@@ -214,10 +224,12 @@ func (a *App) showWordDesignerDialog() {
 			default:
 				return
 			}
-			a.runWordSpacingCommand("设计器应用版式："+schemeName, func(editor document.WordParagraphSpacingEditor) error {
-				return editor.SetAllParagraphsSpacing(before, after)
-			})
-			a.setStatus("设计器已成功应用：" + schemeName)
+			if !a.runWordApplicationCommand("设计器应用版式："+schemeName, "word.paragraph.spacing_all.set", map[string]any{
+				"before_points": float64(before) / 20,
+				"after_points":  float64(after) / 20,
+			}) {
+				a.setStatus("无法启动 Word 设计器版式操作")
+			}
 		},
 		modalDialogActionSpec{ID: "scheme_gov", Label: "应用公文规范"},
 		modalDialogActionSpec{ID: "scheme_biz", Label: "应用商务企划"},

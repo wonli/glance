@@ -1,8 +1,12 @@
 package desktopui
 
-import "glance/internal/document"
+import (
+	"encoding/json"
 
-func (a *App) runSpreadsheetProtectionCommand(operation string, edit func(document.SpreadsheetProtectionEditor) error) {
+	"glance/internal/document"
+)
+
+func (a *App) runSpreadsheetProtectionCommand(operation, scope string, arguments map[string]any, edit func(document.SpreadsheetProtectionEditor) error) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
@@ -16,16 +20,31 @@ func (a *App) runSpreadsheetProtectionCommand(operation string, edit func(docume
 	if !ok {
 		return
 	}
-	go func() {
-		unlock := lockSessionAdapterWrite(state)
-		err := edit(editor)
-		unlock()
-		a.completeSessionOperation(state, token, err, true)
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		changed := true
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.protection.set", "spreadsheet_protection", scope, sheet, arguments)
+			err = commandErr
+			if err == nil {
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				changed = outcome.Changed
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			err = edit(editor)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) showSpreadsheetProtectSheetDialog() {
@@ -47,7 +66,7 @@ func (a *App) showSpreadsheetProtectSheetDialog() {
 			if action != "confirm" {
 				return
 			}
-			a.runSpreadsheetProtectionCommand("撤销保护工作表", func(ed document.SpreadsheetProtectionEditor) error {
+			a.runSpreadsheetProtectionCommand("撤销保护工作表", "sheet", map[string]any{"scope": "sheet", "sheet": sheet, "enabled": false, "password": pwd}, func(ed document.SpreadsheetProtectionEditor) error {
 				return ed.UnprotectSheet(sheet, pwd)
 			})
 			a.setStatus("已撤销工作表保护")
@@ -62,7 +81,7 @@ func (a *App) showSpreadsheetProtectSheetDialog() {
 			if action != "confirm" {
 				return
 			}
-			a.runSpreadsheetProtectionCommand("保护工作表", func(ed document.SpreadsheetProtectionEditor) error {
+			a.runSpreadsheetProtectionCommand("保护工作表", "sheet", map[string]any{"scope": "sheet", "sheet": sheet, "enabled": true, "password": pwd}, func(ed document.SpreadsheetProtectionEditor) error {
 				return ed.ProtectSheet(sheet, pwd)
 			})
 			a.setStatus("已保护工作表")
@@ -73,7 +92,7 @@ func (a *App) showSpreadsheetProtectSheetDialog() {
 	}
 }
 
-func (a *App) runSpreadsheetWorkbookProtectionCommand(operation string, edit func(document.SpreadsheetWorkbookProtectionEditor) error) {
+func (a *App) runSpreadsheetWorkbookProtectionCommand(operation string, arguments map[string]any, edit func(document.SpreadsheetWorkbookProtectionEditor) error) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
@@ -87,16 +106,31 @@ func (a *App) runSpreadsheetWorkbookProtectionCommand(operation string, edit fun
 	if !ok {
 		return
 	}
-	go func() {
-		unlock := lockSessionAdapterWrite(state)
-		err := edit(editor)
-		unlock()
-		a.completeSessionOperation(state, token, err, true)
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		changed := true
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.protection.set", "spreadsheet_protection", "workbook", sheet, arguments)
+			err = commandErr
+			if err == nil {
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				changed = outcome.Changed
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			err = edit(editor)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) showSpreadsheetProtectWorkbookDialog() {
@@ -117,7 +151,7 @@ func (a *App) showSpreadsheetProtectWorkbookDialog() {
 			if action != "confirm" {
 				return
 			}
-			a.runSpreadsheetWorkbookProtectionCommand("撤销保护工作簿", func(ed document.SpreadsheetWorkbookProtectionEditor) error {
+			a.runSpreadsheetWorkbookProtectionCommand("撤销保护工作簿", map[string]any{"scope": "workbook", "enabled": false, "password": pwd}, func(ed document.SpreadsheetWorkbookProtectionEditor) error {
 				return ed.UnprotectWorkbook(pwd)
 			})
 			a.setStatus("已撤销工作簿保护")
@@ -132,7 +166,7 @@ func (a *App) showSpreadsheetProtectWorkbookDialog() {
 			if action != "confirm" {
 				return
 			}
-			a.runSpreadsheetWorkbookProtectionCommand("保护工作簿", func(ed document.SpreadsheetWorkbookProtectionEditor) error {
+			a.runSpreadsheetWorkbookProtectionCommand("保护工作簿", map[string]any{"scope": "workbook", "enabled": true, "password": pwd}, func(ed document.SpreadsheetWorkbookProtectionEditor) error {
 				return ed.ProtectWorkbook(pwd)
 			})
 			a.setStatus("已保护工作簿")

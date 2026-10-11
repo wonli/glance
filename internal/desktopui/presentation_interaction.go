@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strconv"
 
 	"gioui.org/f32"
 	"gioui.org/gesture"
@@ -72,6 +73,9 @@ func (a *App) updatePresentationElementGestures(gtx layout.Context, v *presentat
 	if interaction == nil || v == nil {
 		return
 	}
+	if len(presentationSelectedIDs(v)) > 1 {
+		return
+	}
 	if v.pictureCrop.active && v.pictureCrop.shapeID == elem.ID {
 		a.updatePresentationCropGestures(gtx, v, elem, interaction)
 		return
@@ -120,6 +124,9 @@ func (a *App) updatePresentationGesture(gtx layout.Context, v *presentationViewS
 			}
 			gestureState.started = true
 			v.selectedShape = elem.ID
+			if a.documentSessionState != nil && a.documentSessionState.pptxDoc == a.pptxDoc {
+				a.documentSessionState.setPresentationDraftDirty(a.windowID, presentationTransformDraft, true)
+			}
 			current := presentationDevicePointToSlide(event.Position, f32.Point{}, v.canvasScale)
 			gestureState.preview = previewPresentationGesture(*gestureState, current, elem.AspectRatioLocked)
 		case pointer.Release:
@@ -132,9 +139,15 @@ func (a *App) updatePresentationGesture(gtx layout.Context, v *presentationViewS
 				gestureState.preview = previewPresentationGesture(gestureState, current, elem.AspectRatioLocked)
 				a.commitPresentationTransformGesture(v, gestureState)
 			}
+			if a.documentSessionState != nil && a.documentSessionState.pptxDoc == a.pptxDoc {
+				a.documentSessionState.setPresentationDraftDirty(a.windowID, presentationTransformDraft, false)
+			}
 			v.transformGesture = presentationTransformGesture{}
 		case pointer.Cancel:
 			cancelPresentationTransformGesture(v, elem.ID, mode)
+			if a.documentSessionState != nil && a.documentSessionState.pptxDoc == a.pptxDoc {
+				a.documentSessionState.setPresentationDraftDirty(a.windowID, presentationTransformDraft, false)
+			}
 		}
 	}
 }
@@ -165,7 +178,37 @@ func (a *App) commitPresentationTransformGesture(v *presentationViewState, gestu
 	if gestureState.preview.Bounds == gestureState.original.Bounds && presentationNormalizeAngle(gestureState.preview.RotationDeg) == presentationNormalizeAngle(gestureState.original.RotationDeg) {
 		return
 	}
-	if err := a.pptxDoc.UpdateSlideElementTransform(v.activeSlide, gestureState.shapeID, gestureState.preview.Bounds, gestureState.preview.RotationDeg); err != nil {
+	slide := v.currentSlide()
+	if slide == nil || slide.ID == 0 {
+		return
+	}
+	state := a.documentSessionState
+	var err error
+	if state != nil && state.pptxDoc == a.pptxDoc && a.applicationSessionRegistered(state.documentID) {
+		token, ok := state.beginOperation(sessionOperationMutation)
+		if !ok {
+			a.setStatus("演示文稿正在处理其他操作")
+			return
+		}
+		_, err = a.executeRibbonApplicationCommand(token, "presentation.element.transform.set", "presentation_element", strconv.FormatInt(gestureState.shapeID, 10), "", map[string]any{
+			"slide_id": slide.ID, "element_id": gestureState.shapeID,
+			"x": gestureState.preview.Bounds.X, "y": gestureState.preview.Bounds.Y,
+			"width": gestureState.preview.Bounds.W, "height": gestureState.preview.Bounds.H,
+			"rotation_deg": gestureState.preview.RotationDeg,
+		})
+		state.finishOperation(token)
+	} else if state == nil || state.pptxDoc != a.pptxDoc {
+		err = a.pptxDoc.UpdateSlideElementTransformByID(slide.ID, gestureState.shapeID, gestureState.preview.Bounds, gestureState.preview.RotationDeg)
+	} else {
+		before := a.pptxDoc.Snapshot().Revision
+		unlock := lockSessionAdapterWrite(state)
+		err = a.pptxDoc.UpdateSlideElementTransformByID(slide.ID, gestureState.shapeID, gestureState.preview.Bounds, gestureState.preview.RotationDeg)
+		unlock()
+		if err == nil && a.pptxDoc.Snapshot().Revision != before {
+			a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load()+1)
+		}
+	}
+	if err != nil {
 		a.setStatus("对象变换失败：" + err.Error())
 		return
 	}

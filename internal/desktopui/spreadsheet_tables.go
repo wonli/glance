@@ -1,11 +1,12 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 )
 
-func (a *App) runSpreadsheetTableCommand(operation string, edit func(document.SpreadsheetTableEditor) error) {
+func (a *App) runSpreadsheetTableCommand(operation string, arguments any, edit func(document.SpreadsheetTableEditor) error) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
@@ -19,19 +20,34 @@ func (a *App) runSpreadsheetTableCommand(operation string, edit func(document.Sp
 	if !ok {
 		return
 	}
-	go func() {
-		unlock := lockSessionAdapterWrite(state)
-		err := edit(editor)
-		unlock()
-		a.completeSessionOperation(state, token, err, true)
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		changed := true
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.table.create", "spreadsheet_cell_range", "selection", sheet, arguments)
+			err = commandErr
+			if err == nil {
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				changed = outcome.Changed
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			err = edit(editor)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		if err == nil {
 			a.setStatus("已创建表格")
 		}
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed}:
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) showSpreadsheetInsertTableDialog(styleName string) {
@@ -55,7 +71,7 @@ func (a *App) showSpreadsheetInsertTableDialog(styleName string) {
 	msg := fmt.Sprintf("将在选区 %s（共 %d 行 %d 列）创建格式化表格。\n表格将自动启用筛选与行列交替颜色。", rangeRef, rowCount, colCount)
 
 	createTable := func(style string) {
-		a.runSpreadsheetTableCommand("创建表格", func(ed document.SpreadsheetTableEditor) error {
+		a.runSpreadsheetTableCommand("创建表格", map[string]any{"sheet": sheet, "bounds": bounds, "style_name": style}, func(ed document.SpreadsheetTableEditor) error {
 			return ed.AddTable(document.SpreadsheetTableSpec{
 				Sheet:     sheet,
 				Range:     bounds,

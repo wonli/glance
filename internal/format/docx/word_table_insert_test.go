@@ -1,6 +1,7 @@
 package docx
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -87,5 +88,36 @@ func TestWordInsertTableAndUndo(t *testing.T) {
 	blocksAfterRedo := doc.WordBlocks()
 	if len(blocksAfterRedo) <= len(initialBlocks) {
 		t.Fatalf("expected table restored after redo, got %d blocks", len(blocksAfterRedo))
+	}
+}
+
+func TestWordInsertTable_UnknownExplicitParagraphDoesNotFallBackOrMutate(t *testing.T) {
+	doc, err := NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	editor, ok := any(doc).(document.WordTableInsertEditor)
+	if !ok {
+		t.Fatal("doc does not implement WordTableInsertEditor")
+	}
+	before := append([]byte(nil), doc.parts[doc.documentIdx].data...)
+	dirtyBefore := doc.Dirty()
+	if _, err := editor.InsertTable("missing-paragraph", 1, 1); err == nil {
+		t.Fatal("InsertTable accepted an unknown explicit paragraph ID")
+	}
+	if after := doc.parts[doc.documentIdx].data; !bytes.Equal(after, before) {
+		t.Fatalf("unknown table target changed document XML: before=%s after=%s", before, after)
+	}
+	history, ok := any(doc).(document.WordHistory)
+	if !ok {
+		t.Fatal("doc does not implement WordHistory")
+	}
+	if history.CanUndo() {
+		t.Fatal("unknown table target created an undo record")
+	}
+	if dirtyAfter := doc.Dirty(); dirtyAfter != dirtyBefore {
+		t.Fatalf("unknown table target changed dirty state from %v to %v", dirtyBefore, dirtyAfter)
 	}
 }

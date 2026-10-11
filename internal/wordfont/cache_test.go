@@ -1,4 +1,4 @@
-package desktopui
+package wordfont
 
 import (
 	"os"

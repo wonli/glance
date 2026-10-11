@@ -79,7 +79,7 @@ func (a *App) startWordImagePicker(operation wordImagePickerOperation) {
 		choose = chooseOfficeImageFile
 	}
 	shutdown, results, window := a.shutdown, a.wordImagePickerResults, a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		result.path, result.err = choose()
 		if result.err == nil && result.path != "" {
 			var file wordImageFile
@@ -93,7 +93,7 @@ func (a *App) startWordImagePicker(operation wordImagePickerOperation) {
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 }
 
 func loadWordImageFile(path string) (wordImageFile, error) {
@@ -176,7 +176,7 @@ func (a *App) runWordImageInsertCommand(paragraphID, afterInlineID, mediaType st
 		return
 	}
 	generation := a.documentGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		var imageID string
 		blocks, err := runWordMutation(state, func() error {
 			var insertErr error
@@ -184,5 +184,5 @@ func (a *App) runWordImageInsertCommand(paragraphID, afterInlineID, mediaType st
 			return insertErr
 		})
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "插入图片", err: err, imageID: imageID, selectInsertedImage: err == nil, blocks: blocks})
-	}()
+	})
 }

@@ -51,7 +51,25 @@ func TestPresentationLayoutRendering(t *testing.T) {
 		t.Fatalf("notes expanded: expected dims 1440x900, got %dx%d", dims.Size.X, dims.Size.Y)
 	}
 
-	// 4. Render slideshow mode
+	// 4. Render the slide sorter grid.
+	v.sorterMode = true
+	ops.Reset()
+	dims = app.layoutPresentationDocument(gtx)
+	if dims.Size.X != 1440 || dims.Size.Y != 900 {
+		t.Fatalf("sorter mode: expected dims 1440x900, got %dx%d", dims.Size.X, dims.Size.Y)
+	}
+	v.sorterMode = false
+
+	// 5. Render horizontal and vertical presentation rulers around the slide.
+	v.rulerVisible = true
+	ops.Reset()
+	dims = app.layoutPresentationDocument(gtx)
+	if dims.Size.X != 1440 || dims.Size.Y != 900 || v.canvasCardSize.X <= 0 || v.canvasCardSize.Y <= 0 {
+		t.Fatalf("ruler mode: expected rendered slide inside 1440x900 canvas, got dims=%v canvas=%v", dims.Size, v.canvasCardSize)
+	}
+	v.rulerVisible = false
+
+	// 6. Render slideshow mode
 	v.slideshowMode = true
 	ops.Reset()
 	dims = app.layoutPresentationDocument(gtx)
@@ -59,7 +77,7 @@ func TestPresentationLayoutRendering(t *testing.T) {
 		t.Fatalf("slideshow mode: expected dims 1440x900, got %dx%d", dims.Size.X, dims.Size.Y)
 	}
 
-	// 5. Exit slideshow mode
+	// 7. Exit slideshow mode
 	v.slideshowMode = false
 	ops.Reset()
 	dims = app.layoutPresentationDocument(gtx)
@@ -115,6 +133,7 @@ func TestPresentationAddSlideButtonLayoutAndClick(t *testing.T) {
 	ops.Reset()
 	app.layoutPresentationSidebar(gtx, v)
 
+	waitPresentationCommandResult(t, app, v)
 	if got := app.pptxDoc.SlideCount(); got != initialSlides+1 {
 		t.Fatalf("expected slide count %d after clicking add slide button, got %d", initialSlides+1, got)
 	}

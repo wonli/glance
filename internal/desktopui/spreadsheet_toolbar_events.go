@@ -184,23 +184,11 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			continue
 		}
 		if action.slot == toolbarActionZoomIn {
-			newZoom := a.spreadsheetZoom() + 0.1
-			if newZoom > 2.0 {
-				newZoom = 2.0
-			}
-			a.setSpreadsheetZoom(newZoom)
-			a.setStatus(fmt.Sprintf("缩放比例：%.0f%%", newZoom*100))
-			if a.window != nil {
-				a.window.Invalidate()
-			}
+			a.runSpreadsheetZoomIntent("zoom_in", 0)
 			continue
 		}
 		if action.slot == toolbarActionZoom100 {
-			a.setSpreadsheetZoom(1.0)
-			a.setStatus("缩放比例：100%")
-			if a.window != nil {
-				a.window.Invalidate()
-			}
+			a.runSpreadsheetZoomIntent("reset", 0)
 			continue
 		}
 		if action.slot == toolbarActionLayoutMargins {
@@ -221,6 +209,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 		}
 		if action.slot == toolbarActionViewGridlines || action.slot == toolbarActionLayoutGridlines {
 			state.spreadsheetGridlinesHidden = !state.spreadsheetGridlinesHidden
+			show := !state.spreadsheetGridlinesHidden
 			if state.virtualGrid != nil {
 				state.virtualGrid.CellPaintCache = nil
 				state.virtualGrid.CellPaintFIFO = nil
@@ -230,9 +219,11 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			} else {
 				a.setStatus("已显示网格线")
 			}
-			if editor, ok := state.book.(document.SpreadsheetGridlinesEditor); ok {
-				_ = editor.SetSheetGridlines(state.sheet, !state.spreadsheetGridlinesHidden)
+			operation := "隐藏网格线"
+			if show {
+				operation = "显示网格线"
 			}
+			a.runSpreadsheetGridlinesCommand(operation, show)
 			if a.window != nil {
 				a.window.Invalidate()
 			}

@@ -44,6 +44,35 @@ func TestHomeFavoriteStarFillsGoldWhenSelected(t *testing.T) {
 	}
 }
 
+func TestHomeNavigationStarMatchesPenColorAndStroke(t *testing.T) {
+	want := color.NRGBA{R: 63, G: 71, B: 82, A: 255} // ElmiY: #3F4752.
+	icon, ok := tintedToolbarIcon("star-outline", want)
+	if !ok {
+		t.Fatal("navigation star SVG is unavailable")
+	}
+	opaque := 0
+	for y := 0; y < icon.Bounds().Dy(); y++ {
+		for x := 0; x < icon.Bounds().Dx(); x++ {
+			pixel := color.NRGBAModel.Convert(icon.At(x, y)).(color.NRGBA)
+			if pixel.A < 240 {
+				continue
+			}
+			opaque++
+			if !nearByte(pixel.R, want.R) || !nearByte(pixel.G, want.G) || !nearByte(pixel.B, want.B) {
+				t.Fatalf("navigation star pixel=%v; want %v", pixel, want)
+			}
+		}
+	}
+	// A 1.8-unit Lucide outline scaled from 24 to 96 pixels must retain
+	// a solid stroke, rather than a thin, translucent rasterized outline.
+	if opaque < 1000 {
+		t.Fatalf("navigation star has %d opaque pixels; want a solid 1.8-unit outline", opaque)
+	}
+	if _, _, _, alpha := icon.At(48, 48).RGBA(); alpha != 0 {
+		t.Fatal("navigation star must remain hollow")
+	}
+}
+
 func TestHomeGreetingMatchesTimeOfDay(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

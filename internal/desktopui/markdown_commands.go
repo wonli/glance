@@ -1,9 +1,11 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"gioui.org/io/key"
 	"gioui.org/layout"
+	"glance/internal/application"
 	"glance/internal/format/markdowndoc"
 	"net/url"
 	"os/exec"
@@ -31,10 +33,13 @@ func (a *App) flushMarkdownDraft() {
 	}
 	unlock := lockSessionAdapterWrite(a.documentSessionState)
 	err := a.markdownDoc.SetText(source)
+	if err == nil {
+		v.sourceSynced = source
+		setMarkdownDraftState(a.documentSessionState, v, false, false)
+	}
 	unlock()
 	a.completeSessionOperation(a.documentSessionState, token, err, err == nil)
 	if err == nil {
-		v.sourceSynced = source
 		a.persistActiveSession()
 	} else {
 		a.setStatus(err.Error())
@@ -46,6 +51,9 @@ func (a *App) applyMarkdownEdit(action string, args markdowndoc.EditArgs) error 
 		return fmt.Errorf("请先完成输入法选字")
 	}
 	start, end := v.editor.Selection()
+	if a.documentSessionState != nil && a.applicationSessionRegistered(a.documentSessionState.documentID) {
+		return a.startMarkdownApplicationEdit(v, action, args, start, end)
+	}
 	out, err := markdowndoc.ApplyEdit(v.text(), action, start, end, args)
 	if err != nil {
 		return err
@@ -58,15 +66,151 @@ func (a *App) applyMarkdownEdit(action string, args markdowndoc.EditArgs) error 
 	a.flushMarkdownDraft()
 	return nil
 }
+
+func (a *App) startMarkdownApplicationEdit(v *markdownViewState, action string, args markdowndoc.EditArgs, start, end int) error {
+	if v.editPending {
+		return fmt.Errorf("Markdown 正在处理上一项操作")
+	}
+	state := a.documentSessionState
+	if state == nil || state.markdownDoc == nil {
+		return application.ErrDocumentNotFound
+	}
+	source := v.text()
+	if markdownEditorComposing(&v.editor) {
+		return fmt.Errorf("请先完成输入法选字")
+	}
+	a.flushMarkdownDraft()
+	if state.markdownDoc.Text() != source {
+		return fmt.Errorf("Markdown 内容尚未同步，操作已取消")
+	}
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return fmt.Errorf("Markdown 文档正在处理其他操作")
+	}
+	v.editPending = true
+	window, shutdown, generation := a.window, a.shutdown, a.documentGeneration
+	arguments := map[string]any{
+		"action": action, "start": start, "end": end,
+		"label": args.Label, "destination": args.Destination, "display": args.Display,
+	}
+	a.launchManagedBackground(func() {
+		result, err := a.executeRibbonApplicationCommand(token, "markdown.text.edit", "markdown_document", token.documentID, "", arguments)
+		state.finishOperation(token)
+		editResult := markdownEditResult{state: state, view: v, source: source, action: action, generation: generation, err: err}
+		if err == nil {
+			editResult.data = append([]byte(nil), result.Data...)
+		}
+		select {
+		case v.editResults <- editResult:
+		case <-shutdown:
+		}
+		if window != nil {
+			window.Invalidate()
+		}
+	})
+	return nil
+}
+
+func (a *App) startMarkdownViewApplicationCommand(v *markdownViewState, mode string) bool {
+	state := a.documentSessionState
+	if v == nil || state == nil || state.markdownDoc == nil || !a.applicationSessionRegistered(state.documentID) {
+		return false
+	}
+	token, ok := state.beginOperation(sessionOperationRead)
+	if !ok {
+		a.setStatus("Markdown 文档正在处理其他操作")
+		return true
+	}
+	v.editPending = true
+	generation := a.documentGeneration
+	window, shutdown := a.window, a.shutdown
+	a.launchManagedBackground(func() {
+		_, err := a.executeRibbonApplicationCommand(token, "markdown.view.set", "attached_window", fmt.Sprint(a.windowID), "", map[string]string{"mode": mode})
+		state.finishOperation(token)
+		result := markdownEditResult{state: state, view: v, action: "view", generation: generation, err: err}
+		select {
+		case v.editResults <- result:
+		case <-shutdown:
+		}
+		if window != nil {
+			window.Invalidate()
+		}
+	})
+	return true
+}
+
+func (a *App) pollMarkdownEditResult(v *markdownViewState) {
+	select {
+	case result := <-v.editResults:
+		v.editPending = false
+		if result.action == "view" {
+			if result.err != nil {
+				if result.state == a.documentSessionState && result.generation == a.documentGeneration {
+					a.setStatus("切换 Markdown 视图失败：" + result.err.Error())
+				}
+				return
+			}
+			if result.state == a.documentSessionState && result.generation == a.documentGeneration {
+				a.setStatus("Markdown 视图已切换")
+			}
+			return
+		}
+		if result.err != nil {
+			if result.state == a.documentSessionState && result.generation == a.documentGeneration {
+				a.setStatus("Markdown 操作失败：" + result.err.Error())
+			}
+			return
+		}
+		if result.state == nil || result.state.markdownDoc == nil || result.view != v {
+			return
+		}
+		var output struct {
+			Changed   bool `json:"changed"`
+			Selection struct {
+				Start int `json:"start"`
+				End   int `json:"end"`
+			} `json:"selection"`
+		}
+		if err := json.Unmarshal(result.data, &output); err != nil {
+			if result.state == a.documentSessionState && result.generation == a.documentGeneration {
+				a.setStatus("无法读取 Markdown 操作结果：" + err.Error())
+			}
+			return
+		}
+		current := result.state.markdownDoc.Text()
+		if v.text() == result.source {
+			v.editor.SetText(current)
+			v.sourceSynced, v.observedDraft = current, current
+			setMarkdownDraftState(result.state, v, false, false)
+			v.cacheValid = false
+			start, end := clampEditorSelection(output.Selection.Start, output.Selection.End, current)
+			v.editor.SetCaret(start, end)
+			v.focus = true
+		}
+		if output.Changed && result.state == a.documentSessionState && result.generation == a.documentGeneration {
+			a.persistActiveSession()
+			label := map[string]string{"heading": "标题", "bold": "加粗", "italic": "斜体", "quote": "引用", "code": "代码", "link": "链接", "image": "图片", "list": "列表", "todo": "待办", "math": "公式"}[result.action]
+			a.setStatus("已应用 Markdown" + label)
+		}
+	default:
+	}
+}
 func (a *App) handleMarkdownAction(gtx layout.Context, id string) {
 	v := a.ensureMarkdownView()
 	switch id {
 	case "mode-edit", "mode-preview", "mode-split":
+		if v.editPending {
+			return
+		}
 		if markdownEditorComposing(&v.editor) {
 			return
 		}
 		a.flushMarkdownDraft()
-		v.mode = map[string]int{"mode-edit": 0, "mode-preview": 1, "mode-split": 2}[id]
+		mode := map[string]string{"mode-edit": "edit", "mode-preview": "preview", "mode-split": "split"}[id]
+		if a.startMarkdownViewApplicationCommand(v, mode) {
+			return
+		}
+		v.mode = map[string]int{"edit": 0, "preview": 1, "split": 2}[mode]
 		v.focus = v.mode != 1
 		a.persistActiveSession()
 	case "outline":
@@ -157,7 +301,7 @@ func (a *App) openMarkdownLink(destination string) {
 		a.startOpen(target)
 		return
 	}
-	go func() {
+	a.launchManagedBackground(func() {
 		var cmd *exec.Cmd
 		switch runtime.GOOS {
 		case "darwin":
@@ -168,7 +312,7 @@ func (a *App) openMarkdownLink(destination string) {
 			cmd = exec.Command("xdg-open", target)
 		}
 		_ = cmd.Run()
-	}()
+	})
 }
 
 func markdownLinkTarget(destination, sourcePath string) (string, bool, error) {

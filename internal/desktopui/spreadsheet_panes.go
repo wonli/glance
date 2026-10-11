@@ -1,12 +1,13 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
 )
 
-func (a *App) runSpreadsheetPanesCommand(operation string, edit func(document.SpreadsheetPanesEditor) error) {
+func (a *App) runSpreadsheetPanesCommand(operation string, arguments any, target document.SpreadsheetPaneFreeze, edit func(document.SpreadsheetPanesEditor) error) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
@@ -20,16 +21,36 @@ func (a *App) runSpreadsheetPanesCommand(operation string, edit func(document.Sp
 	if !ok {
 		return
 	}
-	go func() {
-		unlock := lockSessionAdapterWrite(state)
-		err := edit(editor)
-		unlock()
-		a.completeSessionOperation(state, token, err, true)
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		changed := true
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.panes.set", "spreadsheet_sheet", sheet, sheet, arguments)
+			err = commandErr
+			if err == nil {
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				changed = outcome.Changed
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			var current document.SpreadsheetPaneFreeze
+			current, err = editor.GetSheetPanes(sheet)
+			changed = current != target
+			if err == nil && changed {
+				err = edit(editor)
+			}
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed}:
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) showSpreadsheetFreezePanesDialog() {
@@ -74,23 +95,27 @@ func (a *App) showSpreadsheetFreezePanesDialog() {
 		a.modal.Hide()
 		switch action {
 		case "freeze_row":
-			a.runSpreadsheetPanesCommand("冻结首行", func(ed document.SpreadsheetPanesEditor) error {
-				return ed.SetSheetPanes(sheet, document.SpreadsheetPaneFreeze{Frozen: true, XSplit: 0, YSplit: 1})
+			target := document.SpreadsheetPaneFreeze{Frozen: true, YSplit: 1}
+			a.runSpreadsheetPanesCommand("冻结首行", map[string]any{"sheet": sheet, "operation": "freeze_rows", "rows": 1}, target, func(ed document.SpreadsheetPanesEditor) error {
+				return ed.SetSheetPanes(sheet, target)
 			})
 			a.setStatus("已冻结首行")
 		case "freeze_col":
-			a.runSpreadsheetPanesCommand("冻结首列", func(ed document.SpreadsheetPanesEditor) error {
-				return ed.SetSheetPanes(sheet, document.SpreadsheetPaneFreeze{Frozen: true, XSplit: 1, YSplit: 0})
+			target := document.SpreadsheetPaneFreeze{Frozen: true, XSplit: 1}
+			a.runSpreadsheetPanesCommand("冻结首列", map[string]any{"sheet": sheet, "operation": "freeze_columns", "columns": 1}, target, func(ed document.SpreadsheetPanesEditor) error {
+				return ed.SetSheetPanes(sheet, target)
 			})
 			a.setStatus("已冻结首列")
 		case "freeze_sel":
-			a.runSpreadsheetPanesCommand("冻结选区", func(ed document.SpreadsheetPanesEditor) error {
-				return ed.SetSheetPanes(sheet, document.SpreadsheetPaneFreeze{Frozen: true, XSplit: activeCol, YSplit: activeRow})
+			target := document.SpreadsheetPaneFreeze{Frozen: true, XSplit: activeCol, YSplit: activeRow}
+			a.runSpreadsheetPanesCommand("冻结选区", map[string]any{"sheet": sheet, "operation": "freeze_at", "rows": activeRow, "columns": activeCol}, target, func(ed document.SpreadsheetPanesEditor) error {
+				return ed.SetSheetPanes(sheet, target)
 			})
 			a.setStatus(fmt.Sprintf("已冻结至 %s", xlsx.CellName(activeCol+1, activeRow+1)))
 		case "unfreeze":
-			a.runSpreadsheetPanesCommand("取消冻结", func(ed document.SpreadsheetPanesEditor) error {
-				return ed.SetSheetPanes(sheet, document.SpreadsheetPaneFreeze{Frozen: false})
+			target := document.SpreadsheetPaneFreeze{}
+			a.runSpreadsheetPanesCommand("取消冻结", map[string]any{"sheet": sheet, "operation": "unfreeze"}, target, func(ed document.SpreadsheetPanesEditor) error {
+				return ed.SetSheetPanes(sheet, target)
 			})
 			a.setStatus("已取消冻结窗格")
 		}

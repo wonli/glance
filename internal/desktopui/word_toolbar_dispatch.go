@@ -10,6 +10,9 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	if state == nil || state.word == nil {
 		return
 	}
+	if a.runWordViewRibbonAction(actionID) {
+		return
+	}
 	switch actionID {
 	case "new":
 		word, err := docx.NewBlank()
@@ -41,18 +44,9 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	case "view-new-window":
 		a.requestWordNewWindow()
 	case "autosave":
-		state.wordAutoSave = !state.wordAutoSave
-		if state.wordAutoSave {
-			if state.path == "" {
-				a.setStatus("自动保存将在文档另存为后启用")
-			} else {
-				a.setStatus("已开启自动保存")
-			}
-		} else {
-			a.setStatus("已关闭自动保存")
+		if !a.runWordViewRibbonAction("autosave") {
+			a.setStatus("自动保存需要已连接的 Word 运行时")
 		}
-		a.persistActiveSession()
-		a.maybeAutoSaveWord(state)
 	case "format-painter":
 		a.toggleWordFormatPainter()
 	case "view-print-layout":
@@ -157,13 +151,17 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	case "review-language":
 		a.showWordLanguageDialog()
 	case "design-compact":
-		a.runWordSpacingCommand("紧凑段落间距", func(editor document.WordParagraphSpacingEditor) error {
-			return editor.SetAllParagraphsSpacing(0, 80)
-		})
+		if !a.runWordApplicationCommand("紧凑段落间距", "word.paragraph.spacing_all.set", map[string]any{"before_points": 0, "after_points": 4}) {
+			a.runWordSpacingCommand("紧凑段落间距", func(editor document.WordParagraphSpacingEditor) error {
+				return editor.SetAllParagraphsSpacing(0, 80)
+			})
+		}
 	case "design-spacious":
-		a.runWordSpacingCommand("宽松段落间距", func(editor document.WordParagraphSpacingEditor) error {
-			return editor.SetAllParagraphsSpacing(0, 240)
-		})
+		if !a.runWordApplicationCommand("宽松段落间距", "word.paragraph.spacing_all.set", map[string]any{"before_points": 0, "after_points": 12}) {
+			a.runWordSpacingCommand("宽松段落间距", func(editor document.WordParagraphSpacingEditor) error {
+				return editor.SetAllParagraphsSpacing(0, 240)
+			})
+		}
 	case "review-word-count":
 		a.showWordCountDetails()
 	case "review-restrict":

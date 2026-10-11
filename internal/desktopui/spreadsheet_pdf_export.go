@@ -2,12 +2,10 @@ package desktopui
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"strings"
 
 	"glance/internal/document"
-	sheetpdf "glance/internal/format/pdf"
 )
 
 type spreadsheetPDFPickerRequest struct {
@@ -21,24 +19,6 @@ type spreadsheetPDFExportResult struct {
 	sheet string
 	path  string
 	err   error
-}
-
-type spreadsheetPDFImageSource struct {
-	reader document.SpreadsheetImageReader
-}
-
-func (s spreadsheetPDFImageSource) SpreadsheetImages(sheet string) ([]document.SpreadsheetImage, error) {
-	if s.reader == nil {
-		return nil, nil
-	}
-	return s.reader.SpreadsheetImages(sheet)
-}
-
-func (s spreadsheetPDFImageSource) SpreadsheetImageBytes(imageID string) ([]byte, error) {
-	if s.reader == nil {
-		return nil, nil
-	}
-	return s.reader.SpreadsheetImageBytes(imageID)
 }
 
 func (a *App) requestSpreadsheetPDFExport() {
@@ -76,33 +56,38 @@ func (a *App) startSpreadsheetPDFFileExport(state *documentSessionState, sheet s
 		a.setStatus("工作簿已切换，PDF 导出已取消")
 		return
 	}
-	if a.wordPDFFontSource == nil {
-		shaper, err := newWordTextShaper()
-		if err != nil {
-			a.setStatus("初始化 PDF 字体服务失败：" + err.Error())
-			return
-		}
-		a.wordPDFFontSource = shaper
-	}
-
-	reader, ok := state.book.(document.GridReader)
+	dimensions, ok := state.book.(interface {
+		Dimension(string) (int, int, error)
+	})
 	if !ok {
-		a.setStatus("当前电子表格不支持网格视图，无法导出 PDF")
+		a.setStatus("当前电子表格不支持读取打印范围，无法导出 PDF")
 		return
 	}
-
+	unlock := lockSessionAdapterRead(state)
+	maxColumn, maxRow, err := dimensions.Dimension(sheet)
+	unlock()
+	if err != nil {
+		a.setStatus("读取工作表范围失败：" + err.Error())
+		return
+	}
+	if maxColumn <= 0 || maxRow <= 0 {
+		maxColumn, maxRow = 1, 1
+	}
+	if maxColumn > 100 || maxRow > 5000 {
+		a.setStatus("工作表范围超过 PDF 导出上限 5000 行 × 100 列")
+		return
+	}
+	bounds := document.CellRange{StartRow: 1, StartColumn: 1, EndRow: maxRow, EndColumn: maxColumn}
+	if !a.applicationSessionRegistered(state.documentID) {
+		a.setStatus("MCP 应用运行时不可用，无法通过共享导出能力执行")
+		return
+	}
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
 		a.setStatus("电子表格正在处理其他操作，请稍后重试")
 		return
 	}
 
-	var imageSrc sheetpdf.SpreadsheetImageSource
-	if imgReader, ok := state.book.(document.SpreadsheetImageReader); ok {
-		imageSrc = spreadsheetPDFImageSource{reader: imgReader}
-	}
-
-	fontSource := a.wordPDFFontSource
 	ctx, cancel := context.WithCancel(context.Background())
 	state.spreadsheetPDFExportCancel = cancel
 	state.spreadsheetPDFExportRunning = true
@@ -117,34 +102,14 @@ func (a *App) startSpreadsheetPDFFileExport(state *documentSessionState, sheet s
 	}
 
 	stateCopy := state
-	go func() {
+	a.launchManagedBackground(func() {
+		defer cancel()
 		defer stateCopy.finishOperation(token)
 		result := spreadsheetPDFExportResult{state: stateCopy, sheet: sheet, path: path}
-		unlock := lockSessionAdapterRead(stateCopy)
-		window, _, snapshotErr := readSpreadsheetPDFPreviewSnapshot(stateCopy, reader, sheet)
-		unlock()
-		opts := sheetpdf.SpreadsheetPDFOptions{
-			SheetName:      sheet,
-			Orientation:    orientation,
-			FitToPageWidth: true,
-		}
-		if snapshotErr != nil {
-			result.err = errors.New("读取工作表数据失败：" + snapshotErr.Error())
-		} else {
-			result.err = sheetpdf.ExportSpreadsheetPDFFileWithCommitGuard(ctx, path, window, opts, fontSource, imageSrc, func() (func(), error) {
-				stateCopy.spreadsheetExportCommitMu.Lock()
-				release := stateCopy.spreadsheetExportCommitMu.Unlock
-				if ctx.Err() != nil {
-					release()
-					return nil, ctx.Err()
-				}
-				if stateCopy.closed.Load() {
-					release()
-					return nil, errors.New("工作簿已关闭，未覆盖目标文件")
-				}
-				return release, nil
-			})
-		}
+		_, result.err = a.executeRibbonApplicationCommandWithContext(ctx, token,
+			"spreadsheet.document.export_pdf", "spreadsheet_sheet", sheet, sheet,
+			map[string]any{"sheet": sheet, "bounds": bounds, "target_path": path, "orientation": orientation},
+		)
 		select {
 		case results <- result:
 			if appWindow != nil {
@@ -152,7 +117,7 @@ func (a *App) startSpreadsheetPDFFileExport(state *documentSessionState, sheet s
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 	a.setStatus("正在生成电子表格 PDF…")
 }
 

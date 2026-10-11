@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"glance/internal/document"
@@ -22,7 +23,7 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 		}
 		return
 	}
-	editor, ok := any(state.book).(document.SpreadsheetImageEditor)
+	_, ok := any(state.book).(document.SpreadsheetImageEditor)
 	if !ok {
 		if a.window != nil {
 			a.setStatus("当前工作簿不支持编辑图片")
@@ -50,19 +51,24 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 	}
 	generation, sheet := a.documentGeneration, state.sheet
 	results, shutdown, window := a.gridPictureCommands, a.shutdown, a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		result := gridPictureCommandResult{state: state, token: token, generation: generation, sheet: sheet, operation: request.operation}
-		unlock := lockSessionAdapterWrite(state)
+		commandID := ""
+		arguments := map[string]any{"sheet": sheet}
+		targetType, targetID := "spreadsheet_image", request.imageID
 		switch request.kind {
 		case gridPictureCommandMove:
 			if request.target == nil {
 				result.err = fmt.Errorf("missing picture placement")
 			} else {
 				target := request.target
-				result.err = editor.MoveSpreadsheetImage(request.imageID, target.Row, target.Column, target.OffsetX, target.OffsetY)
+				commandID = "spreadsheet.image.move"
+				arguments["image_id"], arguments["row"], arguments["column"] = request.imageID, target.Row, target.Column
+				arguments["offset_x"], arguments["offset_y"] = target.OffsetX, target.OffsetY
 			}
 		case gridPictureCommandResize:
-			result.err = editor.ResizeSpreadsheetImage(request.imageID, request.widthPx)
+			commandID = "spreadsheet.image.resize"
+			arguments["image_id"], arguments["width_px"] = request.imageID, request.widthPx
 		case gridPictureCommandInsert:
 			placement := request.placement
 			if request.findFreeAnchor {
@@ -71,7 +77,9 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 					result.err = fmt.Errorf("workbook cannot find an open picture anchor")
 				} else {
 					var existing []document.SpreadsheetImage
+					unlock := lockSessionAdapterRead(state)
 					existing, result.err = reader.SpreadsheetImages(sheet)
+					unlock()
 					if result.err == nil {
 						placement.Row, placement.Column = nearbyFreeGridPictureAnchor(existing, placement.Row, placement.Column)
 					}
@@ -80,25 +88,53 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 			if result.err != nil {
 				break
 			}
-			var imageID string
-			imageID, result.err = editor.InsertSpreadsheetImage(placement, request.data)
-			result.selectedID = imageID
+			commandID = "spreadsheet.image.insert"
+			arguments = map[string]any{
+				"sheet": placement.Sheet, "row": placement.Row, "column": placement.Column,
+				"offset_x": placement.OffsetX, "offset_y": placement.OffsetY,
+				"width_px": placement.WidthPx, "height_px": placement.HeightPx,
+				"media_type": placement.MediaType, "name": placement.Name, "alt_text": placement.AltText,
+				"image_base64": request.data,
+			}
+			targetType, targetID = "spreadsheet_cell", fmt.Sprintf("%s!%s%d", placement.Sheet, columnName(placement.Column), placement.Row)
 			request.placement = placement
 		case gridPictureCommandReplace:
-			result.err = editor.ReplaceSpreadsheetImage(request.imageID, request.mediaType, request.data)
+			commandID = "spreadsheet.image.replace"
+			arguments["image_id"], arguments["media_type"], arguments["image_base64"] = request.imageID, request.mediaType, request.data
 			result.selectedID = request.imageID
 		case gridPictureCommandDelete:
-			result.err = editor.DeleteSpreadsheetImage(request.imageID)
+			commandID = "spreadsheet.image.delete"
+			arguments["image_id"] = request.imageID
 		default:
 			result.err = fmt.Errorf("unknown picture operation")
 		}
+		if result.err == nil && commandID != "" {
+			commandResult, err := a.executeRibbonApplicationCommand(token, commandID, targetType, targetID, sheet, arguments)
+			result.err = err
+			if err == nil {
+				result.revision = commandResult.Revision
+				var outcome struct {
+					Changed bool   `json:"changed"`
+					ImageID string `json:"image_id"`
+				}
+				if err := json.Unmarshal(commandResult.Data, &outcome); err != nil {
+					result.err = fmt.Errorf("decode spreadsheet image command result: %w", err)
+				} else {
+					result.mutated = outcome.Changed
+					if request.kind == gridPictureCommandInsert {
+						result.selectedID = outcome.ImageID
+					}
+				}
+			}
+		}
 		if result.err == nil {
-			result.mutated = true
 			reader, supported := any(state.book).(document.SpreadsheetImageReader)
 			if !supported {
 				result.err = fmt.Errorf("workbook cannot refresh picture metadata")
 			} else {
+				unlock := lockSessionAdapterRead(state)
 				result.images, result.err = reader.SpreadsheetImages(sheet)
+				unlock()
 			}
 			if result.err == nil {
 				switch request.kind {
@@ -119,12 +155,10 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 				}
 			}
 		}
-		unlock()
-		if result.mutated {
-			a.ensureDesktopRuntime().publishSessionRevision(token.documentID, token.revision+1)
-		}
 		state.finishOperation(token)
-		result.revision = state.wordRevisionAtomic.Load()
+		if result.revision == 0 {
+			result.revision = state.wordRevisionAtomic.Load()
+		}
 		select {
 		case results <- result:
 			if window != nil {
@@ -132,7 +166,7 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 }
 
 func pictureCommandOperationName(kind gridPictureCommandKind) string {

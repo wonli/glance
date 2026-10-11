@@ -17,90 +17,110 @@ import (
 	"gioui.org/widget"
 )
 
-// sharedDocumentSession owns document data and work that must be consistent
-// across every window displaying the same logical document.
+// liveDocumentState contains the canonical document identity, revision, and
+// format-backed data shared by the application Runtime adapter and every
+// desktop view. It deliberately contains no Gio widgets or window state.
+type liveDocumentState struct {
+	adapterMu          sync.RWMutex
+	documentID         string
+	wordRevision       uint64
+	path               string
+	book               document.Spreadsheet
+	word               *docx.Document
+	wordBlocks         []document.WordBlock
+	jsonDoc            *jsondoc.Document
+	markdownDoc        *markdowndoc.Document
+	pdfDoc             *pdfdoc.Document
+	pptxDoc            *pptx.Document
+	sheets             []string
+	wordRevisionAtomic atomic.Uint64
+	publishedRevision  atomic.Uint64
+}
+
+// sharedDocumentSession owns lifecycle, draft synchronization, and work that
+// must be consistent across every window displaying the same document.
+// Canonical document state is grouped in liveDocumentState; view widgets stay
+// in documentSessionState.
 type sharedDocumentSession struct {
-	adapterMu                   sync.RWMutex
-	operationMu                 sync.Mutex
-	wordLayoutCancelMu          sync.Mutex
-	wordBlocksMu                sync.RWMutex
-	wordDraftMu                 sync.RWMutex
-	viewsMu                     sync.RWMutex
-	operationGeneration         uint64
-	activeOperation             sessionOperationToken
-	operationActive             bool
-	operationChanged            chan struct{}
-	finalized                   atomic.Bool
-	adaptersClosed              atomic.Bool
-	wordLayoutReleased          atomic.Bool
-	wordRevisionAtomic          atomic.Uint64
-	publishedRevision           atomic.Uint64
-	wordDraftEpoch              atomic.Uint64
-	wordTextResetEpoch          atomic.Uint64
-	wordRestoreNoticeMu         sync.Mutex
-	wordRestoreError            string
-	wordRestoreErrorEpoch       uint64
-	wordRestoreLaunchMu         sync.Mutex
-	wordRestoreLaunchClaimed    bool
-	wordLayoutPageCount         atomic.Int64
-	wordExportCommitMu          sync.Mutex
-	spreadsheetExportCommitMu   sync.Mutex
-	documentID                  string
-	wordRevision                uint64
-	path                        string
-	book                        document.Spreadsheet
-	word                        *docx.Document
-	wordBlocks                  []document.WordBlock
-	jsonDoc                     *jsondoc.Document
-	markdownDoc                 *markdowndoc.Document
-	pdfDoc                      *pdfdoc.Document
-	pptxDoc                     *pptx.Document
-	sheets                      []string
-	wordRunCommitted            map[string]string
-	wordRunDrafts               map[string]string
-	views                       map[uint64]*documentSessionState
-	ownerRuntime                *desktopRuntime
-	wordLayoutPendingKey        *wordLayoutKey
-	wordLayoutAcceptedKey       *wordLayoutKey
-	wordLayoutErrorKey          *wordLayoutKey
-	wordLayoutResult            *wordlayout.Result
-	wordLayoutError             string
-	wordLayoutCancel            context.CancelFunc
-	wordLayoutPendingView       *documentSessionState
-	wordLayoutWarningConfirmed  bool
-	wordInsertionRunning        bool
-	wordFlushRequested          atomic.Bool
-	wordFlushAllDrafts          atomic.Bool
-	wordForceDraftFlush         atomic.Bool
-	wordRestoreAfterDraftsID    int64
-	wordSaveAfterDrafts         bool
-	wordSaveAfterDraftsReason   wordSaveReason
-	wordPDFExportAfterDrafts    bool
-	wordPDFExportAfterLayout    bool
-	wordPDFExportRunning        bool
-	wordPDFExportCancel         context.CancelFunc
-	spreadsheetPDFExportRunning bool
-	spreadsheetPDFExportCancel  context.CancelFunc
-	wordPrintAfterDrafts        bool
-	wordPrintAfterLayout        bool
-	wordPrintPreparing          bool
-	wordPrintRunning            bool
-	wordPrintCancel             context.CancelFunc
-	wordAutoSave                bool
-	formatRunning               atomic.Bool
-	saveRunning                 atomic.Bool
+	liveDocumentState
+	operationMu                  sync.Mutex
+	wordLayoutCancelMu           sync.Mutex
+	wordBlocksMu                 sync.RWMutex
+	wordDraftMu                  sync.RWMutex
+	presentationDraftMu          sync.RWMutex
+	viewsMu                      sync.RWMutex
+	operationGeneration          uint64
+	activeOperation              sessionOperationToken
+	operationActive              bool
+	operationChanged             chan struct{}
+	finalized                    atomic.Bool
+	adaptersClosed               atomic.Bool
+	wordLayoutReleased           atomic.Bool
+	spreadsheetDraftViews        atomic.Int32
+	markdownDraftViews           atomic.Int32
+	markdownCompositionViews     atomic.Int32
+	wordDraftEpoch               atomic.Uint64
+	wordTextResetEpoch           atomic.Uint64
+	wordRestoreNoticeMu          sync.Mutex
+	wordRestoreError             string
+	wordRestoreErrorEpoch        uint64
+	wordRestoreLaunchMu          sync.Mutex
+	wordRestoreLaunchClaimed     bool
+	wordLayoutPageCount          atomic.Int64
+	wordExportCommitMu           sync.Mutex
+	spreadsheetExportCommitMu    sync.Mutex
+	wordRunCommitted             map[string]string
+	wordRunDrafts                map[string]string
+	presentationDraftDirty       map[uint64]map[string]bool
+	views                        map[uint64]*documentSessionState
+	ownerRuntime                 *desktopRuntime
+	wordLayoutPendingKey         *wordLayoutKey
+	wordLayoutAcceptedKey        *wordLayoutKey
+	wordLayoutErrorKey           *wordLayoutKey
+	wordLayoutResult             *wordlayout.Result
+	wordLayoutError              string
+	wordLayoutCancel             context.CancelFunc
+	wordLayoutPendingView        *documentSessionState
+	wordLayoutWarningConfirmed   bool
+	wordInsertionRunning         bool
+	wordFlushRequested           atomic.Bool
+	wordFlushAllDrafts           atomic.Bool
+	wordForceDraftFlush          atomic.Bool
+	wordRestoreAfterDraftsID     int64
+	wordSaveAfterDrafts          bool
+	wordSaveAfterDraftsReason    wordSaveReason
+	wordPDFExportAfterDrafts     bool
+	wordPDFExportAfterLayout     bool
+	wordPDFExportRunning         bool
+	wordPDFExportCancel          context.CancelFunc
+	spreadsheetPDFExportRunning  bool
+	spreadsheetPDFExportCancel   context.CancelFunc
+	presentationPDFExportRunning bool
+	spreadsheetPrintRunning      bool
+	spreadsheetPrintCancel       context.CancelFunc
+	wordPrintAfterDrafts         bool
+	wordPrintAfterLayout         bool
+	wordPrintPreparing           bool
+	wordPrintRunning             bool
+	wordPrintCancel              context.CancelFunc
+	wordAutoSave                 bool
+	formatRunning                atomic.Bool
+	saveRunning                  atomic.Bool
 }
 
 func newSharedDocumentSession(path string) *sharedDocumentSession {
 	idle := make(chan struct{})
 	close(idle)
 	session := &sharedDocumentSession{
-		path:             path,
-		wordRevision:     1,
-		operationChanged: idle,
-		wordRunCommitted: make(map[string]string),
-		wordRunDrafts:    make(map[string]string),
-		views:            make(map[uint64]*documentSessionState),
+		liveDocumentState: liveDocumentState{
+			path:         path,
+			wordRevision: 1,
+		},
+		operationChanged:       idle,
+		wordRunCommitted:       make(map[string]string),
+		wordRunDrafts:          make(map[string]string),
+		presentationDraftDirty: make(map[uint64]map[string]bool),
+		views:                  make(map[uint64]*documentSessionState),
 	}
 	session.wordRevisionAtomic.Store(session.wordRevision)
 	session.publishedRevision.Store(session.wordRevision)
@@ -147,6 +167,7 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 		selectedBlock:            -1,
 	}
 	shared.attachView(windowID, state)
+	state.cellEdit.session = shared
 	state.cellEditor.SingleLine = true
 	state.cellEditor.Submit = true
 	state.formulaEditor.SingleLine = true

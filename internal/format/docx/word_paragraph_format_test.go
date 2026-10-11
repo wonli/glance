@@ -282,13 +282,17 @@ func TestWordFormatPainterCopiesSupportedTextAndParagraphFormatting(t *testing.T
 	targetBefore := *targetRun
 	targetParagraphBefore := *targetParagraph
 	painter, ok := any(doc).(interface {
-		ApplyWordFormatting(sourceRunID, targetRunID string) error
+		ApplyWordFormatting(sourceRunID, targetRunID string) (bool, error)
 	})
 	if !ok {
 		t.Fatal("DOCX adapter does not expose format painting")
 	}
-	if err := painter.ApplyWordFormatting(sourceRun.ID, targetRun.ID); err != nil {
+	changed, err := painter.ApplyWordFormatting(sourceRun.ID, targetRun.ID)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("format painter reported no change for different source and target formatting")
 	}
 
 	blocks = doc.WordBlocks()

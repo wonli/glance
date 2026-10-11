@@ -12,7 +12,7 @@ func (v *presentationViewState) beginPresentationTextEdit(elem document.Presenta
 	if elem.Kind != document.ElementKindText {
 		return
 	}
-	v.selectedShape = elem.ID
+	setPresentationSingleSelection(v, elem.ID)
 	v.editingShape = elem.ID
 	v.shapeDraftText = elem.PlainText()
 	v.shapeEditor.SetText(v.shapeDraftText)

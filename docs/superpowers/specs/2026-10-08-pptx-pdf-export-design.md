@@ -1,6 +1,6 @@
 # PPTX PDF Export Through the Shared Preview
 
-**Status:** Approved for specification on 2026-10-08. Implementation is not yet approved.
+**Status:** Implemented; build and static analysis pass. Representative visual acceptance remains pending.
 
 ## Problem
 
@@ -27,7 +27,7 @@ The preview and export must use the same immutable presentation snapshot. The th
 3. Orientation changes update the shared preview's paper fit. Page navigation selects a slide without changing the active slide in the editor.
 4. Cancel closes the dialog without opening a picker or creating a file.
 5. Confirm closes the preview and opens the existing asynchronous PDF save picker. The export worker writes from the captured snapshot, not from mutable UI state.
-6. Before replacing the destination, the exporter verifies that the originating presentation is still open and its revision matches the captured revision. It writes to a sibling temporary file, validates the generated PDF, then atomically replaces the destination. Failure or cancellation leaves any existing destination and the PPTX source untouched.
+6. Before creating the destination, the exporter verifies that the originating presentation is still open and its revision matches the captured revision. It writes to a sibling temporary file, validates the generated PDF, then exclusively links the staged file to the new destination. An existing destination causes failure and is never replaced. Failure or cancellation leaves the destination and PPTX source untouched.
 
 Export does not adopt the PDF path as the presentation path, mark the PPTX clean, or otherwise alter its saved/dirty state. Export errors and success use the existing status reporting conventions.
 

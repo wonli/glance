@@ -71,6 +71,22 @@ func (a *App) startSpreadsheetShareCopyFile(request *spreadsheetShareCopyPickerR
 		a.setStatus("共享副本不能覆盖当前 XLSX")
 		return
 	}
+	if a.applicationSessionRegistered(state.documentID) {
+		results, shutdown := a.spreadsheetShareCopyResults, a.shutdown
+		if results == nil {
+			a.setStatus("共享副本导出不可用")
+			return
+		}
+		if a.startDocumentExportCopy(state, path, state.wordRevisionAtomic.Load(), func(outputPath string, err error) {
+			select {
+			case results <- spreadsheetShareCopyResult{state: state, path: outputPath, err: err}:
+			case <-shutdown:
+			}
+		}) {
+			a.setStatus("正在导出共享 XLSX 副本…")
+			return
+		}
+	}
 
 	book := state.book
 	snapshooter, ok := book.(interface{ Snapshot() ([]byte, error) })
@@ -90,7 +106,7 @@ func (a *App) startSpreadsheetShareCopyFile(request *spreadsheetShareCopyPickerR
 		a.setStatus("共享副本导出不可用")
 		return
 	}
-	go func() {
+	a.launchManagedBackground(func() {
 		defer state.finishOperation(token)
 		result := spreadsheetShareCopyResult{state: state, path: path}
 		result.err = saveShareCopySnapshot(
@@ -136,7 +152,7 @@ func (a *App) startSpreadsheetShareCopyFile(request *spreadsheetShareCopyPickerR
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 	a.setStatus("正在导出共享 XLSX 副本…")
 }
 

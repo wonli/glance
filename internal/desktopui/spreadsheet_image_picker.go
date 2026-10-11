@@ -82,7 +82,7 @@ func (a *App) startSpreadsheetImagePicker(operation spreadsheetImagePickerOperat
 		choose = chooseOfficeImageFile
 	}
 	results, shutdown, window := a.xlsxImagePickerResults, a.shutdown, a.window
-	go func() {
+	a.launchManagedBackground(func() {
 		result.path, result.err = choose()
 		if result.err == nil && result.path != "" {
 			var file spreadsheetImageFile
@@ -96,7 +96,7 @@ func (a *App) startSpreadsheetImagePicker(operation spreadsheetImagePickerOperat
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) handleSpreadsheetImagePickerResult(result spreadsheetImagePickerResult) {

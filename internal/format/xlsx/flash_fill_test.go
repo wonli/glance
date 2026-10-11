@@ -76,3 +76,30 @@ func TestWorkbookFlashFillAndUndo(t *testing.T) {
 		t.Fatalf("expected B2 to be restored after redo, got %q", b2AfterRedo)
 	}
 }
+
+func TestWorkbookFlashFillOnCompleteRangeIsNoop(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	sheet := wb.SheetNames()[0]
+	if err := wb.SetCellText(sheet, "A1", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.SetCellText(sheet, "A2", "2"); err != nil {
+		t.Fatal(err)
+	}
+	wb.SetDirty(false)
+
+	result, err := wb.FlashFill(sheet, document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 1})
+	if err != nil {
+		t.Fatalf("FlashFill complete range: %v", err)
+	}
+	if result.RowsFilled != 0 || wb.Dirty() {
+		t.Fatalf("complete-range fill result=%+v dirty=%v, want clean zero-fill no-op", result, wb.Dirty())
+	}
+	if _, err := wb.FlashFill(sheet, document.CellRange{StartRow: 1, StartColumn: 2, EndRow: 3, EndColumn: 2}); err == nil {
+		t.Fatal("FlashFill without any source pattern should still report an error")
+	}
+	if wb.Dirty() {
+		t.Fatal("missing-pattern failure dirtied the workbook")
+	}
+}

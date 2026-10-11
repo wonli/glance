@@ -29,6 +29,7 @@ type homeSection uint8
 const (
 	homeSectionRecent homeSection = iota
 	homeSectionFavorites
+	homeSectionSettings
 )
 
 type homeFileMetadata struct {
@@ -91,7 +92,7 @@ func (a *App) refreshHomeMetadata() {
 	recents := a.collection.Recents()
 	a.homeMetadataGeneration++
 	generation := a.homeMetadataGeneration
-	go func() {
+	a.launchManagedBackground(func() {
 		entries := make(map[string]homeFileMetadata, len(recents))
 		for _, item := range recents {
 			info, err := os.Stat(item.Path)
@@ -105,7 +106,7 @@ func (a *App) refreshHomeMetadata() {
 		case a.homeMetadataResults <- homeMetadataResult{generation: generation, entries: entries}:
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
@@ -155,7 +156,10 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return a.layoutHomeNavRow(gtx, "favorites", "star", "收藏", len(a.homeFavorites), a.homeSection == homeSectionFavorites)
+						return a.layoutHomeNavRow(gtx, "favorites", "star-outline", "收藏", len(a.homeFavorites), a.homeSection == homeSectionFavorites)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return a.layoutHomeNavRow(gtx, "agent-settings", "settings-2", "设置", -1, a.homeSection == homeSectionSettings)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(18), Bottom: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -188,6 +192,14 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.layoutHomeFolderRow(gtx) }),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return a.layoutHomeNavRow(gtx, "mcp", "settings", "MCP 连接", -1, false)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return a.layoutHomeNavRow(gtx, "agent-chat", "ellipsis", "AI 助手", -1, false)
+					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
 				)
 			})
@@ -219,6 +231,16 @@ func (a *App) processHomeNavClicks(gtx layout.Context) {
 			a.homeSection = navigation.section
 		}
 	}
+	if a.homeNavButton("mcp").Clicked(gtx) {
+		a.showMCPConnectionDialog()
+	}
+	if a.homeNavButton("agent-chat").Clicked(gtx) {
+		a.showAgentChat()
+	}
+	if a.homeNavButton("agent-settings").Clicked(gtx) {
+		a.prepareAgentSettingsPage()
+		a.homeSection = homeSectionSettings
+	}
 }
 
 func (a *App) layoutHomeNavRow(gtx layout.Context, id, glyph, label string, count int, selected bool) layout.Dimensions {
@@ -240,24 +262,28 @@ func (a *App) layoutHomeNavRow(gtx layout.Context, id, glyph, label string, coun
 			},
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					children := []layout.FlexChild{
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return homeIcon(gtx, glyph, 20, color.NRGBA{R: 63, G: 71, B: 82, A: 255})
+							iconColor := color.NRGBA{R: 63, G: 71, B: 82, A: 255}
+							return homeIcon(gtx, glyph, 20, iconColor)
 						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							gtx.Constraints.Min.Y = 0
 							return layout.Inset{Left: unit.Dp(12), Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return homeTextLabel(gtx, a.theme, label, 15, homeText, selected)
 							})
 						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					}
+					if count >= 0 {
+						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							countText := fmt.Sprintf("%d", count)
 							gtx.Constraints.Min.Y = 0
 							return layout.Inset{Left: unit.Dp(12), Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return homeTextLabel(gtx, a.theme, countText, 13, homeMuted, false)
 							})
-						}),
-					)
+						}))
+					}
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 				})
 			},
 		)
@@ -295,6 +321,13 @@ func (a *App) layoutHomeFolderRow(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutHomeContent(gtx layout.Context) layout.Dimensions {
+	if a.homeSection == homeSectionSettings {
+		return layout.Inset{Top: unit.Dp(64), Left: unit.Dp(64), Right: unit.Dp(64), Bottom: unit.Dp(64)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return a.homeContentList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+				return a.layoutAgentSettingsPage(gtx)
+			})
+		})
+	}
 	return layout.Inset{Top: unit.Dp(68), Left: unit.Dp(50), Right: unit.Dp(50)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return a.homeContentList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 			return a.layoutHomeContentPage(gtx)

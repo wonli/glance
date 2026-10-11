@@ -3,6 +3,7 @@ package desktopui
 import (
 	"glance/internal/document"
 	"image"
+	"image/color"
 	"strings"
 
 	"gioui.org/font"
@@ -69,40 +70,52 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 		if v.pictureCrop.active && v.pictureCrop.shapeID != elem.ID {
 			a.cancelPresentationPictureCrop(v)
 		}
-		v.selectedShape = elem.ID
-		if elem.Kind == document.ElementKindPicture && elem.CanEditPicture {
-			v.activeRibbonTab = "picture"
-		} else if v.activeRibbonTab == "picture" {
-			v.activeRibbonTab = "home"
-		}
-		if elem.Kind == document.ElementKindText {
-			if presentationElementHasPlaceholderPrompt(elem) || wasSelected || click.NumClicks > 1 {
-				v.beginPresentationTextEdit(elem)
+		multiSelect := click.Modifiers.Contain(key.ModCtrl | key.ModCommand | key.ModShift)
+		if multiSelect {
+			togglePresentationSelection(v, elem.ID)
+			v.editingShape = 0
+			a.markPresentationTextEditorOpen(v, false)
+			v.shapeDraftText = ""
+			gtx.Execute(key.FocusCmd{Tag: &v.canvasBlankClick})
+		} else {
+			setPresentationSingleSelection(v, elem.ID)
+			if elem.Kind == document.ElementKindPicture && elem.CanEditPicture {
+				v.activeRibbonTab = "picture"
+			} else if v.activeRibbonTab == "picture" {
+				v.activeRibbonTab = "home"
+			}
+			if elem.Kind == document.ElementKindText {
+				if presentationElementHasPlaceholderPrompt(elem) || wasSelected || click.NumClicks > 1 {
+					v.beginPresentationTextEdit(elem)
+					a.markPresentationTextEditorOpen(v, true)
+				} else {
+					v.editingShape = 0
+					a.markPresentationTextEditorOpen(v, false)
+					v.shapeDraftText = ""
+					gtx.Execute(key.FocusCmd{Tag: &v.canvasBlankClick})
+				}
+				if v.editingShape == elem.ID && hasClickPosition && !presentationElementHasPlaceholderPrompt(elem) {
+					inset := presentationEditorLayoutInset(gtx, elem, scale)
+					editorInset := image.Pt(gtx.Dp(inset.Left), gtx.Dp(inset.Top))
+					textMaxWidth := max(1, elemW-2*editorInset.X)
+					fontSize := presentationElementFontSize(elem)
+					textSize := presentationCanvasFontSize(gtx, fontSize, scale)
+					caret := presentationCaretOffsetAt(gtx, a.theme, presentationElementEditorFont(elem), v.shapeDraftText, clickInElement.Sub(editorInset), textSize, textMaxWidth, textMaxWidth, presentationElementTextAlignment(elem), presentationElementParagraphMetrics(elem), scale)
+					v.shapeEditor.SetCaret(caret, caret)
+				}
+				if v.editingShape == elem.ID {
+					gtx.Execute(key.FocusCmd{Tag: &v.shapeEditor})
+				}
 			} else {
 				v.editingShape = 0
+				a.markPresentationTextEditorOpen(v, false)
 				v.shapeDraftText = ""
 				gtx.Execute(key.FocusCmd{Tag: &v.canvasBlankClick})
 			}
-			if v.editingShape == elem.ID && hasClickPosition && !presentationElementHasPlaceholderPrompt(elem) {
-				inset := presentationEditorLayoutInset(gtx, elem, scale)
-				editorInset := image.Pt(gtx.Dp(inset.Left), gtx.Dp(inset.Top))
-				textMaxWidth := max(1, elemW-2*editorInset.X)
-				fontSize := presentationElementFontSize(elem)
-				textSize := presentationCanvasFontSize(gtx, fontSize, scale)
-				caret := presentationCaretOffsetAt(gtx, a.theme, presentationElementEditorFont(elem), v.shapeDraftText, clickInElement.Sub(editorInset), textSize, textMaxWidth, textMaxWidth, presentationElementTextAlignment(elem), presentationElementParagraphMetrics(elem), scale)
-				v.shapeEditor.SetCaret(caret, caret)
-			}
-			if v.editingShape == elem.ID {
-				gtx.Execute(key.FocusCmd{Tag: &v.shapeEditor})
-			}
-		} else {
-			v.editingShape = 0
-			v.shapeDraftText = ""
-			gtx.Execute(key.FocusCmd{Tag: &v.canvasBlankClick})
 		}
 	}
 	// Editing and selection share one frame over the object's original bounds.
-	isSelected := v.selectedShape == elem.ID
+	isSelected := v.selectedShape == elem.ID || v.selectedShapes[elem.ID]
 	isEditing = v.editingShape == elem.ID
 
 	// 1. Draw the shape geometry and fill using the same renderer as thumbnails.
@@ -113,6 +126,18 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 	}
 	drawPresentationElementShape(gtx, shapeToDraw, image.Pt(elemW, elemH), scale)
 	shapeOffset.Pop()
+	if elem.Kind == document.ElementKindAudio || elem.Kind == document.ElementKindVideo {
+		labelText := "音频"
+		if elem.Kind == document.ElementKindVideo {
+			labelText = "视频"
+		}
+		labelOffset := op.Offset(image.Pt(elemX+8, elemY+8)).Push(gtx.Ops)
+		label := material.Label(a.theme, unit.Sp(float32(max(10, int(14*scale)))), labelText)
+		label.Color = color.NRGBA{R: 31, G: 41, B: 55, A: 255}
+		label.Font.Weight = font.Medium
+		label.Layout(gtx)
+		labelOffset.Pop()
+	}
 
 	// 3. Render picture
 	if elem.Kind == document.ElementKindPicture && elem.Image != nil {
@@ -130,6 +155,9 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 
 	// 4. In-place text editor
 	if isEditing {
+		if a.documentSessionState != nil && a.documentSessionState.pptxDoc == a.pptxDoc {
+			a.documentSessionState.setPresentationDraftDirty(a.windowID, presentationTextEditorOpen, true)
+		}
 		editorOrigin := presentationEditorOrigin(elemX, elemY)
 		off := op.Offset(editorOrigin).Push(gtx.Ops)
 		edGtx := gtx
@@ -156,12 +184,15 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 		editorClip.Pop()
 		v.editingArea = selectionRect
 		v.shapeDraftText = v.shapeEditor.Text()
+		if a.documentSessionState != nil && a.documentSessionState.pptxDoc == a.pptxDoc {
+			a.documentSessionState.setPresentationDraftDirty(a.windowID, presentationTextDraft, v.shapeDraftText != elem.PlainText())
+		}
 		off.Pop()
 		if isSelected {
 			drawPresentationTransformSelection(gtx, selectionRect)
 		}
 		rotation.Pop()
-		registerPresentationTransformInputs(gtx, v, elem, interaction, selectionRect, isSelected, true)
+		registerPresentationTransformInputs(gtx, v, elem, interaction, selectionRect, v.selectedShape == elem.ID && len(presentationSelectedIDs(v)) == 1, true)
 		return
 	} else if len(elem.Paragraphs) > 0 || presentationElementHasPlaceholderPrompt(elem) {
 		// 5. Read-only formatted text rendering
@@ -304,7 +335,7 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 			drawPresentationTransformSelection(gtx, selectionRect)
 		}
 		rotation.Pop()
-		registerPresentationTransformInputs(gtx, v, elem, interaction, selectionRect, isSelected, isEditing)
+		registerPresentationTransformInputs(gtx, v, elem, interaction, selectionRect, v.selectedShape == elem.ID && len(presentationSelectedIDs(v)) == 1, isEditing)
 		return
 	}
 
@@ -336,6 +367,6 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 	if v.pictureCrop.active && v.pictureCrop.shapeID == elem.ID {
 		registerPresentationCropInputs(gtx, v, elem, interaction, selectionRect)
 	} else {
-		registerPresentationTransformInputs(gtx, v, elem, interaction, selectionRect, isSelected, isEditing)
+		registerPresentationTransformInputs(gtx, v, elem, interaction, selectionRect, v.selectedShape == elem.ID && len(presentationSelectedIDs(v)) == 1, isEditing)
 	}
 }

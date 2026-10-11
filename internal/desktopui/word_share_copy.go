@@ -79,6 +79,22 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 		a.setStatus("共享副本不能覆盖当前 DOCX")
 		return
 	}
+	if a.applicationSessionRegistered(state.documentID) {
+		results, shutdown := a.wordShareCopyResults, a.shutdown
+		if results == nil {
+			a.setStatus("共享副本导出不可用")
+			return
+		}
+		if a.startDocumentExportCopy(state, path, request.revision, func(outputPath string, err error) {
+			select {
+			case results <- wordShareCopyResult{state: state, path: outputPath, err: err}:
+			case <-shutdown:
+			}
+		}) {
+			a.setStatus("正在导出共享 DOCX 副本…")
+			return
+		}
+	}
 
 	word := state.word
 	revision, draftEpoch := request.revision, request.draftEpoch
@@ -93,7 +109,7 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 		a.setStatus("共享副本导出不可用")
 		return
 	}
-	go func() {
+	a.launchManagedBackground(func() {
 		defer state.finishOperation(token)
 		result := wordShareCopyResult{state: state, path: path}
 		result.err = saveShareCopySnapshot(
@@ -129,7 +145,7 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 			}
 		case <-shutdown:
 		}
-	}()
+	})
 	a.setStatus("正在导出共享 DOCX 副本…")
 }
 

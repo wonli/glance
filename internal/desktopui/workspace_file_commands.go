@@ -83,7 +83,7 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 		}
 	}
 	runner := a.fileCommandRunner
-	go func() {
+	a.launchManagedBackground(func() {
 		result := fileCommandResult{kind: kind}
 		if runner != nil {
 			result = runner(kind, format)
@@ -108,7 +108,7 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 			}
 		case <-a.shutdown:
 		}
-	}()
+	})
 }
 
 func scanOfficeFolder(path string) ([]workspace.Recent, error) {

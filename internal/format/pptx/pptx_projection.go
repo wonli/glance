@@ -10,6 +10,14 @@ import (
 
 // Snapshot generates an immutable view data model for the desktop UI.
 func (d *Document) Snapshot() document.PresentationSnapshot {
+	snapshot, _ := d.SnapshotWindow(0, int(^uint(0)>>1), int(^uint(0)>>1))
+	return snapshot
+}
+
+// SnapshotWindow projects a bounded slide window and no more than maxElements
+// shape and inherited elements in total. It is used by Agent queries so a
+// large presentation does not require projecting every slide into memory.
+func (d *Document) SnapshotWindow(start, limit, maxElements int) (document.PresentationSnapshot, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -28,16 +36,32 @@ func (d *Document) Snapshot() document.PresentationSnapshot {
 	}
 
 	if d.pres == nil {
-		return snap
+		return snap, false
 	}
 
 	slides, err := d.pres.Slides()
 	if err != nil {
-		return snap
+		return snap, false
 	}
 	snap.SlideCount = len(slides)
+	if start < 0 {
+		start = 0
+	}
+	if start > len(slides) {
+		start = len(slides)
+	}
+	if limit < 0 || limit > len(slides)-start {
+		limit = len(slides) - start
+	}
+	end := start + limit
+	remainingElements := maxElements
+	if remainingElements < 0 {
+		remainingElements = 0
+	}
+	truncated := false
 
-	for i, sl := range slides {
+	for i := start; i < end; i++ {
+		sl := slides[i]
 		pSlide := document.PresentationSlide{
 			Index:      i,
 			ID:         uint32(sl.ID()),
@@ -54,7 +78,13 @@ func (d *Document) Snapshot() document.PresentationSnapshot {
 			pSlide.BackgroundImage = background.Image
 		}
 		if i < len(d.slideInherited) {
-			pSlide.InheritedElements = d.slideInherited[i]
+			inherited := d.slideInherited[i]
+			count := min(len(inherited), remainingElements)
+			pSlide.InheritedElements = inherited[:count]
+			remainingElements -= count
+			if count < len(inherited) {
+				truncated = true
+			}
 		}
 
 		if notes, err := sl.SpeakerNotesText(); err == nil {
@@ -63,18 +93,28 @@ func (d *Document) Snapshot() document.PresentationSnapshot {
 
 		// Extract shapes
 		if shapes, err := sl.Shapes(); err == nil {
-			idCounts := make(map[uint32]int, len(shapes))
+			projectedShapes := make([]document.PresentationElement, 0, len(shapes))
 			for _, sh := range shapes {
-				idCounts[uint32(sh.ID())]++
+				projectedShapes = append(projectedShapes, d.projectShapeTree(sh, i, 0)...)
 			}
-			for _, sh := range shapes {
-				elem := d.projectShape(sh, i)
-				if idCounts[uint32(sh.ID())] != 1 {
+			idCounts := make(map[uint32]int, len(projectedShapes))
+			for _, element := range projectedShapes {
+				idCounts[uint32(element.ID)]++
+			}
+			for shapeIndex, elem := range projectedShapes {
+				if remainingElements == 0 {
+					if shapeIndex < len(projectedShapes) {
+						truncated = true
+					}
+					break
+				}
+				if idCounts[uint32(elem.ID)] != 1 {
 					elem.CanEditPicture = false
 					elem.CanEditTextStyle = false
 					elem.CanEditShapeStyle = false
 				}
 				pSlide.Elements = append(pSlide.Elements, elem)
+				remainingElements--
 				if pSlide.Title == "" && len(elem.Paragraphs) > 0 {
 					pSlide.Title = elem.PlainText()
 				}
@@ -88,7 +128,74 @@ func (d *Document) Snapshot() document.PresentationSnapshot {
 		snap.Slides = append(snap.Slides, pSlide)
 	}
 
-	return snap
+	return snap, truncated
+}
+
+func (d *Document) projectShapeTree(shape gopptx.Shape, slideIndex int, groupID uint32) []document.PresentationElement {
+	group, ok := shape.(*gopptx.GroupShape)
+	if !ok || group == nil {
+		element := d.projectShape(shape, slideIndex)
+		element.GroupID = groupID
+		return []document.PresentationElement{element}
+	}
+
+	if groupID == 0 {
+		groupID = uint32(group.ID())
+	}
+	children, err := group.Children()
+	if err != nil {
+		return nil
+	}
+	var projected []document.PresentationElement
+	for _, child := range children {
+		projected = append(projected, d.projectShapeTree(child, slideIndex, groupID)...)
+	}
+	return projected
+}
+
+// PresentationElementByID returns one editable projection addressed by stable
+// slide and element IDs. Projection is bounded so a single read cannot expand
+// an arbitrarily large slide into memory.
+func (d *Document) PresentationElementByID(slideID uint32, elementID int64) (document.PresentationElement, error) {
+	d.mu.RLock()
+	if d.pres == nil {
+		d.mu.RUnlock()
+		return document.PresentationElement{}, fmt.Errorf("演示文稿已关闭")
+	}
+	slides, err := d.pres.Slides()
+	if err != nil {
+		d.mu.RUnlock()
+		return document.PresentationElement{}, fmt.Errorf("读取幻灯片失败: %w", err)
+	}
+	index := -1
+	for i, slide := range slides {
+		if uint32(slide.ID()) == slideID {
+			index = i
+			break
+		}
+	}
+	d.mu.RUnlock()
+	if index < 0 {
+		return document.PresentationElement{}, fmt.Errorf("未找到幻灯片 ID %d", slideID)
+	}
+
+	const maxProjectedElements = 10000
+	snapshot, truncated := d.SnapshotWindow(index, 1, maxProjectedElements)
+	if len(snapshot.Slides) != 1 || snapshot.Slides[0].ID != slideID {
+		return document.PresentationElement{}, fmt.Errorf("演示文稿在读取期间发生变化，请重新查询目标")
+	}
+	for _, element := range snapshot.Slides[0].Elements {
+		if element.ID == elementID {
+			if !element.CanEditTextStyle || (element.Kind != document.ElementKindText && element.Kind != document.ElementKindShape) {
+				return document.PresentationElement{}, fmt.Errorf("目标元素不包含可读取的纯文本")
+			}
+			return element, nil
+		}
+	}
+	if truncated {
+		return document.PresentationElement{}, fmt.Errorf("目标幻灯片元素超过单次读取上限 %d", maxProjectedElements)
+	}
+	return document.PresentationElement{}, fmt.Errorf("未找到元素 ID %d", elementID)
 }
 
 // projectShape maps a go-pptx Shape into neutral PresentationElement.
@@ -230,6 +337,7 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 				for _, para := range paras {
 					pPara := document.PresentationParagraph{}
 					if props, _, err := para.Props(); err == nil && props.Specified {
+						pPara.Bullet = props.Bullet != nil && props.Bullet.Kind != gopptx.BulletNone && props.Bullet.Kind != gopptx.BulletUnknown
 						switch props.Align {
 						case "ctr":
 							pPara.Align = "center"
@@ -302,6 +410,7 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 	case *gopptx.PictureShape:
 		elem.Kind = document.ElementKindPicture
 		elem.AltText = s.AltText()
+		elem.Decorative = s.IsDecorative()
 		if targets := d.slidePictureTargets[slideIdx]; targets != nil {
 			if target, ok := targets[uint32(s.ID())]; ok {
 				elem.Image = d.mediaImages[target]
@@ -326,6 +435,14 @@ func (d *Document) projectShape(sh gopptx.Shape, slideIdx int) document.Presenta
 			}
 		}
 		elem.CanEditPicture = d.pictureCanEditLocked(slideIdx, id)
+	case *gopptx.AudioShape:
+		elem.Kind = document.ElementKindAudio
+		elem.AltText = s.AltText()
+		elem.Decorative = s.IsDecorative()
+	case *gopptx.VideoShape:
+		elem.Kind = document.ElementKindVideo
+		elem.AltText = s.AltText()
+		elem.Decorative = s.IsDecorative()
 	}
 	if slideIdx < len(d.slideStyleChanges) {
 		if patch, ok := d.slideStyleChanges[slideIdx][shapeID]; ok {
