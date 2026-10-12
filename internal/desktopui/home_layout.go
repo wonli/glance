@@ -79,6 +79,7 @@ var (
 	homeRowBorder     = color.NRGBA{R: 238, G: 240, B: 242, A: 255}
 	homeText          = color.NRGBA{R: 52, G: 59, B: 69, A: 255}
 	homeMuted         = color.NRGBA{R: 138, G: 146, B: 157, A: 255}
+	settingsBlack     = color.NRGBA{R: 0, G: 0, B: 0, A: 255}
 	homeSelectedFill  = color.NRGBA{R: 241, G: 242, B: 244, A: 255}
 	homeHoverFill     = color.NRGBA{R: 247, G: 248, B: 249, A: 255}
 	homeFavoriteGold  = color.NRGBA{R: 176, G: 138, B: 55, A: 255}
@@ -110,6 +111,14 @@ func (a *App) refreshHomeMetadata() {
 }
 
 func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
+	if a.homeSection == homeSectionSettings {
+		a.processSettingsNavClicks(gtx)
+	} else {
+		a.processHomeNavClicks(gtx)
+	}
+	if a.homeSection == homeSectionSettings {
+		return a.layoutSettingsWorkspace(gtx)
+	}
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions { return fill(gtx, homeCanvas) },
 		func(gtx layout.Context) layout.Dimensions {
@@ -125,9 +134,143 @@ func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
 	)
 }
 
+func (a *App) layoutSettingsWorkspace(gtx layout.Context) layout.Dimensions {
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions { return fill(gtx, homeCanvas) },
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					width := gtx.Dp(unit.Dp(250))
+					gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
+					return a.layoutSettingsSidebar(gtx)
+				}),
+				layout.Flexed(1, a.layoutSettingsMain),
+			)
+		},
+	)
+}
+
+func (a *App) layoutSettingsSidebar(gtx layout.Context) layout.Dimensions {
+	gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, homeSidebarFill, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			paint.FillShape(gtx.Ops, homeSidebarBorder, clip.Rect{Min: image.Pt(gtx.Constraints.Max.X-1, 0), Max: gtx.Constraints.Max}.Op())
+			return layout.Dimensions{Size: gtx.Constraints.Max}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(28), Left: unit.Dp(18), Right: unit.Dp(18), Bottom: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						height := gtx.Dp(unit.Dp(30))
+						gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return homeIcon(gtx, "settings-2", 20, color.NRGBA{R: 63, G: 71, B: 82, A: 255})
+								})
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Left: unit.Dp(12), Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return homeTextLabel(gtx, a.theme, "设置", 15, homeText, true)
+								})
+							}),
+							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return a.homeNavButton("settings-back").Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									width, height := gtx.Dp(unit.Dp(30)), gtx.Dp(unit.Dp(30))
+									gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
+									return homeRoundedPanel(gtx, homeHoverFill, homeHoverFill, unit.Dp(5), func(gtx layout.Context) layout.Dimensions {
+										return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											return homeIcon(gtx, "arrow-left", 18, settingsBlack)
+										})
+									})
+								})
+							}),
+						)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Top: unit.Dp(22), Bottom: unit.Dp(28)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							height := gtx.Dp(unit.Dp(1))
+							gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(gtx.Constraints.Max.X, height), image.Pt(gtx.Constraints.Max.X, height)
+							return homeRoundedPanel(gtx, homeSidebarBorder, homeSidebarBorder, unit.Dp(0), func(gtx layout.Context) layout.Dimensions {
+								return layout.Dimensions{Size: gtx.Constraints.Max}
+							})
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return a.layoutSettingsNavItem(gtx, "providers", "AI 提供商", "bot")
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return a.layoutSettingsNavItem(gtx, "mcp", "MCP 连接", "plug")
+						})
+					}),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
+				)
+			})
+		},
+	)
+}
+
+func (a *App) layoutSettingsNavItem(gtx layout.Context, id, label, icon string) layout.Dimensions {
+	button := a.settingsPageTabButton(id)
+	selected := a.agentUI.settingsPageTab == id
+	height := gtx.Dp(unit.Dp(44))
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
+				bg := color.NRGBA{A: 0}
+				if selected {
+					bg = homeSelectedFill
+				} else if button.Hovered() {
+					bg = homeHoverFill
+				}
+				shape := clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(7)))
+				paint.FillShape(gtx.Ops, bg, shape.Op(gtx.Ops))
+				return layout.Dimensions{Size: gtx.Constraints.Max}
+			},
+			func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							height := gtx.Dp(unit.Dp(44))
+							gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return homeIcon(gtx, icon, 20, color.NRGBA{R: 63, G: 71, B: 82, A: 255})
+							})
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								height := gtx.Dp(unit.Dp(44))
+								gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+								return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										return homeTextLabel(gtx, a.theme, label, 15, homeText, selected)
+									})
+								})
+							})
+						}),
+					)
+				})
+			},
+		)
+	})
+}
+
+func (a *App) layoutSettingsMain(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(76), Left: unit.Dp(60), Right: unit.Dp(48), Bottom: unit.Dp(36)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return a.homeContentList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+			return a.layoutAgentSettingsPage(gtx)
+		})
+	})
+}
+
 func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
-	a.processHomeNavClicks(gtx)
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, homeSidebarFill, clip.Rect{Max: gtx.Constraints.Max}.Op())
@@ -193,11 +336,17 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.layoutHomeFolderRow(gtx) }),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if a.homeSection == homeSectionSettings {
+							return layout.Dimensions{}
+						}
 						return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return a.layoutHomeNavRow(gtx, "mcp", "settings", "MCP 连接", -1, false)
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if a.homeSection == homeSectionSettings {
+							return layout.Dimensions{}
+						}
 						return a.layoutHomeNavRow(gtx, "agent-chat", "ellipsis", "AI 助手", -1, false)
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
@@ -228,19 +377,27 @@ func (a *App) processHomeNavClicks(gtx layout.Context) {
 		{id: "favorites", section: homeSectionFavorites},
 	} {
 		if a.homeNavButton(navigation.id).Clicked(gtx) {
+			a.resetHomeContentScroll()
 			a.homeSection = navigation.section
 		}
 	}
 	if a.homeNavButton("mcp").Clicked(gtx) {
-		a.showMCPConnectionDialog()
+		a.openMCPSettingsPage()
 	}
 	if a.homeNavButton("agent-chat").Clicked(gtx) {
 		a.showAgentChat()
 	}
 	if a.homeNavButton("agent-settings").Clicked(gtx) {
+		a.resetHomeContentScroll()
 		a.prepareAgentSettingsPage()
 		a.homeSection = homeSectionSettings
 	}
+}
+
+func (a *App) resetHomeContentScroll() {
+	a.homeContentList.Position.First = 0
+	a.homeContentList.Position.Offset = 0
+	a.homeContentList.Position.OffsetLast = 0
 }
 
 func (a *App) layoutHomeNavRow(gtx layout.Context, id, glyph, label string, count int, selected bool) layout.Dimensions {

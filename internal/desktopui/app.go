@@ -77,9 +77,16 @@ type App struct {
 	modal                   modalDialog
 	agentUI                 agentUIState
 	mcpCopyConfigButton     widget.Clickable
+	mcpCopyURLButton        widget.Clickable
+	mcpCopyTokenButton      widget.Clickable
+	mcpConnectionURL        string
+	mcpConnectionToken      string
+	mcpConnectionViewConfig string
 	mcpConnectionConfig     string
 	mcpConnectionError      string
 	mcpConfigCopied         bool
+	mcpURLCopied            bool
+	mcpTokenCopied          bool
 	wordSymbolPickerVisible bool
 	wordSymbolPickerScrim   widget.Clickable
 	wordSymbolPickerClose   widget.Clickable

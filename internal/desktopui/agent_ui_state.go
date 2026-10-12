@@ -37,6 +37,8 @@ type agentUIState struct {
 	settingsInfo       string
 	settingsError      string
 	settings           agentsettings.ModelSettings
+	settingsPageTab    string
+	settingsPageTabs   map[string]*widget.Clickable
 	settingsTab        string
 	settingsTabButtons map[string]*widget.Clickable
 	settingsKeyLink    widget.Clickable
@@ -46,6 +48,7 @@ type agentUIState struct {
 	settingsTest       widget.Clickable
 	settingsSave       widget.Clickable
 	settingsKeyToggle  widget.Clickable
+	settingsKeyPreview agentSettingsKeyPreview
 	applicationEvents  chan application.Event
 	confirmationList   widget.List
 	confirmations      map[string]*agentConfirmationCard
@@ -70,6 +73,7 @@ type agentUIState struct {
 func newAgentUIState() agentUIState {
 	state := agentUIState{
 		settingsDone:       make(chan agentSettingsResult, 1),
+		settingsPageTabs:   make(map[string]*widget.Clickable),
 		settingsTabButtons: make(map[string]*widget.Clickable),
 		applicationEvents:  make(chan application.Event, 128),
 		confirmationList:   widget.List{List: layout.List{Axis: layout.Vertical}},

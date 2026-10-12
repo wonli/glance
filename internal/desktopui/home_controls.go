@@ -37,7 +37,7 @@ func homeRecentCountStyle(theme *material.Theme, text string, scale float32) mat
 func homeIcon(gtx layout.Context, name string, size unit.Dp, tint color.NRGBA) layout.Dimensions {
 	pixels := gtx.Dp(size)
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(pixels, pixels), image.Pt(pixels, pixels)
-	icon, ok := svgIconTint("home", name, tint)
+	icon, ok := svgIconTintAtSize("home", name, pixels, tint)
 	if !ok {
 		icon, ok = tintedToolbarIcon(name, tint)
 	}
@@ -48,7 +48,7 @@ func homeIcon(gtx layout.Context, name string, size unit.Dp, tint color.NRGBA) l
 		Src:      paint.NewImageOp(icon),
 		Fit:      widget.Contain,
 		Position: layout.Center,
-		Scale:    float32(size) / 96,
+		Scale:    float32(size) / float32(icon.Bounds().Dx()),
 	}.Layout(gtx)
 }
 

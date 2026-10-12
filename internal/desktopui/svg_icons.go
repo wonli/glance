@@ -70,6 +70,14 @@ func renderSVGIcon(family, name string, size int, tint *color.NRGBA) (image.Imag
 	scale := float64(size) / max(icon.ViewBox.W, icon.ViewBox.H)
 	w, h := icon.ViewBox.W*scale, icon.ViewBox.H*scale
 	icon.SetTarget((float64(size)-w)/2, (float64(size)-h)/2, w, h)
+	if family == "home" {
+		// oksvg transforms paths in SetTarget, but leaves stroke widths in
+		// source units. Scale home strokes with the raster to retain their
+		// weight at small menu sizes and at Retina pixel densities.
+		for i := range icon.SVGPaths {
+			icon.SVGPaths[i].LineWidth *= scale
+		}
+	}
 	scanner := rasterx.NewScannerGV(size, size, img, img.Bounds())
 	icon.Draw(rasterx.NewDasher(size, size, scanner), 1)
 

@@ -27,6 +27,8 @@ func (a *App) showAgentSettings(returnToChat bool) {
 }
 
 func (a *App) prepareAgentSettings(returnToChat bool) {
+	a.clearAgentSettingsKeyPreview()
+	a.agentUI.apiKeyInput.Mask = '•'
 	settings, err := a.ensureDesktopRuntime().loadAgentSettings(context.Background())
 	a.agentUI.settings = settings
 	a.agentUI.returnToChat = returnToChat
@@ -250,6 +252,8 @@ func (a *App) processAgentSettingsResult() {
 			a.agentUI.settingsInfo = ""
 			return
 		}
+		a.clearAgentSettingsKeyPreview()
+		a.agentUI.apiKeyInput.Mask = '•'
 		a.agentUI.settings = result.settings
 		a.agentUI.settingsError = ""
 		a.agentUI.apiKeyInput.SetText("")
