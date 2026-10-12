@@ -13,6 +13,7 @@ import (
 	"glance/internal/agent/provider"
 	"glance/internal/application"
 	"glance/internal/document"
+	"glance/internal/workspace"
 )
 
 func TestBuiltInAgentAuditsWorkbookCreatesAndSavesReportIntoDesktopWorkspace(t *testing.T) {
@@ -21,6 +22,11 @@ func TestBuiltInAgentAuditsWorkbookCreatesAndSavesReportIntoDesktopWorkspace(t *
 	t.Cleanup(runtime.shutdown)
 	app := newAppWithRuntime(nil, runtime)
 	runtime.attachWindow(1, app)
+	conversationStore, err := workspace.Open(filepath.Join(t.TempDir(), "workspace.db"))
+	if err != nil {
+		t.Fatalf("open workspace conversation store: %v", err)
+	}
+	runtime.workspaceStore = conversationStore
 
 	workbook, err := runtime.applicationRuntime.CreateDocument(ctx, application.FormatXLSX)
 	if err != nil {
@@ -58,7 +64,10 @@ func TestBuiltInAgentAuditsWorkbookCreatesAndSavesReportIntoDesktopWorkspace(t *
 	if err != nil {
 		t.Fatalf("ConnectMCP: %v", err)
 	}
-	host, err := agent.NewHost(ctx, model, client.Session, agent.HostOptions{Model: "workflow-test", MaxToolRounds: 6, MaxToolCalls: 6})
+	host, err := agent.NewHost(ctx, model, client.Session, agent.HostOptions{
+		Model: "workflow-test", MaxToolRounds: 6, MaxToolCalls: 6,
+		ConversationStore: workspaceAgentConversationStore{runtime: runtime},
+	})
 	if err != nil {
 		_ = client.Close()
 		t.Fatalf("NewHost: %v", err)
@@ -66,6 +75,12 @@ func TestBuiltInAgentAuditsWorkbookCreatesAndSavesReportIntoDesktopWorkspace(t *
 	runtime.agentMu.Lock()
 	runtime.agentClient, runtime.agentHost = client, host
 	runtime.agentMu.Unlock()
+	conversation, err := host.CreateConversation(ctx, workbook.DocumentID)
+	if err != nil {
+		t.Fatalf("create document conversation: %v", err)
+	}
+	app.agentUI.conversationDocumentID = workbook.DocumentID
+	app.agentUI.conversationID = conversation.ID
 	t.Cleanup(func() {
 		app.shutdownOnce.Do(func() { close(app.shutdown) })
 		app.closeAgentSubscription()
@@ -73,7 +88,7 @@ func TestBuiltInAgentAuditsWorkbookCreatesAndSavesReportIntoDesktopWorkspace(t *
 		app.closeWorkspace()
 	})
 	turnCompleted := make(chan struct{}, 1)
-	stopObserver := host.Subscribe(ctx, "window-1", func(event agent.AgentEvent) {
+	stopObserver := host.Subscribe(ctx, conversation.ID, func(event agent.AgentEvent) {
 		if event.Type == agent.EventTurnCompleted {
 			select {
 			case turnCompleted <- struct{}{}:
@@ -135,7 +150,18 @@ type payrollReportWorkflowProvider struct {
 	calls            int
 }
 
+func (*payrollReportWorkflowProvider) ListModels(context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+func (*payrollReportWorkflowProvider) Stop(context.Context, string) error { return nil }
+
 func (p *payrollReportWorkflowProvider) Stream(_ context.Context, request provider.ModelRequest, emit func(provider.ModelEvent) error) error {
+	if len(request.Tools) == 0 {
+		if err := emit(provider.ModelEvent{TextDelta: "工资日报"}); err != nil {
+			return err
+		}
+		return emit(provider.ModelEvent{Done: true})
+	}
 	call := p.calls
 	p.calls++
 	if call == 0 {

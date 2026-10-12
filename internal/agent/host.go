@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"glance/internal/agent/prompts"
 	"glance/internal/agent/provider"
 	"glance/internal/application"
 
@@ -18,23 +19,27 @@ import (
 )
 
 var (
-	ErrHostClosed            = errors.New("Agent Host is closed")
-	ErrConversationBusy      = errors.New("conversation already has an active turn")
-	ErrInvalidConversation   = errors.New("conversation ID is required")
-	ErrEmptyMessage          = errors.New("message is empty")
-	ErrMessageTooLarge       = errors.New("message exceeds the configured size limit")
-	ErrPromptTooLarge        = errors.New("conversation context exceeds the configured size limit")
-	ErrEmptyModelResponse    = errors.New("model returned neither text nor tool calls")
-	ErrToolCallLimit         = errors.New("Agent turn exceeded the tool call limit")
-	ErrToolRoundLimit        = errors.New("Agent turn exceeded the tool round limit")
-	ErrToolArgumentsTooLarge = errors.New("tool arguments exceed the configured size limit")
-	ErrToolResultTooLarge    = errors.New("tool result exceeds the configured size limit")
+	ErrHostClosed                   = errors.New("Agent Host is closed")
+	ErrConversationBusy             = errors.New("conversation already has an active turn")
+	ErrInvalidConversation          = errors.New("conversation ID is required")
+	ErrConversationDocumentRequired = errors.New("document ID is required for conversation persistence")
+	ErrConversationScopeMismatch    = errors.New("conversation belongs to a different document")
+	ErrConversationNotInterrupted   = errors.New("conversation has no interrupted turn to resume")
+	ErrEmptyMessage                 = errors.New("message is empty")
+	ErrMessageTooLarge              = errors.New("message exceeds the configured size limit")
+	ErrPromptTooLarge               = errors.New("conversation context exceeds the configured size limit")
+	ErrEmptyModelResponse           = errors.New("model returned neither text nor tool calls")
+	ErrToolCallLimit                = errors.New("Agent turn exceeded the tool call limit")
+	ErrToolRoundLimit               = errors.New("Agent turn exceeded the tool round limit")
+	ErrToolArgumentsTooLarge        = errors.New("tool arguments exceed the configured size limit")
+	ErrToolResultTooLarge           = errors.New("tool result exceeds the configured size limit")
 )
 
 const maxListedTools = 1024
 
 type HostOptions struct {
 	Model                 string
+	ConversationStore     ConversationStore
 	ModelTimeout          time.Duration
 	MaxToolRounds         int
 	MaxToolCalls          int
@@ -45,16 +50,28 @@ type HostOptions struct {
 }
 
 type ConversationSnapshot struct {
-	ID       ConversationID
-	Messages []provider.ModelMessage
-	Busy     bool
+	ID          ConversationID
+	DocumentID  string
+	Title       string
+	Messages    []provider.ModelMessage
+	Reasoning   []ReasoningBlock
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Busy        bool
+	Interrupted bool
 }
 
 type conversationState struct {
-	mu       sync.Mutex
-	messages []provider.ModelMessage
-	busy     bool
-	cancel   context.CancelFunc
+	mu         sync.Mutex
+	documentID string
+	title      string
+	messages   []provider.ModelMessage
+	reasoning  []ReasoningBlock
+	createdAt  time.Time
+	updatedAt  time.Time
+	busy       bool
+	cancel     context.CancelFunc
+	requestID  string
 }
 
 type agentSubscriber struct {
@@ -74,6 +91,7 @@ type AgentHost struct {
 	client   *mcp.ClientSession
 	model    string
 	options  HostOptions
+	store    ConversationStore
 	tools    map[string]toolSpec
 
 	mu                sync.Mutex
@@ -82,6 +100,7 @@ type AgentHost struct {
 	conversations     map[ConversationID]*conversationState
 	subscribers       map[uint64]*agentSubscriber
 	nextSubID         atomic.Uint64
+	nextRequestID     atomic.Uint64
 	turns             sync.WaitGroup
 	subscriptionTasks sync.WaitGroup
 }
@@ -100,6 +119,7 @@ func NewHost(ctx context.Context, modelProvider provider.ModelProvider, client *
 	}
 	return &AgentHost{
 		provider: modelProvider, client: client, model: strings.TrimSpace(options.Model), options: options,
+		store: options.ConversationStore,
 		tools: tools, conversations: make(map[ConversationID]*conversationState),
 		subscribers: make(map[uint64]*agentSubscriber), closeDone: make(chan struct{}),
 	}, nil
@@ -186,6 +206,9 @@ func (h *AgentHost) Send(ctx context.Context, conversationID ConversationID, mes
 	if len(message) > h.options.MaxMessageBytes {
 		return ErrMessageTooLarge
 	}
+	if h.store != nil && strings.TrimSpace(view.DocumentID) == "" {
+		return ErrConversationDocumentRequired
+	}
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()
@@ -193,7 +216,17 @@ func (h *AgentHost) Send(ctx context.Context, conversationID ConversationID, mes
 	}
 	state := h.conversations[conversationID]
 	if state == nil {
-		state = &conversationState{}
+		state = &conversationState{documentID: view.DocumentID, createdAt: time.Now().UTC()}
+		if h.store != nil {
+			record, found, err := h.store.Load(ctx, view.DocumentID, conversationID)
+			if err != nil {
+				h.mu.Unlock()
+				return fmt.Errorf("load Agent conversation: %w", err)
+			}
+			if found {
+				state = conversationStateFromRecord(record)
+			}
+		}
 		h.conversations[conversationID] = state
 	}
 	// Add while holding h.mu so Close cannot start waiting before this turn is
@@ -202,7 +235,15 @@ func (h *AgentHost) Send(ctx context.Context, conversationID ConversationID, mes
 	h.turns.Add(1)
 
 	turnCtx, cancel := context.WithCancel(ctx)
+	requestID := fmt.Sprintf("agent-turn-%d", h.nextRequestID.Add(1))
 	state.mu.Lock()
+	if h.store != nil && state.documentID != view.DocumentID {
+		state.mu.Unlock()
+		h.mu.Unlock()
+		cancel()
+		h.turns.Done()
+		return ErrConversationScopeMismatch
+	}
 	if state.busy {
 		state.mu.Unlock()
 		h.mu.Unlock()
@@ -212,16 +253,119 @@ func (h *AgentHost) Send(ctx context.Context, conversationID ConversationID, mes
 	}
 	state.busy = true
 	state.cancel = cancel
+	state.requestID = requestID
+	if state.documentID == "" {
+		state.documentID = view.DocumentID
+	}
 	state.messages = append(state.messages, provider.ModelMessage{Role: "user", Content: message})
+	state.updatedAt = time.Now().UTC()
 	state.mu.Unlock()
 	h.mu.Unlock()
 	defer h.turns.Done()
 
-	err := h.runTurn(turnCtx, conversationID, state, view)
+	if err := h.persistConversation(turnCtx, conversationID, state); err != nil {
+		cancel()
+		state.mu.Lock()
+		if len(state.messages) > 0 {
+			last := state.messages[len(state.messages)-1]
+			if last.Role == "user" && last.Content == message {
+				state.messages = state.messages[:len(state.messages)-1]
+			}
+		}
+		state.busy, state.cancel, state.requestID = false, nil, ""
+		state.mu.Unlock()
+		return fmt.Errorf("save user message before model request: %w", err)
+	}
+	return h.completeTurn(turnCtx, cancel, conversationID, state, view, requestID)
+}
+
+// ResumeConversation continues the last persisted user turn without adding a
+// duplicate user message. It is used after title generation, a stream, or the
+// application was interrupted.
+func (h *AgentHost) ResumeConversation(ctx context.Context, conversationID ConversationID, view application.ViewContext) error {
+	if h == nil {
+		return ErrHostClosed
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if strings.TrimSpace(string(conversationID)) == "" {
+		return ErrInvalidConversation
+	}
+	if h.store != nil && strings.TrimSpace(view.DocumentID) == "" {
+		return ErrConversationDocumentRequired
+	}
+	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		return ErrHostClosed
+	}
+	state := h.conversations[conversationID]
+	if state == nil {
+		if h.store == nil {
+			h.mu.Unlock()
+			return ErrInvalidConversation
+		}
+		record, found, err := h.store.Load(ctx, view.DocumentID, conversationID)
+		if err != nil {
+			h.mu.Unlock()
+			return fmt.Errorf("load Agent conversation: %w", err)
+		}
+		if !found {
+			h.mu.Unlock()
+			return ErrInvalidConversation
+		}
+		state = conversationStateFromRecord(record)
+		h.conversations[conversationID] = state
+	}
+	h.turns.Add(1)
+	turnCtx, cancel := context.WithCancel(ctx)
+	requestID := fmt.Sprintf("agent-turn-%d", h.nextRequestID.Add(1))
+	state.mu.Lock()
+	if h.store != nil && state.documentID != view.DocumentID {
+		state.mu.Unlock()
+		h.mu.Unlock()
+		cancel()
+		h.turns.Done()
+		return ErrConversationScopeMismatch
+	}
+	if state.busy {
+		state.mu.Unlock()
+		h.mu.Unlock()
+		cancel()
+		h.turns.Done()
+		return ErrConversationBusy
+	}
+	if !ConversationInterrupted(state.messages) {
+		state.mu.Unlock()
+		h.mu.Unlock()
+		cancel()
+		h.turns.Done()
+		return ErrConversationNotInterrupted
+	}
+	if state.documentID == "" {
+		state.documentID = view.DocumentID
+	}
+	state.busy, state.cancel, state.requestID = true, cancel, requestID
+	state.mu.Unlock()
+	h.mu.Unlock()
+	defer h.turns.Done()
+	return h.completeTurn(turnCtx, cancel, conversationID, state, view, requestID)
+}
+
+func (h *AgentHost) completeTurn(ctx context.Context, cancel context.CancelFunc, conversationID ConversationID, state *conversationState, view application.ViewContext, requestID string) error {
+	err := h.ensureConversationTitle(ctx, conversationID, state, requestID)
+	if err == nil {
+		err = h.repairInterruptedToolCalls(ctx, conversationID, state)
+	}
+	if err == nil {
+		err = h.runTurn(ctx, conversationID, state, view, requestID)
+	}
 	cancel()
 	state.mu.Lock()
 	state.busy = false
 	state.cancel = nil
+	state.requestID = ""
 	state.mu.Unlock()
 	if err != nil {
 		code, message := DescribeTurnError(err)
@@ -232,20 +376,34 @@ func (h *AgentHost) Send(ctx context.Context, conversationID ConversationID, mes
 	return nil
 }
 
-func (h *AgentHost) runTurn(ctx context.Context, conversationID ConversationID, state *conversationState, view application.ViewContext) error {
+func (h *AgentHost) runTurn(ctx context.Context, conversationID ConversationID, state *conversationState, view application.ViewContext, requestID string) error {
 	totalCalls := 0
 	for round := 0; round < h.options.MaxToolRounds; round++ {
-		messages := h.requestMessages(state, view)
+		messages, reasoningByMessage, err := h.requestMessages(state, view)
+		if err != nil {
+			return err
+		}
 		if promptSize(messages) > h.options.MaxPromptBytes {
 			return ErrPromptTooLarge
 		}
-		request := provider.ModelRequest{Model: h.model, Messages: messages, Tools: h.modelTools()}
+		request := provider.ModelRequest{
+			RequestID: requestID, ReasoningByMessage: reasoningByMessage,
+			Model: h.model, Messages: messages, Tools: h.modelTools(),
+		}
 		var text strings.Builder
+		var reasoning strings.Builder
 		calls := make(map[int]*toolCallAccumulator)
 		streamCtx, cancelStream := context.WithTimeout(ctx, h.options.ModelTimeout)
-		err := h.provider.Stream(streamCtx, request, func(event provider.ModelEvent) error {
+		err = h.provider.Stream(streamCtx, request, func(event provider.ModelEvent) error {
 			if streamCtx.Err() != nil {
 				return streamCtx.Err()
+			}
+			if event.ReasoningDelta != "" {
+				if reasoning.Len()+len(event.ReasoningDelta) > h.options.MaxToolResultBytes {
+					return ErrMessageTooLarge
+				}
+				reasoning.WriteString(event.ReasoningDelta)
+				h.publish(AgentEvent{ConversationID: conversationID, Type: EventReasoningDelta, Reasoning: event.ReasoningDelta})
 			}
 			if event.TextDelta != "" {
 				if text.Len()+len(event.TextDelta) > h.options.MaxToolResultBytes {
@@ -263,23 +421,45 @@ func (h *AgentHost) runTurn(ctx context.Context, conversationID ConversationID, 
 		})
 		cancelStream()
 		if err != nil {
+			if persistErr := h.persistInterruptedReasoning(ctx, conversationID, state, reasoning.String()); persistErr != nil {
+				return persistErr
+			}
 			return err
 		}
 		orderedCalls := orderedToolCalls(calls)
 		if len(orderedCalls) == 0 {
 			if strings.TrimSpace(text.String()) == "" {
+				if persistErr := h.persistInterruptedReasoning(ctx, conversationID, state, reasoning.String()); persistErr != nil {
+					return persistErr
+				}
 				return ErrEmptyModelResponse
 			}
 			state.mu.Lock()
+			messageCount, reasoningCount := len(state.messages), len(state.reasoning)
+			appendReasoningBlock(state, reasoning.String())
 			state.messages = append(state.messages, provider.ModelMessage{Role: "assistant", Content: text.String()})
+			state.updatedAt = time.Now().UTC()
 			state.mu.Unlock()
+			if err := h.persistConversation(ctx, conversationID, state); err != nil {
+				state.mu.Lock()
+				state.messages = state.messages[:messageCount]
+				state.reasoning = state.reasoning[:reasoningCount]
+				state.mu.Unlock()
+				return fmt.Errorf("save assistant response: %w", err)
+			}
 			return nil
 		}
 		totalCalls += len(orderedCalls)
 		if totalCalls > h.options.MaxToolCalls {
+			if persistErr := h.persistInterruptedReasoning(ctx, conversationID, state, reasoning.String()); persistErr != nil {
+				return persistErr
+			}
 			return ErrToolCallLimit
 		}
 		if round == h.options.MaxToolRounds-1 {
+			if persistErr := h.persistInterruptedReasoning(ctx, conversationID, state, reasoning.String()); persistErr != nil {
+				return persistErr
+			}
 			return ErrToolRoundLimit
 		}
 		assistantMessage := provider.ModelMessage{Role: "assistant", Content: text.String()}
@@ -296,12 +476,24 @@ func (h *AgentHost) runTurn(ctx context.Context, conversationID ConversationID, 
 			})
 		}
 		state.mu.Lock()
+		messageCount, reasoningCount := len(state.messages), len(state.reasoning)
+		appendReasoningBlock(state, reasoning.String())
 		state.messages = append(state.messages, assistantMessage)
+		state.updatedAt = time.Now().UTC()
 		state.mu.Unlock()
+		if err := h.persistConversation(ctx, conversationID, state); err != nil {
+			state.mu.Lock()
+			state.messages = state.messages[:messageCount]
+			state.reasoning = state.reasoning[:reasoningCount]
+			state.mu.Unlock()
+			return fmt.Errorf("save assistant tool calls before execution: %w", err)
+		}
 
 		for callIndex, call := range orderedCalls {
 			if ctx.Err() != nil {
-				h.appendCanceledToolCallResults(conversationID, state, orderedCalls[callIndex:])
+				if err := h.appendCanceledToolCallResults(ctx, conversationID, state, orderedCalls[callIndex:]); err != nil {
+					return err
+				}
 				return ctx.Err()
 			}
 			if err := h.executeToolCall(ctx, conversationID, state, call, view); err != nil {
@@ -313,9 +505,9 @@ func (h *AgentHost) runTurn(ctx context.Context, conversationID ConversationID, 
 	return ErrToolRoundLimit
 }
 
-func (h *AgentHost) appendCanceledToolCallResults(conversationID ConversationID, state *conversationState, calls []*toolCallAccumulator) {
+func (h *AgentHost) appendCanceledToolCallResults(ctx context.Context, conversationID ConversationID, state *conversationState, calls []*toolCallAccumulator) error {
 	if state == nil || len(calls) == 0 {
-		return
+		return nil
 	}
 	const content = `{"error":"tool_call_cancelled","message":"Agent 轮次已取消，工具调用未执行。"}`
 	for _, call := range calls {
@@ -329,11 +521,15 @@ func (h *AgentHost) appendCanceledToolCallResults(conversationID ConversationID,
 			Content: content,
 		})
 		state.mu.Unlock()
+		if err := h.persistConversation(ctx, conversationID, state); err != nil {
+			return fmt.Errorf("save canceled tool result: %w", err)
+		}
 		h.publish(AgentEvent{
 			ConversationID: conversationID, Type: EventToolCompleted,
 			ToolName: call.name, ToolCallID: call.id, Result: json.RawMessage(content), IsError: true,
 		})
 	}
+	return nil
 }
 
 type toolCallAccumulator struct {
@@ -390,7 +586,11 @@ func (h *AgentHost) executeToolCall(ctx context.Context, conversationID Conversa
 	state.messages = append(state.messages, provider.ModelMessage{
 		Role: "tool", ToolCallID: call.id, ToolName: call.name, Content: string(resultContent),
 	})
+	state.updatedAt = time.Now().UTC()
 	state.mu.Unlock()
+	if err := h.persistConversation(ctx, conversationID, state); err != nil {
+		return fmt.Errorf("save tool result: %w", err)
+	}
 	h.publish(AgentEvent{ConversationID: conversationID, Type: EventToolCompleted, ToolName: call.name, ToolCallID: call.id, Result: append(json.RawMessage(nil), resultContent...), IsError: isError})
 	return nil
 }
@@ -522,16 +722,300 @@ func (h *AgentHost) updatedViewFromLastToolResult(state *conversationState, curr
 	return current
 }
 
-func (h *AgentHost) requestMessages(state *conversationState, view application.ViewContext) []provider.ModelMessage {
+func appendReasoningBlock(state *conversationState, content string) {
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+	state.reasoning = append(state.reasoning, ReasoningBlock{BeforeMessage: len(state.messages), Content: content})
+}
+
+func (h *AgentHost) persistInterruptedReasoning(ctx context.Context, conversationID ConversationID, state *conversationState, content string) error {
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	state.mu.Lock()
+	messageCount, reasoningCount, oldUpdatedAt := len(state.messages), len(state.reasoning), state.updatedAt
+	state.reasoning = append(state.reasoning, ReasoningBlock{BeforeMessage: -1, Content: content})
+	state.updatedAt = time.Now().UTC()
+	state.mu.Unlock()
+	if err := h.persistConversation(ctx, conversationID, state); err != nil {
+		state.mu.Lock()
+		state.messages = state.messages[:messageCount]
+		state.reasoning = state.reasoning[:reasoningCount]
+		state.updatedAt = oldUpdatedAt
+		state.mu.Unlock()
+		return fmt.Errorf("save interrupted reasoning transcript: %w", err)
+	}
+	return nil
+}
+
+func (h *AgentHost) repairInterruptedToolCalls(ctx context.Context, conversationID ConversationID, state *conversationState) error {
 	state.mu.Lock()
 	messages := cloneMessages(state.messages)
+	missing := make([]provider.ModelToolCall, 0)
+	for messageIndex, message := range messages {
+		if message.Role != "assistant" || len(message.ToolCalls) == 0 {
+			continue
+		}
+		for _, call := range message.ToolCalls {
+			if call.ID == "" {
+				continue
+			}
+			found := false
+			for _, later := range messages[messageIndex+1:] {
+				if later.Role == "tool" && later.ToolCallID == call.ID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				missing = append(missing, call)
+			}
+		}
+	}
+	if len(missing) == 0 {
+		state.mu.Unlock()
+		return nil
+	}
+	messageCount := len(state.messages)
+	oldUpdatedAt := state.updatedAt
+	for _, call := range missing {
+		content := `{"error":"interrupted_tool_call","message":"The previous run stopped before this tool result was saved. The action was not repeated automatically."}`
+		state.messages = append(state.messages, provider.ModelMessage{
+			Role: "tool", ToolCallID: call.ID, ToolName: call.Function.Name, Content: content,
+		})
+	}
+	state.updatedAt = time.Now().UTC()
 	state.mu.Unlock()
-	instruction := "你是 Glance 办公 Agent。先通过已注册工具检查用户明确指定的文档，再执行需要的修改。工具调用必须使用能力目录提供的参数。"
+	if err := h.persistConversation(ctx, conversationID, state); err != nil {
+		state.mu.Lock()
+		state.messages = state.messages[:messageCount]
+		state.updatedAt = oldUpdatedAt
+		state.mu.Unlock()
+		return fmt.Errorf("save interrupted tool results: %w", err)
+	}
+	return nil
+}
+
+func (h *AgentHost) requestMessages(state *conversationState, view application.ViewContext) ([]provider.ModelMessage, map[int]string, error) {
+	state.mu.Lock()
+	messages := cloneMessages(state.messages)
+	reasoning := append([]ReasoningBlock(nil), state.reasoning...)
+	state.mu.Unlock()
+	viewContext := ""
 	if view.DocumentID != "" {
 		encoded, _ := json.Marshal(view)
-		instruction += " 当前 Gio 视图上下文为 " + string(encoded) + "。未提供目标时可使用其中的文档 ID、修订和选区；工具返回新修订后使用新修订。"
+		viewContext = string(encoded)
 	}
-	return append([]provider.ModelMessage{{Role: "system", Content: instruction}}, messages...)
+	instruction, err := prompts.System(prompts.SystemData{ViewContext: viewContext})
+	if err != nil {
+		return nil, nil, err
+	}
+	reasoningByMessage := make(map[int]string, len(reasoning))
+	for _, block := range reasoning {
+		messageIndex := block.BeforeMessage
+		if messageIndex < 0 || messageIndex >= len(messages) || messages[messageIndex].Role != "assistant" {
+			continue
+		}
+		// The system instruction is prepended to the request, shifting stored
+		// message indexes by one. Providers that need prior thinking can map
+		// this metadata into their own protocol fields.
+		requestIndex := messageIndex + 1
+		previous := reasoningByMessage[requestIndex]
+		if previous != "" {
+			previous += "\n"
+		}
+		reasoningByMessage[requestIndex] = previous + block.Content
+	}
+	return append([]provider.ModelMessage{{Role: "system", Content: instruction}}, messages...), reasoningByMessage, nil
+}
+
+func (h *AgentHost) ensureConversationTitle(ctx context.Context, conversationID ConversationID, state *conversationState, requestID string) error {
+	if h.store == nil {
+		return nil
+	}
+	state.mu.Lock()
+	if state.title != "" {
+		state.mu.Unlock()
+		return nil
+	}
+	firstMessage := ""
+	for _, message := range state.messages {
+		if message.Role == "user" {
+			firstMessage = message.Content
+			break
+		}
+	}
+	state.mu.Unlock()
+	if firstMessage == "" {
+		return ErrEmptyMessage
+	}
+	titlePrompt, err := prompts.ConversationTitle(prompts.TitleData{UserMessage: firstMessage})
+	if err != nil {
+		return err
+	}
+	request := provider.ModelRequest{
+		RequestID: requestID,
+		Model:     h.model,
+		Messages:  []provider.ModelMessage{{Role: "user", Content: titlePrompt}},
+	}
+	titleCtx, cancel := context.WithTimeout(ctx, h.options.ModelTimeout)
+	defer cancel()
+	var title strings.Builder
+	err = h.provider.Stream(titleCtx, request, func(event provider.ModelEvent) error {
+		if titleCtx.Err() != nil {
+			return titleCtx.Err()
+		}
+		if event.ToolCallDelta != nil {
+			return errors.New("title response unexpectedly contained a tool call")
+		}
+		if title.Len()+len(event.TextDelta) > 1024 {
+			return errors.New("conversation title response exceeds limit")
+		}
+		title.WriteString(event.TextDelta)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("generate conversation title: %w", err)
+	}
+	generated := strings.Trim(strings.TrimSpace(title.String()), "\"'“”‘’#*` \r\n\t")
+	if generated == "" {
+		return errors.New("model returned an empty conversation title")
+	}
+	if len([]rune(generated)) > 32 {
+		return errors.New("model returned a conversation title that is too long")
+	}
+	state.mu.Lock()
+	oldTitle, oldUpdatedAt := state.title, state.updatedAt
+	state.title = generated
+	state.updatedAt = time.Now().UTC()
+	state.mu.Unlock()
+	if err := h.persistConversation(ctx, conversationID, state); err != nil {
+		state.mu.Lock()
+		state.title, state.updatedAt = oldTitle, oldUpdatedAt
+		state.mu.Unlock()
+		return fmt.Errorf("save conversation title: %w", err)
+	}
+	h.publish(AgentEvent{ConversationID: conversationID, Type: EventConversationTitle, Title: generated})
+	return nil
+}
+
+func (h *AgentHost) persistConversation(ctx context.Context, id ConversationID, state *conversationState) error {
+	if h.store == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	state.mu.Lock()
+	record := ConversationRecord{
+		ID: id, DocumentID: state.documentID, Title: state.title,
+		Messages: cloneMessages(state.messages), Reasoning: append([]ReasoningBlock(nil), state.reasoning...),
+		CreatedAt: state.createdAt, UpdatedAt: state.updatedAt,
+	}
+	state.mu.Unlock()
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = time.Now().UTC()
+	}
+	if record.UpdatedAt.IsZero() {
+		record.UpdatedAt = record.CreatedAt
+	}
+	saveCtx := ctx
+	var cancel context.CancelFunc
+	if ctx.Err() != nil {
+		saveCtx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+	return h.store.Save(saveCtx, record)
+}
+
+func conversationStateFromRecord(record ConversationRecord) *conversationState {
+	return &conversationState{
+		documentID: record.DocumentID, title: record.Title, messages: cloneMessages(record.Messages),
+		reasoning: append([]ReasoningBlock(nil), record.Reasoning...), createdAt: record.CreatedAt, updatedAt: record.UpdatedAt,
+	}
+}
+
+func (h *AgentHost) CreateConversation(ctx context.Context, documentID string) (ConversationSnapshot, error) {
+	if h == nil || h.store == nil {
+		return ConversationSnapshot{}, errors.New("conversation storage is unavailable")
+	}
+	if strings.TrimSpace(documentID) == "" {
+		return ConversationSnapshot{}, ErrConversationDocumentRequired
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	id, err := NewConversationID()
+	if err != nil {
+		return ConversationSnapshot{}, err
+	}
+	now := time.Now().UTC()
+	state := &conversationState{documentID: documentID, createdAt: now, updatedAt: now}
+	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		return ConversationSnapshot{}, ErrHostClosed
+	}
+	if err := h.store.Save(ctx, ConversationRecord{ID: id, DocumentID: documentID, Messages: []provider.ModelMessage{}, Reasoning: []ReasoningBlock{}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		h.mu.Unlock()
+		return ConversationSnapshot{}, fmt.Errorf("create Agent conversation: %w", err)
+	}
+	h.conversations[id] = state
+	h.mu.Unlock()
+	return snapshotConversation(id, state), nil
+}
+
+func (h *AgentHost) ListConversations(ctx context.Context, documentID string) ([]ConversationSummary, error) {
+	if h == nil || h.store == nil {
+		return nil, errors.New("conversation storage is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	items, err := h.store.List(ctx, documentID)
+	return items, err
+}
+
+func (h *AgentHost) LoadConversation(ctx context.Context, documentID string, id ConversationID) (ConversationSnapshot, bool, error) {
+	if h == nil || h.store == nil {
+		return ConversationSnapshot{}, false, errors.New("conversation storage is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	record, found, err := h.store.Load(ctx, documentID, id)
+	if err != nil || !found {
+		return ConversationSnapshot{}, found, err
+	}
+	state := conversationStateFromRecord(record)
+	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		return ConversationSnapshot{}, false, ErrHostClosed
+	}
+	if existing := h.conversations[id]; existing != nil {
+		existing.mu.Lock()
+		if existing.busy {
+			existing.mu.Unlock()
+			h.mu.Unlock()
+			return ConversationSnapshot{}, false, ErrConversationBusy
+		}
+		existing.mu.Unlock()
+	}
+	h.conversations[id] = state
+	h.mu.Unlock()
+	return snapshotConversation(id, state), true, nil
+}
+
+func snapshotConversation(id ConversationID, state *conversationState) ConversationSnapshot {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return ConversationSnapshot{
+		ID: id, DocumentID: state.documentID, Title: state.title, Messages: cloneMessages(state.messages),
+		Reasoning: append([]ReasoningBlock(nil), state.reasoning...), CreatedAt: state.createdAt, UpdatedAt: state.updatedAt,
+		Busy: state.busy, Interrupted: ConversationInterrupted(state.messages),
+	}
 }
 
 func (h *AgentHost) modelTools() []provider.ModelTool {
@@ -562,10 +1046,7 @@ func (h *AgentHost) Snapshot(conversationID ConversationID) (ConversationSnapsho
 	if state == nil {
 		return ConversationSnapshot{}, false
 	}
-	state.mu.Lock()
-	snapshot := ConversationSnapshot{ID: conversationID, Messages: cloneMessages(state.messages), Busy: state.busy}
-	state.mu.Unlock()
-	return snapshot, true
+	return snapshotConversation(conversationID, state), true
 }
 
 func cloneMessages(messages []provider.ModelMessage) []provider.ModelMessage {
@@ -588,9 +1069,15 @@ func (h *AgentHost) Cancel(conversationID ConversationID) error {
 	}
 	state.mu.Lock()
 	cancel := state.cancel
+	requestID := state.requestID
 	state.mu.Unlock()
 	if cancel == nil {
 		return nil
+	}
+	if requestID != "" {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = h.provider.Stop(stopCtx, requestID)
+		stopCancel()
 	}
 	cancel()
 	return nil
@@ -688,7 +1175,13 @@ func (h *AgentHost) Close() {
 	for _, state := range states {
 		state.mu.Lock()
 		cancel := state.cancel
+		requestID := state.requestID
 		state.mu.Unlock()
+		if requestID != "" {
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = h.provider.Stop(stopCtx, requestID)
+			stopCancel()
+		}
 		if cancel != nil {
 			cancel()
 		}

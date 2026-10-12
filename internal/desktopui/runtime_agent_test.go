@@ -70,6 +70,10 @@ func TestAgentSubscriptionWatcherStopsWhenHostIsReplacedOrWindowCloses(t *testin
 	}
 	firstHost, _ := runtime.currentAgentHost()
 	app := newAppWithRuntime(nil, runtime)
+	app.documentSessionState = &documentSessionState{sharedDocumentSession: &sharedDocumentSession{}}
+	app.documentSessionState.documentID = "doc-subscription"
+	app.agentUI.conversationDocumentID = "doc-subscription"
+	app.agentUI.conversationID = "conversation-subscription"
 	app.subscribeToAgent(firstHost)
 	firstWatcher := app.agentUI.subscriptionDone
 	if firstWatcher == nil {
@@ -114,6 +118,10 @@ func TestDesktopRuntimeShutdownClosesAgentSubscriptionAndLiveSessions(t *testing
 	if err := runtime.installAgentHost(ctx, agentsettings.ModelSettings{ProviderID: "ollama", Model: "test-model"}, ""); err != nil {
 		t.Fatalf("install Agent Host: %v", err)
 	}
+	app.documentSessionState = &documentSessionState{sharedDocumentSession: &sharedDocumentSession{}}
+	app.documentSessionState.documentID = documentInfo.DocumentID
+	app.agentUI.conversationDocumentID = documentInfo.DocumentID
+	app.agentUI.conversationID = "conversation-runtime-shutdown"
 	host, _ := runtime.currentAgentHost()
 	app.subscribeToAgent(host)
 	watcherDone := app.agentUI.subscriptionDone

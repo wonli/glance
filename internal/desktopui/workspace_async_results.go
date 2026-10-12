@@ -8,6 +8,8 @@ import (
 func (a *App) processAsyncResults() {
 	a.ensureDesktopRuntime()
 	a.processAgentSettingsResult()
+	a.processAgentModelLookupResult()
+	a.processAgentChatHistoryResults()
 	a.processAgentSettingsKeyPreviewResult()
 	a.processAgentApplicationEvents()
 	a.processAgentChatEvents()

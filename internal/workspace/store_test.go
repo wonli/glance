@@ -34,6 +34,9 @@ func TestFavoritesSurviveRestartAndMigrateVersionTwoDatabase(t *testing.T) {
 	if _, err := store.db.Exec(`DROP TABLE word_versions`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.db.Exec(`DROP TABLE agent_conversations`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.db.Exec(`PRAGMA user_version = 2`); err != nil {
 		t.Fatal(err)
 	}

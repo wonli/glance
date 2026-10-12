@@ -3,9 +3,20 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/url"
 )
+
+// HTTPStatusError exposes only the response status to UI/error classification;
+// provider response bodies can contain sensitive request or account details.
+type HTTPStatusError struct {
+	StatusCode int
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("model provider returned HTTP %d", e.StatusCode)
+}
 
 type ErrorCategory string
 

@@ -182,6 +182,56 @@ func TestAgentHostRejectsWriteWhenCapturedViewRevisionBecomesStale(t *testing.T)
 	}
 }
 
+func TestAgentHostCancelCallsProviderStopWithTurnRequestID(t *testing.T) {
+	ctx := context.Background()
+	runtime, err := application.NewRuntime(ctx, application.RuntimeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(ctx) })
+	client, err := ConnectMCP(ctx, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	model := &requestIDStopProvider{started: make(chan string, 1), stopped: make(chan string, 1)}
+	host, err := NewHost(ctx, model, client.Session, HostOptions{Model: "stop-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer host.Close()
+	result := make(chan error, 1)
+	go func() { result <- host.Send(ctx, "stop-conversation", "等待停止", application.ViewContext{}) }()
+	var requestID string
+	select {
+	case requestID = <-model.started:
+	case <-time.After(time.Second):
+		t.Fatal("model stream did not start")
+	}
+	if requestID == "" {
+		t.Fatal("AgentHost did not assign a model request ID")
+	}
+	if err := host.Cancel("stop-conversation"); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	select {
+	case stoppedID := <-model.stopped:
+		if stoppedID != requestID {
+			t.Fatalf("provider Stop request ID=%q; want %q", stoppedID, requestID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("AgentHost did not call provider Stop")
+	}
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Send after Cancel error=%v; want context canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Send remained active after Cancel")
+	}
+}
+
 func TestAgentHostCancelStopsProviderRequest(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := application.NewRuntime(ctx, application.RuntimeOptions{})
@@ -474,6 +524,7 @@ func TestAgentHostCloseWaitsForActiveModelTurn(t *testing.T) {
 }
 
 type closeBlockingProvider struct {
+	testModelProviderContract
 	started  chan struct{}
 	canceled chan struct{}
 	release  chan struct{}
@@ -762,10 +813,12 @@ func TestAgentHostRecoversAfterModelStreamError(t *testing.T) {
 }
 
 type scriptedProvider struct {
-	t     *testing.T
-	mu    sync.Mutex
-	steps []func(provider.ModelRequest) []provider.ModelEvent
-	calls int
+	testModelProviderContract
+	t          *testing.T
+	mu         sync.Mutex
+	steps      []func(provider.ModelRequest) []provider.ModelEvent
+	stepErrors []error
+	calls      int
 }
 
 func newTestAgentHost(t *testing.T, runtime *application.Runtime, model provider.ModelProvider, options HostOptions) *AgentHost {
@@ -784,6 +837,7 @@ func newTestAgentHost(t *testing.T, runtime *application.Runtime, model provider
 }
 
 type failOnceProvider struct {
+	testModelProviderContract
 	mu         sync.Mutex
 	firstError error
 	calls      int
@@ -811,8 +865,15 @@ func (p *scriptedProvider) Stream(_ context.Context, request provider.ModelReque
 		return errors.New("unexpected model request")
 	}
 	step := p.steps[p.calls]
+	var stepError error
+	if p.calls < len(p.stepErrors) {
+		stepError = p.stepErrors[p.calls]
+	}
 	p.calls++
 	p.mu.Unlock()
+	if stepError != nil {
+		return stepError
+	}
 	for _, event := range step(request) {
 		if err := emit(event); err != nil {
 			return err
@@ -822,7 +883,35 @@ func (p *scriptedProvider) Stream(_ context.Context, request provider.ModelReque
 }
 
 type blockingProvider struct {
+	testModelProviderContract
 	started chan struct{}
+}
+
+type testModelProviderContract struct{}
+
+func (testModelProviderContract) ListModels(context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+func (testModelProviderContract) Stop(context.Context, string) error { return nil }
+
+type requestIDStopProvider struct {
+	testModelProviderContract
+	started chan string
+	stopped chan string
+}
+
+func (p *requestIDStopProvider) Stream(ctx context.Context, request provider.ModelRequest, _ func(provider.ModelEvent) error) error {
+	p.started <- request.RequestID
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (p *requestIDStopProvider) Stop(ctx context.Context, requestID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	p.stopped <- requestID
+	return nil
 }
 
 func (p blockingProvider) Stream(ctx context.Context, _ provider.ModelRequest, _ func(provider.ModelEvent) error) error {

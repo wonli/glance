@@ -1,32 +1,48 @@
-// Package provider contains model protocol adapters used by the Agent Host.
+// Package provider defines provider-neutral Agent model contracts and DTOs.
 package provider
 
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 )
 
-// ModelProvider streams one model response. The Agent Host owns tool execution
-// and starts another stream after it has appended tool results to the messages.
+// ModelProvider implements model discovery, streaming, and request-scoped stop.
 type ModelProvider interface {
+	ListModels(context.Context) ([]ModelInfo, error)
 	Stream(context.Context, ModelRequest, func(ModelEvent) error) error
+	Stop(context.Context, string) error
+}
+
+// ModelInfo is the provider-neutral model catalog item used by settings UI.
+type ModelInfo struct {
+	ID   string
+	Name string
 }
 
 type ModelRequest struct {
-	Model       string         `json:"model,omitempty"`
-	Messages    []ModelMessage `json:"messages"`
-	Tools       []ModelTool    `json:"tools,omitempty"`
-	Temperature *float64       `json:"temperature,omitempty"`
+	// RequestID identifies one local stream so Stop can cancel only that request.
+	// Providers must never serialize it to an inference endpoint.
+	RequestID string `json:"-"`
+	// ReasoningByMessage carries separately persisted thinking text keyed by
+	// Messages index. Only providers whose protocol requires it should map it
+	// into their wire format; it is never part of a normal ModelMessage.
+	ReasoningByMessage map[int]string `json:"-"`
+	Model              string         `json:"model,omitempty"`
+	Messages           []ModelMessage `json:"messages"`
+	Tools              []ModelTool    `json:"tools,omitempty"`
+	Temperature        *float64       `json:"temperature,omitempty"`
 }
 
 type ModelMessage struct {
-	Role       string          `json:"role"`
-	Content    string          `json:"content,omitempty"`
-	Name       string          `json:"name,omitempty"`
-	ToolCallID string          `json:"tool_call_id,omitempty"`
-	ToolName   string          `json:"tool_name,omitempty"`
-	ToolCalls  []ModelToolCall `json:"tool_calls,omitempty"`
+	Role       string `json:"role"`
+	Content    string `json:"content,omitempty"`
+	Name       string `json:"name,omitempty"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
+	// ToolName is retained in persisted context and used by protocols such as
+	// Ollama. Chat Completions adapters map messages to their own wire DTOs and
+	// omit it when the protocol does not define this field.
+	ToolName  string          `json:"tool_name,omitempty"`
+	ToolCalls []ModelToolCall `json:"tool_calls,omitempty"`
 }
 
 type ModelTool struct {
@@ -66,41 +82,10 @@ type TokenUsage struct {
 }
 
 type ModelEvent struct {
-	TextDelta     string
-	ToolCallDelta *ToolCallDelta
-	Usage         *TokenUsage
-	FinishReason  string
-	Done          bool
-}
-
-// ChatCompletionsConfig keeps credentials and network configuration outside
-// ordinary settings and conversation state.
-type ChatCompletionsConfig struct {
-	BaseURL    string
-	APIKey     string
-	Model      string
-	HTTPClient *http.Client
-}
-
-// DefaultChatCompletionsBaseURL returns the endpoint prefix used by the
-// migrated provider adapters. Unknown IDs can still use a custom BaseURL.
-func DefaultChatCompletionsBaseURL(providerID string) string {
-	switch providerID {
-	case "minimax":
-		return "https://api.minimaxi.com/v1"
-	case "kimi":
-		return "https://api.moonshot.cn/v1"
-	case "deepseek":
-		return "https://api.deepseek.com"
-	default:
-		return ""
-	}
-}
-
-// OllamaConfig describes a local Ollama server. APIKey is intentionally not
-// part of this config because the local adapter does not send cloud credentials.
-type OllamaConfig struct {
-	BaseURL    string
-	Model      string
-	HTTPClient *http.Client
+	ReasoningDelta string
+	TextDelta      string
+	ToolCallDelta  *ToolCallDelta
+	Usage          *TokenUsage
+	FinishReason   string
+	Done           bool
 }

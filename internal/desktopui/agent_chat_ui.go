@@ -20,12 +20,7 @@ import (
 )
 
 func (a *App) showAgentChat() {
-	if a.agentUI.conversationID == "" {
-		a.agentUI.conversationID = agent.ConversationID(fmt.Sprintf("window-%d", a.windowID))
-	}
-	if host, _ := a.ensureDesktopRuntime().currentAgentHost(); host != nil {
-		a.subscribeToAgent(host)
-	}
+	a.ensureAgentChatDocument(a.agentViewContext().DocumentID)
 	a.modal.ShowCustom("AI 助手", "Agent 会按需通过 Glance 能力查询文档；只有被工具读取的内容会发送到所配置的模型服务。", 820,
 		a.layoutAgentChat,
 		func(action string) {
@@ -43,6 +38,9 @@ func (a *App) showAgentChat() {
 }
 
 func (a *App) layoutAgentChat(gtx layout.Context) layout.Dimensions {
+	if view := a.agentViewContext(); view.DocumentID != a.agentUI.conversationDocumentID {
+		a.ensureAgentChatDocument(view.DocumentID)
+	}
 	gtx.Constraints.Min.Y = 0
 	maxHeight := gtx.Dp(unit.Dp(500))
 	if gtx.Constraints.Max.Y > 0 && gtx.Constraints.Max.Y < maxHeight {
@@ -68,6 +66,8 @@ func (a *App) layoutAgentChat(gtx layout.Context) layout.Dimensions {
 			style.MaxLines = 2
 			return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, style.Layout)
 		}),
+		layout.Rigid(a.layoutAgentConversationToolbar),
+		layout.Rigid(a.layoutAgentConversationHistory),
 		layout.Rigid(a.layoutAgentConfirmations),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return material.List(a.theme, &a.agentUI.chatList).Layout(gtx, len(a.agentUI.chatLines), func(gtx layout.Context, index int) layout.Dimensions {
@@ -87,15 +87,31 @@ func (a *App) layoutAgentChat(gtx layout.Context) layout.Dimensions {
 								role = "人工确认"
 							case "error":
 								role = "错误"
+							case "reasoning":
+								role = "思考过程"
 							}
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if line.role == "reasoning" && line.toggle != nil {
+										if line.toggle.Clicked(gtx) {
+											a.agentUI.chatLines[index].collapsed = !a.agentUI.chatLines[index].collapsed
+										}
+										if line.collapsed {
+											role += "（已折叠，点击展开）"
+										} else {
+											role += "（点击折叠）"
+										}
+										return material.Button(a.theme, line.toggle, role).Layout(gtx)
+									}
 									header := material.Caption(a.theme, role)
 									header.Color = homeMuted
 									header.MaxLines = 1
 									return header.Layout(gtx)
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if line.role == "reasoning" && line.collapsed {
+										return layout.Dimensions{}
+									}
 									body := material.Body1(a.theme, line.text)
 									body.MaxLines = 0
 									return layout.Inset{Top: unit.Dp(3)}.Layout(gtx, body.Layout)
@@ -270,8 +286,22 @@ func (a *App) sendAgentChatMessage() {
 	if editorHasActiveComposition(&a.agentUI.chatInput) {
 		return
 	}
+	if a.agentUI.conversationInterrupted {
+		a.agentUI.chatStatus = "上一轮尚未完成，请先点击顶部的“继续”恢复会话。"
+		return
+	}
 	message := strings.TrimSpace(a.agentUI.chatInput.Text())
 	if message == "" || a.agentUI.conversationBusy {
+		return
+	}
+	view := a.agentViewContext()
+	if view.DocumentID == "" {
+		a.agentUI.chatStatus = "请先打开一份文档，再开始与该文档关联的会话。"
+		return
+	}
+	if a.agentUI.conversationID == "" {
+		a.ensureAgentChatDocument(view.DocumentID)
+		a.agentUI.chatStatus = "正在准备文档会话，请稍后再发送。"
 		return
 	}
 	host, _ := a.ensureDesktopRuntime().currentAgentHost()
@@ -281,11 +311,12 @@ func (a *App) sendAgentChatMessage() {
 		return
 	}
 	a.subscribeToAgent(host)
+	a.agentUI.activeReasoningLine = -1
+	a.agentUI.activeAnswerStarted = false
 	a.agentUI.chatInput.SetText("")
 	a.agentUI.chatLines = appendAgentChatLine(a.agentUI.chatLines, agentChatLine{role: "user", text: message})
 	a.agentUI.conversationBusy = true
 	a.agentUI.chatStatus = "正在联系模型…"
-	view := a.agentViewContext()
 	ctx, cancel := context.WithCancel(context.Background())
 	conversationID := a.agentUI.conversationID
 	watcherStarted := a.launchManagedBackground(func() {
@@ -316,16 +347,77 @@ func (a *App) sendAgentChatMessage() {
 	}
 }
 
+func (a *App) resumeAgentChatConversation() {
+	if a == nil || !a.agentUI.conversationInterrupted || a.agentUI.conversationBusy {
+		return
+	}
+	host, _ := a.ensureDesktopRuntime().currentAgentHost()
+	if host == nil {
+		a.agentUI.chatStatus = "请先配置可用模型，再继续此会话。"
+		return
+	}
+	id := a.agentUI.conversationID
+	if id == "" {
+		return
+	}
+	a.subscribeToAgent(host)
+	a.agentUI.activeReasoningLine = -1
+	a.agentUI.activeAnswerStarted = false
+	a.agentUI.conversationBusy = true
+	a.agentUI.chatStatus = "正在恢复已保存的会话…"
+	view := a.agentViewContext()
+	ctx, cancel := context.WithCancel(context.Background())
+	watcherStarted := a.launchManagedBackground(func() {
+		select {
+		case <-a.shutdown:
+			cancel()
+		case <-ctx.Done():
+		}
+	})
+	if !watcherStarted {
+		cancel()
+		a.agentUI.conversationBusy = false
+		return
+	}
+	if !a.launchManagedBackground(func() {
+		defer cancel()
+		if err := host.ResumeConversation(ctx, id, view); err != nil {
+			code, message := agent.DescribeTurnError(err)
+			select {
+			case a.agentUI.chatEvents <- agent.AgentEvent{ConversationID: id, Type: agent.EventTurnFailed, ErrorCode: code, Error: message}:
+			case <-a.shutdown:
+			}
+		}
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	}) {
+		cancel()
+		a.agentUI.conversationBusy = false
+		a.agentUI.chatStatus = "无法启动会话恢复请求。"
+	}
+}
+
 func (a *App) stopAgentChatTurn() {
 	host, _ := a.ensureDesktopRuntime().currentAgentHost()
 	if host == nil || !a.agentUI.conversationBusy {
 		return
 	}
-	if err := host.Cancel(a.agentUI.conversationID); err != nil {
-		a.agentUI.chatStatus = err.Error()
-		return
-	}
 	a.agentUI.chatStatus = "正在停止…"
+	conversationID := a.agentUI.conversationID
+	if !a.launchManagedBackground(func() {
+		if err := host.Cancel(conversationID); err != nil {
+			select {
+			case a.agentUI.chatEvents <- agent.AgentEvent{ConversationID: conversationID, Type: agent.EventTurnFailed, Error: err.Error()}:
+			case <-a.shutdown:
+			}
+		}
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	}) {
+		a.agentUI.chatStatus = "无法启动停止请求。"
+	}
 }
 
 func (a *App) subscribeToAgent(host *agent.AgentHost) {
@@ -341,7 +433,7 @@ func (a *App) subscribeToAgent(host *agent.AgentHost) {
 	}
 	a.closeAgentSubscription()
 	if a.agentUI.conversationID == "" {
-		a.agentUI.conversationID = agent.ConversationID(fmt.Sprintf("window-%d", a.windowID))
+		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -391,16 +483,48 @@ func (a *App) processAgentChatEvents() {
 	for {
 		select {
 		case event := <-a.agentUI.chatEvents:
+			if event.ConversationID != a.agentUI.conversationID {
+				continue
+			}
 			switch event.Type {
+			case agent.EventReasoningDelta:
+				lineIndex := a.agentUI.activeReasoningLine
+				if lineIndex >= 0 && lineIndex < len(a.agentUI.chatLines) && a.agentUI.chatLines[lineIndex].role == "reasoning" {
+					a.agentUI.chatLines[lineIndex].text += event.Reasoning
+					if a.agentUI.activeAnswerStarted {
+						a.agentUI.chatLines[lineIndex].collapsed = true
+					}
+				} else if a.agentUI.activeAnswerStarted {
+					line := newAgentReasoningLine(event.Reasoning, true)
+					answerIndex := lastAgentAssistantLine(a.agentUI.chatLines)
+					if answerIndex >= 0 {
+						a.agentUI.activeReasoningLine = a.insertLiveAgentChatLine(answerIndex, line)
+					} else {
+						a.appendLiveAgentChatLine(line)
+						a.agentUI.activeReasoningLine = len(a.agentUI.chatLines) - 1
+					}
+				} else {
+					line := newAgentReasoningLine(event.Reasoning, false)
+					a.appendLiveAgentChatLine(line)
+					a.agentUI.activeReasoningLine = len(a.agentUI.chatLines) - 1
+				}
 			case agent.EventAssistantDelta:
+				a.agentUI.activeAnswerStarted = true
+				a.collapseCurrentAgentReasoning()
 				if len(a.agentUI.chatLines) > 0 && a.agentUI.chatLines[len(a.agentUI.chatLines)-1].role == "assistant" {
 					a.agentUI.chatLines[len(a.agentUI.chatLines)-1].text += event.Text
 				} else {
-					a.agentUI.chatLines = appendAgentChatLine(a.agentUI.chatLines, agentChatLine{role: "assistant", text: event.Text})
+					a.appendLiveAgentChatLine(agentChatLine{role: "assistant", text: event.Text})
 				}
+			case agent.EventConversationTitle:
+				a.agentUI.conversationTitle = event.Title
+				a.refreshAgentConversationHistory(false)
 			case agent.EventToolStarted:
+				a.collapseCurrentAgentReasoning()
+				a.agentUI.activeReasoningLine = -1
+				a.agentUI.activeAnswerStarted = false
 				a.agentUI.chatStatus = "正在调用工具：" + event.ToolName
-				a.agentUI.chatLines = appendAgentChatLine(a.agentUI.chatLines, agentChatLine{role: "tool", text: "正在执行 " + event.ToolName})
+				a.appendLiveAgentChatLine(agentChatLine{role: "tool", text: "正在执行 " + event.ToolName})
 			case agent.EventToolCompleted:
 				a.agentUI.chatStatus = ""
 				message := "工具 " + event.ToolName + " 已完成"
@@ -410,17 +534,44 @@ func (a *App) processAgentChatEvents() {
 				if len(a.agentUI.chatLines) > 0 && a.agentUI.chatLines[len(a.agentUI.chatLines)-1].role == "tool" {
 					a.agentUI.chatLines[len(a.agentUI.chatLines)-1].text = message
 				} else {
-					a.agentUI.chatLines = appendAgentChatLine(a.agentUI.chatLines, agentChatLine{role: "tool", text: message})
+					a.appendLiveAgentChatLine(agentChatLine{role: "tool", text: message})
 				}
 			case agent.EventTurnCompleted:
 				a.agentUI.conversationBusy = false
+				a.agentUI.conversationInterrupted = false
 				a.agentUI.chatStatus = ""
+				a.agentUI.activeReasoningLine = -1
+				a.agentUI.activeAnswerStarted = false
+				a.refreshAgentConversationHistory(false)
 			case agent.EventTurnFailed:
+				a.collapseCurrentAgentReasoning()
 				a.agentUI.conversationBusy = false
 				a.agentUI.chatStatus = ""
+				a.agentUI.activeReasoningLine = -1
+				a.agentUI.activeAnswerStarted = false
+				optimisticMessage := ""
+				if count := len(a.agentUI.chatLines); count > 0 && a.agentUI.chatLines[count-1].role == "user" {
+					optimisticMessage = a.agentUI.chatLines[count-1].text
+				}
+				if host, _ := a.ensureDesktopRuntime().currentAgentHost(); host != nil {
+					if snapshot, found := host.Snapshot(event.ConversationID); found {
+						a.agentUI.conversationInterrupted = snapshot.Interrupted
+						a.agentUI.conversationTitle = snapshot.Title
+						a.agentUI.chatLines = agentConversationChatLines(snapshot)
+						if snapshot.Interrupted {
+							if snapshot.Title == "" && a.ensureDesktopRuntime().workspaceStore != nil {
+								a.agentUI.chatStatus = "首条消息已保存，标题或回复尚未完成；点击顶部标题旁的“继续”重试。"
+							} else {
+								a.agentUI.chatStatus = "上一轮尚未完成；点击顶部的“继续”恢复。"
+							}
+						} else if optimisticMessage != "" {
+							a.agentUI.chatInput.SetText(optimisticMessage)
+						}
+					}
+				}
 				if event.Error != "" {
 					if len(a.agentUI.chatLines) == 0 || a.agentUI.chatLines[len(a.agentUI.chatLines)-1].role != "error" || a.agentUI.chatLines[len(a.agentUI.chatLines)-1].text != event.Error {
-						a.agentUI.chatLines = appendAgentChatLine(a.agentUI.chatLines, agentChatLine{role: "error", text: event.Error})
+						a.appendLiveAgentChatLine(agentChatLine{role: "error", text: event.Error})
 					}
 				}
 			}
@@ -608,6 +759,67 @@ func appendAgentChatLine(lines []agentChatLine, line agentChatLine) []agentChatL
 		lines = append([]agentChatLine(nil), lines[len(lines)-300:]...)
 	}
 	return lines
+}
+
+func newAgentReasoningLine(text string, collapsed bool) agentChatLine {
+	return agentChatLine{role: "reasoning", text: text, collapsed: collapsed, toggle: new(widget.Clickable)}
+}
+
+func (a *App) appendLiveAgentChatLine(line agentChatLine) {
+	previousLength := len(a.agentUI.chatLines)
+	a.agentUI.chatLines = appendAgentChatLine(a.agentUI.chatLines, line)
+	dropped := previousLength + 1 - len(a.agentUI.chatLines)
+	if dropped > 0 && a.agentUI.activeReasoningLine >= 0 {
+		a.agentUI.activeReasoningLine -= dropped
+		if a.agentUI.activeReasoningLine < 0 {
+			a.agentUI.activeReasoningLine = -1
+		}
+	}
+}
+
+func (a *App) insertLiveAgentChatLine(index int, line agentChatLine) int {
+	lines := a.agentUI.chatLines
+	if index < 0 {
+		index = 0
+	}
+	if index > len(lines) {
+		index = len(lines)
+	}
+	lines = append(lines, agentChatLine{})
+	copy(lines[index+1:], lines[index:len(lines)-1])
+	lines[index] = line
+	dropped := 0
+	if len(lines) > 300 {
+		dropped = len(lines) - 300
+		lines = append([]agentChatLine(nil), lines[dropped:]...)
+	}
+	if a.agentUI.activeReasoningLine >= index {
+		a.agentUI.activeReasoningLine++
+	}
+	if dropped > 0 && a.agentUI.activeReasoningLine >= 0 {
+		a.agentUI.activeReasoningLine -= dropped
+		if a.agentUI.activeReasoningLine < 0 {
+			a.agentUI.activeReasoningLine = -1
+		}
+	}
+	a.agentUI.chatLines = lines
+	return index - dropped
+}
+
+func lastAgentAssistantLine(lines []agentChatLine) int {
+	for index := len(lines) - 1; index >= 0; index-- {
+		if lines[index].role == "assistant" {
+			return index
+		}
+	}
+	return -1
+}
+
+func (a *App) collapseCurrentAgentReasoning() {
+	index := a.agentUI.activeReasoningLine
+	if index >= 0 && index < len(a.agentUI.chatLines) && a.agentUI.chatLines[index].role == "reasoning" {
+		a.agentUI.chatLines[index].collapsed = true
+	}
 }
 
 func (a *App) agentViewContext() application.ViewContext {

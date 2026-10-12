@@ -22,6 +22,7 @@ func TestAgentChatEventsKeepLongRepliesAndRenderToolAndErrorStatus(t *testing.T)
 	runtime := newDesktopRuntime()
 	t.Cleanup(runtime.shutdown)
 	app := newAppWithRuntime(nil, runtime)
+	app.agentUI.conversationID = "window-1"
 	if len(app.agentUI.chatLines) != 0 {
 		t.Fatalf("new chat is not empty: %+v", app.agentUI.chatLines)
 	}
@@ -59,12 +60,63 @@ func TestAgentChatEventsKeepLongRepliesAndRenderToolAndErrorStatus(t *testing.T)
 	}
 }
 
+func TestAgentChatShowsReasoningSeparatelyAndCollapsesItWhenAnswerStarts(t *testing.T) {
+	runtime := newDesktopRuntime()
+	t.Cleanup(runtime.shutdown)
+	app := newAppWithRuntime(nil, runtime)
+	app.agentUI.conversationID = "conversation-1"
+	app.agentUI.chatEvents <- agent.AgentEvent{ConversationID: "conversation-1", Type: agent.EventReasoningDelta, Reasoning: "先检查数据范围。"}
+	app.agentUI.chatEvents <- agent.AgentEvent{ConversationID: "conversation-1", Type: agent.EventAssistantDelta, Text: "本季度营业额增长。"}
+	app.agentUI.chatEvents <- agent.AgentEvent{ConversationID: "conversation-1", Type: agent.EventReasoningDelta, Reasoning: "我还核对了汇总行。"}
+	app.processAgentChatEvents()
+	if len(app.agentUI.chatLines) != 2 || app.agentUI.chatLines[0].role != "reasoning" || app.agentUI.chatLines[0].text != "先检查数据范围。我还核对了汇总行。" || !app.agentUI.chatLines[0].collapsed {
+		t.Fatalf("reasoning was not kept separate and collapsed before the answer: %+v", app.agentUI.chatLines)
+	}
+	if app.agentUI.chatLines[1].role != "assistant" || app.agentUI.chatLines[1].text != "本季度营业额增长。" {
+		t.Fatalf("answer line=%+v", app.agentUI.chatLines[1])
+	}
+}
+
+func TestAgentChatInsertsFirstLateReasoningBeforeItsAnswer(t *testing.T) {
+	runtime := newDesktopRuntime()
+	t.Cleanup(runtime.shutdown)
+	app := newAppWithRuntime(nil, runtime)
+	app.agentUI.conversationID = "conversation-late-reasoning"
+	app.agentUI.chatEvents <- agent.AgentEvent{ConversationID: "conversation-late-reasoning", Type: agent.EventAssistantDelta, Text: "已完成检查。"}
+	app.agentUI.chatEvents <- agent.AgentEvent{ConversationID: "conversation-late-reasoning", Type: agent.EventReasoningDelta, Reasoning: "先核对了文档结构。"}
+	app.processAgentChatEvents()
+	if len(app.agentUI.chatLines) != 2 || app.agentUI.chatLines[0].role != "reasoning" || app.agentUI.chatLines[0].text != "先核对了文档结构。" || !app.agentUI.chatLines[0].collapsed {
+		t.Fatalf("late reasoning was not inserted into a folded transcript before the answer: %+v", app.agentUI.chatLines)
+	}
+	if app.agentUI.chatLines[1].role != "assistant" || app.agentUI.chatLines[1].text != "已完成检查。" {
+		t.Fatalf("answer moved or changed unexpectedly: %+v", app.agentUI.chatLines)
+	}
+}
+
+func TestAgentConversationHistoryRestoresReasoningBeforeItsAnswer(t *testing.T) {
+	snapshot := agent.ConversationSnapshot{
+		Messages: []provider.ModelMessage{
+			{Role: "user", Content: "分析数据"},
+			{Role: "assistant", Content: "结论"},
+		},
+		Reasoning: []agent.ReasoningBlock{{BeforeMessage: 1, Content: "先检查数据"}},
+	}
+	lines := agentConversationChatLines(snapshot)
+	if len(lines) != 3 || lines[0].role != "user" || lines[1].role != "reasoning" || !lines[1].collapsed || lines[2].role != "assistant" {
+		t.Fatalf("restored conversation transcript=%+v", lines)
+	}
+}
+
 func TestAgentChatSendAndStopUseBackgroundHostTurn(t *testing.T) {
 	ctx := context.Background()
 	desktopRuntime := newDesktopRuntime()
 	t.Cleanup(desktopRuntime.shutdown)
 	app := newAppWithRuntime(nil, desktopRuntime)
 	desktopRuntime.attachWindow(1, app)
+	app.documentSessionState = &documentSessionState{sharedDocumentSession: &sharedDocumentSession{}}
+	app.documentSessionState.documentID = "doc-chat-ui"
+	app.agentUI.conversationDocumentID = "doc-chat-ui"
+	app.agentUI.conversationID = "conversation-chat-ui"
 
 	client, err := agent.ConnectMCP(ctx, desktopRuntime.applicationRuntime)
 	if err != nil {
@@ -119,7 +171,7 @@ func TestAgentChatSendAndStopUseBackgroundHostTurn(t *testing.T) {
 		}
 	}
 	app.processAgentChatEvents()
-	if app.agentUI.conversationBusy || app.agentUI.chatStatus != "" {
+	if app.agentUI.conversationBusy || !strings.Contains(app.agentUI.chatStatus, "上一轮尚未完成") {
 		t.Fatalf("stopped turn state busy=%v status=%q", app.agentUI.conversationBusy, app.agentUI.chatStatus)
 	}
 	var stoppedMessage bool
@@ -135,6 +187,10 @@ func TestAgentChatDoesNotSubmitChineseIMEComposition(t *testing.T) {
 	runtime := newDesktopRuntime()
 	t.Cleanup(runtime.shutdown)
 	app := newAppWithRuntime(nil, runtime)
+	app.documentSessionState = &documentSessionState{sharedDocumentSession: &sharedDocumentSession{}}
+	app.documentSessionState.documentID = "doc-ime"
+	app.agentUI.conversationDocumentID = "doc-ime"
+	app.agentUI.conversationID = "conversation-ime"
 	var router input.Router
 	var ops op.Ops
 	frame := func() {
@@ -178,6 +234,11 @@ type chatBlockingProvider struct {
 	started chan struct{}
 	once    sync.Once
 }
+
+func (*chatBlockingProvider) ListModels(context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+func (*chatBlockingProvider) Stop(context.Context, string) error { return nil }
 
 func (p *chatBlockingProvider) Stream(ctx context.Context, _ provider.ModelRequest, _ func(provider.ModelEvent) error) error {
 	p.once.Do(func() { close(p.started) })

@@ -11,6 +11,7 @@ func (a *App) processSettingsNavClicks(gtx layout.Context) {
 		}
 	}
 	if a.homeNavButton("settings-back").Clicked(gtx) {
+		a.cancelAgentModelLookup(true)
 		a.clearAgentSettingsKeyPreview()
 		a.agentUI.apiKeyInput.Mask = '•'
 		a.resetHomeContentScroll()

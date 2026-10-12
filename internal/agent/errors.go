@@ -18,6 +18,12 @@ func DescribeTurnError(err error) (string, string) {
 		return "timeout", "模型请求超时，可以检查服务状态后重试。"
 	case errors.Is(err, ErrPromptTooLarge), errors.Is(err, ErrMessageTooLarge), errors.Is(err, ErrToolArgumentsTooLarge), errors.Is(err, ErrToolResultTooLarge):
 		return "agent_limit", "本轮对话或工具结果超过 Glance 的处理上限，请缩小输入范围后重试。"
+	case errors.Is(err, ErrConversationDocumentRequired):
+		return "conversation_document_required", "请先打开一份文档，再开始与该文档关联的会话。"
+	case errors.Is(err, ErrConversationScopeMismatch):
+		return "conversation_scope", "无法加载此会话：它属于另一份文档。"
+	case errors.Is(err, ErrConversationNotInterrupted):
+		return "conversation_not_interrupted", "此会话没有待继续的轮次。"
 	case errors.Is(err, ErrToolCallLimit), errors.Is(err, ErrToolRoundLimit):
 		return "agent_limit", "本轮工具调用次数达到上限；可以把任务拆成更小的步骤。"
 	case errors.Is(err, ErrEmptyModelResponse):

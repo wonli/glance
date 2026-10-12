@@ -89,8 +89,8 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version > 4 {
-		return fmt.Errorf("workspace database version %d is newer than supported version 4", version)
+	if version > 5 {
+		return fmt.Errorf("workspace database version %d is newer than supported version 5", version)
 	}
 	if version == 0 {
 		tx, err := db.Begin()
@@ -177,6 +177,35 @@ func migrate(db *sql.DB) error {
 		if err := tx.Commit(); err != nil {
 			return err
 		}
+		version = 4
+	}
+	if version == 4 {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for _, query := range []string{
+			`CREATE TABLE agent_conversations (
+				id TEXT PRIMARY KEY,
+				document_id TEXT NOT NULL,
+				title TEXT NOT NULL DEFAULT '',
+				messages BLOB NOT NULL DEFAULT X'',
+				reasoning BLOB NOT NULL DEFAULT X'',
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL
+			)`,
+			`CREATE INDEX agent_conversations_document_updated ON agent_conversations(document_id, updated_at DESC, id DESC)`,
+			`PRAGMA user_version = 5`,
+		} {
+			if _, err := tx.Exec(query); err != nil {
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		version = 5
 	}
 	return nil
 }

@@ -27,6 +27,7 @@ func (a *App) showAgentSettings(returnToChat bool) {
 }
 
 func (a *App) prepareAgentSettings(returnToChat bool) {
+	a.cancelAgentModelLookup(true)
 	a.clearAgentSettingsKeyPreview()
 	a.agentUI.apiKeyInput.Mask = '•'
 	settings, err := a.ensureDesktopRuntime().loadAgentSettings(context.Background())
@@ -59,6 +60,7 @@ func (a *App) handleAgentSettingsAction(action string) {
 	}
 	switch action {
 	case "test":
+		a.cancelAgentModelLookup(true)
 		settings := agentsettings.ModelSettings{
 			ProviderID: a.agentUI.providerInput.Text(),
 			BaseURL:    a.agentUI.baseURLInput.Text(),
@@ -82,12 +84,14 @@ func (a *App) handleAgentSettingsAction(action string) {
 			return settings, a.ensureDesktopRuntime().testAgentSettings(ctx, settings, apiKey)
 		})
 	case "cancel", "close":
+		a.cancelAgentModelLookup(true)
 		returnToChat := a.agentUI.returnToChat
 		a.modal.Hide()
 		if returnToChat {
 			a.showAgentChat()
 		}
 	case "save", "confirm":
+		a.cancelAgentModelLookup(true)
 		settings := agentsettings.ModelSettings{
 			ProviderID: a.agentUI.providerInput.Text(),
 			BaseURL:    a.agentUI.baseURLInput.Text(),
@@ -115,6 +119,7 @@ func (a *App) handleAgentSettingsAction(action string) {
 			return saved, err
 		})
 	case "clear-key":
+		a.cancelAgentModelLookup(true)
 		a.agentUI.saving = true
 		a.agentUI.settingsError = ""
 		a.agentUI.settingsInfo = "正在从系统凭据库删除 API Key…"
@@ -167,7 +172,7 @@ func (a *App) runAgentSettingsOperation(operation string, run func(context.Conte
 }
 
 func (a *App) layoutAgentSettings(gtx layout.Context) layout.Dimensions {
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+	dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return agentSettingsField(gtx, a.theme, "Provider ID", &a.agentUI.providerInput, "minimax / kimi / deepseek / ollama / openai-compatible")
 		}),
@@ -182,15 +187,22 @@ func (a *App) layoutAgentSettings(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			var dims layout.Dimensions
 			if a.agentUI.providerInput.Text() == "ollama" {
 				style := material.Caption(a.theme, "Ollama 在本机运行，不需要 API Key。默认地址为 http://127.0.0.1:11434。")
 				style.Color = homeMuted
 				style.MaxLines = 2
-				return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, style.Layout)
+				dims = layout.Inset{Top: unit.Dp(12)}.Layout(gtx, style.Layout)
+			} else {
+				dims = layout.Inset{Top: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return agentSettingsField(gtx, a.theme, "API Key（留空保留已保存的 Key）", &a.agentUI.apiKeyInput, "输入后会安全保存")
+				})
 			}
-			return layout.Inset{Top: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return agentSettingsField(gtx, a.theme, "API Key（留空保留已保存的 Key）", &a.agentUI.apiKeyInput, "输入后会安全保存")
-			})
+			a.observeAgentModelLookup()
+			return dims
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return a.layoutAgentModelOptions(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			message := a.agentUI.settingsInfo
@@ -204,6 +216,8 @@ func (a *App) layoutAgentSettings(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, style.Layout)
 		}),
 	)
+	a.observeAgentModelLookup()
+	return dims
 }
 
 func agentSettingsField(gtx layout.Context, theme *material.Theme, label string, editor *widget.Editor, hint string) layout.Dimensions {

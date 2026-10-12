@@ -38,6 +38,8 @@ func (a *App) prepareAgentSettingsPage() {
 
 func settingsTabFor(providerID, baseURL string) string {
 	switch providerID {
+	case "minimax", "kimi", "ollama":
+		return providerID
 	case "deepseek":
 		return "deepseek"
 	case "openai-compatible":
@@ -66,6 +68,9 @@ func (a *App) selectSettingsPageTab(id string) {
 	if id != "providers" && id != "mcp" || a.agentUI.settingsPageTab == id {
 		return
 	}
+	if id != "providers" {
+		a.cancelAgentModelLookup(true)
+	}
 	a.resetHomeContentScroll()
 	a.agentUI.settingsPageTab = id
 	if id == "mcp" {
@@ -92,6 +97,12 @@ func (a *App) selectSettingsProvider(id string) {
 	switch id {
 	case "openai":
 		providerID, baseURL = "openai-compatible", "https://api.openai.com/v1"
+	case "minimax":
+		providerID, baseURL = "minimax", defaultAgentBaseURL("minimax")
+	case "kimi":
+		providerID, baseURL = "kimi", defaultAgentBaseURL("kimi")
+	case "ollama":
+		providerID, baseURL = "ollama", defaultAgentBaseURL("ollama")
 	case "deepseek":
 		providerID, baseURL = "deepseek", defaultAgentBaseURL("deepseek")
 	case "custom":
@@ -125,16 +136,17 @@ func (a *App) layoutAgentSettingsPage(gtx layout.Context) layout.Dimensions {
 			enabled bool
 		}{
 			{id: "openai", enabled: true},
-			{id: "anthropic"},
-			{id: "gemini"},
+			{id: "minimax", enabled: true},
+			{id: "kimi", enabled: true},
 			{id: "deepseek", enabled: true},
+			{id: "ollama", enabled: true},
 			{id: "custom", enabled: true},
 		} {
 			if a.settingsProviderButton(tab.id).Clicked(gtx) {
 				if tab.enabled {
 					a.selectSettingsProvider(tab.id)
 				} else {
-					a.agentUI.settingsInfo = "该服务商暂未接入；当前可用 OpenAI、DeepSeek 和自定义兼容接口。"
+					a.agentUI.settingsInfo = "该服务商暂未接入。"
 				}
 			}
 		}
@@ -151,7 +163,7 @@ func (a *App) layoutAgentSettingsPage(gtx layout.Context) layout.Dimensions {
 			a.openAgentAPIKeyHelp()
 		}
 	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+	dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return a.layoutSettingsPageHeading(gtx)
 		}),
@@ -168,6 +180,8 @@ func (a *App) layoutAgentSettingsPage(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 	)
+	a.observeAgentModelLookup()
+	return dims
 }
 
 func (a *App) layoutSettingsPageHeading(gtx layout.Context) layout.Dimensions {
@@ -297,9 +311,10 @@ func (a *App) layoutSettingsProviderTabs(gtx layout.Context) layout.Dimensions {
 		width   unit.Dp
 	}{
 		{id: "openai", label: "OpenAI", enabled: true, width: 92},
-		{id: "anthropic", label: "Anthropic", width: 112},
-		{id: "gemini", label: "Gemini", width: 96},
+		{id: "minimax", label: "MiniMax", enabled: true, width: 100},
+		{id: "kimi", label: "Kimi", enabled: true, width: 78},
 		{id: "deepseek", label: "DeepSeek", enabled: true, width: 108},
+		{id: "ollama", label: "Ollama", enabled: true, width: 92},
 		{id: "custom", label: "自定义", enabled: true, width: 84},
 	}
 	children := make([]layout.FlexChild, 0, len(tabs))
@@ -348,8 +363,14 @@ func settingsTabLabel(tab string) string {
 	switch tab {
 	case "openai":
 		return "OpenAI"
+	case "minimax":
+		return "MiniMax"
+	case "kimi":
+		return "Kimi"
 	case "deepseek":
 		return "DeepSeek"
+	case "ollama":
+		return "Ollama"
 	case "custom":
 		return "自定义"
 	default:
@@ -371,8 +392,10 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 		strings.TrimRight(savedBaseURL, "/") == strings.TrimRight(currentBaseURL, "/") &&
 		(a.agentUI.settings.CredentialRef != "" || a.agentUI.settings.ProviderID == "ollama")
 	status, statusFG, statusBG := "未配置", settingsBlack, homeHoverFill
-	if configured {
-		status, statusFG, statusBG = "连接正常", settingsBlack, color.NRGBA{R: 232, G: 246, B: 238, A: 255}
+	if configured && strings.TrimSpace(a.agentUI.apiKeyInput.Text()) == "" {
+		status, statusFG, statusBG = "已保存", settingsBlack, color.NRGBA{R: 232, G: 246, B: 238, A: 255}
+	} else if strings.TrimSpace(a.agentUI.providerInput.Text()) != "" {
+		status = "待验证"
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -434,7 +457,12 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return agentSettingsPageFieldHelp(gtx, a.theme, "默认模型", &a.agentUI.modelInput, "填写服务商提供的模型名", "用于新建 AI 对话，可在会话中切换。")
+			dims := agentSettingsPageFieldHelp(gtx, a.theme, "默认模型", &a.agentUI.modelInput, "填写服务商提供的模型名", "用于新建 AI 对话，可在会话中切换。")
+			a.observeAgentModelLookup()
+			return dims
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Bottom: unit.Dp(16)}.Layout(gtx, a.layoutAgentModelOptions)
 		}),
 	)
 }

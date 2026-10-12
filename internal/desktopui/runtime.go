@@ -28,6 +28,7 @@ type desktopRuntime struct {
 	agentSettings           *agentsettings.Store
 	agentSettingsErr        error
 	agentSettingsValue      agentsettings.ModelSettings
+	agentProviderFactory    func(agentsettings.ModelSettings, string) (provider.ModelProvider, error)
 	agentClient             *agent.InProcessMCPClient
 	agentHost               *agent.AgentHost
 	agentMu                 sync.RWMutex
@@ -319,34 +320,15 @@ func (r *desktopRuntime) testAgentSettings(ctx context.Context, settings agentse
 		}
 	}
 
-	var modelProvider provider.ModelProvider
-	switch settings.ProviderID {
-	case "ollama":
-		baseURL := settings.BaseURL
-		if baseURL == "" {
-			baseURL = "http://127.0.0.1:11434"
-		}
-		modelProvider = provider.NewOllama(provider.OllamaConfig{BaseURL: baseURL, Model: settings.Model})
-	case "minimax", "kimi", "deepseek", "openai-compatible":
-		baseURL := settings.BaseURL
-		if baseURL == "" {
-			baseURL = provider.DefaultChatCompletionsBaseURL(settings.ProviderID)
-		}
-		if baseURL == "" {
-			return errors.New("请填写兼容 Chat Completions 的服务地址")
-		}
-		if secret == "" {
-			return errors.New("请填写 API Key")
-		}
-		modelProvider = provider.NewChatCompletions(provider.ChatCompletionsConfig{BaseURL: baseURL, APIKey: secret, Model: settings.Model})
-	default:
-		return errors.New("不支持的模型服务商")
+	modelProvider, err := newAgentProvider(settings, secret)
+	if err != nil {
+		return err
 	}
 
 	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	var response strings.Builder
-	err := modelProvider.Stream(probeCtx, provider.ModelRequest{
+	err = modelProvider.Stream(probeCtx, provider.ModelRequest{
 		Model:    settings.Model,
 		Messages: []provider.ModelMessage{{Role: "user", Content: "请只回复：连接成功"}},
 	}, func(event provider.ModelEvent) error {
@@ -401,21 +383,11 @@ func (r *desktopRuntime) installAgentHost(ctx context.Context, saved agentsettin
 	r.mu.Unlock()
 	var modelProvider provider.ModelProvider
 	var err error
-	if saved.ProviderID == "ollama" {
-		baseURL := saved.BaseURL
-		if baseURL == "" {
-			baseURL = "http://127.0.0.1:11434"
+	if saved.ProviderID == "ollama" || secret != "" {
+		modelProvider, err = newAgentProvider(saved, secret)
+		if err != nil {
+			return err
 		}
-		modelProvider = provider.NewOllama(provider.OllamaConfig{BaseURL: baseURL, Model: saved.Model})
-	} else if secret != "" {
-		baseURL := saved.BaseURL
-		if baseURL == "" {
-			baseURL = provider.DefaultChatCompletionsBaseURL(saved.ProviderID)
-		}
-		if baseURL == "" {
-			return errors.New("该模型服务需要填写兼容 Chat Completions 的服务地址")
-		}
-		modelProvider = provider.NewChatCompletions(provider.ChatCompletionsConfig{BaseURL: baseURL, APIKey: secret, Model: saved.Model})
 	}
 
 	var newClient *agent.InProcessMCPClient
@@ -428,7 +400,9 @@ func (r *desktopRuntime) installAgentHost(ctx context.Context, saved agentsettin
 		if err != nil {
 			return fmt.Errorf("连接 Glance 能力目录: %w", err)
 		}
-		newHost, err = agent.NewHost(ctx, modelProvider, newClient.Session, agent.HostOptions{Model: saved.Model})
+		newHost, err = agent.NewHost(ctx, modelProvider, newClient.Session, agent.HostOptions{
+			Model: saved.Model, ConversationStore: workspaceAgentConversationStore{runtime: r},
+		})
 		if err != nil {
 			_ = newClient.Close()
 			return fmt.Errorf("创建内置 Agent Host: %w", err)
