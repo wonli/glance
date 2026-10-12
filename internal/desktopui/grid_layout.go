@@ -381,7 +381,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 	area := gridShape.Push(gtx.Ops)
 	event.Op(gtx.Ops, &v.PointerTag)
 	key.InputHintOp{Tag: &v.PointerTag, Hint: key.HintText}.Add(gtx.Ops)
-	pointer.PassOp{}.Push(gtx.Ops)
+	pass := pointer.PassOp{}.Push(gtx.Ops)
 	if v.ResizeCursor == resizeColumns {
 		pointer.CursorEastWestResize.Add(gtx.Ops)
 	} else if v.ResizeCursor == resizeRows {
@@ -401,6 +401,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 	if a.documentSessionState == nil || !a.documentSessionState.spreadsheetGridlinesHidden {
 		paint.FillShape(gtx.Ops, gridLine, clip.Stroke{Path: gridShape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
 	}
+	pass.Pop()
 	area.Pop()
 	return dims
 }

@@ -127,6 +127,7 @@ func (a *App) selectSettingsProvider(id string) {
 }
 
 func (a *App) layoutAgentSettingsPage(gtx layout.Context) layout.Dimensions {
+	a.processAgentModelOptionClicks(gtx)
 	if a.agentUI.settingsPageTab == "" {
 		a.agentUI.settingsPageTab = "providers"
 	}
@@ -379,6 +380,7 @@ func settingsTabLabel(tab string) string {
 }
 
 func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimensions {
+	a.processAgentModelOptionClicks(gtx)
 	providerName := settingsTabLabel(a.agentUI.settingsTab)
 	savedBaseURL := a.agentUI.settings.BaseURL
 	if savedBaseURL == "" {

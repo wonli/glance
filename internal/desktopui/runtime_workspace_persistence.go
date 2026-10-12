@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -30,6 +31,9 @@ func (r *desktopRuntime) startWorkspaceWriter() {
 		defer close(done)
 		for job := range jobs {
 			if job.barrier != nil {
+				if err := r.flushWorkspacePreferences(); err != nil {
+					r.publishWorkspaceWriteResult(err)
+				}
 				close(job.barrier)
 				continue
 			}
@@ -38,8 +42,11 @@ func (r *desktopRuntime) startWorkspaceWriter() {
 				err = r.workspaceStore.SaveRecents(job.recents)
 			} else if job.saveFavorite {
 				err = r.workspaceStore.SaveFavorite(job.favoritePath, job.favoriteValue)
-			} else {
+			} else if !job.savePreferences {
 				err = r.writeWorkspaceSnapshot(job)
+			}
+			if preferenceErr := r.flushWorkspacePreferences(); preferenceErr != nil {
+				err = errors.Join(err, preferenceErr)
 			}
 			r.publishWorkspaceWriteResult(err)
 			r.invalidateWindows()
@@ -178,4 +185,47 @@ func (r *desktopRuntime) shutdown() {
 			}
 		})
 	})
+}
+
+// Coalesce personalization writes so dragging never blocks the window loop.
+func (r *desktopRuntime) queueWorkspacePreference(key, value string) {
+	r.startWorkspaceWriter()
+	r.workspaceQueueMu.Lock()
+	defer r.workspaceQueueMu.Unlock()
+	if r.workspaceWriterStopped || r.workspaceWriteJobs == nil {
+		return
+	}
+	r.workspacePreferenceMu.Lock()
+	if r.workspacePreferences == nil {
+		r.workspacePreferences = make(map[string]string)
+	}
+	r.workspacePreferences[key] = value
+	r.workspacePreferenceMu.Unlock()
+	select {
+	case r.workspaceWriteJobs <- workspaceWriteJob{savePreferences: true}:
+	default:
+	}
+	// A full queue already has work that will flush the pending values.
+}
+
+func (r *desktopRuntime) flushWorkspacePreferences() error {
+	r.workspacePreferenceMu.Lock()
+	values := r.workspacePreferences
+	r.workspacePreferences = nil
+	r.workspacePreferenceMu.Unlock()
+	var failures error
+	for key, value := range values {
+		if err := r.workspaceStore.SetPreference(key, value); err != nil {
+			failures = errors.Join(failures, fmt.Errorf("save personalization: %w", err))
+			r.workspacePreferenceMu.Lock()
+			if r.workspacePreferences == nil {
+				r.workspacePreferences = make(map[string]string)
+			}
+			if _, newer := r.workspacePreferences[key]; !newer {
+				r.workspacePreferences[key] = value
+			}
+			r.workspacePreferenceMu.Unlock()
+		}
+	}
+	return failures
 }

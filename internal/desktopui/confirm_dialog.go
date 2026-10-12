@@ -63,6 +63,7 @@ func (a *App) layoutConfirmDialogCard(gtx layout.Context) layout.Dimensions {
 	}
 	gtx.Constraints.Min.X = maxWidth
 	gtx.Constraints.Max.X = maxWidth
+	gtx.Constraints.Min.Y = 0
 
 	child := op.Record(gtx.Ops)
 	dims := layout.Inset{Top: unit.Dp(24), Bottom: unit.Dp(24), Left: unit.Dp(24), Right: unit.Dp(24)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

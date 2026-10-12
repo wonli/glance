@@ -43,7 +43,9 @@ func (a *App) layoutWordFlow(gtx layout.Context) layout.Dimensions {
 					return a.layoutWordRibbon(gtx)
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return a.layoutWordBodyArea(gtx, state, blocks)
+					return a.layoutAgentSidebarWorkspace(gtx, func(gtx layout.Context) layout.Dimensions {
+						return a.layoutWordBodyArea(gtx, state, blocks)
+					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return a.layoutWordStatusBar(gtx, state)

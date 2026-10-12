@@ -34,7 +34,9 @@ func (a *App) layoutJSON(gtx layout.Context) layout.Dimensions {
 	a.handleJSONToolbarEvents(gtx)
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(a.layoutJSONToolbar),
-		layout.Flexed(1, a.layoutJSONWorkspace),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return a.layoutAgentSidebarWorkspace(gtx, a.layoutJSONWorkspace)
+		}),
 		layout.Rigid(a.layoutJSONStatus),
 	)
 }

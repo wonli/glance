@@ -19,6 +19,7 @@ func (a *App) layoutJSONToolbar(gtx layout.Context) layout.Dimensions {
 	return jsonPanel(gtx, contentSurface, false, true, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Left: 8, Right: 8, Top: 10, Bottom: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(a.layoutAgentRibbonEntry),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					a.jsonToolbarActionList.List.Axis = layout.Horizontal
 					return a.jsonToolbarActionList.Layout(gtx, len(jsonToolbarActions), func(gtx layout.Context, index int) layout.Dimensions {

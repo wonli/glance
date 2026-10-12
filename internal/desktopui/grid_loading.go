@@ -21,12 +21,16 @@ func (a *App) requestGridWindow(v *gridViewport, reader document.GridReader, she
 		unlock()
 		select {
 		case a.gridLoadResults <- gridLoadResult{generation: generation, viewport: v, sheet: sheet, rangeOf: r, window: w, err: err}:
-			a.window.Invalidate()
+			if a.window != nil {
+				a.window.Invalidate()
+			}
 		case <-a.shutdown:
 		}
 	})
 	a.setStatus(fmt.Sprintf("正在读取工作表「%s」的可见单元格…", sheet))
-	a.window.Invalidate()
+	if a.window != nil {
+		a.window.Invalidate()
+	}
 }
 
 func (a *App) pollGridLoad(v *gridViewport) {
@@ -41,7 +45,9 @@ func (a *App) pollGridLoad(v *gridViewport) {
 				continue
 			}
 			if result.generation != a.documentGeneration || result.sheet != a.sheet {
-				a.window.Invalidate()
+				if a.window != nil {
+					a.window.Invalidate()
+				}
 				continue
 			}
 			if result.err != nil {
@@ -49,13 +55,17 @@ func (a *App) pollGridLoad(v *gridViewport) {
 				v.FailedRange = result.rangeOf
 				v.FailedSheet = result.sheet
 				a.setStatus(gridWindowError(result.sheet, result.err))
-				a.window.Invalidate()
+				if a.window != nil {
+					a.window.Invalidate()
+				}
 				continue
 			}
 			_ = v.applyWindow(result.sheet, result.rangeOf, result.window)
 			a.applyValueFilterWindow(a.documentSessionState, v)
 			a.setStatus("就绪")
-			a.window.Invalidate()
+			if a.window != nil {
+				a.window.Invalidate()
+			}
 		default:
 			return
 		}

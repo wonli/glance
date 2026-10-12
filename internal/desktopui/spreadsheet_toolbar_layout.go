@@ -52,44 +52,51 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = stripHeight, stripHeight
 					actions := toolbarActionsForTab(state.toolbarTab)
 					iconSize := toolbarIconSize
-					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return state.toolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
-							action := actions[index]
-							style := a.selectedCellStyle()
-							mixed := action.slot >= 0 && formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
-							formatActive := formatStyleActive(action.slot, style) ||
-								(action.slot == toolbarActionFormatPainter && state != nil && state.excelFormatPainterActive) ||
-								((action.slot == toolbarActionViewGridlines || action.slot == toolbarActionLayoutGridlines) && (state == nil || !state.spreadsheetGridlinesHidden)) ||
-								(action.slot == toolbarActionNormalView && (state == nil || state.spreadsheetViewMode == "normal" || state.spreadsheetViewMode == "")) ||
-								(action.slot == toolbarActionPageBreakPreview && state != nil && state.spreadsheetViewMode == "pageBreakPreview") ||
-								(action.slot == toolbarActionRuler && state != nil && state.spreadsheetRulerVisible) ||
-								(action.slot == toolbarActionProtectSheet && state != nil && state.spreadsheetSheetProtected) ||
-								(action.slot == toolbarActionProtectWorkbook && state != nil && state.spreadsheetWorkbookProtected)
-							active := action.slot >= 0 && !mixed && formatActive
-							enabled := action.slot >= 0 && a.toolbarActionEnabled(action.slot)
-							var button *widget.Clickable
-							if action.slot >= 0 {
-								button = &state.toolbarActionButtons[action.slot]
-							}
-							iconColor, background := toolbarIconColor(true), contentSurface
-							if active {
-								background = toolbarActiveBackground
-							}
-							if mixed {
-								background = mixedToolbarBackground
-							}
-							if !enabled {
-								background = contentSurface
-							}
-							icon, _ := tintedToolbarIcon(action.icon, iconColor)
-							return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
-								btnGtx := gtx
-								btnGtx.Constraints.Min = image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight))
-								btnGtx.Constraints.Max = btnGtx.Constraints.Min
-								return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, action.label, enabled, mixed, background)
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(11), Right: unit.Dp(5)}.Layout(gtx, a.layoutAgentRibbonEntry)
+						}),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return state.toolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
+									action := actions[index]
+									style := a.selectedCellStyle()
+									mixed := action.slot >= 0 && formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
+									formatActive := formatStyleActive(action.slot, style) ||
+										(action.slot == toolbarActionFormatPainter && state != nil && state.excelFormatPainterActive) ||
+										((action.slot == toolbarActionViewGridlines || action.slot == toolbarActionLayoutGridlines) && (state == nil || !state.spreadsheetGridlinesHidden)) ||
+										(action.slot == toolbarActionNormalView && (state == nil || state.spreadsheetViewMode == "normal" || state.spreadsheetViewMode == "")) ||
+										(action.slot == toolbarActionPageBreakPreview && state != nil && state.spreadsheetViewMode == "pageBreakPreview") ||
+										(action.slot == toolbarActionRuler && state != nil && state.spreadsheetRulerVisible) ||
+										(action.slot == toolbarActionProtectSheet && state != nil && state.spreadsheetSheetProtected) ||
+										(action.slot == toolbarActionProtectWorkbook && state != nil && state.spreadsheetWorkbookProtected)
+									active := action.slot >= 0 && !mixed && formatActive
+									enabled := action.slot >= 0 && a.toolbarActionEnabled(action.slot)
+									var button *widget.Clickable
+									if action.slot >= 0 {
+										button = &state.toolbarActionButtons[action.slot]
+									}
+									iconColor, background := toolbarIconColor(true), contentSurface
+									if active {
+										background = toolbarActiveBackground
+									}
+									if mixed {
+										background = mixedToolbarBackground
+									}
+									if !enabled {
+										background = contentSurface
+									}
+									icon, _ := tintedToolbarIcon(action.icon, iconColor)
+									return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
+										btnGtx := gtx
+										btnGtx.Constraints.Min = image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight))
+										btnGtx.Constraints.Max = btnGtx.Constraints.Min
+										return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, action.label, enabled, mixed, background)
+									})
+								})
 							})
-						})
-					})
+						}),
+					)
 				}),
 			)
 		},

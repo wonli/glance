@@ -60,7 +60,9 @@ func (a *App) handleMarkdownEvents(gtx layout.Context) {
 }
 func (a *App) layoutMarkdownDocument(gtx layout.Context) layout.Dimensions {
 	a.handleMarkdownEvents(gtx)
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(a.layoutMarkdownRibbon), layout.Flexed(1, a.layoutMarkdownWorkspace), layout.Rigid(a.layoutMarkdownStatus))
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(a.layoutMarkdownRibbon), layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+		return a.layoutAgentSidebarWorkspace(gtx, a.layoutMarkdownWorkspace)
+	}), layout.Rigid(a.layoutMarkdownStatus))
 }
 func (a *App) layoutMarkdownWorkspace(gtx layout.Context) layout.Dimensions {
 	v := a.ensureMarkdownView()

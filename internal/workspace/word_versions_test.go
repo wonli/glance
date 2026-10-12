@@ -39,8 +39,8 @@ func assertLegacyWorkspaceMigratesToV5(t *testing.T, version int) {
 	if err := store.db.QueryRow("PRAGMA user_version").Scan(&migratedVersion); err != nil {
 		t.Fatal(err)
 	}
-	if migratedVersion != 5 {
-		t.Fatalf("user_version=%d; want 5", migratedVersion)
+	if migratedVersion != 6 {
+		t.Fatalf("user_version=%d; want 6", migratedVersion)
 	}
 
 	got, err := store.Load()

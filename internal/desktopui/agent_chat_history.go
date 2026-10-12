@@ -2,13 +2,11 @@ package desktopui
 
 import (
 	"context"
-	"image/color"
 	"strings"
+	"time"
 
 	"gioui.org/layout"
-	"gioui.org/unit"
 	"gioui.org/widget"
-	"gioui.org/widget/material"
 
 	"glance/internal/agent"
 )
@@ -21,8 +19,11 @@ func (a *App) ensureAgentChatDocument(documentID string) {
 			a.agentUI.conversationDocumentID = ""
 			a.agentUI.conversationID = ""
 			a.agentUI.conversationTitle = ""
+			a.agentUI.conversationStartedAt = time.Time{}
 			a.agentUI.conversationHistory = nil
+			a.agentUI.conversationHistoryLoaded = false
 			a.agentUI.chatLines = nil
+			a.agentUI.chatList.Position = layout.Position{}
 			a.agentUI.activeReasoningLine = -1
 			a.agentUI.activeAnswerStarted = false
 			a.agentUI.conversationBusy = false
@@ -35,11 +36,10 @@ func (a *App) ensureAgentChatDocument(documentID string) {
 		if host, _ := a.ensureDesktopRuntime().currentAgentHost(); host != nil {
 			if a.agentUI.conversationID != "" {
 				a.subscribeToAgent(host)
-			} else if !a.agentUI.conversationHistoryLoading {
-				a.refreshAgentConversationHistory(true)
 			}
 		}
-		if a.modal.Visible && a.agentUI.conversationHistory == nil {
+		if a.agentUI.sidebarVisible && a.agentUI.conversationHistory == nil &&
+			!a.agentUI.conversationHistoryLoaded && !a.agentUI.conversationHistoryLoading {
 			a.refreshAgentConversationHistory(true)
 		}
 		return
@@ -56,9 +56,15 @@ func (a *App) ensureAgentChatDocument(documentID string) {
 	a.agentUI.conversationDocumentID = documentID
 	a.agentUI.conversationID = ""
 	a.agentUI.conversationTitle = ""
+	a.agentUI.conversationStartedAt = time.Time{}
 	a.agentUI.conversationHistory = nil
+	a.agentUI.conversationHistoryLoaded = false
 	a.agentUI.conversationHistoryButtons = make(map[agent.ConversationID]*widget.Clickable)
+	a.agentUI.conversationHistoryDeleteButtons = make(map[agent.ConversationID]*widget.Clickable)
+	a.agentUI.historySearch.SetText("")
+	a.agentUI.conversationHistoryList.Position = layout.Position{}
 	a.agentUI.chatLines = nil
+	a.agentUI.chatList.Position = layout.Position{}
 	a.agentUI.activeReasoningLine = -1
 	a.agentUI.activeAnswerStarted = false
 	a.agentUI.conversationBusy = false
@@ -84,8 +90,9 @@ func (a *App) refreshAgentConversationHistory(selectLatest bool) {
 		return
 	}
 	if a.desktopRuntime == nil || a.desktopRuntime.workspaceStore == nil {
+		a.agentUI.conversationHistoryLoaded = true
 		a.agentUI.conversationHistoryError = "工作区会话存储不可用，无法加载历史会话。"
-		a.agentUI.chatStatus = ""
+		a.agentUI.chatStatus = a.agentUI.conversationHistoryError
 		return
 	}
 	a.startAgentChatHistoryTask("list", documentID, selectLatest, func(ctx context.Context) (agentChatHistoryResult, error) {
@@ -102,6 +109,9 @@ func (a *App) startAgentChatHistoryTask(kind, documentID string, selectLatest bo
 	ctx, cancel := context.WithCancel(context.Background())
 	state.conversationHistoryCancel = cancel
 	state.conversationHistoryLoading = true
+	if kind == "list" {
+		state.conversationHistoryLoaded = false
+	}
 	state.conversationHistoryError = ""
 	results := state.conversationHistoryResults
 	if results == nil {
@@ -128,6 +138,9 @@ func (a *App) startAgentChatHistoryTask(kind, documentID string, selectLatest bo
 		cancel()
 		state.conversationHistoryCancel = nil
 		state.conversationHistoryLoading = false
+		if kind == "list" {
+			state.conversationHistoryLoaded = true
+		}
 		state.conversationHistoryError = "无法启动会话历史请求。"
 	}
 }
@@ -139,6 +152,27 @@ func (a *App) createAgentConversation() {
 	}
 	runtime := a.ensureDesktopRuntime()
 	documentID := a.agentUI.conversationDocumentID
+	oldID, oldBusy := a.agentUI.conversationID, a.agentUI.conversationBusy
+	if oldBusy && oldID != "" {
+		if host, _ := runtime.currentAgentHost(); host != nil {
+			a.launchManagedBackground(func() { _ = host.Cancel(oldID) })
+		}
+	}
+	a.closeAgentSubscription()
+	// Detach immediately, before asynchronous creation. Old turn failures must
+	// not be accepted while the new conversation has not received its ID yet.
+	a.agentUI.conversationID = ""
+	a.agentUI.conversationTitle = ""
+	a.agentUI.conversationStartedAt = time.Time{}
+	a.agentUI.conversationBusy = false
+	a.agentUI.conversationInterrupted = false
+	a.agentUI.conversationHistoryVisible = false
+	a.agentUI.chatLines = nil
+	a.agentUI.chatList.Position = layout.Position{}
+	a.agentUI.chatInput.SetText("")
+	a.agentUI.activeReasoningLine = -1
+	a.agentUI.activeAnswerStarted = false
+	a.agentUI.chatStatus = "正在创建新会话…"
 	a.startAgentChatHistoryTask("create", documentID, false, func(ctx context.Context) (agentChatHistoryResult, error) {
 		record, err := runtime.createAgentConversation(ctx, documentID)
 		if err != nil {
@@ -177,6 +211,7 @@ func (a *App) loadAgentConversation(id agent.ConversationID) {
 }
 
 func (a *App) processAgentChatHistoryResults() {
+	a.processAgentConversationDeletes()
 	results := a.agentUI.conversationHistoryResults
 	if results == nil {
 		return
@@ -194,14 +229,24 @@ func (a *App) processAgentChatHistoryResults() {
 				state.conversationHistoryCancel = nil
 			}
 			state.conversationHistoryLoading = false
+			if result.kind == "list" {
+				state.conversationHistoryLoaded = true
+			}
 			if result.err != nil {
 				state.conversationHistoryError = result.err.Error()
-				state.chatStatus = ""
+				state.chatStatus = "会话操作失败：" + result.err.Error()
 				continue
 			}
 			switch result.kind {
 			case "list":
-				state.conversationHistory = result.summaries
+				items := result.summaries[:0]
+				for _, item := range result.summaries {
+					if _, deleted := state.conversationDeletedIDs[item.ID]; !deleted {
+						items = append(items, item)
+					}
+				}
+				result.summaries = items
+				state.conversationHistory = items
 				state.conversationHistoryError = ""
 				if result.selectLatest {
 					if len(result.summaries) == 0 {
@@ -211,25 +256,23 @@ func (a *App) processAgentChatHistoryResults() {
 					}
 				}
 			case "create", "load":
+				if _, deleted := state.conversationDeletedIDs[result.snapshot.ID]; deleted {
+					continue
+				}
 				if !result.found {
 					state.conversationHistoryError = "此文档中没有找到该会话。"
 					continue
 				}
 				state.conversationID = result.snapshot.ID
 				state.conversationTitle = result.snapshot.Title
+				state.conversationStartedAt = result.snapshot.CreatedAt
 				state.chatLines = agentConversationChatLines(result.snapshot)
+				state.chatList.Position = layout.Position{}
 				state.activeReasoningLine = -1
 				state.activeAnswerStarted = false
 				state.conversationBusy = result.snapshot.Busy
 				state.conversationInterrupted = result.snapshot.Interrupted
 				state.chatStatus = ""
-				if result.snapshot.Interrupted {
-					if result.snapshot.Title == "" && a.ensureDesktopRuntime().workspaceStore != nil {
-						state.chatStatus = "首条消息已保存，标题或回复尚未完成；点击顶部标题旁的“继续”重试。"
-					} else {
-						state.chatStatus = "上一轮尚未完成；点击顶部的“继续”恢复。"
-					}
-				}
 				state.conversationHistoryVisible = false
 				if host, _ := a.ensureDesktopRuntime().currentAgentHost(); host != nil {
 					a.subscribeToAgent(host)
@@ -257,6 +300,12 @@ func agentConversationChatLines(snapshot agent.ConversationSnapshot) []agentChat
 		}
 		reasoningByIndex[index] = append(reasoningByIndex[index], block.Content)
 	}
+	completedCallIDs := make(map[string]bool)
+	for _, message := range snapshot.Messages {
+		if message.Role == "tool" && message.ToolCallID != "" {
+			completedCallIDs[message.ToolCallID] = true
+		}
+	}
 	for index := 0; index <= len(snapshot.Messages); index++ {
 		for _, reasoning := range reasoningByIndex[index] {
 			lines = appendAgentChatLine(lines, newAgentReasoningLine(reasoning, true))
@@ -270,101 +319,43 @@ func agentConversationChatLines(snapshot agent.ConversationSnapshot) []agentChat
 			lines = appendAgentChatLine(lines, agentChatLine{role: "user", text: message.Content})
 		case "assistant":
 			if message.Content != "" {
-				lines = appendAgentChatLine(lines, agentChatLine{role: "assistant", text: message.Content})
+				lines = appendAgentChatLine(lines, newAgentAssistantLine(message.Content))
 			} else if len(message.ToolCalls) > 0 {
-				lines = appendAgentChatLine(lines, agentChatLine{role: "tool", text: "Agent 请求调用工具"})
+				for _, call := range message.ToolCalls {
+					if call.ID != "" && completedCallIDs[call.ID] {
+						continue
+					}
+					name := call.Function.Name
+					if name == "" {
+						name = "工具"
+					}
+					lines = appendAgentChatLine(lines, agentChatLine{
+						role:        "tool",
+						text:        "Agent 请求调用 " + name,
+						toolName:    name,
+						toolSummary: "等待执行",
+						collapsed:   true,
+					})
+				}
 			}
 		case "tool":
 			name := message.ToolName
 			if name == "" {
 				name = "工具"
 			}
-			lines = appendAgentChatLine(lines, agentChatLine{role: "tool", text: name + " 的结果已保存在会话上下文中"})
+			raw := []byte(message.Content)
+			isErr := agentToolResultHasError(raw)
+			needsAuth := agentToolResultNeedsConfirmation(raw)
+			lines = appendAgentChatLine(lines, agentChatLine{
+				role:        "tool",
+				text:        name + " 的结果已保存在会话上下文中",
+				toolName:    name,
+				toolSummary: summarizeAgentToolResult(name, raw, isErr),
+				isError:     isErr,
+				needsAuth:   needsAuth,
+				collapsed:   true,
+			})
 		}
 	}
 	return lines
-}
-
-func (a *App) layoutAgentConversationToolbar(gtx layout.Context) layout.Dimensions {
-	if a.agentUI.conversationTitleButton.Clicked(gtx) {
-		a.agentUI.conversationHistoryVisible = !a.agentUI.conversationHistoryVisible
-		if a.agentUI.conversationHistory == nil {
-			a.refreshAgentConversationHistory(false)
-		}
-	}
-	if a.agentUI.newConversationButton.Clicked(gtx) {
-		a.createAgentConversation()
-	}
-	if a.agentUI.resumeConversationButton.Clicked(gtx) {
-		a.resumeAgentChatConversation()
-	}
-	title := strings.TrimSpace(a.agentUI.conversationTitle)
-	if title == "" {
-		title = "新会话"
-	}
-	title += "　⌄"
-	return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				style := material.Button(a.theme, &a.agentUI.conversationTitleButton, title)
-				return style.Layout(gtx)
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				if !a.agentUI.conversationInterrupted || a.agentUI.conversationBusy {
-					return layout.Dimensions{}
-				}
-				return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Button(a.theme, &a.agentUI.resumeConversationButton, "继续").Layout(gtx)
-				})
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return material.Button(a.theme, &a.agentUI.newConversationButton, "新建会话").Layout(gtx)
-			}),
-		)
-	})
-}
-
-func (a *App) layoutAgentConversationHistory(gtx layout.Context) layout.Dimensions {
-	state := &a.agentUI
-	if !state.conversationHistoryVisible {
-		return layout.Dimensions{}
-	}
-	if state.conversationHistoryLoading && len(state.conversationHistory) == 0 {
-		style := material.Caption(a.theme, "正在加载会话历史…")
-		style.Color = homeMuted
-		return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, style.Layout)
-	}
-	if state.conversationHistoryError != "" {
-		style := material.Caption(a.theme, state.conversationHistoryError)
-		style.Color = color.NRGBA{R: 178, G: 54, B: 54, A: 255}
-		return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, style.Layout)
-	}
-	if len(state.conversationHistory) == 0 {
-		style := material.Caption(a.theme, "此文档还没有历史会话。")
-		style.Color = homeMuted
-		return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, style.Layout)
-	}
-	maxHeight := gtx.Dp(unit.Dp(160))
-	gtx.Constraints.Min.Y = 0
-	gtx.Constraints.Max.Y = maxHeight
-	return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return material.List(a.theme, &state.conversationHistoryList).Layout(gtx, len(state.conversationHistory), func(gtx layout.Context, index int) layout.Dimensions {
-			item := state.conversationHistory[index]
-			button := state.conversationHistoryButtons[item.ID]
-			if button == nil {
-				button = new(widget.Clickable)
-				state.conversationHistoryButtons[item.ID] = button
-			}
-			if button.Clicked(gtx) {
-				a.loadAgentConversation(item.ID)
-			}
-			label := strings.TrimSpace(item.Title)
-			if label == "" {
-				label = "新会话"
-			}
-			return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return material.Button(a.theme, button, label).Layout(gtx)
-			})
-		})
-	})
 }

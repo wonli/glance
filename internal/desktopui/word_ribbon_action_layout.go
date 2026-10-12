@@ -16,33 +16,40 @@ import (
 func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSessionState, tab wordToolbarTab) layout.Dimensions {
 	actions := wordToolbarActions(tab)
 	iconSize := toolbarIconSize
-	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		// Keep short command lists full-width so Background does not center them.
-		gtx.Constraints.Min.X = gtx.Constraints.Max.X
-		return state.wordToolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
-			action := actions[index]
-			enabled := a.wordToolbarActionEnabled(action)
-			button := wordToolbarButton(state, action.id)
-			description := a.wordToolbarActionDescription(action)
-			if action.id == "view-new-window" && !enabled {
-				if _, reason := wordNewWindowAvailability(state, a.desktopRuntime); reason != "" {
-					description += "，不可用：" + reason
-				}
-			}
-			active := enabled && wordToolbarActionActive(state, action)
-			background := contentSurface
-			if active {
-				background = toolbarActiveBackground
-			}
-			icon, _ := wordToolbarActionIcon(action, enabled)
-			return layoutWordToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
-				btnGtx := gtx
-				btnGtx.Constraints.Min = image.Pt(gtx.Dp(toolbarButtonWidth), gtx.Dp(toolbarButtonHeight))
-				btnGtx.Constraints.Max = btnGtx.Constraints.Min
-				return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, description, enabled, false, background)
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(11), Right: unit.Dp(5)}.Layout(gtx, a.layoutAgentRibbonEntry)
+		}),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				// Keep short command lists full-width so Background does not center them.
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				return state.wordToolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
+					action := actions[index]
+					enabled := a.wordToolbarActionEnabled(action)
+					button := wordToolbarButton(state, action.id)
+					description := a.wordToolbarActionDescription(action)
+					if action.id == "view-new-window" && !enabled {
+						if _, reason := wordNewWindowAvailability(state, a.desktopRuntime); reason != "" {
+							description += "，不可用：" + reason
+						}
+					}
+					active := enabled && wordToolbarActionActive(state, action)
+					background := contentSurface
+					if active {
+						background = toolbarActiveBackground
+					}
+					icon, _ := wordToolbarActionIcon(action, enabled)
+					return layoutWordToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
+						btnGtx := gtx
+						btnGtx.Constraints.Min = image.Pt(gtx.Dp(toolbarButtonWidth), gtx.Dp(toolbarButtonHeight))
+						btnGtx.Constraints.Max = btnGtx.Constraints.Min
+						return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, description, enabled, false, background)
+					})
+				})
 			})
-		})
-	})
+		}),
+	)
 }
 
 func layoutWordToolbarActionItem(gtx layout.Context, action ribbonAction, index int, actions []ribbonAction, child layout.Widget) layout.Dimensions {

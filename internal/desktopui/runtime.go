@@ -39,6 +39,8 @@ type desktopRuntime struct {
 	shuttingDown            bool
 	mu                      sync.Mutex
 	workspaceQueueMu        sync.Mutex
+	workspacePreferences    map[string]string
+	workspacePreferenceMu   sync.Mutex
 	workspaceInitMu         sync.Mutex
 	workspaceInitialized    bool
 	workspaceDBMu           sync.Mutex

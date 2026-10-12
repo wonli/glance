@@ -49,10 +49,12 @@ func (a *App) layoutPresentationDocument(gtx layout.Context) layout.Dimensions {
 		}),
 		// 3. Main Workspace (Sidebar + Canvas + Notes)
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			if v.sorterMode {
-				return a.layoutPresentationSorter(gtx, v)
-			}
-			return a.layoutPresentationMainWorkspace(gtx, v)
+			return a.layoutAgentSidebarWorkspace(gtx, func(gtx layout.Context) layout.Dimensions {
+				if v.sorterMode {
+					return a.layoutPresentationSorter(gtx, v)
+				}
+				return a.layoutPresentationMainWorkspace(gtx, v)
+			})
 		}),
 		// 4. Status Bar (34dp)
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -137,36 +139,41 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 	paint.FillShape(gtx.Ops, pptxBorderColor, clip.Rect{Min: image.Pt(0, height-1), Max: gtx.Constraints.Max}.Op())
 
 	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return v.ribbonActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
-			action := actions[index]
-			button := v.ribbonBtn(action.id)
-			enabled := a.presentationActionEnabled(v, action.id)
-			clicked := button.Clicked(gtx)
-			if enabled && clicked {
-				switch action.id {
-				case "home_copy":
-					a.startPresentationTextCopy(v)
-				case "home_paste":
-					a.startPresentationClipboardPaste(gtx, v)
-				default:
-					a.handlePresentationRibbonAction(v, action.id)
-				}
-			}
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(a.layoutAgentRibbonEntry),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return v.ribbonActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
+					action := actions[index]
+					button := v.ribbonBtn(action.id)
+					enabled := a.presentationActionEnabled(v, action.id)
+					clicked := button.Clicked(gtx)
+					if enabled && clicked {
+						switch action.id {
+						case "home_copy":
+							a.startPresentationTextCopy(v)
+						case "home_paste":
+							a.startPresentationClipboardPaste(gtx, v)
+						default:
+							a.handlePresentationRibbonAction(v, action.id)
+						}
+					}
 
-			active := a.isPresentationActionActive(v, action.id)
-			iconColor, background := toolbarIconColor(enabled), contentSurface
-			if active {
-				background = toolbarActiveBackground
-			}
-			icon, _ := pptxToolbarIcon(action.icon, iconColor)
+					active := a.isPresentationActionActive(v, action.id)
+					iconColor, background := toolbarIconColor(enabled), contentSurface
+					if active {
+						background = toolbarActiveBackground
+					}
+					icon, _ := pptxToolbarIcon(action.icon, iconColor)
 
-			return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
-				btnGtx := gtx
-				btnGtx.Constraints.Min = image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight))
-				btnGtx.Constraints.Max = btnGtx.Constraints.Min
-				return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, action.label, enabled, false, background)
-			})
-		})
+					return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
+						btnGtx := gtx
+						btnGtx.Constraints.Min = image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight))
+						btnGtx.Constraints.Max = btnGtx.Constraints.Min
+						return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, action.label, enabled, false, background)
+					})
+				})
+			}),
+		)
 	})
 }
 

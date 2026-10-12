@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -53,6 +54,61 @@ func TestStreamRestoresPriorReasoningForDeepSeekToolTurn(t *testing.T) {
 	}
 	if _, exists := posted.Messages[1]["reasoning_content"]; exists {
 		t.Fatal("provider-specific reasoning was attached to a user message")
+	}
+}
+
+func TestStreamMapsMCPNamesAcrossToolDefinitionsHistoryAndFragmentedReplies(t *testing.T) {
+	var wireName string
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var body struct {
+			Tools    []provider.ModelTool `json:"tools"`
+			Messages []chatMessage        `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return nil, err
+		}
+		wireName = body.Tools[0].Function.Name
+		if !regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`).MatchString(wireName) {
+			t.Errorf("DeepSeek rejects dotted MCP tool name %q", wireName)
+		}
+		if wireName == body.Tools[1].Function.Name {
+			t.Error("distinct MCP names share a wire alias")
+		}
+		if body.Messages[1].ToolCalls[0].Function.Name != wireName {
+			t.Error("history does not use the same wire tool name")
+		}
+		stream := ""
+		for i, fragment := range []string{wireName[:6], wireName[6:]} {
+			id := ""
+			if i == 0 {
+				id = "call-2"
+			}
+			b, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": id, "type": "function", "function": map[string]string{"name": fragment, "arguments": ""}}}}}}})
+			stream += "data: " + string(b) + "\n\n"
+		}
+		stream += "data: [DONE]\n\n"
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(stream)), Request: r}, nil
+	})}
+	request := provider.ModelRequest{Model: "deepseek-flash", Tools: []provider.ModelTool{
+		{Type: "function", Function: provider.ModelToolFunction{Name: "document.inspect", Parameters: json.RawMessage(`{"type":"object"}`)}},
+		{Type: "function", Function: provider.ModelToolFunction{Name: "document_inspect", Parameters: json.RawMessage(`{"type":"object"}`)}},
+		{Type: "function", Function: provider.ModelToolFunction{Name: "glance", Parameters: json.RawMessage(`{"type":"object"}`)}},
+	}, Messages: []provider.ModelMessage{{Role: "user", Content: "检查"}, {Role: "assistant", ToolCalls: []provider.ModelToolCall{{ID: "call-1", Type: "function", Function: provider.ModelToolCallFunction{Name: "document.inspect", Arguments: "{}"}}}}, {Role: "tool", ToolCallID: "call-1", Content: "{}"}}}
+	var decoded string
+	err := New(Config{HTTPClient: client}).Stream(context.Background(), request, func(e provider.ModelEvent) error {
+		if e.ToolCallDelta != nil {
+			decoded += e.ToolCallDelta.Name
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded != "document.inspect" {
+		t.Fatalf("MCP execution name=%q, want document.inspect", decoded)
+	}
+	if request.Tools[0].Function.Name != "document.inspect" || request.Messages[1].ToolCalls[0].Function.Name != "document.inspect" {
+		t.Fatal("adapter changed neutral request or saved history")
 	}
 }
 

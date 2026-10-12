@@ -57,6 +57,7 @@ func (a *App) layoutWordReadingBar(gtx layout.Context, state *documentSessionSta
 						semantic.DescriptionOp("退出阅读模式").Add(gtx.Ops)
 						return material.Button(a.theme, &state.wordReadingExitButton, "退出阅读模式").Layout(gtx)
 					}),
+					layout.Rigid(a.layoutAgentRibbonEntry),
 				)
 			})
 		},

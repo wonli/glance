@@ -335,20 +335,6 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.layoutHomeFolderRow(gtx) }),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if a.homeSection == homeSectionSettings {
-							return layout.Dimensions{}
-						}
-						return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return a.layoutHomeNavRow(gtx, "mcp", "settings", "MCP 连接", -1, false)
-						})
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if a.homeSection == homeSectionSettings {
-							return layout.Dimensions{}
-						}
-						return a.layoutHomeNavRow(gtx, "agent-chat", "ellipsis", "AI 助手", -1, false)
-					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
 				)
 			})
@@ -380,12 +366,6 @@ func (a *App) processHomeNavClicks(gtx layout.Context) {
 			a.resetHomeContentScroll()
 			a.homeSection = navigation.section
 		}
-	}
-	if a.homeNavButton("mcp").Clicked(gtx) {
-		a.openMCPSettingsPage()
-	}
-	if a.homeNavButton("agent-chat").Clicked(gtx) {
-		a.showAgentChat()
 	}
 	if a.homeNavButton("agent-settings").Clicked(gtx) {
 		a.resetHomeContentScroll()

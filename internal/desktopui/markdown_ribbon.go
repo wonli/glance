@@ -28,6 +28,7 @@ func (a *App) layoutMarkdownRibbon(gtx layout.Context) layout.Dimensions {
 	return jsonPanel(gtx, contentSurface, false, true, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Left: 8, Right: 12, Top: 3, Bottom: 3}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(a.layoutAgentRibbonEntry),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return v.toolbar.Layout(gtx, len(markdownToolbarActions), func(gtx layout.Context, index int) layout.Dimensions {
 						action := markdownToolbarActions[index]

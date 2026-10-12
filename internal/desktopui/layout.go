@@ -42,9 +42,9 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 						layout.Flexed(1, a.layoutWorkspaceBody),
 					)
 				}),
-				layout.Stacked(a.layoutModalDialog),
 				layout.Stacked(a.layoutWordSymbolPicker),
 				layout.Expanded(a.layoutFeedback),
+				layout.Expanded(a.layoutModalDialog),
 			)
 		},
 	)
@@ -108,12 +108,18 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(a.layoutSpreadsheetToolbar),
-					layout.Rigid(a.layoutGridControls),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, a.layoutVirtualGrid)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, a.layoutSheetTabs)
+						return a.layoutAgentSidebarWorkspace(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(a.layoutGridControls),
+								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, a.layoutVirtualGrid)
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, a.layoutSheetTabs)
+								}),
+							)
+						})
 					}),
 					layout.Rigid(a.layoutSpreadsheetStatusBar),
 				)
@@ -123,24 +129,34 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 	}
 	if len(a.grid) == 0 {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(a.layoutSheetTabs),
+			layout.Rigid(a.layoutAgentFallbackToolbar),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.H6(a.theme, "当前工作表为空，没有读到单元格内容").Layout(gtx)
+				return a.layoutAgentSidebarWorkspace(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(a.layoutSheetTabs),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return material.H6(a.theme, "当前工作表为空，没有读到单元格内容").Layout(gtx)
+							})
+						}),
+					)
 				})
 			}),
 		)
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutSheetTabs(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutColumnHeader(gtx)
-		}),
+		layout.Rigid(a.layoutAgentFallbackToolbar),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return material.List(a.theme, &a.gridList).Layout(gtx, len(a.grid), func(gtx layout.Context, row int) layout.Dimensions {
-				return a.layoutGridRow(gtx, row)
+			return a.layoutAgentSidebarWorkspace(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(a.layoutSheetTabs),
+					layout.Rigid(a.layoutColumnHeader),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return material.List(a.theme, &a.gridList).Layout(gtx, len(a.grid), func(gtx layout.Context, row int) layout.Dimensions {
+							return a.layoutGridRow(gtx, row)
+						})
+					}),
+				)
 			})
 		}),
 	)

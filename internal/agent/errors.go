@@ -24,8 +24,10 @@ func DescribeTurnError(err error) (string, string) {
 		return "conversation_scope", "无法加载此会话：它属于另一份文档。"
 	case errors.Is(err, ErrConversationNotInterrupted):
 		return "conversation_not_interrupted", "此会话没有待继续的轮次。"
-	case errors.Is(err, ErrToolCallLimit), errors.Is(err, ErrToolRoundLimit):
+	case errors.Is(err, ErrToolCallLimit):
 		return "agent_limit", "本轮工具调用次数达到上限；可以把任务拆成更小的步骤。"
+	case errors.Is(err, ErrToolRoundLimit):
+		return "agent_limit", "本轮工具执行轮数达到上限；请检查工具错误或把任务拆成更小的步骤。"
 	case errors.Is(err, ErrEmptyModelResponse):
 		return "invalid_response", "模型没有返回可用内容，请检查模型配置后重试。"
 	}

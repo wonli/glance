@@ -39,6 +39,7 @@ type modalDialogConfirmStyle struct {
 
 // modalDialog is a reusable, stateful modal surface for app-level prompts.
 type modalDialog struct {
+	AgentHistoryDelete    bool
 	Visible               bool
 	Title                 string
 	Message               string
@@ -89,6 +90,7 @@ func (d *modalDialog) Show(title, message string, onAction func(string), actions
 	d.HasSecondInput = false
 	d.HasForm = false
 	d.CardWidthDp = 0
+	d.AgentHistoryDelete = false
 	d.CustomLayout = nil
 	d.CustomActionsInLayout = false
 	if style, ok := defaultConfirmStyleForTitle(title); ok {
@@ -180,10 +182,29 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 	if !a.modal.Visible {
 		return layout.Dimensions{}
 	}
+	for a.modal.scrim.Clicked(gtx) {
+	}
+	if !a.modal.CustomActionsInLayout {
+		for i := range a.modal.Actions {
+			action := &a.modal.Actions[i]
+			if action.button.Clicked(gtx) {
+				if a.modal.OnAction != nil {
+					a.modal.OnAction(action.ID)
+				}
+				if !a.modal.Visible {
+					return layout.Dimensions{}
+				}
+				break
+			}
+		}
+	}
 	if a.modal.HasInput {
 		for ev, ok := a.modal.Input.Update(gtx); ok; ev, ok = a.modal.Input.Update(gtx) {
 			if _, submit := ev.(widget.SubmitEvent); submit && a.modal.OnAction != nil {
 				a.modal.OnAction("confirm")
+				if !a.modal.Visible {
+					return layout.Dimensions{}
+				}
 			}
 		}
 	}
@@ -191,6 +212,9 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 		for ev, ok := a.modal.SecondInput.Update(gtx); ok; ev, ok = a.modal.SecondInput.Update(gtx) {
 			if _, submit := ev.(widget.SubmitEvent); submit && a.modal.OnAction != nil {
 				a.modal.OnAction("confirm")
+				if !a.modal.Visible {
+					return layout.Dimensions{}
+				}
 			}
 		}
 	}
@@ -199,6 +223,9 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 			for ev, ok := a.modal.FormInputs[index].Update(gtx); ok; ev, ok = a.modal.FormInputs[index].Update(gtx) {
 				if _, submit := ev.(widget.SubmitEvent); submit && a.modal.OnAction != nil {
 					a.modal.OnAction("confirm")
+					if !a.modal.Visible {
+						return layout.Dimensions{}
+					}
 				}
 			}
 		}
@@ -207,7 +234,8 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			return a.modal.scrim.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				size := gtx.Constraints.Max
-				paint.FillShape(gtx.Ops, color.NRGBA{R: 0, G: 0, B: 0, A: 96}, clip.Rect{Max: size}.Op())
+				scrimColor := color.NRGBA{R: 0, G: 0, B: 0, A: 96}
+				paint.FillShape(gtx.Ops, scrimColor, clip.Rect{Max: size}.Op())
 				return layout.Dimensions{Size: size}
 			})
 		}),

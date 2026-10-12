@@ -129,3 +129,33 @@ func (s *Store) LoadAgentConversation(documentID, id string) (AgentConversation,
 	conversation.UpdatedAt = time.Unix(0, updatedAt).UTC()
 	return conversation, true, nil
 }
+
+// DeleteAgentConversation removes only the conversation owned by documentID.
+func (s *Store) DeleteAgentConversation(documentID, id string) error {
+	if s == nil || s.db == nil {
+		return errors.New("workspace store is not open")
+	}
+	if documentID == "" || id == "" {
+		return errors.New("document ID and conversation ID are required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var owner string
+	err = tx.QueryRow(`SELECT document_id FROM agent_conversations WHERE id=?`, id).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if owner != documentID {
+		return errors.New("conversation belongs to a different document")
+	}
+	if _, err = tx.Exec(`DELETE FROM agent_conversations WHERE document_id=? AND id=?`, documentID, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

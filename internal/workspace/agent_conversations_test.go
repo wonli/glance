@@ -54,3 +54,40 @@ func TestAgentConversationsAreDocumentScopedAndSurviveRestart(t *testing.T) {
 		t.Fatal("conversation ID was reassigned to another document")
 	}
 }
+
+func TestDeleteAgentConversationIsScopedAndPermanent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, id := range []string{"delete", "keep"} {
+		if err := s.SaveAgentConversation(AgentConversation{ID: id, DocumentID: "doc-a", Title: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.DeleteAgentConversation("doc-b", "delete"); err == nil {
+		t.Fatal("cross-document deletion accepted")
+	}
+	if _, found, err := s.LoadAgentConversation("doc-a", "delete"); err != nil || !found {
+		t.Fatal("cross-document deletion removed conversation")
+	}
+	if err := s.DeleteAgentConversation("doc-a", "delete"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, found, err := s.LoadAgentConversation("doc-a", "delete"); err != nil || found {
+		t.Fatal("deleted conversation survived restart")
+	}
+	if _, found, err := s.LoadAgentConversation("doc-a", "keep"); err != nil || !found {
+		t.Fatal("unrelated conversation removed")
+	}
+}

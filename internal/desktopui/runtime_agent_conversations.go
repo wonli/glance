@@ -124,3 +124,15 @@ func conversationStoreContextError(ctx context.Context) error {
 	}
 	return ctx.Err()
 }
+
+func (s workspaceAgentConversationStore) Delete(ctx context.Context, documentID string, id agent.ConversationID) error {
+	if err := conversationStoreContextError(ctx); err != nil {
+		return err
+	}
+	store, unlock := s.lockWorkspaceStore()
+	defer unlock()
+	if store == nil {
+		return errors.New("workspace conversation storage is unavailable")
+	}
+	return store.DeleteAgentConversation(documentID, string(id))
+}

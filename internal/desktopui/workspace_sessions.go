@@ -130,6 +130,7 @@ func (a *App) initializeWorkspace() {
 	}
 	collection := runtime.collection
 	a.loadHomeFavorites()
+	a.loadAgentSidebarPreference()
 	for _, record := range collection.Tabs() {
 		a.tabMeta[record.Tab.ID] = record.Tab
 		if !hasRestorableSnapshot(record) {

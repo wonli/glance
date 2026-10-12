@@ -89,8 +89,8 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version > 5 {
-		return fmt.Errorf("workspace database version %d is newer than supported version 5", version)
+	if version > 6 {
+		return fmt.Errorf("workspace database version %d is newer than supported version 6", version)
 	}
 	if version == 0 {
 		tx, err := db.Begin()
@@ -207,6 +207,22 @@ func migrate(db *sql.DB) error {
 		}
 		version = 5
 	}
+	if version == 5 {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for _, query := range []string{`CREATE TABLE preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`, `PRAGMA user_version = 6`} {
+			if _, err := tx.Exec(query); err != nil {
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

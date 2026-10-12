@@ -172,6 +172,7 @@ func (a *App) runAgentSettingsOperation(operation string, run func(context.Conte
 }
 
 func (a *App) layoutAgentSettings(gtx layout.Context) layout.Dimensions {
+	a.processAgentModelOptionClicks(gtx)
 	dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return agentSettingsField(gtx, a.theme, "Provider ID", &a.agentUI.providerInput, "minimax / kimi / deepseek / ollama / openai-compatible")

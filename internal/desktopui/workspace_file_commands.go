@@ -16,6 +16,7 @@ type workspaceWriteJob struct {
 	favoritePath       string
 	favoriteValue      bool
 	saveFavorite       bool
+	savePreferences    bool
 }
 
 type fileCommandKind uint8

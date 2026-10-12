@@ -171,8 +171,8 @@ func TestAgentChatSendAndStopUseBackgroundHostTurn(t *testing.T) {
 		}
 	}
 	app.processAgentChatEvents()
-	if app.agentUI.conversationBusy || !strings.Contains(app.agentUI.chatStatus, "上一轮尚未完成") {
-		t.Fatalf("stopped turn state busy=%v status=%q", app.agentUI.conversationBusy, app.agentUI.chatStatus)
+	if app.agentUI.conversationBusy || !app.agentUI.conversationInterrupted || app.agentUI.chatStatus != "" {
+		t.Fatalf("stopped turn state busy=%v interrupted=%v status=%q", app.agentUI.conversationBusy, app.agentUI.conversationInterrupted, app.agentUI.chatStatus)
 	}
 	var stoppedMessage bool
 	for _, line := range app.agentUI.chatLines {
@@ -219,10 +219,13 @@ func TestAgentChatDoesNotSubmitChineseIMEComposition(t *testing.T) {
 		t.Fatalf("send action submitted or cleared active IME text: lines=%+v input=%q", app.agentUI.chatLines, app.agentUI.chatInput.Text())
 	}
 
-	router.Queue(key.CompositionEvent{Start: -1, End: -1})
+	router.Queue(key.CompositionEvent{Start: -1, End: -1}, key.Event{Name: key.NameEnter, State: key.Press})
 	frame()
 	if editorHasActiveComposition(&app.agentUI.chatInput) {
 		t.Fatal("Gio editor remained in composition after the commit event")
+	}
+	if len(app.agentUI.chatLines) != 0 || app.agentUI.chatInput.Text() != "中" {
+		t.Fatal("Enter confirming an IME candidate submitted the draft")
 	}
 	app.sendAgentChatMessage()
 	if app.agentUI.chatInput.Text() != "" || len(app.agentUI.chatLines) != 1 || app.agentUI.chatLines[0].role != "error" {

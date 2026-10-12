@@ -85,7 +85,13 @@ func (a *App) layoutPDFDocument(gtx layout.Context) layout.Dimensions {
 		v.scene = document.PDFPage{}
 	}
 	a.updatePDFScale(gtx)
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(a.layoutPDFRibbon), layout.Flexed(1, a.layoutPDFWorkspace), layout.Rigid(a.layoutPDFStatus))
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(a.layoutPDFRibbon),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return a.layoutAgentSidebarWorkspace(gtx, a.layoutPDFWorkspace)
+		}),
+		layout.Rigid(a.layoutPDFStatus),
+	)
 }
 
 func (a *App) updatePDFScale(gtx layout.Context) {
@@ -119,7 +125,11 @@ func (a *App) updatePDFScale(gtx layout.Context) {
 			notesW = gtx.Dp(300)
 		}
 	}
-	canvasW := max(1, gtx.Constraints.Max.X-thumbW-notesW)
+	sidebarW := 0
+	if a.agentUI.sidebarVisible {
+		sidebarW = a.agentSidebarWidth(gtx)
+	}
+	canvasW := max(1, gtx.Constraints.Max.X-sidebarW-thumbW-notesW)
 	canvasH := max(1, gtx.Constraints.Max.Y-gtx.Dp(54)-gtx.Dp(34))
 
 	width, height := canvasW-gtx.Dp(48), canvasH-gtx.Dp(48)
@@ -144,7 +154,8 @@ func (a *App) layoutPDFRibbon(gtx layout.Context) layout.Dimensions {
 	v := a.ensurePDFView()
 	gtx = jsonFixedHeight(gtx, 54)
 	return jsonPanel(gtx, contentSurface, false, true, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(a.layoutAgentRibbonEntry),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return v.toolbar.Layout(gtx, len(pdfToolbarActions), func(gtx layout.Context, i int) layout.Dimensions {
 					action := pdfToolbarActions[i]

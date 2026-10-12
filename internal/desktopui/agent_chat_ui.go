@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gioui.org/layout"
 	"gioui.org/unit"
@@ -20,154 +21,22 @@ import (
 )
 
 func (a *App) showAgentChat() {
-	a.ensureAgentChatDocument(a.agentViewContext().DocumentID)
-	a.modal.ShowCustom("AI 助手", "Agent 会按需通过 Glance 能力查询文档；只有被工具读取的内容会发送到所配置的模型服务。", 820,
-		a.layoutAgentChat,
-		func(action string) {
-			switch action {
-			case "settings":
-				a.modal.Hide()
-				a.showAgentSettings(true)
-			case "close":
-				a.modal.Hide()
-			}
-		},
-		modalDialogActionSpec{ID: "settings", Label: "模型设置"},
-		modalDialogActionSpec{ID: "close", Label: "关闭"},
-	)
+	view := a.agentViewContext()
+	if view.DocumentID != "" {
+		a.agentUI.sidebarVisible = true
+		a.ensureAgentChatDocument(view.DocumentID)
+		if a.modal.Visible && a.modal.Title == "AI 助手" {
+			a.modal.Hide()
+		}
+		return
+	}
+	a.setStatus("请先打开一份文档，再从文档工具栏打开 AI 助手。")
 }
 
+// layoutAgentChat keeps the existing interaction harness pointed at the same
+// chat body while production opens it only in the document workspace sidebar.
 func (a *App) layoutAgentChat(gtx layout.Context) layout.Dimensions {
-	if view := a.agentViewContext(); view.DocumentID != a.agentUI.conversationDocumentID {
-		a.ensureAgentChatDocument(view.DocumentID)
-	}
-	gtx.Constraints.Min.Y = 0
-	maxHeight := gtx.Dp(unit.Dp(500))
-	if gtx.Constraints.Max.Y > 0 && gtx.Constraints.Max.Y < maxHeight {
-		maxHeight = gtx.Constraints.Max.Y
-	}
-	gtx.Constraints.Max.Y = maxHeight
-	host, settings := a.ensureDesktopRuntime().currentAgentHost()
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			status := "已连接模型：" + settings.ProviderID + " / " + settings.Model
-			if host == nil {
-				switch {
-				case settings.ProviderID == "":
-					status = "尚未配置模型，请打开“模型设置”。"
-				case settings.ProviderID != "ollama" && settings.CredentialRef == "":
-					status = "设置已保存，请输入 API Key 后开始使用。"
-				default:
-					status = "模型暂不可用，请检查模型设置和本机服务状态。"
-				}
-			}
-			style := material.Caption(a.theme, status)
-			style.Color = homeMuted
-			style.MaxLines = 2
-			return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, style.Layout)
-		}),
-		layout.Rigid(a.layoutAgentConversationToolbar),
-		layout.Rigid(a.layoutAgentConversationHistory),
-		layout.Rigid(a.layoutAgentConfirmations),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return material.List(a.theme, &a.agentUI.chatList).Layout(gtx, len(a.agentUI.chatLines), func(gtx layout.Context, index int) layout.Dimensions {
-				line := a.agentUI.chatLines[index]
-				return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return homeRoundedPanel(gtx, agentChatLineColor(line.role), homeBorder, unit.Dp(8), func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							role := line.role
-							switch role {
-							case "user":
-								role = "你"
-							case "assistant":
-								role = "Glance Agent"
-							case "tool":
-								role = "工具"
-							case "confirmation":
-								role = "人工确认"
-							case "error":
-								role = "错误"
-							case "reasoning":
-								role = "思考过程"
-							}
-							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									if line.role == "reasoning" && line.toggle != nil {
-										if line.toggle.Clicked(gtx) {
-											a.agentUI.chatLines[index].collapsed = !a.agentUI.chatLines[index].collapsed
-										}
-										if line.collapsed {
-											role += "（已折叠，点击展开）"
-										} else {
-											role += "（点击折叠）"
-										}
-										return material.Button(a.theme, line.toggle, role).Layout(gtx)
-									}
-									header := material.Caption(a.theme, role)
-									header.Color = homeMuted
-									header.MaxLines = 1
-									return header.Layout(gtx)
-								}),
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									if line.role == "reasoning" && line.collapsed {
-										return layout.Dimensions{}
-									}
-									body := material.Body1(a.theme, line.text)
-									body.MaxLines = 0
-									return layout.Inset{Top: unit.Dp(3)}.Layout(gtx, body.Layout)
-								}),
-							)
-						})
-					})
-				})
-			})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if a.agentUI.chatStatus == "" {
-				return layout.Dimensions{}
-			}
-			style := material.Caption(a.theme, a.agentUI.chatStatus)
-			style.Color = homeMuted
-			style.MaxLines = 2
-			return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, style.Layout)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			style := material.Editor(a.theme, &a.agentUI.chatInput, "输入消息…")
-			return style.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			sendClicked := a.agentUI.sendButton.Clicked(gtx)
-			stopClicked := a.agentUI.stopButton.Clicked(gtx)
-			dimensions := layout.Inset{Top: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						if a.agentUI.conversationBusy {
-							return material.Caption(a.theme, "Agent 正在处理请求；可以随时停止。 ").Layout(gtx)
-						}
-						return material.Caption(a.theme, "当前视图上下文会随消息提供；不会自动上传整份文档。").Layout(gtx)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if a.agentUI.conversationBusy {
-							return material.Button(a.theme, &a.agentUI.stopButton, "停止").Layout(gtx)
-						}
-						return material.Button(a.theme, &a.agentUI.sendButton, "发送").Layout(gtx)
-					}),
-				)
-			})
-			if sendClicked {
-				a.sendAgentChatMessage()
-			}
-			if stopClicked {
-				a.stopAgentChatTurn()
-			}
-			for event, ok := a.agentUI.chatInput.Update(gtx); ok; event, ok = a.agentUI.chatInput.Update(gtx) {
-				if _, submit := event.(widget.SubmitEvent); submit {
-					a.sendAgentChatMessage()
-				}
-			}
-			return dimensions
-		}),
-	)
+	return a.layoutAgentSidebar(gtx)
 }
 
 func (a *App) layoutAgentConfirmations(gtx layout.Context) layout.Dimensions {
@@ -271,23 +140,20 @@ func (a *App) resolveAgentConfirmation(card *agentConfirmationCard, approved boo
 	}
 }
 
-func agentChatLineColor(role string) color.NRGBA {
-	switch role {
-	case "user":
-		return color.NRGBA{R: 245, G: 248, B: 252, A: 255}
-	case "error":
-		return color.NRGBA{R: 255, G: 244, B: 242, A: 255}
-	default:
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	}
-}
-
 func (a *App) sendAgentChatMessage() {
+	if a.agentUI.conversationDeletes[a.agentUI.conversationID] != "" {
+		return
+	}
 	if editorHasActiveComposition(&a.agentUI.chatInput) {
 		return
 	}
 	if a.agentUI.conversationInterrupted {
-		a.agentUI.chatStatus = "上一轮尚未完成，请先点击顶部的“继续”恢复会话。"
+		if strings.TrimSpace(a.agentUI.chatInput.Text()) == "继续" {
+			a.agentUI.chatInput.SetText("")
+			a.resumeAgentChatConversation()
+		} else {
+			a.agentUI.chatStatus = ""
+		}
 		return
 	}
 	message := strings.TrimSpace(a.agentUI.chatInput.Text())
@@ -493,6 +359,7 @@ func (a *App) processAgentChatEvents() {
 					a.agentUI.chatLines[lineIndex].text += event.Reasoning
 					if a.agentUI.activeAnswerStarted {
 						a.agentUI.chatLines[lineIndex].collapsed = true
+						a.agentUI.chatLines[lineIndex].inProgress = false
 					}
 				} else if a.agentUI.activeAnswerStarted {
 					line := newAgentReasoningLine(event.Reasoning, true)
@@ -505,16 +372,21 @@ func (a *App) processAgentChatEvents() {
 					}
 				} else {
 					line := newAgentReasoningLine(event.Reasoning, false)
+					line.inProgress = true
+					line.startedAt = time.Now()
 					a.appendLiveAgentChatLine(line)
 					a.agentUI.activeReasoningLine = len(a.agentUI.chatLines) - 1
 				}
 			case agent.EventAssistantDelta:
 				a.agentUI.activeAnswerStarted = true
 				a.collapseCurrentAgentReasoning()
+				a.completeActiveAgentProcessLines()
 				if len(a.agentUI.chatLines) > 0 && a.agentUI.chatLines[len(a.agentUI.chatLines)-1].role == "assistant" {
-					a.agentUI.chatLines[len(a.agentUI.chatLines)-1].text += event.Text
+					last := &a.agentUI.chatLines[len(a.agentUI.chatLines)-1]
+					last.text += event.Text
+					last.ensureMarkdownBlocks()
 				} else {
-					a.appendLiveAgentChatLine(agentChatLine{role: "assistant", text: event.Text})
+					a.appendLiveAgentChatLine(newAgentAssistantLine(event.Text))
 				}
 			case agent.EventConversationTitle:
 				a.agentUI.conversationTitle = event.Title
@@ -524,19 +396,48 @@ func (a *App) processAgentChatEvents() {
 				a.agentUI.activeReasoningLine = -1
 				a.agentUI.activeAnswerStarted = false
 				a.agentUI.chatStatus = "正在调用工具：" + event.ToolName
-				a.appendLiveAgentChatLine(agentChatLine{role: "tool", text: "正在执行 " + event.ToolName})
+				a.appendLiveAgentChatLine(agentChatLine{
+					role:       "tool",
+					text:       "正在执行 " + event.ToolName,
+					toolName:   event.ToolName,
+					inProgress: true,
+					collapsed:  true,
+					startedAt:  time.Now(),
+				})
 			case agent.EventToolCompleted:
 				a.agentUI.chatStatus = ""
 				message := "工具 " + event.ToolName + " 已完成"
 				if event.IsError {
 					message = "工具 " + event.ToolName + " 执行失败，Agent 会收到错误并决定下一步。"
 				}
+				needsAuth := agentToolResultNeedsConfirmation(event.Result)
+				summary := summarizeAgentToolResult(event.ToolName, event.Result, event.IsError)
 				if len(a.agentUI.chatLines) > 0 && a.agentUI.chatLines[len(a.agentUI.chatLines)-1].role == "tool" {
-					a.agentUI.chatLines[len(a.agentUI.chatLines)-1].text = message
+					last := &a.agentUI.chatLines[len(a.agentUI.chatLines)-1]
+					last.text = message
+					last.toolName = event.ToolName
+					last.toolSummary = summary
+					last.inProgress = false
+					last.isError = event.IsError
+					last.needsAuth = needsAuth
+					last.collapsed = true
+					if !last.startedAt.IsZero() && last.duration == 0 {
+						last.duration = time.Since(last.startedAt)
+					}
 				} else {
-					a.appendLiveAgentChatLine(agentChatLine{role: "tool", text: message})
+					a.appendLiveAgentChatLine(agentChatLine{
+						role:        "tool",
+						text:        message,
+						toolName:    event.ToolName,
+						toolSummary: summary,
+						isError:     event.IsError,
+						needsAuth:   needsAuth,
+						collapsed:   true,
+					})
 				}
 			case agent.EventTurnCompleted:
+				a.collapseCurrentAgentReasoning()
+				a.completeActiveAgentProcessLines()
 				a.agentUI.conversationBusy = false
 				a.agentUI.conversationInterrupted = false
 				a.agentUI.chatStatus = ""
@@ -545,6 +446,7 @@ func (a *App) processAgentChatEvents() {
 				a.refreshAgentConversationHistory(false)
 			case agent.EventTurnFailed:
 				a.collapseCurrentAgentReasoning()
+				a.completeActiveAgentProcessLines()
 				a.agentUI.conversationBusy = false
 				a.agentUI.chatStatus = ""
 				a.agentUI.activeReasoningLine = -1
@@ -558,13 +460,7 @@ func (a *App) processAgentChatEvents() {
 						a.agentUI.conversationInterrupted = snapshot.Interrupted
 						a.agentUI.conversationTitle = snapshot.Title
 						a.agentUI.chatLines = agentConversationChatLines(snapshot)
-						if snapshot.Interrupted {
-							if snapshot.Title == "" && a.ensureDesktopRuntime().workspaceStore != nil {
-								a.agentUI.chatStatus = "首条消息已保存，标题或回复尚未完成；点击顶部标题旁的“继续”重试。"
-							} else {
-								a.agentUI.chatStatus = "上一轮尚未完成；点击顶部的“继续”恢复。"
-							}
-						} else if optimisticMessage != "" {
+						if !snapshot.Interrupted && optimisticMessage != "" {
 							a.agentUI.chatInput.SetText(optimisticMessage)
 						}
 					}
@@ -613,7 +509,7 @@ func (a *App) processAgentApplicationEvents() {
 						a.updateAgentConfirmationChatLine(info, true)
 					}
 					a.setStatus("有高影响操作等待确认，请检查操作目标后批准或拒绝。")
-					if a.window != nil && !a.modal.Visible {
+					if a.window != nil && !a.modal.Visible && !a.agentUI.sidebarVisible {
 						a.showAgentChat()
 					}
 				} else {
@@ -818,7 +714,28 @@ func lastAgentAssistantLine(lines []agentChatLine) int {
 func (a *App) collapseCurrentAgentReasoning() {
 	index := a.agentUI.activeReasoningLine
 	if index >= 0 && index < len(a.agentUI.chatLines) && a.agentUI.chatLines[index].role == "reasoning" {
-		a.agentUI.chatLines[index].collapsed = true
+		line := &a.agentUI.chatLines[index]
+		line.collapsed = true
+		line.inProgress = false
+		if !line.startedAt.IsZero() && line.duration == 0 {
+			line.duration = time.Since(line.startedAt)
+		}
+	}
+}
+
+func (a *App) completeActiveAgentProcessLines() {
+	for index := len(a.agentUI.chatLines) - 1; index >= 0; index-- {
+		line := &a.agentUI.chatLines[index]
+		if line.role == "user" {
+			break
+		}
+		if line.role == "reasoning" || line.role == "tool" {
+			line.collapsed = true
+			line.inProgress = false
+			if !line.startedAt.IsZero() && line.duration == 0 {
+				line.duration = time.Since(line.startedAt)
+			}
+		}
 	}
 }
 

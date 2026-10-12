@@ -121,6 +121,7 @@ func (c *Client) Stream(ctx context.Context, request provider.ModelRequest, emit
 		return err
 	}
 	defer func() { c.remove(request.RequestID); cancel() }()
+	names := newToolNameCodec(request)
 
 	body := struct {
 		Model       string               `json:"model"`
@@ -134,10 +135,10 @@ func (c *Client) Stream(ctx context.Context, request provider.ModelRequest, emit
 		StreamOptions struct {
 			IncludeUsage bool `json:"include_usage"`
 		} `json:"stream_options,omitempty"`
-	}{Model: model, Messages: chatMessages(request.Messages, request.ReasoningByMessage), Tools: request.Tools, Temperature: request.Temperature, Stream: true}
+	}{Model: model, Messages: names.messages(chatMessages(request.Messages, request.ReasoningByMessage)), Tools: names.tools(request.Tools), Temperature: request.Temperature, Stream: true}
 	body.StreamOptions.IncludeUsage = true
 	body.Thinking.Type = "enabled"
-	api := &streamRequest{url: endpoint, apiKey: c.config.APIKey, body: body, emit: emit, cancel: cancel}
+	api := &streamRequest{url: endpoint, apiKey: c.config.APIKey, body: body, emit: names.emitter(emit), cancel: cancel}
 	api.OnEvent(api.receive)
 	id := &apic.ApiId{Name: streamRequestName, Client: api, Stream: true}
 	err = apic.NewApiClient().WithContext(streamCtx).WithHTTPClient(c.config.HTTPClient).Call(id, &apic.Options{Debug: false})

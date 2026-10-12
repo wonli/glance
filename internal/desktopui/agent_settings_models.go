@@ -185,6 +185,7 @@ func (a *App) layoutAgentModelOptions(gtx layout.Context) layout.Dimensions {
 	if len(lookup.models) == 0 {
 		return layout.Dimensions{}
 	}
+	optionMaxWidth := gtx.Constraints.Max.X
 	if lookup.optionButtons == nil {
 		lookup.optionButtons = make(map[string]*widget.Clickable)
 	}
@@ -209,6 +210,10 @@ func (a *App) layoutAgentModelOptions(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return lookup.optionsList.Layout(gtx, len(lookup.modelIDs), func(gtx layout.Context, index int) layout.Dimensions {
+				// A horizontal List gives children an unbounded main axis.
+				// Material labels must not shape or register hits at that width.
+				gtx.Constraints.Max.X = optionMaxWidth
+				gtx.Constraints.Min.X = 0
 				id := lookup.modelIDs[index]
 				model := lookup.modelsByID[id]
 				name := strings.TrimSpace(model.Name)
@@ -216,9 +221,6 @@ func (a *App) layoutAgentModelOptions(gtx layout.Context) layout.Dimensions {
 					name = id
 				}
 				button := lookup.optionButtons[id]
-				if button.Clicked(gtx) {
-					a.agentUI.modelInput.SetText(id)
-				}
 				return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					style := material.Button(a.theme, button, name)
 					style.Background = color.NRGBA{R: 242, G: 245, B: 249, A: 255}
@@ -228,6 +230,21 @@ func (a *App) layoutAgentModelOptions(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 	)
+}
+
+func (a *App) processAgentModelOptionClicks(gtx layout.Context) {
+	lookup := &a.agentUI.modelLookup
+	if lookup.loading || lookup.err != "" || a.agentUI.saving {
+		return
+	}
+	for _, model := range lookup.models {
+		if button := lookup.optionButtons[model.ID]; button != nil && button.Clicked(gtx) {
+			a.agentUI.modelInput.SetText(model.ID)
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		}
+	}
 }
 
 var colorSettingsError = color.NRGBA{R: 178, G: 54, B: 54, A: 255}

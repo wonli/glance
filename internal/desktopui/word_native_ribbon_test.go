@@ -79,7 +79,7 @@ func TestWordRibbonKeepsHeightAndPictureActionsStayOnOneRow(t *testing.T) {
 	}
 }
 
-func TestWordHomeRibbonMatchesPenClpgmGroupGeometry(t *testing.T) {
+func TestWordHomeRibbonKeepsCommandGeometryAfterAgentEntry(t *testing.T) {
 	state, closeDocument := newLongWordFlowState(t, 2)
 	defer closeDocument()
 	state.wordToolbarTab = wordTabHome
@@ -96,15 +96,16 @@ func TestWordHomeRibbonMatchesPenClpgmGroupGeometry(t *testing.T) {
 	app.layoutWordFlow(gtx)
 	router.Frame(&ops)
 	want := map[string]image.Rectangle{
-		"文件":  {Min: image.Pt(22, 2), Max: image.Pt(53, 32)},
-		"开始":  {Min: image.Pt(81, 2), Max: image.Pt(112, 32)},
-		"粘贴":  {Min: image.Pt(8, 44), Max: image.Pt(52, 92)},
-		"剪切":  {Min: image.Pt(58, 44), Max: image.Pt(102, 92)},
-		"字体":  {Min: image.Pt(227, 44), Max: image.Pt(271, 92)},
-		"加粗":  {Min: image.Pt(377, 44), Max: image.Pt(421, 92)},
-		"左对齐": {Min: image.Pt(746, 44), Max: image.Pt(790, 92)},
-		"查找":  {Min: image.Pt(1065, 44), Max: image.Pt(1109, 92)},
-		"编辑器": {Min: image.Pt(1234, 44), Max: image.Pt(1278, 92)},
+		"文件":    {Min: image.Pt(22, 2), Max: image.Pt(53, 32)},
+		"开始":    {Min: image.Pt(81, 2), Max: image.Pt(112, 32)},
+		"AI 助手": {Min: image.Pt(11, 40), Max: image.Pt(51, 96)},
+		"粘贴":    {Min: image.Pt(64, 44), Max: image.Pt(108, 92)},
+		"剪切":    {Min: image.Pt(114, 44), Max: image.Pt(158, 92)},
+		"字体":    {Min: image.Pt(283, 44), Max: image.Pt(327, 92)},
+		"加粗":    {Min: image.Pt(433, 44), Max: image.Pt(477, 92)},
+		"左对齐":   {Min: image.Pt(802, 44), Max: image.Pt(846, 92)},
+		"查找":    {Min: image.Pt(1121, 44), Max: image.Pt(1165, 92)},
+		"编辑器":   {Min: image.Pt(1290, 44), Max: image.Pt(1334, 92)},
 	}
 	found := make(map[string]image.Rectangle, len(want))
 	hasHistoryAction := false

@@ -38,9 +38,10 @@ var (
 const maxListedTools = 1024
 
 type HostOptions struct {
-	Model                 string
-	ConversationStore     ConversationStore
-	ModelTimeout          time.Duration
+	Model             string
+	ConversationStore ConversationStore
+	ModelTimeout      time.Duration
+	// MaxToolRounds bounds tool execution rounds, excluding the final answer.
 	MaxToolRounds         int
 	MaxToolCalls          int
 	MaxPromptBytes        int
@@ -94,15 +95,16 @@ type AgentHost struct {
 	store    ConversationStore
 	tools    map[string]toolSpec
 
-	mu                sync.Mutex
-	closed            bool
-	closeDone         chan struct{}
-	conversations     map[ConversationID]*conversationState
-	subscribers       map[uint64]*agentSubscriber
-	nextSubID         atomic.Uint64
-	nextRequestID     atomic.Uint64
-	turns             sync.WaitGroup
-	subscriptionTasks sync.WaitGroup
+	mu                   sync.Mutex
+	closed               bool
+	closeDone            chan struct{}
+	conversations        map[ConversationID]*conversationState
+	deletedConversations map[ConversationID]struct{}
+	subscribers          map[uint64]*agentSubscriber
+	nextSubID            atomic.Uint64
+	nextRequestID        atomic.Uint64
+	turns                sync.WaitGroup
+	subscriptionTasks    sync.WaitGroup
 }
 
 func NewHost(ctx context.Context, modelProvider provider.ModelProvider, client *mcp.ClientSession, options HostOptions) (*AgentHost, error) {
@@ -130,10 +132,10 @@ func normalizeHostOptions(options HostOptions) HostOptions {
 		options.ModelTimeout = 3 * time.Minute
 	}
 	if options.MaxToolRounds <= 0 {
-		options.MaxToolRounds = 4
+		options.MaxToolRounds = 8
 	}
 	if options.MaxToolCalls <= 0 {
-		options.MaxToolCalls = 8
+		options.MaxToolCalls = 24
 	}
 	if options.MaxPromptBytes <= 0 {
 		options.MaxPromptBytes = 1 << 20
@@ -213,6 +215,10 @@ func (h *AgentHost) Send(ctx context.Context, conversationID ConversationID, mes
 	if h.closed {
 		h.mu.Unlock()
 		return ErrHostClosed
+	}
+	if _, deleted := h.deletedConversations[conversationID]; deleted {
+		h.mu.Unlock()
+		return ErrInvalidConversation
 	}
 	state := h.conversations[conversationID]
 	if state == nil {
@@ -300,6 +306,10 @@ func (h *AgentHost) ResumeConversation(ctx context.Context, conversationID Conve
 		h.mu.Unlock()
 		return ErrHostClosed
 	}
+	if _, deleted := h.deletedConversations[conversationID]; deleted {
+		h.mu.Unlock()
+		return ErrInvalidConversation
+	}
 	state := h.conversations[conversationID]
 	if state == nil {
 		if h.store == nil {
@@ -378,17 +388,22 @@ func (h *AgentHost) completeTurn(ctx context.Context, cancel context.CancelFunc,
 
 func (h *AgentHost) runTurn(ctx context.Context, conversationID ConversationID, state *conversationState, view application.ViewContext, requestID string) error {
 	totalCalls := 0
-	for round := 0; round < h.options.MaxToolRounds; round++ {
+	for round := 0; round <= h.options.MaxToolRounds; round++ {
 		messages, reasoningByMessage, err := h.requestMessages(state, view)
 		if err != nil {
 			return err
 		}
-		if promptSize(messages) > h.options.MaxPromptBytes {
-			return ErrPromptTooLarge
-		}
 		request := provider.ModelRequest{
 			RequestID: requestID, ReasoningByMessage: reasoningByMessage,
 			Model: h.model, Messages: messages, Tools: h.modelTools(),
+		}
+		finalAnswerOnly := round == h.options.MaxToolRounds || totalCalls >= h.options.MaxToolCalls
+		if finalAnswerOnly {
+			request.Tools = nil
+			request.Messages[0].Content += "\n本轮工具执行预算已用尽，不能再调用工具。请根据已完成的工具结果回复用户，明确说明失败原因或尚未完成的部分；不能声称未执行的操作已经完成。"
+		}
+		if promptSize(request.Messages) > h.options.MaxPromptBytes {
+			return ErrPromptTooLarge
 		}
 		var text strings.Builder
 		var reasoning strings.Builder
@@ -450,17 +465,17 @@ func (h *AgentHost) runTurn(ctx context.Context, conversationID ConversationID, 
 			return nil
 		}
 		totalCalls += len(orderedCalls)
+		if round == h.options.MaxToolRounds {
+			if persistErr := h.persistInterruptedReasoning(ctx, conversationID, state, reasoning.String()); persistErr != nil {
+				return persistErr
+			}
+			return ErrToolRoundLimit
+		}
 		if totalCalls > h.options.MaxToolCalls {
 			if persistErr := h.persistInterruptedReasoning(ctx, conversationID, state, reasoning.String()); persistErr != nil {
 				return persistErr
 			}
 			return ErrToolCallLimit
-		}
-		if round == h.options.MaxToolRounds-1 {
-			if persistErr := h.persistInterruptedReasoning(ctx, conversationID, state, reasoning.String()); persistErr != nil {
-				return persistErr
-			}
-			return ErrToolRoundLimit
 		}
 		assistantMessage := provider.ModelMessage{Role: "assistant", Content: text.String()}
 		for index, call := range orderedCalls {
@@ -984,12 +999,17 @@ func (h *AgentHost) LoadConversation(ctx context.Context, documentID string, id 
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	h.mu.Lock()
+	if _, deleted := h.deletedConversations[id]; deleted {
+		h.mu.Unlock()
+		return ConversationSnapshot{}, false, ErrInvalidConversation
+	}
 	record, found, err := h.store.Load(ctx, documentID, id)
 	if err != nil || !found {
+		h.mu.Unlock()
 		return ConversationSnapshot{}, found, err
 	}
 	state := conversationStateFromRecord(record)
-	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()
 		return ConversationSnapshot{}, false, ErrHostClosed

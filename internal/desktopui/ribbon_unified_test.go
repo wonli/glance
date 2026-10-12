@@ -291,8 +291,8 @@ func TestWordRibbonSubmenuScrollableAndLeftAligned(t *testing.T) {
 		}
 	}
 	visit(router.AppendSemantics(nil))
-	if pasteBounds.Min.X != 8 {
-		t.Errorf("Word Ribbon '粘贴' Min.X = %d; want 8 (left aligned with 8dp inset)", pasteBounds.Min.X)
+	if pasteBounds.Min.X != 64 {
+		t.Errorf("Word Ribbon '粘贴' Min.X = %d; want 64 (56dp AI entry area + 8dp inset)", pasteBounds.Min.X)
 	}
 
 	// Test 2: narrow width scrolling capability via wordToolbarActionList
@@ -324,8 +324,8 @@ func TestWordRibbonSubmenuScrollableAndLeftAligned(t *testing.T) {
 	if fontBounds.Empty() {
 		t.Error("Word Ribbon did not render '字体' after scrolling horizontally")
 	}
-	if fontBounds.Min.X != 8 && fontBounds.Min.X != 10 {
-		t.Errorf("scrolled '字体' Min.X = %d; want 8 or 10 (scrolled to start)", fontBounds.Min.X)
+	if fontBounds.Min.X != 64 && fontBounds.Min.X != 66 {
+		t.Errorf("scrolled '字体' Min.X = %d; want 64 or 66 (scrolled to start after AI entry)", fontBounds.Min.X)
 	}
 }
 
@@ -363,8 +363,8 @@ func TestWordRibbonShortMenusStayLeftAligned(t *testing.T) {
 				}
 			}
 			visit(router.AppendSemantics(nil))
-			if bounds.Empty() || bounds.Min.X != 8 {
-				t.Errorf("tab %v at width %d: first command %q bounds = %v; want left edge 8", tab, width, firstLabel, bounds)
+			if bounds.Empty() || bounds.Min.X != 64 {
+				t.Errorf("tab %v at width %d: first command %q bounds = %v; want left edge 64 after AI entry", tab, width, firstLabel, bounds)
 			}
 		}
 	}

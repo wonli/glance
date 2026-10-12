@@ -221,7 +221,10 @@ func (a *App) updateWordRulerIndentDrag(gtx layout.Context, state *documentSessi
 }
 
 func paintWordRulerResizeHandle(gtx layout.Context, x, height int) {
-	width := gtx.Dp(unit.Dp(7))
+	width := min(gtx.Dp(unit.Dp(7)), gtx.Constraints.Max.X)
+	// Opening a sidebar can put the page edge exactly on the viewport edge.
+	// Keep the full grip inside that viewport rather than clipping half of it.
+	x = max(width/2, min(gtx.Constraints.Max.X-(width+1)/2, x))
 	handleHeight := gtx.Dp(unit.Dp(19))
 	top := (height - handleHeight) / 2
 	paint.FillShape(gtx.Ops, rulerResizeHandleColor, clip.UniformRRect(image.Rect(x-width/2, top, x+(width+1)/2, top+handleHeight), gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
