@@ -195,9 +195,7 @@ func (a *App) processAIAssistantEvents(gtx layout.Context) {
 		}
 	}
 	if a.aiModelSelectButton.Clicked(gtx) {
-		a.resetHomeContentScroll()
-		a.prepareAgentSettingsPage()
-		a.homeSection = homeSectionSettings
+		a.openAgentSettingsPage()
 	}
 	if a.aiAttachButton.Clicked(gtx) {
 		a.setStatus("附加文档：请选择或拖入本地文件。")
@@ -294,6 +292,7 @@ func (a *App) layoutAIAssistantBody(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutAIAssistantEmptyState(gtx layout.Context) layout.Dimensions {
+	gtx.Constraints.Min.X = gtx.Constraints.Max.X
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -607,7 +606,7 @@ func (a *App) layoutAIAssistantInputCard(gtx layout.Context) layout.Dimensions {
 										return label.Layout(gtx)
 									})
 								}),
-								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
+								layout.Flexed(1, layout.Spacer{}.Layout),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									btn := &a.agentUI.sendButton
 									if a.agentUI.conversationBusy {

@@ -102,6 +102,7 @@ type App struct {
 	pendingCloseTabID       string
 	recentList              widget.List
 	homeSection             homeSection
+	settingsReturnSection   homeSection
 	homeTypeFilter          string
 	homeSearch              widget.Editor
 	homeSortOpenedDesc      bool

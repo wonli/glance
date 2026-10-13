@@ -394,9 +394,7 @@ func (a *App) processHomeNavClicks(gtx layout.Context) {
 		}
 	}
 	if a.homeNavButton("agent-settings").Clicked(gtx) {
-		a.resetHomeContentScroll()
-		a.prepareAgentSettingsPage()
-		a.homeSection = homeSectionSettings
+		a.openAgentSettingsPage()
 	}
 }
 

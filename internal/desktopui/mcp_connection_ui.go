@@ -37,11 +37,9 @@ func (a *App) showMCPConnectionDialog() {
 }
 
 func (a *App) openMCPSettingsPage() {
-	a.resetHomeContentScroll()
-	a.prepareAgentSettingsPage()
+	a.openAgentSettingsPage()
 	a.agentUI.settingsPageTab = "mcp"
 	a.prepareMCPConnectionPage()
-	a.homeSection = homeSectionSettings
 }
 
 func (a *App) prepareMCPConnectionPage() {
