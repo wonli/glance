@@ -13,8 +13,6 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
-
-	"glance/internal/workspace"
 )
 
 const (
@@ -93,7 +91,7 @@ func (a *App) layoutHomeFolderTreeRow(gtx layout.Context, row homeFolderTreeRow)
 		a.toggleHomeFolderExpanded(row.folder.ID)
 	}
 	if widgets.selectButton.Clicked(gtx) {
-		a.homeFolderNameClicked(row.folder.ID, gtx.Now)
+		a.selectHomeFolder(row.folder.ID)
 	}
 	if widgets.menuButton.Clicked(gtx) {
 		a.toggleHomeFolderMenu(row.folder.ID)
@@ -244,7 +242,7 @@ func (a *App) layoutHomeFolderTreeRowContents(gtx layout.Context, row homeFolder
 								return homeIcon(gtx, glyph, 20, fg)
 							})
 						}
-						if !homeFolderHasChildren(a.homeFolderSnapshotValue(), row.folder.ID) {
+						if !row.hasChildren {
 							return icon(gtx)
 						}
 						return widgets.expandButton.Layout(gtx, icon)
@@ -442,20 +440,6 @@ func (a *App) homeFolderMenuItem(row *homeFolderRowWidgets, id string) *widget.C
 		row.menuItems[id] = new(widget.Clickable)
 	}
 	return row.menuItems[id]
-}
-
-func (a *App) homeFolderSnapshotValue() workspace.HomeFolderSnapshot {
-	snapshot, _ := a.homeFolderSnapshot()
-	return snapshot
-}
-
-func homeFolderHasChildren(snapshot workspace.HomeFolderSnapshot, folderID string) bool {
-	for _, folder := range snapshot.Folders {
-		if folder.ParentID == folderID {
-			return true
-		}
-	}
-	return false
 }
 
 func (a *App) layoutHomeFolderContentPage(gtx layout.Context) layout.Dimensions {

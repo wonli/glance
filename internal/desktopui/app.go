@@ -143,8 +143,6 @@ type App struct {
 	homeFolderBlank              widget.Clickable
 	homeFolderMenuBounds         image.Rectangle
 	homeFolderMenuAnchorBounds   image.Rectangle
-	homeFolderLastNameID         string
-	homeFolderLastNameAt         time.Time
 	homeFolderTreeRootOrigin     image.Point
 	homeFolderTreeViewport       image.Rectangle
 	homeFolderDropTargets        []homeFolderDropTarget
@@ -174,6 +172,9 @@ type App struct {
 	homeFolderContents           map[string][]workspace.Recent
 	homeFolderContentsResults    chan homeFolderContentsResult
 	homeFolderContentsGeneration uint64
+	homeFolderContentsLatest     map[string]uint64
+	homeFolderContentsLoading    map[string]bool
+	homeFolderContentsLastScan   map[string]time.Time
 	homeCanonicalPaths           map[string]string
 	fileCommandResults           chan fileCommandResult
 	fileCommandRunner            func(fileCommandKind, string) fileCommandResult
@@ -339,6 +340,9 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		homeMetadataResults:           make(chan homeMetadataResult, 8),
 		homeFolderContents:            make(map[string][]workspace.Recent),
 		homeFolderContentsResults:     make(chan homeFolderContentsResult, 8),
+		homeFolderContentsLatest:      make(map[string]uint64),
+		homeFolderContentsLoading:     make(map[string]bool),
+		homeFolderContentsLastScan:    make(map[string]time.Time),
 		homeFolderWriteResults:        make(chan homeFolderWriteResult, 1),
 		workspaceTabsList:             widget.List{List: layout.List{Axis: layout.Horizontal}},
 		createActionsList:             widget.List{List: layout.List{Axis: layout.Horizontal}},

@@ -13,9 +13,9 @@ import (
 	"glance/internal/workspace"
 )
 
-const homeFolderDoubleClickWindow = 450 * time.Millisecond
-
 const homeFolderPageSize = 30
+
+const homeFolderContentsRefreshInterval = 5 * time.Second
 
 func (a *App) currentHomeFolderSnapshot() (workspace.HomeFolderSnapshot, uint64, error) {
 	if a == nil || a.desktopRuntime == nil {
@@ -38,8 +38,9 @@ func hasHomeFolder(snapshot workspace.HomeFolderSnapshot, folderID string) bool 
 }
 
 type homeFolderTreeRow struct {
-	folder workspace.HomeFolder
-	depth  int
+	folder      workspace.HomeFolder
+	depth       int
+	hasChildren bool
 }
 
 type homeFolderContentsResult struct {
@@ -176,6 +177,9 @@ func (a *App) handleHomeFolderPickerResult(result fileCommandResult) {
 
 func (a *App) selectHomeFolder(folderID string) {
 	changed := a.homeSelectedFolderID != folderID
+	snapshot, _ := a.homeFolderSnapshot()
+	a.setHomeFolderOpenPath(snapshot, folderID)
+	sourcePath := homeFolderSourcePathFromSnapshot(snapshot, folderID)
 	a.homeSection = homeSectionRecent
 	a.homeSelectedFolderID = folderID
 	if changed {
@@ -184,10 +188,36 @@ func (a *App) selectHomeFolder(folderID string) {
 	}
 	a.dismissHomeFolderMenu()
 	a.resetHomeContentScroll()
-	if changed && folderID != "" {
-		if sourcePath := a.homeFolderSourcePath(folderID); sourcePath != "" {
-			a.refreshHomeFolderContents(folderID, sourcePath)
+	if folderID != "" && sourcePath != "" {
+		a.refreshHomeFolderContents(folderID, sourcePath)
+	}
+}
+
+func (a *App) setHomeFolderOpenPath(snapshot workspace.HomeFolderSnapshot, folderID string) {
+	if a.homeFolderExpanded == nil {
+		a.homeFolderExpanded = make(map[string]bool)
+	}
+	clear(a.homeFolderExpanded)
+	if folderID == "" {
+		return
+	}
+	folders := make(map[string]workspace.HomeFolder, len(snapshot.Folders))
+	hasChildren := make(map[string]bool, len(snapshot.Folders))
+	for _, folder := range snapshot.Folders {
+		folders[folder.ID] = folder
+		if folder.ParentID != "" {
+			hasChildren[folder.ParentID] = true
 		}
+	}
+	for currentID := folderID; currentID != ""; {
+		folder, exists := folders[currentID]
+		if !exists {
+			break
+		}
+		if hasChildren[currentID] {
+			a.homeFolderExpanded[currentID] = true
+		}
+		currentID = folder.ParentID
 	}
 }
 
@@ -215,27 +245,47 @@ func (a *App) loadMoreHomeFolderItems(folderID string, total int) {
 }
 
 func (a *App) toggleHomeFolderExpanded(folderID string) {
-	if a.homeFolderExpanded == nil {
-		a.homeFolderExpanded = make(map[string]bool)
-	}
-	if a.homeFolderExpanded[folderID] {
-		delete(a.homeFolderExpanded, folderID)
+	snapshot, _ := a.homeFolderSnapshot()
+	folder, exists := homeFolderByID(snapshot, folderID)
+	if !exists {
 		return
 	}
-	a.homeFolderExpanded[folderID] = true
+	if !a.homeFolderExpanded[folderID] {
+		a.selectHomeFolder(folderID)
+		return
+	}
+	if homeFolderIsWithin(snapshot, a.homeSelectedFolderID, folderID) {
+		a.selectHomeFolder(folder.ParentID)
+		return
+	}
+	a.selectHomeFolder(a.homeSelectedFolderID)
 }
 
-func (a *App) homeFolderNameClicked(folderID string, now time.Time) {
-	wasDoubleClick := a.homeFolderLastNameID == folderID && !now.Before(a.homeFolderLastNameAt) && now.Sub(a.homeFolderLastNameAt) <= homeFolderDoubleClickWindow
-	a.selectHomeFolder(folderID)
-	if wasDoubleClick {
-		a.toggleHomeFolderExpanded(folderID)
-		a.homeFolderLastNameID = ""
-		a.homeFolderLastNameAt = time.Time{}
-		return
+func homeFolderByID(snapshot workspace.HomeFolderSnapshot, folderID string) (workspace.HomeFolder, bool) {
+	for _, folder := range snapshot.Folders {
+		if folder.ID == folderID {
+			return folder, true
+		}
 	}
-	a.homeFolderLastNameID = folderID
-	a.homeFolderLastNameAt = now
+	return workspace.HomeFolder{}, false
+}
+
+func homeFolderIsWithin(snapshot workspace.HomeFolderSnapshot, folderID, ancestorID string) bool {
+	folders := make(map[string]workspace.HomeFolder, len(snapshot.Folders))
+	for _, folder := range snapshot.Folders {
+		folders[folder.ID] = folder
+	}
+	for currentID := folderID; currentID != ""; {
+		if currentID == ancestorID {
+			return true
+		}
+		folder, exists := folders[currentID]
+		if !exists {
+			return false
+		}
+		currentID = folder.ParentID
+	}
+	return false
 }
 
 func (a *App) toggleHomeFolderMenu(folderID string) {
@@ -338,20 +388,19 @@ func (a *App) reconcileHomeFolderSelection() {
 	}
 	removedID := a.homeSelectedFolderID
 	delete(a.homeFolderContents, removedID)
-	delete(a.homeFolderExpanded, removedID)
 	delete(a.homeFolderRows, removedID)
-	a.homeFolderContentsGeneration++
+	delete(a.homeFolderContentsLatest, removedID)
+	delete(a.homeFolderContentsLoading, removedID)
+	delete(a.homeFolderContentsLastScan, removedID)
 	a.selectHomeFolder("")
 }
 
-func (a *App) homeFolderSourcePath(folderID string) string {
-	snapshot, _ := a.homeFolderSnapshot()
-	for _, folder := range snapshot.Folders {
-		if folder.ID == folderID {
-			return folder.SourcePath
-		}
+func homeFolderSourcePathFromSnapshot(snapshot workspace.HomeFolderSnapshot, folderID string) string {
+	folder, exists := homeFolderByID(snapshot, folderID)
+	if !exists {
+		return ""
 	}
-	return ""
+	return folder.SourcePath
 }
 
 func (a *App) refreshHomeFolderContents(folderID, sourcePath string) {
@@ -362,8 +411,26 @@ func (a *App) refreshHomeFolderContents(folderID, sourcePath string) {
 	if a.homeFolderContents == nil {
 		a.homeFolderContents = make(map[string][]workspace.Recent)
 	}
+	if a.homeFolderContentsLoading == nil {
+		a.homeFolderContentsLoading = make(map[string]bool)
+	}
+	if a.homeFolderContentsLastScan == nil {
+		a.homeFolderContentsLastScan = make(map[string]time.Time)
+	}
+	if a.homeFolderContentsLatest == nil {
+		a.homeFolderContentsLatest = make(map[string]uint64)
+	}
+	if a.homeFolderContentsLoading[folderID] {
+		return
+	}
+	if lastScan := a.homeFolderContentsLastScan[folderID]; !lastScan.IsZero() && time.Since(lastScan) < homeFolderContentsRefreshInterval {
+		return
+	}
 	a.homeFolderContentsGeneration++
 	generation := a.homeFolderContentsGeneration
+	a.homeFolderContentsLatest[folderID] = generation
+	a.homeFolderContentsLoading[folderID] = true
+	a.homeFolderContentsLastScan[folderID] = time.Now()
 	a.launchManagedBackground(func() {
 		result := homeFolderContentsResult{folderID: folderID, generation: generation}
 		result.recents, result.metadata, result.canonicalPaths, result.err = scanHomeFolderContents(sourcePath)
@@ -409,8 +476,12 @@ func scanHomeFolderContents(sourcePath string) ([]workspace.Recent, map[string]h
 }
 
 func (a *App) applyHomeFolderContentsResult(result homeFolderContentsResult) {
-	if result.generation != a.homeFolderContentsGeneration {
+	if a.homeFolderContentsLatest[result.folderID] != result.generation {
 		return
+	}
+	delete(a.homeFolderContentsLoading, result.folderID)
+	if a.homeFolderContentsLastScan != nil {
+		a.homeFolderContentsLastScan[result.folderID] = time.Now()
 	}
 	snapshot, _ := a.homeFolderSnapshot()
 	if !hasHomeFolder(snapshot, result.folderID) {
@@ -483,7 +554,7 @@ func homeFolderTreeRows(snapshot workspace.HomeFolderSnapshot, expanded map[stri
 	var appendChildren func(string, int)
 	appendChildren = func(parentID string, depth int) {
 		for _, folder := range children[parentID] {
-			rows = append(rows, homeFolderTreeRow{folder: folder, depth: depth})
+			rows = append(rows, homeFolderTreeRow{folder: folder, depth: depth, hasChildren: len(children[folder.ID]) != 0})
 			if expanded[folder.ID] {
 				appendChildren(folder.ID, depth+1)
 			}

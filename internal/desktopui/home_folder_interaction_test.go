@@ -133,24 +133,98 @@ func TestHomeFolderMembershipCanonicalizesSymlinkAliases(t *testing.T) {
 	}
 }
 
-func TestHomeFolderTreeExpandDoesNotSelectAndDoubleClickToggles(t *testing.T) {
+func TestHomeFolderSelectionOpensOneBranchPerLevel(t *testing.T) {
 	app := newHomeFolderTestApp(t)
-	app.homeSelectedFolderID = "selected"
+	app.desktopRuntime.setHomeFolderTestSnapshot(workspace.HomeFolderSnapshot{Folders: []workspace.HomeFolder{
+		{ID: "first-root", Name: "项目一"},
+		{ID: "first-child", ParentID: "first-root", Name: "文档"},
+		{ID: "first-grandchild", ParentID: "first-child", Name: "草稿"},
+		{ID: "second-child", ParentID: "first-root", Name: "归档"},
+		{ID: "second-root", Name: "项目二"},
+		{ID: "second-root-child", ParentID: "second-root", Name: "工作簿"},
+	}})
+
+	app.selectHomeFolder("first-grandchild")
+	if app.homeSelectedFolderID != "first-grandchild" || !app.homeFolderExpanded["first-root"] || !app.homeFolderExpanded["first-child"] {
+		t.Fatalf("selecting nested folder did not open its path: selected=%q expanded=%v", app.homeSelectedFolderID, app.homeFolderExpanded)
+	}
+	if app.homeFolderExpanded["second-child"] || app.homeFolderExpanded["second-root"] {
+		t.Fatalf("selecting nested folder left a same-level branch open: %v", app.homeFolderExpanded)
+	}
+
+	app.selectHomeFolder("second-child")
+	if app.homeSelectedFolderID != "second-child" || !app.homeFolderExpanded["first-root"] || app.homeFolderExpanded["first-child"] {
+		t.Fatalf("switching siblings did not move the open branch: selected=%q expanded=%v", app.homeSelectedFolderID, app.homeFolderExpanded)
+	}
+
+	app.selectHomeFolder("second-root-child")
+	if app.homeSelectedFolderID != "second-root-child" || app.homeFolderExpanded["first-root"] || !app.homeFolderExpanded["second-root"] {
+		t.Fatalf("switching roots did not close the previous branch: selected=%q expanded=%v", app.homeSelectedFolderID, app.homeFolderExpanded)
+	}
+
+	app.selectHomeFolder("")
+	if app.homeSelectedFolderID != "" || len(app.homeFolderExpanded) != 0 {
+		t.Fatalf("clearing the selected folder left the tree open: selected=%q expanded=%v", app.homeSelectedFolderID, app.homeFolderExpanded)
+	}
+}
+
+func TestHomeFolderDisclosureAndSelectionStaySynchronized(t *testing.T) {
+	app := newHomeFolderTestApp(t)
+	app.desktopRuntime.setHomeFolderTestSnapshot(workspace.HomeFolderSnapshot{Folders: []workspace.HomeFolder{
+		{ID: "parent", Name: "项目"},
+		{ID: "child", ParentID: "parent", Name: "文档"},
+	}})
 	app.toggleHomeFolderExpanded("parent")
-	if app.homeSelectedFolderID != "selected" {
-		t.Fatal("expanding a folder changed the selected folder")
-	}
-	if !app.homeFolderExpanded["parent"] {
-		t.Fatal("expand control did not open the folder")
-	}
-	first := time.Now()
-	app.homeFolderNameClicked("parent", first)
 	if app.homeSelectedFolderID != "parent" || !app.homeFolderExpanded["parent"] {
-		t.Fatal("first name click should select without toggling the current expansion")
+		t.Fatalf("opening a folder did not select it: selected=%q expanded=%v", app.homeSelectedFolderID, app.homeFolderExpanded)
 	}
-	app.homeFolderNameClicked("parent", first.Add(250*time.Millisecond))
-	if app.homeFolderExpanded["parent"] {
-		t.Fatal("double-clicking the folder name did not collapse it")
+	app.toggleHomeFolderExpanded("parent")
+	if app.homeSelectedFolderID != "" || len(app.homeFolderExpanded) != 0 {
+		t.Fatalf("closing the active root folder did not clear its open selection: selected=%q expanded=%v", app.homeSelectedFolderID, app.homeFolderExpanded)
+	}
+}
+
+func TestHomeFolderSwitchReusesDirectoryScanResults(t *testing.T) {
+	app := newHomeFolderTestApp(t)
+	firstDir, secondDir := t.TempDir(), t.TempDir()
+	if err := osWriteFile(filepath.Join(firstDir, "first.docx")); err != nil {
+		t.Fatal(err)
+	}
+	if err := osWriteFile(filepath.Join(secondDir, "second.xlsx")); err != nil {
+		t.Fatal(err)
+	}
+	app.desktopRuntime.setHomeFolderTestSnapshot(workspace.HomeFolderSnapshot{Folders: []workspace.HomeFolder{
+		{ID: "first", Name: "项目一", SourcePath: firstDir},
+		{ID: "second", Name: "项目二", SourcePath: secondDir},
+	}})
+	app.selectHomeFolder("first")
+	app.selectHomeFolder("second")
+	results := make([]homeFolderContentsResult, 0, 2)
+	for range 2 {
+		select {
+		case result := <-app.homeFolderContentsResults:
+			results = append(results, result)
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out scanning both selected folders")
+		}
+	}
+	for _, result := range results {
+		app.applyHomeFolderContentsResult(result)
+	}
+	if len(app.homeFolderContents["first"]) != 1 || len(app.homeFolderContents["second"]) != 1 {
+		t.Fatalf("switching folders failed to cache both scans: first=%+v second=%+v", app.homeFolderContents["first"], app.homeFolderContents["second"])
+	}
+
+	firstGeneration := app.homeFolderContentsGeneration
+	if err := osWriteFile(filepath.Join(firstDir, "new.docx")); err != nil {
+		t.Fatal(err)
+	}
+	app.selectHomeFolder("first")
+	if app.homeFolderContentsGeneration != firstGeneration {
+		t.Fatalf("immediate folder switch rescanned the directory: generation=%d want %d", app.homeFolderContentsGeneration, firstGeneration)
+	}
+	if len(app.homeFolderContents["first"]) != 1 {
+		t.Fatalf("cached folder contents were not immediately reusable: %+v", app.homeFolderContents["first"])
 	}
 }
 
@@ -607,7 +681,7 @@ func TestHomeFolderMenuMatchesFolderWidthAndHighlightsHoveredItem(t *testing.T) 
 	}
 }
 
-func TestHomeFolderIconTogglesExpansionWithoutSelectingFolder(t *testing.T) {
+func TestHomeFolderIconOpensAndSelectsFolder(t *testing.T) {
 	app := newHomeFolderTestApp(t)
 	app.desktopRuntime.setHomeFolderTestSnapshot(workspace.HomeFolderSnapshot{Folders: []workspace.HomeFolder{
 		{ID: "parent", Name: "项目资料"},
@@ -628,8 +702,8 @@ func TestHomeFolderIconTogglesExpansionWithoutSelectingFolder(t *testing.T) {
 	draw()
 	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 5, Position: point})
 	draw()
-	if !app.homeFolderExpanded["parent"] || app.homeSelectedFolderID != "" {
-		t.Fatalf("folder-icon click expanded=%v selected=%q; want expanded without changing selection", app.homeFolderExpanded["parent"], app.homeSelectedFolderID)
+	if !app.homeFolderExpanded["parent"] || app.homeSelectedFolderID != "parent" {
+		t.Fatalf("folder-icon click expanded=%v selected=%q; want the opened folder selected", app.homeFolderExpanded["parent"], app.homeSelectedFolderID)
 	}
 }
 
@@ -932,6 +1006,8 @@ func TestFailedHomeFolderDirectoryRescanClearsStaleEntries(t *testing.T) {
 	app.homeSelectedFolderID = "folder"
 	app.homeFolderContents["folder"] = []workspace.Recent{{Path: filepath.Join(t.TempDir(), "stale.docx"), Kind: "docx"}}
 	app.homeFolderContentsGeneration = 7
+	app.homeFolderContentsLatest["folder"] = 7
+	app.homeFolderContentsLoading["folder"] = true
 	app.applyHomeFolderContentsResult(homeFolderContentsResult{folderID: "folder", generation: 7, err: fmt.Errorf("directory unavailable")})
 	if len(app.homeFolderContents["folder"]) != 0 {
 		t.Fatalf("failed directory rescan left stale files visible: %+v", app.homeFolderContents["folder"])
@@ -1028,28 +1104,31 @@ func newHomeFolderTestApp(t *testing.T) *App {
 	}
 	runtime.startWorkspaceWriter()
 	app := &App{
-		desktopRuntime:            runtime,
-		theme:                     material.NewTheme(),
-		homeSection:               homeSectionRecent,
-		homeTypeFilter:            "全部",
-		homeSortOpenedDesc:        true,
-		homeActionButtons:         make(map[string]*widget.Clickable),
-		homeFolderWriteResults:    make(chan homeFolderWriteResult, 1),
-		homeFolderRows:            make(map[string]*homeFolderRowWidgets),
-		homeFolderExpanded:        make(map[string]bool),
-		homeFavorites:             make(map[string]bool),
-		homeMetadata:              make(map[string]homeFileMetadata),
-		homeFilterButtons:         make(map[string]*widget.Clickable),
-		homeFolderContents:        make(map[string][]workspace.Recent),
-		homeFolderContentsResults: make(chan homeFolderContentsResult, 8),
-		homeOpenButtons:           make(map[string]*widget.Clickable),
-		homeFavoriteButtons:       make(map[string]*widget.Clickable),
-		homeMoreButtons:           make(map[string]*widget.Clickable),
-		recentList:                widget.List{List: layout.List{Axis: layout.Vertical}},
-		homeFolderTreeList:        widget.List{List: layout.List{Axis: layout.Vertical}},
-		homeContentList:           widget.List{List: layout.List{Axis: layout.Vertical}},
-		fileCommandResults:        make(chan fileCommandResult, 1),
-		shutdown:                  make(chan struct{}),
+		desktopRuntime:             runtime,
+		theme:                      material.NewTheme(),
+		homeSection:                homeSectionRecent,
+		homeTypeFilter:             "全部",
+		homeSortOpenedDesc:         true,
+		homeActionButtons:          make(map[string]*widget.Clickable),
+		homeFolderWriteResults:     make(chan homeFolderWriteResult, 1),
+		homeFolderRows:             make(map[string]*homeFolderRowWidgets),
+		homeFolderExpanded:         make(map[string]bool),
+		homeFavorites:              make(map[string]bool),
+		homeMetadata:               make(map[string]homeFileMetadata),
+		homeFilterButtons:          make(map[string]*widget.Clickable),
+		homeFolderContents:         make(map[string][]workspace.Recent),
+		homeFolderContentsResults:  make(chan homeFolderContentsResult, 8),
+		homeFolderContentsLatest:   make(map[string]uint64),
+		homeFolderContentsLoading:  make(map[string]bool),
+		homeFolderContentsLastScan: make(map[string]time.Time),
+		homeOpenButtons:            make(map[string]*widget.Clickable),
+		homeFavoriteButtons:        make(map[string]*widget.Clickable),
+		homeMoreButtons:            make(map[string]*widget.Clickable),
+		recentList:                 widget.List{List: layout.List{Axis: layout.Vertical}},
+		homeFolderTreeList:         widget.List{List: layout.List{Axis: layout.Vertical}},
+		homeContentList:            widget.List{List: layout.List{Axis: layout.Vertical}},
+		fileCommandResults:         make(chan fileCommandResult, 1),
+		shutdown:                   make(chan struct{}),
 	}
 	t.Cleanup(runtime.shutdown)
 	return app
