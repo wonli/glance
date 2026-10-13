@@ -128,6 +128,9 @@ func (a *App) initializeWorkspace() {
 		}
 		runtime.collection = collection
 	}
+	if err := runtime.loadHomeFolderState(); err != nil {
+		a.setStatus("文件夹数据不可用：" + err.Error())
+	}
 	collection := runtime.collection
 	a.loadHomeFavorites()
 	a.loadAgentSidebarPreference()

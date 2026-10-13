@@ -23,14 +23,20 @@ import (
 func (a *App) layoutHomeRecentTable(gtx layout.Context) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(330))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-	items := a.homeVisibleRecents(true)
+	items := a.homeDisplayedRecents()
+	a.homeRecentListRootOrigin = a.homeRecentTableRootOrigin.Add(image.Pt(0, gtx.Dp(unit.Dp(48))))
 	return homeRoundedPanel(gtx, homeSurface, homeBorder, unit.Dp(14), func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.layoutHomeTableHeader(gtx) }),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				if len(items) == 0 {
 					message := "最近还没有文件"
-					if a.homeSection == homeSectionFavorites {
+					if a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
+						message = "暂无文件"
+						if strings.TrimSpace(a.homeSearch.Text()) != "" || a.homeTypeFilter != "全部" {
+							message = "没有符合条件的文件"
+						}
+					} else if a.homeSection == homeSectionFavorites {
 						message = "收藏的文件会显示在这里"
 					} else if strings.TrimSpace(a.homeSearch.Text()) != "" || a.homeTypeFilter != "全部" {
 						message = "没有符合条件的文件"
@@ -40,7 +46,7 @@ func (a *App) layoutHomeRecentTable(gtx layout.Context) layout.Dimensions {
 					})
 				}
 				return material.List(a.theme, &a.recentList).Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
-					return a.layoutHomeRecentRow(gtx, items[index])
+					return a.layoutHomeRecentRow(gtx, items[index], index)
 				})
 			}),
 		)
@@ -64,7 +70,8 @@ func (a *App) layoutHomeTableHeader(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-func (a *App) layoutHomeRecentRow(gtx layout.Context, item workspace.Recent) layout.Dimensions {
+func (a *App) layoutHomeRecentRow(gtx layout.Context, item workspace.Recent, index int) layout.Dimensions {
+	a.updateHomeDocumentDrag(gtx, item.Path, a.homeRecentRowOrigin(index, gtx))
 	button := a.homeOpenButtons[item.Path]
 	if button == nil {
 		button = new(widget.Clickable)
@@ -240,7 +247,13 @@ func homeTableColumns(gtx layout.Context, theme *material.Theme, header bool, ro
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			if !header && row != nil && row.open != nil {
-				return row.open.Layout(gtx, layoutDataColumns)
+				return row.open.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					state := row.app.homeDocumentDragState(row.item.Path)
+					area := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
+					state.drag.Add(gtx.Ops)
+					area.Pop()
+					return layoutDataColumns(gtx)
+				})
 			}
 			return layoutDataColumns(gtx)
 		}),
@@ -268,17 +281,38 @@ func (a *App) homeVisibleRecents(applyFilter bool) []workspace.Recent {
 	if a != nil && a.desktopRuntime != nil && a.collection != nil {
 		recents = a.collection.Recents()
 	}
+	filtered := a.filterHomeRecents(recents, applyFilter, nil)
+	if len(filtered) > 5 {
+		filtered = filtered[:5]
+	}
+	return filtered
+}
+
+func (a *App) homeDisplayedRecents() []workspace.Recent {
+	if a != nil && a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
+		return a.homeFolderVisibleRecents(a.homeSelectedFolderID)
+	}
+	return a.homeVisibleRecents(true)
+}
+
+func (a *App) filterHomeRecents(recents []workspace.Recent, applyFilter bool, include func(workspace.Recent) bool) []workspace.Recent {
 	filtered := make([]workspace.Recent, 0, len(recents))
-	query := strings.ToLower(strings.TrimSpace(a.homeSearch.Text()))
+	query := ""
+	if a != nil {
+		query = strings.ToLower(strings.TrimSpace(a.homeSearch.Text()))
+	}
 	for _, item := range recents {
+		if include != nil && !include(item) {
+			continue
+		}
 		if !applyFilter {
 			filtered = append(filtered, item)
 			continue
 		}
-		if a.homeSection == homeSectionFavorites && !a.homeFavorites[item.Path] {
+		if a != nil && a.homeSection == homeSectionFavorites && !a.homeFavorites[item.Path] {
 			continue
 		}
-		if a.homeTypeFilter != "全部" && !homeTypeMatches(item.Path, a.homeTypeFilter) {
+		if a != nil && a.homeTypeFilter != "全部" && !homeTypeMatches(item.Path, a.homeTypeFilter) {
 			continue
 		}
 		if query != "" && !strings.Contains(strings.ToLower(filepath.Base(item.Path)), query) && !strings.Contains(strings.ToLower(filepath.Dir(item.Path)), query) {
@@ -304,9 +338,6 @@ func (a *App) homeVisibleRecents(applyFilter bool) []workspace.Recent {
 			}
 			return left.Before(right)
 		})
-	}
-	if len(filtered) > 5 {
-		filtered = filtered[:5]
 	}
 	return filtered
 }

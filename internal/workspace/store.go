@@ -89,8 +89,8 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version > 6 {
-		return fmt.Errorf("workspace database version %d is newer than supported version 6", version)
+	if version > 7 {
+		return fmt.Errorf("workspace database version %d is newer than supported version 7", version)
 	}
 	if version == 0 {
 		tx, err := db.Begin()
@@ -221,6 +221,41 @@ func migrate(db *sql.DB) error {
 		if err := tx.Commit(); err != nil {
 			return err
 		}
+		version = 6
+	}
+	if version == 6 {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for _, query := range []string{
+			`CREATE TABLE home_folders (
+				id TEXT PRIMARY KEY NOT NULL,
+				parent_id TEXT REFERENCES home_folders(id) ON DELETE CASCADE,
+				name TEXT NOT NULL CHECK(length(trim(name)) > 0),
+				sort_order INTEGER NOT NULL DEFAULT 0,
+				source_path TEXT,
+				CHECK (source_path IS NULL OR (parent_id IS NULL AND length(source_path) > 0))
+			)`,
+			`CREATE UNIQUE INDEX home_folders_sibling_name ON home_folders(IFNULL(parent_id, ''), name COLLATE NOCASE)`,
+			`CREATE UNIQUE INDEX home_folders_source_path ON home_folders(source_path) WHERE source_path IS NOT NULL`,
+			`CREATE INDEX home_folders_parent_sort ON home_folders(parent_id, sort_order, id)`,
+			`CREATE TABLE home_document_folders (
+				path TEXT PRIMARY KEY NOT NULL CHECK(path <> ''),
+				folder_id TEXT NOT NULL REFERENCES home_folders(id) ON DELETE CASCADE
+			)`,
+			`CREATE INDEX home_document_folders_folder_path ON home_document_folders(folder_id, path)`,
+			`PRAGMA user_version = 7`,
+		} {
+			if _, err := tx.Exec(query); err != nil {
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		version = 7
 	}
 
 	return nil
@@ -465,4 +500,113 @@ func (s *Store) SaveFavorite(path string, favorite bool) error {
 	}
 	_, err := s.db.Exec(`DELETE FROM favorites WHERE path=?`, path)
 	return err
+}
+
+// LoadHomeFolderSnapshot loads and validates the complete logical folder tree
+// and its one-folder-per-document assignments.
+func (s *Store) LoadHomeFolderSnapshot() (HomeFolderSnapshot, error) {
+	if s == nil || s.db == nil {
+		return HomeFolderSnapshot{}, errors.New("workspace store is not open")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return HomeFolderSnapshot{}, err
+	}
+	defer tx.Rollback()
+
+	snapshot := HomeFolderSnapshot{}
+	rows, err := tx.Query(`SELECT id, parent_id, name, sort_order, source_path FROM home_folders`)
+	if err != nil {
+		return HomeFolderSnapshot{}, err
+	}
+	for rows.Next() {
+		var folder HomeFolder
+		var parentID, sourcePath sql.NullString
+		if err := rows.Scan(&folder.ID, &parentID, &folder.Name, &folder.SortOrder, &sourcePath); err != nil {
+			rows.Close()
+			return HomeFolderSnapshot{}, err
+		}
+		if parentID.Valid {
+			folder.ParentID = parentID.String
+		}
+		if sourcePath.Valid {
+			folder.SourcePath = sourcePath.String
+		}
+		snapshot.Folders = append(snapshot.Folders, folder)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return HomeFolderSnapshot{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return HomeFolderSnapshot{}, err
+	}
+
+	rows, err = tx.Query(`SELECT path, folder_id FROM home_document_folders ORDER BY path`)
+	if err != nil {
+		return HomeFolderSnapshot{}, err
+	}
+	for rows.Next() {
+		var assignment HomeFolderAssignment
+		if err := rows.Scan(&assignment.Path, &assignment.FolderID); err != nil {
+			rows.Close()
+			return HomeFolderSnapshot{}, err
+		}
+		snapshot.Assignments = append(snapshot.Assignments, assignment)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return HomeFolderSnapshot{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return HomeFolderSnapshot{}, err
+	}
+	if err := ValidateHomeFolderSnapshot(snapshot); err != nil {
+		return HomeFolderSnapshot{}, fmt.Errorf("workspace home folder data is invalid: %w", err)
+	}
+	snapshot.Folders = orderedHomeFolders(snapshot.Folders)
+	if err := tx.Commit(); err != nil {
+		return HomeFolderSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+// SaveHomeFolderSnapshot atomically replaces all persisted folder nodes and
+// document assignments after validating the new snapshot.
+func (s *Store) SaveHomeFolderSnapshot(snapshot HomeFolderSnapshot) error {
+	if s == nil || s.db == nil {
+		return errors.New("workspace store is not open")
+	}
+	if err := ValidateHomeFolderSnapshot(snapshot); err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM home_document_folders`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM home_folders`); err != nil {
+		return err
+	}
+	for _, folder := range orderedHomeFolders(snapshot.Folders) {
+		var parentID, sourcePath any
+		if folder.ParentID != "" {
+			parentID = folder.ParentID
+		}
+		if folder.SourcePath != "" {
+			sourcePath = folder.SourcePath
+		}
+		if _, err := tx.Exec(`INSERT INTO home_folders(id, parent_id, name, sort_order, source_path) VALUES (?, ?, ?, ?, ?)`, folder.ID, parentID, folder.Name, folder.SortOrder, sourcePath); err != nil {
+			return fmt.Errorf("save home folder %q: %w", folder.ID, err)
+		}
+	}
+	for _, assignment := range snapshot.Assignments {
+		if _, err := tx.Exec(`INSERT INTO home_document_folders(path, folder_id) VALUES (?, ?)`, assignment.Path, assignment.FolderID); err != nil {
+			return fmt.Errorf("save home folder assignment for %q: %w", assignment.Path, err)
+		}
+	}
+	return tx.Commit()
 }

@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
+	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +49,14 @@ type desktopRuntime struct {
 	workspaceDBMu           sync.Mutex
 	workspaceStore          *workspace.Store
 	collection              *workspace.Collection
+	homeFolderWorking       workspace.HomeFolderSnapshot
+	homeFolderCommitted     workspace.HomeFolderSnapshot
+	homeFolderRevision      uint64
+	homeFolderCommittedRev  uint64
+	homeFolderCompletedRev  uint64
+	homeFolderPendingRemove map[string]uint64
+	homeFolderLoaded        bool
+	homeFolderLoadErr       error
 	workspaceWriteJobs      chan workspaceWriteJob
 	workspaceWriteResults   chan error
 	workspaceWriterDone     chan struct{}
@@ -65,7 +76,50 @@ type desktopRuntime struct {
 	nextWindowAttachment    uint64
 }
 
+func isValidMCPPort(port int) bool {
+	return port >= 1024 && port <= 65535
+}
+
+func (r *desktopRuntime) loadConfiguredMCPPort() int {
+	if envPort := os.Getenv("GLANCE_MCP_PORT"); envPort != "" {
+		if p, err := strconv.Atoi(strings.TrimSpace(envPort)); err == nil {
+			if p == 0 || isValidMCPPort(p) {
+				return p
+			}
+		}
+	}
+	r.mu.Lock()
+	store := r.workspaceStore
+	r.mu.Unlock()
+	if store != nil {
+		if val, found, err := store.Preference(workspace.PreferenceMCPServerPort); err == nil && found {
+			if p, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && isValidMCPPort(p) {
+				return p
+			}
+		}
+	}
+	return mcpserver.DefaultDesktopMCPPort
+}
+
+func (r *desktopRuntime) saveConfiguredMCPPort(port int) error {
+	if !isValidMCPPort(port) {
+		return errors.New("端口超出可用范围（1024–65535）")
+	}
+	r.mu.Lock()
+	store := r.workspaceStore
+	r.mu.Unlock()
+	if store == nil {
+		return errors.New("工作区数据库不可用")
+	}
+	return store.SetPreference(workspace.PreferenceMCPServerPort, strconv.Itoa(port))
+}
+
 func (r *desktopRuntime) startDesktopMCPEndpoint() error {
+	port := r.loadConfiguredMCPPort()
+	return r.startDesktopMCPEndpointWithPort(port)
+}
+
+func (r *desktopRuntime) startDesktopMCPEndpointWithPort(port int) error {
 	if r == nil {
 		return errors.New("desktop runtime is unavailable")
 	}
@@ -88,7 +142,7 @@ func (r *desktopRuntime) startDesktopMCPEndpoint() error {
 	if applicationRuntime == nil {
 		return errors.New("application runtime is unavailable")
 	}
-	endpoint, err := mcpserver.StartDesktopEndpoint(applicationRuntime)
+	endpoint, err := mcpserver.StartDesktopEndpointWithOptions(applicationRuntime, mcpserver.DesktopEndpointOptions{Port: port})
 	r.mu.Lock()
 	if r.shuttingDown {
 		r.mu.Unlock()
@@ -110,6 +164,68 @@ func (r *desktopRuntime) startDesktopMCPEndpoint() error {
 	r.mcpEndpoint = endpoint
 	r.mu.Unlock()
 	return nil
+}
+
+func (r *desktopRuntime) restartDesktopMCPEndpoint(port int) error {
+	if r == nil {
+		return errors.New("desktop runtime is unavailable")
+	}
+	if !isValidMCPPort(port) {
+		return errors.New("端口超出可用范围（1024–65535）")
+	}
+	r.mu.Lock()
+	if r.shuttingDown {
+		r.mu.Unlock()
+		return errors.New("desktop runtime is shutting down")
+	}
+	applicationRuntime := r.applicationRuntime
+	r.mu.Unlock()
+	if applicationRuntime == nil {
+		return errors.New("application runtime is unavailable")
+	}
+
+	bindAddr := fmt.Sprintf("127.0.0.1:%d", port)
+	listener, err := net.Listen("tcp", bindAddr)
+	if err != nil {
+		return fmt.Errorf("端口 %d 已被占用或无法监听: %w", port, err)
+	}
+
+	if err := r.saveConfiguredMCPPort(port); err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("保存端口配置失败: %w", err)
+	}
+
+	endpoint, err := mcpserver.StartDesktopEndpointWithOptions(applicationRuntime, mcpserver.DesktopEndpointOptions{
+		Port:     port,
+		Listener: listener,
+	})
+	if err != nil {
+		_ = listener.Close()
+		return err
+	}
+
+	r.mu.Lock()
+	oldEndpoint := r.mcpEndpoint
+	r.mcpEndpoint = endpoint
+	r.mcpEndpointErr = nil
+	r.mu.Unlock()
+
+	if oldEndpoint != nil {
+		_ = oldEndpoint.Close()
+	}
+	return nil
+}
+
+func (r *desktopRuntime) currentDesktopMCPPort() int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.mcpEndpoint != nil {
+		return r.mcpEndpoint.Port()
+	}
+	return 0
 }
 
 func (r *desktopRuntime) desktopMCPConnectionInfo() (mcpserver.DesktopEndpointInfo, bool, error) {

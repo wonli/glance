@@ -44,6 +44,12 @@ func TestPreferencesMigrateVersionFiveWithoutLosingDocuments(t *testing.T) {
 	if _, err := s.db.Exec(`DROP TABLE preferences`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.db.Exec(`DROP TABLE home_document_folders`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DROP TABLE home_folders`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.db.Exec(`PRAGMA user_version = 5`); err != nil {
 		t.Fatal(err)
 	}

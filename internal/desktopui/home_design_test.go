@@ -73,6 +73,27 @@ func TestHomeNavigationStarMatchesPenColorAndStroke(t *testing.T) {
 	}
 }
 
+func TestHomeFolderIconsRenderFromHomeAssets(t *testing.T) {
+	for _, name := range []string{"chevron-right", "ellipsis", "folder", "folder-minus", "folder-open", "folder-plus", "pencil", "plus", "trash-2"} {
+		icon, ok := svgIconTintAtSize("home", name, 48, homeMuted)
+		if !ok {
+			t.Fatalf("home folder icon %q is missing", name)
+		}
+		visible := 0
+		for y := 0; y < icon.Bounds().Dy(); y++ {
+			for x := 0; x < icon.Bounds().Dx(); x++ {
+				_, _, _, alpha := icon.At(x, y).RGBA()
+				if alpha != 0 {
+					visible++
+				}
+			}
+		}
+		if visible < 20 {
+			t.Errorf("home folder icon %q has only %d visible pixels", name, visible)
+		}
+	}
+}
+
 func TestHomeGreetingMatchesTimeOfDay(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

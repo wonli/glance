@@ -54,7 +54,7 @@ func clickRecentRow(t *testing.T, position f32.Point) (*App, workspace.Recent) {
 			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
 			Constraints: layout.Exact(image.Pt(900, 56)),
 		}
-		app.layoutHomeRecentRow(gtx, item)
+		app.layoutHomeRecentRow(gtx, item, 0)
 		router.Frame(&ops)
 	}
 	draw()

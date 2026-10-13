@@ -40,8 +40,9 @@ type homeFileMetadata struct {
 }
 
 type homeMetadataResult struct {
-	generation uint64
-	entries    map[string]homeFileMetadata
+	generation     uint64
+	entries        map[string]homeFileMetadata
+	canonicalPaths map[string]string
 }
 
 type homeAction struct {
@@ -72,18 +73,19 @@ const (
 )
 
 var (
-	homeCanvas        = color.NRGBA{R: 251, G: 251, B: 252, A: 255}
-	homeSidebarFill   = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	homeSurface       = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	homeBorder        = color.NRGBA{R: 225, G: 229, B: 234, A: 255}
-	homeSidebarBorder = color.NRGBA{R: 231, G: 233, B: 236, A: 255}
-	homeRowBorder     = color.NRGBA{R: 238, G: 240, B: 242, A: 255}
-	homeText          = color.NRGBA{R: 52, G: 59, B: 69, A: 255}
-	homeMuted         = color.NRGBA{R: 138, G: 146, B: 157, A: 255}
-	settingsBlack     = color.NRGBA{R: 0, G: 0, B: 0, A: 255}
-	homeSelectedFill  = color.NRGBA{R: 241, G: 242, B: 244, A: 255}
-	homeHoverFill     = color.NRGBA{R: 247, G: 248, B: 249, A: 255}
-	homeFavoriteGold  = color.NRGBA{R: 176, G: 138, B: 55, A: 255}
+	homeCanvas         = color.NRGBA{R: 251, G: 251, B: 252, A: 255}
+	homeSidebarFill    = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	homeSurface        = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	homeBorder         = color.NRGBA{R: 225, G: 229, B: 234, A: 255}
+	homeSidebarBorder  = color.NRGBA{R: 231, G: 233, B: 236, A: 255}
+	homeRowBorder      = color.NRGBA{R: 238, G: 240, B: 242, A: 255}
+	homeText           = color.NRGBA{R: 52, G: 59, B: 69, A: 255}
+	homeMuted          = color.NRGBA{R: 138, G: 146, B: 157, A: 255}
+	settingsBlack      = color.NRGBA{R: 0, G: 0, B: 0, A: 255}
+	homeSelectedFill   = color.NRGBA{R: 241, G: 242, B: 244, A: 255}
+	homeHoverFill      = color.NRGBA{R: 247, G: 248, B: 249, A: 255}
+	homeDropTargetFill = color.NRGBA{R: 229, G: 240, B: 253, A: 255}
+	homeFavoriteGold   = color.NRGBA{R: 176, G: 138, B: 55, A: 255}
 )
 
 func (a *App) refreshHomeMetadata() {
@@ -96,7 +98,9 @@ func (a *App) refreshHomeMetadata() {
 	generation := a.homeMetadataGeneration
 	a.launchManagedBackground(func() {
 		entries := make(map[string]homeFileMetadata, len(recents))
+		canonicalPaths := make(map[string]string, len(recents))
 		for _, item := range recents {
+			canonicalPaths[cleanHomeDocumentPath(item.Path)] = canonicalDocumentPath(item.Path)
 			info, err := os.Stat(item.Path)
 			if err != nil {
 				entries[item.Path] = homeFileMetadata{unavailable: true}
@@ -105,25 +109,30 @@ func (a *App) refreshHomeMetadata() {
 			entries[item.Path] = homeFileMetadata{modified: info.ModTime(), size: info.Size()}
 		}
 		select {
-		case a.homeMetadataResults <- homeMetadataResult{generation: generation, entries: entries}:
+		case a.homeMetadataResults <- homeMetadataResult{generation: generation, entries: entries, canonicalPaths: canonicalPaths}:
 		case <-a.shutdown:
 		}
 	})
 }
 
 func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
+	a.reconcileHomeFolderSelection()
 	if a.homeSection == homeSectionSettings {
 		a.processSettingsNavClicks(gtx)
 	} else {
 		a.processHomeNavClicks(gtx)
 	}
 	if a.homeSection == homeSectionSettings {
-		return a.layoutSettingsWorkspace(gtx)
+		dims := a.layoutSettingsWorkspace(gtx)
+		a.layoutHomeFolderMenuDismissInput(gtx)
+		return dims
 	}
 	if a.homeSection == homeSectionAIAssistant {
-		return a.layoutAIAssistantWorkspace(gtx)
+		dims := a.layoutAIAssistantWorkspace(gtx)
+		a.layoutHomeFolderMenuDismissInput(gtx)
+		return dims
 	}
-	return layout.Background{}.Layout(gtx,
+	dims := layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions { return fill(gtx, homeCanvas) },
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
@@ -132,10 +141,16 @@ func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 					return a.layoutHomeSidebar(gtx)
 				}),
-				layout.Flexed(1, a.layoutHomeContent),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					a.homeContentRootOrigin = image.Pt(gtx.Dp(unit.Dp(250)), 0)
+					return a.layoutHomeContent(gtx)
+				}),
 			)
 		},
 	)
+	a.layoutHomeDocumentDragOverlay(gtx)
+	a.layoutHomeFolderMenuDismissInput(gtx)
+	return dims
 }
 
 func (a *App) layoutSettingsWorkspace(gtx layout.Context) layout.Dimensions {
@@ -283,8 +298,16 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(28), Left: unit.Dp(18), Right: unit.Dp(18), Bottom: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				var precedingHeight int
+				trackedRigid := func(child layout.Widget) layout.FlexChild {
+					return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						dims := child(gtx)
+						precedingHeight += dims.Size.Y
+						return dims
+					})
+				}
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							height := gtx.Dp(unit.Dp(42))
 							gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
@@ -297,31 +320,31 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 							})
 						})
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return a.layoutHomeNavRow(gtx, "recent", "clock-3", "最近", len(a.homeVisibleRecents(false)), a.homeSection == homeSectionRecent)
 						})
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return a.layoutHomeNavRow(gtx, "favorites", "star-outline", "收藏", len(a.homeFavorites), a.homeSection == homeSectionFavorites)
 						})
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return a.layoutHomeNavRow(gtx, "ai-assistant", "sparkles", "AI 助手", -1, a.homeSection == homeSectionAIAssistant)
 						})
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return a.layoutHomeNavRow(gtx, "agent-settings", "settings-2", "设置", -1, a.homeSection == homeSectionSettings)
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(18), Bottom: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							paint.FillShape(gtx.Ops, homeSidebarBorder, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
 							return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}
 						})
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							height := gtx.Dp(unit.Dp(30))
 							gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
@@ -334,19 +357,21 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 										})
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return homeSmallIconButton(gtx, &a.homeNewFolderButton, "folder-plus", 17, homeMuted, func() { a.setStatus("文件夹功能即将开放") })
+										return homeSmallIconButton(gtx, &a.homeNewFolderButton, "folder-open", 17, homeMuted, a.startHomeFolderDirectoryPicker)
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Inset{Left: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											return homeSmallIconButton(gtx, &a.homeFolderAddButton, "plus", 17, homeMuted, func() { a.setStatus("文件夹功能即将开放") })
+											return homeSmallIconButton(gtx, &a.homeFolderAddButton, "plus", 17, homeMuted, func() { a.showCreateHomeFolderDialog(a.homeSelectedFolderID) })
 										})
 									}),
 								)
 							})
 						})
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.layoutHomeFolderRow(gtx) }),
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						a.homeFolderTreeRootOrigin = image.Pt(gtx.Dp(unit.Dp(18)), gtx.Dp(unit.Dp(28))+precedingHeight)
+						return a.layoutHomeFolderTree(gtx)
+					}),
 				)
 			})
 		},
@@ -376,6 +401,7 @@ func (a *App) processHomeNavClicks(gtx layout.Context) {
 		if a.homeNavButton(navigation.id).Clicked(gtx) {
 			a.resetHomeContentScroll()
 			a.homeSection = navigation.section
+			a.homeSelectedFolderID = ""
 		}
 	}
 	if a.homeNavButton("ai-assistant").Clicked(gtx) {
@@ -389,6 +415,7 @@ func (a *App) processHomeNavClicks(gtx layout.Context) {
 			}
 		} else {
 			a.resetHomeContentScroll()
+			a.homeSelectedFolderID = ""
 			a.ensureGlobalAIAssistant()
 			a.homeSection = homeSectionAIAssistant
 		}
@@ -451,36 +478,6 @@ func (a *App) layoutHomeNavRow(gtx layout.Context, id, glyph, label string, coun
 	})
 }
 
-func (a *App) layoutHomeFolderRow(gtx layout.Context) layout.Dimensions {
-	if a.homeFolderButton.Clicked(gtx) {
-		a.setStatus("Glance 文件夹")
-	}
-	return a.homeFolderButton.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		height := gtx.Dp(unit.Dp(36))
-		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-		return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return homeIcon(gtx, "chevron-down", 16, homeMuted)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return homeIcon(gtx, "folder", 20, color.NRGBA{R: 60, G: 70, B: 82, A: 255})
-					})
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						gtx.Constraints.Min.Y = 0
-						return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return homeTextLabel(gtx, a.theme, "Glance", 15, homeText, false)
-						})
-					})
-				}),
-			)
-		})
-	})
-}
-
 func (a *App) layoutHomeContent(gtx layout.Context) layout.Dimensions {
 	if a.homeSection == homeSectionSettings {
 		return layout.Inset{Top: unit.Dp(64), Left: unit.Dp(64), Right: unit.Dp(64), Bottom: unit.Dp(64)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -489,28 +486,93 @@ func (a *App) layoutHomeContent(gtx layout.Context) layout.Dimensions {
 			})
 		})
 	}
+	if a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
+		a.homeContentList.Axis = layout.Vertical
+		return layout.Inset{Top: unit.Dp(68), Left: unit.Dp(50)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			a.homeContentViewportHeight = gtx.Constraints.Max.Y
+			return layout.Stack{Alignment: layout.NE}.Layout(gtx,
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+					return material.List(a.theme, &a.homeContentList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+						a.homeContentRootOrigin = image.Pt(a.homeContentRootOrigin.X+gtx.Dp(unit.Dp(50)), gtx.Dp(unit.Dp(68))-a.homeContentList.Position.Offset)
+						return layout.Inset{Right: unit.Dp(50)}.Layout(gtx, a.layoutHomeFolderContentPage)
+					})
+				}),
+				layout.Stacked(a.layoutHomeContentScrollbar),
+			)
+		})
+	}
 	return layout.Inset{Top: unit.Dp(68), Left: unit.Dp(50), Right: unit.Dp(50)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return a.homeContentList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+			a.homeContentRootOrigin = image.Pt(a.homeContentRootOrigin.X+gtx.Dp(unit.Dp(50)), gtx.Dp(unit.Dp(68))-a.homeContentList.Position.Offset)
 			return a.layoutHomeContentPage(gtx)
 		})
 	})
 }
 
+func homeContentScrollbarRange(position layout.Position, viewportHeight int) (float32, float32, bool) {
+	if position.Length <= viewportHeight || position.Length <= 0 || viewportHeight <= 0 {
+		return 0, 1, false
+	}
+	offset := max(0, position.Offset)
+	start := float32(offset) / float32(position.Length)
+	end := float32(offset+viewportHeight) / float32(position.Length)
+	if start > 1 {
+		start = 1
+	}
+	if end > 1 {
+		end = 1
+	}
+	if end < start {
+		end = start
+	}
+	return start, end, end-start < 1
+}
+
+func (a *App) layoutHomeContentScrollbar(gtx layout.Context) layout.Dimensions {
+	start, end, scrollable := homeContentScrollbarRange(a.homeContentList.Position, a.homeContentViewportHeight)
+	if !scrollable {
+		return layout.Dimensions{}
+	}
+	style := material.Scrollbar(a.theme, &a.homeContentList.Scrollbar)
+	dimensions := style.Layout(gtx, layout.Vertical, start, end)
+	if delta := a.homeContentList.ScrollDistance(); delta != 0 {
+		a.homeContentList.List.ScrollBy(delta)
+	}
+	return dimensions
+}
+
 func (a *App) layoutHomeContentPage(gtx layout.Context) layout.Dimensions {
+	if a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
+		return a.layoutHomeFolderContentPage(gtx)
+	}
+	var precedingHeight int
+	trackedRigid := func(child layout.Widget) layout.FlexChild {
+		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			dims := child(gtx)
+			precedingHeight += dims.Size.Y
+			return dims
+		})
+	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		trackedRigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Bottom: unit.Dp(28)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return a.layoutHomeGreeting(gtx)
 			})
 		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		trackedRigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Bottom: unit.Dp(28)}.Layout(gtx, a.layoutHomeActions)
 		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		trackedRigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Bottom: unit.Dp(28)}.Layout(gtx, a.layoutHomeFilters)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, a.layoutHomeRecentTable)
+			tableTopInset := gtx.Dp(unit.Dp(12))
+			a.homeRecentTableRootOrigin = a.homeContentRootOrigin.Add(image.Pt(0, precedingHeight+tableTopInset))
+			return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				dims := a.layoutHomeRecentTable(gtx)
+				precedingHeight += dims.Size.Y + tableTopInset
+				return dims
+			})
 		}),
 	)
 }

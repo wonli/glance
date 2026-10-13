@@ -13,18 +13,18 @@ import (
 )
 
 func TestWordVersionMigrateV1PreservesWorkspace(t *testing.T) {
-	assertLegacyWorkspaceMigratesToV5(t, 1)
+	assertLegacyWorkspaceMigratesToLatest(t, 1)
 }
 
 func TestWordVersionMigrateV2PreservesWorkspace(t *testing.T) {
-	assertLegacyWorkspaceMigratesToV5(t, 2)
+	assertLegacyWorkspaceMigratesToLatest(t, 2)
 }
 
 func TestWordVersionMigrateV3PreservesWorkspace(t *testing.T) {
-	assertLegacyWorkspaceMigratesToV5(t, 3)
+	assertLegacyWorkspaceMigratesToLatest(t, 3)
 }
 
-func assertLegacyWorkspaceMigratesToV5(t *testing.T, version int) {
+func assertLegacyWorkspaceMigratesToLatest(t *testing.T, version int) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	createLegacyWorkspaceDatabase(t, path, version)
@@ -39,8 +39,8 @@ func assertLegacyWorkspaceMigratesToV5(t *testing.T, version int) {
 	if err := store.db.QueryRow("PRAGMA user_version").Scan(&migratedVersion); err != nil {
 		t.Fatal(err)
 	}
-	if migratedVersion != 6 {
-		t.Fatalf("user_version=%d; want 6", migratedVersion)
+	if migratedVersion != 7 {
+		t.Fatalf("user_version=%d; want 7", migratedVersion)
 	}
 
 	got, err := store.Load()

@@ -38,7 +38,16 @@ func (r *desktopRuntime) startWorkspaceWriter() {
 				continue
 			}
 			var err error
-			if job.recents != nil {
+			if job.homeFolderSnapshot != nil {
+				result := homeFolderWriteResult{
+					revision: job.homeFolderRevision,
+					snapshot: cloneHomeFolderRuntimeSnapshot(*job.homeFolderSnapshot),
+					err:      r.writeHomeFolderSnapshot(*job.homeFolderSnapshot),
+				}
+				r.finishHomeFolderWrite(result)
+				publishHomeFolderWriteResult(job.homeFolderResults, result)
+				err = result.err
+			} else if job.recents != nil {
 				err = r.workspaceStore.SaveRecents(job.recents)
 			} else if job.saveFavorite {
 				err = r.workspaceStore.SaveFavorite(job.favoritePath, job.favoriteValue)
@@ -95,6 +104,25 @@ func (r *desktopRuntime) publishWorkspaceWriteResult(err error) {
 	}
 }
 
+func publishHomeFolderWriteResult(results chan homeFolderWriteResult, result homeFolderWriteResult) {
+	if results == nil {
+		return
+	}
+	select {
+	case results <- result:
+		return
+	default:
+	}
+	select {
+	case <-results:
+	default:
+	}
+	select {
+	case results <- result:
+	default:
+	}
+}
+
 func (r *desktopRuntime) writeWorkspaceSnapshot(job workspaceWriteJob) error {
 	state := job.state
 	if state == nil || state.closed.Load() {
@@ -118,6 +146,21 @@ func (r *desktopRuntime) writeWorkspaceSnapshot(job workspaceWriteJob) error {
 		return nil
 	}
 	return r.workspaceStore.SaveDocument(workspace.Document{ID: job.documentID, Format: job.format, Payload: payload, ViewState: job.viewState, Dirty: sessionDirty(state), UpdatedAt: time.Now().UTC()})
+}
+
+func (r *desktopRuntime) writeHomeFolderSnapshot(snapshot workspace.HomeFolderSnapshot) error {
+	if r == nil {
+		return fmt.Errorf("工作区数据库不可用")
+	}
+	r.mu.Lock()
+	store := r.workspaceStore
+	r.mu.Unlock()
+	if store == nil {
+		return fmt.Errorf("工作区数据库不可用")
+	}
+	r.workspaceDBMu.Lock()
+	defer r.workspaceDBMu.Unlock()
+	return store.SaveHomeFolderSnapshot(snapshot)
 }
 
 func (r *desktopRuntime) shutdown() {

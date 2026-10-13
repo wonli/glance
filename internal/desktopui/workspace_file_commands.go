@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"fmt"
 	"glance/internal/workspace"
 	"os"
 	"path/filepath"
@@ -11,6 +12,9 @@ type workspaceWriteJob struct {
 	documentID, format string
 	state              *documentSessionState
 	viewState          []byte
+	homeFolderSnapshot *workspace.HomeFolderSnapshot
+	homeFolderRevision uint64
+	homeFolderResults  chan homeFolderWriteResult
 	barrier            chan struct{}
 	recents            []workspace.Recent
 	favoritePath       string
@@ -24,6 +28,7 @@ type fileCommandKind uint8
 const (
 	commandOpenFile fileCommandKind = iota + 1
 	commandOpenFolder
+	commandRegisterHomeFolder
 	commandSaveAs
 	commandExportPDF
 	commandShareCopy
@@ -42,6 +47,10 @@ func (a *App) startOpenFilePicker() {
 
 func (a *App) startFolderPicker() {
 	a.startFileCommand(commandOpenFolder, "")
+}
+
+func (a *App) startHomeFolderDirectoryPicker() {
+	a.startFileCommand(commandRegisterHomeFolder, "")
 }
 
 func (a *App) startSaveAsPicker(format string) {
@@ -72,6 +81,8 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 		a.setStatus("选择要打开的文件…")
 	case commandOpenFolder:
 		a.setStatus("选择要浏览的文件夹…")
+	case commandRegisterHomeFolder:
+		a.setStatus("选择要加入文件夹导航的本地目录…")
 	case commandSaveAs:
 		a.setStatus("选择另存为位置…")
 	case commandExportPDF:
@@ -98,6 +109,11 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 				if result.err == nil && result.path != "" {
 					result.recents, result.err = scanOfficeFolder(result.path)
 				}
+			case commandRegisterHomeFolder:
+				result.path, result.err = chooseOfficeFolder()
+				if result.err == nil && result.path != "" {
+					result.path, result.err = validateHomeFolderDirectory(result.path)
+				}
 			case commandSaveAs, commandExportPDF, commandShareCopy:
 				result.path, result.err = chooseSavePath(format)
 			}
@@ -112,6 +128,21 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 	})
 }
 
+func validateHomeFolderDirectory(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	canonical := canonicalDocumentPath(path)
+	info, err := os.Stat(canonical)
+	if err != nil {
+		return "", fmt.Errorf("无法访问所选文件夹：%w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("所选路径不是文件夹：%s", canonical)
+	}
+	return canonical, nil
+}
+
 func scanOfficeFolder(path string) ([]workspace.Recent, error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
@@ -123,7 +154,7 @@ func scanOfficeFolder(path string) ([]workspace.Recent, error) {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext != ".pdf" && ext != ".xlsx" && ext != ".xls" && ext != ".docx" && ext != ".json" && ext != ".md" && ext != ".markdown" {
+		if ext != ".pdf" && ext != ".xlsx" && ext != ".xls" && ext != ".docx" && ext != ".pptx" && ext != ".json" && ext != ".md" && ext != ".markdown" {
 			continue
 		}
 		recents = append(recents, workspace.Recent{Path: filepath.Join(path, entry.Name()), Kind: strings.TrimPrefix(ext, ".")})

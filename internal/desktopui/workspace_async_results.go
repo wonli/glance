@@ -85,10 +85,21 @@ func (a *App) processAsyncResults() {
 	case result := <-a.homeMetadataResults:
 		if result.generation == a.homeMetadataGeneration {
 			a.homeMetadata = result.entries
+			if a.homeCanonicalPaths == nil {
+				a.homeCanonicalPaths = make(map[string]string)
+			}
+			for path, canonical := range result.canonicalPaths {
+				a.homeCanonicalPaths[path] = canonical
+			}
 			if a.window != nil {
 				a.window.Invalidate()
 			}
 		}
+	default:
+	}
+	select {
+	case result := <-a.homeFolderContentsResults:
+		a.applyHomeFolderContentsResult(result)
 	default:
 	}
 	if a.processSpreadsheetFormatResult() {
@@ -132,6 +143,8 @@ func (a *App) processAsyncResults() {
 					a.persistRecentsAsync()
 					a.setStatus(fmt.Sprintf("已添加 %d 个文档到最近打开", len(result.recents)))
 				}
+			case commandRegisterHomeFolder:
+				a.handleHomeFolderPickerResult(result)
 			case commandSaveAs:
 				if result.path != "" {
 					a.startSaveAs(result.path)
@@ -306,6 +319,11 @@ func (a *App) processAsyncResults() {
 		} else {
 			a.workspaceWriteError = ""
 		}
+	default:
+	}
+	select {
+	case result := <-a.homeFolderWriteResults:
+		a.handleHomeFolderWriteResult(result)
 	default:
 	}
 	select {

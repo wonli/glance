@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"gioui.org/layout"
 	"gioui.org/unit"
@@ -22,9 +23,11 @@ func (a *App) layoutHomeFilters(gtx layout.Context) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(44 * scale))
 	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-	items := a.homeVisibleRecents(true)
+	items := a.homeDisplayedRecents()
 	countText := "最近使用"
-	if a.homeSection == homeSectionFavorites {
+	if a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
+		countText = filepath.Base(a.homeFolderDisplayPath(a.homeSelectedFolderID))
+	} else if a.homeSection == homeSectionFavorites {
 		countText = "收藏"
 	}
 	countText = fmt.Sprintf("%s  %d 个文件", countText, len(items))
@@ -70,9 +73,11 @@ func (a *App) layoutHomeFiltersCompact(gtx layout.Context, width int) layout.Dim
 	rowGap := gtx.Dp(unit.Dp(8))
 	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = rowHeight*2+rowGap, rowHeight*2+rowGap
-	items := a.homeVisibleRecents(true)
+	items := a.homeDisplayedRecents()
 	countText := "最近使用"
-	if a.homeSection == homeSectionFavorites {
+	if a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
+		countText = filepath.Base(a.homeFolderDisplayPath(a.homeSelectedFolderID))
+	} else if a.homeSection == homeSectionFavorites {
 		countText = "收藏"
 	}
 	countText = fmt.Sprintf("%s  %d 个文件", countText, len(items))
