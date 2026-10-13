@@ -71,7 +71,8 @@ func (a *App) layoutHomeTableHeader(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutHomeRecentRow(gtx layout.Context, item workspace.Recent, index int) layout.Dimensions {
-	a.updateHomeDocumentDrag(gtx, item.Path, a.homeRecentRowOrigin(index, gtx))
+	rowOrigin := a.homeRecentRowOrigin(index, gtx)
+	a.updateHomeDocumentDrag(gtx, item.Path, rowOrigin)
 	button := a.homeOpenButtons[item.Path]
 	if button == nil {
 		button = new(widget.Clickable)
@@ -96,7 +97,10 @@ func (a *App) layoutHomeRecentRow(gtx layout.Context, item workspace.Recent, ind
 		a.homeMoreButtons[item.Path] = more
 	}
 	if more.Clicked(gtx) {
-		a.setStatus("最近文件操作")
+		a.toggleHomeRecentMenu(item.Path, gtx)
+	}
+	if a.homeRecentMenuPath == item.Path {
+		a.homeRecentMenuAnchorBounds = homeRecentMoreButtonBounds(rowOrigin, gtx.Constraints.Max.X, gtx)
 	}
 
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(56)), gtx.Dp(unit.Dp(56))

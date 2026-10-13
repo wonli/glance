@@ -145,6 +145,11 @@ func (a *App) processAsyncResults() {
 				}
 			case commandRegisterHomeFolder:
 				a.handleHomeFolderPickerResult(result)
+			case commandRevealFile:
+				if result.path == a.homeRecentMenuPath {
+					a.dismissHomeRecentMenu()
+				}
+				a.setStatus("已在文件夹中打开")
 			case commandSaveAs:
 				if result.path != "" {
 					a.startSaveAs(result.path)
@@ -327,14 +332,26 @@ func (a *App) processAsyncResults() {
 	default:
 	}
 	select {
+	case result := <-a.homeRecentWriteResults:
+		a.handleHomeRecentWriteResult(result)
+	default:
+	}
+	select {
 	case result := <-a.openResults:
 		a.opening = false
+		openSucceeded := false
 		if result.err != nil {
 			a.setStatus(result.err.Error())
 		} else if err := a.installDocument(result.loaded); err != nil {
 			a.setStatus(err.Error())
-		} else if result.historyErr != nil && result.loaded.word != nil {
-			a.setStatus("文档已打开，但历史版本暂不可用：" + result.historyErr.Error())
+		} else {
+			openSucceeded = true
+			if result.historyErr != nil && result.loaded.word != nil {
+				a.setStatus("文档已打开，但历史版本暂不可用：" + result.historyErr.Error())
+			}
+		}
+		if openSucceeded && a.homeRecentOpenPath != "" && a.path == a.homeRecentOpenPath {
+			a.dismissHomeRecentMenu()
 		}
 	default:
 	}

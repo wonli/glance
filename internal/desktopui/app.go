@@ -120,6 +120,16 @@ type App struct {
 	homeOpenButtons              map[string]*widget.Clickable
 	homeFavoriteButtons          map[string]*widget.Clickable
 	homeMoreButtons              map[string]*widget.Clickable
+	homeRecentMenuPath           string
+	homeRecentOpenPath           string
+	homeRecentMenuIndex          int
+	homeRecentMenuDismiss        widget.Clickable
+	homeRecentMenuBounds         image.Rectangle
+	homeRecentMenuAnchorBounds   image.Rectangle
+	homeRecentMenuItems          [homeRecentMenuItemCount]widget.Clickable
+	homeRecentUndo               *homeRecentUndoRecord
+	homeRecentWriteGeneration    uint64
+	homeRecentWriteResults       chan homeRecentWriteResult
 	homeFolderButton             widget.Clickable
 	homeNewFolderButton          widget.Clickable
 	homeFolderAddButton          widget.Clickable
@@ -128,6 +138,7 @@ type App struct {
 	homeFolderExpanded           map[string]bool
 	homeSelectedFolderID         string
 	homeFolderMenuFolderID       string
+	homeFolderMenuIndex          int
 	homeFolderMenuDismiss        widget.Clickable
 	homeFolderBlank              widget.Clickable
 	homeFolderMenuBounds         image.Rectangle
@@ -319,6 +330,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		homeOpenButtons:               make(map[string]*widget.Clickable),
 		homeFavoriteButtons:           make(map[string]*widget.Clickable),
 		homeMoreButtons:               make(map[string]*widget.Clickable),
+		homeRecentWriteResults:        make(chan homeRecentWriteResult, 1),
 		homeFolderRows:                make(map[string]*homeFolderRowWidgets),
 		homeFolderExpanded:            make(map[string]bool),
 		homeDocumentDrags:             make(map[string]*homeDocumentDragState),

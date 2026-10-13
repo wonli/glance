@@ -244,12 +244,14 @@ func (a *App) toggleHomeFolderMenu(folderID string) {
 		return
 	}
 	a.homeFolderMenuFolderID = folderID
+	a.homeFolderMenuIndex = -1
 	a.homeFolderMenuBounds = image.Rectangle{}
 	a.homeFolderMenuAnchorBounds = image.Rectangle{}
 }
 
 func (a *App) dismissHomeFolderMenu() {
 	a.homeFolderMenuFolderID = ""
+	a.homeFolderMenuIndex = -1
 	a.homeFolderMenuBounds = image.Rectangle{}
 	a.homeFolderMenuAnchorBounds = image.Rectangle{}
 }

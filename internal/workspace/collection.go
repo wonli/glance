@@ -314,6 +314,14 @@ func (c *Collection) StageRecents(recents []Recent) {
 	}
 }
 
+// StageRecentsSnapshot replaces the in-memory recent list without touching
+// SQLite. Callers can persist that snapshot through a background writer.
+func (c *Collection) StageRecentsSnapshot(recents []Recent) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.recents = append(make([]Recent, 0, len(recents)), recents...)
+}
+
 func (c *Collection) RemoveRecent(path string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

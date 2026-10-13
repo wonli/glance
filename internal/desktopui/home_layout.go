@@ -123,11 +123,13 @@ func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
 		a.processHomeNavClicks(gtx)
 	}
 	if a.homeSection == homeSectionSettings {
+		a.dismissHomeRecentMenu()
 		dims := a.layoutSettingsWorkspace(gtx)
 		a.layoutHomeFolderMenuDismissInput(gtx)
 		return dims
 	}
 	if a.homeSection == homeSectionAIAssistant {
+		a.dismissHomeRecentMenu()
 		dims := a.layoutAIAssistantWorkspace(gtx)
 		a.layoutHomeFolderMenuDismissInput(gtx)
 		return dims
@@ -149,6 +151,8 @@ func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
 		},
 	)
 	a.layoutHomeDocumentDragOverlay(gtx)
+	a.layoutHomeRecentMenuDismissInput(gtx)
+	a.layoutHomeRecentFloatingMenu(gtx)
 	a.layoutHomeFolderMenuDismissInput(gtx)
 	return dims
 }
@@ -479,6 +483,9 @@ func (a *App) layoutHomeNavRow(gtx layout.Context, id, glyph, label string, coun
 }
 
 func (a *App) layoutHomeContent(gtx layout.Context) layout.Dimensions {
+	if a.homeRecentMenuPath != "" {
+		a.homeRecentMenuAnchorBounds = image.Rectangle{}
+	}
 	if a.homeSection == homeSectionSettings {
 		return layout.Inset{Top: unit.Dp(64), Left: unit.Dp(64), Right: unit.Dp(64), Bottom: unit.Dp(64)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return a.homeContentList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {

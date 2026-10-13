@@ -41,6 +41,8 @@ func TestFeedbackSeverity(t *testing.T) {
 	}{
 		{"JSON 格式正确", feedbackSuccess},
 		{"已对 JSON 键排序", feedbackSuccess},
+		{"路径已复制", feedbackSuccess},
+		{"文件名已复制", feedbackSuccess},
 		{"JSON 内容已经改变，已取消操作", feedbackWarning},
 		{"当前文件只读", feedbackWarning},
 		{"格式化失败：invalid JSON", feedbackError},
@@ -93,6 +95,8 @@ func TestFeedbackOnlyTriggersOnSideEffectOperations(t *testing.T) {
 	}
 
 	sideEffects := []string{
+		"路径已复制",
+		"文件名已复制",
 		"已保存 data.json",
 		"文件已保存，但历史版本未记录",
 		"工作区已保存",

@@ -20,7 +20,10 @@ import (
 const (
 	homeFolderMenuItemHeight = 42
 	homeFolderMenuHeight     = 2*6 + 3*homeFolderMenuItemHeight + 2*4
+	homeFolderMenuItemCount  = 3
 )
+
+var homeFolderMenuActionIDs = [homeFolderMenuItemCount]string{"create-child", "rename", "remove"}
 
 type homeFolderRowWidgets struct {
 	selectButton widget.Clickable
@@ -38,9 +41,7 @@ func (a *App) layoutHomeFolderTree(gtx layout.Context) layout.Dimensions {
 	}
 	a.homeFolderTreeList.Axis = layout.Vertical
 	if a.homeFolderMenuFolderID != "" {
-		if _, ok := gtx.Event(key.Filter{Focus: &a.homeFolderMenuDismiss, Name: key.NameEscape}); ok {
-			a.dismissHomeFolderMenu()
-		}
+		a.processHomeFolderMenuKeys(gtx)
 	}
 	if a.homeFolderBlank.Clicked(gtx) && a.homeFolderMenuFolderID != "" {
 		a.dismissHomeFolderMenu()
@@ -81,18 +82,10 @@ func (a *App) layoutHomeFolderTreeRow(gtx layout.Context, row homeFolderTreeRow)
 		widgets = &homeFolderRowWidgets{menuItems: make(map[string]*widget.Clickable)}
 		a.homeFolderRows[row.folder.ID] = widgets
 	}
-	for _, event := range []struct {
-		id    string
-		label string
-		call  func()
-	}{
-		{id: "create-child", label: "新建子文件夹", call: func() { a.dismissHomeFolderMenu(); a.showCreateHomeFolderDialog(row.folder.ID) }},
-		{id: "rename", label: "重命名", call: func() { a.dismissHomeFolderMenu(); a.showRenameHomeFolderDialog(row.folder.ID) }},
-		{id: "remove", label: "从列表移除", call: func() { a.dismissHomeFolderMenu(); a.showRemoveHomeFolderConfirm(row.folder.ID) }},
-	} {
-		button := a.homeFolderMenuItem(widgets, event.id)
+	for index, id := range homeFolderMenuActionIDs {
+		button := a.homeFolderMenuItem(widgets, id)
 		if button.Clicked(gtx) {
-			event.call()
+			a.executeHomeFolderMenuAction(row.folder.ID, index)
 		}
 	}
 	if widgets.expandButton.Clicked(gtx) {
@@ -269,7 +262,7 @@ func (a *App) layoutHomeFolderTreeRowContents(gtx layout.Context, row homeFolder
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if !widgets.menuButton.Hovered() && a.homeFolderMenuFolderID != row.folder.ID && !widgets.selectButton.Hovered() && !widgets.expandButton.Hovered() {
+						if !widgets.menuButton.Hovered() && !gtx.Focused(&widgets.menuButton) && a.homeFolderMenuFolderID != row.folder.ID && !widgets.selectButton.Hovered() && !widgets.expandButton.Hovered() {
 							return layout.Dimensions{}
 						}
 						button := func(gtx layout.Context) layout.Dimensions {
@@ -282,6 +275,68 @@ func (a *App) layoutHomeFolderTreeRowContents(gtx layout.Context, row homeFolder
 			})
 		},
 	)
+}
+
+func (a *App) processHomeFolderMenuKeys(gtx layout.Context) {
+	for event, ok := gtx.Event(key.Filter{Focus: &a.homeFolderMenuDismiss}); ok; event, ok = gtx.Event(key.Filter{Focus: &a.homeFolderMenuDismiss}) {
+		keyEvent, isKey := event.(key.Event)
+		if !isKey || keyEvent.State != key.Press {
+			continue
+		}
+		switch keyEvent.Name {
+		case key.NameEscape:
+			folderID := a.homeFolderMenuFolderID
+			anchor := a.homeFolderRows[folderID]
+			a.dismissHomeFolderMenu()
+			if anchor != nil {
+				gtx.Execute(key.FocusCmd{Tag: &anchor.menuButton})
+			}
+			return
+		case key.NameUpArrow:
+			a.homeFolderMenuIndex = homeFolderMenuNextSelection(a.homeFolderMenuIndex, -1)
+		case key.NameDownArrow:
+			a.homeFolderMenuIndex = homeFolderMenuNextSelection(a.homeFolderMenuIndex, 1)
+		case key.NameEnter, key.NameReturn:
+			index := a.homeFolderMenuIndex
+			if index < 0 {
+				index = 0
+			}
+			a.executeHomeFolderMenuAction(a.homeFolderMenuFolderID, index)
+			return
+		}
+	}
+}
+
+func homeFolderMenuNextSelection(current, direction int) int {
+	if direction == 0 {
+		return current
+	}
+	if current < 0 || current >= homeFolderMenuItemCount {
+		if direction < 0 {
+			return homeFolderMenuItemCount - 1
+		}
+		return 0
+	}
+	next := (current + direction) % homeFolderMenuItemCount
+	if next < 0 {
+		next += homeFolderMenuItemCount
+	}
+	return next
+}
+
+func (a *App) executeHomeFolderMenuAction(folderID string, index int) {
+	if folderID == "" || index < 0 || index >= homeFolderMenuItemCount {
+		return
+	}
+	a.dismissHomeFolderMenu()
+	switch homeFolderMenuActionIDs[index] {
+	case "create-child":
+		a.showCreateHomeFolderDialog(folderID)
+	case "rename":
+		a.showRenameHomeFolderDialog(folderID)
+	case "remove":
+		a.showRemoveHomeFolderConfirm(folderID)
+	}
 }
 
 func (a *App) layoutHomeFolderMenu(gtx layout.Context, widgets *homeFolderRowWidgets) layout.Dimensions {
@@ -321,7 +376,7 @@ func (a *App) layoutHomeFolderMenuItem(gtx layout.Context, widgets *homeFolderRo
 		return layout.Background{}.Layout(gtx,
 			func(gtx layout.Context) layout.Dimensions {
 				bg := color.NRGBA{A: 0}
-				if button.Hovered() {
+				if button.Hovered() || a.homeFolderMenuIndex == homeFolderMenuItemIndex(id) {
 					bg = homeHoverFill
 				}
 				paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(6))).Op(gtx.Ops))
@@ -355,6 +410,15 @@ func (a *App) layoutHomeFolderMenuItem(gtx layout.Context, widgets *homeFolderRo
 			},
 		)
 	})
+}
+
+func homeFolderMenuItemIndex(id string) int {
+	for index, actionID := range homeFolderMenuActionIDs {
+		if actionID == id {
+			return index
+		}
+	}
+	return -1
 }
 
 func homeFolderMenuIconName(id string) string {

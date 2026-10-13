@@ -49,6 +49,7 @@ func (r *desktopRuntime) startWorkspaceWriter() {
 				err = result.err
 			} else if job.recents != nil {
 				err = r.workspaceStore.SaveRecents(job.recents)
+				publishHomeRecentWriteResult(job.homeRecentResults, homeRecentWriteResult{generation: job.homeRecentRevision, err: err})
 			} else if job.saveFavorite {
 				err = r.workspaceStore.SaveFavorite(job.favoritePath, job.favoriteValue)
 			} else if !job.savePreferences {

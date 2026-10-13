@@ -14,6 +14,7 @@ import (
 	"gioui.org/f32"
 	"gioui.org/gpu/headless"
 	"gioui.org/io/input"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -225,6 +226,82 @@ func TestHomeFolderMenuDismissesOnBlankClickAndEscape(t *testing.T) {
 	app.dismissHomeFolderMenu()
 	if app.homeFolderMenuFolderID != "" {
 		t.Fatal("Escape menu dismissal left the folder menu open")
+	}
+}
+
+func TestHomeFolderMenuSupportsArrowNavigationAndEnter(t *testing.T) {
+	app := newHomeFolderTestApp(t)
+	app.desktopRuntime.setHomeFolderTestSnapshot(workspace.HomeFolderSnapshot{Folders: []workspace.HomeFolder{{ID: "folder", Name: "项目资料"}}})
+	app.toggleHomeFolderMenu("folder")
+	var router input.Router
+	var ops op.Ops
+	draw := func() {
+		ops.Reset()
+		gtx := layout.Context{Ops: &ops, Source: router.Source(), Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(360, 260))}
+		app.layoutHomeFolderTree(gtx)
+		app.layoutHomeFolderMenuDismissInput(gtx)
+		router.Frame(&ops)
+	}
+	draw()
+	router.Queue(key.Event{Name: key.NameDownArrow, State: key.Press})
+	draw()
+	router.Queue(key.Event{Name: key.NameDownArrow, State: key.Press})
+	draw()
+	router.Queue(key.Event{Name: key.NameEnter, State: key.Press})
+	draw()
+	if !app.modal.Visible || app.modal.Title != "重命名文件夹" {
+		t.Fatalf("Down, Down, Enter opened modal=%v title=%q; want the rename action", app.modal.Visible, app.modal.Title)
+	}
+	if app.homeFolderMenuFolderID != "" {
+		t.Fatalf("Enter left folder menu open for %q", app.homeFolderMenuFolderID)
+	}
+}
+
+func TestHomeFolderMenuUpSelectsLastItem(t *testing.T) {
+	app := newHomeFolderTestApp(t)
+	app.desktopRuntime.setHomeFolderTestSnapshot(workspace.HomeFolderSnapshot{Folders: []workspace.HomeFolder{{ID: "folder", Name: "项目资料"}}})
+	app.toggleHomeFolderMenu("folder")
+	var router input.Router
+	var ops op.Ops
+	draw := func() {
+		ops.Reset()
+		gtx := layout.Context{Ops: &ops, Source: router.Source(), Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(360, 260))}
+		app.layoutHomeFolderTree(gtx)
+		app.layoutHomeFolderMenuDismissInput(gtx)
+		router.Frame(&ops)
+	}
+	draw()
+	router.Queue(key.Event{Name: key.NameUpArrow, State: key.Press})
+	draw()
+	router.Queue(key.Event{Name: key.NameEnter, State: key.Press})
+	draw()
+	if !app.modal.Visible || app.modal.Title != "移除文件夹" {
+		t.Fatalf("Up, Enter opened modal=%v title=%q; want the remove action", app.modal.Visible, app.modal.Title)
+	}
+}
+
+func TestHomeFolderMenuEscapeReturnsFocusToAnchor(t *testing.T) {
+	app := newHomeFolderTestApp(t)
+	app.desktopRuntime.setHomeFolderTestSnapshot(workspace.HomeFolderSnapshot{Folders: []workspace.HomeFolder{{ID: "folder", Name: "项目资料"}}})
+	app.toggleHomeFolderMenu("folder")
+	var router input.Router
+	var ops op.Ops
+	draw := func() {
+		ops.Reset()
+		gtx := layout.Context{Ops: &ops, Source: router.Source(), Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(360, 260))}
+		app.layoutHomeFolderTree(gtx)
+		app.layoutHomeFolderMenuDismissInput(gtx)
+		router.Frame(&ops)
+	}
+	draw()
+	router.Queue(key.Event{Name: key.NameEscape, State: key.Press})
+	draw()
+	if app.homeFolderMenuFolderID != "" {
+		t.Fatalf("Escape left folder menu open for %q", app.homeFolderMenuFolderID)
+	}
+	anchor := app.homeFolderRows["folder"]
+	if anchor == nil || !router.Source().Focused(&anchor.menuButton) {
+		t.Fatal("Escape did not return focus to the folder menu anchor")
 	}
 }
 

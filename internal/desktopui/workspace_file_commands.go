@@ -17,6 +17,8 @@ type workspaceWriteJob struct {
 	homeFolderResults  chan homeFolderWriteResult
 	barrier            chan struct{}
 	recents            []workspace.Recent
+	homeRecentResults  chan homeRecentWriteResult
+	homeRecentRevision uint64
 	favoritePath       string
 	favoriteValue      bool
 	saveFavorite       bool
@@ -32,6 +34,7 @@ const (
 	commandSaveAs
 	commandExportPDF
 	commandShareCopy
+	commandRevealFile
 )
 
 type fileCommandResult struct {
@@ -93,6 +96,8 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 		} else {
 			a.setStatus("选择共享 DOCX 副本保存位置…")
 		}
+	case commandRevealFile:
+		a.setStatus("正在打开文件夹…")
 	}
 	runner := a.fileCommandRunner
 	a.launchManagedBackground(func() {
@@ -100,6 +105,9 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 		if runner != nil {
 			result = runner(kind, format)
 			result.kind = kind
+			if kind == commandRevealFile && result.path == "" {
+				result.path = format
+			}
 		} else {
 			switch kind {
 			case commandOpenFile:
@@ -114,6 +122,9 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 				if result.err == nil && result.path != "" {
 					result.path, result.err = validateHomeFolderDirectory(result.path)
 				}
+			case commandRevealFile:
+				result.path = format
+				result.err = revealHomeRecentFile(format)
 			case commandSaveAs, commandExportPDF, commandShareCopy:
 				result.path, result.err = chooseSavePath(format)
 			}

@@ -37,6 +37,32 @@ func TestCollectionEmptyMarkdownSnapshotAndMissingSnapshotGate(t *testing.T) {
 	}
 }
 
+func TestCollectionStageRecentsSnapshotReplacesAndRestoresOrder(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	collection, err := OpenCollection(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := time.Date(2026, 10, 13, 10, 20, 30, 0, time.UTC)
+	original := []Recent{
+		{Path: "/docs/first.xlsx", Kind: "xlsx", OpenedAt: opened},
+		{Path: "/docs/second.docx", Kind: "docx", OpenedAt: opened.Add(time.Minute)},
+	}
+	collection.StageRecentsSnapshot(original)
+	collection.StageRecentsSnapshot(original[1:])
+	if got := collection.Recents(); len(got) != 1 || got[0].Path != original[1].Path {
+		t.Fatalf("staged removal recents=%+v; want only %q", got, original[1].Path)
+	}
+	collection.StageRecentsSnapshot(original)
+	if got := collection.Recents(); len(got) != len(original) || got[0] != original[0] || got[1] != original[1] {
+		t.Fatalf("staged undo recents=%+v; want original order and timestamps %+v", got, original)
+	}
+}
+
 func TestCollectionSwitchAndCloseKeepSessionsIndependent(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "workspace.db"))
 	if err != nil {

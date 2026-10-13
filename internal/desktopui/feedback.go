@@ -33,6 +33,8 @@ type feedbackState struct {
 	message     string
 	until       time.Time
 	close       widget.Clickable
+	actionLabel string
+	action      widget.Clickable
 }
 
 func feedbackSeverity(message string) feedbackKind {
@@ -46,7 +48,7 @@ func feedbackSeverity(message string) feedbackKind {
 			return feedbackWarning
 		}
 	}
-	if strings.HasPrefix(message, "已") || strings.Contains(message, "格式正确") {
+	if strings.HasPrefix(message, "已") || strings.Contains(message, "格式正确") || message == "路径已复制" || message == "文件名已复制" {
 		return feedbackSuccess
 	}
 	return feedbackInfo
@@ -81,6 +83,10 @@ func isSideEffectStatus(status string) bool {
 		strings.Contains(s, "大纲视图") || strings.Contains(s, "页面视图") ||
 		strings.Contains(s, "阅读视图") || strings.Contains(s, "只读预览") {
 		return false
+	}
+	// File-menu copies explicitly promise a confirmation toast.
+	if s == "路径已复制" || s == "文件名已复制" {
+		return true
 	}
 	// Clipboard copy (read-only)
 	if strings.Contains(s, "已复制") {
@@ -214,7 +220,7 @@ func (s *feedbackState) observe(status string, now time.Time) {
 	}
 }
 func (s *feedbackState) visible(now time.Time) bool { return s.message != "" && now.Before(s.until) }
-func (s *feedbackState) dismiss()                   { s.message = "" }
+func (s *feedbackState) dismiss()                   { s.message = ""; s.actionLabel = "" }
 
 type feedbackStyle struct {
 	title, icon string
@@ -239,8 +245,14 @@ func feedbackAppearance(kind feedbackKind) feedbackStyle {
 func (a *App) layoutFeedback(gtx layout.Context) layout.Dimensions {
 	s := &a.feedback
 	s.observe(a.status, gtx.Now)
+	if s.actionLabel != "" && s.action.Clicked(gtx) {
+		a.undoHomeRecentRemoval()
+	}
 	if s.close.Clicked(gtx) {
 		s.dismiss()
+	}
+	if !s.visible(gtx.Now) && s.actionLabel != "" {
+		s.actionLabel = ""
 	}
 	if !s.visible(gtx.Now) || a.modal.Visible {
 		return layout.Dimensions{}
@@ -299,6 +311,26 @@ func (a *App) layoutFeedbackCard(gtx layout.Context) layout.Dimensions {
 					)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if a.feedback.actionLabel == "" {
+						return layout.Dimensions{}
+					}
+					return layout.Inset{Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						buttonWidth, buttonHeight := gtx.Dp(unit.Dp(48)), gtx.Dp(unit.Dp(28))
+						gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(buttonWidth, buttonHeight), image.Pt(buttonWidth, buttonHeight)
+						return a.feedback.action.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							bg := color.NRGBA{A: 0}
+							if a.feedback.action.Hovered() {
+								bg = homeHoverFill
+							}
+							shape := clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(6)))
+							paint.FillShape(gtx.Ops, bg, shape.Op(gtx.Ops))
+							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return homeTextLabel(gtx, a.theme, a.feedback.actionLabel, 12, color.NRGBA{R: 52, G: 120, B: 209, A: 255}, true)
+							})
+						})
+					})
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(20), gtx.Dp(24)))
 						return a.feedback.close.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -320,4 +352,5 @@ func (a *App) setStatus(message string) {
 	a.status = message
 	a.feedback.initialized = true
 	a.feedback.pending = true
+	a.feedback.actionLabel = ""
 }
