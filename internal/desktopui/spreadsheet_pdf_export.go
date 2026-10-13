@@ -40,6 +40,13 @@ func (a *App) startSpreadsheetPDFSavePicker(state *documentSessionState, sheet s
 	a.startFileCommand(commandExportPDF, "pdf")
 }
 
+type spreadsheetDocumentExportPdfArguments struct {
+	Sheet       string             `json:"sheet"`
+	Bounds      document.CellRange `json:"bounds"`
+	TargetPath  string             `json:"target_path"`
+	Orientation string             `json:"orientation"`
+}
+
 func (a *App) startSpreadsheetPDFFileExport(state *documentSessionState, sheet string, path string, orientation string) {
 	if state == nil || state.book == nil || state.closed.Load() {
 		a.setStatus("PDF 导出状态已过期，请重新导出")
@@ -107,8 +114,7 @@ func (a *App) startSpreadsheetPDFFileExport(state *documentSessionState, sheet s
 		defer stateCopy.finishOperation(token)
 		result := spreadsheetPDFExportResult{state: stateCopy, sheet: sheet, path: path}
 		_, result.err = a.executeRibbonApplicationCommandWithContext(ctx, token,
-			"spreadsheet.document.export_pdf", "spreadsheet_sheet", sheet, sheet,
-			map[string]any{"sheet": sheet, "bounds": bounds, "target_path": path, "orientation": orientation},
+			"spreadsheet.document.export_pdf", "spreadsheet_sheet", sheet, sheet, spreadsheetDocumentExportPdfArguments{Sheet: sheet, Bounds: bounds, TargetPath: path, Orientation: orientation},
 		)
 		select {
 		case results <- result:

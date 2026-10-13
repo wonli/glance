@@ -10,6 +10,18 @@ import (
 	"testing"
 )
 
+type jsonTextTransformPayload struct // A no-op on a clean reopened file must remain clean.
+
+{
+	Operation string `json:"operation"`
+}
+
+type jsonDocumentValidatePayload struct {
+}
+
+type jsonDocumentReadTextPayload struct {
+}
+
 func TestJSONTransformAndValidationCapabilitiesPreserveStateAndRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -53,7 +65,7 @@ func TestJSONTransformAndValidationCapabilitiesPreserveStateAndRoundTrip(t *test
 	}
 	readText := func() string {
 		t.Helper()
-		result, invokeErr := invoke("json.document.read_text", map[string]any{})
+		result, invokeErr := invoke("json.document.read_text", jsonDocumentReadTextPayload{})
 		if invokeErr != nil {
 			t.Fatalf("InvokeCapability(json.document.read_text): %v", invokeErr)
 		}
@@ -68,7 +80,7 @@ func TestJSONTransformAndValidationCapabilitiesPreserveStateAndRoundTrip(t *test
 	transform := func(operation string, wantChanged bool) {
 		t.Helper()
 		before := getInfo()
-		result, invokeErr := invoke("json.text.transform", map[string]any{"operation": operation})
+		result, invokeErr := invoke("json.text.transform", jsonTextTransformPayload{Operation: operation})
 		if invokeErr != nil {
 			t.Fatalf("InvokeCapability(json.text.transform %s): %v", operation, invokeErr)
 		}
@@ -100,7 +112,7 @@ func TestJSONTransformAndValidationCapabilitiesPreserveStateAndRoundTrip(t *test
 		t.Helper()
 		beforeInfo := getInfo()
 		beforeText := readText()
-		_, invokeErr := invoke("json.text.transform", map[string]any{"operation": operation})
+		_, invokeErr := invoke("json.text.transform", jsonTextTransformPayload{Operation: operation})
 		if !errors.Is(invokeErr, ErrInvalidCommandArguments) {
 			t.Fatalf("invalid operation error = %v, want ErrInvalidCommandArguments", invokeErr)
 		}
@@ -111,7 +123,7 @@ func TestJSONTransformAndValidationCapabilitiesPreserveStateAndRoundTrip(t *test
 	validate := func(wantValid bool) string {
 		t.Helper()
 		before := getInfo()
-		result, invokeErr := invoke("json.document.validate", map[string]any{})
+		result, invokeErr := invoke("json.document.validate", jsonDocumentValidatePayload{})
 		if invokeErr != nil {
 			t.Fatalf("InvokeCapability(json.document.validate): %v", invokeErr)
 		}
@@ -161,7 +173,7 @@ func TestJSONTransformAndValidationCapabilitiesPreserveStateAndRoundTrip(t *test
 	if reopened.Dirty || readText() != "{\n  \"a\": {\n    \"b\": 2,\n    \"d\": 4\n  },\n  \"z\": 1\n}\n" {
 		t.Fatalf("reopened JSON state/content = %+v, text=%q", reopened, readText())
 	}
-	transform("sort_keys", false) // A no-op on a clean reopened file must remain clean.
+	transform("sort_keys", false)
 
 	invalidPath := filepath.Join(dir, "invalid.json")
 	const invalidText = `{"broken":`
@@ -177,7 +189,7 @@ func TestJSONTransformAndValidationCapabilitiesPreserveStateAndRoundTrip(t *test
 		t.Fatal("invalid JSON validation returned no diagnostic")
 	}
 	beforeInfo, beforeText := getInfo(), readText()
-	if _, err := invoke("json.text.transform", map[string]any{"operation": "format"}); err == nil {
+	if _, err := invoke("json.text.transform", jsonTextTransformPayload{Operation: "format"}); err == nil {
 		t.Fatal("format accepted invalid JSON")
 	}
 	if after := getInfo(); after.Revision != beforeInfo.Revision || after.Dirty != beforeInfo.Dirty || readText() != beforeText {

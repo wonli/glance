@@ -88,6 +88,11 @@ func (a *App) handlePresentationClipboardEvents(gtx layout.Context, v *presentat
 	}
 }
 
+type presentationElementTextCopyArguments struct {
+	SlideId   uint32 `json:"slide_id"`
+	ElementId int64  `json:"element_id"`
+}
+
 func (a *App) startPresentationTextCopy(v *presentationViewState) bool {
 	state := a.documentSessionState
 	if v == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -113,9 +118,7 @@ func (a *App) startPresentationTextCopy(v *presentationViewState) bool {
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.text.copy", "presentation_element", fmt.Sprint(element.ID), "", map[string]any{
-			"slide_id": slideID, "element_id": element.ID,
-		})
+		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.text.copy", "presentation_element", fmt.Sprint(element.ID), "", presentationElementTextCopyArguments{SlideId: slideID, ElementId: element.ID})
 		state.finishOperation(token)
 		out := presentationCommandResult{state: state, view: v, generation: generation, clipboardCopy: true, err: err}
 		if err == nil {
@@ -188,9 +191,7 @@ func (a *App) startPresentationTextPaste(v *presentationViewState, slideID uint3
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.text.set", "presentation_element", fmt.Sprint(elementID), "", map[string]any{
-			"slide_id": slideID, "element_id": elementID, "text": text,
-		})
+		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.text.set", "presentation_element", fmt.Sprint(elementID), "", presentationElementTextSetArguments{SlideId: slideID, ElementId: elementID, Text: text})
 		state.finishOperation(token)
 		out := presentationCommandResult{state: state, view: v, generation: generation, clipboardPaste: true, clipboardText: text, clipboardElementID: elementID, err: err}
 		if err == nil {

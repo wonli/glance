@@ -11,6 +11,19 @@ import (
 	"glance/internal/workspace"
 )
 
+type testWorkspaceFormatQueryArguments struct {
+	Format string `json:"format"`
+	Query  string `json:"query"`
+	Limit  int    `json:"limit"`
+	Offset int    `json:"offset"`
+}
+
+type testWorkspaceFormatQueryLimitArguments struct {
+	Format string `json:"format"`
+	Query  string `json:"query"`
+	Limit  int    `json:"limit"`
+}
+
 func TestWorkspaceRecentListCapabilityFiltersAndBoundsResults(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{WorkspaceDBPath: filepath.Join(t.TempDir(), "workspace.sqlite")})
@@ -31,7 +44,7 @@ func TestWorkspaceRecentListCapabilityFiltersAndBoundsResults(t *testing.T) {
 	result, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "recent-word-reports", CapabilityID: "workspace.recent.list",
 		Operator:  Operator{ID: "agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"format": "docx", "query": "周报", "limit": 1}),
+		Arguments: mustJSON(t, testWorkspaceFormatQueryLimitArguments{Format: "docx", Query: "周报", Limit: 1}),
 	})
 	if err != nil {
 		t.Fatalf("InvokeCapability(workspace.recent.list): %v", err)
@@ -58,7 +71,7 @@ func TestWorkspaceRecentListCapabilityFiltersAndBoundsResults(t *testing.T) {
 	secondPage, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "recent-word-reports-page-2", CapabilityID: "workspace.recent.list",
 		Operator:  Operator{ID: "agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"format": "docx", "query": "周报", "limit": 1, "offset": 1}),
+		Arguments: mustJSON(t, testWorkspaceFormatQueryArguments{Format: "docx", Query: "周报", Limit: 1, Offset: 1}),
 	})
 	if err != nil {
 		t.Fatalf("InvokeCapability(workspace.recent.list offset=1): %v", err)
@@ -94,6 +107,10 @@ func TestWorkspaceRecentListReportsMissingWorkspace(t *testing.T) {
 	}
 }
 
+type testWorkspaceLimitArguments struct {
+	Limit int `json:"limit"`
+}
+
 func TestWorkspaceRecentListRejectsUnboundedLimit(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{WorkspaceDBPath: filepath.Join(t.TempDir(), "workspace.sqlite")})
@@ -105,7 +122,7 @@ func TestWorkspaceRecentListRejectsUnboundedLimit(t *testing.T) {
 	_, err = runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "recent-too-many", CapabilityID: "workspace.recent.list",
 		Operator:  Operator{ID: "agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"limit": 101}),
+		Arguments: mustJSON(t, testWorkspaceLimitArguments{Limit: 101}),
 	})
 	if !errors.Is(err, ErrInvalidCommandArguments) {
 		t.Fatalf("unbounded recent list error = %v; want ErrInvalidCommandArguments", err)

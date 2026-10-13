@@ -16,6 +16,61 @@ import (
 	"glance/internal/format/docx"
 )
 
+type wordImageDeletePayload struct {
+	ImageId string `json:"image_id"`
+}
+
+type wordImageReplacePayload struct {
+	ImageId string `json:"image_id"`
+	Path    string `json:"path"`
+}
+
+type testWordimageImageIdWidthPointsArguments struct {
+	ImageId     string `json:"image_id"`
+	WidthPoints int    `json:"width_points"`
+}
+
+type testWordimageImageIdDeltaDegreesArguments struct {
+	ImageId      string `json:"image_id"`
+	DeltaDegrees int    `json:"delta_degrees"`
+}
+
+type wordImageResizePayload struct {
+	ImageId     string `json:"image_id"`
+	WidthPoints int    `json:"width_points"`
+}
+
+type wordImageRotatePayload struct {
+	ImageId      string `json:"image_id"`
+	DeltaDegrees int    `json:"delta_degrees"`
+}
+
+type wordImageInsertPayload struct {
+	ParagraphId string `json:"paragraph_id"`
+	Path        string `json:"path"`
+}
+
+type testWordimageImageIdParagraphIdArguments struct {
+	ImageId     string `json:"image_id"`
+	ParagraphId string `json:"paragraph_id"`
+}
+
+type testWordimageImageIdParagraphIdAfterInlineIdArguments struct {
+	ImageId       string `json:"image_id"`
+	ParagraphId   string `json:"paragraph_id"`
+	AfterInlineId string `json:"after_inline_id"`
+}
+
+type testWordimageParagraphIdAfterInlineIdArguments struct {
+	ParagraphId   string `json:"paragraph_id"`
+	AfterInlineId string `json:"after_inline_id"`
+	Path          string `json:"path"`
+}
+
+type testWordimageTextArguments struct {
+	Text string `json:"text"`
+}
+
 func TestWordImageCapabilitiesRoundTripAndDelete(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -83,7 +138,7 @@ func TestWordImageCapabilitiesRoundTripAndDelete(t *testing.T) {
 	}
 	appended, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "append-image-target", DocumentID: doc.DocumentID, CommandID: "word.paragraph.append",
-		ExpectedRevision: doc.Revision, Operator: operator, Arguments: mustJSON(t, map[string]any{"text": "图片说明"}),
+		ExpectedRevision: doc.Revision, Operator: operator, Arguments: mustJSON(t, testWordimageTextArguments{Text: "图片说明"}),
 	})
 	if err != nil {
 		t.Fatalf("append image target paragraph: %v", err)
@@ -97,7 +152,7 @@ func TestWordImageCapabilitiesRoundTripAndDelete(t *testing.T) {
 	}
 	destination, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "append-image-destination", DocumentID: doc.DocumentID, CommandID: "word.paragraph.append",
-		ExpectedRevision: appended.Revision, Operator: operator, Arguments: mustJSON(t, map[string]any{"text": "目标段落"}),
+		ExpectedRevision: appended.Revision, Operator: operator, Arguments: mustJSON(t, testWordimageTextArguments{Text: "目标段落"}),
 	})
 	if err != nil {
 		t.Fatalf("append image destination paragraph: %v", err)
@@ -114,7 +169,7 @@ func TestWordImageCapabilitiesRoundTripAndDelete(t *testing.T) {
 	inserted, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "insert-agent-image", DocumentID: doc.DocumentID, CommandID: "word.image.insert",
 		ExpectedRevision: destination.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"paragraph_id": paragraph.ParagraphID, "after_inline_id": paragraph.RunID, "path": pngPath}),
+		Arguments: mustJSON(t, testWordimageParagraphIdAfterInlineIdArguments{ParagraphId: paragraph.ParagraphID, AfterInlineId: paragraph.RunID, Path: pngPath}),
 	})
 	if err != nil {
 		t.Fatalf("insert Agent image: %v", err)
@@ -129,7 +184,7 @@ func TestWordImageCapabilitiesRoundTripAndDelete(t *testing.T) {
 	moved, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "move-agent-image", DocumentID: doc.DocumentID, CommandID: "word.image.move",
 		ExpectedRevision: inserted.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"image_id": insertedImage.ImageID, "paragraph_id": destinationParagraph.ParagraphID, "after_inline_id": destinationParagraph.RunID}),
+		Arguments: mustJSON(t, testWordimageImageIdParagraphIdAfterInlineIdArguments{ImageId: insertedImage.ImageID, ParagraphId: destinationParagraph.ParagraphID, AfterInlineId: destinationParagraph.RunID}),
 	})
 	if err != nil {
 		t.Fatalf("move Agent image: %v", err)
@@ -150,7 +205,7 @@ func TestWordImageCapabilitiesRoundTripAndDelete(t *testing.T) {
 	moveNoop, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "move-agent-image-noop", DocumentID: doc.DocumentID, CommandID: "word.image.move",
 		ExpectedRevision: moved.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"image_id": insertedImage.ImageID, "paragraph_id": destinationParagraph.ParagraphID, "after_inline_id": destinationParagraph.RunID}),
+		Arguments: mustJSON(t, testWordimageImageIdParagraphIdAfterInlineIdArguments{ImageId: insertedImage.ImageID, ParagraphId: destinationParagraph.ParagraphID, AfterInlineId: destinationParagraph.RunID}),
 	})
 	var moveNoopResult struct {
 		Changed bool `json:"changed"`
@@ -163,7 +218,7 @@ func TestWordImageCapabilitiesRoundTripAndDelete(t *testing.T) {
 	if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "move-agent-image-invalid-target", DocumentID: doc.DocumentID, CommandID: "word.image.move",
 		ExpectedRevision: moved.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"image_id": insertedImage.ImageID, "paragraph_id": "missing-paragraph"}),
+		Arguments: mustJSON(t, testWordimageImageIdParagraphIdArguments{ImageId: insertedImage.ImageID, ParagraphId: "missing-paragraph"}),
 	}); err == nil {
 		t.Fatal("moving image to a missing paragraph should fail")
 	}
@@ -173,15 +228,15 @@ func TestWordImageCapabilitiesRoundTripAndDelete(t *testing.T) {
 	if got := runtimeWordImageParagraph(t, runtime, doc.DocumentID, insertedImage.ImageID); got != destinationParagraph.ParagraphID {
 		t.Fatalf("failed move changed image paragraph to %q", got)
 	}
-	assertInvalidImageRequest("insert-image-missing-paragraph", "word.image.insert", moved.Revision, map[string]any{"paragraph_id": "missing-paragraph", "path": pngPath})
-	assertInvalidImageRequest("rotate-image-missing-id", "word.image.rotate", moved.Revision, map[string]any{"image_id": "missing-image", "delta_degrees": 90})
-	assertInvalidImageRequest("resize-image-missing-id", "word.image.resize", moved.Revision, map[string]any{"image_id": "missing-image", "width_points": 72})
-	assertInvalidImageRequest("replace-image-missing-id", "word.image.replace", moved.Revision, map[string]any{"image_id": "missing-image", "path": jpegPath})
-	assertInvalidImageRequest("delete-image-missing-id", "word.image.delete", moved.Revision, map[string]any{"image_id": "missing-image"})
+	assertInvalidImageRequest("insert-image-missing-paragraph", "word.image.insert", moved.Revision, wordImageInsertPayload{ParagraphId: "missing-paragraph", Path: pngPath})
+	assertInvalidImageRequest("rotate-image-missing-id", "word.image.rotate", moved.Revision, wordImageRotatePayload{ImageId: "missing-image", DeltaDegrees: 90})
+	assertInvalidImageRequest("resize-image-missing-id", "word.image.resize", moved.Revision, wordImageResizePayload{ImageId: "missing-image", WidthPoints: 72})
+	assertInvalidImageRequest("replace-image-missing-id", "word.image.replace", moved.Revision, wordImageReplacePayload{ImageId: "missing-image", Path: jpegPath})
+	assertInvalidImageRequest("delete-image-missing-id", "word.image.delete", moved.Revision, wordImageDeletePayload{ImageId: "missing-image"})
 	rotated, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "rotate-agent-image", DocumentID: doc.DocumentID, CommandID: "word.image.rotate",
 		ExpectedRevision: moved.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"image_id": insertedImage.ImageID, "delta_degrees": 90}),
+		Arguments: mustJSON(t, testWordimageImageIdDeltaDegreesArguments{ImageId: insertedImage.ImageID, DeltaDegrees: 90}),
 	})
 	if err != nil {
 		t.Fatalf("rotate Agent image: %v", err)
@@ -190,13 +245,13 @@ func TestWordImageCapabilitiesRoundTripAndDelete(t *testing.T) {
 	resized, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "resize-agent-image", DocumentID: doc.DocumentID, CommandID: "word.image.resize",
 		ExpectedRevision: rotated.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"image_id": insertedImage.ImageID, "width_points": 72}),
+		Arguments: mustJSON(t, testWordimageImageIdWidthPointsArguments{ImageId: insertedImage.ImageID, WidthPoints: 72}),
 	})
 	if err != nil {
 		t.Fatalf("resize Agent image: %v", err)
 	}
 	assertState(resized.Revision, true)
-	replaced := invokeConfirmed("replace-agent-image", "word.image.replace", resized.Revision, map[string]any{"image_id": insertedImage.ImageID, "path": jpegPath})
+	replaced := invokeConfirmed("replace-agent-image", "word.image.replace", resized.Revision, wordImageReplacePayload{ImageId: insertedImage.ImageID, Path: jpegPath})
 	assertState(replaced.Revision, true)
 	path := filepath.Join(t.TempDir(), "agent-image.docx")
 	saved, err := runtime.SaveDocumentAs(ctx, doc.DocumentID, path)
@@ -225,7 +280,7 @@ func TestWordImageCapabilitiesRoundTripAndDelete(t *testing.T) {
 	if !bytes.HasPrefix(imageBytes, []byte{0xff, 0xd8}) {
 		t.Fatal("replacement image bytes are not JPEG")
 	}
-	deleted := invokeConfirmed("delete-agent-image", "word.image.delete", replaced.Revision, map[string]any{"image_id": insertedImage.ImageID})
+	deleted := invokeConfirmed("delete-agent-image", "word.image.delete", replaced.Revision, wordImageDeletePayload{ImageId: insertedImage.ImageID})
 	if deleted.Revision != replaced.Revision+1 {
 		t.Fatalf("delete revision = %d; want %d", deleted.Revision, replaced.Revision+1)
 	}

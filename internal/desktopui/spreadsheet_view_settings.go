@@ -6,6 +6,11 @@ import (
 	"glance/internal/document"
 )
 
+type spreadsheetGridlinesSetArguments struct {
+	Sheet string `json:"sheet"`
+	Show  bool   `json:"show"`
+}
+
 func (a *App) runSpreadsheetGridlinesCommand(operation string, show bool) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() || a.isSaving() {
@@ -25,7 +30,7 @@ func (a *App) runSpreadsheetGridlinesCommand(operation string, show bool) {
 		changed := true
 		var err error
 		if commandRouted {
-			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.gridlines.set", "spreadsheet_sheet", sheet, sheet, map[string]any{"sheet": sheet, "show": show})
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.gridlines.set", "spreadsheet_sheet", sheet, sheet, spreadsheetGridlinesSetArguments{Sheet: sheet, Show: show})
 			err = commandErr
 			if err == nil {
 				var outcome struct {
@@ -93,6 +98,11 @@ func (a *App) runSpreadsheetViewCommand(operation, commandID string, arguments a
 	})
 }
 
+type spreadsheetViewModeSetArguments struct {
+	Sheet string `json:"sheet"`
+	Mode  string `json:"mode"`
+}
+
 func (a *App) setSpreadsheetViewMode(mode string) {
 	state := a.documentSessionState
 	if state == nil {
@@ -104,13 +114,18 @@ func (a *App) setSpreadsheetViewMode(mode string) {
 	}
 	state.spreadsheetViewMode = mode
 	sheet := state.sheet
-	a.runSpreadsheetViewCommand("切换"+label, "spreadsheet.view.mode.set", map[string]any{"sheet": sheet, "mode": mode}, func(editor document.SpreadsheetViewsEditor) error {
+	a.runSpreadsheetViewCommand("切换"+label, "spreadsheet.view.mode.set", spreadsheetViewModeSetArguments{Sheet: sheet, Mode: mode}, func(editor document.SpreadsheetViewsEditor) error {
 		return editor.SetSheetViewMode(sheet, mode)
 	})
 	a.setStatus("已切换为" + label)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
+}
+
+type spreadsheetViewRulerSetArguments struct {
+	Sheet     string `json:"sheet"`
+	ShowRuler bool   `json:"show_ruler"`
 }
 
 func (a *App) toggleSpreadsheetRuler() {
@@ -121,7 +136,7 @@ func (a *App) toggleSpreadsheetRuler() {
 	state.spreadsheetRulerVisible = !state.spreadsheetRulerVisible
 	show := state.spreadsheetRulerVisible
 	sheet := state.sheet
-	a.runSpreadsheetViewCommand("切换标尺", "spreadsheet.view.ruler.set", map[string]any{"sheet": sheet, "show_ruler": show}, func(editor document.SpreadsheetViewsEditor) error {
+	a.runSpreadsheetViewCommand("切换标尺", "spreadsheet.view.ruler.set", spreadsheetViewRulerSetArguments{Sheet: sheet, ShowRuler: show}, func(editor document.SpreadsheetViewsEditor) error {
 		return editor.SetSheetRuler(sheet, show)
 	})
 	if show {

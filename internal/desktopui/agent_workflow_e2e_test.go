@@ -155,6 +155,29 @@ func (*payrollReportWorkflowProvider) ListModels(context.Context) ([]provider.Mo
 }
 func (*payrollReportWorkflowProvider) Stop(context.Context, string) error { return nil }
 
+type documentSaveAsPayload struct {
+	DocumentId       string `json:"document_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+	Path             string `json:"path"`
+}
+
+type wordParagraphAppendPayload struct {
+	DocumentId       string `json:"document_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+	Text             string `json:"text"`
+}
+
+type documentCreatePayload struct {
+	Format string `json:"format"`
+}
+
+type auditPayrollPayload struct {
+	DocumentId       string             `json:"document_id"`
+	ExpectedRevision uint64             `json:"expected_revision"`
+	Sheet            string             `json:"sheet"`
+	Range            document.CellRange `json:"range"`
+}
+
 func (p *payrollReportWorkflowProvider) Stream(_ context.Context, request provider.ModelRequest, emit func(provider.ModelEvent) error) error {
 	if len(request.Tools) == 0 {
 		if err := emit(provider.ModelEvent{TextDelta: "工资日报"}); err != nil {
@@ -166,10 +189,7 @@ func (p *payrollReportWorkflowProvider) Stream(_ context.Context, request provid
 	p.calls++
 	if call == 0 {
 		p.reportText = "工资表日报：Sheet1 A1:B3 共检查 6 个单元格，包含员工和工资列，未发现异常。"
-		return emit(provider.ModelEvent{ToolCallDelta: workflowToolCall(0, "audit-payroll", "workbook.audit", map[string]any{
-			"document_id": p.workbookID, "expected_revision": p.workbookRevision,
-			"sheet": "Sheet1", "range": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2},
-		})})
+		return emit(provider.ModelEvent{ToolCallDelta: workflowToolCall(0, "audit-payroll", "workbook.audit", auditPayrollPayload{DocumentId: p.workbookID, ExpectedRevision: p.workbookRevision, Sheet: "Sheet1", Range: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}})})
 	}
 	lastTool, err := lastWorkflowToolResult(request)
 	if err != nil {
@@ -189,7 +209,7 @@ func (p *payrollReportWorkflowProvider) Stream(_ context.Context, request provid
 		if result.Data.CellsScanned != 6 || result.Data.FindingsTotal != 0 {
 			p.t.Errorf("Agent audit result = %+v", result.Data)
 		}
-		return emit(provider.ModelEvent{ToolCallDelta: workflowToolCall(0, "create-report", "document.create", map[string]any{"format": "docx"})})
+		return emit(provider.ModelEvent{ToolCallDelta: workflowToolCall(0, "create-report", "document.create", documentCreatePayload{Format: "docx"})})
 	case 2:
 		var result struct {
 			Data application.DocumentInfo `json:"data"`
@@ -202,9 +222,7 @@ func (p *payrollReportWorkflowProvider) Stream(_ context.Context, request provid
 		if p.reportDocumentID == "" {
 			p.t.Error("document.create returned no report document ID")
 		}
-		return emit(provider.ModelEvent{ToolCallDelta: workflowToolCall(0, "append-report", "word.paragraph.append", map[string]any{
-			"document_id": p.reportDocumentID, "expected_revision": p.reportRevision, "text": p.reportText,
-		})})
+		return emit(provider.ModelEvent{ToolCallDelta: workflowToolCall(0, "append-report", "word.paragraph.append", wordParagraphAppendPayload{DocumentId: p.reportDocumentID, ExpectedRevision: p.reportRevision, Text: p.reportText})})
 	case 3:
 		var result struct {
 			DocumentID string `json:"document_id"`
@@ -220,9 +238,7 @@ func (p *payrollReportWorkflowProvider) Stream(_ context.Context, request provid
 			p.t.Errorf("word.paragraph.append result = %+v", result)
 		}
 		p.reportRevision = result.Revision
-		return emit(provider.ModelEvent{ToolCallDelta: workflowToolCall(0, "save-report", "document.save_as", map[string]any{
-			"document_id": p.reportDocumentID, "expected_revision": p.reportRevision, "path": p.reportPath,
-		})})
+		return emit(provider.ModelEvent{ToolCallDelta: workflowToolCall(0, "save-report", "document.save_as", documentSaveAsPayload{DocumentId: p.reportDocumentID, ExpectedRevision: p.reportRevision, Path: p.reportPath})})
 	case 4:
 		var result struct {
 			Data application.DocumentInfo `json:"data"`
@@ -242,7 +258,7 @@ func (p *payrollReportWorkflowProvider) Stream(_ context.Context, request provid
 	}
 }
 
-func workflowToolCall(index int, id, name string, arguments map[string]any) *provider.ToolCallDelta {
+func workflowToolCall(index int, id, name string, arguments any) *provider.ToolCallDelta {
 	encoded, _ := json.Marshal(arguments)
 	return &provider.ToolCallDelta{Index: index, ID: id, Type: "function", Name: name, ArgumentsDelta: string(encoded)}
 }

@@ -171,6 +171,16 @@ func previewPresentationGesture(gestureState presentationTransformGesture, curre
 	}
 }
 
+type presentationElementTransformSetArguments struct {
+	SlideId     uint32  `json:"slide_id"`
+	ElementId   int64   `json:"element_id"`
+	X           float64 `json:"x"`
+	Y           float64 `json:"y"`
+	Width       float64 `json:"width"`
+	Height      float64 `json:"height"`
+	RotationDeg float64 `json:"rotation_deg"`
+}
+
 func (a *App) commitPresentationTransformGesture(v *presentationViewState, gestureState presentationTransformGesture) {
 	if v == nil || a.pptxDoc == nil || !gestureState.started {
 		return
@@ -190,12 +200,7 @@ func (a *App) commitPresentationTransformGesture(v *presentationViewState, gestu
 			a.setStatus("演示文稿正在处理其他操作")
 			return
 		}
-		_, err = a.executeRibbonApplicationCommand(token, "presentation.element.transform.set", "presentation_element", strconv.FormatInt(gestureState.shapeID, 10), "", map[string]any{
-			"slide_id": slide.ID, "element_id": gestureState.shapeID,
-			"x": gestureState.preview.Bounds.X, "y": gestureState.preview.Bounds.Y,
-			"width": gestureState.preview.Bounds.W, "height": gestureState.preview.Bounds.H,
-			"rotation_deg": gestureState.preview.RotationDeg,
-		})
+		_, err = a.executeRibbonApplicationCommand(token, "presentation.element.transform.set", "presentation_element", strconv.FormatInt(gestureState.shapeID, 10), "", presentationElementTransformSetArguments{SlideId: slide.ID, ElementId: gestureState.shapeID, X: gestureState.preview.Bounds.X, Y: gestureState.preview.Bounds.Y, Width: gestureState.preview.Bounds.W, Height: gestureState.preview.Bounds.H, RotationDeg: gestureState.preview.RotationDeg})
 		state.finishOperation(token)
 	} else if state == nil || state.pptxDoc != a.pptxDoc {
 		err = a.pptxDoc.UpdateSlideElementTransformByID(slide.ID, gestureState.shapeID, gestureState.preview.Bounds, gestureState.preview.RotationDeg)

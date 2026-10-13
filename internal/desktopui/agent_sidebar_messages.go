@@ -244,7 +244,6 @@ func (a *App) storeAgentSidebarGroupHeight(index int, entry agentChatGroupHeight
 	slots[0] = entry
 }
 
-
 func (a *App) agentSidebarConversationStamp(now time.Time) string {
 	if a.agentUI.conversationStartedAt.IsZero() {
 		return ""
@@ -392,7 +391,6 @@ func applyAgentSidebarScrollTop(list *layout.List, heights []int, targetScrollTo
 		rem -= h
 	}
 }
-
 
 func (a *App) layoutAgentSidebarMessageGroup(gtx layout.Context, group [2]int, lastAssistant int) layout.Dimensions {
 	if a.agentUI.chatLines[group[0]].role == "user" {

@@ -9,6 +9,28 @@ import (
 	"glance/internal/document"
 )
 
+type spreadsheetProofreadArguments struct {
+	Sheet      string             `json:"sheet"`
+	Bounds     document.CellRange `json:"bounds"`
+	Dictionary []string           `json:"dictionary,omitempty"`
+}
+
+type spreadsheetProofreadCase struct {
+	name      string
+	arguments spreadsheetProofreadArguments
+}
+type testSpreadsheetproofreadSheetBoundsArguments struct {
+	Sheet      string             `json:"sheet"`
+	Bounds     document.CellRange `json:"bounds"`
+	Dictionary []string           `json:"dictionary"`
+}
+
+type testSpreadsheetproofreadSheetCellArguments struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+	Value string `json:"value"`
+}
+
 func TestSpreadsheetProofreadUsesExplicitRangeAndOptionalDictionary(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -29,7 +51,7 @@ func TestSpreadsheetProofreadUsesExplicitRangeAndOptionalDictionary(t *testing.T
 			RequestID: "proofread-seed-" + cell.address, DocumentID: doc.DocumentID,
 			CommandID: "spreadsheet.cell.set", ExpectedRevision: doc.Revision,
 			Operator:  Operator{ID: "test", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "cell": cell.address, "value": cell.value}),
+			Arguments: mustJSON(t, testSpreadsheetproofreadSheetCellArguments{Sheet: "Sheet1", Cell: cell.address, Value: cell.value}),
 		}); err != nil {
 			t.Fatalf("seed %s: %v", cell.address, err)
 		}
@@ -42,11 +64,8 @@ func TestSpreadsheetProofreadUsesExplicitRangeAndOptionalDictionary(t *testing.T
 	result, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "proofread-explicit-range", DocumentID: doc.DocumentID,
 		CapabilityID: "spreadsheet.text.proofread", ExpectedRevision: doc.Revision,
-		Operator: Operator{ID: "test", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{
-			"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 1},
-			"dictionary": []string{"hello", "world", "safe", "value"},
-		}),
+		Operator:  Operator{ID: "test", Kind: OperatorExternalAgent},
+		Arguments: mustJSON(t, testSpreadsheetproofreadSheetBoundsArguments{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 1}, Dictionary: []string{"hello", "world", "safe", "value"}}),
 	})
 	if err != nil {
 		t.Fatalf("InvokeCapability: %v", err)
@@ -91,6 +110,17 @@ func TestSpreadsheetProofreadUsesExplicitRangeAndOptionalDictionary(t *testing.T
 	}
 }
 
+type testSpreadsheetproofreadSheetBoundsArguments91 struct {
+	Sheet  string             `json:"sheet"`
+	Bounds document.CellRange `json:"bounds"`
+}
+
+type testSpreadsheetproofreadSheetCellValueArguments struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+	Value string `json:"value"`
+}
+
 func TestSpreadsheetProofreadWithoutDictionaryDoesNotClaimSpellingCheck(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -105,7 +135,7 @@ func TestSpreadsheetProofreadWithoutDictionaryDoesNotClaimSpellingCheck(t *testi
 	if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "proofread-seed-no-dictionary", DocumentID: doc.DocumentID, CommandID: "spreadsheet.cell.set",
 		ExpectedRevision: doc.Revision, Operator: Operator{ID: "test", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "cell": "A1", "value": "definately"}),
+		Arguments: mustJSON(t, testSpreadsheetproofreadSheetCellValueArguments{Sheet: "Sheet1", Cell: "A1", Value: "definately"}),
 	}); err != nil {
 		t.Fatalf("seed cell: %v", err)
 	}
@@ -116,7 +146,7 @@ func TestSpreadsheetProofreadWithoutDictionaryDoesNotClaimSpellingCheck(t *testi
 	result, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "proofread-no-dictionary", DocumentID: doc.DocumentID, CapabilityID: "spreadsheet.text.proofread",
 		ExpectedRevision: doc.Revision, Operator: Operator{ID: "test", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}}),
+		Arguments: mustJSON(t, testSpreadsheetproofreadSheetBoundsArguments91{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}}),
 	})
 	if err != nil {
 		t.Fatalf("InvokeCapability: %v", err)
@@ -146,15 +176,15 @@ func TestSpreadsheetProofreadRejectsOutOfBoundsAndMalformedDictionary(t *testing
 	if err != nil {
 		t.Fatalf("CreateDocument: %v", err)
 	}
-	for name, arguments := range map[string]any{
-		"too many cells":          map[string]any{"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 101, EndColumn: 100}},
-		"invalid dictionary term": map[string]any{"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, "dictionary": []string{"two words"}},
+	for _, testCase := range []spreadsheetProofreadCase{
+		{name: "too many cells", arguments: spreadsheetProofreadArguments{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 101, EndColumn: 100}}},
+		{name: "invalid dictionary term", arguments: spreadsheetProofreadArguments{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, Dictionary: []string{"two words"}}},
 	} {
-		t.Run(name, func(t *testing.T) {
+		t.Run(testCase.name, func(t *testing.T) {
 			_, err := runtime.InvokeCapability(ctx, CapabilityRequest{
-				RequestID: "proofread-invalid-" + name, DocumentID: doc.DocumentID, CapabilityID: "spreadsheet.text.proofread",
+				RequestID: "proofread-invalid-" + testCase.name, DocumentID: doc.DocumentID, CapabilityID: "spreadsheet.text.proofread",
 				ExpectedRevision: doc.Revision, Operator: Operator{ID: "test", Kind: OperatorExternalAgent},
-				Arguments: mustJSON(t, arguments),
+				Arguments: mustJSON(t, testCase.arguments),
 			})
 			if !errors.Is(err, ErrInvalidCommandArguments) {
 				t.Fatalf("InvokeCapability error = %v; want ErrInvalidCommandArguments", err)

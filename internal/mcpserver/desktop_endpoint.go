@@ -40,6 +40,11 @@ type DesktopEndpoint struct {
 	closeErr error
 }
 
+type desktopEndpointConfiguration struct {
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers"`
+}
+
 // StartDesktopEndpoint binds only to IPv4 loopback and starts a bearer-protected
 // Streamable HTTP endpoint.
 func StartDesktopEndpoint(runtime *application.Runtime) (*DesktopEndpoint, error) {
@@ -64,9 +69,8 @@ func StartDesktopEndpoint(runtime *application.Runtime) (*DesktopEndpoint, error
 	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
 	address := listener.Addr().(*net.TCPAddr)
 	endpointURL := "http://127.0.0.1:" + strconv.Itoa(address.Port) + "/mcp"
-	configuration, err := json.MarshalIndent(map[string]any{
-		"url":     endpointURL,
-		"headers": map[string]string{"Authorization": "Bearer " + token},
+	configuration, err := json.MarshalIndent(desktopEndpointConfiguration{
+		URL: endpointURL, Headers: map[string]string{"Authorization": "Bearer " + token},
 	}, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("encode MCP connection configuration: %w", err)

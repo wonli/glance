@@ -26,6 +26,24 @@ func response(request *http.Request, status int, body string) *http.Response {
 
 type providerConfig func(*http.Client) provider.ModelProvider
 
+type providerRequestBody struct {
+	RequestID json.RawMessage       `json:"request_id"`
+	Thinking  providerThinkingBody  `json:"thinking"`
+	Messages  []providerMessageBody `json:"messages"`
+}
+
+type providerThinkingBody struct {
+	Type string `json:"type"`
+}
+
+type providerMessageBody struct {
+	Role             string          `json:"role"`
+	Content          string          `json:"content"`
+	ReasoningContent json.RawMessage `json:"reasoning_content"`
+	ToolCallID       string          `json:"tool_call_id"`
+	ToolName         json.RawMessage `json:"tool_name"`
+}
+
 func chatProviderConfigs(baseURL string, apiKey string) []struct {
 	name, chatPath string
 	make           providerConfig
@@ -66,37 +84,35 @@ func TestChatProviderModelListAndStreamContracts(t *testing.T) {
 				if r.URL.Path != test.chatPath || r.Method != http.MethodPost {
 					t.Errorf("chat request=%s %s", r.Method, r.URL.Path)
 				}
-				var body map[string]any
+				var body providerRequestBody
 				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 					t.Errorf("decode body: %v", err)
 				}
-				if _, exists := body["request_id"]; exists {
+				if len(body.RequestID) > 0 {
 					t.Error("local RequestID leaked into provider request")
 				}
 				if test.thinkingMode != "" {
-					thinking, ok := body["thinking"].(map[string]any)
-					if !ok || thinking["type"] != test.thinkingMode {
-						t.Errorf("thinking request mode=%v, want %q", body["thinking"], test.thinkingMode)
+					if body.Thinking.Type != test.thinkingMode {
+						t.Errorf("thinking request mode=%v, want %q", body.Thinking.Type, test.thinkingMode)
 					}
 				}
-				messages, ok := body["messages"].([]any)
-				if !ok || len(messages) != 3 {
-					t.Errorf("serialized messages=%v, want user, assistant, and tool result", body["messages"])
-				} else if assistant, ok := messages[1].(map[string]any); !ok {
-					t.Errorf("serialized assistant message=%T", messages[1])
+				messages := body.Messages
+				if len(messages) != 3 {
+					t.Errorf("serialized messages=%v, want user, assistant, and tool result", messages)
 				} else if test.name == "deepseek" {
-					if assistant["reasoning_content"] != "provider-only thought" {
-						t.Errorf("DeepSeek assistant reasoning=%v", assistant["reasoning_content"])
+					var reasoning string
+					if err := json.Unmarshal(messages[1].ReasoningContent, &reasoning); err != nil || reasoning != "provider-only thought" {
+						t.Errorf("DeepSeek assistant reasoning=%v (error %v)", reasoning, err)
 					}
-				} else if _, exists := assistant["reasoning_content"]; exists {
+				} else if len(messages[1].ReasoningContent) > 0 {
 					t.Errorf("%s request leaked another provider's reasoning field", test.name)
 				}
-				if ok && len(messages) == 3 {
-					toolResult, ok := messages[2].(map[string]any)
-					if !ok || toolResult["role"] != "tool" || toolResult["tool_call_id"] != "tool-1" || toolResult["content"] != "tool result" {
-						t.Errorf("serialized tool result=%v", messages[2])
-					} else if _, exists := toolResult["tool_name"]; exists {
-						t.Errorf("%s request leaked internal tool_name into Chat Completions payload: %v", test.name, toolResult)
+				if len(messages) == 3 {
+					toolResult := messages[2]
+					if toolResult.Role != "tool" || toolResult.ToolCallID != "tool-1" || toolResult.Content != "tool result" {
+						t.Errorf("serialized tool result=%+v", toolResult)
+					} else if len(toolResult.ToolName) > 0 {
+						t.Errorf("%s request leaked internal tool_name into Chat Completions payload: %+v", test.name, toolResult)
 					}
 				}
 				textChunk := `"content":"hello"`

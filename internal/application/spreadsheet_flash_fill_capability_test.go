@@ -10,6 +10,11 @@ import (
 	"glance/internal/document"
 )
 
+type spreadsheetFlashFillApplyPayload struct {
+	Sheet  string             `json:"sheet"`
+	Bounds document.CellRange `json:"bounds"`
+}
+
 func TestSpreadsheetFlashFillCapabilityTreatsFilledRangeAsNoop(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -58,9 +63,7 @@ func TestSpreadsheetFlashFillCapabilityTreatsFilledRangeAsNoop(t *testing.T) {
 	assertFill := func(wantRowsFilled int, wantRevisionDelta uint64, wantDirty bool) {
 		t.Helper()
 		before := mustGetDocumentInfo(t, runtime, documentID)
-		result, invokeErr := invoke("spreadsheet.flash_fill.apply", map[string]any{
-			"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 1},
-		})
+		result, invokeErr := invoke("spreadsheet.flash_fill.apply", spreadsheetFlashFillApplyPayload{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 1}})
 		if invokeErr != nil {
 			t.Fatalf("InvokeCapability(spreadsheet.flash_fill.apply): %v", invokeErr)
 		}
@@ -79,8 +82,8 @@ func TestSpreadsheetFlashFillCapabilityTreatsFilledRangeAsNoop(t *testing.T) {
 		}
 	}
 
-	if _, err := invoke("spreadsheet.cells.set", map[string]any{"sheet": "Sheet1", "edits": []map[string]any{
-		{"row": 1, "column": 1, "value": "1"}, {"row": 2, "column": 1, "value": "2"},
+	if _, err := invoke("spreadsheet.cells.set", spreadsheetCellsSetPayloadSheet{Sheet: "Sheet1", Edits: []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "1"}, {Row: 2, Column: 1, Value: "2"},
 	}}); err != nil {
 		t.Fatalf("seed workbook: %v", err)
 	}
@@ -91,9 +94,7 @@ func TestSpreadsheetFlashFillCapabilityTreatsFilledRangeAsNoop(t *testing.T) {
 	assertFill(0, 0, true)
 	beforeFailure := mustGetDocumentInfo(t, runtime, documentID)
 	beforeValues := inspectValues()
-	if _, err := invoke("spreadsheet.flash_fill.apply", map[string]any{
-		"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 2, EndRow: 4, EndColumn: 2},
-	}); err == nil {
+	if _, err := invoke("spreadsheet.flash_fill.apply", spreadsheetFlashFillApplyPayload{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 2, EndRow: 4, EndColumn: 2}}); err == nil {
 		t.Fatal("Flash Fill accepted a range without source pattern data")
 	}
 	if afterFailure := mustGetDocumentInfo(t, runtime, documentID); afterFailure.Revision != beforeFailure.Revision || afterFailure.Dirty != beforeFailure.Dirty || fmt.Sprint(inspectValues()) != fmt.Sprint(beforeValues) {

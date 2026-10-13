@@ -13,6 +13,35 @@ import (
 	"glance/internal/document"
 )
 
+type testSpreadsheetrulesSheetBoundsArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	Operation string             `json:"operation"`
+}
+
+type testSpreadsheetrulesSheetBoundsOperationArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	Operation string             `json:"operation"`
+	Type      string             `json:"type"`
+}
+
+type testSpreadsheetrulesSheetBoundsOperationItemsArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	Operation string             `json:"operation"`
+	Items     []string           `json:"items"`
+}
+
+type testSpreadsheetrulesSheetBoundsOperationItemsMinimumArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	Operation string             `json:"operation"`
+	Items     []string           `json:"items,omitempty"`
+	Minimum   *float64           `json:"minimum,omitempty"`
+	Maximum   *float64           `json:"maximum,omitempty"`
+}
+
 func TestSpreadsheetConditionalFormatAndValidationCapabilitiesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -109,22 +138,17 @@ func TestSpreadsheetConditionalFormatAndValidationCapabilitiesRoundTrip(t *testi
 		{document.CellRange{StartRow: 1, StartColumn: 4, EndRow: 3, EndColumn: 4}, "duplicate"},
 		{document.CellRange{StartRow: 1, StartColumn: 5, EndRow: 3, EndColumn: 5}, "above_average"},
 	}
-	validations := []map[string]any{
-		{
-			"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 2, EndRow: 3, EndColumn: 2},
-			"operation": "list", "items": []string{"北区", "南区"},
-		},
-		{
-			"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 6, EndRow: 3, EndColumn: 6},
-			"operation": "number", "minimum": 0, "maximum": 100,
-		},
+	minimum, maximum := float64(0), float64(100)
+	validations := []testSpreadsheetrulesSheetBoundsOperationItemsMinimumArguments{
+		{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 2, EndRow: 3, EndColumn: 2}, Operation: "list", Items: []string{"北区", "南区"}},
+		{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 6, EndRow: 3, EndColumn: 6}, Operation: "number", Minimum: &minimum, Maximum: &maximum},
 	}
-	invalidConditional := map[string]any{"sheet": "Missing", "bounds": conditionalRules[0].bounds, "operation": "set", "type": conditionalRules[0].typeID}
-	invalidValidation := map[string]any{"sheet": "Missing", "bounds": validations[0]["bounds"], "operation": "list", "items": []string{"北区", "南区"}}
+	invalidConditional := testSpreadsheetrulesSheetBoundsOperationArguments{Sheet: "Missing", Bounds: conditionalRules[0].bounds, Operation: "set", Type: conditionalRules[0].typeID}
+	invalidValidation := testSpreadsheetrulesSheetBoundsOperationItemsArguments{Sheet: "Missing", Bounds: validations[0].Bounds, Operation: "list", Items: []string{"北区", "南区"}}
 	assertInvalidTarget("spreadsheet.conditional_format.set", invalidConditional)
 	assertInvalidTarget("spreadsheet.data_validation.set", invalidValidation)
 	for _, rule := range conditionalRules {
-		arguments := map[string]any{"sheet": "Sheet1", "bounds": rule.bounds, "operation": "set", "type": rule.typeID}
+		arguments := testSpreadsheetrulesSheetBoundsOperationArguments{Sheet: "Sheet1", Bounds: rule.bounds, Operation: "set", Type: rule.typeID}
 		assertRuleCommand("spreadsheet.conditional_format.set", arguments, true)
 		assertRuleCommand("spreadsheet.conditional_format.set", arguments, false)
 	}
@@ -149,7 +173,7 @@ func TestSpreadsheetConditionalFormatAndValidationCapabilitiesRoundTrip(t *testi
 		t.Fatalf("reopened workbook with rules is dirty: %+v", reopened)
 	}
 	for _, rule := range conditionalRules {
-		arguments := map[string]any{"sheet": "Sheet1", "bounds": rule.bounds, "operation": "set", "type": rule.typeID}
+		arguments := testSpreadsheetrulesSheetBoundsOperationArguments{Sheet: "Sheet1", Bounds: rule.bounds, Operation: "set", Type: rule.typeID}
 		assertRuleCommand("spreadsheet.conditional_format.set", arguments, false)
 	}
 	for _, validation := range validations {
@@ -168,12 +192,12 @@ func TestSpreadsheetConditionalFormatAndValidationCapabilitiesRoundTrip(t *testi
 	}
 
 	for _, rule := range conditionalRules {
-		arguments := map[string]any{"sheet": "Sheet1", "bounds": rule.bounds, "operation": "clear"}
+		arguments := testSpreadsheetrulesSheetBoundsArguments{Sheet: "Sheet1", Bounds: rule.bounds, Operation: "clear"}
 		assertRuleCommand("spreadsheet.conditional_format.set", arguments, true)
 		assertRuleCommand("spreadsheet.conditional_format.set", arguments, false)
 	}
 	for _, validation := range validations {
-		arguments := map[string]any{"sheet": "Sheet1", "bounds": validation["bounds"], "operation": "clear"}
+		arguments := testSpreadsheetrulesSheetBoundsArguments{Sheet: "Sheet1", Bounds: validation.Bounds, Operation: "clear"}
 		assertRuleCommand("spreadsheet.data_validation.set", arguments, true)
 		assertRuleCommand("spreadsheet.data_validation.set", arguments, false)
 	}

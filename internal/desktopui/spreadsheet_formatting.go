@@ -119,6 +119,12 @@ func (a *App) applySpreadsheetFormatPainter() {
 	}
 }
 
+type spreadsheetFormatPaintArguments struct {
+	Sheet        string             `json:"sheet"`
+	SourceCell   string             `json:"source_cell"`
+	TargetBounds document.CellRange `json:"target_bounds"`
+}
+
 func (a *App) runSpreadsheetFormatPaintIntent(sourceCell string, targetBounds document.CellRange) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
@@ -130,9 +136,7 @@ func (a *App) runSpreadsheetFormatPaintIntent(sourceCell string, targetBounds do
 	}
 	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.format.paint", "spreadsheet_range", "selection", sheet, map[string]any{
-			"sheet": sheet, "source_cell": sourceCell, "target_bounds": targetBounds,
-		})
+		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.format.paint", "spreadsheet_range", "selection", sheet, spreadsheetFormatPaintArguments{Sheet: sheet, SourceCell: sourceCell, TargetBounds: targetBounds})
 		var changed bool
 		if err == nil {
 			var outcome struct {

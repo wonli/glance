@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+type spreadsheetDataValidationArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	Operation string             `json:"operation"`
+	Items     []string           `json:"items,omitempty"`
+}
+
 func (a *App) showSpreadsheetDataValidationDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -48,13 +55,13 @@ func (a *App) showSpreadsheetDataValidationDialog() {
 			var err error
 			if commandRouted {
 				operation := "list"
-				arguments := map[string]any{"sheet": sheet, "bounds": bounds}
+				arguments := spreadsheetDataValidationArguments{Sheet: sheet, Bounds: bounds}
 				if clear {
 					operation = "clear"
 				} else {
-					arguments["items"] = items
+					arguments.Items = items
 				}
-				arguments["operation"] = operation
+				arguments.Operation = operation
 				result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.data_validation.set", "spreadsheet_cell_range", "selection", sheet, arguments)
 				err = commandErr
 				if err == nil {

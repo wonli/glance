@@ -1,11 +1,11 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -142,14 +142,11 @@ func handleDocumentCompare(ctx context.Context, capability CapabilityContext, ra
 	return CapabilityResult{Data: data}, err
 }
 
-func decodeJSONValue(data json.RawMessage) (any, error) {
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		return nil, err
+func decodeJSONValue(data json.RawMessage) (json.RawMessage, error) {
+	if !json.Valid(data) {
+		return nil, errors.New("invalid JSON")
 	}
-	return value, nil
+	return append(json.RawMessage(nil), data...), nil
 }
 
 func normalizedQueryLimit(limit int) int {
@@ -159,7 +156,7 @@ func normalizedQueryLimit(limit int) int {
 	return limit
 }
 
-func compareJSONValues(left, right any, path string, depth int, state *documentDiffState) {
+func compareJSONValues(left, right json.RawMessage, path string, depth int, state *documentDiffState) {
 	if state.more {
 		return
 	}
@@ -168,8 +165,8 @@ func compareJSONValues(left, right any, path string, depth int, state *documentD
 		state.more = true
 		return
 	}
-	leftMap, leftIsMap := left.(map[string]any)
-	rightMap, rightIsMap := right.(map[string]any)
+	leftMap, leftIsMap := jsonObject(left)
+	rightMap, rightIsMap := jsonObject(right)
 	if leftIsMap && rightIsMap {
 		keys := make([]string, 0, len(leftMap)+len(rightMap))
 		seen := make(map[string]struct{}, len(leftMap)+len(rightMap))
@@ -201,8 +198,8 @@ func compareJSONValues(left, right any, path string, depth int, state *documentD
 		}
 		return
 	}
-	leftArray, leftIsArray := left.([]any)
-	rightArray, rightIsArray := right.([]any)
+	leftArray, leftIsArray := jsonArray(left)
+	rightArray, rightIsArray := jsonArray(right)
 	if leftIsArray && rightIsArray {
 		maximum := max(len(leftArray), len(rightArray))
 		for index := 0; index < maximum; index++ {
@@ -221,9 +218,21 @@ func compareJSONValues(left, right any, path string, depth int, state *documentD
 		}
 		return
 	}
-	if !reflect.DeepEqual(left, right) {
+	if !equalJSONScalars(left, right) {
 		appendDocumentDiff(path, state)
 	}
+}
+
+func equalJSONScalars(left, right json.RawMessage) bool {
+	if leftString, ok := jsonString(left); ok {
+		rightString, rightOK := jsonString(right)
+		return rightOK && leftString == rightString
+	}
+	if leftBool, ok := jsonBool(left); ok {
+		rightBool, rightOK := jsonBool(right)
+		return rightOK && leftBool == rightBool
+	}
+	return bytes.Equal(bytes.TrimSpace(left), bytes.TrimSpace(right))
 }
 
 func appendDocumentDiff(path string, state *documentDiffState) {

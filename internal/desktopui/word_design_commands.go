@@ -33,10 +33,7 @@ func (a *App) showWordThemesDialog() {
 			default:
 				return
 			}
-			if !a.runWordApplicationCommand("应用文档主题："+themeName, "word.paragraph.spacing_all.set", map[string]any{
-				"before_points": float64(before) / 20,
-				"after_points":  float64(after) / 20,
-			}) {
+			if !a.runWordApplicationCommand("应用文档主题："+themeName, "word.paragraph.spacing_all.set", worddesignBeforePointsAfterPointsArguments{BeforePoints: float64(before) / 20, AfterPoints: float64(after) / 20}) {
 				a.setStatus("无法启动 Word 文档主题操作")
 			}
 		},
@@ -46,6 +43,10 @@ func (a *App) showWordThemesDialog() {
 		modalDialogActionSpec{ID: "theme_modern", Label: "现代出版"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+type wordPageBackgroundSetArguments struct {
+	Color string `json:"color"`
 }
 
 func (a *App) showWordColorsDialog() {
@@ -82,9 +83,7 @@ func (a *App) showWordColorsDialog() {
 			default:
 				return
 			}
-			if !a.runWordApplicationCommand("应用主题配色："+schemeName, "word.page.background.set", map[string]any{
-				"color": colorHex,
-			}) {
+			if !a.runWordApplicationCommand("应用主题配色："+schemeName, "word.page.background.set", wordPageBackgroundSetArguments{Color: colorHex}) {
 				a.setStatus("无法启动 Word 主题配色操作")
 			}
 		},
@@ -94,6 +93,11 @@ func (a *App) showWordColorsDialog() {
 		modalDialogActionSpec{ID: "scheme_blue", Label: "商务湛蓝"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+type wordTextRunFontFamilySetArguments struct {
+	RunId      string `json:"run_id"`
+	FontFamily string `json:"font_family"`
 }
 
 func (a *App) showWordFontsDialog() {
@@ -149,9 +153,7 @@ func (a *App) showWordFontsDialog() {
 				a.setStatus("未找到可设置字体的正文文本")
 				return
 			}
-			if !a.runWordApplicationCommand("设置主题字体："+label, "word.text_run.font_family.set", map[string]any{
-				"run_id": runID, "font_family": fontName,
-			}) {
+			if !a.runWordApplicationCommand("设置主题字体："+label, "word.text_run.font_family.set", wordTextRunFontFamilySetArguments{RunId: runID, FontFamily: fontName}) {
 				a.setStatus("无法启动 Word 主题字体操作")
 			}
 		},
@@ -161,6 +163,10 @@ func (a *App) showWordFontsDialog() {
 		modalDialogActionSpec{ID: "font_calibri", Label: "Calibri"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+type wordThemeEffectsSetArguments struct {
+	EffectProfile string `json:"effect_profile"`
 }
 
 func (a *App) showWordEffectsDialog() {
@@ -180,7 +186,7 @@ func (a *App) showWordEffectsDialog() {
 				return
 			}
 			if a.applicationSessionRegistered(state.documentID) {
-				if !a.runWordApplicationCommand("设置主题效果", "word.theme.effects.set", map[string]any{"effect_profile": action}) {
+				if !a.runWordApplicationCommand("设置主题效果", "word.theme.effects.set", wordThemeEffectsSetArguments{EffectProfile: action}) {
 					a.setStatus("无法启动主题效果设置")
 				}
 				return
@@ -194,6 +200,11 @@ func (a *App) showWordEffectsDialog() {
 		modalDialogActionSpec{ID: "intense", Label: "强烈"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+type worddesignBeforePointsAfterPointsArguments struct {
+	BeforePoints float64 `json:"before_points"`
+	AfterPoints  float64 `json:"after_points"`
 }
 
 func (a *App) showWordDesignerDialog() {
@@ -224,10 +235,7 @@ func (a *App) showWordDesignerDialog() {
 			default:
 				return
 			}
-			if !a.runWordApplicationCommand("设计器应用版式："+schemeName, "word.paragraph.spacing_all.set", map[string]any{
-				"before_points": float64(before) / 20,
-				"after_points":  float64(after) / 20,
-			}) {
+			if !a.runWordApplicationCommand("设计器应用版式："+schemeName, "word.paragraph.spacing_all.set", worddesignBeforePointsAfterPointsArguments{BeforePoints: float64(before) / 20, AfterPoints: float64(after) / 20}) {
 				a.setStatus("无法启动 Word 设计器版式操作")
 			}
 		},

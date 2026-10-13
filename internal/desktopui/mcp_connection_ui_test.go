@@ -14,6 +14,14 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type testMcpconnectionDocumentIdExpectedRevisionArguments struct {
+	DocumentId       string `json:"document_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+	Sheet            string `json:"sheet"`
+	Cell             string `json:"cell"`
+	Value            string `json:"value"`
+}
+
 func TestDesktopMCPHTTPEditsTheLiveGioSession(t *testing.T) {
 	ctx := context.Background()
 	desktop := newDesktopRuntime()
@@ -52,10 +60,7 @@ func TestDesktopMCPHTTPEditsTheLiveGioSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get live document: %v", err)
 	}
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "spreadsheet.cell.set", Arguments: map[string]any{
-		"document_id": app.documentID, "expected_revision": documentInfo.Revision,
-		"sheet": "Sheet1", "cell": "A1", "value": "由桌面 MCP 写入",
-	}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "spreadsheet.cell.set", Arguments: testMcpconnectionDocumentIdExpectedRevisionArguments{DocumentId: app.documentID, ExpectedRevision: documentInfo.Revision, Sheet: "Sheet1", Cell: "A1", Value: "由桌面 MCP 写入"}})
 	if err != nil || result.IsError {
 		t.Fatalf("MCP spreadsheet edit result=%+v error=%v", result, err)
 	}

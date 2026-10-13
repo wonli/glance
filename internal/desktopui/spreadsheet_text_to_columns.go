@@ -46,6 +46,13 @@ func (a *App) runSpreadsheetTextToColumnsCommand(operation string, arguments any
 	})
 }
 
+type spreadsheettextSheetBoundsArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	KeyColumn int                `json:"key_column"`
+	Delimiter string             `json:"delimiter"`
+}
+
 func (a *App) showSpreadsheetTextToColumnsDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -66,7 +73,7 @@ func (a *App) showSpreadsheetTextToColumnsDialog() {
 	msg := fmt.Sprintf("将在选区 %s 中对 %s 列进行文本分列。\n选择预设分隔符或输入自定义字符向右拆分数据：", rangeRef, activeColName)
 
 	splitWith := func(delim, label string) {
-		a.runSpreadsheetTextToColumnsCommand("文本分列 ("+label+")", map[string]any{"sheet": sheet, "bounds": bounds, "key_column": keyCol, "delimiter": delim}, func(ed document.SpreadsheetTextToColumnsEditor) (document.SpreadsheetTextToColumnsResult, error) {
+		a.runSpreadsheetTextToColumnsCommand("文本分列 ("+label+")", spreadsheettextSheetBoundsArguments{Sheet: sheet, Bounds: bounds, KeyColumn: keyCol, Delimiter: delim}, func(ed document.SpreadsheetTextToColumnsEditor) (document.SpreadsheetTextToColumnsResult, error) {
 			return ed.SplitTextToColumns(sheet, bounds, keyCol, delim)
 		})
 	}

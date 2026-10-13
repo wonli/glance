@@ -12,6 +12,32 @@ import (
 	"glance/internal/document"
 )
 
+type spreadsheetTextToColumnsSplitPayload struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	KeyColumn int                `json:"key_column"`
+	Delimiter string             `json:"delimiter"`
+}
+
+type spreadsheetDuplicatesRemovePayload struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	KeyColumn int                `json:"key_column"`
+}
+
+type testSpreadsheetrowSheetBoundsArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	KeyColumn int                `json:"key_column"`
+	Delimiter string             `json:"delimiter"`
+}
+
+type testSpreadsheetrowSheetBoundsKeyColumnArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	KeyColumn int                `json:"key_column"`
+}
+
 func TestSpreadsheetDuplicateRemovalAndTextSplitCapabilitiesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -125,26 +151,20 @@ func TestSpreadsheetDuplicateRemovalAndTextSplitCapabilitiesRoundTrip(t *testing
 		}
 		return rows[row-1][column-1]
 	}
-	duplicatesArgs := map[string]any{
-		"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 2}, "key_column": 1,
-	}
+	duplicatesArgs := testSpreadsheetrowSheetBoundsKeyColumnArguments{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 2}, KeyColumn: 1}
 	delimiter := strings.Repeat("🙂", 100)
-	splitArgs := map[string]any{
-		"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 5, StartColumn: 4, EndRow: 6, EndColumn: 4}, "key_column": 4, "delimiter": delimiter,
-	}
+	splitArgs := testSpreadsheetrowSheetBoundsArguments{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 5, StartColumn: 4, EndRow: 6, EndColumn: 4}, KeyColumn: 4, Delimiter: delimiter}
 
-	seed := []map[string]any{
-		{"row": 1, "column": 1, "value": "key-1"}, {"row": 1, "column": 2, "value": "first"},
-		{"row": 2, "column": 1, "value": "key-1"}, {"row": 2, "column": 2, "value": "duplicate"},
-		{"row": 3, "column": 1, "value": "key-2"}, {"row": 3, "column": 2, "value": "second"},
-		{"row": 4, "column": 1, "value": "key-3"}, {"row": 4, "column": 2, "value": "third"},
-		{"row": 6, "column": 4, "value": "alpha" + delimiter + "beta"}, {"row": 6, "column": 5, "value": "overwritten"},
-		{"row": 7, "column": 4, "value": "gamma" + delimiter + "delta"}, {"row": 7, "column": 5, "value": "overwritten"},
+	seed := []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "key-1"}, {Row: 1, Column: 2, Value: "first"},
+		{Row: 2, Column: 1, Value: "key-1"}, {Row: 2, Column: 2, Value: "duplicate"},
+		{Row: 3, Column: 1, Value: "key-2"}, {Row: 3, Column: 2, Value: "second"},
+		{Row: 4, Column: 1, Value: "key-3"}, {Row: 4, Column: 2, Value: "third"},
+		{Row: 6, Column: 4, Value: "alpha" + delimiter + "beta"}, {Row: 6, Column: 5, Value: "overwritten"},
+		{Row: 7, Column: 4, Value: "gamma" + delimiter + "delta"}, {Row: 7, Column: 5, Value: "overwritten"},
 	}
-	assertTransformResult("spreadsheet.cells.set", map[string]any{"sheet": "Sheet1", "edits": seed}, true)
-	assertAtomicFailure("spreadsheet.duplicates.remove", map[string]any{
-		"sheet": "Missing", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 2}, "key_column": 1,
-	})
+	assertTransformResult("spreadsheet.cells.set", spreadsheetCellsSetPayload{Sheet: "Sheet1", Edits: seed}, true)
+	assertAtomicFailure("spreadsheet.duplicates.remove", spreadsheetDuplicatesRemovePayload{Sheet: "Missing", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 2}, KeyColumn: 1})
 	var duplicateResult struct {
 		RemovedCount   int `json:"removed_count"`
 		RemainingCount int `json:"remaining_count"`
@@ -157,9 +177,7 @@ func TestSpreadsheetDuplicateRemovalAndTextSplitCapabilitiesRoundTrip(t *testing
 		t.Fatalf("duplicate removal lost or reordered nonduplicate rows: %+v", afterDuplicates)
 	}
 	assertTransformResult("spreadsheet.duplicates.remove", duplicatesArgs, false)
-	assertAtomicFailure("spreadsheet.text_to_columns.split", map[string]any{
-		"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 5, StartColumn: 4, EndRow: 6, EndColumn: 4}, "key_column": 5, "delimiter": ",",
-	})
+	assertAtomicFailure("spreadsheet.text_to_columns.split", spreadsheetTextToColumnsSplitPayload{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 5, StartColumn: 4, EndRow: 6, EndColumn: 4}, KeyColumn: 5, Delimiter: ","})
 	var splitResult struct {
 		RowsSplit int `json:"rows_split"`
 		MaxCols   int `json:"max_columns"`

@@ -8,6 +8,26 @@ import (
 	"glance/internal/document"
 )
 
+type presentationChartSeries struct {
+	Name   string    `json:"name"`
+	Values []float64 `json:"values"`
+}
+
+type presentationDataObjectArguments struct {
+	SlideID    uint32                    `json:"slide_id"`
+	X          float64                   `json:"x"`
+	Y          float64                   `json:"y"`
+	Width      float64                   `json:"width"`
+	Height     float64                   `json:"height"`
+	Rows       [][]string                `json:"rows,omitempty"`
+	FirstRow   bool                      `json:"first_row,omitempty"`
+	BandRows   bool                      `json:"band_rows,omitempty"`
+	ChartType  string                    `json:"chart_type,omitempty"`
+	Title      string                    `json:"title,omitempty"`
+	Categories []string                  `json:"categories,omitempty"`
+	Series     []presentationChartSeries `json:"series,omitempty"`
+}
+
 func (a *App) showPresentationTableInsertOptions(view *presentationViewState) {
 	if view == nil {
 		return
@@ -29,8 +49,8 @@ func (a *App) showPresentationTableInsertOptions(view *presentationViewState) {
 		for row := range grid {
 			grid[row] = make([]string, columns)
 		}
-		if !a.startPresentationDataObject(view, "presentation.element.table.create", map[string]any{
-			"rows": grid, "first_row": true, "band_rows": true,
+		if !a.startPresentationDataObject(view, "presentation.element.table.create", presentationDataObjectArguments{
+			Rows: grid, FirstRow: true, BandRows: true,
 		}, false) {
 			a.setStatus("无法启动表格插入")
 		}
@@ -51,10 +71,10 @@ func (a *App) showPresentationChartInsertOptions(view *presentationViewState) {
 		if action != "bar" && action != "line" && action != "pie" {
 			return
 		}
-		if !a.startPresentationDataObject(view, "presentation.element.chart.create", map[string]any{
-			"chart_type": action, "title": "示例数据",
-			"categories": []string{"类别 1", "类别 2", "类别 3"},
-			"series":     []any{map[string]any{"name": "系列 1", "values": []float64{1, 2, 3}}},
+		if !a.startPresentationDataObject(view, "presentation.element.chart.create", presentationDataObjectArguments{
+			ChartType: action, Title: "示例数据",
+			Categories: []string{"类别 1", "类别 2", "类别 3"},
+			Series:     []presentationChartSeries{{Name: "系列 1", Values: []float64{1, 2, 3}}},
 		}, true) {
 			a.setStatus("无法启动图表插入")
 		}
@@ -66,7 +86,7 @@ func (a *App) showPresentationChartInsertOptions(view *presentationViewState) {
 	)
 }
 
-func (a *App) startPresentationDataObject(view *presentationViewState, capabilityID string, arguments map[string]any, chart bool) bool {
+func (a *App) startPresentationDataObject(view *presentationViewState, capabilityID string, arguments presentationDataObjectArguments, chart bool) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
 		return false
@@ -86,11 +106,11 @@ func (a *App) startPresentationDataObject(view *presentationViewState, capabilit
 		return true
 	}
 	bounds := presentationObjectBounds(slide)
-	arguments["slide_id"] = slide.ID
-	arguments["x"] = bounds.X
-	arguments["y"] = bounds.Y
-	arguments["width"] = bounds.W
-	arguments["height"] = bounds.H
+	arguments.SlideID = slide.ID
+	arguments.X = bounds.X
+	arguments.Y = bounds.Y
+	arguments.Width = bounds.W
+	arguments.Height = bounds.H
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
 		a.setStatus("演示文稿正在处理其他操作")

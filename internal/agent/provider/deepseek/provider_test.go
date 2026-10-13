@@ -57,6 +57,30 @@ func TestStreamRestoresPriorReasoningForDeepSeekToolTurn(t *testing.T) {
 	}
 }
 
+type testProviderIndexIdArguments struct {
+	Index    int                      `json:"index"`
+	Id       string                   `json:"id"`
+	Type     string                   `json:"type"`
+	Function testProviderFunctionCall `json:"function"`
+}
+
+type testProviderFunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type testProviderToolCallsArguments struct {
+	ToolCalls []testProviderIndexIdArguments `json:"tool_calls"`
+}
+
+type testProviderDeltaArguments struct {
+	Delta testProviderToolCallsArguments `json:"delta"`
+}
+
+type testProviderChoicesArguments struct {
+	Choices []testProviderDeltaArguments `json:"choices"`
+}
+
 func TestStreamMapsMCPNamesAcrossToolDefinitionsHistoryAndFragmentedReplies(t *testing.T) {
 	var wireName string
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -83,7 +107,7 @@ func TestStreamMapsMCPNamesAcrossToolDefinitionsHistoryAndFragmentedReplies(t *t
 			if i == 0 {
 				id = "call-2"
 			}
-			b, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": id, "type": "function", "function": map[string]string{"name": fragment, "arguments": ""}}}}}}})
+			b, _ := json.Marshal(testProviderChoicesArguments{Choices: []testProviderDeltaArguments{{Delta: testProviderToolCallsArguments{ToolCalls: []testProviderIndexIdArguments{{Index: 0, Id: id, Type: "function", Function: testProviderFunctionCall{Name: fragment}}}}}}})
 			stream += "data: " + string(b) + "\n\n"
 		}
 		stream += "data: [DONE]\n\n"

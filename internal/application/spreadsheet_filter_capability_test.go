@@ -13,6 +13,13 @@ import (
 type spreadsheetFilterViewHandler struct {
 	intents []ViewIntent
 }
+type handleViewIntentPayload struct {
+	WindowId    uint64 `json:"window_id"`
+	Operation   string `json:"operation"`
+	Sheet       string `json:"sheet"`
+	RowsVisible int    `json:"rows_visible"`
+	Changed     bool   `json:"changed"`
+}
 
 func (h *spreadsheetFilterViewHandler) HandleViewIntent(_ context.Context, intent ViewIntent) (json.RawMessage, error) {
 	h.intents = append(h.intents, intent)
@@ -24,10 +31,28 @@ func (h *spreadsheetFilterViewHandler) HandleViewIntent(_ context.Context, inten
 	if err := json.Unmarshal(intent.Arguments, &input); err != nil {
 		return nil, err
 	}
-	return json.Marshal(map[string]any{
-		"window_id": intent.WindowID, "operation": input.Operation, "sheet": input.Sheet,
-		"rows_visible": len(input.VisibleRows), "changed": true,
-	})
+	return json.Marshal(handleViewIntentPayload{WindowId: intent.WindowID, Operation: input.Operation, Sheet: input.Sheet, RowsVisible: len(input.VisibleRows), Changed: true})
+}
+
+type spreadsheetFilterApplyPayload struct {
+	Operation string `json:"operation"`
+	Sheet     string `json:"sheet"`
+}
+
+type spreadsheetFilterApplySetFromRowPayload struct {
+	Operation string             `json:"operation"`
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	Column    int                `json:"column"`
+	SourceRow int                `json:"source_row"`
+}
+
+type spreadsheetFilterApplySetValuePayload struct {
+	Operation string             `json:"operation"`
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	Column    int                `json:"column"`
+	Value     string             `json:"value"`
 }
 
 func TestSpreadsheetFilterCapabilityReadsExplicitRangeAndRoutesWindowIntent(t *testing.T) {
@@ -54,14 +79,14 @@ func TestSpreadsheetFilterCapabilityReadsExplicitRangeAndRoutesWindowIntent(t *t
 			Arguments: mustJSON(t, arguments),
 		})
 	}
-	seed := []map[string]any{
-		{"row": 1, "column": 1, "value": "员工"}, {"row": 1, "column": 2, "value": "团队"},
-		{"row": 2, "column": 1, "value": "甲"}, {"row": 2, "column": 2, "value": "东区"},
-		{"row": 3, "column": 1, "value": "乙"}, {"row": 3, "column": 2, "value": "西区"},
-		{"row": 4, "column": 1, "value": "丙"}, {"row": 4, "column": 2, "value": "东区"},
+	seed := []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "员工"}, {Row: 1, Column: 2, Value: "团队"},
+		{Row: 2, Column: 1, Value: "甲"}, {Row: 2, Column: 2, Value: "东区"},
+		{Row: 3, Column: 1, Value: "乙"}, {Row: 3, Column: 2, Value: "西区"},
+		{Row: 4, Column: 1, Value: "丙"}, {Row: 4, Column: 2, Value: "东区"},
 	}
 	seedInfo := mustGetDocumentInfo(t, runtime, documentID)
-	if _, err := invoke("spreadsheet.cells.set", map[string]any{"sheet": "Sheet1", "edits": seed}, ViewContext{}); err != nil {
+	if _, err := invoke("spreadsheet.cells.set", spreadsheetCellsSetPayload{Sheet: "Sheet1", Edits: seed}, ViewContext{}); err != nil {
 		t.Fatalf("seed filter fixture: %v", err)
 	}
 	seeded := mustGetDocumentInfo(t, runtime, documentID)
@@ -71,9 +96,7 @@ func TestSpreadsheetFilterCapabilityReadsExplicitRangeAndRoutesWindowIntent(t *t
 	view := ViewContext{WindowID: 41, DocumentID: documentID, Revision: seeded.Revision}
 	bounds := document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 2}
 
-	_, err = invoke("spreadsheet.filter.apply", map[string]any{
-		"operation": "set_value", "sheet": "Sheet1", "bounds": bounds, "column": 2, "value": "东区",
-	}, ViewContext{})
+	_, err = invoke("spreadsheet.filter.apply", spreadsheetFilterApplySetValuePayload{Operation: "set_value", Sheet: "Sheet1", Bounds: bounds, Column: 2, Value: "东区"}, ViewContext{})
 	if !errors.Is(err, ErrNoAttachedView) {
 		t.Fatalf("filter without attached view error=%v; want ErrNoAttachedView", err)
 	}
@@ -82,9 +105,7 @@ func TestSpreadsheetFilterCapabilityReadsExplicitRangeAndRoutesWindowIntent(t *t
 	}
 
 	before := mustGetDocumentInfo(t, runtime, documentID)
-	setValueResult, err := invoke("spreadsheet.filter.apply", map[string]any{
-		"operation": "set_value", "sheet": "Sheet1", "bounds": bounds, "column": 2, "value": "东区",
-	}, view)
+	setValueResult, err := invoke("spreadsheet.filter.apply", spreadsheetFilterApplySetValuePayload{Operation: "set_value", Sheet: "Sheet1", Bounds: bounds, Column: 2, Value: "东区"}, view)
 	if err != nil {
 		t.Fatalf("InvokeCapability(spreadsheet.filter.apply set_value): %v", err)
 	}
@@ -130,9 +151,7 @@ func TestSpreadsheetFilterCapabilityReadsExplicitRangeAndRoutesWindowIntent(t *t
 		t.Fatalf("filter result=%+v revision=%d; before=%+v", setOutput, setValueResult.Revision, before)
 	}
 
-	fromRowResult, err := invoke("spreadsheet.filter.apply", map[string]any{
-		"operation": "set_from_row", "sheet": "Sheet1", "bounds": bounds, "column": 2, "source_row": 2,
-	}, view)
+	fromRowResult, err := invoke("spreadsheet.filter.apply", spreadsheetFilterApplySetFromRowPayload{Operation: "set_from_row", Sheet: "Sheet1", Bounds: bounds, Column: 2, SourceRow: 2}, view)
 	if err != nil {
 		t.Fatalf("InvokeCapability(spreadsheet.filter.apply set_from_row): %v", err)
 	}
@@ -141,15 +160,13 @@ func TestSpreadsheetFilterCapabilityReadsExplicitRangeAndRoutesWindowIntent(t *t
 		t.Fatalf("set_from_row changed document revision: before=%d result=%d", before.Revision, fromRowResult.Revision)
 	}
 
-	if _, err := invoke("spreadsheet.filter.apply", map[string]any{
-		"operation": "set_from_row", "sheet": "Sheet1", "bounds": bounds, "column": 2, "source_row": 1,
-	}, view); err == nil {
+	if _, err := invoke("spreadsheet.filter.apply", spreadsheetFilterApplySetFromRowPayload{Operation: "set_from_row", Sheet: "Sheet1", Bounds: bounds, Column: 2, SourceRow: 1}, view); err == nil {
 		t.Fatal("filter accepted header row as its criteria source")
 	}
 	if len(handler.intents) != 2 {
 		t.Fatalf("invalid filter request reached the view: %+v", handler.intents)
 	}
-	clearResult, err := invoke("spreadsheet.filter.apply", map[string]any{"operation": "clear", "sheet": "Sheet1"}, view)
+	clearResult, err := invoke("spreadsheet.filter.apply", spreadsheetFilterApplyPayload{Operation: "clear", Sheet: "Sheet1"}, view)
 	if err != nil {
 		t.Fatalf("InvokeCapability(spreadsheet.filter.apply clear): %v", err)
 	}

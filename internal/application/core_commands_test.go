@@ -42,6 +42,14 @@ func TestRuntimeRegistersCoreAgentEditCapabilities(t *testing.T) {
 	}
 }
 
+type testCorecommandsAlignmentArguments struct {
+	Alignment string `json:"alignment"`
+}
+
+type testCorecommandsTextArguments struct {
+	Text string `json:"text"`
+}
+
 func TestWordHeaderFooterCapabilitiesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -57,11 +65,11 @@ func TestWordHeaderFooterCapabilitiesRoundTrip(t *testing.T) {
 	revision := doc.Revision
 	commands := []struct {
 		id   string
-		args map[string]any
+		args any
 	}{
-		{"word.header.set", map[string]any{"text": "季度经营报告"}},
-		{"word.footer.set", map[string]any{"text": "仅供内部使用"}},
-		{"word.page_number.set", map[string]any{"alignment": "center"}},
+		{"word.header.set", testCorecommandsTextArguments{Text: "季度经营报告"}},
+		{"word.footer.set", testCorecommandsTextArguments{Text: "仅供内部使用"}},
+		{"word.page_number.set", testCorecommandsAlignmentArguments{Alignment: "center"}},
 	}
 	for index, command := range commands {
 		result, err := runtime.Commands().Execute(ctx, CommandRequest{
@@ -137,6 +145,34 @@ func TestWordHeaderFooterCapabilitiesRoundTrip(t *testing.T) {
 	}
 }
 
+type testCorecommandsBorderTypeArguments struct {
+	BorderType string `json:"border_type"`
+}
+
+type testCorecommandsModeArguments struct {
+	Mode string `json:"mode"`
+}
+
+type testCorecommandsColumnsArguments struct {
+	Columns int `json:"columns"`
+}
+
+type testCorecommandsWidthPointsHeightPointsArguments struct {
+	WidthPoints  int `json:"width_points"`
+	HeightPoints int `json:"height_points"`
+}
+
+type testCorecommandsTopPointsRightPointsArguments struct {
+	TopPoints    int `json:"top_points"`
+	RightPoints  int `json:"right_points"`
+	BottomPoints int `json:"bottom_points"`
+	LeftPoints   int `json:"left_points"`
+}
+
+type testCorecommandsOrientationArguments struct {
+	Orientation string `json:"orientation"`
+}
+
 func TestWordPageSetupCapabilitiesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -150,14 +186,14 @@ func TestWordPageSetupCapabilitiesRoundTrip(t *testing.T) {
 	}
 	commands := []struct {
 		id   string
-		args map[string]any
+		args any
 	}{
-		{"word.page_setup.orientation.set", map[string]any{"orientation": "landscape"}},
-		{"word.page_setup.margins.set", map[string]any{"top_points": 54, "right_points": 60, "bottom_points": 66, "left_points": 48}},
-		{"word.page_setup.size.set", map[string]any{"width_points": 792, "height_points": 612}},
-		{"word.page_setup.columns.set", map[string]any{"columns": 2}},
-		{"word.page_setup.line_numbers.set", map[string]any{"mode": "continuous"}},
-		{"word.page_setup.borders.set", map[string]any{"border_type": "dashed"}},
+		{"word.page_setup.orientation.set", testCorecommandsOrientationArguments{Orientation: "landscape"}},
+		{"word.page_setup.margins.set", testCorecommandsTopPointsRightPointsArguments{TopPoints: 54, RightPoints: 60, BottomPoints: 66, LeftPoints: 48}},
+		{"word.page_setup.size.set", testCorecommandsWidthPointsHeightPointsArguments{WidthPoints: 792, HeightPoints: 612}},
+		{"word.page_setup.columns.set", testCorecommandsColumnsArguments{Columns: 2}},
+		{"word.page_setup.line_numbers.set", testCorecommandsModeArguments{Mode: "continuous"}},
+		{"word.page_setup.borders.set", testCorecommandsBorderTypeArguments{BorderType: "dashed"}},
 	}
 	revision := doc.Revision
 	for _, command := range commands {
@@ -194,14 +230,14 @@ func TestWordPageSetupCapabilitiesRoundTrip(t *testing.T) {
 	}
 	invalid := []struct {
 		id   string
-		args map[string]any
+		args any
 	}{
-		{"word.page_setup.orientation.set", map[string]any{"orientation": "diagonal"}},
-		{"word.page_setup.margins.set", map[string]any{"top_points": 1001, "right_points": 60, "bottom_points": 66, "left_points": 48}},
-		{"word.page_setup.size.set", map[string]any{"width_points": 3001, "height_points": 612}},
-		{"word.page_setup.columns.set", map[string]any{"columns": 5}},
-		{"word.page_setup.line_numbers.set", map[string]any{"mode": "sometimes"}},
-		{"word.page_setup.borders.set", map[string]any{"border_type": "unknown"}},
+		{"word.page_setup.orientation.set", testCorecommandsOrientationArguments{Orientation: "diagonal"}},
+		{"word.page_setup.margins.set", testCorecommandsTopPointsRightPointsArguments{TopPoints: 1001, RightPoints: 60, BottomPoints: 66, LeftPoints: 48}},
+		{"word.page_setup.size.set", testCorecommandsWidthPointsHeightPointsArguments{WidthPoints: 3001, HeightPoints: 612}},
+		{"word.page_setup.columns.set", testCorecommandsColumnsArguments{Columns: 5}},
+		{"word.page_setup.line_numbers.set", testCorecommandsModeArguments{Mode: "sometimes"}},
+		{"word.page_setup.borders.set", testCorecommandsBorderTypeArguments{BorderType: "unknown"}},
 	}
 	for index, command := range invalid {
 		if _, err := runtime.Commands().Execute(ctx, CommandRequest{
@@ -379,6 +415,13 @@ func TestWordLanguageAndStatisticsCapabilities(t *testing.T) {
 	}
 }
 
+type testCorecommandsRunIdStartArguments struct {
+	RunId     string `json:"run_id"`
+	Start     int    `json:"start"`
+	End       int    `json:"end"`
+	BreakType string `json:"break_type"`
+}
+
 func TestWordColumnBreakCapabilityRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -407,7 +450,7 @@ func TestWordColumnBreakCapabilityRoundTrips(t *testing.T) {
 	inserted, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "insert-column-break", DocumentID: doc.DocumentID, CommandID: "word.page_break.insert",
 		ExpectedRevision: appended.Revision, Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"run_id": paragraph.RunID, "start": 2, "end": 2, "break_type": "column"}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartArguments{RunId: paragraph.RunID, Start: 2, End: 2, BreakType: "column"}),
 	})
 	if err != nil {
 		t.Fatalf("insert Word column break: %v", err)
@@ -438,6 +481,9 @@ func TestWordColumnBreakCapabilityRoundTrips(t *testing.T) {
 		}
 	}
 	t.Fatal("column break did not survive DOCX save and reopen")
+}
+
+type testCorecommandsEmptyArguments struct {
 }
 
 func TestWordDocumentPropertiesCapabilitiesRoundTrip(t *testing.T) {
@@ -489,7 +535,7 @@ func TestWordDocumentPropertiesCapabilitiesRoundTrip(t *testing.T) {
 	}
 	queried, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "get-word-properties", DocumentID: doc.DocumentID, CapabilityID: "word.document.properties.get",
-		Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent}, Arguments: mustJSON(t, map[string]any{}),
+		Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent}, Arguments: mustJSON(t, testCorecommandsEmptyArguments{}),
 	})
 	if err != nil {
 		t.Fatalf("get Word document properties: %v", err)
@@ -608,6 +654,33 @@ func TestWordPageBackgroundCapabilitySetsAndClears(t *testing.T) {
 	}
 }
 
+type testCorecommandsParagraphIdBeforePointsArguments struct {
+	ParagraphId  string `json:"paragraph_id"`
+	BeforePoints int    `json:"before_points"`
+	AfterPoints  int    `json:"after_points"`
+}
+
+type testCorecommandsParagraphIdListTypeArguments struct {
+	ParagraphId string `json:"paragraph_id"`
+	ListType    string `json:"list_type"`
+}
+
+type testCorecommandsRunIdFontSizePointsArguments struct {
+	RunId          string `json:"run_id"`
+	FontSizePoints int    `json:"font_size_points"`
+}
+
+type testCorecommandsRunIdFontFamilyArguments struct {
+	RunId      string `json:"run_id"`
+	FontFamily string `json:"font_family"`
+}
+
+type testCorecommandsParagraphIdBeforePointsAfterPointsArguments struct {
+	ParagraphId  string  `json:"paragraph_id"`
+	BeforePoints float64 `json:"before_points"`
+	AfterPoints  float64 `json:"after_points"`
+}
+
 func TestWordFontListAndSpacingCapabilitiesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -652,7 +725,7 @@ func TestWordFontListAndSpacingCapabilitiesRoundTrip(t *testing.T) {
 		t.Fatalf("repeat font family result=%+v data=%s error=%v; want no-op", noopFontFamily, noopFontFamily.Data, err)
 	}
 	request.RequestID, request.CommandID, request.ExpectedRevision = "word-font-size", "word.text_run.font_size.set", fontFamily.Revision
-	request.Arguments = mustJSON(t, map[string]any{"run_id": target.RunID, "font_size_points": 16})
+	request.Arguments = mustJSON(t, testCorecommandsRunIdFontSizePointsArguments{RunId: target.RunID, FontSizePoints: 16})
 	fontSize, err := runtime.Commands().Execute(ctx, request)
 	if err != nil {
 		t.Fatalf("set Word font size: %v", err)
@@ -680,7 +753,7 @@ func TestWordFontListAndSpacingCapabilitiesRoundTrip(t *testing.T) {
 		t.Fatalf("repeat paragraph list result=%+v data=%s error=%v; want no-op", noopList, noopList.Data, err)
 	}
 	request.RequestID, request.CommandID, request.ExpectedRevision = "word-paragraph-spacing", "word.paragraph.spacing.set", list.Revision
-	request.Arguments = mustJSON(t, map[string]any{"paragraph_id": target.ParagraphID, "before_points": 12.0, "after_points": 8.0})
+	request.Arguments = mustJSON(t, testCorecommandsParagraphIdBeforePointsAfterPointsArguments{ParagraphId: target.ParagraphID, BeforePoints: 12.0, AfterPoints: 8.0})
 	spacing, err := runtime.Commands().Execute(ctx, request)
 	if err != nil {
 		t.Fatalf("set Word paragraph spacing: %v", err)
@@ -704,10 +777,10 @@ func TestWordFontListAndSpacingCapabilitiesRoundTrip(t *testing.T) {
 		commandID string
 		arguments any
 	}{
-		{"word.text_run.font_family.set", map[string]any{"run_id": "missing-run", "font_family": "Arial"}},
-		{"word.text_run.font_size.set", map[string]any{"run_id": "missing-run", "font_size_points": 16}},
-		{"word.paragraph.list.set", map[string]any{"paragraph_id": "missing-paragraph", "list_type": "bullet"}},
-		{"word.paragraph.spacing.set", map[string]any{"paragraph_id": "missing-paragraph", "before_points": 12, "after_points": 8}},
+		{"word.text_run.font_family.set", testCorecommandsRunIdFontFamilyArguments{RunId: "missing-run", FontFamily: "Arial"}},
+		{"word.text_run.font_size.set", testCorecommandsRunIdFontSizePointsArguments{RunId: "missing-run", FontSizePoints: 16}},
+		{"word.paragraph.list.set", testCorecommandsParagraphIdListTypeArguments{ParagraphId: "missing-paragraph", ListType: "bullet"}},
+		{"word.paragraph.spacing.set", testCorecommandsParagraphIdBeforePointsArguments{ParagraphId: "missing-paragraph", BeforePoints: 12, AfterPoints: 8}},
 	} {
 		if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: "word-format-invalid-" + invalid.commandID, DocumentID: doc.DocumentID,
@@ -790,6 +863,23 @@ func TestWordFontListAndSpacingCapabilitiesRoundTrip(t *testing.T) {
 	}
 }
 
+type testCorecommandsParagraphIdLeftIndentPointsArguments struct {
+	ParagraphId       string `json:"paragraph_id"`
+	LeftIndentPoints  int    `json:"left_indent_points"`
+	RightIndentPoints int    `json:"right_indent_points"`
+}
+
+type testCorecommandsParagraphIdAlignmentArguments struct {
+	ParagraphId string `json:"paragraph_id"`
+	Alignment   string `json:"alignment"`
+}
+
+type testCorecommandsParagraphIdLeftIndentPointsRightIndentPointsArguments struct {
+	ParagraphId       string  `json:"paragraph_id"`
+	LeftIndentPoints  float64 `json:"left_indent_points"`
+	RightIndentPoints float64 `json:"right_indent_points"`
+}
+
 func TestWordParagraphAlignmentAndIndentCapabilitiesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -842,7 +932,7 @@ func TestWordParagraphAlignmentAndIndentCapabilitiesRoundTrip(t *testing.T) {
 	indented, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "word-paragraph-indent", DocumentID: doc.DocumentID, CommandID: "word.paragraph.indent.set",
 		ExpectedRevision: aligned.Revision, Operator: Operator{ID: "agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"paragraph_id": paragraph.ParagraphID, "left_indent_points": 36.0, "right_indent_points": 18.0}),
+		Arguments: mustJSON(t, testCorecommandsParagraphIdLeftIndentPointsRightIndentPointsArguments{ParagraphId: paragraph.ParagraphID, LeftIndentPoints: 36.0, RightIndentPoints: 18.0}),
 	})
 	if err != nil {
 		t.Fatalf("set paragraph indents: %v", err)
@@ -853,7 +943,7 @@ func TestWordParagraphAlignmentAndIndentCapabilitiesRoundTrip(t *testing.T) {
 	noopIndent, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "word-paragraph-indent-noop", DocumentID: doc.DocumentID, CommandID: "word.paragraph.indent.set",
 		ExpectedRevision: indented.Revision, Operator: Operator{ID: "agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"paragraph_id": paragraph.ParagraphID, "left_indent_points": 36.0, "right_indent_points": 18.0}),
+		Arguments: mustJSON(t, testCorecommandsParagraphIdLeftIndentPointsRightIndentPointsArguments{ParagraphId: paragraph.ParagraphID, LeftIndentPoints: 36.0, RightIndentPoints: 18.0}),
 	})
 	var noopIndentData struct {
 		Changed bool `json:"changed"`
@@ -869,8 +959,8 @@ func TestWordParagraphAlignmentAndIndentCapabilitiesRoundTrip(t *testing.T) {
 		commandID string
 		arguments any
 	}{
-		{"word.paragraph.alignment.set", map[string]any{"paragraph_id": "missing-paragraph", "alignment": "center"}},
-		{"word.paragraph.indent.set", map[string]any{"paragraph_id": "missing-paragraph", "left_indent_points": 36, "right_indent_points": 18}},
+		{"word.paragraph.alignment.set", testCorecommandsParagraphIdAlignmentArguments{ParagraphId: "missing-paragraph", Alignment: "center"}},
+		{"word.paragraph.indent.set", testCorecommandsParagraphIdLeftIndentPointsArguments{ParagraphId: "missing-paragraph", LeftIndentPoints: 36, RightIndentPoints: 18}},
 	} {
 		if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: "word-layout-invalid-" + invalid.commandID, DocumentID: doc.DocumentID,
@@ -935,6 +1025,19 @@ func TestWordParagraphAlignmentAndIndentCapabilitiesRoundTrip(t *testing.T) {
 	}
 }
 
+type testCorecommandsRunIdBoldArguments struct {
+	RunId string `json:"run_id"`
+	Bold  bool   `json:"bold"`
+}
+
+type testCorecommandsRunIdBoldItalicArguments struct {
+	RunId     string `json:"run_id"`
+	Bold      bool   `json:"bold"`
+	Italic    bool   `json:"italic"`
+	FontColor string `json:"font_color"`
+	Highlight string `json:"highlight"`
+}
+
 func TestWordTextRunStyleSetIsIdempotentAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -976,9 +1079,7 @@ func TestWordTextRunStyleSetIsIdempotentAndRoundTrips(t *testing.T) {
 	request := CommandRequest{
 		RequestID: "word-style-set", DocumentID: doc.DocumentID, CommandID: "word.text_run.style.set",
 		ExpectedRevision: doc.Revision, Operator: Operator{ID: "agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{
-			"run_id": runID, "bold": true, "italic": true, "font_color": "#2A54C7", "highlight": "yellow",
-		}),
+		Arguments: mustJSON(t, testCorecommandsRunIdBoldItalicArguments{RunId: runID, Bold: true, Italic: true, FontColor: "#2A54C7", Highlight: "yellow"}),
 	}
 	first, err := runtime.Commands().Execute(ctx, request)
 	if err != nil {
@@ -1003,7 +1104,7 @@ func TestWordTextRunStyleSetIsIdempotentAndRoundTrips(t *testing.T) {
 	if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "word-style-invalid-run", DocumentID: doc.DocumentID, CommandID: "word.text_run.style.set",
 		ExpectedRevision: stateBeforeInvalid.Revision, Operator: Operator{ID: "agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"run_id": "missing-run", "bold": true}),
+		Arguments: mustJSON(t, testCorecommandsRunIdBoldArguments{RunId: "missing-run", Bold: true}),
 	}); err == nil {
 		t.Fatal("Word style setter accepted an unknown run ID")
 	}
@@ -1332,6 +1433,13 @@ func TestWordTextRunReplaceCommandUsesNeutralRunIdentity(t *testing.T) {
 	}
 }
 
+type testCorecommandsRunIdStartEndArguments struct {
+	RunId       string `json:"run_id"`
+	Start       int    `json:"start"`
+	End         int    `json:"end"`
+	Replacement string `json:"replacement"`
+}
+
 func TestWordTextRangeReplaceUsesUnicodeRuneOffsets(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -1360,7 +1468,7 @@ func TestWordTextRangeReplaceUsesUnicodeRuneOffsets(t *testing.T) {
 	replaced, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "range-replace-emoji", DocumentID: doc.DocumentID, CommandID: "word.text_range.replace",
 		ExpectedRevision: appended.Revision, Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"run_id": target.RunID, "start": 1, "end": 2, "replacement": "丁丙"}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartEndArguments{RunId: target.RunID, Start: 1, End: 2, Replacement: "丁丙"}),
 	})
 	if err != nil {
 		t.Fatalf("replace Unicode range: %v", err)
@@ -1371,7 +1479,7 @@ func TestWordTextRangeReplaceUsesUnicodeRuneOffsets(t *testing.T) {
 	noop, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "range-replace-same-text", DocumentID: doc.DocumentID, CommandID: "word.text_range.replace",
 		ExpectedRevision: replaced.Revision, Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"run_id": target.RunID, "start": 1, "end": 3, "replacement": "丁丙"}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartEndArguments{RunId: target.RunID, Start: 1, End: 3, Replacement: "丁丙"}),
 	})
 	var noopData struct {
 		Changed bool `json:"changed"`
@@ -1382,7 +1490,7 @@ func TestWordTextRangeReplaceUsesUnicodeRuneOffsets(t *testing.T) {
 	if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "range-replace-invalid-range", DocumentID: doc.DocumentID, CommandID: "word.text_range.replace",
 		ExpectedRevision: replaced.Revision, Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"run_id": target.RunID, "start": 4, "end": 2, "replacement": "不应写入"}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartEndArguments{RunId: target.RunID, Start: 4, End: 2, Replacement: "不应写入"}),
 	}); err == nil {
 		t.Fatal("Word range replacement accepted an end offset before its start")
 	}
@@ -1442,6 +1550,15 @@ func TestWordTextRangeReplaceUsesUnicodeRuneOffsets(t *testing.T) {
 	t.Fatalf("Unicode range replacement did not survive save/reopen: content=%s", reopenedSnapshot.Content)
 }
 
+type testCorecommandsRunIdStartEndReplacementArguments struct // 1,050,000 UTF-8 bytes, within the 1,048,576-rune schema limit.
+
+{
+	RunId       string `json:"run_id"`
+	Start       int    `json:"start"`
+	End         int    `json:"end"`
+	Replacement string `json:"replacement"`
+}
+
 func TestWordTextRangeReplaceUsesSchemaUnicodeLength(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -1467,8 +1584,8 @@ func TestWordTextRangeReplaceUsesSchemaUnicodeLength(t *testing.T) {
 	if err := json.Unmarshal(appended.Data, &source); err != nil || source.RunID == "" {
 		t.Fatalf("decode source run: data=%s error=%v", appended.Data, err)
 	}
-	replacement := strings.Repeat("中", 350000) // 1,050,000 UTF-8 bytes, within the 1,048,576-rune schema limit.
-	arguments := mustJSON(t, map[string]any{"run_id": source.RunID, "start": 0, "end": 0, "replacement": replacement})
+	replacement := strings.Repeat("中", 350000)
+	arguments := mustJSON(t, testCorecommandsRunIdStartEndReplacementArguments{RunId: source.RunID, Start: 0, End: 0, Replacement: replacement})
 	descriptor, ok := runtime.Catalog().Descriptor("word.text_range.replace")
 	if !ok {
 		t.Fatal("word.text_range.replace is not registered")
@@ -1489,7 +1606,7 @@ func TestWordTextRangeReplaceUsesSchemaUnicodeLength(t *testing.T) {
 	collapsed, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "unicode-range-long-replacement-collapse", DocumentID: doc.DocumentID, CommandID: "word.text_range.replace",
 		ExpectedRevision: result.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"run_id": source.RunID, "start": 0, "end": 350000, "replacement": "已验证"}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartEndReplacementArguments{RunId: source.RunID, Start: 0, End: 350000, Replacement: "已验证"}),
 	})
 	if err != nil || collapsed.Revision != result.Revision+1 {
 		t.Fatalf("replace long Unicode range: revision=%d error=%v", collapsed.Revision, err)
@@ -1498,6 +1615,19 @@ func TestWordTextRangeReplaceUsesSchemaUnicodeLength(t *testing.T) {
 	if err != nil || !strings.Contains(string(snapshot.Content), "已验证初始") {
 		t.Fatalf("long Unicode range replacement was not present in the live document: content=%s error=%v", snapshot.Content, err)
 	}
+}
+
+type testCorecommandsRunIdStartEndReplacementArguments27 struct {
+	RunId       string `json:"run_id"`
+	Start       int    `json:"start"`
+	End         int    `json:"end"`
+	Replacement string `json:"replacement"`
+}
+
+type testCorecommandsRunIdStartEndArguments28 struct {
+	RunId string `json:"run_id"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
 }
 
 func TestWordTextRangeCopyCutAndPasteUseExplicitUnicodeRanges(t *testing.T) {
@@ -1530,7 +1660,7 @@ func TestWordTextRangeCopyCutAndPasteUseExplicitUnicodeRanges(t *testing.T) {
 	copied, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "range-clipboard-copy", DocumentID: doc.DocumentID, CapabilityID: "word.text_range.copy",
 		ExpectedRevision: appended.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"run_id": target.RunID, "start": 3, "end": 4}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartEndArguments28{RunId: target.RunID, Start: 3, End: 4}),
 	})
 	if err != nil {
 		t.Fatalf("copy Unicode range: %v", err)
@@ -1547,7 +1677,7 @@ func TestWordTextRangeCopyCutAndPasteUseExplicitUnicodeRanges(t *testing.T) {
 	emptyCut, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "range-clipboard-empty-cut", DocumentID: doc.DocumentID, CommandID: "word.text_range.cut",
 		ExpectedRevision: appended.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"run_id": target.RunID, "start": 3, "end": 3}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartEndArguments28{RunId: target.RunID, Start: 3, End: 3}),
 	})
 	if err != nil {
 		t.Fatalf("cut empty range: %v", err)
@@ -1563,9 +1693,9 @@ func TestWordTextRangeCopyCutAndPasteUseExplicitUnicodeRanges(t *testing.T) {
 	if stateAfterEmptyCut.Revision != appended.Revision || !stateAfterEmptyCut.Dirty {
 		t.Fatalf("empty cut changed revision or dirty state: %+v", stateAfterEmptyCut)
 	}
-	for index, arguments := range []map[string]any{
-		{"run_id": "missing-run", "start": 0, "end": 1},
-		{"run_id": target.RunID, "start": 3, "end": 99},
+	for index, arguments := range []testCorecommandsRunIdStartEndArguments28{
+		{RunId: "missing-run", Start: 0, End: 1},
+		{RunId: target.RunID, Start: 3, End: 99},
 	} {
 		if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: fmt.Sprintf("range-clipboard-invalid-cut-%d", index), DocumentID: doc.DocumentID,
@@ -1582,7 +1712,7 @@ func TestWordTextRangeCopyCutAndPasteUseExplicitUnicodeRanges(t *testing.T) {
 	cut, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "range-clipboard-cut", DocumentID: doc.DocumentID, CapabilityID: "word.text_range.cut",
 		ExpectedRevision: appended.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"run_id": target.RunID, "start": 3, "end": 4}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartEndArguments28{RunId: target.RunID, Start: 3, End: 4}),
 	})
 	if err != nil {
 		t.Fatalf("cut Unicode range: %v", err)
@@ -1601,7 +1731,7 @@ func TestWordTextRangeCopyCutAndPasteUseExplicitUnicodeRanges(t *testing.T) {
 	pasted, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "range-clipboard-paste", DocumentID: doc.DocumentID, CommandID: "word.text_range.replace",
 		ExpectedRevision: cut.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"run_id": target.RunID, "start": 3, "end": 3, "replacement": "🙂"}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartEndReplacementArguments27{RunId: target.RunID, Start: 3, End: 3, Replacement: "🙂"}),
 	})
 	if err != nil {
 		t.Fatalf("paste at empty range: %v", err)
@@ -1651,6 +1781,11 @@ func TestWordTextRangeCopyCutAndPasteUseExplicitUnicodeRanges(t *testing.T) {
 	}
 }
 
+type testCorecommandsRunIdBoldArguments29 struct {
+	RunId string `json:"run_id"`
+	Bold  bool   `json:"bold"`
+}
+
 func TestWordFormatPainterUsesExplicitSourceAndTargetRuns(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -1685,7 +1820,7 @@ func TestWordFormatPainterUsesExplicitSourceAndTargetRuns(t *testing.T) {
 	styled, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "format-painter-style-source", DocumentID: doc.DocumentID, CommandID: "word.text_run.style.set",
 		ExpectedRevision: target.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"run_id": sourceRunID, "bold": true}),
+		Arguments: mustJSON(t, testCorecommandsRunIdBoldArguments29{RunId: sourceRunID, Bold: true}),
 	})
 	if err != nil {
 		t.Fatalf("style format painter source: %v", err)
@@ -1792,6 +1927,9 @@ func TestWordFormatPainterUsesExplicitSourceAndTargetRuns(t *testing.T) {
 	t.Fatalf("saved format painter target run %q was not found", targetRunID)
 }
 
+type testCorecommandsEmptyArguments30 struct {
+}
+
 func TestWordWatermarkCapabilitiesRoundTripThroughRuntime(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -1816,7 +1954,7 @@ func TestWordWatermarkCapabilitiesRoundTripThroughRuntime(t *testing.T) {
 	}
 	got, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "watermark-get", DocumentID: doc.DocumentID, CapabilityID: "word.watermark.get",
-		ExpectedRevision: set.Revision, Operator: operator, Arguments: mustJSON(t, map[string]any{}),
+		ExpectedRevision: set.Revision, Operator: operator, Arguments: mustJSON(t, testCorecommandsEmptyArguments30{}),
 	})
 	if err != nil {
 		t.Fatalf("get watermark: %v", err)
@@ -1863,6 +2001,13 @@ func TestWordWatermarkCapabilitiesRoundTripThroughRuntime(t *testing.T) {
 	}
 }
 
+type testCorecommandsEnabledArguments struct {
+	Enabled string `json:"enabled"`
+}
+
+type testCorecommandsEmptyArguments32 struct {
+}
+
 func TestWordTrackRevisionsCapabilitiesUseAbsoluteState(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -1886,7 +2031,7 @@ func TestWordTrackRevisionsCapabilitiesUseAbsoluteState(t *testing.T) {
 		t.Helper()
 		result, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 			RequestID: requestID, DocumentID: doc.DocumentID, CapabilityID: "word.review.track.get",
-			ExpectedRevision: revision, Operator: operator, Arguments: mustJSON(t, map[string]any{}),
+			ExpectedRevision: revision, Operator: operator, Arguments: mustJSON(t, testCorecommandsEmptyArguments32{}),
 		})
 		if err != nil {
 			t.Fatalf("query revision tracking: %v", err)
@@ -1961,7 +2106,7 @@ func TestWordTrackRevisionsCapabilitiesUseAbsoluteState(t *testing.T) {
 	}
 	if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "track-revisions-invalid-type", DocumentID: doc.DocumentID, CommandID: "word.review.track.set",
-		ExpectedRevision: cleared.Revision, Operator: operator, Arguments: mustJSON(t, map[string]any{"enabled": "false"}),
+		ExpectedRevision: cleared.Revision, Operator: operator, Arguments: mustJSON(t, testCorecommandsEnabledArguments{Enabled: "false"}),
 	}); err == nil {
 		t.Fatal("revision tracking accepted a string instead of a boolean")
 	}
@@ -1995,6 +2140,13 @@ func TestWordTrackRevisionsCapabilitiesUseAbsoluteState(t *testing.T) {
 	}
 }
 
+type testCorecommandsQueryStartBlockArguments struct {
+	Query      string `json:"query"`
+	StartBlock int    `json:"start_block"`
+	MaxBlocks  int    `json:"max_blocks"`
+	Limit      int    `json:"limit"`
+}
+
 func TestWordTextSearchReturnsBoundedUnicodeMatches(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -2025,7 +2177,7 @@ func TestWordTextSearchReturnsBoundedUnicodeMatches(t *testing.T) {
 	result, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "search-document", DocumentID: doc.DocumentID, CapabilityID: "word.text.search",
 		Operator:  Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"query": "🌺乙", "start_block": 1, "max_blocks": 2, "limit": 1}),
+		Arguments: mustJSON(t, testCorecommandsQueryStartBlockArguments{Query: "🌺乙", StartBlock: 1, MaxBlocks: 2, Limit: 1}),
 	})
 	if err != nil {
 		t.Fatalf("search Word document: %v", err)
@@ -2049,6 +2201,12 @@ func TestWordTextSearchReturnsBoundedUnicodeMatches(t *testing.T) {
 	if result.Revision != second.Revision {
 		t.Fatalf("read-only search revision = %d, want %d", result.Revision, second.Revision)
 	}
+}
+
+type testCorecommandsAfterParagraphIdRowsArguments struct {
+	AfterParagraphId string `json:"after_paragraph_id"`
+	Rows             int    `json:"rows"`
+	Columns          int    `json:"columns"`
 }
 
 func TestWordTableInsertCapabilityCreatesEditableTable(t *testing.T) {
@@ -2079,7 +2237,7 @@ func TestWordTableInsertCapabilityCreatesEditableTable(t *testing.T) {
 	inserted, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "insert-agent-table", DocumentID: doc.DocumentID, CommandID: "word.table.insert",
 		ExpectedRevision: paragraph.Revision, Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"after_paragraph_id": anchor.ParagraphID, "rows": 2, "columns": 3}),
+		Arguments: mustJSON(t, testCorecommandsAfterParagraphIdRowsArguments{AfterParagraphId: anchor.ParagraphID, Rows: 2, Columns: 3}),
 	})
 	if err != nil {
 		t.Fatalf("insert Word table: %v", err)
@@ -2097,7 +2255,7 @@ func TestWordTableInsertCapabilityCreatesEditableTable(t *testing.T) {
 	if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "insert-agent-table-invalid-target", DocumentID: doc.DocumentID, CommandID: "word.table.insert",
 		ExpectedRevision: inserted.Revision, Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"after_paragraph_id": "missing-paragraph", "rows": 1, "columns": 1}),
+		Arguments: mustJSON(t, testCorecommandsAfterParagraphIdRowsArguments{AfterParagraphId: "missing-paragraph", Rows: 1, Columns: 1}),
 	}); err == nil {
 		t.Fatal("word.table.insert accepted an unknown paragraph ID")
 	}
@@ -2243,6 +2401,12 @@ func TestWordCoverPageCapabilityRoundTrips(t *testing.T) {
 	}
 }
 
+type testCorecommandsRunIdStartEndArguments35 struct {
+	RunId string `json:"run_id"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
 func TestWordPageBreakCapabilitySplitsUnicodeRun(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -2273,9 +2437,9 @@ func TestWordPageBreakCapabilitySplitsUnicodeRun(t *testing.T) {
 	if stateBeforeInvalidTargets.Revision != appended.Revision || !stateBeforeInvalidTargets.Dirty {
 		t.Fatalf("page-break invalid-target precondition = %+v; want appended dirty document", stateBeforeInvalidTargets)
 	}
-	for index, arguments := range []map[string]any{
-		{"run_id": "missing-run", "start": 0, "end": 0},
-		{"run_id": run.RunID, "start": 1, "end": 99},
+	for index, arguments := range []testCorecommandsRunIdStartEndArguments35{
+		{RunId: "missing-run", Start: 0, End: 0},
+		{RunId: run.RunID, Start: 1, End: 99},
 	} {
 		if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: fmt.Sprintf("insert-page-break-invalid-%d", index), DocumentID: doc.DocumentID, CommandID: "word.page_break.insert",
@@ -2291,7 +2455,7 @@ func TestWordPageBreakCapabilitySplitsUnicodeRun(t *testing.T) {
 	inserted, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "insert-page-break", DocumentID: doc.DocumentID, CommandID: "word.page_break.insert",
 		ExpectedRevision: appended.Revision, Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"run_id": run.RunID, "start": 1, "end": 1}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartEndArguments35{RunId: run.RunID, Start: 1, End: 1}),
 	})
 	if err != nil {
 		t.Fatalf("insert page break: %v", err)
@@ -2342,6 +2506,12 @@ func TestWordPageBreakCapabilitySplitsUnicodeRun(t *testing.T) {
 	}
 }
 
+type testCorecommandsRunIdStartEndArguments36 struct {
+	RunId string `json:"run_id"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
 func TestWordBlankPageCapabilityInsertsTwoPageBreaks(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -2371,9 +2541,9 @@ func TestWordBlankPageCapabilityInsertsTwoPageBreaks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDocument before invalid blank-page requests: %v", err)
 	}
-	for index, arguments := range []map[string]any{
-		{"run_id": "missing-run", "start": 0, "end": 0},
-		{"run_id": run.RunID, "start": 1, "end": 99},
+	for index, arguments := range []testCorecommandsRunIdStartEndArguments36{
+		{RunId: "missing-run", Start: 0, End: 0},
+		{RunId: run.RunID, Start: 1, End: 99},
 	} {
 		if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: fmt.Sprintf("insert-blank-page-invalid-%d", index), DocumentID: doc.DocumentID, CommandID: "word.blank_page.insert",
@@ -2389,7 +2559,7 @@ func TestWordBlankPageCapabilityInsertsTwoPageBreaks(t *testing.T) {
 	inserted, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "insert-blank-page", DocumentID: doc.DocumentID, CommandID: "word.blank_page.insert",
 		ExpectedRevision: stateBeforeInvalid.Revision, Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"run_id": run.RunID, "start": 1, "end": 3}),
+		Arguments: mustJSON(t, testCorecommandsRunIdStartEndArguments36{RunId: run.RunID, Start: 1, End: 3}),
 	})
 	if err != nil {
 		t.Fatalf("insert blank page: %v", err)

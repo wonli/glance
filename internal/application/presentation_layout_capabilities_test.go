@@ -8,6 +8,14 @@ import (
 	"testing"
 )
 
+type presentationSlideLayoutSetPayload struct {
+	SlideId     uint32 `json:"slide_id"`
+	LayoutIndex int    `json:"layout_index"`
+}
+
+type presentationLayoutsListPayload struct {
+}
+
 func TestPresentationLayoutCapabilitiesUseLiveCatalogAndRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -58,7 +66,7 @@ func TestPresentationLayoutCapabilitiesUseLiveCatalogAndRoundTrip(t *testing.T) 
 		Name  string `json:"name"`
 	}) {
 		t.Helper()
-		result, invokeErr := invoke("presentation.layouts.list", map[string]any{})
+		result, invokeErr := invoke("presentation.layouts.list", presentationLayoutsListPayload{})
 		if invokeErr != nil {
 			t.Fatalf("InvokeCapability(presentation.layouts.list): %v", invokeErr)
 		}
@@ -82,7 +90,7 @@ func TestPresentationLayoutCapabilitiesUseLiveCatalogAndRoundTrip(t *testing.T) 
 		t.Helper()
 		before := mustGetDocumentInfo(t, runtime, documentID)
 		beforeSlideID, beforeTitle := inspectSlide()
-		if _, invokeErr := invoke("presentation.slide.layout.set", map[string]any{"slide_id": slideID, "layout_index": layoutIndex}); invokeErr == nil {
+		if _, invokeErr := invoke("presentation.slide.layout.set", presentationSlideLayoutSetPayload{SlideId: slideID, LayoutIndex: layoutIndex}); invokeErr == nil {
 			t.Fatalf("layout set accepted invalid target slide=%d layout=%d", slideID, layoutIndex)
 		}
 		after := mustGetDocumentInfo(t, runtime, documentID)
@@ -104,7 +112,7 @@ func TestPresentationLayoutCapabilitiesUseLiveCatalogAndRoundTrip(t *testing.T) 
 	setLayout := func(index int, wantChanged *bool) CapabilityInvocationResult {
 		t.Helper()
 		before := mustGetDocumentInfo(t, runtime, documentID)
-		result, invokeErr := invoke("presentation.slide.layout.set", map[string]any{"slide_id": slideID, "layout_index": index})
+		result, invokeErr := invoke("presentation.slide.layout.set", presentationSlideLayoutSetPayload{SlideId: slideID, LayoutIndex: index})
 		if invokeErr != nil {
 			t.Fatalf("InvokeCapability(presentation.slide.layout.set): %v", invokeErr)
 		}

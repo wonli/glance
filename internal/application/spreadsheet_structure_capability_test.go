@@ -9,6 +9,11 @@ import (
 	"glance/internal/document"
 )
 
+type testSpreadsheetstructureOperationNewNameArguments struct {
+	Operation string `json:"operation"`
+	NewName   string `json:"new_name"`
+}
+
 func TestSpreadsheetStructureCapabilityRequiresHumanAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -30,7 +35,7 @@ func TestSpreadsheetStructureCapabilityRequiresHumanAndRoundTrips(t *testing.T) 
 			RequestID: "xlsx-structure-" + name, DocumentID: documentID,
 			CapabilityID: "spreadsheet.structure.edit", ExpectedRevision: info.Revision,
 			Operator:  Operator{ID: "structure-agent-test", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"operation": "create_sheet", "new_name": name}),
+			Arguments: mustJSON(t, testSpreadsheetstructureOperationNewNameArguments{Operation: "create_sheet", NewName: name}),
 		})
 		if invokeErr != nil {
 			t.Fatalf("stage sheet creation %q: %v", name, invokeErr)

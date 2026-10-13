@@ -11,6 +11,28 @@ import (
 	"testing"
 )
 
+type testSpreadsheetshapeSheetCellArguments struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+	Type  string `json:"type"`
+	Text  string `json:"text"`
+}
+
+type testSpreadsheetshapeSheetCellTypeArguments struct {
+	Sheet    string `json:"sheet"`
+	Cell     string `json:"cell"`
+	Type     string `json:"type"`
+	WidthPx  int    `json:"width_px"`
+	HeightPx int    `json:"height_px"`
+	Text     string `json:"text"`
+}
+
+type testSpreadsheetshapeSheetCellTypeArguments111 struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+	Type  string `json:"type"`
+}
+
 func TestSpreadsheetShapeCapabilityUsesExplicitTargetsAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -45,13 +67,11 @@ func TestSpreadsheetShapeCapabilityUsesExplicitTargetsAndRoundTrips(t *testing.T
 			t.Fatalf("invalid shape request partially changed workbook: before=%+v after=%+v", before, after)
 		}
 	}
-	assertFailedAtomic(map[string]any{"sheet": "Sheet1", "cell": "A0", "type": "rect"})
-	assertFailedAtomic(map[string]any{"sheet": "Missing", "cell": "B2", "type": "rect"})
+	assertFailedAtomic(testSpreadsheetshapeSheetCellTypeArguments111{Sheet: "Sheet1", Cell: "A0", Type: "rect"})
+	assertFailedAtomic(testSpreadsheetshapeSheetCellTypeArguments111{Sheet: "Missing", Cell: "B2", Type: "rect"})
 
 	before := mustGetDocumentInfo(t, runtime, documentID)
-	shapeResult, err := invoke(map[string]any{
-		"sheet": "Sheet1", "cell": "D4", "type": "rightArrow", "width_px": 240, "height_px": 72, "text": "Agent status",
-	})
+	shapeResult, err := invoke(testSpreadsheetshapeSheetCellTypeArguments{Sheet: "Sheet1", Cell: "D4", Type: "rightArrow", WidthPx: 240, HeightPx: 72, Text: "Agent status"})
 	if err != nil {
 		t.Fatalf("InvokeCapability(spreadsheet.shape.create): %v", err)
 	}
@@ -75,7 +95,7 @@ func TestSpreadsheetShapeCapabilityUsesExplicitTargetsAndRoundTrips(t *testing.T
 		t.Fatalf("shape creation state: before=%+v result=%+v after=%+v", before, shapeResult, after)
 	}
 
-	textBoxResult, err := invoke(map[string]any{"sheet": "Sheet1", "cell": "G7", "type": "rect", "text": "Text box"})
+	textBoxResult, err := invoke(testSpreadsheetshapeSheetCellArguments{Sheet: "Sheet1", Cell: "G7", Type: "rect", Text: "Text box"})
 	if err != nil {
 		t.Fatalf("create default-sized text box: %v", err)
 	}

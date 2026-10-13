@@ -33,6 +33,11 @@ func (a *App) showPresentationBackgroundOptions(view *presentationViewState) {
 	)
 }
 
+type presentationSlideBackgroundSetArguments struct {
+	SlideId  uint32 `json:"slide_id"`
+	ColorHex string `json:"color_hex"`
+}
+
 func (a *App) startPresentationBackgroundSet(view *presentationViewState, colorHex string) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -63,9 +68,7 @@ func (a *App) startPresentationBackgroundSet(view *presentationViewState, colorH
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "presentation.slide.background.set", "presentation_slide", fmt.Sprint(slide.ID), "", map[string]any{
-			"slide_id": slide.ID, "color_hex": colorHex,
-		})
+		result, err := a.executeRibbonApplicationCommand(token, "presentation.slide.background.set", "presentation_slide", fmt.Sprint(slide.ID), "", presentationSlideBackgroundSetArguments{SlideId: slide.ID, ColorHex: colorHex})
 		state.finishOperation(token)
 		out := presentationCommandResult{state: state, view: view, generation: generation, background: true, err: err}
 		if err == nil {

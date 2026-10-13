@@ -11,6 +11,41 @@ import (
 	"glance/internal/application"
 )
 
+type testSpreadsheetpdfStartRowStartColumnArguments struct {
+	StartRow    int `json:"start_row"`
+	StartColumn int `json:"start_column"`
+	EndRow      int `json:"end_row"`
+	EndColumn   int `json:"end_column"`
+}
+
+type testSpreadsheetpdfStartRowStartColumnEndRowArguments struct {
+	StartRow    int `json:"start_row"`
+	StartColumn int `json:"start_column"`
+	EndRow      int `json:"end_row"`
+	EndColumn   int `json:"end_column"`
+}
+
+type testSpreadsheetpdfDocumentIdExpectedRevisionArguments struct {
+	DocumentId       string                                               `json:"document_id"`
+	ExpectedRevision uint64                                               `json:"expected_revision"`
+	Sheet            string                                               `json:"sheet"`
+	Bounds           testSpreadsheetpdfStartRowStartColumnEndRowArguments `json:"bounds"`
+	TargetPath       string                                               `json:"target_path"`
+	Orientation      string                                               `json:"orientation"`
+}
+
+type testSpreadsheetpdfDocumentIdExpectedRevisionSheetArguments struct {
+	DocumentId       string `json:"document_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+	Sheet            string `json:"sheet"`
+	Cell             string `json:"cell"`
+	Value            string `json:"value"`
+}
+
+type testSpreadsheetpdfFormatArguments struct {
+	Format string `json:"format"`
+}
+
 func TestMCPSpecifiesSpreadsheetPDFRangeAndExportsLiveSession(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := application.NewRuntime(ctx, application.RuntimeOptions{})
@@ -27,17 +62,14 @@ func TestMCPSpecifiesSpreadsheetPDFRangeAndExportsLiveSession(t *testing.T) {
 		t.Fatalf("connect in-memory MCP client: %v", err)
 	}
 	t.Cleanup(func() { _ = closeSession() })
-	created, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.create", Arguments: map[string]any{"format": "xlsx"}})
+	created, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.create", Arguments: testSpreadsheetpdfFormatArguments{Format: "xlsx"}})
 	if err != nil || created.IsError {
 		t.Fatalf("create XLSX tool result = %+v, %v", created, err)
 	}
 	createdData := mapValue(t, mapValue(t, created.StructuredContent)["data"])
 	documentID := stringValue(t, createdData["document_id"])
 	revision := uint64(numberValue(t, createdData["revision"]))
-	updated, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "spreadsheet.cell.set", Arguments: map[string]any{
-		"document_id": documentID, "expected_revision": revision,
-		"sheet": "Sheet1", "cell": "A1", "value": "工资统计",
-	}})
+	updated, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "spreadsheet.cell.set", Arguments: testSpreadsheetpdfDocumentIdExpectedRevisionSheetArguments{DocumentId: documentID, ExpectedRevision: revision, Sheet: "Sheet1", Cell: "A1", Value: "工资统计"}})
 	if err != nil || updated.IsError {
 		t.Fatalf("set spreadsheet source cell = %+v, %v", updated, err)
 	}
@@ -47,11 +79,7 @@ func TestMCPSpecifiesSpreadsheetPDFRangeAndExportsLiveSession(t *testing.T) {
 	}
 	revision = updatedDocument.Revision
 	target := filepath.Join(t.TempDir(), "payroll.pdf")
-	exported, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "spreadsheet.document.export_pdf", Arguments: map[string]any{
-		"document_id": documentID, "expected_revision": revision,
-		"sheet": "Sheet1", "bounds": map[string]any{"start_row": 1, "start_column": 1, "end_row": 5, "end_column": 4},
-		"target_path": target, "orientation": "landscape",
-	}})
+	exported, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "spreadsheet.document.export_pdf", Arguments: testSpreadsheetpdfDocumentIdExpectedRevisionArguments{DocumentId: documentID, ExpectedRevision: revision, Sheet: "Sheet1", Bounds: testSpreadsheetpdfStartRowStartColumnEndRowArguments{StartRow: 1, StartColumn: 1, EndRow: 5, EndColumn: 4}, TargetPath: target, Orientation: "landscape"}})
 	if err != nil || exported.IsError {
 		t.Fatalf("export spreadsheet PDF tool result = %+v, %v", exported, err)
 	}

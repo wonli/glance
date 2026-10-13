@@ -67,6 +67,15 @@ func (a *App) applyMarkdownEdit(action string, args markdowndoc.EditArgs) error 
 	return nil
 }
 
+type startMarkdownApplicationEditPayload struct {
+	Action      string `json:"action"`
+	Start       int    `json:"start"`
+	End         int    `json:"end"`
+	Label       string `json:"label"`
+	Destination string `json:"destination"`
+	Display     bool   `json:"display"`
+}
+
 func (a *App) startMarkdownApplicationEdit(v *markdownViewState, action string, args markdowndoc.EditArgs, start, end int) error {
 	if v.editPending {
 		return fmt.Errorf("Markdown 正在处理上一项操作")
@@ -89,10 +98,7 @@ func (a *App) startMarkdownApplicationEdit(v *markdownViewState, action string, 
 	}
 	v.editPending = true
 	window, shutdown, generation := a.window, a.shutdown, a.documentGeneration
-	arguments := map[string]any{
-		"action": action, "start": start, "end": end,
-		"label": args.Label, "destination": args.Destination, "display": args.Display,
-	}
+	arguments := startMarkdownApplicationEditPayload{Action: action, Start: start, End: end, Label: args.Label, Destination: args.Destination, Display: args.Display}
 	a.launchManagedBackground(func() {
 		result, err := a.executeRibbonApplicationCommand(token, "markdown.text.edit", "markdown_document", token.documentID, "", arguments)
 		state.finishOperation(token)

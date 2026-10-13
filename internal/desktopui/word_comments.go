@@ -11,6 +11,11 @@ import (
 	"glance/internal/document"
 )
 
+type wordCommentAddArguments struct {
+	RunId string `json:"run_id"`
+	Text  string `json:"text"`
+}
+
 func (a *App) showWordNewCommentDialog() {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
@@ -42,13 +47,18 @@ func (a *App) showWordNewCommentDialog() {
 				a.setStatus("批注内容不能为空")
 				return
 			}
-			if !a.runWordApplicationCommandExpectedRevision("添加批注", "word.comment.add", map[string]any{"run_id": run.ID, "text": commentText}, expectedRevision) {
+			if !a.runWordApplicationCommandExpectedRevision("添加批注", "word.comment.add", wordCommentAddArguments{RunId: run.ID, Text: commentText}, expectedRevision) {
 				a.setStatus("文档已变化或应用命令运行时不可用，请重新选择文本后添加批注")
 			}
 		},
 		modalDialogActionSpec{ID: "confirm", Label: "添加批注"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+type wordCommentsListArguments struct {
+	Start int `json:"start"`
+	Limit int `json:"limit"`
 }
 
 func (a *App) showWordDeleteCommentDialog() {
@@ -67,7 +77,7 @@ func (a *App) showWordDeleteCommentDialog() {
 	}
 	generation := a.documentGeneration
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommandWithContext(context.Background(), token, "word.comments.list", "word_document", token.documentID, "", map[string]any{"start": 0, "limit": 100})
+		result, err := a.executeRibbonApplicationCommandWithContext(context.Background(), token, "word.comments.list", "word_document", token.documentID, "", wordCommentsListArguments{Start: 0, Limit: 100})
 		comments := make([]document.WordComment, 0)
 		total := 0
 		if err == nil {
@@ -100,6 +110,10 @@ func (a *App) showWordDeleteCommentDialog() {
 		})
 	})
 	a.setStatus("正在读取 Word 批注…")
+}
+
+type wordCommentDeleteArguments struct {
+	CommentId string `json:"comment_id"`
 }
 
 func (a *App) showWordDeleteCommentPrompt(comments []document.WordComment, total int, expectedRevision uint64) {
@@ -142,7 +156,7 @@ func (a *App) showWordDeleteCommentPrompt(comments []document.WordComment, total
 				a.setStatus("批注 ID 不在当前列表中，请重新打开删除批注")
 				return
 			}
-			if !a.runWordApplicationCommandExpectedRevision("删除批注", "word.comment.delete", map[string]any{"comment_id": commentID}, expectedRevision) {
+			if !a.runWordApplicationCommandExpectedRevision("删除批注", "word.comment.delete", wordCommentDeleteArguments{CommentId: commentID}, expectedRevision) {
 				a.setStatus("文档已变化或应用命令运行时不可用，请重新打开删除批注")
 			}
 		},

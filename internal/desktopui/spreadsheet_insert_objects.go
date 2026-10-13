@@ -93,6 +93,15 @@ func (a *App) showSpreadsheetInsertTextBoxDialog() {
 	)
 }
 
+type spreadsheetShapeCreateArguments struct {
+	Sheet    string `json:"sheet"`
+	Cell     string `json:"cell"`
+	Type     string `json:"type"`
+	WidthPx  uint   `json:"width_px"`
+	HeightPx uint   `json:"height_px"`
+	Text     string `json:"text"`
+}
+
 func (a *App) runSpreadsheetShapeCommand(state *documentSessionState, operation string, spec document.SpreadsheetShapeSpec) {
 	if state == nil || state != a.documentSessionState || state.book == nil || state.formatRunning.Load() || a.isSaving() {
 		return
@@ -111,10 +120,7 @@ func (a *App) runSpreadsheetShapeCommand(state *documentSessionState, operation 
 		changed := true
 		var err error
 		if commandRouted {
-			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.shape.create", "spreadsheet_cell", spec.Cell, spec.Sheet, map[string]any{
-				"sheet": spec.Sheet, "cell": spec.Cell, "type": spec.Type,
-				"width_px": spec.Width, "height_px": spec.Height, "text": spec.Text,
-			})
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.shape.create", "spreadsheet_cell", spec.Cell, spec.Sheet, spreadsheetShapeCreateArguments{Sheet: spec.Sheet, Cell: spec.Cell, Type: spec.Type, WidthPx: spec.Width, HeightPx: spec.Height, Text: spec.Text})
 			err = commandErr
 			if err == nil {
 				var outcome struct {
@@ -139,6 +145,14 @@ func (a *App) runSpreadsheetShapeCommand(state *documentSessionState, operation 
 			}
 		}
 	})
+}
+
+type spreadsheetChartCreateArguments struct {
+	Sheet  string                        `json:"sheet"`
+	Kind   document.SpreadsheetChartKind `json:"kind"`
+	Bounds document.CellRange            `json:"bounds"`
+	Cell   string                        `json:"cell"`
+	Title  string                        `json:"title"`
 }
 
 func (a *App) showSpreadsheetInsertChartDialog(kind document.SpreadsheetChartKind) {
@@ -204,9 +218,7 @@ func (a *App) showSpreadsheetInsertChartDialog(kind document.SpreadsheetChartKin
 				changed := true
 				var err error
 				if commandRouted {
-					result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.chart.create", "spreadsheet_cell_range", "chart-source", sheet, map[string]any{
-						"sheet": sheet, "kind": kind, "bounds": bounds, "cell": cellName, "title": title,
-					})
+					result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.chart.create", "spreadsheet_cell_range", "chart-source", sheet, spreadsheetChartCreateArguments{Sheet: sheet, Kind: kind, Bounds: bounds, Cell: cellName, Title: title})
 					err = commandErr
 					if err == nil {
 						var outcome struct {

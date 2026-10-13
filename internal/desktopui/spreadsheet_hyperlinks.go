@@ -49,6 +49,18 @@ func (a *App) runSpreadsheetHyperlinkCommand(operation, commandID, cell string, 
 	})
 }
 
+type spreadsheetHyperlinkRemoveArguments struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+}
+
+type spreadsheetHyperlinkSetArguments struct {
+	Sheet   string `json:"sheet"`
+	Cell    string `json:"cell"`
+	Target  string `json:"target"`
+	Tooltip string `json:"tooltip"`
+}
+
 func (a *App) showSpreadsheetLinkDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -88,17 +100,13 @@ func (a *App) showSpreadsheetLinkDialog() {
 					a.setStatus("链接地址不能为空")
 					return
 				}
-				a.runSpreadsheetHyperlinkCommand("插入链接", "spreadsheet.hyperlink.set", cellName, map[string]any{
-					"sheet": sheet, "cell": cellName, "target": target, "tooltip": tooltip,
-				}, func(ed document.SpreadsheetHyperlinkEditor) error {
+				a.runSpreadsheetHyperlinkCommand("插入链接", "spreadsheet.hyperlink.set", cellName, spreadsheetHyperlinkSetArguments{Sheet: sheet, Cell: cellName, Target: target, Tooltip: tooltip}, func(ed document.SpreadsheetHyperlinkEditor) error {
 					return ed.SetCellHyperlink(sheet, cellName, target, tooltip)
 				})
 				a.setStatus(fmt.Sprintf("已为 %s 设置链接：%s", cellName, target))
 			case "remove":
 				a.modal.Hide()
-				a.runSpreadsheetHyperlinkCommand("删除链接", "spreadsheet.hyperlink.remove", cellName, map[string]any{
-					"sheet": sheet, "cell": cellName,
-				}, func(ed document.SpreadsheetHyperlinkEditor) error {
+				a.runSpreadsheetHyperlinkCommand("删除链接", "spreadsheet.hyperlink.remove", cellName, spreadsheetHyperlinkRemoveArguments{Sheet: sheet, Cell: cellName}, func(ed document.SpreadsheetHyperlinkEditor) error {
 					return ed.RemoveCellHyperlink(sheet, cellName)
 				})
 				a.setStatus(fmt.Sprintf("已删除 %s 的超链接", cellName))

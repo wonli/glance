@@ -9,6 +9,23 @@ import (
 	"glance/internal/document"
 )
 
+type wordViewSelection struct {
+	Scope string `json:"scope"`
+}
+
+type wordViewArguments struct {
+	Selection         *wordViewSelection `json:"selection,omitempty"`
+	Enabled           *bool              `json:"enabled,omitempty"`
+	Mode              string             `json:"mode,omitempty"`
+	MultiplePages     *bool              `json:"multiple_pages,omitempty"`
+	NavigationVisible *bool              `json:"navigation_visible,omitempty"`
+	ReadingMode       *bool              `json:"reading_mode,omitempty"`
+	RulerVisible      *bool              `json:"ruler_visible,omitempty"`
+	GridlinesVisible  *bool              `json:"gridlines_visible,omitempty"`
+}
+
+func commandArgumentPointer[T any](value T) *T { return &value }
+
 func (a *App) applicationSessionRegistered(documentID string) bool {
 	runtime := a.ensureDesktopRuntime()
 	if runtime.applicationRuntimeErr != nil || runtime.applicationRuntime == nil || documentID == "" {
@@ -59,37 +76,37 @@ func (a *App) runWordViewRibbonAction(actionID string) bool {
 		return false
 	}
 	commandID := "word.view.set"
-	arguments := map[string]any{}
+	arguments := wordViewArguments{}
 	switch actionID {
 	case "select":
-		arguments["selection"] = map[string]any{"scope": "document"}
+		arguments.Selection = &wordViewSelection{Scope: "document"}
 	case "autosave":
 		commandID = "word.autosave.set"
-		arguments["enabled"] = !state.wordAutoSave
+		arguments.Enabled = commandArgumentPointer(!state.wordAutoSave)
 	case "view-print-layout":
 		mode := "print"
 		if state.wordViewMode == wordViewPrintLayout {
 			mode = "continuous"
 		}
-		arguments["mode"] = mode
+		arguments.Mode = mode
 	case "view-web-layout":
 		mode := "web"
 		if state.wordViewMode == wordViewWebLayout {
 			mode = "continuous"
 		}
-		arguments["mode"] = mode
+		arguments.Mode = mode
 	case "view-navigation":
-		arguments["navigation_visible"] = !state.wordNavigationVisible
+		arguments.NavigationVisible = commandArgumentPointer(!state.wordNavigationVisible)
 	case "view-single-page":
-		arguments["mode"], arguments["multiple_pages"] = "print", false
+		arguments.Mode, arguments.MultiplePages = "print", commandArgumentPointer(false)
 	case "view-multiple-pages":
-		arguments["mode"], arguments["multiple_pages"] = "print", true
+		arguments.Mode, arguments.MultiplePages = "print", commandArgumentPointer(true)
 	case "view-reading":
-		arguments["reading_mode"] = !state.wordReadingMode
+		arguments.ReadingMode = commandArgumentPointer(!state.wordReadingMode)
 	case "view-ruler":
-		arguments["ruler_visible"] = state.wordRulerHidden
+		arguments.RulerVisible = commandArgumentPointer(state.wordRulerHidden)
 	case "view-gridlines":
-		arguments["gridlines_visible"] = !state.wordGridlinesVisible
+		arguments.GridlinesVisible = commandArgumentPointer(!state.wordGridlinesVisible)
 	case "view-new-window":
 		commandID = "word.view.new_window"
 	case "view-side-by-side":

@@ -10,6 +10,20 @@ import (
 	"glance/internal/document"
 )
 
+type spreadsheetWorkbookRecalculatePayload struct {
+}
+
+type spreadsheetCellSetPayload struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+	Value string `json:"value"`
+}
+
+type spreadsheetCellsSetPayloadSheet struct {
+	Sheet string                       `json:"sheet"`
+	Edits []spreadsheetCellEditFixture `json:"edits"`
+}
+
 func TestSpreadsheetRecalculateCapabilityRecalculatesWorkbook(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -58,24 +72,24 @@ func TestSpreadsheetRecalculateCapabilityRecalculatesWorkbook(t *testing.T) {
 		return output.Rows[0][0].Value, output.Rows[0][0].Formula
 	}
 
-	if _, err := invoke("spreadsheet.cells.set", map[string]any{"sheet": "Sheet1", "edits": []map[string]any{
-		{"row": 1, "column": 1, "value": "1"},
-		{"row": 2, "column": 1, "value": "2"},
+	if _, err := invoke("spreadsheet.cells.set", spreadsheetCellsSetPayloadSheet{Sheet: "Sheet1", Edits: []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "1"},
+		{Row: 2, Column: 1, Value: "2"},
 	}}); err != nil {
 		t.Fatalf("seed formula inputs: %v", err)
 	}
-	if _, err := invoke("spreadsheet.formula.set", map[string]any{"sheet": "Sheet1", "cell": "B1", "formula": "=SUM(A1:A2)"}); err != nil {
+	if _, err := invoke("spreadsheet.formula.set", spreadsheetFormulaSetPayload{Sheet: "Sheet1", Cell: "B1", Formula: "=SUM(A1:A2)"}); err != nil {
 		t.Fatalf("set formula: %v", err)
 	}
 	if value, formula := inspectFormula(); value != "3" || formula != "SUM(A1:A2)" {
 		t.Fatalf("formula before input edit = value %q formula %q; want 3 and SUM(A1:A2)", value, formula)
 	}
-	if _, err := invoke("spreadsheet.cell.set", map[string]any{"sheet": "Sheet1", "cell": "A1", "value": "5"}); err != nil {
+	if _, err := invoke("spreadsheet.cell.set", spreadsheetCellSetPayload{Sheet: "Sheet1", Cell: "A1", Value: "5"}); err != nil {
 		t.Fatalf("change formula input: %v", err)
 	}
 
 	before := mustGetDocumentInfo(t, runtime, documentID)
-	result, err := invoke("spreadsheet.workbook.recalculate", map[string]any{})
+	result, err := invoke("spreadsheet.workbook.recalculate", spreadsheetWorkbookRecalculatePayload{})
 	if err != nil {
 		t.Fatalf("InvokeCapability(spreadsheet.workbook.recalculate): %v", err)
 	}

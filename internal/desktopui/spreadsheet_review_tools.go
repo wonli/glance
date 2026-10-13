@@ -8,6 +8,11 @@ import (
 	"strings"
 )
 
+type spreadsheetTextProofreadArguments struct {
+	Sheet  string             `json:"sheet"`
+	Bounds document.CellRange `json:"bounds"`
+}
+
 func (a *App) showSpreadsheetSpellCheckDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() || a.isSaving() {
@@ -27,9 +32,7 @@ func (a *App) showSpreadsheetSpellCheckDialog() {
 		a.window.Invalidate()
 	}
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.text.proofread", "spreadsheet_range", "selection", sheet, map[string]any{
-			"sheet": sheet, "bounds": bounds,
-		})
+		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.text.proofread", "spreadsheet_range", "selection", sheet, spreadsheetTextProofreadArguments{Sheet: sheet, Bounds: bounds})
 		details := ""
 		if err == nil {
 			var report struct {

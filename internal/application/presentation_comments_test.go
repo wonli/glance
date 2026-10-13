@@ -8,6 +8,33 @@ import (
 	"testing"
 )
 
+type testPresentationcommentsSlideIdLimitArguments struct {
+	SlideId uint32 `json:"slide_id"`
+	Limit   int    `json:"limit"`
+}
+
+type testPresentationcommentsSlideIdCommentIdArguments struct {
+	SlideId   uint32 `json:"slide_id"`
+	CommentId string `json:"comment_id"`
+}
+
+type testPresentationcommentsSlideIdXPtArguments struct {
+	SlideId uint32 `json:"slide_id"`
+	XPt     int    `json:"x_pt"`
+	YPt     int    `json:"y_pt"`
+	Author  string `json:"author"`
+	Text    string `json:"text"`
+}
+
+type testPresentationcommentsSlideIdXArguments struct {
+	SlideId uint32 `json:"slide_id"`
+	X       int    `json:"x"`
+	Y       int    `json:"y"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Text    string `json:"text"`
+}
+
 func TestPresentationCommentCapabilitySavesAndReopensWithoutLosingSlideContent(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -43,10 +70,8 @@ func TestPresentationCommentCapabilitySavesAndReopensWithoutLosingSlideContent(t
 	textBox, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-comment-seed-content", DocumentID: doc.DocumentID,
 		CapabilityID: "presentation.element.textbox.create", ExpectedRevision: revision,
-		Operator: operator,
-		Arguments: mustJSON(t, map[string]any{
-			"slide_id": slideID, "x": 72, "y": 72, "width": 240, "height": 48, "text": "季度成本摘要",
-		}),
+		Operator:  operator,
+		Arguments: mustJSON(t, testPresentationcommentsSlideIdXArguments{SlideId: slideID, X: 72, Y: 72, Width: 240, Height: 48, Text: "季度成本摘要"}),
 	})
 	if err != nil {
 		t.Fatalf("seed slide content: %v", err)
@@ -56,11 +81,8 @@ func TestPresentationCommentCapabilitySavesAndReopensWithoutLosingSlideContent(t
 	_, err = runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-comment-add-invalid-slide", DocumentID: doc.DocumentID,
 		CapabilityID: "presentation.comment.add", ExpectedRevision: revision,
-		Operator: operator,
-		Arguments: mustJSON(t, map[string]any{
-			"slide_id": slideID + 100000, "x_pt": 96, "y_pt": 120,
-			"author": "财务同事", "text": "不应写入。",
-		}),
+		Operator:  operator,
+		Arguments: mustJSON(t, testPresentationcommentsSlideIdXPtArguments{SlideId: slideID + 100000, XPt: 96, YPt: 120, Author: "财务同事", Text: "不应写入。"}),
 	})
 	if err == nil {
 		t.Fatal("presentation comment accepted a nonexistent slide ID")
@@ -72,11 +94,8 @@ func TestPresentationCommentCapabilitySavesAndReopensWithoutLosingSlideContent(t
 	added, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-comment-add", DocumentID: doc.DocumentID,
 		CapabilityID: "presentation.comment.add", ExpectedRevision: revision,
-		Operator: operator,
-		Arguments: mustJSON(t, map[string]any{
-			"slide_id": slideID, "x_pt": 96, "y_pt": 120,
-			"author": "财务同事", "text": "请复核本季度的成本分类。",
-		}),
+		Operator:  operator,
+		Arguments: mustJSON(t, testPresentationcommentsSlideIdXPtArguments{SlideId: slideID, XPt: 96, YPt: 120, Author: "财务同事", Text: "请复核本季度的成本分类。"}),
 	})
 	if err != nil {
 		t.Fatalf("add presentation comment: %v", err)
@@ -139,7 +158,7 @@ func TestPresentationCommentCapabilitySavesAndReopensWithoutLosingSlideContent(t
 	listed, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-comment-list-after-reopen", DocumentID: reopened.DocumentID,
 		CapabilityID: "presentation.comments.list", ExpectedRevision: reopened.Revision,
-		Operator: operator, Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "limit": 20}),
+		Operator: operator, Arguments: mustJSON(t, testPresentationcommentsSlideIdLimitArguments{SlideId: slideID, Limit: 20}),
 	})
 	if err != nil {
 		t.Fatalf("list comments after reopen: %v", err)
@@ -171,7 +190,7 @@ func TestPresentationCommentCapabilitySavesAndReopensWithoutLosingSlideContent(t
 		RequestID: "pptx-comment-delete-invalid", DocumentID: reopened.DocumentID,
 		CapabilityID: "presentation.comment.delete", ExpectedRevision: reopened.Revision,
 		Operator:  deleteOperator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "comment_id": "missing-comment"}),
+		Arguments: mustJSON(t, testPresentationcommentsSlideIdCommentIdArguments{SlideId: slideID, CommentId: "missing-comment"}),
 	})
 	if err == nil {
 		t.Fatal("comment deletion accepted an ID absent from presentation.comments.list")
@@ -185,7 +204,7 @@ func TestPresentationCommentCapabilitySavesAndReopensWithoutLosingSlideContent(t
 		RequestID: "pptx-comment-delete", DocumentID: reopened.DocumentID,
 		CapabilityID: "presentation.comment.delete", ExpectedRevision: reopened.Revision,
 		Operator:  deleteOperator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "comment_id": addedData.CommentID}),
+		Arguments: mustJSON(t, testPresentationcommentsSlideIdCommentIdArguments{SlideId: slideID, CommentId: addedData.CommentID}),
 	})
 	if err != nil || !containsJSONText(deleted.Data, `"changed":true`) || deleted.Revision != reopened.Revision+1 {
 		t.Fatalf("delete presentation comment result=%s revision=%d error=%v", deleted.Data, deleted.Revision, err)
@@ -197,7 +216,7 @@ func TestPresentationCommentCapabilitySavesAndReopensWithoutLosingSlideContent(t
 	deletedList, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-comment-list-after-delete", DocumentID: reopened.DocumentID,
 		CapabilityID: "presentation.comments.list", ExpectedRevision: deleted.Revision,
-		Operator: deleteOperator, Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "limit": 20}),
+		Operator: deleteOperator, Arguments: mustJSON(t, testPresentationcommentsSlideIdLimitArguments{SlideId: slideID, Limit: 20}),
 	})
 	if err != nil || !containsJSONText(deletedList.Data, `"total":0`) {
 		t.Fatalf("deleted presentation comment remains in live list: result=%s error=%v", deletedList.Data, err)
@@ -219,7 +238,7 @@ func TestPresentationCommentCapabilitySavesAndReopensWithoutLosingSlideContent(t
 	finalList, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-comment-final-list", DocumentID: reopened.DocumentID,
 		CapabilityID: "presentation.comments.list", ExpectedRevision: reopened.Revision,
-		Operator: deleteOperator, Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "limit": 20}),
+		Operator: deleteOperator, Arguments: mustJSON(t, testPresentationcommentsSlideIdLimitArguments{SlideId: slideID, Limit: 20}),
 	})
 	if err != nil || !containsJSONText(finalList.Data, `"total":0`) {
 		t.Fatalf("deleted presentation comment returned after save/reopen: result=%s error=%v", finalList.Data, err)

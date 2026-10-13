@@ -9,6 +9,13 @@ import (
 	"glance/internal/document"
 )
 
+type presentationCommentAddArguments struct {
+	SlideId uint32  `json:"slide_id"`
+	XPt     float64 `json:"x_pt"`
+	YPt     float64 `json:"y_pt"`
+	Text    string  `json:"text"`
+}
+
 func (a *App) showPresentationNewCommentDialog(view *presentationViewState) {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -50,13 +57,17 @@ func (a *App) showPresentationNewCommentDialog(view *presentationViewState) {
 				a.setStatus("批注内容不能为空")
 				return
 			}
-			a.startPresentationCommentMutation(view, "presentation.comment.add", map[string]any{
-				"slide_id": slide.ID, "x_pt": xPT, "y_pt": yPT, "text": text,
-			}, expectedRevision, "add", "")
+			a.startPresentationCommentMutation(view, "presentation.comment.add", presentationCommentAddArguments{SlideId: slide.ID, XPt: xPT, YPt: yPT, Text: text}, expectedRevision, "add", "")
 		},
 		modalDialogActionSpec{ID: "confirm", Label: "添加批注"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+type presentationCommentsListArguments struct {
+	SlideId uint32 `json:"slide_id"`
+	Start   int    `json:"start"`
+	Limit   int    `json:"limit"`
 }
 
 func (a *App) startPresentationDeleteComment(view *presentationViewState) bool {
@@ -82,9 +93,7 @@ func (a *App) startPresentationDeleteComment(view *presentationViewState) bool {
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
 		out := presentationCommandResult{state: state, view: view, generation: generation, presentationCommentList: true}
-		result, err := a.executeRibbonApplicationCommand(token, "presentation.comments.list", "presentation_document", token.documentID, "", map[string]any{
-			"slide_id": slide.ID, "start": 0, "limit": 100,
-		})
+		result, err := a.executeRibbonApplicationCommand(token, "presentation.comments.list", "presentation_document", token.documentID, "", presentationCommentsListArguments{SlideId: slide.ID, Start: 0, Limit: 100})
 		if err != nil {
 			out.err = err
 		} else {
@@ -126,6 +135,11 @@ func (a *App) startPresentationDeleteComment(view *presentationViewState) bool {
 	return true
 }
 
+type presentationCommentDeleteArguments struct {
+	SlideId   uint32 `json:"slide_id"`
+	CommentId string `json:"comment_id"`
+}
+
 func (a *App) showPresentationDeleteCommentPrompt(view *presentationViewState, comments []document.PresentationComment, total int, expectedRevision uint64) {
 	var listing strings.Builder
 	visible := min(len(comments), 30)
@@ -163,9 +177,7 @@ func (a *App) showPresentationDeleteCommentPrompt(view *presentationViewState, c
 				a.setStatus("批注 ID 不在当前列表中，请重新打开删除批注")
 				return
 			}
-			a.startPresentationCommentMutation(view, "presentation.comment.delete", map[string]any{
-				"slide_id": selected.SlideID, "comment_id": selected.ID,
-			}, expectedRevision, "delete", selected.ID)
+			a.startPresentationCommentMutation(view, "presentation.comment.delete", presentationCommentDeleteArguments{SlideId: selected.SlideID, CommentId: selected.ID}, expectedRevision, "delete", selected.ID)
 		},
 		modalDialogActionSpec{ID: "confirm", Label: "删除"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},

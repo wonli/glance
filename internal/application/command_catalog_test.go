@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"glance/internal/jsonschema"
 )
 
 func TestEveryCommandRejectsStaleRevisionBeforeHandlerExecution(t *testing.T) {
@@ -138,43 +140,52 @@ func TestEveryCommandDispatchesSchemaValidRequestWithoutPartialFailure(t *testin
 
 func isolateGeneratedPaths(t *testing.T, arguments json.RawMessage, capabilityID string) json.RawMessage {
 	t.Helper()
-	var value any
-	if err := json.Unmarshal(arguments, &value); err != nil {
-		t.Fatalf("decode generated arguments for %s: %v", capabilityID, err)
+	if !json.Valid(arguments) {
+		t.Fatalf("generated arguments for %s are invalid JSON", capabilityID)
 	}
 	base := filepath.Join(t.TempDir(), strings.NewReplacer(".", "-", "/", "-").Replace(capabilityID))
-	var rewrite func(any) any
-	rewrite = func(value any) any {
-		switch current := value.(type) {
-		case map[string]any:
-			for key, child := range current {
-				if strings.Contains(strings.ToLower(key), "path") {
-					if _, ok := child.(string); ok {
-						current[key] = base + ".tmp"
-						continue
-					}
-				}
-				current[key] = rewrite(child)
-			}
-			return current
-		case []any:
-			for index, child := range current {
-				current[index] = rewrite(child)
-			}
-			return current
-		default:
-			return value
-		}
-	}
-	encoded, err := json.Marshal(rewrite(value))
+	encoded, err := rewriteGeneratedPaths(arguments, base)
 	if err != nil {
 		t.Fatalf("encode isolated arguments for %s: %v", capabilityID, err)
 	}
 	return encoded
 }
 
+func rewriteGeneratedPaths(value json.RawMessage, base string) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(value, &fields); err == nil && fields != nil {
+		for key, child := range fields {
+			if strings.Contains(strings.ToLower(key), "path") {
+				var path string
+				if json.Unmarshal(child, &path) == nil {
+					fields[key], _ = json.Marshal(base + ".tmp")
+					continue
+				}
+			}
+			rewritten, err := rewriteGeneratedPaths(child, base)
+			if err != nil {
+				return nil, err
+			}
+			fields[key] = rewritten
+		}
+		return json.Marshal(fields)
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(value, &items); err == nil && items != nil {
+		for index, item := range items {
+			rewritten, err := rewriteGeneratedPaths(item, base)
+			if err != nil {
+				return nil, err
+			}
+			items[index] = rewritten
+		}
+		return json.Marshal(items)
+	}
+	return append(json.RawMessage(nil), value...), nil
+}
+
 func exampleArguments(schemaJSON json.RawMessage) (json.RawMessage, error) {
-	var schema map[string]any
+	var schema jsonschema.Definition
 	if err := json.Unmarshal(schemaJSON, &schema); err != nil {
 		return nil, err
 	}
@@ -189,57 +200,54 @@ func exampleArguments(schemaJSON json.RawMessage) (json.RawMessage, error) {
 	return encoded, nil
 }
 
-func exampleSchemaValue(schema map[string]any) (any, bool) {
-	if constant, ok := schema["const"]; ok {
-		return constant, true
+type schemaComposition struct {
+	branches []jsonschema.Definition
+	present  bool
+}
+
+func exampleSchemaValue(schema jsonschema.Definition) (json.RawMessage, bool) {
+	if schema.Has("const") {
+		return append(json.RawMessage(nil), schema.Const...), true
 	}
-	if values, ok := schema["enum"].([]any); ok && len(values) > 0 {
-		return values[0], true
+	if schema.Has("enum") {
+		if len(schema.Enum) == 0 {
+			return nil, false
+		}
+		return append(json.RawMessage(nil), schema.Enum[0]...), true
 	}
-	if branches, ok := schema["allOf"].([]any); ok {
-		composed := cloneSchemaMap(schema)
-		delete(composed, "allOf")
-		for _, branch := range branches {
-			branchSchema, ok := branch.(map[string]any)
-			if !ok {
-				return nil, false
-			}
-			composed = mergeExampleSchemas(composed, branchSchema)
+	if schema.Has("allOf") {
+		composed := schema.Without("allOf")
+		for _, branch := range schema.AllOf {
+			composed = mergeExampleSchemas(composed, branch)
 		}
 		return exampleSchemaValue(composed)
 	}
-	for _, key := range []string{"oneOf", "anyOf"} {
-		branches, ok := schema[key].([]any)
-		if !ok {
+	for _, composition := range []schemaComposition{
+		{schema.OneOf, schema.Has("oneOf")},
+		{schema.AnyOf, schema.Has("anyOf")},
+	} {
+		if !composition.present {
 			continue
 		}
-		for _, branch := range branches {
-			branchSchema, ok := branch.(map[string]any)
-			if !ok {
-				continue
-			}
-			composed := cloneSchemaMap(schema)
-			delete(composed, key)
-			composed = mergeExampleSchemas(composed, branchSchema)
+		for _, branch := range composition.branches {
+			composed := schema.Without("oneOf").Without("anyOf")
+			composed = mergeExampleSchemas(composed, branch)
 			if value, ok := exampleSchemaValue(composed); ok {
 				return value, true
 			}
 		}
 		return nil, false
 	}
-	typeName, _ := schema["type"].(string)
+	typeName := ""
+	if schema.Type != nil {
+		typeName = *schema.Type
+	}
 	switch typeName {
 	case "object":
-		properties, _ := schema["properties"].(map[string]any)
-		required, _ := schema["required"].([]any)
-		object := make(map[string]any, len(required))
-		for _, rawName := range required {
-			name, ok := rawName.(string)
-			if !ok {
-				return nil, false
-			}
-			property, ok := properties[name].(map[string]any)
-			if !ok {
+		object := make(map[string]json.RawMessage, len(schema.Required))
+		for _, name := range schema.Required {
+			property, exists := schema.Properties[name]
+			if !exists {
 				return nil, false
 			}
 			value, ok := exampleSchemaValue(property)
@@ -248,147 +256,249 @@ func exampleSchemaValue(schema map[string]any) (any, bool) {
 			}
 			object[name] = value
 		}
-		return object, true
+		encoded, err := json.Marshal(object)
+		return encoded, err == nil
 	case "array":
-		minimum, _ := schema["minItems"].(float64)
-		count := int(minimum)
-		items, ok := schema["items"].(map[string]any)
-		if count > 0 && !ok {
+		count := 0
+		if schema.Has("minItems") {
+			minimum, ok := schemaInteger(schema.MinItems)
+			if !ok {
+				return nil, false
+			}
+			count = int(minimum)
+		}
+		if count > 0 && schema.Items == nil {
 			return nil, false
 		}
-		array := make([]any, count)
+		array := make([]json.RawMessage, count)
 		for index := range array {
-			var value any
+			var value json.RawMessage
 			var ok bool
-			if unique, _ := schema["uniqueItems"].(bool); unique {
-				value, ok = uniqueExampleSchemaValue(items, index)
+			if schema.UniqueItems != nil && *schema.UniqueItems {
+				value, ok = uniqueExampleSchemaValue(*schema.Items, index)
 			} else {
-				value, ok = exampleSchemaValue(items)
+				value, ok = exampleSchemaValue(*schema.Items)
 			}
 			if !ok {
 				return nil, false
 			}
 			array[index] = value
 		}
-		return array, true
+		encoded, err := json.Marshal(array)
+		return encoded, err == nil
 	case "string":
-		if pattern, _ := schema["pattern"].(string); pattern == "^#[0-9A-Fa-f]{6}$" {
-			return "#000000", true
+		if schema.Pattern != nil && *schema.Pattern == "^#[0-9A-Fa-f]{6}$" {
+			encoded, err := json.Marshal("#000000")
+			return encoded, err == nil
 		}
-		minimum, _ := schema["minLength"].(float64)
-		if minimum < 1 {
-			minimum = 1
+		minimum := int64(1)
+		if schema.Has("minLength") {
+			parsed, ok := schemaInteger(schema.MinLength)
+			if !ok {
+				return nil, false
+			}
+			minimum = max(1, parsed)
 		}
-		return repeatX(int(minimum)), true
+		encoded, err := json.Marshal(repeatX(int(minimum)))
+		return encoded, err == nil
 	case "integer", "number":
-		minimum, hasMinimum := schema["minimum"].(float64)
-		if !hasMinimum {
-			minimum = 1
+		minimum := 1.0
+		if schema.Has("minimum") {
+			parsed, ok := schemaNumber(schema.Minimum)
+			if !ok {
+				return nil, false
+			}
+			minimum = parsed
 		}
-		if exclusive, ok := schema["exclusiveMinimum"].(float64); ok && minimum <= exclusive {
-			minimum = exclusive + 1
+		if schema.Has("exclusiveMinimum") {
+			exclusive, ok := schemaNumber(schema.ExclusiveMinimum)
+			if !ok {
+				return nil, false
+			}
+			if minimum <= exclusive {
+				minimum = exclusive + 1
+			}
 		}
-		if multipleOf, ok := schema["multipleOf"].(float64); ok && multipleOf > 0 {
+		if schema.Has("multipleOf") {
+			multipleOf, ok := schemaNumber(schema.MultipleOf)
+			if !ok || multipleOf <= 0 {
+				return nil, false
+			}
 			minimum = math.Ceil(minimum/multipleOf) * multipleOf
 		}
-		if maximum, ok := schema["maximum"].(float64); ok && minimum > maximum {
-			return nil, false
+		if schema.Has("maximum") {
+			maximum, ok := schemaNumber(schema.Maximum)
+			if !ok || minimum > maximum {
+				return nil, false
+			}
 		}
 		if typeName == "integer" {
-			return math.Ceil(minimum), true
+			minimum = math.Ceil(minimum)
 		}
-		return minimum, true
+		encoded, err := json.Marshal(minimum)
+		return encoded, err == nil
 	case "boolean":
-		return false, true
+		encoded, err := json.Marshal(false)
+		return encoded, err == nil
 	case "null":
-		return nil, true
+		return json.RawMessage("null"), true
 	default:
-		return map[string]any{}, true
+		if len(schema.Properties) > 0 || len(schema.Required) > 0 {
+			return exampleSchemaValue(jsonschema.Definition{Type: jsonschema.StringType("object"), Properties: schema.Properties, Required: schema.Required})
+		}
+		return json.RawMessage("{}"), true
 	}
 }
 
-func uniqueExampleSchemaValue(schema map[string]any, index int) (any, bool) {
-	if values, ok := schema["enum"].([]any); ok {
-		if index >= len(values) {
+func uniqueExampleSchemaValue(schema jsonschema.Definition, index int) (json.RawMessage, bool) {
+	if schema.Has("enum") {
+		if index >= len(schema.Enum) {
 			return nil, false
 		}
-		return values[index], true
+		return append(json.RawMessage(nil), schema.Enum[index]...), true
 	}
 	if index == 0 {
 		return exampleSchemaValue(schema)
 	}
-	typeName, _ := schema["type"].(string)
+	typeName := ""
+	if schema.Type != nil {
+		typeName = *schema.Type
+	}
 	switch typeName {
 	case "integer", "number":
-		value, ok := exampleSchemaValue(schema)
+		encoded, ok := exampleSchemaValue(schema)
 		if !ok {
 			return nil, false
 		}
-		base, ok := value.(float64)
-		if !ok {
+		var base float64
+		if err := json.Unmarshal(encoded, &base); err != nil {
 			return nil, false
 		}
 		step := 1.0
-		if multipleOf, ok := schema["multipleOf"].(float64); ok && multipleOf > 0 {
+		if schema.Has("multipleOf") {
+			multipleOf, valid := schemaNumber(schema.MultipleOf)
+			if !valid || multipleOf <= 0 {
+				return nil, false
+			}
 			step = multipleOf
 		}
 		candidate := base + float64(index)*step
-		if maximum, ok := schema["maximum"].(float64); ok && candidate > maximum {
-			return nil, false
+		if schema.Has("maximum") {
+			maximum, valid := schemaNumber(schema.Maximum)
+			if !valid || candidate > maximum {
+				return nil, false
+			}
 		}
 		if typeName == "integer" {
-			return math.Round(candidate), true
+			candidate = math.Round(candidate)
 		}
-		return candidate, true
+		encoded, err := json.Marshal(candidate)
+		return encoded, err == nil
 	default:
 		return nil, false
 	}
 }
 
-func cloneSchemaMap(schema map[string]any) map[string]any {
-	cloned := make(map[string]any, len(schema))
-	for key, value := range schema {
-		cloned[key] = value
+func mergeExampleSchemas(base, overlay jsonschema.Definition) jsonschema.Definition {
+	merged := base
+	if overlay.Type != nil {
+		merged.Type = overlay.Type
 	}
-	return cloned
-}
-
-func mergeExampleSchemas(base, overlay map[string]any) map[string]any {
-	merged := cloneSchemaMap(base)
-	for key, value := range overlay {
-		switch key {
-		case "properties":
-			properties := make(map[string]any)
-			if existing, ok := merged[key].(map[string]any); ok {
-				for name, property := range existing {
-					properties[name] = property
-				}
-			}
-			if additions, ok := value.(map[string]any); ok {
-				for name, property := range additions {
-					properties[name] = property
-				}
-			}
-			merged[key] = properties
-		case "required":
-			seen := make(map[string]bool)
-			var required []any
-			for _, group := range []any{merged[key], value} {
-				if names, ok := group.([]any); ok {
-					for _, rawName := range names {
-						if name, ok := rawName.(string); ok && !seen[name] {
-							seen[name] = true
-							required = append(required, name)
-						}
-					}
-				}
-			}
-			merged[key] = required
-		default:
-			merged[key] = value
+	if overlay.Title != "" {
+		merged.Title = overlay.Title
+	}
+	if overlay.Description != "" {
+		merged.Description = overlay.Description
+	}
+	if overlay.Properties != nil {
+		properties := make(map[string]jsonschema.Definition, len(base.Properties)+len(overlay.Properties))
+		for name, property := range base.Properties {
+			properties[name] = property
+		}
+		for name, property := range overlay.Properties {
+			properties[name] = property
+		}
+		merged.Properties = properties
+	}
+	if overlay.Required != nil {
+		merged.Required = append(append([]string(nil), base.Required...), overlay.Required...)
+		merged.Required = uniqueStrings(merged.Required)
+	}
+	if len(overlay.AdditionalProperties) > 0 {
+		merged.AdditionalProperties = overlay.AdditionalProperties
+	}
+	if overlay.Items != nil {
+		merged.Items = overlay.Items
+	}
+	if overlay.AnyOf != nil {
+		merged.AnyOf = overlay.AnyOf
+	}
+	if overlay.AllOf != nil {
+		merged.AllOf = overlay.AllOf
+	}
+	if overlay.OneOf != nil {
+		merged.OneOf = overlay.OneOf
+	}
+	if overlay.Enum != nil {
+		merged.Enum = overlay.Enum
+	}
+	if len(overlay.Const) > 0 {
+		merged.Const = overlay.Const
+	}
+	if len(overlay.Minimum) > 0 {
+		merged.Minimum = overlay.Minimum
+	}
+	if len(overlay.Maximum) > 0 {
+		merged.Maximum = overlay.Maximum
+	}
+	if len(overlay.ExclusiveMinimum) > 0 {
+		merged.ExclusiveMinimum = overlay.ExclusiveMinimum
+	}
+	if len(overlay.ExclusiveMaximum) > 0 {
+		merged.ExclusiveMaximum = overlay.ExclusiveMaximum
+	}
+	if len(overlay.MultipleOf) > 0 {
+		merged.MultipleOf = overlay.MultipleOf
+	}
+	if len(overlay.MinLength) > 0 {
+		merged.MinLength = overlay.MinLength
+	}
+	if len(overlay.MaxLength) > 0 {
+		merged.MaxLength = overlay.MaxLength
+	}
+	if len(overlay.MinItems) > 0 {
+		merged.MinItems = overlay.MinItems
+	}
+	if len(overlay.MaxItems) > 0 {
+		merged.MaxItems = overlay.MaxItems
+	}
+	if overlay.Pattern != nil {
+		merged.Pattern = overlay.Pattern
+	}
+	if overlay.UniqueItems != nil {
+		merged.UniqueItems = overlay.UniqueItems
+	}
+	encoded, err := json.Marshal(merged)
+	if err == nil {
+		var normalized jsonschema.Definition
+		if json.Unmarshal(encoded, &normalized) == nil {
+			return normalized
 		}
 	}
 	return merged
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		unique = append(unique, value)
+	}
+	return unique
 }
 
 func repeatX(count int) string {

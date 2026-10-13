@@ -8,6 +8,20 @@ import (
 	"glance/internal/document"
 )
 
+type testWorkbookauditSheetRangeArguments struct {
+	Sheet           string             `json:"sheet"`
+	Range           document.CellRange `json:"range"`
+	HeaderRow       int                `json:"header_row"`
+	RequiredHeaders []string           `json:"required_headers"`
+	KeyColumns      []int              `json:"key_columns"`
+}
+
+type testWorkbookauditSheetCellArguments struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+	Value string `json:"value"`
+}
+
 func TestWorkbookAuditFindsHeaderKeyAndErrorLikeValueIssuesWithoutMutation(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -34,7 +48,7 @@ func TestWorkbookAuditFindsHeaderKeyAndErrorLikeValueIssuesWithoutMutation(t *te
 			RequestID: "audit-fixture-" + value.cell, DocumentID: doc.DocumentID,
 			CapabilityID: "spreadsheet.cell.set", ExpectedRevision: doc.Revision + uint64(index),
 			Operator:  Operator{ID: "audit-fixture", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "cell": value.cell, "value": value.value}),
+			Arguments: mustJSON(t, testWorkbookauditSheetCellArguments{Sheet: "Sheet1", Cell: value.cell, Value: value.value}),
 		})
 		if err != nil {
 			t.Fatalf("set audit fixture cell %s: %v", value.cell, err)
@@ -51,10 +65,7 @@ func TestWorkbookAuditFindsHeaderKeyAndErrorLikeValueIssuesWithoutMutation(t *te
 		RequestID: "workbook-audit", DocumentID: doc.DocumentID, CapabilityID: "workbook.audit",
 		ExpectedRevision: before.Revision,
 		Operator:         Operator{ID: "payroll-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{
-			"sheet": "Sheet1", "range": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 3},
-			"header_row": 1, "required_headers": []string{"员工", "工资", "部门"}, "key_columns": []int{1},
-		}),
+		Arguments:        mustJSON(t, testWorkbookauditSheetRangeArguments{Sheet: "Sheet1", Range: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 3}, HeaderRow: 1, RequiredHeaders: []string{"员工", "工资", "部门"}, KeyColumns: []int{1}}),
 	})
 	if err != nil {
 		t.Fatalf("Invoke workbook.audit: %v", err)
@@ -96,6 +107,11 @@ func TestWorkbookAuditFindsHeaderKeyAndErrorLikeValueIssuesWithoutMutation(t *te
 	}
 }
 
+type testWorkbookauditSheetRangeArguments149 struct {
+	Sheet string             `json:"sheet"`
+	Range document.CellRange `json:"range"`
+}
+
 func TestWorkbookAuditRejectsOversizedRanges(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -110,10 +126,8 @@ func TestWorkbookAuditRejectsOversizedRanges(t *testing.T) {
 	_, err = runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "oversized-workbook-audit", DocumentID: doc.DocumentID,
 		CapabilityID: "workbook.audit", ExpectedRevision: doc.Revision,
-		Operator: Operator{ID: "audit-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{
-			"sheet": "Sheet1", "range": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1000, EndColumn: 1000},
-		}),
+		Operator:  Operator{ID: "audit-agent", Kind: OperatorExternalAgent},
+		Arguments: mustJSON(t, testWorkbookauditSheetRangeArguments149{Sheet: "Sheet1", Range: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1000, EndColumn: 1000}}),
 	})
 	if err == nil || err != ErrInvalidCommandArguments {
 		t.Fatalf("oversized workbook audit error = %v; want invalid arguments", err)

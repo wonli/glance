@@ -17,6 +17,60 @@ import (
 	"glance/internal/format/pptx"
 )
 
+type presentationElementVideoCreatePayload struct {
+	SlideId    uint32 `json:"slide_id"`
+	SourcePath string `json:"source_path"`
+	MediaType  string `json:"media_type"`
+	X          int    `json:"x"`
+	Y          int    `json:"y"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	AltText    string `json:"alt_text"`
+}
+
+type presentationElementAudioCreatePayload struct {
+	SlideId    uint32 `json:"slide_id"`
+	SourcePath string `json:"source_path"`
+	MediaType  string `json:"media_type"`
+	Role       string `json:"role"`
+	X          int    `json:"x"`
+	Y          int    `json:"y"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+}
+
+type testPresentationmediaSlideIdSourcePathArguments struct {
+	SlideId    uint32 `json:"slide_id"`
+	SourcePath string `json:"source_path"`
+	MediaType  string `json:"media_type"`
+	X          int    `json:"x"`
+	Y          int    `json:"y"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+}
+
+type testPresentationmediaSlideIdSourcePathMediaTypeArguments struct {
+	SlideId    uint32 `json:"slide_id"`
+	SourcePath string `json:"source_path"`
+	MediaType  string `json:"media_type"`
+	X          int    `json:"x"`
+	Y          int    `json:"y"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	Decorative bool   `json:"decorative"`
+	AltText    string `json:"alt_text"`
+}
+
+type testPresentationmediaSlideIdSourcePathMediaTypeXArguments struct {
+	SlideId    uint32 `json:"slide_id"`
+	SourcePath string `json:"source_path"`
+	MediaType  string `json:"media_type"`
+	X          int    `json:"x"`
+	Y          int    `json:"y"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+}
+
 func TestPresentationMediaCapabilitiesValidateAndEmbedExplicitFiles(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -93,38 +147,23 @@ func TestPresentationMediaCapabilitiesValidateAndEmbedExplicitFiles(t *testing.T
 	}
 
 	beforeInvalid := info()
-	if _, err := invoke("presentation.element.audio.create", map[string]any{
-		"slide_id": slideID, "source_path": audioPath, "media_type": "audio/mpeg",
-		"x": 48, "y": 60, "width": 100, "height": 48,
-	}); err == nil {
+	if _, err := invoke("presentation.element.audio.create", testPresentationmediaSlideIdSourcePathMediaTypeXArguments{SlideId: slideID, SourcePath: audioPath, MediaType: "audio/mpeg", X: 48, Y: 60, Width: 100, Height: 48}); err == nil {
 		t.Fatal("audio capability accepted a media type that does not match the file extension")
 	}
-	if _, err := invoke("presentation.element.audio.create", map[string]any{
-		"slide_id": slideID, "source_path": emptyPath, "media_type": "audio/wav",
-		"x": 48, "y": 60, "width": 100, "height": 48,
-	}); err == nil {
+	if _, err := invoke("presentation.element.audio.create", testPresentationmediaSlideIdSourcePathMediaTypeXArguments{SlideId: slideID, SourcePath: emptyPath, MediaType: "audio/wav", X: 48, Y: 60, Width: 100, Height: 48}); err == nil {
 		t.Fatal("audio capability accepted an empty file")
 	}
-	if _, err := invoke("presentation.element.video.create", map[string]any{
-		"slide_id": slideID, "source_path": videoPath, "media_type": "video/mp4",
-		"x": 48, "y": 60, "width": 100, "height": 48, "decorative": true, "alt_text": "decorative media cannot have alt text",
-	}); err == nil {
+	if _, err := invoke("presentation.element.video.create", testPresentationmediaSlideIdSourcePathMediaTypeArguments{SlideId: slideID, SourcePath: videoPath, MediaType: "video/mp4", X: 48, Y: 60, Width: 100, Height: 48, Decorative: true, AltText: "decorative media cannot have alt text"}); err == nil {
 		t.Fatal("video capability accepted alt text for decorative video")
 	}
-	if _, err := invoke("presentation.element.video.create", map[string]any{
-		"slide_id": slideID, "source_path": badVideoPath, "media_type": "video/mp4",
-		"x": 48, "y": 60, "width": 100, "height": 48,
-	}); err == nil {
+	if _, err := invoke("presentation.element.video.create", testPresentationmediaSlideIdSourcePathArguments{SlideId: slideID, SourcePath: badVideoPath, MediaType: "video/mp4", X: 48, Y: 60, Width: 100, Height: 48}); err == nil {
 		t.Fatal("video capability accepted an unrecognized media container")
 	}
 	if after := info(); after.Revision != beforeInvalid.Revision || after.Dirty != beforeInvalid.Dirty {
 		t.Fatalf("invalid media requests changed presentation: before=%+v after=%+v", beforeInvalid, after)
 	}
 
-	audio, err := invoke("presentation.element.audio.create", map[string]any{
-		"slide_id": slideID, "source_path": audioPath, "media_type": "audio/wav", "role": "narration",
-		"x": 48, "y": 60, "width": 120, "height": 48,
-	})
+	audio, err := invoke("presentation.element.audio.create", presentationElementAudioCreatePayload{SlideId: slideID, SourcePath: audioPath, MediaType: "audio/wav", Role: "narration", X: 48, Y: 60, Width: 120, Height: 48})
 	if err != nil {
 		t.Fatalf("embed audio: %v", err)
 	}
@@ -137,10 +176,7 @@ func TestPresentationMediaCapabilitiesValidateAndEmbedExplicitFiles(t *testing.T
 	if err := json.Unmarshal(audio.Data, &audioResult); err != nil || audioResult.ElementID <= 0 || audioResult.MediaType != "audio/wav" || audioResult.MediaSizeBytes != len(audioBytes) || !audioResult.Changed {
 		t.Fatalf("audio result=%s error=%v", audio.Data, err)
 	}
-	mp3, err := invoke("presentation.element.audio.create", map[string]any{
-		"slide_id": slideID, "source_path": mp3Path, "media_type": "audio/mpeg", "role": "background",
-		"x": 48, "y": 120, "width": 120, "height": 48,
-	})
+	mp3, err := invoke("presentation.element.audio.create", presentationElementAudioCreatePayload{SlideId: slideID, SourcePath: mp3Path, MediaType: "audio/mpeg", Role: "background", X: 48, Y: 120, Width: 120, Height: 48})
 	if err != nil {
 		t.Fatalf("embed MP3 audio: %v", err)
 	}
@@ -153,10 +189,7 @@ func TestPresentationMediaCapabilitiesValidateAndEmbedExplicitFiles(t *testing.T
 		t.Fatalf("MP3 result=%s error=%v", mp3.Data, err)
 	}
 
-	video, err := invoke("presentation.element.video.create", map[string]any{
-		"slide_id": slideID, "source_path": videoPath, "media_type": "video/mp4",
-		"x": 220, "y": 60, "width": 240, "height": 135, "alt_text": "季度经营汇报视频",
-	})
+	video, err := invoke("presentation.element.video.create", presentationElementVideoCreatePayload{SlideId: slideID, SourcePath: videoPath, MediaType: "video/mp4", X: 220, Y: 60, Width: 240, Height: 135, AltText: "季度经营汇报视频"})
 	if err != nil {
 		t.Fatalf("embed video: %v", err)
 	}

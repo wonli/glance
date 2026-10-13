@@ -180,51 +180,36 @@ func (a *App) applyPresentationStylePatch(v *presentationViewState, patch docume
 	return true
 }
 
-func presentationStyleArguments(slideID uint32, elementID int64, patch document.PresentationElementStylePatch) map[string]any {
-	arguments := map[string]any{"slide_id": slideID, "element_id": elementID}
-	if patch.FontFamily != nil {
-		arguments["font_family"] = *patch.FontFamily
+type presentationStyleCommandArguments struct {
+	SlideID            uint32                        `json:"slide_id"`
+	ElementID          int64                         `json:"element_id"`
+	FontFamily         *string                       `json:"font_family,omitempty"`
+	FontSizePT         *float64                      `json:"font_size_pt,omitempty"`
+	Bold               *bool                         `json:"bold,omitempty"`
+	Italic             *bool                         `json:"italic,omitempty"`
+	Underline          *bool                         `json:"underline,omitempty"`
+	TextColorHex       *string                       `json:"text_color_hex,omitempty"`
+	ParagraphAlignment *string                       `json:"paragraph_alignment,omitempty"`
+	Bullet             *bool                         `json:"bullet,omitempty"`
+	LineSpacing        *document.PresentationSpacing `json:"line_spacing,omitempty"`
+	SpaceBefore        *document.PresentationSpacing `json:"space_before,omitempty"`
+	SpaceAfter         *document.PresentationSpacing `json:"space_after,omitempty"`
+	FillColorHex       *string                       `json:"fill_color_hex,omitempty"`
+	BorderColor        *string                       `json:"border_color,omitempty"`
+	BorderWidthPT      *float64                      `json:"border_width_pt,omitempty"`
+}
+
+func presentationStyleArguments(slideID uint32, elementID int64, patch document.PresentationElementStylePatch) presentationStyleCommandArguments {
+	return presentationStyleCommandArguments{
+		SlideID: slideID, ElementID: elementID,
+		FontFamily: patch.FontFamily, FontSizePT: patch.FontSizePT,
+		Bold: patch.Bold, Italic: patch.Italic, Underline: patch.Underline,
+		TextColorHex: patch.TextColorHex, ParagraphAlignment: patch.ParagraphAlignment,
+		Bullet: patch.Bullet, LineSpacing: patch.LineSpacing,
+		SpaceBefore: patch.SpaceBefore, SpaceAfter: patch.SpaceAfter,
+		FillColorHex: patch.FillColorHex, BorderColor: patch.BorderColor,
+		BorderWidthPT: patch.BorderWidthPT,
 	}
-	if patch.FontSizePT != nil {
-		arguments["font_size_pt"] = *patch.FontSizePT
-	}
-	if patch.Bold != nil {
-		arguments["bold"] = *patch.Bold
-	}
-	if patch.Italic != nil {
-		arguments["italic"] = *patch.Italic
-	}
-	if patch.Underline != nil {
-		arguments["underline"] = *patch.Underline
-	}
-	if patch.TextColorHex != nil {
-		arguments["text_color_hex"] = *patch.TextColorHex
-	}
-	if patch.ParagraphAlignment != nil {
-		arguments["paragraph_alignment"] = *patch.ParagraphAlignment
-	}
-	if patch.Bullet != nil {
-		arguments["bullet"] = *patch.Bullet
-	}
-	if patch.LineSpacing != nil {
-		arguments["line_spacing"] = patch.LineSpacing
-	}
-	if patch.SpaceBefore != nil {
-		arguments["space_before"] = patch.SpaceBefore
-	}
-	if patch.SpaceAfter != nil {
-		arguments["space_after"] = patch.SpaceAfter
-	}
-	if patch.FillColorHex != nil {
-		arguments["fill_color_hex"] = *patch.FillColorHex
-	}
-	if patch.BorderColor != nil {
-		arguments["border_color"] = *patch.BorderColor
-	}
-	if patch.BorderWidthPT != nil {
-		arguments["border_width_pt"] = *patch.BorderWidthPT
-	}
-	return arguments
 }
 
 func (a *App) presentationStyleOptions(v *presentationViewState) []presentationStyleOption {

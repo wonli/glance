@@ -6,6 +6,11 @@ import (
 	"glance/internal/document"
 )
 
+type spreadsheetPivotCreateArguments struct {
+	Sheet  string             `json:"sheet"`
+	Bounds document.CellRange `json:"bounds"`
+}
+
 func (a *App) showSpreadsheetPivotTableDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -44,9 +49,7 @@ func (a *App) showSpreadsheetPivotTableDialog() {
 			changed := true
 			var err error
 			if commandRouted {
-				result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.pivot.create", "spreadsheet_cell_range", "selection", sheet, map[string]any{
-					"sheet": sheet, "bounds": bounds,
-				})
+				result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.pivot.create", "spreadsheet_cell_range", "selection", sheet, spreadsheetPivotCreateArguments{Sheet: sheet, Bounds: bounds})
 				err = commandErr
 				if err == nil {
 					var outcome struct {

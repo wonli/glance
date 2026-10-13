@@ -90,11 +90,7 @@ func (a *App) startPresentationElementAlignment(view *presentationViewState, sli
 	bounds := element.Bounds
 	bounds.X, bounds.Y = alignment.x, alignment.y
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.transform.set", "presentation_element", fmt.Sprint(element.ID), "", map[string]any{
-			"slide_id": slide.ID, "element_id": element.ID,
-			"x": bounds.X, "y": bounds.Y, "width": bounds.W, "height": bounds.H,
-			"rotation_deg": element.RotationDeg,
-		})
+		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.transform.set", "presentation_element", fmt.Sprint(element.ID), "", presentationElementTransformSetArguments{SlideId: slide.ID, ElementId: element.ID, X: bounds.X, Y: bounds.Y, Width: bounds.W, Height: bounds.H, RotationDeg: element.RotationDeg})
 		state.finishOperation(token)
 		out := presentationCommandResult{state: state, view: view, generation: generation, elementAlignment: true, alignmentAction: alignment.label, err: err}
 		if err == nil {

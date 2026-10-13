@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -84,7 +85,7 @@ type agentSubscriber struct {
 
 type toolSpec struct {
 	modelTool provider.ModelTool
-	schema    map[string]any
+	schema    map[string]json.RawMessage
 }
 
 type AgentHost struct {
@@ -174,7 +175,7 @@ func loadTools(ctx context.Context, client *mcp.ClientSession) (map[string]toolS
 			if err != nil {
 				return nil, fmt.Errorf("encode schema for MCP tool %s: %w", tool.Name, err)
 			}
-			var schemaObject map[string]any
+			var schemaObject map[string]json.RawMessage
 			if err := json.Unmarshal(schema, &schemaObject); err != nil || schemaObject == nil {
 				return nil, fmt.Errorf("MCP tool %s has an invalid input schema", tool.Name)
 			}
@@ -620,13 +621,23 @@ func (h *AgentHost) invokeTool(ctx context.Context, call *toolCallAccumulator, v
 		result, _ := json.Marshal(map[string]string{"error": "invalid_arguments", "message": ErrToolArgumentsTooLarge.Error()})
 		return result, true, view
 	}
-	arguments := make(map[string]any)
+	arguments := make(map[string]json.RawMessage)
 	if err := json.Unmarshal([]byte(call.arguments.String()), &arguments); err != nil || arguments == nil {
 		result, _ := json.Marshal(map[string]string{"error": "invalid_arguments", "message": "工具参数必须是 JSON 对象。"})
 		return result, true, view
 	}
 	arguments = injectViewDefaults(arguments, tool.schema, view)
-	result, err := h.client.CallTool(ctx, &mcp.CallToolParams{Name: call.name, Arguments: arguments})
+	encodedArguments, err := json.Marshal(arguments)
+	if err != nil {
+		result, _ := json.Marshal(map[string]string{"error": "invalid_arguments", "message": "工具参数无法编码为 JSON。"})
+		return result, true, view
+	}
+	params, err := newCallToolParams(call.name, encodedArguments)
+	if err != nil {
+		result, _ := json.Marshal(map[string]string{"error": "invalid_arguments", "message": "工具参数必须是 JSON 对象。"})
+		return result, true, view
+	}
+	result, err := h.client.CallTool(ctx, params)
 	if err != nil {
 		payload, _ := json.Marshal(map[string]string{"error": "mcp_call_failed", "message": err.Error()})
 		return payload, true, view
@@ -636,33 +647,40 @@ func (h *AgentHost) invokeTool(ctx context.Context, call *toolCallAccumulator, v
 	return content, result.IsError, updatedView
 }
 
-func injectViewDefaults(arguments map[string]any, schema map[string]any, view application.ViewContext) map[string]any {
-	properties, _ := schema["properties"].(map[string]any)
+func newCallToolParams(name string, arguments json.RawMessage) (*mcp.CallToolParams, error) {
+	params := &mcp.CallToolParams{Name: name}
+	decoder := json.NewDecoder(bytes.NewReader(arguments))
+	decoder.UseNumber()
+	if err := decoder.Decode(&params.Arguments); err != nil || params.Arguments == nil {
+		return nil, errors.New("MCP arguments must be a JSON object")
+	}
+	return params, nil
+}
+
+func injectViewDefaults(arguments map[string]json.RawMessage, schema map[string]json.RawMessage, view application.ViewContext) map[string]json.RawMessage {
+	var properties map[string]json.RawMessage
+	_ = json.Unmarshal(schema["properties"], &properties)
 	if properties == nil || view.DocumentID == "" {
 		return arguments
 	}
 	if _, exists := properties["document_id"]; exists {
 		if _, provided := arguments["document_id"]; !provided {
-			arguments["document_id"] = view.DocumentID
+			arguments["document_id"], _ = json.Marshal(view.DocumentID)
 		}
 	}
-	targetDocumentID, _ := arguments["document_id"].(string)
+	var targetDocumentID string
+	_ = json.Unmarshal(arguments["document_id"], &targetDocumentID)
 	if targetDocumentID != view.DocumentID {
 		return arguments
 	}
 	if _, exists := properties["expected_revision"]; exists && view.Revision != 0 {
 		if _, provided := arguments["expected_revision"]; !provided {
-			arguments["expected_revision"] = view.Revision
+			arguments["expected_revision"], _ = json.Marshal(view.Revision)
 		}
 	}
 	if _, exists := properties["view"]; exists {
 		if _, provided := arguments["view"]; !provided {
-			if encoded, err := json.Marshal(view); err == nil {
-				var viewObject map[string]any
-				if json.Unmarshal(encoded, &viewObject) == nil {
-					arguments["view"] = viewObject
-				}
-			}
+			arguments["view"], _ = json.Marshal(view)
 		}
 	}
 	return arguments
@@ -683,8 +701,13 @@ func marshalToolResult(result *mcp.CallToolResult) []byte {
 			texts = append(texts, text.Text)
 		}
 	}
-	encoded, _ := json.Marshal(map[string]any{"is_error": result.IsError, "content": texts})
+	encoded, _ := json.Marshal(toolResultPayload{IsError: result.IsError, Content: texts})
 	return encoded
+}
+
+type toolResultPayload struct {
+	IsError bool     `json:"is_error"`
+	Content []string `json:"content"`
 }
 
 func viewFromToolResult(result *mcp.CallToolResult, current application.ViewContext) application.ViewContext {

@@ -12,6 +12,14 @@ import (
 	"glance/internal/format/xlsx"
 )
 
+type testDocumentexportPathArguments struct {
+	Path string `json:"path"`
+}
+
+type testDocumentexportEnabledArguments struct {
+	Enabled bool `json:"enabled"`
+}
+
 func TestDocumentExportCopyPreservesLiveSessionAndRejectsOverwrite(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -30,7 +38,7 @@ func TestDocumentExportCopyPreservesLiveSessionAndRejectsOverwrite(t *testing.T)
 				_, err := runtime.Commands().executeApproved(ctx, CommandRequest{
 					RequestID: "protect-before-copy", DocumentID: doc.DocumentID, CommandID: "word.document.protection.set",
 					ExpectedRevision: doc.Revision, Operator: Operator{ID: "human-1", Kind: OperatorHuman},
-					Arguments: mustJSON(t, map[string]any{"enabled": true}),
+					Arguments: mustJSON(t, testDocumentexportEnabledArguments{Enabled: true}),
 				})
 				if err != nil {
 					t.Fatalf("protect source document: %v", err)
@@ -45,7 +53,7 @@ func TestDocumentExportCopyPreservesLiveSessionAndRejectsOverwrite(t *testing.T)
 			result, err := runtime.Commands().Execute(ctx, CommandRequest{
 				RequestID: "copy-" + string(format), DocumentID: doc.DocumentID, CommandID: "document.export_copy",
 				ExpectedRevision: doc.Revision, Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-				Arguments: mustJSON(t, map[string]any{"path": path}),
+				Arguments: mustJSON(t, testDocumentexportPathArguments{Path: path}),
 			})
 			if err != nil {
 				t.Fatalf("export copy: %v", err)
@@ -99,7 +107,7 @@ func TestDocumentExportCopyPreservesLiveSessionAndRejectsOverwrite(t *testing.T)
 	_, err = runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "copy-overwrite", DocumentID: doc.DocumentID, CommandID: "document.export_copy",
 		ExpectedRevision: doc.Revision, Operator: Operator{ID: "agent-1", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"path": existing}),
+		Arguments: mustJSON(t, testDocumentexportPathArguments{Path: existing}),
 	})
 	if !errors.Is(err, ErrTargetExists) {
 		t.Fatalf("export copy overwrite error = %v; want ErrTargetExists", err)

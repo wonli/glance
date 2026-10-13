@@ -10,9 +10,17 @@ import (
 	"glance/internal/format/pptx"
 )
 
+type
+
 // flushPresentationTextDraft commits the active canvas editor before a save or
 // when the user switches to another shape. The editor text stays transient
 // while typing so file-format work does not run on every Gio frame.
+presentationElementTextSetArguments struct {
+	SlideId   uint32 `json:"slide_id"`
+	ElementId int64  `json:"element_id"`
+	Text      string `json:"text"`
+}
+
 func (a *App) flushPresentationTextDraft() error {
 	if a.pptxDoc == nil || a.pptxView == nil || a.pptxView.editingShape == 0 {
 		return nil
@@ -53,9 +61,7 @@ func (a *App) flushPresentationTextDraft() error {
 		if !ok {
 			return fmt.Errorf("演示文稿正在处理其他操作")
 		}
-		_, err := a.executeRibbonApplicationCommand(token, "presentation.element.text.set", "presentation_element", strconv.FormatInt(v.editingShape, 10), "", map[string]any{
-			"slide_id": slideID, "element_id": v.editingShape, "text": text,
-		})
+		_, err := a.executeRibbonApplicationCommand(token, "presentation.element.text.set", "presentation_element", strconv.FormatInt(v.editingShape, 10), "", presentationElementTextSetArguments{SlideId: slideID, ElementId: v.editingShape, Text: text})
 		state.finishOperation(token)
 		if err != nil {
 			a.setStatus("幻灯片文字更新失败：" + err.Error())
@@ -113,6 +119,12 @@ func (a *App) flushPresentationNotesDraft(v *presentationViewState) error {
 	return err
 }
 
+type presentationSlideNotesSetArguments struct {
+	SlideId       uint32 `json:"slide_id"`
+	ExpectedNotes string `json:"expected_notes"`
+	Notes         string `json:"notes"`
+}
+
 func (a *App) commitPresentationNotesDraft(v *presentationViewState, slideID uint32, expectedNotes, notes string) error {
 	if a == nil || a.pptxDoc == nil || v == nil || slideID == 0 {
 		return nil
@@ -126,9 +138,7 @@ func (a *App) commitPresentationNotesDraft(v *presentationViewState, slideID uin
 		if !ok {
 			return fmt.Errorf("演示文稿正在处理其他操作")
 		}
-		_, err := a.executeRibbonApplicationCommand(token, "presentation.slide.notes.set", "presentation_slide", fmt.Sprint(slideID), "", map[string]any{
-			"slide_id": slideID, "expected_notes": expectedNotes, "notes": notes,
-		})
+		_, err := a.executeRibbonApplicationCommand(token, "presentation.slide.notes.set", "presentation_slide", fmt.Sprint(slideID), "", presentationSlideNotesSetArguments{SlideId: slideID, ExpectedNotes: expectedNotes, Notes: notes})
 		state.finishOperation(token)
 		if err != nil {
 			return err

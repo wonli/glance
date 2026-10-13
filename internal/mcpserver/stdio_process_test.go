@@ -13,6 +13,25 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type testStdioprocessDocumentIdExpectedRevisionArguments struct {
+	DocumentId       string `json:"document_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+	Path             string `json:"path"`
+}
+
+type testStdioprocessDocumentIdExpectedRevisionTextArguments struct {
+	DocumentId       string `json:"document_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+	Text             string `json:"text"`
+}
+
+type testStdioprocessFormatArguments struct {
+	Format string `json:"format"`
+}
+
+type testStdioprocessEmptyArguments struct {
+}
+
 func TestMCPStdioSubprocessHasIndependentRuntimeAndSavesWord(t *testing.T) {
 	if os.Getenv("GLANCE_MCP_STDIO_SUBPROCESS") == "1" {
 		handled, exitCode := DispatchCLI([]string{"mcp", "serve", "--stdio"}, os.Stdout, os.Stderr)
@@ -57,15 +76,15 @@ func TestMCPStdioSubprocessHasIndependentRuntimeAndSavesWord(t *testing.T) {
 		}
 	}()
 
-	listed, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.list", Arguments: map[string]any{}})
+	listed, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.list", Arguments: testStdioprocessEmptyArguments{}})
 	if err != nil || listed.IsError {
 		t.Fatalf("list subprocess documents = %+v, %v", listed, err)
 	}
-	if items, ok := mapValue(t, listed.StructuredContent)["data"].([]any); !ok || len(items) != 0 {
+	if items := rawArray(t, mapValue(t, listed.StructuredContent)["data"]); len(items) != 0 {
 		t.Fatalf("stdio process saw desktop sessions: %#v", listed.StructuredContent)
 	}
 
-	created, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.create", Arguments: map[string]any{"format": "docx"}})
+	created, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.create", Arguments: testStdioprocessFormatArguments{Format: "docx"}})
 	if err != nil || created.IsError {
 		t.Fatalf("create subprocess Word document = %+v, %v", created, err)
 	}
@@ -73,17 +92,13 @@ func TestMCPStdioSubprocessHasIndependentRuntimeAndSavesWord(t *testing.T) {
 	documentID := stringValue(t, createdData["document_id"])
 	revision := uint64(numberValue(t, createdData["revision"]))
 
-	appended, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.paragraph.append", Arguments: map[string]any{
-		"document_id": documentID, "expected_revision": revision, "text": "由 stdio MCP 子进程创建并保存",
-	}})
+	appended, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.paragraph.append", Arguments: testStdioprocessDocumentIdExpectedRevisionTextArguments{DocumentId: documentID, ExpectedRevision: revision, Text: "由 stdio MCP 子进程创建并保存"}})
 	if err != nil || appended.IsError {
 		t.Fatalf("append subprocess Word paragraph = %+v, %v", appended, err)
 	}
 	revision = uint64(numberValue(t, mapValue(t, appended.StructuredContent)["revision"]))
 	path := filepath.Join(t.TempDir(), "stdio-report.docx")
-	saved, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.save_as", Arguments: map[string]any{
-		"document_id": documentID, "expected_revision": revision, "path": path,
-	}})
+	saved, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.save_as", Arguments: testStdioprocessDocumentIdExpectedRevisionArguments{DocumentId: documentID, ExpectedRevision: revision, Path: path}})
 	if err != nil || saved.IsError {
 		t.Fatalf("save subprocess Word document = %+v, %v", saved, err)
 	}

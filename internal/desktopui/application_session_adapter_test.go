@@ -20,6 +20,10 @@ import (
 	"glance/internal/workspace"
 )
 
+type desktopQueryContent struct {
+	Kind string `json:"kind"`
+}
+
 func TestDesktopRuntimeRegistersLiveSessionInApplicationRuntime(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "shared.json")
 	desktop := newDesktopRuntime()
@@ -242,6 +246,23 @@ func TestSpreadsheetRecalculateRibbonUsesRegisteredCapability(t *testing.T) {
 	}
 }
 
+type spreadsheetCellsSetPayload struct {
+	Row    int `json:"row"`
+	Column int `json:"column"`
+	Value  any `json:"value"`
+}
+
+type spreadsheetCellsSetPayloadSheet struct {
+	Sheet string                       `json:"sheet"`
+	Edits []spreadsheetCellsSetPayload `json:"edits"`
+}
+
+type spreadsheetCellSetPayload struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+	Value any    `json:"value"`
+}
+
 func TestAgentSpreadsheetCellCommandsPreserveTypedValuesInLiveSession(t *testing.T) {
 	ctx := context.Background()
 	desktop := newDesktopRuntime()
@@ -283,9 +304,9 @@ func TestAgentSpreadsheetCellCommandsPreserveTypedValuesInLiveSession(t *testing
 		}
 		return result
 	}
-	first := invoke("spreadsheet.cell.set", map[string]any{"sheet": "Sheet1", "cell": "A1", "value": "00123"})
-	number := invoke("spreadsheet.cell.set", map[string]any{"sheet": "Sheet1", "cell": "B1", "value": 123.5})
-	boolean := invoke("spreadsheet.cell.set", map[string]any{"sheet": "Sheet1", "cell": "C1", "value": true})
+	first := invoke("spreadsheet.cell.set", spreadsheetCellSetPayload{Sheet: "Sheet1", Cell: "A1", Value: "00123"})
+	number := invoke("spreadsheet.cell.set", spreadsheetCellSetPayload{Sheet: "Sheet1", Cell: "B1", Value: 123.5})
+	boolean := invoke("spreadsheet.cell.set", spreadsheetCellSetPayload{Sheet: "Sheet1", Cell: "C1", Value: true})
 	if first.Revision != info.Revision+1 || number.Revision != first.Revision+1 || boolean.Revision != number.Revision+1 {
 		t.Fatalf("live session revisions: initial=%d text=%d number=%d boolean=%d", info.Revision, first.Revision, number.Revision, boolean.Revision)
 	}
@@ -294,7 +315,7 @@ func TestAgentSpreadsheetCellCommandsPreserveTypedValuesInLiveSession(t *testing
 			t.Fatalf("live cell %s=%q error=%v; want %q", cell, got, err, want)
 		}
 	}
-	noop := invoke("spreadsheet.cell.set", map[string]any{"sheet": "Sheet1", "cell": "A1", "value": "00123"})
+	noop := invoke("spreadsheet.cell.set", spreadsheetCellSetPayload{Sheet: "Sheet1", Cell: "A1", Value: "00123"})
 	var noopResult struct {
 		Changed bool `json:"changed"`
 	}
@@ -302,10 +323,10 @@ func TestAgentSpreadsheetCellCommandsPreserveTypedValuesInLiveSession(t *testing
 		t.Fatalf("live typed no-op result=%s revision=%d error=%v", noop.Data, noop.Revision, err)
 	}
 
-	batch := invoke("spreadsheet.cells.set", map[string]any{"sheet": "Sheet1", "edits": []map[string]any{
-		{"row": 2, "column": 1, "value": "00045"},
-		{"row": 2, "column": 2, "value": 45.25},
-		{"row": 2, "column": 3, "value": false},
+	batch := invoke("spreadsheet.cells.set", spreadsheetCellsSetPayloadSheet{Sheet: "Sheet1", Edits: []spreadsheetCellsSetPayload{
+		{Row: 2, Column: 1, Value: "00045"},
+		{Row: 2, Column: 2, Value: 45.25},
+		{Row: 2, Column: 3, Value: false},
 	}})
 	var batchResult struct {
 		Changed bool `json:"changed"`
@@ -514,6 +535,130 @@ func TestWordShareRibbonUsesRegisteredCopyCapabilityAndRejectsPendingDraft(t *te
 	}
 }
 
+type testApplicationsessionImageIdDeltaDegreesArguments struct {
+	ImageId      string `json:"image_id"`
+	DeltaDegrees int    `json:"delta_degrees"`
+}
+
+type testApplicationsessionParagraphIdAfterInlineIdArguments struct {
+	ParagraphId   string `json:"paragraph_id"`
+	AfterInlineId string `json:"after_inline_id"`
+	Path          string `json:"path"`
+}
+
+type testApplicationsessionColorArguments struct {
+	Color string `json:"color"`
+}
+
+type testApplicationsessionTitleCreatorArguments struct {
+	Title   string `json:"title"`
+	Creator string `json:"creator"`
+}
+
+type testApplicationsessionEmptyArguments struct {
+}
+
+type testApplicationsessionStartBlockMaxBlocksArguments struct {
+	StartBlock int `json:"start_block"`
+	MaxBlocks  int `json:"max_blocks"`
+}
+
+type testApplicationsessionRunIdLanguageCodeArguments struct {
+	RunId        string `json:"run_id"`
+	LanguageCode string `json:"language_code"`
+}
+
+type testApplicationsessionBorderTypeArguments struct {
+	BorderType string `json:"border_type"`
+}
+
+type testApplicationsessionModeArguments struct {
+	Mode string `json:"mode"`
+}
+
+type testApplicationsessionColumnsArguments struct {
+	Columns int `json:"columns"`
+}
+
+type testApplicationsessionWidthPointsHeightPointsArguments struct {
+	WidthPoints  int `json:"width_points"`
+	HeightPoints int `json:"height_points"`
+}
+
+type testApplicationsessionTopPointsRightPointsArguments struct {
+	TopPoints    int `json:"top_points"`
+	RightPoints  int `json:"right_points"`
+	BottomPoints int `json:"bottom_points"`
+	LeftPoints   int `json:"left_points"`
+}
+
+type testApplicationsessionOrientationArguments struct {
+	Orientation string `json:"orientation"`
+}
+
+type testApplicationsessionAlignmentArguments struct {
+	Alignment string `json:"alignment"`
+}
+
+type testApplicationsessionTextArguments struct {
+	Text string `json:"text"`
+}
+
+type testApplicationsessionAfterParagraphIdTextArguments struct {
+	AfterParagraphId string `json:"after_paragraph_id"`
+	Text             string `json:"text"`
+}
+
+type testApplicationsessionAfterParagraphIdRowsArguments struct {
+	AfterParagraphId string `json:"after_paragraph_id"`
+	Rows             int    `json:"rows"`
+	Columns          int    `json:"columns"`
+}
+
+type testApplicationsessionQueryLimitArguments struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit"`
+}
+
+type testApplicationsessionRunIdStartArguments struct {
+	RunId string `json:"run_id"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
+type testApplicationsessionRunIdStartEndArguments struct {
+	RunId       string `json:"run_id"`
+	Start       int    `json:"start"`
+	End         int    `json:"end"`
+	Replacement string `json:"replacement"`
+}
+
+type testApplicationsessionParagraphIdBeforePointsArguments struct {
+	ParagraphId  string `json:"paragraph_id"`
+	BeforePoints int    `json:"before_points"`
+	AfterPoints  int    `json:"after_points"`
+}
+
+type testApplicationsessionParagraphIdListTypeArguments struct {
+	ParagraphId string `json:"paragraph_id"`
+	ListType    string `json:"list_type"`
+}
+
+type testApplicationsessionRunIdFontSizePointsArguments struct {
+	RunId          string `json:"run_id"`
+	FontSizePoints int    `json:"font_size_points"`
+}
+
+type testApplicationsessionRunIdFontFamilyArguments struct {
+	RunId      string `json:"run_id"`
+	FontFamily string `json:"font_family"`
+}
+
+type testApplicationsessionRunIdBoldArguments struct {
+	RunId string `json:"run_id"`
+	Bold  bool   `json:"bold"`
+}
+
 func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) {
 	ctx := context.Background()
 	desktop := newDesktopRuntime()
@@ -546,7 +691,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	if err := json.Unmarshal(result.Data, &appended); err != nil || appended.RunID == "" || appended.ParagraphID == "" {
 		t.Fatalf("decode appended Word identities: %v, data=%s", err, result.Data)
 	}
-	marshalArgs := func(values map[string]any) json.RawMessage {
+	marshalArgs := func(values any) json.RawMessage {
 		arguments, err := json.Marshal(values)
 		if err != nil {
 			t.Fatalf("marshal Word command arguments: %v", err)
@@ -566,7 +711,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	if err != nil {
 		t.Fatalf("set Agent report alignment: %v", err)
 	}
-	styleArguments, err := json.Marshal(map[string]any{"run_id": appended.RunID, "bold": true})
+	styleArguments, err := json.Marshal(testApplicationsessionRunIdBoldArguments{RunId: appended.RunID, Bold: true})
 	if err != nil {
 		t.Fatalf("marshal Word style arguments: %v", err)
 	}
@@ -582,7 +727,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	family, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-report-font-family", DocumentID: app.documentID, CommandID: "word.text_run.font_family.set",
 		ExpectedRevision: styled.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"run_id": appended.RunID, "font_family": "Arial"}),
+		Arguments: marshalArgs(testApplicationsessionRunIdFontFamilyArguments{RunId: appended.RunID, FontFamily: "Arial"}),
 	})
 	if err != nil {
 		t.Fatalf("set Agent report font family: %v", err)
@@ -590,7 +735,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	sized, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-report-font-size", DocumentID: app.documentID, CommandID: "word.text_run.font_size.set",
 		ExpectedRevision: family.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"run_id": appended.RunID, "font_size_points": 16}),
+		Arguments: marshalArgs(testApplicationsessionRunIdFontSizePointsArguments{RunId: appended.RunID, FontSizePoints: 16}),
 	})
 	if err != nil {
 		t.Fatalf("set Agent report font size: %v", err)
@@ -598,7 +743,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	listed, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-report-list", DocumentID: app.documentID, CommandID: "word.paragraph.list.set",
 		ExpectedRevision: sized.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"paragraph_id": appended.ParagraphID, "list_type": "bullet"}),
+		Arguments: marshalArgs(testApplicationsessionParagraphIdListTypeArguments{ParagraphId: appended.ParagraphID, ListType: "bullet"}),
 	})
 	if err != nil {
 		t.Fatalf("set Agent report list: %v", err)
@@ -606,7 +751,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	spacing, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-report-spacing", DocumentID: app.documentID, CommandID: "word.paragraph.spacing.set",
 		ExpectedRevision: listed.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"paragraph_id": appended.ParagraphID, "before_points": 12, "after_points": 8}),
+		Arguments: marshalArgs(testApplicationsessionParagraphIdBeforePointsArguments{ParagraphId: appended.ParagraphID, BeforePoints: 12, AfterPoints: 8}),
 	})
 	if err != nil {
 		t.Fatalf("set Agent report paragraph spacing: %v", err)
@@ -614,7 +759,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	ranged, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-report-range-replace", DocumentID: app.documentID, CommandID: "word.text_range.replace",
 		ExpectedRevision: spacing.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"run_id": appended.RunID, "start": 2, "end": 4, "replacement": "交付"}),
+		Arguments: marshalArgs(testApplicationsessionRunIdStartEndArguments{RunId: appended.RunID, Start: 2, End: 4, Replacement: "交付"}),
 	})
 	if err != nil {
 		t.Fatalf("replace Agent report text range: %v", err)
@@ -622,7 +767,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	paged, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-report-page-break", DocumentID: app.documentID, CommandID: "word.page_break.insert",
 		ExpectedRevision: ranged.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"run_id": appended.RunID, "start": 8, "end": 8}),
+		Arguments: marshalArgs(testApplicationsessionRunIdStartArguments{RunId: appended.RunID, Start: 8, End: 8}),
 	})
 	if err != nil {
 		t.Fatalf("insert Agent report page break: %v", err)
@@ -647,7 +792,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	search, err := desktop.applicationRuntime.InvokeCapability(ctx, application.CapabilityRequest{
 		RequestID: "agent-search-live-report", DocumentID: app.documentID, CapabilityID: "word.text.search",
 		Operator:  application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"query": "交付项目", "limit": 10}),
+		Arguments: marshalArgs(testApplicationsessionQueryLimitArguments{Query: "交付项目", Limit: 10}),
 	})
 	if err != nil {
 		t.Fatalf("search live desktop Word session: %v", err)
@@ -665,7 +810,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	table, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-insert-live-table", DocumentID: app.documentID, CommandID: "word.table.insert",
 		ExpectedRevision: paged.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"after_paragraph_id": appended.ParagraphID, "rows": 1, "columns": 2}),
+		Arguments: marshalArgs(testApplicationsessionAfterParagraphIdRowsArguments{AfterParagraphId: appended.ParagraphID, Rows: 1, Columns: 2}),
 	})
 	if err != nil {
 		t.Fatalf("insert table in live desktop Word session: %v", err)
@@ -688,7 +833,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	textBox, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-insert-live-textbox", DocumentID: app.documentID, CommandID: "word.text_box.insert",
 		ExpectedRevision: table.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"after_paragraph_id": appended.ParagraphID, "text": "本周重点：完成工资核算"}),
+		Arguments: marshalArgs(testApplicationsessionAfterParagraphIdTextArguments{AfterParagraphId: appended.ParagraphID, Text: "本周重点：完成工资核算"}),
 	})
 	if err != nil {
 		t.Fatalf("insert text box in live desktop Word session: %v", err)
@@ -703,17 +848,17 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	pageRevision := textBox.Revision
 	for _, capability := range []struct {
 		id   string
-		args map[string]any
+		args any
 	}{
-		{"word.header.set", map[string]any{"text": "桌面实时页眉"}},
-		{"word.footer.set", map[string]any{"text": "桌面实时页脚"}},
-		{"word.page_number.set", map[string]any{"alignment": "center"}},
-		{"word.page_setup.orientation.set", map[string]any{"orientation": "landscape"}},
-		{"word.page_setup.margins.set", map[string]any{"top_points": 54, "right_points": 60, "bottom_points": 66, "left_points": 48}},
-		{"word.page_setup.size.set", map[string]any{"width_points": 792, "height_points": 612}},
-		{"word.page_setup.columns.set", map[string]any{"columns": 2}},
-		{"word.page_setup.line_numbers.set", map[string]any{"mode": "continuous"}},
-		{"word.page_setup.borders.set", map[string]any{"border_type": "dashed"}},
+		{"word.header.set", testApplicationsessionTextArguments{Text: "桌面实时页眉"}},
+		{"word.footer.set", testApplicationsessionTextArguments{Text: "桌面实时页脚"}},
+		{"word.page_number.set", testApplicationsessionAlignmentArguments{Alignment: "center"}},
+		{"word.page_setup.orientation.set", testApplicationsessionOrientationArguments{Orientation: "landscape"}},
+		{"word.page_setup.margins.set", testApplicationsessionTopPointsRightPointsArguments{TopPoints: 54, RightPoints: 60, BottomPoints: 66, LeftPoints: 48}},
+		{"word.page_setup.size.set", testApplicationsessionWidthPointsHeightPointsArguments{WidthPoints: 792, HeightPoints: 612}},
+		{"word.page_setup.columns.set", testApplicationsessionColumnsArguments{Columns: 2}},
+		{"word.page_setup.line_numbers.set", testApplicationsessionModeArguments{Mode: "continuous"}},
+		{"word.page_setup.borders.set", testApplicationsessionBorderTypeArguments{BorderType: "dashed"}},
 	} {
 		result, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 			RequestID: "agent-live-" + capability.id, DocumentID: app.documentID, CommandID: capability.id,
@@ -746,14 +891,14 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	}
 	for _, capability := range []struct {
 		id   string
-		args map[string]any
+		args any
 	}{
-		{"word.page_setup.orientation.set", map[string]any{"orientation": "landscape"}},
-		{"word.page_setup.margins.set", map[string]any{"top_points": 54, "right_points": 60, "bottom_points": 66, "left_points": 48}},
-		{"word.page_setup.size.set", map[string]any{"width_points": 792, "height_points": 612}},
-		{"word.page_setup.columns.set", map[string]any{"columns": 2}},
-		{"word.page_setup.line_numbers.set", map[string]any{"mode": "continuous"}},
-		{"word.page_setup.borders.set", map[string]any{"border_type": "dashed"}},
+		{"word.page_setup.orientation.set", testApplicationsessionOrientationArguments{Orientation: "landscape"}},
+		{"word.page_setup.margins.set", testApplicationsessionTopPointsRightPointsArguments{TopPoints: 54, RightPoints: 60, BottomPoints: 66, LeftPoints: 48}},
+		{"word.page_setup.size.set", testApplicationsessionWidthPointsHeightPointsArguments{WidthPoints: 792, HeightPoints: 612}},
+		{"word.page_setup.columns.set", testApplicationsessionColumnsArguments{Columns: 2}},
+		{"word.page_setup.line_numbers.set", testApplicationsessionModeArguments{Mode: "continuous"}},
+		{"word.page_setup.borders.set", testApplicationsessionBorderTypeArguments{BorderType: "dashed"}},
 	} {
 		result, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 			RequestID: "agent-live-noop-" + capability.id, DocumentID: app.documentID, CommandID: capability.id,
@@ -773,7 +918,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	language, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-live-language", DocumentID: app.documentID, CommandID: "word.proofing.language.set",
 		ExpectedRevision: pageRevision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"run_id": appended.RunID, "language_code": "zh-CN"}),
+		Arguments: marshalArgs(testApplicationsessionRunIdLanguageCodeArguments{RunId: appended.RunID, LanguageCode: "zh-CN"}),
 	})
 	if err != nil {
 		t.Fatalf("set proofing language in live desktop Word session: %v", err)
@@ -787,7 +932,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	languageNoop, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-live-language-noop", DocumentID: app.documentID, CommandID: "word.proofing.language.set",
 		ExpectedRevision: language.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"run_id": appended.RunID, "language_code": "zh-CN"}),
+		Arguments: marshalArgs(testApplicationsessionRunIdLanguageCodeArguments{RunId: appended.RunID, LanguageCode: "zh-CN"}),
 	})
 	var languageNoopData struct {
 		Changed bool `json:"changed"`
@@ -799,14 +944,14 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	statistics, err := desktop.applicationRuntime.InvokeCapability(ctx, application.CapabilityRequest{
 		RequestID: "agent-live-word-statistics", DocumentID: app.documentID, CapabilityID: "word.text.statistics",
 		Operator:  application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"start_block": 0, "max_blocks": 100}),
+		Arguments: marshalArgs(testApplicationsessionStartBlockMaxBlocksArguments{StartBlock: 0, MaxBlocks: 100}),
 	})
 	if err != nil || statistics.Revision != pageRevision {
 		t.Fatalf("read live desktop Word statistics: revision=%d want=%d error=%v", statistics.Revision, pageRevision, err)
 	}
 	properties, err := desktop.applicationRuntime.InvokeCapability(ctx, application.CapabilityRequest{
 		RequestID: "agent-live-word-properties", DocumentID: app.documentID, CapabilityID: "word.document.properties.get",
-		Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent}, Arguments: marshalArgs(map[string]any{}),
+		Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent}, Arguments: marshalArgs(testApplicationsessionEmptyArguments{}),
 	})
 	if err != nil {
 		t.Fatalf("read live desktop Word properties: %v", err)
@@ -817,7 +962,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	updatedProperties, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-live-word-properties-set", DocumentID: app.documentID, CommandID: "word.document.properties.set",
 		ExpectedRevision: pageRevision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"title": "桌面实时 Agent 文档", "creator": "Glance Agent"}),
+		Arguments: marshalArgs(testApplicationsessionTitleCreatorArguments{Title: "桌面实时 Agent 文档", Creator: "Glance Agent"}),
 	})
 	if err != nil {
 		t.Fatalf("update live desktop Word properties: %v", err)
@@ -825,7 +970,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	background, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-live-word-background", DocumentID: app.documentID, CommandID: "word.page.background.set",
 		ExpectedRevision: updatedProperties.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"color": "#E3F2FD"}),
+		Arguments: marshalArgs(testApplicationsessionColorArguments{Color: "#E3F2FD"}),
 	})
 	if err != nil {
 		t.Fatalf("set live desktop Word page background: %v", err)
@@ -848,7 +993,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	imageInserted, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-live-word-image-insert", DocumentID: app.documentID, CommandID: "word.image.insert",
 		ExpectedRevision: background.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"paragraph_id": appended.ParagraphID, "after_inline_id": appended.RunID, "path": imagePath}),
+		Arguments: marshalArgs(testApplicationsessionParagraphIdAfterInlineIdArguments{ParagraphId: appended.ParagraphID, AfterInlineId: appended.RunID, Path: imagePath}),
 	})
 	if err != nil {
 		t.Fatalf("insert image into live desktop Word session: %v", err)
@@ -862,7 +1007,7 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	imageRotated, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-live-word-image-rotate", DocumentID: app.documentID, CommandID: "word.image.rotate",
 		ExpectedRevision: imageInserted.Revision, Operator: application.Operator{ID: "agent", Kind: application.OperatorBuiltInAgent},
-		Arguments: marshalArgs(map[string]any{"image_id": imageResult.ImageID, "delta_degrees": -90}),
+		Arguments: marshalArgs(testApplicationsessionImageIdDeltaDegreesArguments{ImageId: imageResult.ImageID, DeltaDegrees: -90}),
 	})
 	if err != nil || app.wordRevisionAtomic.Load() != imageRotated.Revision {
 		t.Fatalf("rotate image in live desktop Word session: result=%+v app revision=%d error=%v", imageRotated, app.wordRevisionAtomic.Load(), err)
@@ -870,6 +1015,17 @@ func TestAgentWordParagraphAppendUpdatesDesktopSessionAndRevision(t *testing.T) 
 	if image := findWordImage(word.WordBlocks(), imageResult.ImageID); image == nil || image.RotationDegrees != 270 {
 		t.Fatalf("Agent image rotation is not visible in the live desktop Word session: %+v", image)
 	}
+}
+
+type testApplicationsessionRunIdBoldArguments27 struct {
+	RunId string `json:"run_id"`
+	Bold  bool   `json:"bold"`
+}
+
+type testApplicationsessionRunIdStartEndArguments28 struct {
+	RunId string `json:"run_id"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
 }
 
 func TestAgentWordTextRangeClipboardUsesLiveDesktopSession(t *testing.T) {
@@ -902,7 +1058,7 @@ func TestAgentWordTextRangeClipboardUsesLiveDesktopSession(t *testing.T) {
 	if err := json.Unmarshal(appended.Data, &target); err != nil || target.RunID == "" {
 		t.Fatalf("decode appended run ID: %v, data=%s", err, appended.Data)
 	}
-	arguments, err := json.Marshal(map[string]any{"run_id": target.RunID, "start": 3, "end": 4})
+	arguments, err := json.Marshal(testApplicationsessionRunIdStartEndArguments28{RunId: target.RunID, Start: 3, End: 4})
 	if err != nil {
 		t.Fatalf("marshal range arguments: %v", err)
 	}
@@ -919,7 +1075,7 @@ func TestAgentWordTextRangeClipboardUsesLiveDesktopSession(t *testing.T) {
 	if err := json.Unmarshal(copied.Data, &copyData); err != nil || copyData.Text != "🙂" || copied.Revision != appended.Revision {
 		t.Fatalf("desktop copy = %+v, revision=%d, error=%v", copyData, copied.Revision, err)
 	}
-	cutArguments, err := json.Marshal(map[string]any{"run_id": target.RunID, "start": 3, "end": 4})
+	cutArguments, err := json.Marshal(testApplicationsessionRunIdStartEndArguments28{RunId: target.RunID, Start: 3, End: 4})
 	if err != nil {
 		t.Fatalf("marshal cut arguments: %v", err)
 	}
@@ -959,7 +1115,7 @@ func TestAgentWordTextRangeClipboardUsesLiveDesktopSession(t *testing.T) {
 	styled, err := desktop.applicationRuntime.Commands().Execute(ctx, application.CommandRequest{
 		RequestID: "agent-format-painter-source", DocumentID: app.documentID, CommandID: "word.text_run.style.set",
 		ExpectedRevision: targetParagraph.Revision, Operator: operator,
-		Arguments: marshalAgentArguments(map[string]any{"run_id": target.RunID, "bold": true}),
+		Arguments: marshalAgentArguments(testApplicationsessionRunIdBoldArguments27{RunId: target.RunID, Bold: true}),
 	})
 	if err != nil {
 		t.Fatalf("style format painter source: %v", err)
@@ -1098,11 +1254,11 @@ func TestApplicationRuntimeOpenAndCreateUseDesktopSessions(t *testing.T) {
 	if !strings.Contains(string(query.Content), "unsaved") || !query.Info.Dirty {
 		t.Fatalf("MCP query did not see the live unsaved draft: content=%s info=%+v", query.Content, query.Info)
 	}
-	var queriedContent map[string]any
+	var queriedContent desktopQueryContent
 	if err := json.Unmarshal(query.Content, &queriedContent); err != nil {
 		t.Fatalf("unmarshal live query: %v", err)
 	}
-	if queriedContent["kind"] != "object" {
+	if queriedContent.Kind != "object" {
 		t.Fatalf("unexpected live query DTO: %s", query.Content)
 	}
 	created, err := desktop.applicationRuntime.CreateDocument(ctx, application.FormatJSON)

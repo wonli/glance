@@ -183,6 +183,11 @@ func (a *App) showSpreadsheetNameManagerDialog() {
 	}, modalDialogActionSpec{ID: "confirm", Label: "新建名称"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
 }
 
+type spreadsheetFlashFillApplyArguments struct {
+	Sheet  string             `json:"sheet"`
+	Bounds document.CellRange `json:"bounds"`
+}
+
 func (a *App) applySpreadsheetFlashFill() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
@@ -204,7 +209,7 @@ func (a *App) applySpreadsheetFlashFill() {
 		var res document.SpreadsheetFlashFillResult
 		var err error
 		if commandRouted {
-			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.flash_fill.apply", "spreadsheet_cell_range", "selection", sheet, map[string]any{"sheet": sheet, "bounds": bounds})
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.flash_fill.apply", "spreadsheet_cell_range", "selection", sheet, spreadsheetFlashFillApplyArguments{Sheet: sheet, Bounds: bounds})
 			err = commandErr
 			if err == nil {
 				err = json.Unmarshal(result.Data, &res)

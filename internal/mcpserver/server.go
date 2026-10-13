@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"glance/internal/application"
+	"glance/internal/jsonschema"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -249,21 +250,24 @@ func errorCode(err error) string {
 }
 
 func mcpInputSchema(descriptor application.CapabilityDescriptor) (json.RawMessage, error) {
-	var schema map[string]any
-	if err := json.Unmarshal(descriptor.InputSchema, &schema); err != nil || schema == nil {
+	var schema jsonschema.Definition
+	if err := json.Unmarshal(descriptor.InputSchema, &schema); err != nil {
 		return nil, errors.New("capability input schema must be a JSON object")
 	}
-	properties, ok := schema["properties"].(map[string]any)
-	if !ok {
-		properties = make(map[string]any)
-		schema["properties"] = properties
+	properties := schema.Properties
+	if properties == nil {
+		properties = make(map[string]jsonschema.Definition)
 	}
-	required := schemaStringArray(schema["required"])
+	required := append([]string(nil), schema.Required...)
 	if descriptor.RequiresDocument {
-		properties["document_id"] = map[string]any{"type": "string", "description": "Glance 实时文档会话 ID"}
+		properties["document_id"] = jsonschema.Definition{Type: jsonschema.StringType("string"), Description: "Glance 实时文档会话 ID"}
 		required = append(required, "document_id")
-		properties["view"] = viewContextSchema(descriptor.RequiresView)
-		properties["expected_revision"] = map[string]any{"type": "integer", "description": "本次操作基于的当前文档修订版本"}
+		var viewSchema jsonschema.Definition
+		if err := json.Unmarshal(viewContextSchema(descriptor.RequiresView), &viewSchema); err != nil {
+			return nil, fmt.Errorf("build MCP view context schema: %w", err)
+		}
+		properties["view"] = viewSchema
+		properties["expected_revision"] = jsonschema.Definition{Type: jsonschema.StringType("integer"), Description: "本次操作基于的当前文档修订版本"}
 	}
 	if descriptor.RequiresView {
 		required = append(required, "view")
@@ -272,37 +276,54 @@ func mcpInputSchema(descriptor application.CapabilityDescriptor) (json.RawMessag
 		required = append(required, "expected_revision")
 	}
 	if descriptor.Category == application.CapabilityCommand {
-		properties["idempotency_key"] = map[string]any{"type": "string", "description": "可选的幂等键，用于安全重试相同操作"}
+		properties["idempotency_key"] = jsonschema.Definition{Type: jsonschema.StringType("string"), Description: "可选的幂等键，用于安全重试相同操作"}
 	}
-	schema["required"] = uniqueStrings(required)
-	schema["additionalProperties"] = false
+	schema.Properties = properties
+	schema.Required = uniqueStrings(required)
+	schema.AdditionalProperties = jsonschema.RawBool(false)
 	return json.Marshal(schema)
 }
 
-func viewContextSchema(requireWindow bool) map[string]any {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"window_id":   map[string]any{"type": "integer"},
-			"document_id": map[string]any{"type": "string"},
-			"revision":    map[string]any{"type": "integer"},
-			"selection": map[string]any{
-				"type": "object", "properties": map[string]any{
-					"target_type": map[string]any{"type": "string"},
-					"target_id":   map[string]any{"type": "string"},
-					"sheet":       map[string]any{"type": "string"},
-					"range": map[string]any{"type": "object", "properties": map[string]any{
-						"start_row": map[string]any{"type": "integer"}, "start_column": map[string]any{"type": "integer"},
-						"end_row": map[string]any{"type": "integer"}, "end_column": map[string]any{"type": "integer"},
-					}},
-				}, "required": []string{"target_type"}, "additionalProperties": false,
-			},
-		}, "additionalProperties": false,
+type schemaProperty struct {
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+}
+
+func viewContextSchema(requireWindow bool) json.RawMessage {
+	rangeProperties := map[string]jsonschema.Definition{
+		"start_row":    {Type: jsonschema.StringType("integer")},
+		"start_column": {Type: jsonschema.StringType("integer")},
+		"end_row":      {Type: jsonschema.StringType("integer")},
+		"end_column":   {Type: jsonschema.StringType("integer")},
 	}
+	selectionProperties := map[string]jsonschema.Definition{
+		"target_type": {Type: jsonschema.StringType("string")},
+		"target_id":   {Type: jsonschema.StringType("string")},
+		"sheet":       {Type: jsonschema.StringType("string")},
+		"range": {Type: jsonschema.StringType("object"), Properties: rangeProperties,
+			AdditionalProperties: jsonschema.RawBool(false)},
+	}
+	rootProperties := map[string]jsonschema.Definition{
+		"window_id":   {Type: jsonschema.StringType("integer")},
+		"document_id": {Type: jsonschema.StringType("string")},
+		"revision":    {Type: jsonschema.StringType("integer")},
+		"selection": {Type: jsonschema.StringType("object"), Properties: selectionProperties,
+			Required: []string{"target_type"}, AdditionalProperties: jsonschema.RawBool(false)},
+	}
+	required := []string(nil)
 	if requireWindow {
-		schema["required"] = []string{"window_id", "document_id", "revision"}
+		required = []string{"window_id", "document_id", "revision"}
 	}
-	return schema
+	return rawSchema(jsonschema.Definition{Type: jsonschema.StringType("object"), Properties: rootProperties,
+		Required: required, AdditionalProperties: jsonschema.RawBool(false)})
+}
+
+func rawSchema[T any](value T) json.RawMessage {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return encoded
 }
 
 func uniqueStrings(values []string) []string {
@@ -318,54 +339,66 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
-func schemaStringArray(raw any) []string {
-	items, _ := raw.([]any)
-	result := make([]string, 0, len(items))
-	for _, item := range items {
-		if value, ok := item.(string); ok {
-			result = append(result, value)
-		}
-	}
-	return result
+type outputSchemaDocument struct {
+	Type       string           `json:"type"`
+	Properties outputProperties `json:"properties"`
+	Required   []string         `json:"required"`
 }
 
-func mcpOutputSchema(descriptor application.CapabilityDescriptor) map[string]any {
-	var data any = map[string]any{}
-	if len(descriptor.OutputSchema) != 0 {
-		_ = json.Unmarshal(descriptor.OutputSchema, &data)
+type outputProperties struct {
+	RequestID  schemaProperty  `json:"request_id"`
+	DocumentID schemaProperty  `json:"document_id"`
+	Revision   schemaProperty  `json:"revision"`
+	Data       json.RawMessage `json:"data"`
+}
+
+type schemaAlternatives struct {
+	OneOf []json.RawMessage `json:"oneOf"`
+}
+
+func outputDataSchema(descriptor application.CapabilityDescriptor) json.RawMessage {
+	data := json.RawMessage(`{}`)
+	if json.Valid(descriptor.OutputSchema) {
+		data = append(json.RawMessage(nil), descriptor.OutputSchema...)
 	}
-	if descriptor.Risk == application.RiskHigh || descriptor.Risk == application.RiskCritical {
-		data = map[string]any{
-			"oneOf": []any{
-				data,
-				map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"status":            map[string]any{"type": "string", "enum": []string{"confirmation_required", "confirmation_running", "confirmation_rejected", "confirmation_failed", "confirmation_expired", "confirmation_cancelled"}},
-						"confirmation_id":   map[string]any{"type": "string"},
-						"capability_id":     map[string]any{"type": "string"},
-						"capability_name":   map[string]any{"type": "string"},
-						"document_id":       map[string]any{"type": "string"},
-						"document_label":    map[string]any{"type": "string"},
-						"expected_revision": map[string]any{"type": "integer"},
-						"impact_summary":    map[string]any{"type": "string"},
-						"expires_at":        map[string]any{"type": "string"},
-						"error":             map[string]any{"type": "string"},
-					},
-					"required":             []string{"status", "confirmation_id", "capability_id", "capability_name", "impact_summary", "expires_at"},
-					"additionalProperties": false,
+	if descriptor.Risk != application.RiskHigh && descriptor.Risk != application.RiskCritical {
+		return data
+	}
+	confirmationSchema := rawSchema(jsonschema.Definition{
+		Type: jsonschema.StringType("object"),
+		Properties: map[string]jsonschema.Definition{
+			"status": {
+				Type: jsonschema.StringType("string"),
+				Enum: []json.RawMessage{
+					rawSchema("confirmation_required"), rawSchema("confirmation_running"), rawSchema("confirmation_rejected"),
+					rawSchema("confirmation_failed"), rawSchema("confirmation_expired"), rawSchema("confirmation_cancelled"),
 				},
 			},
-		}
-	}
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"request_id":  map[string]any{"type": "string"},
-			"document_id": map[string]any{"type": "string"},
-			"revision":    map[string]any{"type": "integer"},
-			"data":        data,
+			"confirmation_id":   {Type: jsonschema.StringType("string")},
+			"capability_id":     {Type: jsonschema.StringType("string")},
+			"capability_name":   {Type: jsonschema.StringType("string")},
+			"document_id":       {Type: jsonschema.StringType("string")},
+			"document_label":    {Type: jsonschema.StringType("string")},
+			"expected_revision": {Type: jsonschema.StringType("integer")},
+			"impact_summary":    {Type: jsonschema.StringType("string")},
+			"expires_at":        {Type: jsonschema.StringType("string")},
+			"error":             {Type: jsonschema.StringType("string")},
 		},
-		"required": []string{"request_id", "data"},
-	}
+		Required:             []string{"status", "confirmation_id", "capability_id", "capability_name", "impact_summary", "expires_at"},
+		AdditionalProperties: jsonschema.RawBool(false),
+	})
+	return rawSchema(schemaAlternatives{OneOf: []json.RawMessage{data, confirmationSchema}})
+}
+
+func mcpOutputSchema(descriptor application.CapabilityDescriptor) json.RawMessage {
+	return rawSchema(outputSchemaDocument{
+		Type: "object",
+		Properties: outputProperties{
+			RequestID:  schemaProperty{Type: "string"},
+			DocumentID: schemaProperty{Type: "string"},
+			Revision:   schemaProperty{Type: "integer"},
+			Data:       outputDataSchema(descriptor),
+		},
+		Required: []string{"request_id", "data"},
+	})
 }

@@ -2,6 +2,7 @@ package officeqa
 
 import (
 	"context"
+	"encoding/json"
 	"image"
 	"image/color"
 	"os"
@@ -93,7 +94,6 @@ func writeInput(t *testing.T, root, relative string, content []byte) string {
 	return path
 }
 
-func caseWithExpected(entry map[string]any, expected string) map[string]any {
-	entry["expected"] = expected
-	return entry
+func caseWithExpected(t *testing.T, entry json.RawMessage, expected string) json.RawMessage {
+	return setManifestField(t, entry, "expected", expected)
 }

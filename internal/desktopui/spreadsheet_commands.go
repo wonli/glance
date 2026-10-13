@@ -183,6 +183,14 @@ func (a *App) applyBatchEdits(edits []document.CellEdit, operation string) error
 	return nil
 }
 
+type spreadsheetStructureEditArguments struct {
+	Operation string `json:"operation"`
+	Sheet     string `json:"sheet"`
+	NewName   string `json:"new_name"`
+	Index     int    `json:"index"`
+	Count     int    `json:"count"`
+}
+
 func (a *App) applyStructure(edit document.StructureEdit) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
@@ -206,9 +214,7 @@ func (a *App) applyStructure(edit document.StructureEdit) {
 		var err error
 		if commandRouted {
 			operation := spreadsheetStructureOperation(edit.Kind)
-			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.structure.edit", "spreadsheet_workbook", token.documentID, edit.Sheet, map[string]any{
-				"operation": operation, "sheet": edit.Sheet, "new_name": edit.NewName, "index": edit.Index, "count": edit.Count,
-			})
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.structure.edit", "spreadsheet_workbook", token.documentID, edit.Sheet, spreadsheetStructureEditArguments{Operation: operation, Sheet: edit.Sheet, NewName: edit.NewName, Index: edit.Index, Count: edit.Count})
 			err = commandErr
 			if err == nil {
 				var outcome struct {

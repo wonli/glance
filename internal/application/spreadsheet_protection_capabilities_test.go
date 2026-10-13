@@ -9,6 +9,18 @@ import (
 	"testing"
 )
 
+type testSpreadsheetprotectionScopeEnabledArguments struct {
+	Scope    string `json:"scope"`
+	Enabled  bool   `json:"enabled"`
+	Sheet    string `json:"sheet,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
+type testSpreadsheetprotectionScopeArguments struct {
+	Scope string `json:"scope"`
+	Sheet string `json:"sheet,omitempty"`
+}
+
 func TestSpreadsheetProtectionCapabilitiesRequireHumanAndRoundTripWithoutLeakingPassword(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -35,10 +47,7 @@ func TestSpreadsheetProtectionCapabilitiesRequireHumanAndRoundTripWithoutLeaking
 	}
 	getProtection := func(scope, sheet string) bool {
 		t.Helper()
-		arguments := map[string]any{"scope": scope}
-		if sheet != "" {
-			arguments["sheet"] = sheet
-		}
+		arguments := testSpreadsheetprotectionScopeArguments{Scope: scope, Sheet: sheet}
 		result, invokeErr := invoke("spreadsheet.protection.get", arguments)
 		if invokeErr != nil {
 			t.Fatalf("InvokeCapability(spreadsheet.protection.get): %v", invokeErr)
@@ -58,13 +67,7 @@ func TestSpreadsheetProtectionCapabilitiesRequireHumanAndRoundTripWithoutLeaking
 	}
 	setProtection := func(scope, sheet string, enabled bool, password string, wantChanged, wantError bool) ConfirmationInfo {
 		t.Helper()
-		arguments := map[string]any{"scope": scope, "enabled": enabled}
-		if sheet != "" {
-			arguments["sheet"] = sheet
-		}
-		if password != "" {
-			arguments["password"] = password
-		}
+		arguments := testSpreadsheetprotectionScopeEnabledArguments{Scope: scope, Enabled: enabled, Sheet: sheet, Password: password}
 		before := mustGetDocumentInfo(t, runtime, documentID)
 		pending, invokeErr := invoke("spreadsheet.protection.set", arguments)
 		if invokeErr != nil {

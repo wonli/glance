@@ -11,6 +11,16 @@ import (
 	"github.com/SalvioniDigitalSolutions/gopdf"
 )
 
+type testWordprintCopiesFirstPageArguments struct {
+	Copies    int `json:"copies"`
+	FirstPage int `json:"first_page"`
+	LastPage  int `json:"last_page"`
+}
+
+type testWordprintTextArguments struct {
+	Text string `json:"text"`
+}
+
 func TestWordPrintCapabilityRequiresHumanAndValidatesPages(t *testing.T) {
 	ctx := context.Background()
 	printer := &capturingPrintService{}
@@ -26,7 +36,7 @@ func TestWordPrintCapabilityRequiresHumanAndValidatesPages(t *testing.T) {
 	seed, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "word-print-seed", DocumentID: doc.DocumentID, CapabilityID: "word.paragraph.append",
 		ExpectedRevision: doc.Revision, Operator: Operator{ID: "word-print-agent-test", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"text": "周报：本周完成工资表核对。"}),
+		Arguments: mustJSON(t, testWordprintTextArguments{Text: "周报：本周完成工资表核对。"}),
 	})
 	if err != nil {
 		t.Fatalf("seed Word document: %v", err)
@@ -37,7 +47,7 @@ func TestWordPrintCapabilityRequiresHumanAndValidatesPages(t *testing.T) {
 		result, invokeErr := runtime.InvokeCapability(ctx, CapabilityRequest{
 			RequestID: requestID, DocumentID: doc.DocumentID, CapabilityID: "word.document.print",
 			ExpectedRevision: before.Revision, Operator: Operator{ID: "word-print-agent-test", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"copies": 2, "first_page": firstPage, "last_page": lastPage}),
+			Arguments: mustJSON(t, testWordprintCopiesFirstPageArguments{Copies: 2, FirstPage: firstPage, LastPage: lastPage}),
 		})
 		if invokeErr != nil {
 			t.Fatalf("stage Word print: %v", invokeErr)

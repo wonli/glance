@@ -47,7 +47,7 @@ func TestRunUsesUniqueIDsWhenGeneratedIDConflictsWithManifest(t *testing.T) {
 	root := t.TempDir()
 	writeInput(t, root, "plain.xlsx", []byte("plain"))
 	writeInput(t, root, "z-manifested.xlsx", []byte("manifested"))
-	writeManifestFile(t, root, []map[string]any{manifestCase(generatedCaseID("plain.xlsx"), "z-manifested.xlsx", "xlsx")})
+	writeManifestFile(t, root, manifestCase(generatedCaseID("plain.xlsx"), "z-manifested.xlsx", "xlsx"))
 	manifest, err := LoadManifest(root)
 	if err != nil {
 		t.Fatal(err)

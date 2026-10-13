@@ -9,6 +9,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type testWordlayoutDocumentIdExpectedRevisionArguments struct {
+	DocumentId       string `json:"document_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+}
+
 func TestMCPWordPageSetupQueryReturnsSectionData(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := application.NewRuntime(ctx, application.RuntimeOptions{})
@@ -30,15 +35,13 @@ func TestMCPWordPageSetupQueryReturnsSectionData(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closeSession() })
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.page_setup.get", Arguments: map[string]any{
-		"document_id": doc.DocumentID, "expected_revision": doc.Revision,
-	}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.page_setup.get", Arguments: testWordlayoutDocumentIdExpectedRevisionArguments{DocumentId: doc.DocumentID, ExpectedRevision: doc.Revision}})
 	if err != nil || result.IsError {
 		t.Fatalf("query Word page setup = %+v, %v", result, err)
 	}
 	data := mapValue(t, mapValue(t, result.StructuredContent)["data"])
-	sections, ok := data["sections"].([]any)
-	if !ok || len(sections) == 0 {
+	sections := rawArray(t, data["sections"])
+	if len(sections) == 0 {
 		t.Fatalf("Word page setup sections = %#v", data["sections"])
 	}
 	setup := mapValue(t, mapValue(t, sections[0])["page_setup"])

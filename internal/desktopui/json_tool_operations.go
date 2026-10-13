@@ -59,21 +59,36 @@ func (a *App) startJSONTool(id string) {
 	})
 }
 
+type startJSONApplicationToolPayload struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit"`
+}
+
+type startJSONApplicationToolSortKeysPayload struct {
+	Operation string `json:"operation"`
+}
+
+type startJSONApplicationToolPayloadOperation struct {
+	Operation string `json:"operation"`
+}
+
+type startJSONApplicationToolArguments struct{}
+
 func (a *App) startJSONApplicationTool(v *jsonWorkspaceView, id, source string) bool {
 	state := a.documentSessionState
 	if state == nil || state.jsonDoc == nil || !a.applicationSessionRegistered(state.documentID) {
 		return false
 	}
 	capabilityID := "json.text.transform"
-	arguments := map[string]any{}
+	var arguments any = startJSONApplicationToolArguments{}
 	kind := sessionOperationMutation
 	switch id {
 	case "format":
-		arguments["operation"] = "format"
+		arguments = startJSONApplicationToolPayloadOperation{Operation: "format"}
 	case "minify":
-		arguments["operation"] = "minify"
+		arguments = startJSONApplicationToolPayloadOperation{Operation: "minify"}
 	case "sort-keys":
-		arguments["operation"] = "sort_keys"
+		arguments = startJSONApplicationToolSortKeysPayload{Operation: "sort_keys"}
 	case "validate":
 		capabilityID = "json.document.validate"
 		kind = sessionOperationRead
@@ -83,7 +98,7 @@ func (a *App) startJSONApplicationTool(v *jsonWorkspaceView, id, source string) 
 			return false
 		}
 		capabilityID = "json.document.search"
-		arguments["query"], arguments["limit"] = query, 100
+		arguments = startJSONApplicationToolPayload{Query: query, Limit: 100}
 		kind = sessionOperationRead
 	case "copy":
 		capabilityID = "json.document.read_text"
@@ -119,6 +134,11 @@ func (a *App) startJSONApplicationTool(v *jsonWorkspaceView, id, source string) 
 	return true
 }
 
+type startJSONViewApplicationToolPayload struct {
+	Operation string `json:"operation"`
+	Level     *int   `json:"level,omitempty"`
+}
+
 func (a *App) startJSONViewApplicationTool(v *jsonWorkspaceView, operation string, level int) bool {
 	state := a.documentSessionState
 	if v == nil || state == nil || state.jsonDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -129,9 +149,9 @@ func (a *App) startJSONViewApplicationTool(v *jsonWorkspaceView, operation strin
 		v.toolMessage = "JSON 文档正在处理其他操作"
 		return true
 	}
-	arguments := map[string]any{"operation": operation}
+	arguments := startJSONViewApplicationToolPayload{Operation: operation}
 	if operation == "expand_level" {
-		arguments["level"] = level
+		arguments.Level = &level
 	}
 	v.toolPending = true
 	generation := a.documentGeneration

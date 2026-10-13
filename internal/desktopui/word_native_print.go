@@ -245,6 +245,9 @@ func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKe
 	a.setStatus("正在打开系统打印面板…")
 }
 
+type wordDocumentPrintArguments struct {
+}
+
 func (a *App) beginWordApplicationPrint(state *documentSessionState, key wordLayoutKey) {
 	ctx, cancel := context.WithCancel(context.Background())
 	token, ok := state.beginOperation(sessionOperationRead)
@@ -266,7 +269,7 @@ func (a *App) beginWordApplicationPrint(state *documentSessionState, key wordLay
 	a.launchManagedBackground(func() {
 		defer state.finishOperation(token)
 		result := wordPrintResult{state: state, key: key}
-		_, result.err = a.executeRibbonApplicationCommandWithContext(ctx, token, "word.document.print", "word_document", state.documentID, "", map[string]any{})
+		_, result.err = a.executeRibbonApplicationCommandWithContext(ctx, token, "word.document.print", "word_document", state.documentID, "", wordDocumentPrintArguments{})
 		select {
 		case results <- result:
 			if window != nil {

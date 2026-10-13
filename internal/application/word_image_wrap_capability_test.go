@@ -16,6 +16,11 @@ import (
 	"glance/internal/format/docx"
 )
 
+type testWordimageImageIdWrapModeArguments struct {
+	ImageId  string `json:"image_id"`
+	WrapMode string `json:"wrap_mode"`
+}
+
 func TestWordImageWrapCapabilityRequiresHumanAndPreservesImage(t *testing.T) {
 	ctx := context.Background()
 	fixturePath, imageID, originalImage, originalBytes := makeFloatingWordImageFixture(t)
@@ -39,7 +44,7 @@ func TestWordImageWrapCapabilityRequiresHumanAndPreservesImage(t *testing.T) {
 			RequestID: fmt.Sprintf("word-image-wrap-%d", requestNumber), DocumentID: documentID,
 			CapabilityID: "word.image.wrap.set", ExpectedRevision: info.Revision,
 			Operator:  Operator{ID: "wrap-agent-test", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"image_id": imageID, "wrap_mode": "inline"}),
+			Arguments: mustJSON(t, testWordimageImageIdWrapModeArguments{ImageId: imageID, WrapMode: "inline"}),
 		})
 		if invokeErr != nil {
 			t.Fatalf("stage Word image wrap: %v", invokeErr)

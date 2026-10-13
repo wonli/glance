@@ -24,6 +24,18 @@ type agentCapabilityManifest struct {
 	} `json:"agent_only_capabilities"`
 }
 
+type manifestCapabilityArguments struct {
+	DocumentID       string                   `json:"document_id,omitempty"`
+	ExpectedRevision uint64                   `json:"expected_revision,omitempty"`
+	View             *application.ViewContext `json:"view,omitempty"`
+}
+
+type testAgentmanifestEmptyArguments struct // Use a missing document for document-scoped capabilities so the call
+// reaches the registered handler but cannot mutate a real document.
+{
+
+}
+
 func TestEveryManifestCapabilityIsRegisteredAndCallable(t *testing.T) {
 	_, sourcePath, _, ok := runtime.Caller(0)
 	if !ok {
@@ -108,16 +120,14 @@ func TestEveryManifestCapabilityIsRegisteredAndCallable(t *testing.T) {
 			continue
 		}
 
-		// Use a missing document for document-scoped capabilities so the call
-		// reaches the registered handler but cannot mutate a real document.
-		arguments := map[string]any{}
+		arguments := manifestCapabilityArguments{}
 		if descriptor.RequiresDocument {
-			arguments["document_id"] = "manifest-conformance-missing-document"
+			arguments.DocumentID = "manifest-conformance-missing-document"
 			if descriptor.RequiresRevision {
-				arguments["expected_revision"] = 1
+				arguments.ExpectedRevision = 1
 			}
 			if descriptor.RequiresView {
-				arguments["view"] = application.ViewContext{
+				arguments.View = &application.ViewContext{
 					WindowID: 1, DocumentID: "manifest-conformance-missing-document", Revision: 1,
 				}
 			}

@@ -7,6 +7,19 @@ import (
 	"glance/internal/document"
 )
 
+type toggleValueFilterSetFromRowArguments struct {
+	Operation string             `json:"operation"`
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	Column    int                `json:"column"`
+	SourceRow int                `json:"source_row"`
+}
+
+type toggleValueFilterArguments struct {
+	Operation string `json:"operation"`
+	Sheet     string `json:"sheet"`
+}
+
 func (a *App) toggleValueFilter() {
 	state := a.documentSessionState
 	if state == nil || state.formatRunning.Load() || state.book == nil {
@@ -14,7 +27,7 @@ func (a *App) toggleValueFilter() {
 	}
 	if state.valueFilter != nil {
 		if a.applicationSessionRegistered(state.documentID) {
-			a.runSpreadsheetFilterIntent(map[string]any{"operation": "clear", "sheet": state.sheet})
+			a.runSpreadsheetFilterIntent(toggleValueFilterArguments{Operation: "clear", Sheet: state.sheet})
 		} else {
 			a.clearValueFilter(state)
 		}
@@ -30,10 +43,7 @@ func (a *App) toggleValueFilter() {
 		return
 	}
 	if a.applicationSessionRegistered(state.documentID) {
-		a.runSpreadsheetFilterIntent(map[string]any{
-			"operation": "set_from_row", "sheet": sheet, "bounds": bounds,
-			"column": pos.Column + 1, "source_row": pos.Row + 1,
-		})
+		a.runSpreadsheetFilterIntent(toggleValueFilterSetFromRowArguments{Operation: "set_from_row", Sheet: sheet, Bounds: bounds, Column: pos.Column + 1, SourceRow: pos.Row + 1})
 		return
 	}
 	reader, ok := state.book.(document.SpreadsheetRangeReader)

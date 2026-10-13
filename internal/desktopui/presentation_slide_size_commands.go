@@ -31,6 +31,11 @@ func (a *App) showPresentationSlideSizeOptions(view *presentationViewState) {
 	)
 }
 
+type presentationSlideSizeSetArguments struct {
+	WidthPt  float64 `json:"width_pt"`
+	HeightPt float64 `json:"height_pt"`
+}
+
 func (a *App) startPresentationSlideSizeSet(view *presentationViewState, widthPT, heightPT float64) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -56,9 +61,7 @@ func (a *App) startPresentationSlideSizeSet(view *presentationViewState, widthPT
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "presentation.slide.size.set", "presentation_document", token.documentID, "", map[string]any{
-			"width_pt": widthPT, "height_pt": heightPT,
-		})
+		result, err := a.executeRibbonApplicationCommand(token, "presentation.slide.size.set", "presentation_document", token.documentID, "", presentationSlideSizeSetArguments{WidthPt: widthPT, HeightPt: heightPT})
 		state.finishOperation(token)
 		out := presentationCommandResult{state: state, view: view, generation: generation, slideSize: true, err: err}
 		if err == nil {

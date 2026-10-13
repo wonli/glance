@@ -251,6 +251,11 @@ func (a *App) startPresentationPDFSavePicker(state *documentSessionState, snapsh
 	a.startFileCommand(commandExportPDF, "pdf")
 }
 
+type presentationDocumentExportPdfArguments struct {
+	TargetPath  string `json:"target_path"`
+	Orientation string `json:"orientation"`
+}
+
 func (a *App) startPresentationPDFFileExport(request *presentationPDFPickerRequest, path string) {
 	if request == nil || request.state == nil || request.state.pptxDoc == nil || request.state.closed.Load() {
 		a.setStatus("演示文稿 PDF 导出状态已过期，请重新导出")
@@ -302,8 +307,7 @@ func (a *App) startPresentationPDFFileExport(request *presentationPDFPickerReque
 		defer cancel()
 		defer state.finishOperation(token)
 		_, err := a.executeRibbonApplicationCommandWithContext(ctx, token,
-			"presentation.document.export_pdf", "presentation_document", state.documentID, "",
-			map[string]any{"target_path": path, "orientation": request.orientation},
+			"presentation.document.export_pdf", "presentation_document", state.documentID, "", presentationDocumentExportPdfArguments{TargetPath: path, Orientation: request.orientation},
 		)
 		result := presentationPDFExportResult{state: state, path: path, err: err}
 		select {
@@ -315,6 +319,11 @@ func (a *App) startPresentationPDFFileExport(request *presentationPDFPickerReque
 		}
 	})
 	a.setStatus("正在生成演示文稿 PDF…")
+}
+
+type presentationDocumentPrintArguments struct {
+	Orientation string `json:"orientation"`
+	Copies      int    `json:"copies"`
 }
 
 func (a *App) startPresentationPDFPrint(state *documentSessionState, snapshot document.PresentationSnapshot, orientation string) {
@@ -355,8 +364,7 @@ func (a *App) startPresentationPDFPrint(state *documentSessionState, snapshot do
 		defer cancel()
 		defer state.finishOperation(token)
 		_, err := a.executeRibbonApplicationCommandWithContext(ctx, token,
-			"presentation.document.print", "presentation_document", state.documentID, "",
-			map[string]any{"orientation": orientation, "copies": 1},
+			"presentation.document.print", "presentation_document", state.documentID, "", presentationDocumentPrintArguments{Orientation: orientation, Copies: 1},
 		)
 		result := presentationPDFExportResult{state: state, printJob: true, printed: err == nil, err: err}
 		select {

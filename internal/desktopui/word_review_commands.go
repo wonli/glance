@@ -27,6 +27,10 @@ func (a *App) runWordWatermarkCommand(operation string, edit func(document.WordW
 	})
 }
 
+type wordReviewTrackSetArguments struct {
+	Enabled bool `json:"enabled"`
+}
+
 func (a *App) toggleWordTrackRevisions() {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
@@ -43,9 +47,13 @@ func (a *App) toggleWordTrackRevisions() {
 	if !next {
 		label = "关闭修订跟踪"
 	}
-	if !a.runWordApplicationCommand(label, "word.review.track.set", map[string]any{"enabled": next}) {
+	if !a.runWordApplicationCommand(label, "word.review.track.set", wordReviewTrackSetArguments{Enabled: next}) {
 		a.setStatus("当前文档的应用命令运行时不可用，未修改修订跟踪状态")
 	}
+}
+
+type wordreviewActionArguments struct {
+	Action string `json:"action"`
 }
 
 func (a *App) acceptWordRevisions() {
@@ -61,7 +69,7 @@ func (a *App) acceptWordRevisions() {
 	a.modal.Show("接受全部修订", "将接受文档中的所有插入并移除所有删除标记。是否继续？", func(action string) {
 		a.modal.Hide()
 		if action == "confirm" {
-			if !a.runWordApplicationCommand("接受全部修订", "word.review.revisions.apply", map[string]any{"action": "accept_all"}) {
+			if !a.runWordApplicationCommand("接受全部修订", "word.review.revisions.apply", wordreviewActionArguments{Action: "accept_all"}) {
 				a.setStatus("当前文档的应用命令运行时不可用，未接受修订")
 			}
 		}
@@ -84,7 +92,7 @@ func (a *App) rejectWordRevisions() {
 	a.modal.Show("拒绝全部修订", "将放弃文档中的所有插入并恢复所有已删除内容。是否继续？", func(action string) {
 		a.modal.Hide()
 		if action == "confirm" {
-			if !a.runWordApplicationCommand("拒绝全部修订", "word.review.revisions.apply", map[string]any{"action": "reject_all"}) {
+			if !a.runWordApplicationCommand("拒绝全部修订", "word.review.revisions.apply", wordreviewActionArguments{Action: "reject_all"}) {
 				a.setStatus("当前文档的应用命令运行时不可用，未拒绝修订")
 			}
 		}

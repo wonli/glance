@@ -117,8 +117,8 @@ func TestRunRequiresManifestExpectedDiagnostics(t *testing.T) {
 			root, output := t.TempDir(), filepath.Join(t.TempDir(), "run")
 			writeInput(t, root, "drawing-shapes.docx", []byte("docx"))
 			entry := manifestCase("nested-table", "drawing-shapes.docx", "docx")
-			entry["expected_diagnostics"] = []string{"error:nested-table"}
-			writeManifestFile(t, root, []map[string]any{entry})
+			entry = setManifestField(t, entry, "expected_diagnostics", []string{"error:nested-table"})
+			writeManifestFile(t, root, entry)
 			manifest, err := LoadManifest(root)
 			if err != nil {
 				t.Fatal(err)
@@ -148,9 +148,7 @@ func TestRunRequiresManifestExpectedDiagnostics(t *testing.T) {
 func TestRunMatchesManifestForASubdirectoryAndKeepsSourceReadOnly(t *testing.T) {
 	root, output := t.TempDir(), filepath.Join(t.TempDir(), "run")
 	path := writeInput(t, root, "xlsx/expected-failure.xlsx", []byte("unchanged source"))
-	writeManifestFile(t, root, []map[string]any{
-		caseWithExpected(manifestCase("known-render-limit", "xlsx/expected-failure.xlsx", "xlsx"), "render_failure"),
-	})
+	writeManifestFile(t, root, caseWithExpected(t, manifestCase("known-render-limit", "xlsx/expected-failure.xlsx", "xlsx"), "render_failure"))
 	manifest, err := LoadManifest(root)
 	if err != nil {
 		t.Fatal(err)

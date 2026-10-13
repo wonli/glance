@@ -18,6 +18,172 @@ import (
 	"glance/internal/format/pptx"
 )
 
+type testPresentationobjectSlideIdElementIdArguments struct {
+	SlideId     uint32 `json:"slide_id"`
+	ElementId   int64  `json:"element_id"`
+	MediaType   string `json:"media_type"`
+	ImageBase64 []byte `json:"image_base64"`
+}
+
+type presentationElementPictureReplacePayload struct {
+	SlideId     uint32 `json:"slide_id"`
+	ElementId   int    `json:"element_id"`
+	MediaType   string `json:"media_type"`
+	ImageBase64 []byte `json:"image_base64"`
+}
+
+type presentationElementPictureCropSetPayload struct {
+	SlideId   uint32 `json:"slide_id"`
+	ElementId int    `json:"element_id"`
+	Left      int    `json:"left"`
+	Top       int    `json:"top"`
+	Right     int    `json:"right"`
+	Bottom    int    `json:"bottom"`
+}
+
+type testPresentationobjectSlideIdElementIdLeftArguments struct {
+	SlideId   uint32 `json:"slide_id"`
+	ElementId int64  `json:"element_id"`
+	Left      int    `json:"left"`
+	Top       int    `json:"top"`
+	Right     int    `json:"right"`
+	Bottom    int    `json:"bottom"`
+}
+
+type presentationElementPictureCreatePayload struct {
+	SlideId     uint32 `json:"slide_id"`
+	X           int    `json:"x"`
+	Y           int    `json:"y"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	Fit         string `json:"fit"`
+	MediaType   string `json:"media_type"`
+	ImageBase64 []byte `json:"image_base64"`
+}
+
+type testPresentationobjectSlideIdXArguments struct {
+	SlideId     uint32 `json:"slide_id"`
+	X           int    `json:"x"`
+	Y           int    `json:"y"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	Fit         string `json:"fit"`
+	MediaType   string `json:"media_type"`
+	ImageBase64 []byte `json:"image_base64"`
+	AltText     string `json:"alt_text"`
+}
+
+type presentationElementChartCreatePayload struct {
+	Name   string    `json:"name"`
+	Values []float64 `json:"values"`
+}
+
+type testPresentationobjectSlideIdChartTypeArguments struct {
+	SlideId    uint32                                  `json:"slide_id"`
+	ChartType  string                                  `json:"chart_type"`
+	Title      string                                  `json:"title"`
+	X          int                                     `json:"x"`
+	Y          int                                     `json:"y"`
+	Width      int                                     `json:"width"`
+	Height     int                                     `json:"height"`
+	Categories []string                                `json:"categories"`
+	Series     []presentationElementChartCreatePayload `json:"series"`
+}
+
+type presentationElementTableCreatePayload struct {
+	SlideId uint32     `json:"slide_id"`
+	X       int        `json:"x"`
+	Y       int        `json:"y"`
+	Width   int        `json:"width"`
+	Height  int        `json:"height"`
+	Rows    [][]string `json:"rows"`
+}
+
+type testPresentationobjectSlideIdXYArguments struct {
+	SlideId  uint32     `json:"slide_id"`
+	X        int        `json:"x"`
+	Y        int        `json:"y"`
+	Width    int        `json:"width"`
+	Height   int        `json:"height"`
+	FirstRow bool       `json:"first_row"`
+	BandRows bool       `json:"band_rows"`
+	Rows     [][]string `json:"rows"`
+}
+
+type presentationElementStyleSetPayload struct {
+	SlideId       uint32  `json:"slide_id"`
+	ElementId     int64   `json:"element_id"`
+	FillColorHex  string  `json:"fill_color_hex"`
+	BorderColor   string  `json:"border_color"`
+	BorderWidthPt float64 `json:"border_width_pt"`
+}
+
+type presentationElementShapeCreatePayload struct {
+	SlideId  uint32 `json:"slide_id"`
+	Geometry string `json:"geometry"`
+	X        int    `json:"x"`
+	Y        int    `json:"y"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	Text     string `json:"text"`
+}
+
+type presentationElementTransformSetPayload struct {
+	SlideId     uint32 `json:"slide_id"`
+	ElementId   int    `json:"element_id"`
+	X           int    `json:"x"`
+	Y           int    `json:"y"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	RotationDeg int    `json:"rotation_deg"`
+}
+
+type testPresentationobjectSlideIdElementIdXArguments struct {
+	SlideId     uint32 `json:"slide_id"`
+	ElementId   int64  `json:"element_id"`
+	X           int    `json:"x"`
+	Y           int    `json:"y"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	RotationDeg int    `json:"rotation_deg"`
+}
+
+type testPresentationobjectSlideIdElementIdFontFamilyArguments struct {
+	SlideId            uint32 `json:"slide_id"`
+	ElementId          int64  `json:"element_id"`
+	FontFamily         string `json:"font_family"`
+	FontSizePt         int    `json:"font_size_pt"`
+	Bold               bool   `json:"bold"`
+	TextColorHex       string `json:"text_color_hex"`
+	ParagraphAlignment string `json:"paragraph_alignment"`
+}
+
+type presentationElementTextSetPayload struct {
+	SlideId   uint32 `json:"slide_id"`
+	ElementId int64  `json:"element_id"`
+	Text      string `json:"text"`
+}
+
+type presentationElementTextSetPayloadSlideId struct {
+	SlideId   uint32 `json:"slide_id"`
+	ElementId int    `json:"element_id"`
+	Text      string `json:"text"`
+}
+
+type presentationElementTextCopyPayload struct {
+	SlideId   uint32 `json:"slide_id"`
+	ElementId int64  `json:"element_id"`
+}
+
+type testPresentationobjectSlideIdGeometryArguments struct {
+	SlideId  uint32 `json:"slide_id"`
+	Geometry string `json:"geometry"`
+	X        int    `json:"x"`
+	Y        int    `json:"y"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+}
+
 func TestPresentationObjectCapabilitiesUseStableTargetsAndRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -84,18 +250,14 @@ func TestPresentationObjectCapabilitiesUseStableTargetsAndRoundTrip(t *testing.T
 	slideID := initialSlideIDs[0]
 
 	beforeInvalid := state()
-	if _, err := invoke("presentation.element.shape.create", map[string]any{
-		"slide_id": slideID + 10000, "geometry": "ellipse", "x": 30, "y": 40, "width": 120, "height": 80,
-	}); err == nil {
+	if _, err := invoke("presentation.element.shape.create", testPresentationobjectSlideIdGeometryArguments{SlideId: slideID + 10000, Geometry: "ellipse", X: 30, Y: 40, Width: 120, Height: 80}); err == nil {
 		t.Fatal("shape creation accepted a missing slide_id")
 	}
 	if after := state(); after.Revision != beforeInvalid.Revision || after.Dirty != beforeInvalid.Dirty {
 		t.Fatalf("invalid slide target changed presentation: before=%+v after=%+v", beforeInvalid, after)
 	}
 
-	textBox, err := invoke("presentation.element.textbox.create", map[string]any{
-		"slide_id": slideID, "x": 72, "y": 72, "width": 240, "height": 56, "text": "季度分析草稿",
-	})
+	textBox, err := invoke("presentation.element.textbox.create", presentationElementTextboxCreatePayload{SlideId: slideID, X: 72, Y: 72, Width: 240, Height: 56, Text: "季度分析草稿"})
 	if err != nil {
 		t.Fatalf("create text box: %v", err)
 	}
@@ -107,53 +269,42 @@ func TestPresentationObjectCapabilitiesUseStableTargetsAndRoundTrip(t *testing.T
 		t.Fatalf("text box result=%s error=%v", textBox.Data, err)
 	}
 
-	copied, err := invoke("presentation.element.text.copy", map[string]any{"slide_id": slideID, "element_id": textBoxResult.ElementID})
+	copied, err := invoke("presentation.element.text.copy", presentationElementTextCopyPayload{SlideId: slideID, ElementId: textBoxResult.ElementID})
 	if err != nil || !containsJSONText(copied.Data, `"text":"季度分析草稿"`) {
 		t.Fatalf("copy text result=%s error=%v", copied.Data, err)
 	}
 	beforeBadText := state()
-	if _, err := invoke("presentation.element.text.set", map[string]any{"slide_id": slideID, "element_id": 999999, "text": "无效"}); err == nil {
+	if _, err := invoke("presentation.element.text.set", presentationElementTextSetPayloadSlideId{SlideId: slideID, ElementId: 999999, Text: "无效"}); err == nil {
 		t.Fatal("text.set accepted a missing element_id")
 	}
 	if after := state(); after.Revision != beforeBadText.Revision || after.Dirty != beforeBadText.Dirty {
 		t.Fatalf("invalid text target changed presentation: before=%+v after=%+v", beforeBadText, after)
 	}
-	setText, err := invoke("presentation.element.text.set", map[string]any{"slide_id": slideID, "element_id": textBoxResult.ElementID, "text": "季度分析结论"})
+	setText, err := invoke("presentation.element.text.set", presentationElementTextSetPayload{SlideId: slideID, ElementId: textBoxResult.ElementID, Text: "季度分析结论"})
 	assertPresentationChanged(t, setText, err, true)
-	textNoop, err := invoke("presentation.element.text.set", map[string]any{"slide_id": slideID, "element_id": textBoxResult.ElementID, "text": "季度分析结论"})
+	textNoop, err := invoke("presentation.element.text.set", presentationElementTextSetPayload{SlideId: slideID, ElementId: textBoxResult.ElementID, Text: "季度分析结论"})
 	assertPresentationChanged(t, textNoop, err, false)
 
-	styleArgs := map[string]any{
-		"slide_id": slideID, "element_id": textBoxResult.ElementID,
-		"font_family": "Noto Sans CJK SC", "font_size_pt": 22, "bold": true,
-		"text_color_hex": "#2255AA", "paragraph_alignment": "center",
-	}
+	styleArgs := testPresentationobjectSlideIdElementIdFontFamilyArguments{SlideId: slideID, ElementId: textBoxResult.ElementID, FontFamily: "Noto Sans CJK SC", FontSizePt: 22, Bold: true, TextColorHex: "#2255AA", ParagraphAlignment: "center"}
 	styled, err := invoke("presentation.element.style.set", styleArgs)
 	assertPresentationChanged(t, styled, err, true)
 	styleNoop, err := invoke("presentation.element.style.set", styleArgs)
 	assertPresentationChanged(t, styleNoop, err, false)
 
-	transformArgs := map[string]any{
-		"slide_id": slideID, "element_id": textBoxResult.ElementID,
-		"x": 91, "y": 105, "width": 260, "height": 64, "rotation_deg": 12,
-	}
+	transformArgs := testPresentationobjectSlideIdElementIdXArguments{SlideId: slideID, ElementId: textBoxResult.ElementID, X: 91, Y: 105, Width: 260, Height: 64, RotationDeg: 12}
 	transformed, err := invoke("presentation.element.transform.set", transformArgs)
 	assertPresentationChanged(t, transformed, err, true)
 	transformNoop, err := invoke("presentation.element.transform.set", transformArgs)
 	assertPresentationChanged(t, transformNoop, err, false)
 	beforeBadTransform := state()
-	if _, err := invoke("presentation.element.transform.set", map[string]any{
-		"slide_id": slideID, "element_id": 999999, "x": 91, "y": 105, "width": 260, "height": 64, "rotation_deg": 12,
-	}); err == nil {
+	if _, err := invoke("presentation.element.transform.set", presentationElementTransformSetPayload{SlideId: slideID, ElementId: 999999, X: 91, Y: 105, Width: 260, Height: 64, RotationDeg: 12}); err == nil {
 		t.Fatal("transform.set accepted a missing element_id")
 	}
 	if after := state(); after.Revision != beforeBadTransform.Revision || after.Dirty != beforeBadTransform.Dirty {
 		t.Fatalf("invalid transform target changed presentation: before=%+v after=%+v", beforeBadTransform, after)
 	}
 
-	shape, err := invoke("presentation.element.shape.create", map[string]any{
-		"slide_id": slideID, "geometry": "ellipse", "x": 380, "y": 80, "width": 130, "height": 90, "text": "重点",
-	})
+	shape, err := invoke("presentation.element.shape.create", presentationElementShapeCreatePayload{SlideId: slideID, Geometry: "ellipse", X: 380, Y: 80, Width: 130, Height: 90, Text: "重点"})
 	if err != nil {
 		t.Fatalf("create shape: %v", err)
 	}
@@ -164,17 +315,10 @@ func TestPresentationObjectCapabilitiesUseStableTargetsAndRoundTrip(t *testing.T
 	if err := json.Unmarshal(shape.Data, &shapeResult); err != nil || shapeResult.ElementID <= 0 || shapeResult.Geometry != "ellipse" {
 		t.Fatalf("shape result=%s error=%v", shape.Data, err)
 	}
-	shapeStyle, err := invoke("presentation.element.style.set", map[string]any{
-		"slide_id": slideID, "element_id": shapeResult.ElementID,
-		"fill_color_hex": "#FFCC33", "border_color": "#774400", "border_width_pt": 2.5,
-	})
+	shapeStyle, err := invoke("presentation.element.style.set", presentationElementStyleSetPayload{SlideId: slideID, ElementId: shapeResult.ElementID, FillColorHex: "#FFCC33", BorderColor: "#774400", BorderWidthPt: 2.5})
 	assertPresentationChanged(t, shapeStyle, err, true)
 
-	table, err := invoke("presentation.element.table.create", map[string]any{
-		"slide_id": slideID, "x": 70, "y": 230, "width": 300, "height": 100,
-		"first_row": true, "band_rows": true,
-		"rows": [][]string{{"季度", "收入"}, {"第一季度", "128"}},
-	})
+	table, err := invoke("presentation.element.table.create", testPresentationobjectSlideIdXYArguments{SlideId: slideID, X: 70, Y: 230, Width: 300, Height: 100, FirstRow: true, BandRows: true, Rows: [][]string{{"季度", "收入"}, {"第一季度", "128"}}})
 	if err != nil {
 		t.Fatalf("create table: %v", err)
 	}
@@ -187,21 +331,14 @@ func TestPresentationObjectCapabilitiesUseStableTargetsAndRoundTrip(t *testing.T
 		t.Fatalf("table result=%s error=%v", table.Data, err)
 	}
 	beforeBadTable := state()
-	if _, err := invoke("presentation.element.table.create", map[string]any{
-		"slide_id": slideID, "x": 70, "y": 230, "width": 300, "height": 100,
-		"rows": [][]string{{"a", "b"}, {"c"}},
-	}); err == nil {
+	if _, err := invoke("presentation.element.table.create", presentationElementTableCreatePayload{SlideId: slideID, X: 70, Y: 230, Width: 300, Height: 100, Rows: [][]string{{"a", "b"}, {"c"}}}); err == nil {
 		t.Fatal("table creation accepted a ragged matrix")
 	}
 	if after := state(); after.Revision != beforeBadTable.Revision || after.Dirty != beforeBadTable.Dirty {
 		t.Fatalf("invalid table changed presentation: before=%+v after=%+v", beforeBadTable, after)
 	}
 
-	chart, err := invoke("presentation.element.chart.create", map[string]any{
-		"slide_id": slideID, "chart_type": "bar", "title": "季度收入", "x": 400, "y": 230, "width": 300, "height": 180,
-		"categories": []string{"第一季度", "第二季度"},
-		"series":     []map[string]any{{"name": "收入", "values": []float64{128, 156}}},
-	})
+	chart, err := invoke("presentation.element.chart.create", testPresentationobjectSlideIdChartTypeArguments{SlideId: slideID, ChartType: "bar", Title: "季度收入", X: 400, Y: 230, Width: 300, Height: 180, Categories: []string{"第一季度", "第二季度"}, Series: []presentationElementChartCreatePayload{{Name: "收入", Values: []float64{128, 156}}}})
 	if err != nil {
 		t.Fatalf("create chart: %v", err)
 	}
@@ -216,11 +353,7 @@ func TestPresentationObjectCapabilitiesUseStableTargetsAndRoundTrip(t *testing.T
 
 	originalImage := presentationPNG(t, color.NRGBA{R: 40, G: 110, B: 210, A: 255}, color.NRGBA{R: 210, G: 80, B: 50, A: 255})
 	replacementImage := presentationPNG(t, color.NRGBA{R: 30, G: 180, B: 90, A: 255}, color.NRGBA{R: 210, G: 180, B: 30, A: 255})
-	picture, err := invoke("presentation.element.picture.create", map[string]any{
-		"slide_id": slideID, "x": 80, "y": 370, "width": 180, "height": 90,
-		"fit": "contain", "media_type": "image/png", "image_base64": originalImage,
-		"alt_text": "季度数据示意图",
-	})
+	picture, err := invoke("presentation.element.picture.create", testPresentationobjectSlideIdXArguments{SlideId: slideID, X: 80, Y: 370, Width: 180, Height: 90, Fit: "contain", MediaType: "image/png", ImageBase64: originalImage, AltText: "季度数据示意图"})
 	if err != nil {
 		t.Fatalf("create picture: %v", err)
 	}
@@ -236,25 +369,20 @@ func TestPresentationObjectCapabilitiesUseStableTargetsAndRoundTrip(t *testing.T
 		t.Fatalf("picture result=%s error=%v", picture.Data, err)
 	}
 	badMedia := state()
-	if _, err := invoke("presentation.element.picture.create", map[string]any{
-		"slide_id": slideID, "x": 80, "y": 370, "width": 180, "height": 90,
-		"fit": "stretch", "media_type": "image/jpeg", "image_base64": originalImage,
-	}); err == nil {
+	if _, err := invoke("presentation.element.picture.create", presentationElementPictureCreatePayload{SlideId: slideID, X: 80, Y: 370, Width: 180, Height: 90, Fit: "stretch", MediaType: "image/jpeg", ImageBase64: originalImage}); err == nil {
 		t.Fatal("picture creation accepted PNG bytes declared as JPEG")
 	}
 	if after := state(); after.Revision != badMedia.Revision || after.Dirty != badMedia.Dirty {
 		t.Fatalf("invalid picture data changed presentation: before=%+v after=%+v", badMedia, after)
 	}
 
-	cropArgs := map[string]any{"slide_id": slideID, "element_id": pictureResult.ElementID, "left": 1000, "top": 2000, "right": 3000, "bottom": 4000}
+	cropArgs := testPresentationobjectSlideIdElementIdLeftArguments{SlideId: slideID, ElementId: pictureResult.ElementID, Left: 1000, Top: 2000, Right: 3000, Bottom: 4000}
 	crop, err := invoke("presentation.element.picture.crop.set", cropArgs)
 	assertPresentationChanged(t, crop, err, true)
 	cropNoop, err := invoke("presentation.element.picture.crop.set", cropArgs)
 	assertPresentationChanged(t, cropNoop, err, false)
 	beforeBadCrop := state()
-	if _, err := invoke("presentation.element.picture.crop.set", map[string]any{
-		"slide_id": slideID, "element_id": 999999, "left": 1000, "top": 2000, "right": 3000, "bottom": 4000,
-	}); err == nil {
+	if _, err := invoke("presentation.element.picture.crop.set", presentationElementPictureCropSetPayload{SlideId: slideID, ElementId: 999999, Left: 1000, Top: 2000, Right: 3000, Bottom: 4000}); err == nil {
 		t.Fatal("picture crop accepted a missing element_id")
 	}
 	if after := state(); after.Revision != beforeBadCrop.Revision || after.Dirty != beforeBadCrop.Dirty {
@@ -304,15 +432,13 @@ func TestPresentationObjectCapabilitiesUseStableTargetsAndRoundTrip(t *testing.T
 	}
 
 	beforeBadReplace := state()
-	if _, err := invoke("presentation.element.picture.replace", map[string]any{
-		"slide_id": slideID, "element_id": 999999, "media_type": "image/png", "image_base64": replacementImage,
-	}); err == nil {
+	if _, err := invoke("presentation.element.picture.replace", presentationElementPictureReplacePayload{SlideId: slideID, ElementId: 999999, MediaType: "image/png", ImageBase64: replacementImage}); err == nil {
 		t.Fatal("picture replacement accepted a missing element_id")
 	}
 	if after := state(); after.Revision != beforeBadReplace.Revision || after.Dirty != beforeBadReplace.Dirty {
 		t.Fatalf("invalid picture replacement changed presentation: before=%+v after=%+v", beforeBadReplace, after)
 	}
-	replaceArgs := map[string]any{"slide_id": slideID, "element_id": pictureResult.ElementID, "media_type": "image/png", "image_base64": replacementImage}
+	replaceArgs := testPresentationobjectSlideIdElementIdArguments{SlideId: slideID, ElementId: pictureResult.ElementID, MediaType: "image/png", ImageBase64: replacementImage}
 	replaced, err := invoke("presentation.element.picture.replace", replaceArgs)
 	assertPresentationChanged(t, replaced, err, true)
 	replaceNoop, err := invoke("presentation.element.picture.replace", replaceArgs)
@@ -337,6 +463,12 @@ func TestPresentationObjectCapabilitiesUseStableTargetsAndRoundTrip(t *testing.T
 	}
 	assertPresentationPackageContains(t, finalPath, "ppt/charts/chart1.xml", "季度收入", "第一季度", "156")
 	assertPresentationPackageContains(t, finalPath, "ppt/slides/slide1.xml", "季度", "收入", "第一季度")
+}
+
+type presentationSlideNotesSetPayload struct {
+	SlideId       uint32 `json:"slide_id"`
+	ExpectedNotes string `json:"expected_notes"`
+	Notes         string `json:"notes"`
 }
 
 func TestPresentationSlideNotesAndDeleteCapabilitiesUseStableIDsAndConfirmation(t *testing.T) {
@@ -365,7 +497,7 @@ func TestPresentationSlideNotesAndDeleteCapabilitiesUseStableIDsAndConfirmation(
 		}
 		return result, invokeErr
 	}
-	added, err := invoke("presentation.slide.add", map[string]any{})
+	added, err := invoke("presentation.slide.add", presentationSlideAddPayload{})
 	if err != nil {
 		t.Fatalf("add presentation slide: %v", err)
 	}
@@ -390,13 +522,9 @@ func TestPresentationSlideNotesAndDeleteCapabilitiesUseStableIDsAndConfirmation(
 		t.Fatalf("added slide inspection=%s error=%v", inspection.Content, err)
 	}
 	firstSlideID, secondSlideID := slides.Slides[0].ID, slides.Slides[1].ID
-	notes, err := invoke("presentation.slide.notes.set", map[string]any{
-		"slide_id": secondSlideID, "expected_notes": "", "notes": "先核对人员名单，再提交本周日报。\n检查工资汇总。",
-	})
+	notes, err := invoke("presentation.slide.notes.set", presentationSlideNotesSetPayload{SlideId: secondSlideID, ExpectedNotes: "", Notes: "先核对人员名单，再提交本周日报。\n检查工资汇总。"})
 	assertPresentationChanged(t, notes, err, true)
-	staleNotes, err := invoke("presentation.slide.notes.set", map[string]any{
-		"slide_id": secondSlideID, "expected_notes": "旧备注", "notes": "不能覆盖新备注",
-	})
+	staleNotes, err := invoke("presentation.slide.notes.set", presentationSlideNotesSetPayload{SlideId: secondSlideID, ExpectedNotes: "旧备注", Notes: "不能覆盖新备注"})
 	if err == nil {
 		t.Fatalf("notes command accepted a stale expected_notes value: %s", staleNotes.Data)
 	}
@@ -404,9 +532,7 @@ func TestPresentationSlideNotesAndDeleteCapabilitiesUseStableIDsAndConfirmation(
 	if err != nil || stateAfterConflict.Revision != info.Revision || !stateAfterConflict.Dirty {
 		t.Fatalf("notes conflict changed document state: state=%+v info=%+v error=%v", stateAfterConflict, info, err)
 	}
-	notesNoop, err := invoke("presentation.slide.notes.set", map[string]any{
-		"slide_id": secondSlideID, "expected_notes": "先核对人员名单，再提交本周日报。\n检查工资汇总。", "notes": "先核对人员名单，再提交本周日报。\n检查工资汇总。",
-	})
+	notesNoop, err := invoke("presentation.slide.notes.set", presentationSlideNotesSetPayload{SlideId: secondSlideID, ExpectedNotes: "先核对人员名单，再提交本周日报。\n检查工资汇总。", Notes: "先核对人员名单，再提交本周日报。\n检查工资汇总。"})
 	assertPresentationChanged(t, notesNoop, err, false)
 
 	path := filepath.Join(t.TempDir(), "presentation-slide-notes.pptx")

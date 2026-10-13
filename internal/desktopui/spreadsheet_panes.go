@@ -53,6 +53,30 @@ func (a *App) runSpreadsheetPanesCommand(operation string, arguments any, target
 	})
 }
 
+type showSpreadsheetFreezePanesDialogArguments struct {
+	Sheet     string `json:"sheet"`
+	Operation string `json:"operation"`
+}
+
+type spreadsheetpanesGoSheetOperationArguments struct {
+	Sheet     string `json:"sheet"`
+	Operation string `json:"operation"`
+	Rows      int    `json:"rows"`
+	Columns   int    `json:"columns"`
+}
+
+type spreadsheetpanesGoSheetOperationColumnsArguments struct {
+	Sheet     string `json:"sheet"`
+	Operation string `json:"operation"`
+	Columns   int    `json:"columns"`
+}
+
+type spreadsheetpanesGoSheetOperationRowsArguments struct {
+	Sheet     string `json:"sheet"`
+	Operation string `json:"operation"`
+	Rows      int    `json:"rows"`
+}
+
 func (a *App) showSpreadsheetFreezePanesDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -96,25 +120,25 @@ func (a *App) showSpreadsheetFreezePanesDialog() {
 		switch action {
 		case "freeze_row":
 			target := document.SpreadsheetPaneFreeze{Frozen: true, YSplit: 1}
-			a.runSpreadsheetPanesCommand("冻结首行", map[string]any{"sheet": sheet, "operation": "freeze_rows", "rows": 1}, target, func(ed document.SpreadsheetPanesEditor) error {
+			a.runSpreadsheetPanesCommand("冻结首行", spreadsheetpanesGoSheetOperationRowsArguments{Sheet: sheet, Operation: "freeze_rows", Rows: 1}, target, func(ed document.SpreadsheetPanesEditor) error {
 				return ed.SetSheetPanes(sheet, target)
 			})
 			a.setStatus("已冻结首行")
 		case "freeze_col":
 			target := document.SpreadsheetPaneFreeze{Frozen: true, XSplit: 1}
-			a.runSpreadsheetPanesCommand("冻结首列", map[string]any{"sheet": sheet, "operation": "freeze_columns", "columns": 1}, target, func(ed document.SpreadsheetPanesEditor) error {
+			a.runSpreadsheetPanesCommand("冻结首列", spreadsheetpanesGoSheetOperationColumnsArguments{Sheet: sheet, Operation: "freeze_columns", Columns: 1}, target, func(ed document.SpreadsheetPanesEditor) error {
 				return ed.SetSheetPanes(sheet, target)
 			})
 			a.setStatus("已冻结首列")
 		case "freeze_sel":
 			target := document.SpreadsheetPaneFreeze{Frozen: true, XSplit: activeCol, YSplit: activeRow}
-			a.runSpreadsheetPanesCommand("冻结选区", map[string]any{"sheet": sheet, "operation": "freeze_at", "rows": activeRow, "columns": activeCol}, target, func(ed document.SpreadsheetPanesEditor) error {
+			a.runSpreadsheetPanesCommand("冻结选区", spreadsheetpanesGoSheetOperationArguments{Sheet: sheet, Operation: "freeze_at", Rows: activeRow, Columns: activeCol}, target, func(ed document.SpreadsheetPanesEditor) error {
 				return ed.SetSheetPanes(sheet, target)
 			})
 			a.setStatus(fmt.Sprintf("已冻结至 %s", xlsx.CellName(activeCol+1, activeRow+1)))
 		case "unfreeze":
 			target := document.SpreadsheetPaneFreeze{}
-			a.runSpreadsheetPanesCommand("取消冻结", map[string]any{"sheet": sheet, "operation": "unfreeze"}, target, func(ed document.SpreadsheetPanesEditor) error {
+			a.runSpreadsheetPanesCommand("取消冻结", showSpreadsheetFreezePanesDialogArguments{Sheet: sheet, Operation: "unfreeze"}, target, func(ed document.SpreadsheetPanesEditor) error {
 				return ed.SetSheetPanes(sheet, target)
 			})
 			a.setStatus("已取消冻结窗格")

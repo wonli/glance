@@ -36,6 +36,13 @@ func (a *App) showPresentationAnimationAddOptions(view *presentationViewState) {
 	)
 }
 
+type startPresentationElementAnimationPayload struct {
+	SlideID    uint32 `json:"slide_id"`
+	ElementID  int64  `json:"element_id"`
+	Effect     string `json:"effect"`
+	DurationMS int    `json:"duration_ms"`
+}
+
 func (a *App) startPresentationElementAnimation(view *presentationViewState, effect string, durationMS int) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -86,10 +93,7 @@ func (a *App) startPresentationElementAnimation(view *presentationViewState, eff
 	view.commandPending = true
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
-	arguments := map[string]any{
-		"slide_id": slide.ID, "element_id": elementID,
-		"effect": effect, "duration_ms": durationMS,
-	}
+	arguments := startPresentationElementAnimationPayload{SlideID: slide.ID, ElementID: elementID, Effect: effect, DurationMS: durationMS}
 	a.launchManagedBackground(func() {
 		command, err := a.executeRibbonApplicationCommand(token, "presentation.element.animation.add", "presentation_element", fmt.Sprint(elementID), "", arguments)
 		state.finishOperation(token)
@@ -149,6 +153,17 @@ func (a *App) showPresentationAnimationDurationOptions(view *presentationViewSta
 	)
 }
 
+type presentationanimationSlideIdElementIdArguments struct {
+	SlideId        uint32 `json:"slide_id"`
+	ElementId      int64  `json:"element_id"`
+	AnimationIndex int    `json:"animation_index"`
+	DurationMs     int    `json:"duration_ms"`
+}
+
+type presentationAnimationsListArguments struct {
+	SlideId uint32 `json:"slide_id"`
+}
+
 func (a *App) startPresentationAnimationDuration(view *presentationViewState, durationMS int) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -185,7 +200,7 @@ func (a *App) startPresentationAnimationDuration(view *presentationViewState, du
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
 		out := presentationCommandResult{state: state, view: view, generation: generation, presentationAnimationDuration: true, presentationAnimationDurationMS: durationMS}
-		query, err := a.executeRibbonApplicationCommand(token, "presentation.animations.list", "presentation_slide", fmt.Sprint(slide.ID), "", map[string]any{"slide_id": slide.ID})
+		query, err := a.executeRibbonApplicationCommand(token, "presentation.animations.list", "presentation_slide", fmt.Sprint(slide.ID), "", presentationAnimationsListArguments{SlideId: slide.ID})
 		if err != nil {
 			out.err = err
 		} else {
@@ -210,9 +225,7 @@ func (a *App) startPresentationAnimationDuration(view *presentationViewState, du
 				if animationIndex == 0 {
 					out.err = fmt.Errorf("当前元素没有可调整时长的进入动画")
 				} else {
-					command, err := a.executeRibbonApplicationCommand(token, "presentation.element.animation.duration.set", "presentation_element", fmt.Sprint(elementID), "", map[string]any{
-						"slide_id": slide.ID, "element_id": elementID, "animation_index": animationIndex, "duration_ms": durationMS,
-					})
+					command, err := a.executeRibbonApplicationCommand(token, "presentation.element.animation.duration.set", "presentation_element", fmt.Sprint(elementID), "", presentationanimationSlideIdElementIdArguments{SlideId: slide.ID, ElementId: elementID, AnimationIndex: animationIndex, DurationMs: durationMS})
 					if err != nil {
 						out.err = err
 					} else {

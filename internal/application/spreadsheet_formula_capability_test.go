@@ -10,6 +10,12 @@ import (
 	"glance/internal/document"
 )
 
+type testSpreadsheetformulaSheetCellArguments struct {
+	Sheet   string `json:"sheet"`
+	Cell    string `json:"cell"`
+	Formula string `json:"formula"`
+}
+
 func TestSpreadsheetFormulaCapabilityUsesExplicitCellAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -34,7 +40,7 @@ func TestSpreadsheetFormulaCapabilityUsesExplicitCellAndRoundTrips(t *testing.T)
 			RequestID: fmt.Sprintf("xlsx-formula-%d", requestNumber), DocumentID: documentID,
 			CapabilityID: "spreadsheet.formula.set", ExpectedRevision: info.Revision,
 			Operator:  Operator{ID: "formula-agent-test", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"sheet": sheet, "cell": cell, "formula": formula}),
+			Arguments: mustJSON(t, testSpreadsheetformulaSheetCellArguments{Sheet: sheet, Cell: cell, Formula: formula}),
 		})
 	}
 	inspectFormula := func() string {

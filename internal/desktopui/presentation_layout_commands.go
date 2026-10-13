@@ -13,6 +13,9 @@ import (
 	"glance/internal/document"
 )
 
+type presentationLayoutsListArguments struct {
+}
+
 func (a *App) startPresentationLayoutList(view *presentationViewState) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -45,7 +48,7 @@ func (a *App) startPresentationLayoutList(view *presentationViewState) bool {
 			state: state, view: view, generation: generation,
 			presentationLayoutList: true, presentationLayoutSlideID: slideID,
 		}
-		command, err := a.executeRibbonApplicationCommand(token, "presentation.layouts.list", "presentation_document", token.documentID, "", map[string]any{})
+		command, err := a.executeRibbonApplicationCommand(token, "presentation.layouts.list", "presentation_document", token.documentID, "", presentationLayoutsListArguments{})
 		if err != nil {
 			out.err = err
 		} else {
@@ -143,6 +146,11 @@ func (a *App) layoutPresentationLayoutChoices(gtx layout.Context, view *presenta
 	})
 }
 
+type presentationSlideLayoutSetArguments struct {
+	SlideId     uint32 `json:"slide_id"`
+	LayoutIndex int    `json:"layout_index"`
+}
+
 func (a *App) startPresentationLayoutSet(view *presentationViewState, slideID uint32, option document.PresentationLayoutOption, expectedRevision uint64) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -177,9 +185,7 @@ func (a *App) startPresentationLayoutSet(view *presentationViewState, slideID ui
 			state: state, view: view, generation: generation,
 			presentationLayoutSet: true, presentationLayoutSlideID: slideID,
 		}
-		command, err := a.executeRibbonApplicationCommand(token, "presentation.slide.layout.set", "presentation_slide", fmt.Sprint(slideID), "", map[string]any{
-			"slide_id": slideID, "layout_index": option.Index,
-		})
+		command, err := a.executeRibbonApplicationCommand(token, "presentation.slide.layout.set", "presentation_slide", fmt.Sprint(slideID), "", presentationSlideLayoutSetArguments{SlideId: slideID, LayoutIndex: option.Index})
 		if err != nil {
 			out.err = err
 		} else {

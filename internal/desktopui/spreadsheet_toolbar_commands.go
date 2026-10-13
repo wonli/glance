@@ -10,6 +10,9 @@ func (a *App) recalculateSpreadsheet() {
 	a.runSpreadsheetRecalculate("重新计算公式")
 }
 
+type spreadsheetWorkbookRecalculateArguments struct {
+}
+
 func (a *App) runSpreadsheetRecalculate(operation string) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() || a.isSaving() {
@@ -29,7 +32,7 @@ func (a *App) runSpreadsheetRecalculate(operation string) {
 		changed := true
 		var err error
 		if commandRouted {
-			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.workbook.recalculate", "spreadsheet_workbook", token.documentID, sheet, map[string]any{})
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.workbook.recalculate", "spreadsheet_workbook", token.documentID, sheet, spreadsheetWorkbookRecalculateArguments{})
 			err = commandErr
 			if err == nil {
 				var outcome struct {

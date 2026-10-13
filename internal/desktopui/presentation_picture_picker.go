@@ -265,6 +265,13 @@ func (a *App) handlePresentationPicturePickerResult(result presentationPicturePi
 	a.startPresentationPictureReplacement(result)
 }
 
+type presentationpictureSlideIdElementIdMediaTypeArguments struct {
+	SlideId     uint32 `json:"slide_id"`
+	ElementId   int64  `json:"element_id"`
+	MediaType   string `json:"media_type"`
+	ImageBase64 []byte `json:"image_base64"`
+}
+
 func (a *App) startPresentationPictureReplacement(request presentationPicturePickerResult) {
 	state, doc := request.state, request.doc
 	if state == nil || doc == nil || state.closed.Load() || state.pptxDoc != doc || state.formatRunning.Load() || a.isSaving() {
@@ -290,10 +297,7 @@ func (a *App) startPresentationPictureReplacement(request presentationPicturePic
 	results, shutdown, window := a.pptxPicCommandResults, a.shutdown, a.window
 	a.launchManagedBackground(func() {
 		beforeRevision := doc.Revision()
-		commandResult, err := a.executeRibbonApplicationCommand(token, "presentation.element.picture.replace", "presentation_picture", fmt.Sprint(request.shapeID), "", map[string]any{
-			"slide_id": request.slideID, "element_id": request.shapeID,
-			"media_type": request.mediaType, "image_base64": request.data,
-		})
+		commandResult, err := a.executeRibbonApplicationCommand(token, "presentation.element.picture.replace", "presentation_picture", fmt.Sprint(request.shapeID), "", presentationpictureSlideIdElementIdMediaTypeArguments{SlideId: request.slideID, ElementId: request.shapeID, MediaType: request.mediaType, ImageBase64: request.data})
 		result.err = err
 		if err == nil {
 			var payload struct {

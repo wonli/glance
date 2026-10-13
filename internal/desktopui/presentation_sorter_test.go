@@ -95,6 +95,11 @@ func TestPresentationSorterResolvesStableSlideIDAgainstCurrentSnapshot(t *testin
 	}
 }
 
+type testPresentationsorterOperationModeArguments struct {
+	Operation string `json:"operation"`
+	Mode      string `json:"mode"`
+}
+
 func TestPresentationSorterRejectsPendingTextDraft(t *testing.T) {
 	runtime := newDesktopRuntime()
 	t.Cleanup(runtime.shutdown)
@@ -109,7 +114,7 @@ func TestPresentationSorterRejectsPendingTextDraft(t *testing.T) {
 	view.editingShape = slide.Elements[0].ID
 	view.shapeEditor.SetText(slide.Elements[0].PlainText() + " draft")
 
-	raw, err := json.Marshal(map[string]any{"operation": "set_mode", "mode": "sorter"})
+	raw, err := json.Marshal(testPresentationsorterOperationModeArguments{Operation: "set_mode", Mode: "sorter"})
 	if err != nil {
 		t.Fatalf("marshal sorter intent: %v", err)
 	}

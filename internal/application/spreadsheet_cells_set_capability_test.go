@@ -9,6 +9,11 @@ import (
 	"glance/internal/document"
 )
 
+type testSpreadsheetcellsSheetEditsArguments struct {
+	Sheet string                       `json:"sheet"`
+	Edits []spreadsheetCellEditFixture `json:"edits"`
+}
+
 func TestSpreadsheetBatchCellSetIsAtomicIdempotentAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -21,16 +26,16 @@ func TestSpreadsheetBatchCellSetIsAtomicIdempotentAndRoundTrips(t *testing.T) {
 		t.Fatalf("CreateDocument: %v", err)
 	}
 	operator := Operator{ID: "spreadsheet-batch-test", Kind: OperatorExternalAgent}
-	edits := []map[string]any{
-		{"row": 1, "column": 1, "value": "人员"},
-		{"row": 1, "column": 2, "value": "工资"},
+	edits := []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "人员"},
+		{Row: 1, Column: 2, Value: "工资"},
 	}
-	invoke := func(requestID string, revision uint64, sheet string, batch []map[string]any) (CommandResult, error) {
+	invoke := func(requestID string, revision uint64, sheet string, batch []spreadsheetCellEditFixture) (CommandResult, error) {
 		t.Helper()
 		return runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: requestID, DocumentID: doc.DocumentID, CommandID: "spreadsheet.cells.set",
 			ExpectedRevision: revision, Operator: operator,
-			Arguments: mustJSON(t, map[string]any{"sheet": sheet, "edits": batch}),
+			Arguments: mustJSON(t, testSpreadsheetcellsSheetEditsArguments{Sheet: sheet, Edits: batch}),
 		})
 	}
 	first, err := invoke("batch-set-first", doc.Revision, "Sheet1", edits)
@@ -91,13 +96,13 @@ func TestSpreadsheetBatchCellSetIsAtomicIdempotentAndRoundTrips(t *testing.T) {
 	invalidBatches := []struct {
 		requestID string
 		sheet     string
-		edits     []map[string]any
+		edits     []spreadsheetCellEditFixture
 	}{
 		{
 			requestID: "batch-set-duplicate-coordinate", sheet: "Sheet1",
-			edits: []map[string]any{{"row": 1, "column": 1, "value": "覆盖"}, {"row": 1, "column": 1, "value": "应拒绝"}},
+			edits: []spreadsheetCellEditFixture{{Row: 1, Column: 1, Value: "覆盖"}, {Row: 1, Column: 1, Value: "应拒绝"}},
 		},
-		{requestID: "batch-set-missing-sheet", sheet: "MissingSheet", edits: []map[string]any{{"row": 1, "column": 1, "value": "不应写入"}}},
+		{requestID: "batch-set-missing-sheet", sheet: "MissingSheet", edits: []spreadsheetCellEditFixture{{Row: 1, Column: 1, Value: "不应写入"}}},
 	}
 	for _, invalid := range invalidBatches {
 		if _, err := invoke(invalid.requestID, first.Revision, invalid.sheet, invalid.edits); err == nil {

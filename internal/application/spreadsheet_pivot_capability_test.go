@@ -13,6 +13,15 @@ import (
 	"glance/internal/document"
 )
 
+type testSpreadsheetpivotSheetBoundsArguments struct {
+	Sheet           string             `json:"sheet"`
+	Bounds          document.CellRange `json:"bounds"`
+	PivotTableRange string             `json:"pivot_table_range"`
+	Rows            []string           `json:"rows"`
+	Columns         []string           `json:"columns"`
+	Data            []string           `json:"data"`
+}
+
 func TestSpreadsheetPivotCapabilityUsesNamedFieldsAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -37,26 +46,20 @@ func TestSpreadsheetPivotCapabilityUsesNamedFieldsAndRoundTrips(t *testing.T) {
 			Arguments: mustJSON(t, arguments),
 		})
 	}
-	seed := []map[string]any{
-		{"row": 1, "column": 1, "value": "部门"}, {"row": 1, "column": 2, "value": "季度"}, {"row": 1, "column": 3, "value": "销售额"},
-		{"row": 2, "column": 1, "value": "研发"}, {"row": 2, "column": 2, "value": "Q1"}, {"row": 2, "column": 3, "value": "100"},
-		{"row": 3, "column": 1, "value": "市场"}, {"row": 3, "column": 2, "value": "Q1"}, {"row": 3, "column": 3, "value": "200"},
-		{"row": 4, "column": 1, "value": "研发"}, {"row": 4, "column": 2, "value": "Q2"}, {"row": 4, "column": 3, "value": "150"},
-		{"row": 5, "column": 1, "value": "市场"}, {"row": 5, "column": 2, "value": "Q2"}, {"row": 5, "column": 3, "value": "250"},
+	seed := []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "部门"}, {Row: 1, Column: 2, Value: "季度"}, {Row: 1, Column: 3, Value: "销售额"},
+		{Row: 2, Column: 1, Value: "研发"}, {Row: 2, Column: 2, Value: "Q1"}, {Row: 2, Column: 3, Value: "100"},
+		{Row: 3, Column: 1, Value: "市场"}, {Row: 3, Column: 2, Value: "Q1"}, {Row: 3, Column: 3, Value: "200"},
+		{Row: 4, Column: 1, Value: "研发"}, {Row: 4, Column: 2, Value: "Q2"}, {Row: 4, Column: 3, Value: "150"},
+		{Row: 5, Column: 1, Value: "市场"}, {Row: 5, Column: 2, Value: "Q2"}, {Row: 5, Column: 3, Value: "250"},
 	}
-	if _, err := invoke("spreadsheet.cells.set", map[string]any{"sheet": "Sheet1", "edits": seed}); err != nil {
+	if _, err := invoke("spreadsheet.cells.set", spreadsheetCellsSetPayload{Sheet: "Sheet1", Edits: seed}); err != nil {
 		t.Fatalf("seed pivot source: %v", err)
 	}
 	bounds := document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 5, EndColumn: 3}
-	arguments := map[string]any{
-		"sheet": "Sheet1", "bounds": bounds, "pivot_table_range": "F2:J15",
-		"rows": []string{"部门"}, "columns": []string{"季度"}, "data": []string{"销售额"},
-	}
+	arguments := testSpreadsheetpivotSheetBoundsArguments{Sheet: "Sheet1", Bounds: bounds, PivotTableRange: "F2:J15", Rows: []string{"部门"}, Columns: []string{"季度"}, Data: []string{"销售额"}}
 	beforeInvalid := mustGetDocumentInfo(t, runtime, documentID)
-	invalid := map[string]any{
-		"sheet": "Sheet1", "bounds": bounds, "pivot_table_range": "F2:J15",
-		"rows": []string{"不存在"}, "columns": []string{"季度"}, "data": []string{"销售额"},
-	}
+	invalid := testSpreadsheetpivotSheetBoundsArguments{Sheet: "Sheet1", Bounds: bounds, PivotTableRange: "F2:J15", Rows: []string{"不存在"}, Columns: []string{"季度"}, Data: []string{"销售额"}}
 	if _, err := invoke("spreadsheet.pivot.create", invalid); err == nil {
 		t.Fatal("pivot creation accepted a field missing from the source header")
 	}

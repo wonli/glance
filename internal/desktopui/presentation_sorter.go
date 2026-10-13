@@ -110,6 +110,12 @@ func (a *App) layoutPresentationSorterCard(gtx layout.Context, view *presentatio
 	})
 }
 
+type presentationsorterGoOperationModeArguments struct {
+	Operation  string `json:"operation"`
+	Mode       string `json:"mode"`
+	PageNumber int    `json:"page_number"`
+}
+
 func (a *App) selectPresentationSorterSlide(view *presentationViewState, slideID uint32) {
 	if view == nil || a.pptxDoc == nil {
 		a.setStatus("演示文稿已关闭，请重新打开幻灯片浏览")
@@ -120,9 +126,7 @@ func (a *App) selectPresentationSorterSlide(view *presentationViewState, slideID
 		if slide.ID != slideID {
 			continue
 		}
-		raw, err := json.Marshal(map[string]any{
-			"operation": "set_mode", "mode": "normal", "page_number": index + 1,
-		})
+		raw, err := json.Marshal(presentationsorterGoOperationModeArguments{Operation: "set_mode", Mode: "normal", PageNumber: index + 1})
 		if err == nil {
 			_, err = a.applyPresentationViewIntent("presentation.view.set", raw)
 		}

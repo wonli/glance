@@ -7,6 +7,35 @@ import (
 	"testing"
 )
 
+type testPresentationanimationSlideIdElementIdArguments struct {
+	SlideId        uint32 `json:"slide_id"`
+	ElementId      uint32 `json:"element_id"`
+	AnimationIndex int    `json:"animation_index"`
+}
+
+type testPresentationanimationSlideIdElementIdAnimationIndexArguments struct {
+	SlideId        uint32 `json:"slide_id"`
+	ElementId      uint32 `json:"element_id"`
+	AnimationIndex int    `json:"animation_index"`
+	DurationMs     int    `json:"duration_ms"`
+}
+
+type testPresentationanimationSlideIdElementIdEffectArguments struct {
+	SlideId    uint32 `json:"slide_id"`
+	ElementId  uint32 `json:"element_id"`
+	Effect     string `json:"effect"`
+	DurationMs int    `json:"duration_ms"`
+}
+
+type testPresentationanimationSlideIdXArguments struct {
+	SlideId uint32 `json:"slide_id"`
+	X       int    `json:"x"`
+	Y       int    `json:"y"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Text    string `json:"text"`
+}
+
 func TestPresentationAnimationCapabilitiesUseStableTargetsAndRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -37,7 +66,7 @@ func TestPresentationAnimationCapabilitiesUseStableTargetsAndRoundTrip(t *testin
 	created, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-animation-create-target", DocumentID: doc.DocumentID,
 		CapabilityID: "presentation.element.textbox.create", ExpectedRevision: doc.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "x": 80, "y": 100, "width": 180, "height": 64, "text": "季度经营摘要"}),
+		Arguments: mustJSON(t, testPresentationanimationSlideIdXArguments{SlideId: slideID, X: 80, Y: 100, Width: 180, Height: 64, Text: "季度经营摘要"}),
 	})
 	if err != nil {
 		t.Fatalf("create animation target: %v", err)
@@ -85,7 +114,7 @@ func TestPresentationAnimationCapabilitiesUseStableTargetsAndRoundTrip(t *testin
 	added, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-animation-add", DocumentID: doc.DocumentID, CapabilityID: "presentation.element.animation.add",
 		ExpectedRevision: created.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "element_id": elementID, "effect": "fade", "duration_ms": 800}),
+		Arguments: mustJSON(t, testPresentationanimationSlideIdElementIdEffectArguments{SlideId: slideID, ElementId: elementID, Effect: "fade", DurationMs: 800}),
 	})
 	if err != nil || added.Revision != created.Revision+1 || !containsJSONText(added.Data, `"changed":true`) {
 		t.Fatalf("add fade animation: result=%s revision=%d error=%v", added.Data, added.Revision, err)
@@ -97,7 +126,7 @@ func TestPresentationAnimationCapabilitiesUseStableTargetsAndRoundTrip(t *testin
 	if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-animation-invalid-target", DocumentID: doc.DocumentID, CapabilityID: "presentation.element.animation.add",
 		ExpectedRevision: added.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "element_id": ^uint32(0), "effect": "fade", "duration_ms": 800}),
+		Arguments: mustJSON(t, testPresentationanimationSlideIdElementIdEffectArguments{SlideId: slideID, ElementId: ^uint32(0), Effect: "fade", DurationMs: 800}),
 	}); err == nil {
 		t.Fatal("animation add accepted a nonexistent element_id")
 	}
@@ -126,7 +155,7 @@ func TestPresentationAnimationCapabilitiesUseStableTargetsAndRoundTrip(t *testin
 	if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-animation-duration-invalid-target", DocumentID: doc.DocumentID, CapabilityID: "presentation.element.animation.duration.set",
 		ExpectedRevision: added.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "element_id": elementID + 1, "animation_index": animationIndex, "duration_ms": 1200}),
+		Arguments: mustJSON(t, testPresentationanimationSlideIdElementIdAnimationIndexArguments{SlideId: slideID, ElementId: elementID + 1, AnimationIndex: animationIndex, DurationMs: 1200}),
 	}); err == nil {
 		t.Fatal("animation duration accepted an index belonging to another target")
 	}
@@ -138,7 +167,7 @@ func TestPresentationAnimationCapabilitiesUseStableTargetsAndRoundTrip(t *testin
 	durationSet, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-animation-duration-set", DocumentID: doc.DocumentID, CapabilityID: "presentation.element.animation.duration.set",
 		ExpectedRevision: added.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "element_id": elementID, "animation_index": animationIndex, "duration_ms": 1200}),
+		Arguments: mustJSON(t, testPresentationanimationSlideIdElementIdAnimationIndexArguments{SlideId: slideID, ElementId: elementID, AnimationIndex: animationIndex, DurationMs: 1200}),
 	})
 	if err != nil || durationSet.Revision != added.Revision+1 || !containsJSONText(durationSet.Data, `"changed":true`) {
 		t.Fatalf("set animation duration: result=%s revision=%d error=%v", durationSet.Data, durationSet.Revision, err)
@@ -146,7 +175,7 @@ func TestPresentationAnimationCapabilitiesUseStableTargetsAndRoundTrip(t *testin
 	durationNoOp, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-animation-duration-noop", DocumentID: doc.DocumentID, CapabilityID: "presentation.element.animation.duration.set",
 		ExpectedRevision: durationSet.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "element_id": elementID, "animation_index": animationIndex, "duration_ms": 1200}),
+		Arguments: mustJSON(t, testPresentationanimationSlideIdElementIdAnimationIndexArguments{SlideId: slideID, ElementId: elementID, AnimationIndex: animationIndex, DurationMs: 1200}),
 	})
 	if err != nil || durationNoOp.Revision != durationSet.Revision || !containsJSONText(durationNoOp.Data, `"changed":false`) {
 		t.Fatalf("repeat duration should be a no-op: result=%s revision=%d error=%v", durationNoOp.Data, durationNoOp.Revision, err)
@@ -183,7 +212,7 @@ func TestPresentationAnimationCapabilitiesUseStableTargetsAndRoundTrip(t *testin
 	cleanNoOp, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-animation-duration-reopened-noop", DocumentID: reopened.DocumentID, CapabilityID: "presentation.element.animation.duration.set",
 		ExpectedRevision: reopened.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "element_id": elementID, "animation_index": animationIndex, "duration_ms": 1200}),
+		Arguments: mustJSON(t, testPresentationanimationSlideIdElementIdAnimationIndexArguments{SlideId: slideID, ElementId: elementID, AnimationIndex: animationIndex, DurationMs: 1200}),
 	})
 	if err != nil || cleanNoOp.Revision != reopened.Revision || !containsJSONText(cleanNoOp.Data, `"changed":false`) {
 		t.Fatalf("reopened duration should remain an idempotent no-op: result=%s revision=%d error=%v", cleanNoOp.Data, cleanNoOp.Revision, err)
@@ -206,7 +235,7 @@ func TestPresentationAnimationCapabilitiesUseStableTargetsAndRoundTrip(t *testin
 	if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-animation-delete-invalid-target", DocumentID: reopened.DocumentID, CapabilityID: "presentation.element.animation.delete",
 		ExpectedRevision: reopened.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "element_id": elementID + 1, "animation_index": deleteAnimationIndex}),
+		Arguments: mustJSON(t, testPresentationanimationSlideIdElementIdArguments{SlideId: slideID, ElementId: elementID + 1, AnimationIndex: deleteAnimationIndex}),
 	}); err == nil {
 		t.Fatal("animation delete accepted an index belonging to another target")
 	}
@@ -218,7 +247,7 @@ func TestPresentationAnimationCapabilitiesUseStableTargetsAndRoundTrip(t *testin
 	deleted, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-animation-delete", DocumentID: reopened.DocumentID, CapabilityID: "presentation.element.animation.delete",
 		ExpectedRevision: reopened.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "element_id": elementID, "animation_index": deleteAnimationIndex}),
+		Arguments: mustJSON(t, testPresentationanimationSlideIdElementIdArguments{SlideId: slideID, ElementId: elementID, AnimationIndex: deleteAnimationIndex}),
 	})
 	var deleteResult struct {
 		Changed               bool `json:"changed"`

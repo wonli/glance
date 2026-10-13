@@ -14,6 +14,57 @@ import (
 	"glance/internal/document"
 )
 
+type spreadsheetRangeFormatSetPayload struct {
+	Sheet  string             `json:"sheet"`
+	Bounds document.CellRange `json:"bounds"`
+	Patch  any                `json:"patch"`
+}
+
+type testSpreadsheetrangeSheetSourceCellArguments struct {
+	Sheet        string             `json:"sheet"`
+	SourceCell   string             `json:"source_cell"`
+	TargetBounds document.CellRange `json:"target_bounds"`
+}
+
+type testSpreadsheetrangeSheetBoundsArguments struct {
+	Sheet  string             `json:"sheet"`
+	Bounds document.CellRange `json:"bounds"`
+	Patch  any                `json:"patch"`
+}
+
+type testSpreadsheetrangeBoldFillColorArguments struct {
+	Bold      bool   `json:"bold"`
+	FillColor string `json:"fill_color"`
+	FontColor string `json:"font_color"`
+}
+
+type testSpreadsheetrangeSheetQueryArguments struct {
+	Sheet      string `json:"sheet"`
+	Query      string `json:"query"`
+	MaxResults int    `json:"max_results"`
+}
+
+type testSpreadsheetrangeSheetBoundsArguments99 struct {
+	Sheet  string             `json:"sheet"`
+	Bounds document.CellRange `json:"bounds"`
+}
+
+type spreadsheetRangeSearchPayload struct {
+	Sheet string `json:"sheet"`
+	Query string `json:"query"`
+}
+
+type spreadsheetRangeSearchPayloadSheet struct {
+	Sheet      string `json:"sheet"`
+	Query      string `json:"query"`
+	MaxResults int    `json:"max_results"`
+}
+
+type spreadsheetRangeCopyPayload struct {
+	Sheet  string             `json:"sheet"`
+	Bounds document.CellRange `json:"bounds"`
+}
+
 func TestSpreadsheetRangeQueryAndFormattingCapabilitiesUseExplicitTargets(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -64,18 +115,16 @@ func TestSpreadsheetRangeQueryAndFormattingCapabilitiesUseExplicitTargets(t *tes
 		}
 		return result
 	}
-	seed := []map[string]any{
-		{"row": 1, "column": 1, "value": "Item"}, {"row": 1, "column": 2, "value": "Value"},
-		{"row": 2, "column": 1, "value": "apple"}, {"row": 2, "column": 2, "value": "120"},
-		{"row": 3, "column": 1, "value": "apple pie"}, {"row": 3, "column": 2, "value": "150"},
+	seed := []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "Item"}, {Row: 1, Column: 2, Value: "Value"},
+		{Row: 2, Column: 1, Value: "apple"}, {Row: 2, Column: 2, Value: "120"},
+		{Row: 3, Column: 1, Value: "apple pie"}, {Row: 3, Column: 2, Value: "150"},
 	}
-	if _, err := invoke("spreadsheet.cells.set", map[string]any{"sheet": "Sheet1", "edits": seed}); err != nil {
+	if _, err := invoke("spreadsheet.cells.set", spreadsheetCellsSetPayload{Sheet: "Sheet1", Edits: seed}); err != nil {
 		t.Fatalf("seed range: %v", err)
 	}
 	beforeQuery := mustGetDocumentInfo(t, runtime, documentID)
-	copyResult := assertChanged("spreadsheet.range.copy", map[string]any{
-		"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2},
-	}, false)
+	copyResult := assertChanged("spreadsheet.range.copy", spreadsheetRangeCopyPayload{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}}, false)
 	var copied struct {
 		Rows [][]string `json:"rows"`
 	}
@@ -85,7 +134,7 @@ func TestSpreadsheetRangeQueryAndFormattingCapabilitiesUseExplicitTargets(t *tes
 	if len(copied.Rows) != 3 || strings.Join(copied.Rows[1], ",") != "apple,120" || strings.Join(copied.Rows[2], ",") != "apple pie,150" {
 		t.Fatalf("range copy rows=%v; want the explicit A1:B3 values", copied.Rows)
 	}
-	searchResult := assertChanged("spreadsheet.range.search", map[string]any{"sheet": "Sheet1", "query": "APPLE", "max_results": 1}, false)
+	searchResult := assertChanged("spreadsheet.range.search", spreadsheetRangeSearchPayloadSheet{Sheet: "Sheet1", Query: "APPLE", MaxResults: 1}, false)
 	var found struct {
 		Matches []struct {
 			Row    int    `json:"row"`
@@ -101,7 +150,7 @@ func TestSpreadsheetRangeQueryAndFormattingCapabilitiesUseExplicitTargets(t *tes
 		t.Fatalf("range search result=%+v; want first case-insensitive match and truncation", found)
 	}
 	unicodeQuery := strings.Repeat("查", 100)
-	unicodeSearch := assertChanged("spreadsheet.range.search", map[string]any{"sheet": "Sheet1", "query": unicodeQuery}, false)
+	unicodeSearch := assertChanged("spreadsheet.range.search", spreadsheetRangeSearchPayload{Sheet: "Sheet1", Query: unicodeQuery}, false)
 	var unicodeFound struct {
 		Matches []json.RawMessage `json:"matches"`
 	}
@@ -113,27 +162,27 @@ func TestSpreadsheetRangeQueryAndFormattingCapabilitiesUseExplicitTargets(t *tes
 	}
 	invalidQueries := []struct {
 		capabilityID string
-		arguments    map[string]any
+		arguments    any
 	}{
 		{
 			capabilityID: "spreadsheet.range.copy",
-			arguments:    map[string]any{"sheet": "MissingSheet", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}},
+			arguments:    testSpreadsheetrangeSheetBoundsArguments99{Sheet: "MissingSheet", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}},
 		},
 		{
 			capabilityID: "spreadsheet.range.copy",
-			arguments:    map[string]any{"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 2, StartColumn: 1, EndRow: 1, EndColumn: 1}},
+			arguments:    testSpreadsheetrangeSheetBoundsArguments99{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 2, StartColumn: 1, EndRow: 1, EndColumn: 1}},
 		},
 		{
 			capabilityID: "spreadsheet.range.copy",
-			arguments:    map[string]any{"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 101, EndColumn: 100}},
+			arguments:    testSpreadsheetrangeSheetBoundsArguments99{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 101, EndColumn: 100}},
 		},
 		{
 			capabilityID: "spreadsheet.range.search",
-			arguments:    map[string]any{"sheet": "MissingSheet", "query": "apple", "max_results": 10},
+			arguments:    testSpreadsheetrangeSheetQueryArguments{Sheet: "MissingSheet", Query: "apple", MaxResults: 10},
 		},
 		{
 			capabilityID: "spreadsheet.range.search",
-			arguments:    map[string]any{"sheet": "Sheet1", "query": "apple", "max_results": 1001},
+			arguments:    testSpreadsheetrangeSheetQueryArguments{Sheet: "Sheet1", Query: "apple", MaxResults: 1001},
 		},
 	}
 	for _, invalid := range invalidQueries {
@@ -147,17 +196,15 @@ func TestSpreadsheetRangeQueryAndFormattingCapabilitiesUseExplicitTargets(t *tes
 		}
 	}
 
-	formatPatch := map[string]any{"bold": true, "fill_color": "FFFF00", "font_color": "112233"}
-	formatArgs := map[string]any{"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, "patch": formatPatch}
+	formatPatch := testSpreadsheetrangeBoldFillColorArguments{Bold: true, FillColor: "FFFF00", FontColor: "112233"}
+	formatArgs := testSpreadsheetrangeSheetBoundsArguments{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, Patch: formatPatch}
 	assertChanged("spreadsheet.range.format.set", formatArgs, true)
 	assertChanged("spreadsheet.range.format.set", formatArgs, false)
-	paintArgs := map[string]any{"sheet": "Sheet1", "source_cell": "A1", "target_bounds": document.CellRange{StartRow: 1, StartColumn: 2, EndRow: 3, EndColumn: 2}}
+	paintArgs := testSpreadsheetrangeSheetSourceCellArguments{Sheet: "Sheet1", SourceCell: "A1", TargetBounds: document.CellRange{StartRow: 1, StartColumn: 2, EndRow: 3, EndColumn: 2}}
 	assertChanged("spreadsheet.format.paint", paintArgs, true)
 	assertChanged("spreadsheet.format.paint", paintArgs, false)
 	beforeInvalid := mustGetDocumentInfo(t, runtime, documentID)
-	if _, err := invoke("spreadsheet.range.format.set", map[string]any{
-		"sheet": "Missing", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, "patch": formatPatch,
-	}); err == nil {
+	if _, err := invoke("spreadsheet.range.format.set", spreadsheetRangeFormatSetPayload{Sheet: "Missing", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, Patch: formatPatch}); err == nil {
 		t.Fatal("range formatting accepted a missing worksheet")
 	}
 	if afterInvalid := mustGetDocumentInfo(t, runtime, documentID); afterInvalid.Revision != beforeInvalid.Revision || afterInvalid.Dirty != beforeInvalid.Dirty {

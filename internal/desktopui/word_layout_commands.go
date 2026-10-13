@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+type wordParagraphAlignmentSetArguments struct {
+	ParagraphId string `json:"paragraph_id"`
+	Alignment   string `json:"alignment"`
+}
+
 func (a *App) showWordLayoutAlignDialog() {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
@@ -46,9 +51,7 @@ func (a *App) showWordLayoutAlignDialog() {
 			default:
 				align = document.WordAlignLeft
 			}
-			if !a.runWordApplicationCommand("设置排列对齐", "word.paragraph.alignment.set", map[string]any{
-				"paragraph_id": pID, "alignment": string(align),
-			}) {
+			if !a.runWordApplicationCommand("设置排列对齐", "word.paragraph.alignment.set", wordParagraphAlignmentSetArguments{ParagraphId: pID, Alignment: string(align)}) {
 				a.runWordCommand("设置排列对齐", func(editor document.WordTextEditor) error {
 					return editor.SetParagraphAlignment(pID, align)
 				})
@@ -57,6 +60,11 @@ func (a *App) showWordLayoutAlignDialog() {
 		modalDialogActionSpec{ID: "confirm", Label: "应用对齐"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+type showWordLayoutWrapDialogPayload struct {
+	ImageID  string `json:"image_id"`
+	WrapMode string `json:"wrap_mode"`
 }
 
 func (a *App) showWordLayoutWrapDialog() {
@@ -84,7 +92,7 @@ func (a *App) showWordLayoutWrapDialog() {
 		if action != "apply" {
 			return
 		}
-		args := map[string]any{"image_id": imageID, "wrap_mode": "inline"}
+		args := showWordLayoutWrapDialogPayload{ImageID: imageID, WrapMode: "inline"}
 		if a.applicationSessionRegistered(state.documentID) {
 			if !a.runWordApplicationCommand("设置图片文字环绕", "word.image.wrap.set", args) {
 				a.setStatus("无法启动图片环绕调整")
@@ -95,6 +103,12 @@ func (a *App) showWordLayoutWrapDialog() {
 			a.setStatus("无法启动图片环绕调整")
 		}
 	}, modalDialogActionSpec{ID: "apply", Label: "转换为嵌入型"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+}
+
+type showWordLayoutPositionDialogPayload struct {
+	ImageID       string `json:"image_id"`
+	ParagraphID   string `json:"paragraph_id"`
+	AfterInlineID string `json:"after_inline_id"`
 }
 
 func (a *App) showWordLayoutPositionDialog() {
@@ -141,7 +155,7 @@ func (a *App) showWordLayoutPositionDialog() {
 		a.setStatus("图片已位于目标文本位置")
 		return
 	}
-	args := map[string]any{"image_id": imageID, "paragraph_id": paragraphID, "after_inline_id": afterInlineID}
+	args := showWordLayoutPositionDialogPayload{ImageID: imageID, ParagraphID: paragraphID, AfterInlineID: afterInlineID}
 	message := "将选中的图片移动到当前光标段落的行内位置。当前 DOCX 适配器支持正文流式排版，不创建浮动定位或文字环绕。"
 	a.modal.Show("对象位置", message, func(action string) {
 		a.modal.Hide()

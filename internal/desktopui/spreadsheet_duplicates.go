@@ -46,6 +46,12 @@ func (a *App) runSpreadsheetDuplicatesCommand(operation string, arguments any, e
 	})
 }
 
+type spreadsheetduplicatesGoSheetBoundsArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	KeyColumn int                `json:"key_column"`
+}
+
 func (a *App) showSpreadsheetRemoveDuplicatesDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -72,11 +78,11 @@ func (a *App) showSpreadsheetRemoveDuplicatesDialog() {
 		a.modal.Hide()
 		switch action {
 		case "col":
-			a.runSpreadsheetDuplicatesCommand("按列删除重复项", map[string]any{"sheet": sheet, "bounds": bounds, "key_column": keyCol}, func(ed document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error) {
+			a.runSpreadsheetDuplicatesCommand("按列删除重复项", spreadsheetduplicatesGoSheetBoundsArguments{Sheet: sheet, Bounds: bounds, KeyColumn: keyCol}, func(ed document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error) {
 				return ed.RemoveDuplicates(sheet, bounds, keyCol)
 			})
 		case "all":
-			a.runSpreadsheetDuplicatesCommand("按整行删除重复项", map[string]any{"sheet": sheet, "bounds": bounds, "key_column": 0}, func(ed document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error) {
+			a.runSpreadsheetDuplicatesCommand("按整行删除重复项", spreadsheetduplicatesGoSheetBoundsArguments{Sheet: sheet, Bounds: bounds, KeyColumn: 0}, func(ed document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error) {
 				return ed.RemoveDuplicates(sheet, bounds, 0)
 			})
 		}

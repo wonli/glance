@@ -7,6 +7,14 @@ import (
 	"glance/internal/application"
 )
 
+type presentationTransitionArguments struct {
+	SlideID        uint32 `json:"slide_id"`
+	TransitionType string `json:"transition_type,omitempty"`
+	Direction      string `json:"direction,omitempty"`
+	Speed          string `json:"speed,omitempty"`
+	ApplyToAll     bool   `json:"apply_to_all,omitempty"`
+}
+
 func (a *App) runPresentationTransitionAction(view *presentationViewState, actionID string) bool {
 	if view == nil {
 		return false
@@ -18,15 +26,15 @@ func (a *App) runPresentationTransitionAction(view *presentationViewState, actio
 	}
 	switch actionID {
 	case "trans_fade":
-		a.startPresentationTransition(view, map[string]any{"transition_type": "fade"})
+		a.startPresentationTransition(view, presentationTransitionArguments{TransitionType: "fade"})
 	case "trans_push":
-		a.startPresentationTransition(view, map[string]any{"transition_type": "push", "direction": "l"})
+		a.startPresentationTransition(view, presentationTransitionArguments{TransitionType: "push", Direction: "l"})
 	case "trans_options":
 		a.modal.Show("推进方向", "选择方向；当前页需要已设置推进、擦除或覆盖效果。", func(action string) {
 			a.modal.Hide()
 			direction := map[string]string{"left": "l", "right": "r", "up": "u", "down": "d"}[action]
 			if direction != "" {
-				a.startPresentationTransition(view, map[string]any{"direction": direction})
+				a.startPresentationTransition(view, presentationTransitionArguments{Direction: direction})
 			}
 		},
 			modalDialogActionSpec{ID: "left", Label: "向左"},
@@ -39,7 +47,7 @@ func (a *App) runPresentationTransitionAction(view *presentationViewState, actio
 		a.modal.Show("切换速度", "为当前页已设置的切换效果选择速度。", func(action string) {
 			a.modal.Hide()
 			if action == "slow" || action == "med" || action == "fast" {
-				a.startPresentationTransition(view, map[string]any{"speed": action})
+				a.startPresentationTransition(view, presentationTransitionArguments{Speed: action})
 			}
 		},
 			modalDialogActionSpec{ID: "slow", Label: "慢"},
@@ -48,14 +56,14 @@ func (a *App) runPresentationTransitionAction(view *presentationViewState, actio
 			modalDialogActionSpec{ID: "cancel", Label: "取消"},
 		)
 	case "trans_apply_all":
-		a.startPresentationTransition(view, map[string]any{"apply_to_all": true})
+		a.startPresentationTransition(view, presentationTransitionArguments{ApplyToAll: true})
 	default:
 		return false
 	}
 	return true
 }
 
-func (a *App) startPresentationTransition(view *presentationViewState, arguments map[string]any) bool {
+func (a *App) startPresentationTransition(view *presentationViewState, arguments presentationTransitionArguments) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
 		a.setStatus("演示文稿能力尚未连接")
@@ -76,7 +84,7 @@ func (a *App) startPresentationTransition(view *presentationViewState, arguments
 		a.setStatus("未找到当前幻灯片")
 		return true
 	}
-	arguments["slide_id"] = slide.ID
+	arguments.SlideID = slide.ID
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
 		a.setStatus("演示文稿正在处理其他操作")

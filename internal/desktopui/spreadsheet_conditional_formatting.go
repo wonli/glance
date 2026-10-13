@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+type spreadsheetConditionalFormatArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	Operation string             `json:"operation"`
+	Type      string             `json:"type,omitempty"`
+}
+
 func (a *App) showSpreadsheetConditionalFormatDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -63,13 +70,12 @@ func (a *App) showSpreadsheetConditionalFormatDialog() {
 			changed := true
 			var err error
 			if commandRouted {
-				operation, args := "set", map[string]any{"sheet": sheet, "bounds": bounds}
+				args := spreadsheetConditionalFormatArguments{Sheet: sheet, Bounds: bounds, Operation: "set"}
 				if clear {
-					operation = "clear"
+					args.Operation = "clear"
 				} else {
-					args["type"] = string(ruleType)
+					args.Type = string(ruleType)
 				}
-				args["operation"] = operation
 				result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.conditional_format.set", "spreadsheet_cell_range", "selection", sheet, args)
 				err = commandErr
 				if err == nil {

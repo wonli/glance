@@ -10,6 +10,16 @@ import (
 	"glance/internal/document"
 )
 
+type presentationViewArguments struct {
+	Operation  string `json:"operation"`
+	Mode       string `json:"mode,omitempty"`
+	Enabled    *bool  `json:"enabled,omitempty"`
+	PageNumber *int   `json:"page_number,omitempty"`
+	CropAction string `json:"crop_action,omitempty"`
+	SlideID    uint32 `json:"slide_id,omitempty"`
+	ElementID  int64  `json:"element_id,omitempty"`
+}
+
 func (a *App) applyPresentationViewIntent(action string, raw json.RawMessage) (json.RawMessage, error) {
 	if a == nil {
 		return nil, application.ErrNoAttachedView
@@ -252,33 +262,33 @@ func (a *App) runPresentationViewRibbonAction(view *presentationViewState, actio
 	if view == nil {
 		return false
 	}
-	arguments := map[string]any{}
+	var arguments presentationViewArguments
 	switch actionID {
 	case "view_normal":
-		arguments = map[string]any{"operation": "set_mode", "mode": "normal"}
+		arguments = presentationViewArguments{Operation: "set_mode", Mode: "normal"}
 	case "view_sorter":
-		arguments = map[string]any{"operation": "set_mode", "mode": "sorter"}
+		arguments = presentationViewArguments{Operation: "set_mode", Mode: "sorter"}
 	case "view_notes", "home_notes":
-		arguments = map[string]any{"operation": "set_notes_visible", "enabled": !view.notesExpanded}
+		arguments = presentationViewArguments{Operation: "set_notes_visible", Enabled: commandArgumentPointer(!view.notesExpanded)}
 	case "view_ruler":
-		arguments = map[string]any{"operation": "set_ruler_visible", "enabled": !view.rulerVisible}
+		arguments = presentationViewArguments{Operation: "set_ruler_visible", Enabled: commandArgumentPointer(!view.rulerVisible)}
 	case "view_fit":
-		arguments = map[string]any{"operation": "fit"}
+		arguments = presentationViewArguments{Operation: "fit"}
 	case "show_from_start", "home_slideshow":
-		arguments = map[string]any{"operation": "set_mode", "mode": "slideshow", "page_number": 1}
+		arguments = presentationViewArguments{Operation: "set_mode", Mode: "slideshow", PageNumber: commandArgumentPointer(1)}
 	case "show_from_current":
-		arguments = map[string]any{"operation": "set_mode", "mode": "slideshow"}
+		arguments = presentationViewArguments{Operation: "set_mode", Mode: "slideshow"}
 	case "show_rehearse":
-		arguments = map[string]any{"operation": "rehearsal_start"}
+		arguments = presentationViewArguments{Operation: "rehearsal_start"}
 	case "show_presenter":
-		arguments = map[string]any{"operation": "set_mode", "mode": "presenter"}
+		arguments = presentationViewArguments{Operation: "set_mode", Mode: "presenter"}
 	case "picture_crop":
 		slideIndex, picture, ok := presentationSelectedEditablePicture(view)
 		if !ok || slideIndex < 0 || slideIndex >= len(view.snapshot.Slides) {
 			a.setStatus("请先选择可编辑的图片")
 			return true
 		}
-		arguments = map[string]any{"operation": "picture_crop_mode", "crop_action": "begin", "slide_id": view.snapshot.Slides[slideIndex].ID, "element_id": picture.ID}
+		arguments = presentationViewArguments{Operation: "picture_crop_mode", CropAction: "begin", SlideID: view.snapshot.Slides[slideIndex].ID, ElementID: picture.ID}
 	case "picture_crop_cancel", "picture_crop_reset":
 		if !view.pictureCrop.active || view.pictureCrop.slideIndex < 0 || view.pictureCrop.slideIndex >= len(view.snapshot.Slides) {
 			return true
@@ -287,7 +297,7 @@ func (a *App) runPresentationViewRibbonAction(view *presentationViewState, actio
 		if actionID == "picture_crop_reset" {
 			action = "reset"
 		}
-		arguments = map[string]any{"operation": "picture_crop_mode", "crop_action": action, "slide_id": view.snapshot.Slides[view.pictureCrop.slideIndex].ID, "element_id": view.pictureCrop.shapeID}
+		arguments = presentationViewArguments{Operation: "picture_crop_mode", CropAction: action, SlideID: view.snapshot.Slides[view.pictureCrop.slideIndex].ID, ElementID: view.pictureCrop.shapeID}
 	default:
 		return false
 	}

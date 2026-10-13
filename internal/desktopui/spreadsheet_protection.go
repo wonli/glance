@@ -6,7 +6,7 @@ import (
 	"glance/internal/document"
 )
 
-func (a *App) runSpreadsheetProtectionCommand(operation, scope string, arguments map[string]any, edit func(document.SpreadsheetProtectionEditor) error) {
+func (a *App) runSpreadsheetProtectionCommand(operation, scope string, arguments any, edit func(document.SpreadsheetProtectionEditor) error) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
@@ -47,6 +47,13 @@ func (a *App) runSpreadsheetProtectionCommand(operation, scope string, arguments
 	})
 }
 
+type spreadsheetprotectionGoScopeSheetArguments struct {
+	Scope    string `json:"scope"`
+	Sheet    string `json:"sheet"`
+	Enabled  bool   `json:"enabled"`
+	Password string `json:"password"`
+}
+
 func (a *App) showSpreadsheetProtectSheetDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -66,7 +73,7 @@ func (a *App) showSpreadsheetProtectSheetDialog() {
 			if action != "confirm" {
 				return
 			}
-			a.runSpreadsheetProtectionCommand("撤销保护工作表", "sheet", map[string]any{"scope": "sheet", "sheet": sheet, "enabled": false, "password": pwd}, func(ed document.SpreadsheetProtectionEditor) error {
+			a.runSpreadsheetProtectionCommand("撤销保护工作表", "sheet", spreadsheetprotectionGoScopeSheetArguments{Scope: "sheet", Sheet: sheet, Enabled: false, Password: pwd}, func(ed document.SpreadsheetProtectionEditor) error {
 				return ed.UnprotectSheet(sheet, pwd)
 			})
 			a.setStatus("已撤销工作表保护")
@@ -81,7 +88,7 @@ func (a *App) showSpreadsheetProtectSheetDialog() {
 			if action != "confirm" {
 				return
 			}
-			a.runSpreadsheetProtectionCommand("保护工作表", "sheet", map[string]any{"scope": "sheet", "sheet": sheet, "enabled": true, "password": pwd}, func(ed document.SpreadsheetProtectionEditor) error {
+			a.runSpreadsheetProtectionCommand("保护工作表", "sheet", spreadsheetprotectionGoScopeSheetArguments{Scope: "sheet", Sheet: sheet, Enabled: true, Password: pwd}, func(ed document.SpreadsheetProtectionEditor) error {
 				return ed.ProtectSheet(sheet, pwd)
 			})
 			a.setStatus("已保护工作表")
@@ -92,7 +99,7 @@ func (a *App) showSpreadsheetProtectSheetDialog() {
 	}
 }
 
-func (a *App) runSpreadsheetWorkbookProtectionCommand(operation string, arguments map[string]any, edit func(document.SpreadsheetWorkbookProtectionEditor) error) {
+func (a *App) runSpreadsheetWorkbookProtectionCommand(operation string, arguments any, edit func(document.SpreadsheetWorkbookProtectionEditor) error) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
@@ -133,6 +140,12 @@ func (a *App) runSpreadsheetWorkbookProtectionCommand(operation string, argument
 	})
 }
 
+type spreadsheetprotectionGoScopeEnabledArguments struct {
+	Scope    string `json:"scope"`
+	Enabled  bool   `json:"enabled"`
+	Password string `json:"password"`
+}
+
 func (a *App) showSpreadsheetProtectWorkbookDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -151,7 +164,7 @@ func (a *App) showSpreadsheetProtectWorkbookDialog() {
 			if action != "confirm" {
 				return
 			}
-			a.runSpreadsheetWorkbookProtectionCommand("撤销保护工作簿", map[string]any{"scope": "workbook", "enabled": false, "password": pwd}, func(ed document.SpreadsheetWorkbookProtectionEditor) error {
+			a.runSpreadsheetWorkbookProtectionCommand("撤销保护工作簿", spreadsheetprotectionGoScopeEnabledArguments{Scope: "workbook", Enabled: false, Password: pwd}, func(ed document.SpreadsheetWorkbookProtectionEditor) error {
 				return ed.UnprotectWorkbook(pwd)
 			})
 			a.setStatus("已撤销工作簿保护")
@@ -166,7 +179,7 @@ func (a *App) showSpreadsheetProtectWorkbookDialog() {
 			if action != "confirm" {
 				return
 			}
-			a.runSpreadsheetWorkbookProtectionCommand("保护工作簿", map[string]any{"scope": "workbook", "enabled": true, "password": pwd}, func(ed document.SpreadsheetWorkbookProtectionEditor) error {
+			a.runSpreadsheetWorkbookProtectionCommand("保护工作簿", spreadsheetprotectionGoScopeEnabledArguments{Scope: "workbook", Enabled: true, Password: pwd}, func(ed document.SpreadsheetWorkbookProtectionEditor) error {
 				return ed.ProtectWorkbook(pwd)
 			})
 			a.setStatus("已保护工作簿")

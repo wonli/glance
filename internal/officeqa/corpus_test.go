@@ -8,12 +8,17 @@ import (
 	"testing"
 )
 
-func writeManifestFile(t *testing.T, root string, cases []map[string]any) {
+type writeManifestFilePayload struct {
+	Version int               `json:"version"`
+	Cases   []json.RawMessage `json:"cases"`
+}
+
+func writeManifestFile(t *testing.T, root string, cases ...json.RawMessage) {
 	t.Helper()
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	data, err := json.Marshal(map[string]any{"version": 1, "cases": cases})
+	data, err := json.Marshal(writeManifestFilePayload{Version: 1, Cases: cases})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,14 +27,44 @@ func writeManifestFile(t *testing.T, root string, cases []map[string]any) {
 	}
 }
 
-func manifestCase(id, path, format string) map[string]any {
-	return map[string]any{
-		"id":       id,
-		"path":     path,
-		"format":   format,
-		"features": []string{"basic"},
-		"expected": "rendered",
+type manifestCasePayload struct {
+	Id       string   `json:"id"`
+	Path     string   `json:"path"`
+	Format   string   `json:"format"`
+	Features []string `json:"features"`
+	Expected string   `json:"expected"`
+}
+
+func manifestCase(id, path, format string) json.RawMessage {
+	data, _ := json.Marshal(manifestCasePayload{Id: id, Path: path, Format: format, Features: []string{"basic"}, Expected: "rendered"})
+	return data
+}
+
+func manifestFixtureJSON(t *testing.T, fixture any) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(fixture)
+	if err != nil {
+		t.Fatalf("encode manifest fixture: %v", err)
 	}
+	return data
+}
+
+func setManifestField(t *testing.T, entry json.RawMessage, name string, value any) json.RawMessage {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(entry, &fields); err != nil {
+		t.Fatalf("decode manifest fixture: %v", err)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("encode manifest field %q: %v", name, err)
+	}
+	fields[name] = encoded
+	data, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("encode manifest fixture: %v", err)
+	}
+	return data
 }
 
 func touchCorpusFile(t *testing.T, root, relative string) {
@@ -50,7 +85,7 @@ func TestLoadManifestRejectsDuplicateIDsAndPaths(t *testing.T) {
 		touchCorpusFile(t, root, "xlsx/two.xlsx")
 		first := manifestCase("duplicate", "xlsx/one.xlsx", "xlsx")
 		second := manifestCase("duplicate", "xlsx/two.xlsx", "xlsx")
-		writeManifestFile(t, root, []map[string]any{first, second})
+		writeManifestFile(t, root, first, second)
 
 		if _, err := LoadManifest(root); err == nil {
 			t.Fatal("LoadManifest accepted duplicate case IDs")
@@ -62,7 +97,7 @@ func TestLoadManifestRejectsDuplicateIDsAndPaths(t *testing.T) {
 		touchCorpusFile(t, root, "xlsx/one.xlsx")
 		first := manifestCase("first", "xlsx/one.xlsx", "xlsx")
 		second := manifestCase("second", "xlsx/one.xlsx", "xlsx")
-		writeManifestFile(t, root, []map[string]any{first, second})
+		writeManifestFile(t, root, first, second)
 
 		if _, err := LoadManifest(root); err == nil {
 			t.Fatal("LoadManifest accepted duplicate case paths")
@@ -74,7 +109,7 @@ func TestLoadManifestRejectsUnsupportedFormatsAndPathTraversal(t *testing.T) {
 	t.Run("unsupported extension", func(t *testing.T) {
 		root := t.TempDir()
 		touchCorpusFile(t, root, "xls/legacy.xls")
-		writeManifestFile(t, root, []map[string]any{manifestCase("legacy", "xls/legacy.xls", "xls")})
+		writeManifestFile(t, root, manifestCase("legacy", "xls/legacy.xls", "xls"))
 
 		if _, err := LoadManifest(root); err == nil {
 			t.Fatal("LoadManifest accepted unsupported .xls format")
@@ -88,7 +123,7 @@ func TestLoadManifestRejectsUnsupportedFormatsAndPathTraversal(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.Remove(outside) })
-		writeManifestFile(t, root, []map[string]any{manifestCase("escape", "../outside.docx", "docx")})
+		writeManifestFile(t, root, manifestCase("escape", "../outside.docx", "docx"))
 
 		if _, err := LoadManifest(root); err == nil {
 			t.Fatal("LoadManifest accepted a path outside the corpus root")
@@ -99,8 +134,8 @@ func TestLoadManifestRejectsUnsupportedFormatsAndPathTraversal(t *testing.T) {
 		root := t.TempDir()
 		touchCorpusFile(t, root, "xlsx/one.xlsx")
 		entry := manifestCase("baseline-escape", "xlsx/one.xlsx", "xlsx")
-		entry["baselines"] = map[string]string{"target-001": "../outside.png"}
-		writeManifestFile(t, root, []map[string]any{entry})
+		entry = setManifestField(t, entry, "baselines", map[string]string{"target-001": "../outside.png"})
+		writeManifestFile(t, root, entry)
 
 		if _, err := LoadManifest(root); err == nil {
 			t.Fatal("LoadManifest accepted a baseline path outside the corpus root")
@@ -111,8 +146,8 @@ func TestLoadManifestRejectsUnsupportedFormatsAndPathTraversal(t *testing.T) {
 		root := t.TempDir()
 		touchCorpusFile(t, root, "xlsx/one.xlsx")
 		entry := manifestCase("wrong-baseline", "xlsx/one.xlsx", "xlsx")
-		entry["baselines"] = map[string]string{"target-001": "baselines/one.jpg"}
-		writeManifestFile(t, root, []map[string]any{entry})
+		entry = setManifestField(t, entry, "baselines", map[string]string{"target-001": "baselines/one.jpg"})
+		writeManifestFile(t, root, entry)
 
 		if _, err := LoadManifest(root); err == nil {
 			t.Fatal("LoadManifest accepted a non-PNG baseline")
@@ -122,7 +157,7 @@ func TestLoadManifestRejectsUnsupportedFormatsAndPathTraversal(t *testing.T) {
 
 func TestLoadManifestRequiresExistingCaseFiles(t *testing.T) {
 	root := t.TempDir()
-	writeManifestFile(t, root, []map[string]any{manifestCase("missing", "docx/missing.docx", "docx")})
+	writeManifestFile(t, root, manifestCase("missing", "docx/missing.docx", "docx"))
 
 	if _, err := LoadManifest(root); err == nil {
 		t.Fatal("LoadManifest accepted a manifest entry with no document file")
@@ -152,7 +187,7 @@ func TestLoadManifestRejectsSymlinkEscape(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "docx", "linked.docx")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	writeManifestFile(t, root, []map[string]any{manifestCase("symlink-escape", "docx/linked.docx", "docx")})
+	writeManifestFile(t, root, manifestCase("symlink-escape", "docx/linked.docx", "docx"))
 
 	if _, err := LoadManifest(root); err == nil {
 		t.Fatal("LoadManifest accepted a symlink pointing outside the corpus root")
@@ -171,7 +206,7 @@ func TestLoadManifestRejectsInRootDocumentSymlink(t *testing.T) {
 	if err := os.Symlink(target, filepath.Join(root, "docx", "linked.docx")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	writeManifestFile(t, root, []map[string]any{manifestCase("in-root-link", "docx/linked.docx", "docx")})
+	writeManifestFile(t, root, manifestCase("in-root-link", "docx/linked.docx", "docx"))
 
 	if _, err := LoadManifest(root); err == nil {
 		t.Fatal("LoadManifest accepted an in-root document symlink that discovery would skip")
@@ -189,8 +224,8 @@ func TestLoadManifestRejectsBaselineSymlinkEscape(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	entry := manifestCase("baseline-symlink", "xlsx/one.xlsx", "xlsx")
-	entry["baselines"] = map[string]string{"worksheet-1": "baselines/baseline.png"}
-	writeManifestFile(t, root, []map[string]any{entry})
+	entry = setManifestField(t, entry, "baselines", map[string]string{"worksheet-1": "baselines/baseline.png"})
+	writeManifestFile(t, root, entry)
 
 	if _, err := LoadManifest(root); err == nil {
 		t.Fatal("LoadManifest accepted a baseline symlink pointing outside the corpus root")

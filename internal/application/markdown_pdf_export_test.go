@@ -12,6 +12,15 @@ import (
 	"github.com/SalvioniDigitalSolutions/gopdf"
 )
 
+type testMarkdownpdfTargetPathArguments struct {
+	TargetPath string `json:"target_path"`
+}
+
+type testMarkdownpdfTargetPathOrientationArguments struct {
+	TargetPath  string `json:"target_path"`
+	Orientation string `json:"orientation"`
+}
+
 func TestMarkdownExportPDFWritesValidatedNewFile(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -33,7 +42,7 @@ func TestMarkdownExportPDFWritesValidatedNewFile(t *testing.T) {
 		RequestID: "markdown-pdf-export", DocumentID: doc.DocumentID,
 		CapabilityID: "markdown.document.export_pdf", ExpectedRevision: doc.Revision,
 		Operator:  Operator{ID: "markdown-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"target_path": path, "orientation": "landscape"}),
+		Arguments: mustJSON(t, testMarkdownpdfTargetPathOrientationArguments{TargetPath: path, Orientation: "landscape"}),
 	})
 	if err != nil {
 		t.Fatalf("InvokeCapability(markdown.document.export_pdf): %v", err)
@@ -90,7 +99,7 @@ func TestMarkdownExportPDFWritesValidatedNewFile(t *testing.T) {
 			RequestID: "markdown-pdf-existing", DocumentID: doc.DocumentID,
 			CapabilityID: "markdown.document.export_pdf", ExpectedRevision: doc.Revision,
 			Operator:  Operator{ID: "markdown-agent", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"target_path": existing}),
+			Arguments: mustJSON(t, testMarkdownpdfTargetPathArguments{TargetPath: existing}),
 		})
 		if !errors.Is(err, ErrTargetExists) {
 			t.Fatalf("existing PDF error = %v; want ErrTargetExists", err)
@@ -105,7 +114,7 @@ func TestMarkdownExportPDFWritesValidatedNewFile(t *testing.T) {
 			RequestID: "markdown-pdf-wrong-extension", DocumentID: doc.DocumentID,
 			CapabilityID: "markdown.document.export_pdf", ExpectedRevision: doc.Revision,
 			Operator:  Operator{ID: "markdown-agent", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"target_path": filepath.Join(dir, "wrong.md")}),
+			Arguments: mustJSON(t, testMarkdownpdfTargetPathArguments{TargetPath: filepath.Join(dir, "wrong.md")}),
 		})
 		if !errors.Is(err, ErrInvalidCommandArguments) {
 			t.Fatalf("wrong extension error = %v; want ErrInvalidCommandArguments", err)

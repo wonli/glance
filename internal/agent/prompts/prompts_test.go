@@ -30,8 +30,11 @@ func TestConversationTitlePromptTreatsUserMessageAsLiteralData(t *testing.T) {
 	}
 }
 
+type testPromptsEmptyArguments struct {
+}
+
 func TestRenderRejectsMissingTemplateData(t *testing.T) {
-	if _, err := render("system.tmpl", map[string]any{}); err == nil {
+	if _, err := render("system.tmpl", testPromptsEmptyArguments{}); err == nil {
 		t.Fatal("render succeeded with a missing required template key")
 	}
 }

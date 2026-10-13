@@ -50,6 +50,12 @@ func (a *App) runSpreadsheetTableCommand(operation string, arguments any, edit f
 	})
 }
 
+type showSpreadsheetInsertTableDialogArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	StyleName string             `json:"style_name"`
+}
+
 func (a *App) showSpreadsheetInsertTableDialog(styleName string) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -71,7 +77,7 @@ func (a *App) showSpreadsheetInsertTableDialog(styleName string) {
 	msg := fmt.Sprintf("将在选区 %s（共 %d 行 %d 列）创建格式化表格。\n表格将自动启用筛选与行列交替颜色。", rangeRef, rowCount, colCount)
 
 	createTable := func(style string) {
-		a.runSpreadsheetTableCommand("创建表格", map[string]any{"sheet": sheet, "bounds": bounds, "style_name": style}, func(ed document.SpreadsheetTableEditor) error {
+		a.runSpreadsheetTableCommand("创建表格", showSpreadsheetInsertTableDialogArguments{Sheet: sheet, Bounds: bounds, StyleName: style}, func(ed document.SpreadsheetTableEditor) error {
 			return ed.AddTable(document.SpreadsheetTableSpec{
 				Sheet:     sheet,
 				Range:     bounds,

@@ -2,12 +2,16 @@ package desktopui
 
 import "glance/internal/document"
 
+type wordDocumentProtectionSetArguments struct {
+	Enabled bool `json:"enabled"`
+}
+
 func (a *App) runWordProtectionApplicationCommand(operation string, enabled bool) bool {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || !a.applicationSessionRegistered(state.documentID) {
 		return false
 	}
-	if !a.runWordApplicationCommand(operation, "word.document.protection.set", map[string]any{"enabled": enabled}) {
+	if !a.runWordApplicationCommand(operation, "word.document.protection.set", wordDocumentProtectionSetArguments{Enabled: enabled}) {
 		a.setStatus("Word 文档正在处理其他操作")
 	}
 	return true

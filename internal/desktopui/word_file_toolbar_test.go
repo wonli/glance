@@ -12,6 +12,10 @@ import (
 	"glance/internal/workspace"
 )
 
+type wordAutosaveIntentArguments struct {
+	Enabled bool `json:"enabled"`
+}
+
 type wordAutosaveViewIntentTestHandler struct {
 	app      *App
 	requests chan application.ViewIntent
@@ -63,8 +67,8 @@ func TestWordAutosaveRibbonUsesMCPCapabilityHandler(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("AutoSave Ribbon action did not use the registered application capability")
 	}
-	var arguments map[string]any
-	if intent.Action != "word.autosave.set" || json.Unmarshal(intent.Arguments, &arguments) != nil || arguments["enabled"] != true {
+	var arguments wordAutosaveIntentArguments
+	if intent.Action != "word.autosave.set" || json.Unmarshal(intent.Arguments, &arguments) != nil || !arguments.Enabled {
 		t.Fatalf("AutoSave capability intent = %+v", intent)
 	}
 	select {

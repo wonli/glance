@@ -8,6 +8,12 @@ import (
 )
 
 func pdfPoint(x, y float64) f32.Point { return f32.Pt(float32(x), float32(y)) }
+
+type handlePDFEventsSetToolArguments struct {
+	Operation string `json:"operation"`
+	Tool      string `json:"tool"`
+}
+
 func (a *App) handlePDFEvents(gtx layout.Context) {
 	v := a.ensurePDFView()
 	v.syncInfo(a.pdfDoc.Info())
@@ -59,7 +65,7 @@ func (a *App) handlePDFEvents(gtx layout.Context) {
 				v.selectEnd = hit
 				if v.tool == "highlight" && v.selected >= 0 {
 					a.handlePDFAction(gtx, "highlight")
-					a.runPDFViewAction("clear annotation tool", map[string]any{"operation": "set_tool", "tool": ""})
+					a.runPDFViewAction("clear annotation tool", handlePDFEventsSetToolArguments{Operation: "set_tool", Tool: ""})
 				} else if v.mode == "edit" && v.selected >= 0 {
 					a.pdfTextDialog("replace")
 				}

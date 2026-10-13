@@ -7,6 +7,47 @@ import (
 	"glance/internal/document"
 )
 
+type spreadsheetImageMoveArguments struct {
+	Sheet   string `json:"sheet"`
+	ImageID string `json:"image_id"`
+	Row     int    `json:"row"`
+	Column  int    `json:"column"`
+	OffsetX int    `json:"offset_x"`
+	OffsetY int    `json:"offset_y"`
+}
+
+type spreadsheetImageResizeArguments struct {
+	Sheet   string `json:"sheet"`
+	ImageID string `json:"image_id"`
+	WidthPx int    `json:"width_px"`
+}
+
+type spreadsheetImageInsertArguments struct {
+	Sheet       string `json:"sheet"`
+	Row         int    `json:"row"`
+	Column      int    `json:"column"`
+	OffsetX     int    `json:"offset_x"`
+	OffsetY     int    `json:"offset_y"`
+	WidthPx     int    `json:"width_px"`
+	HeightPx    int    `json:"height_px"`
+	MediaType   string `json:"media_type"`
+	Name        string `json:"name"`
+	AltText     string `json:"alt_text"`
+	ImageBase64 []byte `json:"image_base64"`
+}
+
+type spreadsheetImageReplaceArguments struct {
+	Sheet       string `json:"sheet"`
+	ImageID     string `json:"image_id"`
+	MediaType   string `json:"media_type"`
+	ImageBase64 []byte `json:"image_base64"`
+}
+
+type spreadsheetImageDeleteArguments struct {
+	Sheet   string `json:"sheet"`
+	ImageID string `json:"image_id"`
+}
+
 func (a *App) startGridPictureMoveResize(state *documentSessionState, picture document.SpreadsheetImage, mode gridPictureGestureMode, target gridPicturePlacementTarget, preview gridPictureGeometry) {
 	kind, operation := gridPictureCommandMove, "移动图片"
 	if mode == gridPictureGestureResize {
@@ -54,7 +95,7 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 	a.launchManagedBackground(func() {
 		result := gridPictureCommandResult{state: state, token: token, generation: generation, sheet: sheet, operation: request.operation}
 		commandID := ""
-		arguments := map[string]any{"sheet": sheet}
+		var arguments any
 		targetType, targetID := "spreadsheet_image", request.imageID
 		switch request.kind {
 		case gridPictureCommandMove:
@@ -63,12 +104,11 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 			} else {
 				target := request.target
 				commandID = "spreadsheet.image.move"
-				arguments["image_id"], arguments["row"], arguments["column"] = request.imageID, target.Row, target.Column
-				arguments["offset_x"], arguments["offset_y"] = target.OffsetX, target.OffsetY
+				arguments = spreadsheetImageMoveArguments{Sheet: sheet, ImageID: request.imageID, Row: target.Row, Column: target.Column, OffsetX: target.OffsetX, OffsetY: target.OffsetY}
 			}
 		case gridPictureCommandResize:
 			commandID = "spreadsheet.image.resize"
-			arguments["image_id"], arguments["width_px"] = request.imageID, request.widthPx
+			arguments = spreadsheetImageResizeArguments{Sheet: sheet, ImageID: request.imageID, WidthPx: request.widthPx}
 		case gridPictureCommandInsert:
 			placement := request.placement
 			if request.findFreeAnchor {
@@ -89,22 +129,22 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 				break
 			}
 			commandID = "spreadsheet.image.insert"
-			arguments = map[string]any{
-				"sheet": placement.Sheet, "row": placement.Row, "column": placement.Column,
-				"offset_x": placement.OffsetX, "offset_y": placement.OffsetY,
-				"width_px": placement.WidthPx, "height_px": placement.HeightPx,
-				"media_type": placement.MediaType, "name": placement.Name, "alt_text": placement.AltText,
-				"image_base64": request.data,
+			arguments = spreadsheetImageInsertArguments{
+				Sheet: placement.Sheet, Row: placement.Row, Column: placement.Column,
+				OffsetX: placement.OffsetX, OffsetY: placement.OffsetY,
+				WidthPx: placement.WidthPx, HeightPx: placement.HeightPx,
+				MediaType: placement.MediaType, Name: placement.Name, AltText: placement.AltText,
+				ImageBase64: request.data,
 			}
 			targetType, targetID = "spreadsheet_cell", fmt.Sprintf("%s!%s%d", placement.Sheet, columnName(placement.Column), placement.Row)
 			request.placement = placement
 		case gridPictureCommandReplace:
 			commandID = "spreadsheet.image.replace"
-			arguments["image_id"], arguments["media_type"], arguments["image_base64"] = request.imageID, request.mediaType, request.data
+			arguments = spreadsheetImageReplaceArguments{Sheet: sheet, ImageID: request.imageID, MediaType: request.mediaType, ImageBase64: request.data}
 			result.selectedID = request.imageID
 		case gridPictureCommandDelete:
 			commandID = "spreadsheet.image.delete"
-			arguments["image_id"] = request.imageID
+			arguments = spreadsheetImageDeleteArguments{Sheet: sheet, ImageID: request.imageID}
 		default:
 			result.err = fmt.Errorf("unknown picture operation")
 		}

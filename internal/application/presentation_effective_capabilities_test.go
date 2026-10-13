@@ -195,6 +195,20 @@ func TestPresentationThemesAndSlideDuplicateRoundTrip(t *testing.T) {
 	}
 }
 
+type testPresentationeffectiveSlideIdElementIdsArguments struct {
+	SlideId    uint32   `json:"slide_id"`
+	ElementIds []uint32 `json:"element_ids"`
+}
+
+type testPresentationeffectiveSlideIdXArguments struct {
+	SlideId uint32 `json:"slide_id"`
+	X       int    `json:"x"`
+	Y       int    `json:"y"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Text    string `json:"text"`
+}
+
 func TestPresentationGroupCapabilityUsesExplicitAdjacentElementIDs(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -226,7 +240,7 @@ func TestPresentationGroupCapabilityUsesExplicitAdjacentElementIDs(t *testing.T)
 		created, invokeErr := runtime.InvokeCapability(ctx, CapabilityRequest{
 			RequestID: "pptx-group-seed-" + string(rune('a'+index)), DocumentID: doc.DocumentID,
 			CapabilityID: "presentation.element.textbox.create", ExpectedRevision: revision, Operator: operator,
-			Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "x": 80 + index*140, "y": 100, "width": 120, "height": 48, "text": text}),
+			Arguments: mustJSON(t, testPresentationeffectiveSlideIdXArguments{SlideId: slideID, X: 80 + index*140, Y: 100, Width: 120, Height: 48, Text: text}),
 		})
 		if invokeErr != nil {
 			t.Fatalf("create group child %d: %v", index, invokeErr)
@@ -244,7 +258,7 @@ func TestPresentationGroupCapabilityUsesExplicitAdjacentElementIDs(t *testing.T)
 	pending, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-group-set", DocumentID: doc.DocumentID, CapabilityID: "presentation.element.group.set",
 		ExpectedRevision: revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "element_ids": elementIDs}),
+		Arguments: mustJSON(t, testPresentationeffectiveSlideIdElementIdsArguments{SlideId: slideID, ElementIds: elementIDs}),
 	})
 	if err != nil {
 		t.Fatalf("stage grouping adjacent elements: %v", err)
@@ -278,7 +292,7 @@ func TestPresentationGroupCapabilityUsesExplicitAdjacentElementIDs(t *testing.T)
 	_, err = runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-group-invalid-child", DocumentID: doc.DocumentID, CapabilityID: "presentation.element.group.set",
 		ExpectedRevision: completed.Result.Revision, Operator: Operator{ID: "pptx-group-invalid-target-test", Kind: OperatorHuman},
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "element_ids": []uint32{elementIDs[0], 4294967295}}),
+		Arguments: mustJSON(t, testPresentationeffectiveSlideIdElementIdsArguments{SlideId: slideID, ElementIds: []uint32{elementIDs[0], 4294967295}}),
 	})
 	if err == nil {
 		t.Fatal("group operation accepted a nonexistent element_id")
@@ -325,6 +339,15 @@ func TestPresentationGroupCapabilityUsesExplicitAdjacentElementIDs(t *testing.T)
 	}
 }
 
+type testPresentationeffectiveSlideIdXYArguments struct {
+	SlideId uint32 `json:"slide_id"`
+	X       int    `json:"x"`
+	Y       int    `json:"y"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Text    string `json:"text"`
+}
+
 func TestPresentationExportAndPrintCapabilitiesUseRealSnapshot(t *testing.T) {
 	ctx := context.Background()
 	printer := &capturingPrintService{}
@@ -352,7 +375,7 @@ func TestPresentationExportAndPrintCapabilitiesUseRealSnapshot(t *testing.T) {
 	created, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-export-seed", DocumentID: doc.DocumentID, CapabilityID: "presentation.element.textbox.create",
 		ExpectedRevision: doc.Revision, Operator: Operator{ID: "presentation-export-agent", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideData.Slides[0].ID, "x": 72, "y": 72, "width": 360, "height": 64, "text": "季度报告导出验证"}),
+		Arguments: mustJSON(t, testPresentationeffectiveSlideIdXYArguments{SlideId: slideData.Slides[0].ID, X: 72, Y: 72, Width: 360, Height: 64, Text: "季度报告导出验证"}),
 	})
 	if err != nil {
 		t.Fatalf("seed presentation export: %v", err)

@@ -7,6 +7,21 @@ import (
 	"testing"
 )
 
+type presentationBackgroundArguments struct {
+	SlideID  uint32 `json:"slide_id"`
+	ColorHex string `json:"color_hex"`
+}
+
+type presentationBackgroundCase struct {
+	name      string
+	arguments presentationBackgroundArguments
+}
+
+type testPresentationgeometrySlideIdColorHexArguments struct {
+	SlideId  uint32 `json:"slide_id"`
+	ColorHex string `json:"color_hex"`
+}
+
 func TestPresentationBackgroundAndCanvasSizeCapabilitiesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -42,7 +57,7 @@ func TestPresentationBackgroundAndCanvasSizeCapabilitiesRoundTrip(t *testing.T) 
 	background, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-background-set", DocumentID: doc.DocumentID, CapabilityID: "presentation.slide.background.set",
 		ExpectedRevision: doc.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "color_hex": "#aBcDef"}),
+		Arguments: mustJSON(t, testPresentationgeometrySlideIdColorHexArguments{SlideId: slideID, ColorHex: "#aBcDef"}),
 	})
 	if err != nil || background.Revision != doc.Revision+1 || !containsJSONText(background.Data, `"color_hex":"#ABCDEF"`) || !containsJSONText(background.Data, `"changed":true`) {
 		t.Fatalf("set slide background: result=%s revision=%d error=%v", background.Data, background.Revision, err)
@@ -54,7 +69,7 @@ func TestPresentationBackgroundAndCanvasSizeCapabilitiesRoundTrip(t *testing.T) 
 	backgroundNoOp, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-background-noop", DocumentID: doc.DocumentID, CapabilityID: "presentation.slide.background.set",
 		ExpectedRevision: background.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "color_hex": "#abcdef"}),
+		Arguments: mustJSON(t, testPresentationgeometrySlideIdColorHexArguments{SlideId: slideID, ColorHex: "#abcdef"}),
 	})
 	if err != nil || backgroundNoOp.Revision != background.Revision || !containsJSONText(backgroundNoOp.Data, `"changed":false`) {
 		t.Fatalf("normalized background repeat should be a no-op: result=%s revision=%d error=%v", backgroundNoOp.Data, backgroundNoOp.Revision, err)
@@ -64,15 +79,15 @@ func TestPresentationBackgroundAndCanvasSizeCapabilitiesRoundTrip(t *testing.T) 
 	if err != nil {
 		t.Fatalf("GetDocument before invalid background: %v", err)
 	}
-	for name, args := range map[string]map[string]any{
-		"color": {"slide_id": slideID, "color_hex": "not-a-color"},
-		"slide": {"slide_id": ^uint32(0), "color_hex": "#112233"},
+	for _, testCase := range []presentationBackgroundCase{
+		{name: "color", arguments: presentationBackgroundArguments{SlideID: slideID, ColorHex: "not-a-color"}},
+		{name: "slide", arguments: presentationBackgroundArguments{SlideID: ^uint32(0), ColorHex: "#112233"}},
 	} {
 		if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
-			RequestID: "pptx-background-invalid-" + name, DocumentID: doc.DocumentID, CapabilityID: "presentation.slide.background.set",
-			ExpectedRevision: background.Revision, Operator: operator, Arguments: mustJSON(t, args),
+			RequestID: "pptx-background-invalid-" + testCase.name, DocumentID: doc.DocumentID, CapabilityID: "presentation.slide.background.set",
+			ExpectedRevision: background.Revision, Operator: operator, Arguments: mustJSON(t, testCase.arguments),
 		}); err == nil {
-			t.Fatalf("background set accepted invalid %s", name)
+			t.Fatalf("background set accepted invalid %s", testCase.name)
 		}
 	}
 	stateAfterInvalidBackground, err := runtime.GetDocument(ctx, doc.DocumentID)
@@ -131,7 +146,7 @@ func TestPresentationBackgroundAndCanvasSizeCapabilitiesRoundTrip(t *testing.T) 
 	cleanBackgroundNoOp, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-background-reopened-noop", DocumentID: reopened.DocumentID, CapabilityID: "presentation.slide.background.set",
 		ExpectedRevision: reopened.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "color_hex": "#abcdef"}),
+		Arguments: mustJSON(t, testPresentationgeometrySlideIdColorHexArguments{SlideId: slideID, ColorHex: "#abcdef"}),
 	})
 	if err != nil || cleanBackgroundNoOp.Revision != reopened.Revision || !containsJSONText(cleanBackgroundNoOp.Data, `"changed":false`) {
 		t.Fatalf("reopened background no-op: result=%s revision=%d error=%v", cleanBackgroundNoOp.Data, cleanBackgroundNoOp.Revision, err)

@@ -11,6 +11,36 @@ import (
 	"testing"
 )
 
+type testWordtextTargetRunIdArguments struct {
+	Target           string `json:"target"`
+	RunId            string `json:"run_id"`
+	Text             string `json:"text"`
+	AfterParagraphId string `json:"after_paragraph_id"`
+}
+
+type testWordtextTargetRunIdAfterParagraphIdArguments struct {
+	Target           string `json:"target"`
+	RunId            string `json:"run_id"`
+	AfterParagraphId string `json:"after_paragraph_id"`
+	Text             string `json:"text"`
+}
+
+type testWordtextTargetAfterParagraphIdArguments struct {
+	Target           string `json:"target"`
+	AfterParagraphId string `json:"after_paragraph_id"`
+	Text             string `json:"text"`
+}
+
+type testWordtextTargetRunIdTextArguments struct {
+	Target string `json:"target"`
+	RunId  string `json:"run_id"`
+	Text   string `json:"text"`
+}
+
+type testWordtextTextArguments struct {
+	Text string `json:"text"`
+}
+
 func TestWordTextInsertCapabilitySupportsExplicitRunAndParagraphTargets(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -25,7 +55,7 @@ func TestWordTextInsertCapabilitySupportsExplicitRunAndParagraphTargets(t *testi
 	operator := Operator{ID: "dictation-agent", Kind: OperatorBuiltInAgent}
 	appended, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "dictation-source", DocumentID: doc.DocumentID, CommandID: "word.paragraph.append",
-		ExpectedRevision: doc.Revision, Operator: operator, Arguments: mustJSON(t, map[string]any{"text": "已有正文"}),
+		ExpectedRevision: doc.Revision, Operator: operator, Arguments: mustJSON(t, testWordtextTextArguments{Text: "已有正文"}),
 	})
 	if err != nil {
 		t.Fatalf("append source paragraph: %v", err)
@@ -41,7 +71,7 @@ func TestWordTextInsertCapabilitySupportsExplicitRunAndParagraphTargets(t *testi
 	inserted, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "dictation-append-run", DocumentID: doc.DocumentID, CommandID: "word.text.insert",
 		ExpectedRevision: appended.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"target": "run", "run_id": source.RunID, "text": "本周完成报表"}),
+		Arguments: mustJSON(t, testWordtextTargetRunIdTextArguments{Target: "run", RunId: source.RunID, Text: "本周完成报表"}),
 	})
 	if err != nil {
 		t.Fatalf("append dictated text to run: %v", err)
@@ -59,7 +89,7 @@ func TestWordTextInsertCapabilitySupportsExplicitRunAndParagraphTargets(t *testi
 	textbox, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "dictation-insert-textbox", DocumentID: doc.DocumentID, CommandID: "word.text.insert",
 		ExpectedRevision: inserted.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"target": "textbox", "after_paragraph_id": source.ParagraphID, "text": "补充说明"}),
+		Arguments: mustJSON(t, testWordtextTargetAfterParagraphIdArguments{Target: "textbox", AfterParagraphId: source.ParagraphID, Text: "补充说明"}),
 	})
 	if err != nil {
 		t.Fatalf("insert dictated text after paragraph: %v", err)
@@ -79,15 +109,15 @@ func TestWordTextInsertCapabilitySupportsExplicitRunAndParagraphTargets(t *testi
 	invalid, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "dictation-invalid-target", DocumentID: doc.DocumentID, CommandID: "word.text.insert",
 		ExpectedRevision: textbox.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"target": "run", "run_id": source.RunID, "after_paragraph_id": source.ParagraphID, "text": "invalid"}),
+		Arguments: mustJSON(t, testWordtextTargetRunIdAfterParagraphIdArguments{Target: "run", RunId: source.RunID, AfterParagraphId: source.ParagraphID, Text: "invalid"}),
 	})
 	if !errors.Is(err, ErrInvalidCommandArguments) {
 		t.Fatalf("run insertion with a second target returned result %+v, error=%v; want invalid arguments", invalid, err)
 	}
 	stateBeforeInvalidTargets := mustGetDocumentInfo(t, runtime, doc.DocumentID)
-	for index, arguments := range []map[string]any{
-		{"target": "run", "run_id": "missing-run", "text": "不应写入"},
-		{"target": "textbox", "after_paragraph_id": "missing-paragraph", "text": "不应写入"},
+	for index, arguments := range []testWordtextTargetRunIdArguments{
+		{Target: "run", RunId: "missing-run", Text: "不应写入"},
+		{Target: "textbox", AfterParagraphId: "missing-paragraph", Text: "不应写入"},
 	} {
 		if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: fmt.Sprintf("dictation-missing-target-%d", index), DocumentID: doc.DocumentID,
@@ -118,6 +148,10 @@ func TestWordTextInsertCapabilitySupportsExplicitRunAndParagraphTargets(t *testi
 	}
 }
 
+type testWordtextTextArguments144 struct {
+	Text string `json:"text"`
+}
+
 func TestWordParagraphAppendUsesUnicodeCharacterLimitAtomically(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -131,7 +165,7 @@ func TestWordParagraphAppendUsesUnicodeCharacterLimitAtomically(t *testing.T) {
 	}
 	operator := Operator{ID: "unicode-report-agent", Kind: OperatorExternalAgent}
 	text := strings.Repeat("中", 6000)
-	arguments := mustJSON(t, map[string]any{"text": text})
+	arguments := mustJSON(t, testWordtextTextArguments144{Text: text})
 	descriptor, ok := runtime.Catalog().Descriptor("word.paragraph.append")
 	if !ok {
 		t.Fatal("word.paragraph.append is not registered")
@@ -171,7 +205,7 @@ func TestWordParagraphAppendUsesUnicodeCharacterLimitAtomically(t *testing.T) {
 		if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: "unicode-report-invalid-" + name, DocumentID: doc.DocumentID, CommandID: "word.paragraph.append",
 			ExpectedRevision: result.Revision, Operator: operator,
-			Arguments: mustJSON(t, map[string]any{"text": invalidText}),
+			Arguments: mustJSON(t, testWordtextTextArguments144{Text: invalidText}),
 		}); err == nil {
 			t.Fatalf("append invalid paragraph %q succeeded", name)
 		}
@@ -180,6 +214,16 @@ func TestWordParagraphAppendUsesUnicodeCharacterLimitAtomically(t *testing.T) {
 	if state.Revision != result.Revision || !state.Dirty {
 		t.Fatalf("rejected paragraphs changed document state: revision=%d dirty=%v; want revision=%d dirty=true", state.Revision, state.Dirty, result.Revision)
 	}
+}
+
+type testWordtextTargetRunIdTextArguments145 struct {
+	Target string `json:"target"`
+	RunId  string `json:"run_id"`
+	Text   string `json:"text"`
+}
+
+type testWordtextTextArguments146 struct {
+	Text string `json:"text"`
 }
 
 func TestWordTextInsertAcceptsUnicodeWithinSchemaLimit(t *testing.T) {
@@ -197,7 +241,7 @@ func TestWordTextInsertAcceptsUnicodeWithinSchemaLimit(t *testing.T) {
 	source, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "unicode-text-source", DocumentID: doc.DocumentID, CommandID: "word.paragraph.append",
 		ExpectedRevision: doc.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"text": "报告"}),
+		Arguments: mustJSON(t, testWordtextTextArguments146{Text: "报告"}),
 	})
 	if err != nil {
 		t.Fatalf("append source paragraph: %v", err)
@@ -209,7 +253,7 @@ func TestWordTextInsertAcceptsUnicodeWithinSchemaLimit(t *testing.T) {
 		t.Fatalf("source paragraph result=%s error=%v", source.Data, err)
 	}
 	text := strings.Repeat("周", 6000)
-	arguments := mustJSON(t, map[string]any{"target": "run", "run_id": sourceData.RunID, "text": text})
+	arguments := mustJSON(t, testWordtextTargetRunIdTextArguments145{Target: "run", RunId: sourceData.RunID, Text: text})
 	descriptor, ok := runtime.Catalog().Descriptor("word.text.insert")
 	if !ok {
 		t.Fatal("word.text.insert is not registered")
@@ -242,7 +286,7 @@ func TestWordTextInsertAcceptsUnicodeWithinSchemaLimit(t *testing.T) {
 	if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "unicode-text-insert-too-long", DocumentID: doc.DocumentID, CommandID: "word.text.insert",
 		ExpectedRevision: result.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"target": "run", "run_id": sourceData.RunID, "text": strings.Repeat("超", 16001)}),
+		Arguments: mustJSON(t, testWordtextTargetRunIdTextArguments145{Target: "run", RunId: sourceData.RunID, Text: strings.Repeat("超", 16001)}),
 	}); err == nil {
 		t.Fatal("word.text.insert accepted more than 16000 Unicode characters")
 	}

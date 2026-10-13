@@ -6,10 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"math/big"
-	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"glance/internal/document"
+	"glance/internal/jsonschema"
 )
 
 var (
@@ -222,115 +221,120 @@ func cloneCapabilityDescriptor(source CapabilityDescriptor) CapabilityDescriptor
 var capabilityIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
 
 func validateSchemaDocument(raw json.RawMessage) error {
-	var schema map[string]any
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if !json.Valid(raw) || decoder.Decode(&schema) != nil || schema == nil {
+	var schema jsonschema.Definition
+	if err := json.Unmarshal(raw, &schema); err != nil {
 		return errors.New("schema must be a JSON object")
 	}
 	return validateSchemaDefinition(schema)
 }
 
-func validateSchemaDefinition(schema map[string]any) error {
-	if rawType, exists := schema["type"]; exists {
-		kind, ok := rawType.(string)
-		if !ok || !validJSONType(kind) {
-			return fmt.Errorf("unknown JSON type %v", rawType)
+type schemaBranchGroup struct {
+	keyword  string
+	present  bool
+	branches []jsonschema.Definition
+}
+
+type schemaNumericConstraint struct {
+	keyword string
+	raw     json.RawMessage
+}
+
+func validateSchemaDefinition(schema jsonschema.Definition) error {
+	if schema.Has("type") {
+		if schema.Type == nil || !validJSONType(*schema.Type) {
+			return fmt.Errorf("unknown JSON type %v", schema.Type)
 		}
 	}
-	if required, exists := schema["required"]; exists {
-		items, ok := required.([]any)
-		if !ok {
+	if schema.Has("required") {
+		if schema.Required == nil {
 			return errors.New("required must be an array of strings")
 		}
-		for _, item := range items {
-			if _, ok := item.(string); !ok {
-				return errors.New("required must contain only strings")
-			}
-		}
 	}
-	if properties, exists := schema["properties"]; exists {
-		items, ok := properties.(map[string]any)
-		if !ok {
+	if schema.Has("properties") {
+		if schema.Properties == nil {
 			return errors.New("properties must be an object")
 		}
-		for name, rawProperty := range items {
-			property, ok := rawProperty.(map[string]any)
-			if !ok {
-				return fmt.Errorf("property %q must be a schema object", name)
-			}
+		for name, property := range schema.Properties {
 			if err := validateSchemaDefinition(property); err != nil {
 				return fmt.Errorf("property %q: %w", name, err)
 			}
 		}
 	}
-	if items, exists := schema["items"]; exists {
-		itemSchema, ok := items.(map[string]any)
-		if !ok {
+	if schema.Has("items") {
+		if schema.Items == nil {
 			return errors.New("items must be a schema object")
 		}
-		if err := validateSchemaDefinition(itemSchema); err != nil {
+		if err := validateSchemaDefinition(*schema.Items); err != nil {
 			return fmt.Errorf("items: %w", err)
 		}
 	}
-	for _, keyword := range []string{"anyOf", "allOf", "oneOf"} {
-		if rawBranches, exists := schema[keyword]; exists {
-			branches, ok := rawBranches.([]any)
-			if !ok || len(branches) == 0 {
-				return fmt.Errorf("%s must be a non-empty array of schemas", keyword)
-			}
-			for index, rawBranch := range branches {
-				branch, ok := rawBranch.(map[string]any)
-				if !ok {
-					return fmt.Errorf("%s[%d] must be a schema object", keyword, index)
-				}
-				if err := validateSchemaDefinition(branch); err != nil {
-					return fmt.Errorf("%s[%d]: %w", keyword, index, err)
-				}
+	for _, group := range []schemaBranchGroup{
+		{"anyOf", schema.Has("anyOf"), schema.AnyOf},
+		{"allOf", schema.Has("allOf"), schema.AllOf},
+		{"oneOf", schema.Has("oneOf"), schema.OneOf},
+	} {
+		if !group.present {
+			continue
+		}
+		if len(group.branches) == 0 {
+			return fmt.Errorf("%s must be a non-empty array of schemas", group.keyword)
+		}
+		for index, branch := range group.branches {
+			if err := validateSchemaDefinition(branch); err != nil {
+				return fmt.Errorf("%s[%d]: %w", group.keyword, index, err)
 			}
 		}
 	}
-	if additional, exists := schema["additionalProperties"]; exists {
-		if _, ok := additional.(bool); !ok {
+	if schema.Has("additionalProperties") {
+		if _, ok := jsonBool(schema.AdditionalProperties); !ok {
 			return errors.New("additionalProperties must be a boolean")
 		}
 	}
-	if rawEnum, exists := schema["enum"]; exists {
-		values, ok := rawEnum.([]any)
-		if !ok || len(values) == 0 {
+	if schema.Has("enum") {
+		if schema.Enum == nil || len(schema.Enum) == 0 {
 			return errors.New("enum must be a non-empty array")
 		}
 	}
-	for _, keyword := range []string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"} {
-		if raw, exists := schema[keyword]; exists {
-			value, ok := schemaNumber(raw)
+	for _, constraint := range []schemaNumericConstraint{
+		{"minimum", schema.Minimum},
+		{"maximum", schema.Maximum},
+		{"exclusiveMinimum", schema.ExclusiveMinimum},
+		{"exclusiveMaximum", schema.ExclusiveMaximum},
+		{"multipleOf", schema.MultipleOf},
+	} {
+		if schema.Has(constraint.keyword) {
+			value, ok := schemaNumber(constraint.raw)
 			if !ok || math.IsNaN(value) || math.IsInf(value, 0) {
-				return fmt.Errorf("%s must be a finite number", keyword)
+				return fmt.Errorf("%s must be a finite number", constraint.keyword)
 			}
-			if keyword == "multipleOf" && value <= 0 {
+			if constraint.keyword == "multipleOf" && value <= 0 {
 				return errors.New("multipleOf must be greater than zero")
 			}
 		}
 	}
-	for _, keyword := range []string{"minLength", "maxLength", "minItems", "maxItems"} {
-		if raw, exists := schema[keyword]; exists {
-			value, ok := schemaInteger(raw)
+	for _, constraint := range []schemaNumericConstraint{
+		{"minLength", schema.MinLength},
+		{"maxLength", schema.MaxLength},
+		{"minItems", schema.MinItems},
+		{"maxItems", schema.MaxItems},
+	} {
+		if schema.Has(constraint.keyword) {
+			value, ok := schemaInteger(constraint.raw)
 			if !ok || value < 0 {
-				return fmt.Errorf("%s must be a non-negative integer", keyword)
+				return fmt.Errorf("%s must be a non-negative integer", constraint.keyword)
 			}
 		}
 	}
-	if raw, exists := schema["pattern"]; exists {
-		pattern, ok := raw.(string)
-		if !ok {
+	if schema.Has("pattern") {
+		if schema.Pattern == nil {
 			return errors.New("pattern must be a string")
 		}
-		if _, err := regexp.Compile(pattern); err != nil {
+		if _, err := regexp.Compile(*schema.Pattern); err != nil {
 			return fmt.Errorf("pattern is invalid: %w", err)
 		}
 	}
-	if raw, exists := schema["uniqueItems"]; exists {
-		if _, ok := raw.(bool); !ok {
+	if schema.Has("uniqueItems") {
+		if schema.UniqueItems == nil {
 			return errors.New("uniqueItems must be a boolean")
 		}
 	}
@@ -347,42 +351,32 @@ func validJSONType(value string) bool {
 }
 
 func validateArguments(schemaRaw, arguments json.RawMessage) error {
-	var schema map[string]any
-	schemaDecoder := json.NewDecoder(bytes.NewReader(schemaRaw))
-	schemaDecoder.UseNumber()
-	if err := schemaDecoder.Decode(&schema); err != nil {
+	var schema jsonschema.Definition
+	if err := json.Unmarshal(schemaRaw, &schema); err != nil {
 		return ErrInvalidCapabilitySchema
 	}
 	if len(arguments) == 0 {
 		arguments = json.RawMessage(`{}`)
 	}
-	decoder := json.NewDecoder(bytes.NewReader(arguments))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidCommandArguments, err)
+	if !json.Valid(arguments) {
+		return fmt.Errorf("%w: invalid JSON", ErrInvalidCommandArguments)
 	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return ErrInvalidCommandArguments
-	}
-	if err := validateJSONValue(schema, value, "arguments"); err != nil {
+	if err := validateJSONValue(schema, arguments, "arguments"); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidCommandArguments, err)
 	}
 	return nil
 }
 
-func validateJSONValue(schema map[string]any, value any, path string) error {
-	if expected, exists := schema["const"]; exists && !equalJSONValues(expected, value) {
+func validateJSONValue(schema jsonschema.Definition, value json.RawMessage, path string) error {
+	if schema.Has("const") && !equalJSONValues(schema.Const, value) {
 		return fmt.Errorf("%s must equal the declared constant", path)
 	}
-	if rawEnum, exists := schema["enum"]; exists {
-		values, ok := rawEnum.([]any)
-		if !ok {
+	if schema.Has("enum") {
+		if schema.Enum == nil {
 			return ErrInvalidCapabilitySchema
 		}
 		matched := false
-		for _, expected := range values {
+		for _, expected := range schema.Enum {
 			if equalJSONValues(expected, value) {
 				matched = true
 				break
@@ -392,27 +386,31 @@ func validateJSONValue(schema map[string]any, value any, path string) error {
 			return fmt.Errorf("%s must match one of the declared values", path)
 		}
 	}
-	if rawType, exists := schema["type"]; exists {
-		kind, ok := rawType.(string)
-		if !ok || !validJSONType(kind) {
+	if schema.Has("type") {
+		if schema.Type == nil || !validJSONType(*schema.Type) {
 			return ErrInvalidCapabilitySchema
 		}
-		if !matchesJSONType(kind, value) {
-			return fmt.Errorf("%s must be %s", path, kind)
+		if !matchesJSONType(*schema.Type, value) {
+			return fmt.Errorf("%s must be %s", path, *schema.Type)
 		}
 	}
 	if number, ok := schemaRational(value); ok {
-		for _, keyword := range []string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"} {
-			rawBound, exists := schema[keyword]
-			if !exists {
+		for _, constraint := range []schemaNumericConstraint{
+			{"minimum", schema.Minimum},
+			{"maximum", schema.Maximum},
+			{"exclusiveMinimum", schema.ExclusiveMinimum},
+			{"exclusiveMaximum", schema.ExclusiveMaximum},
+			{"multipleOf", schema.MultipleOf},
+		} {
+			if !schema.Has(constraint.keyword) {
 				continue
 			}
-			bound, valid := schemaRational(rawBound)
+			bound, valid := schemaRational(constraint.raw)
 			if !valid {
 				return ErrInvalidCapabilitySchema
 			}
 			comparison := number.Cmp(bound)
-			switch keyword {
+			switch constraint.keyword {
 			case "minimum":
 				if comparison < 0 {
 					return fmt.Errorf("%s must be at least %v", path, bound)
@@ -436,10 +434,10 @@ func validateJSONValue(schema map[string]any, value any, path string) error {
 			}
 		}
 	}
-	if text, ok := value.(string); ok {
+	if text, ok := jsonString(value); ok {
 		length := utf8.RuneCountInString(text)
-		if raw, exists := schema["minLength"]; exists {
-			minimum, valid := schemaInteger(raw)
+		if schema.Has("minLength") {
+			minimum, valid := schemaInteger(schema.MinLength)
 			if !valid {
 				return ErrInvalidCapabilitySchema
 			}
@@ -447,8 +445,8 @@ func validateJSONValue(schema map[string]any, value any, path string) error {
 				return fmt.Errorf("%s must contain at least %d characters", path, minimum)
 			}
 		}
-		if raw, exists := schema["maxLength"]; exists {
-			maximum, valid := schemaInteger(raw)
+		if schema.Has("maxLength") {
+			maximum, valid := schemaInteger(schema.MaxLength)
 			if !valid {
 				return ErrInvalidCapabilitySchema
 			}
@@ -456,12 +454,11 @@ func validateJSONValue(schema map[string]any, value any, path string) error {
 				return fmt.Errorf("%s must contain at most %d characters", path, maximum)
 			}
 		}
-		if raw, exists := schema["pattern"]; exists {
-			pattern, valid := raw.(string)
-			if !valid {
+		if schema.Has("pattern") {
+			if schema.Pattern == nil {
 				return ErrInvalidCapabilitySchema
 			}
-			compiled, err := regexp.Compile(pattern)
+			compiled, err := regexp.Compile(*schema.Pattern)
 			if err != nil {
 				return ErrInvalidCapabilitySchema
 			}
@@ -470,33 +467,42 @@ func validateJSONValue(schema map[string]any, value any, path string) error {
 			}
 		}
 	}
-	if object, ok := value.(map[string]any); ok {
-		properties, _ := schema["properties"].(map[string]any)
-		for _, requiredValue := range stringArray(schema["required"]) {
+	if object, ok := jsonObject(value); ok {
+		properties := schema.Properties
+		if schema.Has("properties") && properties == nil {
+			return ErrInvalidCapabilitySchema
+		}
+		required := schema.Required
+		if schema.Has("required") && required == nil {
+			return ErrInvalidCapabilitySchema
+		}
+		for _, requiredValue := range required {
 			if _, exists := object[requiredValue]; !exists {
 				return fmt.Errorf("%s.%s is required", path, requiredValue)
 			}
 		}
 		for name, child := range object {
-			propertySchemaRaw, exists := properties[name]
+			propertySchema, exists := properties[name]
 			if !exists {
-				if schema["additionalProperties"] == false {
-					return fmt.Errorf("%s.%s is not allowed", path, name)
+				if schema.Has("additionalProperties") {
+					allowed, valid := jsonBool(schema.AdditionalProperties)
+					if !valid {
+						return ErrInvalidCapabilitySchema
+					}
+					if !allowed {
+						return fmt.Errorf("%s.%s is not allowed", path, name)
+					}
 				}
 				continue
-			}
-			propertySchema, ok := propertySchemaRaw.(map[string]any)
-			if !ok {
-				return ErrInvalidCapabilitySchema
 			}
 			if err := validateJSONValue(propertySchema, child, path+"."+name); err != nil {
 				return err
 			}
 		}
 	}
-	if array, ok := value.([]any); ok {
-		if raw, exists := schema["minItems"]; exists {
-			minimum, valid := schemaInteger(raw)
+	if array, ok := jsonArray(value); ok {
+		if schema.Has("minItems") {
+			minimum, valid := schemaInteger(schema.MinItems)
 			if !valid {
 				return ErrInvalidCapabilitySchema
 			}
@@ -504,8 +510,8 @@ func validateJSONValue(schema map[string]any, value any, path string) error {
 				return fmt.Errorf("%s must contain at least %d items", path, minimum)
 			}
 		}
-		if raw, exists := schema["maxItems"]; exists {
-			maximum, valid := schemaInteger(raw)
+		if schema.Has("maxItems") {
+			maximum, valid := schemaInteger(schema.MaxItems)
 			if !valid {
 				return ErrInvalidCapabilitySchema
 			}
@@ -513,49 +519,55 @@ func validateJSONValue(schema map[string]any, value any, path string) error {
 				return fmt.Errorf("%s must contain at most %d items", path, maximum)
 			}
 		}
-		if unique, _ := schema["uniqueItems"].(bool); unique {
-			for index := range array {
-				for prior := 0; prior < index; prior++ {
-					if equalJSONValues(array[index], array[prior]) {
-						return fmt.Errorf("%s[%d] duplicates an earlier item", path, index)
+		if schema.Has("uniqueItems") {
+			if schema.UniqueItems == nil {
+				return ErrInvalidCapabilitySchema
+			}
+			if *schema.UniqueItems {
+				for index := range array {
+					for prior := 0; prior < index; prior++ {
+						if equalJSONValues(array[index], array[prior]) {
+							return fmt.Errorf("%s[%d] duplicates an earlier item", path, index)
+						}
 					}
 				}
 			}
 		}
-		if itemSchema, exists := schema["items"].(map[string]any); exists {
+		if schema.Has("items") {
+			if schema.Items == nil {
+				return ErrInvalidCapabilitySchema
+			}
 			for index, item := range array {
-				if err := validateJSONValue(itemSchema, item, fmt.Sprintf("%s[%d]", path, index)); err != nil {
+				if err := validateJSONValue(*schema.Items, item, fmt.Sprintf("%s[%d]", path, index)); err != nil {
 					return err
 				}
 			}
 		}
 	}
-	for _, keyword := range []string{"anyOf", "allOf", "oneOf"} {
-		rawBranches, exists := schema[keyword]
-		if !exists {
+	for _, group := range []schemaBranchGroup{
+		{"anyOf", schema.Has("anyOf"), schema.AnyOf},
+		{"allOf", schema.Has("allOf"), schema.AllOf},
+		{"oneOf", schema.Has("oneOf"), schema.OneOf},
+	} {
+		if !group.present {
 			continue
 		}
-		branches, ok := rawBranches.([]any)
-		if !ok || len(branches) == 0 {
+		if len(group.branches) == 0 {
 			return ErrInvalidCapabilitySchema
 		}
 		matched := 0
-		for _, rawBranch := range branches {
-			branch, valid := rawBranch.(map[string]any)
-			if !valid {
-				return ErrInvalidCapabilitySchema
-			}
+		for _, branch := range group.branches {
 			if validateJSONValue(branch, value, path) == nil {
 				matched++
 			}
 		}
-		switch keyword {
+		switch group.keyword {
 		case "anyOf":
 			if matched == 0 {
 				return fmt.Errorf("%s must match at least one alternative", path)
 			}
 		case "allOf":
-			if matched != len(branches) {
+			if matched != len(group.branches) {
 				return fmt.Errorf("%s must match every required schema", path)
 			}
 		case "oneOf":
@@ -567,42 +579,25 @@ func validateJSONValue(schema map[string]any, value any, path string) error {
 	return nil
 }
 
-func schemaNumber(value any) (float64, bool) {
-	switch number := value.(type) {
-	case json.Number:
-		parsed, err := number.Float64()
-		return parsed, err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0)
-	case float64:
-		return number, !math.IsNaN(number) && !math.IsInf(number, 0)
-	case int:
-		return float64(number), true
-	case int64:
-		return float64(number), true
-	default:
+func schemaNumber(value json.RawMessage) (float64, bool) {
+	number, ok := jsonNumber(value)
+	if !ok {
 		return 0, false
 	}
+	parsed, err := number.Float64()
+	return parsed, err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0)
 }
 
-func schemaRational(value any) (*big.Rat, bool) {
-	switch number := value.(type) {
-	case json.Number:
-		parsed, ok := new(big.Rat).SetString(number.String())
-		return parsed, ok
-	case float64:
-		if math.IsNaN(number) || math.IsInf(number, 0) {
-			return nil, false
-		}
-		return new(big.Rat).SetFloat64(number), true
-	case int:
-		return new(big.Rat).SetInt64(int64(number)), true
-	case int64:
-		return new(big.Rat).SetInt64(number), true
-	default:
+func schemaRational(value json.RawMessage) (*big.Rat, bool) {
+	number, ok := jsonNumber(value)
+	if !ok {
 		return nil, false
 	}
+	parsed, ok := new(big.Rat).SetString(number.String())
+	return parsed, ok
 }
 
-func schemaInteger(value any) (int64, bool) {
+func schemaInteger(value json.RawMessage) (int64, bool) {
 	number, ok := schemaRational(value)
 	if !ok || !number.IsInt() || !number.Num().IsInt64() {
 		return 0, false
@@ -610,17 +605,14 @@ func schemaInteger(value any) (int64, bool) {
 	return number.Num().Int64(), true
 }
 
-func equalJSONValues(left, right any) bool {
+func equalJSONValues(left, right json.RawMessage) bool {
 	if leftNumber, ok := schemaRational(left); ok {
 		if rightNumber, ok := schemaRational(right); ok {
 			return leftNumber.Cmp(rightNumber) == 0
 		}
 	}
-	if reflect.DeepEqual(left, right) {
-		return true
-	}
-	leftArray, leftIsArray := left.([]any)
-	rightArray, rightIsArray := right.([]any)
+	leftArray, leftIsArray := jsonArray(left)
+	rightArray, rightIsArray := jsonArray(right)
 	if leftIsArray && rightIsArray {
 		if len(leftArray) != len(rightArray) {
 			return false
@@ -632,8 +624,8 @@ func equalJSONValues(left, right any) bool {
 		}
 		return true
 	}
-	leftObject, leftIsObject := left.(map[string]any)
-	rightObject, rightIsObject := right.(map[string]any)
+	leftObject, leftIsObject := jsonObject(left)
+	rightObject, rightIsObject := jsonObject(right)
 	if leftIsObject && rightIsObject {
 		if len(leftObject) != len(rightObject) {
 			return false
@@ -646,47 +638,112 @@ func equalJSONValues(left, right any) bool {
 		}
 		return true
 	}
-	return false
+	if leftString, leftIsString := jsonString(left); leftIsString {
+		rightString, rightIsString := jsonString(right)
+		return rightIsString && leftString == rightString
+	}
+	if leftBool, leftIsBool := jsonBool(left); leftIsBool {
+		rightBool, rightIsBool := jsonBool(right)
+		return rightIsBool && leftBool == rightBool
+	}
+	return bytes.Equal(bytes.TrimSpace(left), bytes.TrimSpace(right)) && json.Valid(left) && json.Valid(right)
 }
 
-func matchesJSONType(kind string, value any) bool {
+func matchesJSONType(kind string, value json.RawMessage) bool {
 	switch kind {
 	case "object":
-		_, ok := value.(map[string]any)
+		_, ok := jsonObject(value)
 		return ok
 	case "array":
-		_, ok := value.([]any)
+		_, ok := jsonArray(value)
 		return ok
 	case "string":
-		_, ok := value.(string)
+		_, ok := jsonString(value)
 		return ok
 	case "integer":
-		number, ok := value.(json.Number)
-		if !ok {
-			return false
-		}
-		parsed, ok := schemaRational(number)
+		parsed, ok := schemaRational(value)
 		return ok && parsed.IsInt()
 	case "number":
-		_, ok := value.(json.Number)
+		_, ok := jsonNumber(value)
 		return ok
 	case "boolean":
-		_, ok := value.(bool)
+		_, ok := jsonBool(value)
 		return ok
 	case "null":
-		return value == nil
+		return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
 	default:
 		return false
 	}
 }
 
-func stringArray(raw any) []string {
-	items, _ := raw.([]any)
+func jsonObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
+	if !json.Valid(raw) {
+		return nil, false
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return nil, false
+	}
+	return object, true
+}
+
+func jsonArray(raw json.RawMessage) ([]json.RawMessage, bool) {
+	if !json.Valid(raw) {
+		return nil, false
+	}
+	var array []json.RawMessage
+	if err := json.Unmarshal(raw, &array); err != nil || array == nil {
+		return nil, false
+	}
+	return array, true
+}
+
+func jsonString(raw json.RawMessage) (string, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '"' {
+		return "", false
+	}
+	var value string
+	err := json.Unmarshal(raw, &value)
+	return value, err == nil
+}
+
+func jsonBool(raw json.RawMessage) (bool, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || (trimmed[0] != 't' && trimmed[0] != 'f') {
+		return false, false
+	}
+	var value bool
+	err := json.Unmarshal(raw, &value)
+	return value, err == nil
+}
+
+func jsonNumber(raw json.RawMessage) (json.Number, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || !bytes.ContainsRune([]byte("-0123456789"), rune(trimmed[0])) {
+		return "", false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value json.Number
+	if err := decoder.Decode(&value); err != nil {
+		return "", false
+	}
+	return value, true
+}
+
+func stringArray(raw json.RawMessage) ([]string, bool) {
+	items, ok := jsonArray(raw)
+	if !ok {
+		return nil, false
+	}
 	out := make([]string, 0, len(items))
 	for _, item := range items {
-		if value, ok := item.(string); ok {
-			out = append(out, value)
+		value, valid := jsonString(item)
+		if !valid {
+			return nil, false
 		}
+		out = append(out, value)
 	}
-	return out
+	return out, true
 }

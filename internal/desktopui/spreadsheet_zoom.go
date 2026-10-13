@@ -45,14 +45,25 @@ func (a *App) setSpreadsheetZoom(zoom float64) {
 	}
 }
 
+type runSpreadsheetZoomIntentPayload struct {
+	Operation string `json:"operation"`
+}
+
+type runSpreadsheetZoomIntentPayloadOperation struct {
+	Operation   string `json:"operation"`
+	ZoomPercent int    `json:"zoom_percent"`
+}
+
 func (a *App) runSpreadsheetZoomIntent(operation string, zoomPercent int) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
 		return
 	}
-	arguments := map[string]any{"operation": operation}
+	var arguments any
 	if operation == "set" {
-		arguments["zoom_percent"] = zoomPercent
+		arguments = runSpreadsheetZoomIntentPayloadOperation{Operation: operation, ZoomPercent: zoomPercent}
+	} else {
+		arguments = runSpreadsheetZoomIntentPayload{Operation: operation}
 	}
 	if !a.applicationSessionRegistered(state.documentID) {
 		a.applySpreadsheetZoomLocally(operation, zoomPercent)

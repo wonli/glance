@@ -7,6 +7,22 @@ import (
 	"testing"
 )
 
+type testPresentationtransitionSlideIdTransitionTypeArguments struct {
+	SlideId        uint32 `json:"slide_id"`
+	TransitionType string `json:"transition_type"`
+	ThroughBlack   bool   `json:"through_black"`
+	ApplyToAll     bool   `json:"apply_to_all"`
+}
+
+type testPresentationtransitionSlideIdTransitionTypeSpeedArguments struct {
+	SlideId        uint32 `json:"slide_id"`
+	TransitionType string `json:"transition_type"`
+	Speed          string `json:"speed"`
+	ThroughBlack   bool   `json:"through_black"`
+	AdvanceOnClick bool   `json:"advance_on_click"`
+	ApplyToAll     bool   `json:"apply_to_all"`
+}
+
 func TestPresentationTransitionCapabilitiesApplyToAllAndRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -83,10 +99,7 @@ func TestPresentationTransitionCapabilitiesApplyToAllAndRoundTrip(t *testing.T) 
 		t.Fatalf("invalid transition query changed document state: before=%+v after=%+v error=%v", stateBeforeInvalidGet, stateAfterInvalidGet, err)
 	}
 
-	setArgs := map[string]any{
-		"slide_id": sourceSlideID, "transition_type": "fade", "speed": "med",
-		"through_black": true, "advance_on_click": false, "apply_to_all": true,
-	}
+	setArgs := testPresentationtransitionSlideIdTransitionTypeSpeedArguments{SlideId: sourceSlideID, TransitionType: "fade", Speed: "med", ThroughBlack: true, AdvanceOnClick: false, ApplyToAll: true}
 	set, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-transition-apply-to-all", DocumentID: doc.DocumentID, CapabilityID: "presentation.transition.set",
 		ExpectedRevision: duplicate.Revision, Operator: operator, Arguments: mustJSON(t, setArgs),
@@ -114,7 +127,7 @@ func TestPresentationTransitionCapabilitiesApplyToAllAndRoundTrip(t *testing.T) 
 	if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pptx-transition-invalid-combination", DocumentID: doc.DocumentID, CapabilityID: "presentation.transition.set",
 		ExpectedRevision: set.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": sourceSlideID, "transition_type": "push", "through_black": true, "apply_to_all": true}),
+		Arguments: mustJSON(t, testPresentationtransitionSlideIdTransitionTypeArguments{SlideId: sourceSlideID, TransitionType: "push", ThroughBlack: true, ApplyToAll: true}),
 	}); err == nil {
 		t.Fatal("transition accepted through_black for push")
 	}

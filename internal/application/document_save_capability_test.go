@@ -8,6 +8,13 @@ import (
 	"testing"
 )
 
+type testDocumentsaveEmptyArguments struct {
+}
+
+type testDocumentsaveTextArguments struct {
+	Text string `json:"text"`
+}
+
 func TestDocumentSaveCapabilityRequiresHumanAndWritesLiveSession(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -35,7 +42,7 @@ func TestDocumentSaveCapabilityRequiresHumanAndWritesLiveSession(t *testing.T) {
 	edit, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "save-fixture-edit", DocumentID: doc.DocumentID, CapabilityID: "word.paragraph.append",
 		ExpectedRevision: clean.Revision, Operator: Operator{ID: "save-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"text": "本周汇总已完成"}),
+		Arguments: mustJSON(t, testDocumentsaveTextArguments{Text: "本周汇总已完成"}),
 	})
 	if err != nil {
 		t.Fatalf("edit live document: %v", err)
@@ -47,7 +54,7 @@ func TestDocumentSaveCapabilityRequiresHumanAndWritesLiveSession(t *testing.T) {
 	human := Operator{ID: "desktop-user", Kind: OperatorHuman}
 	pending, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "agent-save-existing-file", DocumentID: doc.DocumentID, CapabilityID: "document.save",
-		ExpectedRevision: edit.Revision, Operator: agent, Arguments: mustJSON(t, map[string]any{}),
+		ExpectedRevision: edit.Revision, Operator: agent, Arguments: mustJSON(t, testDocumentsaveEmptyArguments{}),
 	})
 	if err != nil {
 		t.Fatalf("stage Agent save: %v", err)
@@ -118,7 +125,7 @@ func TestDocumentSaveCapabilityRequiresHumanAndWritesLiveSession(t *testing.T) {
 
 	noOp, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "human-save-clean-document", DocumentID: reopened.DocumentID, CapabilityID: "document.save",
-		ExpectedRevision: reopened.Revision, Operator: human, Arguments: mustJSON(t, map[string]any{}),
+		ExpectedRevision: reopened.Revision, Operator: human, Arguments: mustJSON(t, testDocumentsaveEmptyArguments{}),
 	})
 	if err != nil {
 		t.Fatalf("save clean document: %v", err)

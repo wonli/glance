@@ -10,6 +10,15 @@ import (
 	"glance/internal/format/docx"
 )
 
+type testWordparagraphBeforePointsAfterPointsArguments struct {
+	BeforePoints int `json:"before_points"`
+	AfterPoints  int `json:"after_points"`
+}
+
+type testWordparagraphTextArguments struct {
+	Text string `json:"text"`
+}
+
 func TestWordAllParagraphSpacingCapabilityRoundTripsAndNoops(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -27,7 +36,7 @@ func TestWordAllParagraphSpacingCapabilityRoundTripsAndNoops(t *testing.T) {
 		appended, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: "spacing-paragraph-" + string(rune('1'+index)), DocumentID: doc.DocumentID,
 			CommandID: "word.paragraph.append", ExpectedRevision: revision, Operator: operator,
-			Arguments: mustJSON(t, map[string]any{"text": text}),
+			Arguments: mustJSON(t, testWordparagraphTextArguments{Text: text}),
 		})
 		if err != nil {
 			t.Fatalf("append paragraph %d: %v", index+1, err)
@@ -37,7 +46,7 @@ func TestWordAllParagraphSpacingCapabilityRoundTripsAndNoops(t *testing.T) {
 	compact, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "set-all-paragraph-spacing", DocumentID: doc.DocumentID,
 		CommandID: "word.paragraph.spacing_all.set", ExpectedRevision: revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"before_points": 0, "after_points": 4}),
+		Arguments: mustJSON(t, testWordparagraphBeforePointsAfterPointsArguments{BeforePoints: 0, AfterPoints: 4}),
 	})
 	if err != nil {
 		t.Fatalf("set all paragraph spacing: %v", err)
@@ -54,7 +63,7 @@ func TestWordAllParagraphSpacingCapabilityRoundTripsAndNoops(t *testing.T) {
 	noop, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "set-all-paragraph-spacing-noop", DocumentID: doc.DocumentID,
 		CommandID: "word.paragraph.spacing_all.set", ExpectedRevision: compact.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"before_points": 0, "after_points": 4}),
+		Arguments: mustJSON(t, testWordparagraphBeforePointsAfterPointsArguments{BeforePoints: 0, AfterPoints: 4}),
 	})
 	if err != nil {
 		t.Fatalf("repeat all paragraph spacing: %v", err)

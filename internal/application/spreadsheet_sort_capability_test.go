@@ -11,6 +11,30 @@ import (
 	"glance/internal/document"
 )
 
+type spreadsheetHistoryApplyPayload struct {
+	Action string `json:"action"`
+}
+
+type spreadsheetRangeSortPayload struct {
+	Sheet      string             `json:"sheet"`
+	Bounds     document.CellRange `json:"bounds"`
+	KeyColumn  int                `json:"key_column"`
+	Descending bool               `json:"descending"`
+}
+
+type spreadsheetFormulaSetPayload struct {
+	Sheet   string `json:"sheet"`
+	Cell    string `json:"cell"`
+	Formula string `json:"formula"`
+}
+
+type testSpreadsheetsortSheetBoundsArguments struct {
+	Sheet      string             `json:"sheet"`
+	Bounds     document.CellRange `json:"bounds"`
+	KeyColumn  int                `json:"key_column"`
+	Descending bool               `json:"descending"`
+}
+
 func TestSpreadsheetSortAndHistoryCapabilitiesUseLiveWorkbookAndRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -96,38 +120,31 @@ func TestSpreadsheetSortAndHistoryCapabilitiesUseLiveWorkbookAndRoundTrip(t *tes
 		}
 		return result
 	}
-	sortArgs := map[string]any{
-		"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2},
-		"key_column": 1, "descending": false,
-	}
-	assertChanged("spreadsheet.history.apply", map[string]any{"action": "undo"}, false)
-	assertAtomicFailure("spreadsheet.range.sort", map[string]any{
-		"sheet": "Missing", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}, "key_column": 1, "descending": false,
-	})
+	sortArgs := testSpreadsheetsortSheetBoundsArguments{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}, KeyColumn: 1, Descending: false}
+	assertChanged("spreadsheet.history.apply", spreadsheetHistoryApplyPayload{Action: "undo"}, false)
+	assertAtomicFailure("spreadsheet.range.sort", spreadsheetRangeSortPayload{Sheet: "Missing", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}, KeyColumn: 1, Descending: false})
 
-	seed := []map[string]any{
-		{"row": 1, "column": 1, "value": "3"}, {"row": 1, "column": 2, "value": "three"},
-		{"row": 2, "column": 1, "value": "1"}, {"row": 2, "column": 2, "value": "one"},
-		{"row": 3, "column": 1, "value": "2"}, {"row": 3, "column": 2, "value": "two"},
-		{"row": 1, "column": 3, "value": "not sorted"}, {"row": 2, "column": 3, "value": "plain text"},
+	seed := []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "3"}, {Row: 1, Column: 2, Value: "three"},
+		{Row: 2, Column: 1, Value: "1"}, {Row: 2, Column: 2, Value: "one"},
+		{Row: 3, Column: 1, Value: "2"}, {Row: 3, Column: 2, Value: "two"},
+		{Row: 1, Column: 3, Value: "not sorted"}, {Row: 2, Column: 3, Value: "plain text"},
 	}
-	assertChanged("spreadsheet.cells.set", map[string]any{"sheet": "Sheet1", "edits": seed}, true)
-	assertChanged("spreadsheet.formula.set", map[string]any{"sheet": "Sheet1", "cell": "C1", "formula": "=SUM(1,2)"}, true)
-	assertAtomicFailure("spreadsheet.range.sort", map[string]any{
-		"sheet": "Sheet1", "bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 3}, "key_column": 1, "descending": false,
-	})
+	assertChanged("spreadsheet.cells.set", spreadsheetCellsSetPayload{Sheet: "Sheet1", Edits: seed}, true)
+	assertChanged("spreadsheet.formula.set", spreadsheetFormulaSetPayload{Sheet: "Sheet1", Cell: "C1", Formula: "=SUM(1,2)"}, true)
+	assertAtomicFailure("spreadsheet.range.sort", spreadsheetRangeSortPayload{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 3}, KeyColumn: 1, Descending: false})
 	assertChanged("spreadsheet.range.sort", sortArgs, true)
 	_, sortedRows := inspect()
 	if sortedRows[0][0].Value != "1" || sortedRows[0][1].Value != "one" || sortedRows[1][0].Value != "2" || sortedRows[1][1].Value != "two" || sortedRows[2][0].Value != "3" || sortedRows[2][1].Value != "three" {
 		t.Fatalf("sorted range did not preserve row associations: %+v", sortedRows)
 	}
 	assertChanged("spreadsheet.range.sort", sortArgs, false)
-	assertChanged("spreadsheet.history.apply", map[string]any{"action": "undo"}, true)
+	assertChanged("spreadsheet.history.apply", spreadsheetHistoryApplyPayload{Action: "undo"}, true)
 	_, undoneRows := inspect()
 	if undoneRows[0][0].Value != "3" || undoneRows[1][0].Value != "1" || undoneRows[2][0].Value != "2" {
 		t.Fatalf("undo did not restore pre-sort rows: %+v", undoneRows)
 	}
-	assertChanged("spreadsheet.history.apply", map[string]any{"action": "redo"}, true)
+	assertChanged("spreadsheet.history.apply", spreadsheetHistoryApplyPayload{Action: "redo"}, true)
 
 	path := filepath.Join(t.TempDir(), "sorted.xlsx")
 	if _, err := runtime.SaveDocumentAs(ctx, documentID, path); err != nil {

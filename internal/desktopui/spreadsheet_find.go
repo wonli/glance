@@ -8,6 +8,12 @@ import (
 	"strings"
 )
 
+type spreadsheetRangeSearchArguments struct {
+	Sheet      string `json:"sheet"`
+	Query      string `json:"query"`
+	MaxResults int    `json:"max_results"`
+}
+
 func (a *App) showSpreadsheetFindDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
@@ -38,9 +44,7 @@ func (a *App) showSpreadsheetFindDialog() {
 				a.setStatus("表格正在处理其他操作")
 				return
 			}
-			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.range.search", "spreadsheet_sheet", state.sheet, state.sheet, map[string]any{
-				"sheet": state.sheet, "query": query, "max_results": 1000,
-			})
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.range.search", "spreadsheet_sheet", state.sheet, state.sheet, spreadsheetRangeSearchArguments{Sheet: state.sheet, Query: query, MaxResults: 1000})
 			err = commandErr
 			a.completeSessionOperation(state, token, err, false)
 			if err == nil {

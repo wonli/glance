@@ -119,8 +119,8 @@ func TestRunComparesConfiguredBaseline(t *testing.T) {
 				writePNGImage(t, filepath.Join(root, filepath.FromSlash(baselineRelative)), baselineImage)
 			}
 			entry := manifestCase("baseline-case", "one.xlsx", "xlsx")
-			entry["baselines"] = map[string]string{"worksheet-1": baselineRelative}
-			writeManifestFile(t, root, []map[string]any{entry})
+			entry = setManifestField(t, entry, "baselines", map[string]string{"worksheet-1": baselineRelative})
+			writeManifestFile(t, root, entry)
 			manifest, err := LoadManifest(root)
 			if err != nil {
 				t.Fatal(err)

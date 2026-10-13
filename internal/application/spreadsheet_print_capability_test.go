@@ -12,6 +12,20 @@ import (
 	"glance/internal/document"
 )
 
+type testSpreadsheetprintSheetBoundsArguments struct {
+	Sheet       string             `json:"sheet"`
+	Bounds      document.CellRange `json:"bounds"`
+	Orientation string             `json:"orientation"`
+	Copies      int                `json:"copies"`
+	FirstPage   int                `json:"first_page"`
+	LastPage    int                `json:"last_page"`
+}
+
+type testSpreadsheetprintSheetEditsArguments struct {
+	Sheet string                       `json:"sheet"`
+	Edits []spreadsheetCellEditFixture `json:"edits"`
+}
+
 func TestSpreadsheetPrintCapabilityRequiresHumanAndPreservesWorkbook(t *testing.T) {
 	ctx := context.Background()
 	printer := &capturingPrintService{}
@@ -25,14 +39,14 @@ func TestSpreadsheetPrintCapabilityRequiresHumanAndPreservesWorkbook(t *testing.
 		t.Fatalf("CreateDocument(XLSX): %v", err)
 	}
 	seedInfo := mustGetDocumentInfo(t, runtime, doc.DocumentID)
-	seed := []map[string]any{
-		{"row": 1, "column": 1, "value": "部门"}, {"row": 1, "column": 2, "value": "人数"},
-		{"row": 2, "column": 1, "value": "研发"}, {"row": 2, "column": 2, "value": "12"},
+	seed := []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "部门"}, {Row: 1, Column: 2, Value: "人数"},
+		{Row: 2, Column: 1, Value: "研发"}, {Row: 2, Column: 2, Value: "12"},
 	}
 	if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "spreadsheet-print-seed", DocumentID: doc.DocumentID, CapabilityID: "spreadsheet.cells.set",
 		ExpectedRevision: seedInfo.Revision, Operator: Operator{ID: "print-agent-test", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "edits": seed}),
+		Arguments: mustJSON(t, testSpreadsheetprintSheetEditsArguments{Sheet: "Sheet1", Edits: seed}),
 	}); err != nil {
 		t.Fatalf("seed print range: %v", err)
 	}
@@ -41,10 +55,8 @@ func TestSpreadsheetPrintCapabilityRequiresHumanAndPreservesWorkbook(t *testing.
 	request := CapabilityRequest{
 		RequestID: "spreadsheet-print-agent-request", DocumentID: doc.DocumentID,
 		CapabilityID: "spreadsheet.document.print", ExpectedRevision: before.Revision,
-		Operator: Operator{ID: "print-agent-test", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{
-			"sheet": "Sheet1", "bounds": bounds, "orientation": "landscape", "copies": 2, "first_page": 1, "last_page": 1,
-		}),
+		Operator:  Operator{ID: "print-agent-test", Kind: OperatorExternalAgent},
+		Arguments: mustJSON(t, testSpreadsheetprintSheetBoundsArguments{Sheet: "Sheet1", Bounds: bounds, Orientation: "landscape", Copies: 2, FirstPage: 1, LastPage: 1}),
 	}
 	pending, err := runtime.InvokeCapability(ctx, request)
 	if err != nil {

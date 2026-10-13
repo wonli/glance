@@ -104,24 +104,59 @@ func (a *App) startPDFCommand(c document.PDFCommand) bool {
 	return true
 }
 
+type pdfHistoryApplyPayload struct {
+	Operation string `json:"operation"`
+}
+
+type pdfInkAnnotationPayload struct {
+	PageNumber int                 `json:"page_number"`
+	Points     []document.PDFPoint `json:"points"`
+}
+
+type pdfAnnotationBounds struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
+}
+
+type pdfHighlightAnnotationPayload struct {
+	PageNumber int                 `json:"page_number"`
+	Bounds     pdfAnnotationBounds `json:"bounds"`
+	Text       string              `json:"text"`
+}
+
+type pdfNoteAnnotationPayload struct {
+	PageNumber int     `json:"page_number"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	Text       string  `json:"text"`
+}
+
+type pdfTextReplacePayload struct {
+	PageNumber int    `json:"page_number"`
+	Run        int    `json:"run"`
+	Text       string `json:"text"`
+}
+
+type pdfPageRotatePayload struct {
+	PageNumber int `json:"page_number"`
+}
+
 func pdfCommandCapability(command document.PDFCommand) (string, any, error) {
 	switch command.Kind {
 	case "rotate":
-		return "pdf.page.rotate", map[string]any{"page_number": command.Page + 1}, nil
+		return "pdf.page.rotate", pdfPageRotatePayload{PageNumber: command.Page + 1}, nil
 	case "replace":
-		return "pdf.text.replace", map[string]any{"page_number": command.Page + 1, "run": command.Run, "text": command.Text}, nil
+		return "pdf.text.replace", pdfTextReplacePayload{PageNumber: command.Page + 1, Run: command.Run, Text: command.Text}, nil
 	case "note":
-		return "pdf.annotation.note", map[string]any{"page_number": command.Page + 1, "x": command.X, "y": command.Y, "text": command.Text}, nil
+		return "pdf.annotation.note", pdfNoteAnnotationPayload{PageNumber: command.Page + 1, X: command.X, Y: command.Y, Text: command.Text}, nil
 	case "highlight":
-		return "pdf.annotation.highlight", map[string]any{
-			"page_number": command.Page + 1,
-			"bounds":      map[string]any{"x": command.X, "y": command.Y, "w": command.W, "h": command.H},
-			"text":        command.Text,
-		}, nil
+		return "pdf.annotation.highlight", pdfHighlightAnnotationPayload{PageNumber: command.Page + 1, Bounds: pdfAnnotationBounds{X: command.X, Y: command.Y, W: command.W, H: command.H}, Text: command.Text}, nil
 	case "ink":
-		return "pdf.annotation.ink", map[string]any{"page_number": command.Page + 1, "points": command.Points}, nil
+		return "pdf.annotation.ink", pdfInkAnnotationPayload{PageNumber: command.Page + 1, Points: command.Points}, nil
 	case "undo", "redo":
-		return "pdf.history.apply", map[string]any{"operation": command.Kind}, nil
+		return "pdf.history.apply", pdfHistoryApplyPayload{Operation: command.Kind}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported PDF command %q", command.Kind)
 	}
@@ -173,12 +208,63 @@ func (a *App) showPDFDraft(command document.PDFCommand, message string) {
 	}, modalDialogActionSpec{ID: "cancel", Label: "取消"}, modalDialogActionSpec{ID: "confirm", Label: "应用", Style: modalDialogActionPrimary})
 }
 
+type handlePDFActionSetToolArguments struct {
+	Operation string `json:"operation"`
+	Tool      string `json:"tool"`
+}
+
+type setModeSetModeArguments struct {
+	Operation string `json:"operation"`
+	Mode      string `json:"mode"`
+}
+
+type fitPageFitPageArguments struct {
+	Operation string `json:"operation"`
+}
+
+type fitWidthFitWidthArguments struct {
+	Operation string `json:"operation"`
+}
+
+type resetZoomResetZoomArguments struct {
+	Operation string `json:"operation"`
+}
+
+type zoomInSetZoomArguments struct {
+	Operation   string `json:"operation"`
+	ZoomPercent int    `json:"zoom_percent"`
+}
+
+type zoomOutSetZoomArguments struct {
+	Operation   string `json:"operation"`
+	ZoomPercent int    `json:"zoom_percent"`
+}
+
+type handlePDFActionArguments struct {
+	Operation string `json:"operation"`
+}
+
+type handlePDFActionSetSearchVisibleArguments struct {
+	Operation string `json:"operation"`
+	Enabled   bool   `json:"enabled"`
+}
+
+type setThumbnailsSetThumbnailsArguments struct {
+	Operation string `json:"operation"`
+	Enabled   bool   `json:"enabled"`
+}
+
+type setPageSetPageArguments struct {
+	Operation  string `json:"operation"`
+	PageNumber int    `json:"page_number"`
+}
+
 func (a *App) handlePDFAction(gtx layout.Context, id string) {
 	v := a.ensurePDFView()
 	if strings.HasPrefix(id, "page-") {
 		n, e := strconv.Atoi(strings.TrimPrefix(id, "page-"))
 		if e == nil {
-			a.runPDFViewAction("set_page", map[string]any{"operation": "set_page", "page_number": n + 1})
+			a.runPDFViewAction("set_page", setPageSetPageArguments{Operation: "set_page", PageNumber: n + 1})
 		}
 		return
 	}
@@ -188,35 +274,35 @@ func (a *App) handlePDFAction(gtx layout.Context, id string) {
 	case "close":
 		a.closeWorkspaceTab(a.activeTabID)
 	case "thumbnails":
-		a.runPDFViewAction("set_thumbnails", map[string]any{"operation": "set_thumbnails", "enabled": !v.thumbnails})
+		a.runPDFViewAction("set_thumbnails", setThumbnailsSetThumbnailsArguments{Operation: "set_thumbnails", Enabled: !v.thumbnails})
 	case "search":
-		a.runPDFViewAction("search", map[string]any{"operation": "set_search_visible", "enabled": !v.showSearch})
+		a.runPDFViewAction("search", handlePDFActionSetSearchVisibleArguments{Operation: "set_search_visible", Enabled: !v.showSearch})
 	case "find":
 		a.startPDFSearch()
 	case "previous":
-		a.runPDFViewAction("previous", map[string]any{"operation": "previous"})
+		a.runPDFViewAction("previous", handlePDFActionArguments{Operation: "previous"})
 	case "next":
-		a.runPDFViewAction("next", map[string]any{"operation": "next"})
+		a.runPDFViewAction("next", handlePDFActionArguments{Operation: "next"})
 	case "zoom-out":
 		zoom := int(math.Round(min(4, max(.25, v.currentZoom(gtx.Metric)-.1)) * 100))
-		a.runPDFViewAction("zoom-out", map[string]any{"operation": "set_zoom", "zoom_percent": zoom})
+		a.runPDFViewAction("zoom-out", zoomOutSetZoomArguments{Operation: "set_zoom", ZoomPercent: zoom})
 	case "zoom-in":
 		zoom := int(math.Round(min(4, v.currentZoom(gtx.Metric)+.1) * 100))
-		a.runPDFViewAction("zoom-in", map[string]any{"operation": "set_zoom", "zoom_percent": zoom})
+		a.runPDFViewAction("zoom-in", zoomInSetZoomArguments{Operation: "set_zoom", ZoomPercent: zoom})
 	case "zoom-indicator", "zoom-100", "actual-size":
-		a.runPDFViewAction("reset_zoom", map[string]any{"operation": "reset_zoom"})
+		a.runPDFViewAction("reset_zoom", resetZoomResetZoomArguments{Operation: "reset_zoom"})
 	case "fit-width":
-		a.runPDFViewAction("fit_width", map[string]any{"operation": "fit_width"})
+		a.runPDFViewAction("fit_width", fitWidthFitWidthArguments{Operation: "fit_width"})
 	case "fit-page":
-		a.runPDFViewAction("fit_page", map[string]any{"operation": "fit_page"})
+		a.runPDFViewAction("fit_page", fitPageFitPageArguments{Operation: "fit_page"})
 	case "read", "edit", "annotate", "signature":
-		a.runPDFViewAction("set_mode", map[string]any{"operation": "set_mode", "mode": id})
+		a.runPDFViewAction("set_mode", setModeSetModeArguments{Operation: "set_mode", Mode: id})
 	case "ink":
-		a.runPDFViewAction("ink", map[string]any{"operation": "set_tool", "tool": "ink"})
+		a.runPDFViewAction("ink", handlePDFActionSetToolArguments{Operation: "set_tool", Tool: "ink"})
 	case "highlight":
 		start, end := v.selectionRange()
 		if start < 0 || end < 0 || len(v.scene.Text) == 0 {
-			a.runPDFViewAction("highlight", map[string]any{"operation": "set_tool", "tool": "highlight"})
+			a.runPDFViewAction("highlight", handlePDFActionSetToolArguments{Operation: "set_tool", Tool: "highlight"})
 			return
 		}
 		start = max(0, min(start, len(v.scene.Text)-1))
@@ -260,6 +346,14 @@ func (a *App) handlePDFAction(gtx layout.Context, id string) {
 		a.printCurrentPDF()
 	}
 }
+
+type startPDFSearchPayload struct {
+	Query      string `json:"query"`
+	StartPage  int    `json:"start_page"`
+	PageLimit  int    `json:"page_limit"`
+	MaxResults int    `json:"max_results"`
+}
+
 func (a *App) startPDFSearch() {
 	v := a.ensurePDFView()
 	query := strings.TrimSpace(v.search.Text())
@@ -284,9 +378,7 @@ func (a *App) startPDFSearch() {
 		for _, pageRange := range ranges {
 			for first := pageRange[0]; r.err == nil && first <= pageRange[1] && len(r.search) == 0; {
 				pageLimit := min(100, pageRange[1]-first+1)
-				arguments, err := json.Marshal(map[string]any{
-					"query": query, "start_page": first, "page_limit": pageLimit, "max_results": 1,
-				})
+				arguments, err := json.Marshal(startPDFSearchPayload{Query: query, StartPage: first, PageLimit: pageLimit, MaxResults: 1})
 				if err != nil {
 					r.err = err
 					break
@@ -346,6 +438,11 @@ func (a *App) startPDFSearch() {
 		}
 	})
 }
+
+type printCurrentPDFPayload struct {
+	Copies int `json:"copies"`
+}
+
 func (a *App) printCurrentPDF() {
 	v := a.ensurePDFView()
 	if v.pending {
@@ -384,7 +481,7 @@ func (a *App) printCurrentPDF() {
 			case <-ctx.Done():
 			}
 		})
-		arguments, _ := json.Marshal(map[string]any{"copies": 1})
+		arguments, _ := json.Marshal(printCurrentPDFPayload{Copies: 1})
 		invocation, err := runtime.applicationRuntime.InvokeCapability(ctx, application.CapabilityRequest{
 			RequestID:  fmt.Sprintf("pdf-print-%s-%d", token.documentID, token.generation),
 			DocumentID: token.documentID, CapabilityID: "pdf.document.print", ExpectedRevision: token.revision,

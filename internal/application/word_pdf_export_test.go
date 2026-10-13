@@ -11,6 +11,19 @@ import (
 	"github.com/SalvioniDigitalSolutions/gopdf"
 )
 
+type testWordpdfTargetPathArguments struct {
+	TargetPath string `json:"target_path"`
+}
+
+type testWordpdfTargetPathOrientationArguments struct {
+	TargetPath  string `json:"target_path"`
+	Orientation string `json:"orientation"`
+}
+
+type testWordpdfTextArguments struct {
+	Text string `json:"text"`
+}
+
 func TestWordExportPDFWritesValidatedNewFileWithoutChangingSession(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -27,7 +40,7 @@ func TestWordExportPDFWritesValidatedNewFileWithoutChangingSession(t *testing.T)
 		RequestID: "append-before-pdf-export", DocumentID: doc.DocumentID,
 		CommandID: "word.paragraph.append", ExpectedRevision: doc.Revision,
 		Operator:  Operator{ID: "pdf-export-agent", Kind: OperatorBuiltInAgent},
-		Arguments: mustJSON(t, map[string]any{"text": "周报汇总：项目进展正常。"}),
+		Arguments: mustJSON(t, testWordpdfTextArguments{Text: "周报汇总：项目进展正常。"}),
 	})
 	if err != nil {
 		t.Fatalf("append Word paragraph: %v", err)
@@ -43,7 +56,7 @@ func TestWordExportPDFWritesValidatedNewFileWithoutChangingSession(t *testing.T)
 		RequestID: "export-weekly-report-pdf", DocumentID: doc.DocumentID,
 		CapabilityID: "word.document.export_pdf", ExpectedRevision: command.Revision,
 		Operator:  Operator{ID: "pdf-export-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"target_path": path, "orientation": "landscape"}),
+		Arguments: mustJSON(t, testWordpdfTargetPathOrientationArguments{TargetPath: path, Orientation: "landscape"}),
 	})
 	if err != nil {
 		t.Fatalf("InvokeCapability(word.document.export_pdf): %v", err)
@@ -98,7 +111,7 @@ func TestWordExportPDFWritesValidatedNewFileWithoutChangingSession(t *testing.T)
 			RequestID: "export-over-existing-pdf", DocumentID: doc.DocumentID,
 			CapabilityID: "word.document.export_pdf", ExpectedRevision: before.Revision,
 			Operator:  Operator{ID: "pdf-export-agent", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"target_path": existing}),
+			Arguments: mustJSON(t, testWordpdfTargetPathArguments{TargetPath: existing}),
 		})
 		if !errors.Is(err, ErrTargetExists) {
 			t.Fatalf("export overwrite error = %v; want ErrTargetExists", err)
@@ -114,7 +127,7 @@ func TestWordExportPDFWritesValidatedNewFileWithoutChangingSession(t *testing.T)
 			RequestID: "export-word-with-wrong-extension", DocumentID: doc.DocumentID,
 			CapabilityID: "word.document.export_pdf", ExpectedRevision: before.Revision,
 			Operator:  Operator{ID: "pdf-export-agent", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"target_path": filepath.Join(t.TempDir(), "wrong.docx")}),
+			Arguments: mustJSON(t, testWordpdfTargetPathArguments{TargetPath: filepath.Join(t.TempDir(), "wrong.docx")}),
 		})
 		if !errors.Is(err, ErrInvalidCommandArguments) {
 			t.Fatalf("wrong extension error = %v; want ErrInvalidCommandArguments", err)

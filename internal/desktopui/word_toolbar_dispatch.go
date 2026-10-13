@@ -5,6 +5,11 @@ import (
 	"glance/internal/format/docx"
 )
 
+type wordParagraphSpacingAllSetArguments struct {
+	BeforePoints int `json:"before_points"`
+	AfterPoints  int `json:"after_points"`
+}
+
 func (a *App) executeWordToolbarAction(actionID string) {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
@@ -151,13 +156,13 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	case "review-language":
 		a.showWordLanguageDialog()
 	case "design-compact":
-		if !a.runWordApplicationCommand("紧凑段落间距", "word.paragraph.spacing_all.set", map[string]any{"before_points": 0, "after_points": 4}) {
+		if !a.runWordApplicationCommand("紧凑段落间距", "word.paragraph.spacing_all.set", wordParagraphSpacingAllSetArguments{BeforePoints: 0, AfterPoints: 4}) {
 			a.runWordSpacingCommand("紧凑段落间距", func(editor document.WordParagraphSpacingEditor) error {
 				return editor.SetAllParagraphsSpacing(0, 80)
 			})
 		}
 	case "design-spacious":
-		if !a.runWordApplicationCommand("宽松段落间距", "word.paragraph.spacing_all.set", map[string]any{"before_points": 0, "after_points": 12}) {
+		if !a.runWordApplicationCommand("宽松段落间距", "word.paragraph.spacing_all.set", wordParagraphSpacingAllSetArguments{BeforePoints: 0, AfterPoints: 12}) {
 			a.runWordSpacingCommand("宽松段落间距", func(editor document.WordParagraphSpacingEditor) error {
 				return editor.SetAllParagraphsSpacing(0, 240)
 			})

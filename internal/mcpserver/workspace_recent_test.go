@@ -12,6 +12,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type testWorkspacerecentFormatQueryArguments struct {
+	Format string `json:"format"`
+	Query  string `json:"query"`
+	Limit  int    `json:"limit"`
+}
+
 func TestMCPWorkspaceRecentListReturnsFilteredPage(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := application.NewRuntime(ctx, application.RuntimeOptions{WorkspaceDBPath: filepath.Join(t.TempDir(), "workspace.sqlite")})
@@ -36,21 +42,22 @@ func TestMCPWorkspaceRecentListReturnsFilteredPage(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closeSession() })
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "workspace.recent.list", Arguments: map[string]any{
-		"format": "docx", "query": "周报", "limit": 1,
-	}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "workspace.recent.list", Arguments: testWorkspacerecentFormatQueryArguments{Format: "docx", Query: "周报", Limit: 1}})
 	if err != nil || result.IsError {
 		t.Fatalf("workspace.recent.list result = %+v, %v", result, err)
 	}
 	data := mapValue(t, mapValue(t, result.StructuredContent)["data"])
-	items, ok := data["items"].([]any)
-	if !ok || len(items) != 1 {
+	items := rawArray(t, data["items"])
+	if len(items) != 1 {
 		t.Fatalf("recent list data = %#v", data)
 	}
 	item := mapValue(t, items[0])
-	if item["path"] != "/docs/本周周报.docx" || item["format"] != "docx" || data["has_more"] != false {
+	if stringValue(t, item["path"]) != "/docs/本周周报.docx" || stringValue(t, item["format"]) != "docx" || boolValue(t, data["has_more"]) {
 		t.Fatalf("recent item/result = %#v / %#v", item, data)
 	}
+}
+
+type testWorkspacerecentEmptyArguments struct {
 }
 
 func TestMCPWorkspaceRecentListExplainsMissingWorkspace(t *testing.T) {
@@ -70,13 +77,17 @@ func TestMCPWorkspaceRecentListExplainsMissingWorkspace(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closeSession() })
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "workspace.recent.list", Arguments: map[string]any{}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "workspace.recent.list", Arguments: testWorkspacerecentEmptyArguments{}})
 	if err != nil {
 		t.Fatalf("workspace.recent.list call: %v", err)
 	}
-	if !result.IsError || mapValue(t, result.StructuredContent)["error"] != "workspace_unavailable" {
+	if !result.IsError || stringValue(t, mapValue(t, result.StructuredContent)["error"]) != "workspace_unavailable" {
 		t.Fatalf("missing workspace result = %+v", result)
 	}
+}
+
+type testWorkspacerecentDocumentIdArguments struct {
+	DocumentId string `json:"document_id"`
 }
 
 func TestMCPWordVersionListReturnsMetadataForSavedDocument(t *testing.T) {
@@ -112,19 +123,17 @@ func TestMCPWordVersionListReturnsMetadataForSavedDocument(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closeSession() })
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.version.list", Arguments: map[string]any{
-		"document_id": doc.DocumentID,
-	}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.version.list", Arguments: testWorkspacerecentDocumentIdArguments{DocumentId: doc.DocumentID}})
 	if err != nil || result.IsError {
 		t.Fatalf("word.version.list result = %+v, %v", result, err)
 	}
 	data := mapValue(t, mapValue(t, result.StructuredContent)["data"])
-	versions, ok := data["versions"].([]any)
-	if !ok || len(versions) != 1 {
+	versions := rawArray(t, data["versions"])
+	if len(versions) != 1 {
 		t.Fatalf("version metadata = %#v", data)
 	}
 	metadata := mapValue(t, versions[0])
-	if numberValue(t, metadata["id"]) != float64(version.ID) || metadata["source"] != string(workspace.WordVersionManualSave) || metadata["size_bytes"] != float64(len("safe metadata only")) {
+	if numberValue(t, metadata["id"]) != float64(version.ID) || stringValue(t, metadata["source"]) != string(workspace.WordVersionManualSave) || numberValue(t, metadata["size_bytes"]) != float64(len("safe metadata only")) {
 		t.Fatalf("version metadata = %#v", metadata)
 	}
 }

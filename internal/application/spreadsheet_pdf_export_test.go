@@ -11,6 +11,25 @@ import (
 	"github.com/SalvioniDigitalSolutions/gopdf"
 )
 
+type testSpreadsheetpdfSheetBoundsArguments struct {
+	Sheet      string         `json:"sheet"`
+	Bounds     map[string]int `json:"bounds"`
+	TargetPath string         `json:"target_path"`
+}
+
+type testSpreadsheetpdfSheetBoundsTargetPathArguments struct {
+	Sheet       string         `json:"sheet"`
+	Bounds      map[string]int `json:"bounds"`
+	TargetPath  string         `json:"target_path"`
+	Orientation string         `json:"orientation"`
+}
+
+type testSpreadsheetpdfSheetCellArguments struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+	Value string `json:"value"`
+}
+
 func TestSpreadsheetExportPDFWritesBoundedLiveWindowWithoutChangingWorkbook(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -25,7 +44,7 @@ func TestSpreadsheetExportPDFWritesBoundedLiveWindowWithoutChangingWorkbook(t *t
 	cell, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "spreadsheet-pdf-cell", DocumentID: doc.DocumentID, CommandID: "spreadsheet.cell.set",
 		ExpectedRevision: doc.Revision, Operator: Operator{ID: "sheet-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "cell": "A1", "value": "工资汇总"}),
+		Arguments: mustJSON(t, testSpreadsheetpdfSheetCellArguments{Sheet: "Sheet1", Cell: "A1", Value: "工资汇总"}),
 	})
 	if err != nil {
 		t.Fatalf("set PDF source cell: %v", err)
@@ -40,11 +59,8 @@ func TestSpreadsheetExportPDFWritesBoundedLiveWindowWithoutChangingWorkbook(t *t
 	result, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "spreadsheet-pdf-export", DocumentID: doc.DocumentID,
 		CapabilityID: "spreadsheet.document.export_pdf", ExpectedRevision: cell.Revision,
-		Operator: Operator{ID: "sheet-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{
-			"sheet": "Sheet1", "bounds": map[string]int{"start_row": 1, "start_column": 1, "end_row": 3, "end_column": 4},
-			"target_path": path, "orientation": "landscape",
-		}),
+		Operator:  Operator{ID: "sheet-agent", Kind: OperatorExternalAgent},
+		Arguments: mustJSON(t, testSpreadsheetpdfSheetBoundsTargetPathArguments{Sheet: "Sheet1", Bounds: map[string]int{"start_row": 1, "start_column": 1, "end_row": 3, "end_column": 4}, TargetPath: path, Orientation: "landscape"}),
 	})
 	if err != nil {
 		t.Fatalf("InvokeCapability(spreadsheet.document.export_pdf): %v", err)
@@ -87,11 +103,8 @@ func TestSpreadsheetExportPDFWritesBoundedLiveWindowWithoutChangingWorkbook(t *t
 		_, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 			RequestID: "spreadsheet-pdf-too-large", DocumentID: doc.DocumentID,
 			CapabilityID: "spreadsheet.document.export_pdf", ExpectedRevision: doc.Revision,
-			Operator: Operator{ID: "sheet-agent", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{
-				"sheet": "Sheet1", "bounds": map[string]int{"start_row": 1, "start_column": 1, "end_row": 5001, "end_column": 100},
-				"target_path": filepath.Join(dir, "too-large.pdf"),
-			}),
+			Operator:  Operator{ID: "sheet-agent", Kind: OperatorExternalAgent},
+			Arguments: mustJSON(t, testSpreadsheetpdfSheetBoundsArguments{Sheet: "Sheet1", Bounds: map[string]int{"start_row": 1, "start_column": 1, "end_row": 5001, "end_column": 100}, TargetPath: filepath.Join(dir, "too-large.pdf")}),
 		})
 		if !errors.Is(err, ErrInvalidCommandArguments) {
 			t.Fatalf("oversized range error = %v; want ErrInvalidCommandArguments", err)
@@ -105,11 +118,8 @@ func TestSpreadsheetExportPDFWritesBoundedLiveWindowWithoutChangingWorkbook(t *t
 		_, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 			RequestID: "spreadsheet-pdf-existing", DocumentID: doc.DocumentID,
 			CapabilityID: "spreadsheet.document.export_pdf", ExpectedRevision: doc.Revision,
-			Operator: Operator{ID: "sheet-agent", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{
-				"sheet": "Sheet1", "bounds": map[string]int{"start_row": 1, "start_column": 1, "end_row": 3, "end_column": 4},
-				"target_path": existing,
-			}),
+			Operator:  Operator{ID: "sheet-agent", Kind: OperatorExternalAgent},
+			Arguments: mustJSON(t, testSpreadsheetpdfSheetBoundsArguments{Sheet: "Sheet1", Bounds: map[string]int{"start_row": 1, "start_column": 1, "end_row": 3, "end_column": 4}, TargetPath: existing}),
 		})
 		if !errors.Is(err, ErrTargetExists) {
 			t.Fatalf("existing PDF error = %v; want ErrTargetExists", err)

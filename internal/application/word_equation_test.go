@@ -9,6 +9,13 @@ import (
 	"testing"
 )
 
+type testWordequationTargetRunIdArguments struct {
+	Target           string `json:"target"`
+	RunId            string `json:"run_id"`
+	Expression       string `json:"expression"`
+	AfterParagraphId string `json:"after_paragraph_id"`
+}
+
 func TestWordEquationCapabilityReplacesRunsAndInsertsTextBoxes(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -74,9 +81,9 @@ func TestWordEquationCapabilityReplacesRunsAndInsertsTextBoxes(t *testing.T) {
 	if state := mustGetDocumentInfo(t, runtime, doc.DocumentID); state.Revision != inserted.Revision || !state.Dirty {
 		t.Fatalf("rejected long equation changed document state: %+v", state)
 	}
-	for index, arguments := range []map[string]any{
-		{"target": "run", "run_id": "missing-run", "expression": "x²"},
-		{"target": "textbox", "after_paragraph_id": "missing-paragraph", "expression": "x²"},
+	for index, arguments := range []testWordequationTargetRunIdArguments{
+		{Target: "run", RunId: "missing-run", Expression: "x²"},
+		{Target: "textbox", AfterParagraphId: "missing-paragraph", Expression: "x²"},
 	} {
 		if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: fmt.Sprintf("equation-missing-target-%d", index), DocumentID: doc.DocumentID,

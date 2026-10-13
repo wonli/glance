@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+type spreadsheetCommentAddArguments struct {
+	Sheet  string `json:"sheet"`
+	Cell   string `json:"cell"`
+	Author string `json:"author"`
+	Text   string `json:"text"`
+}
+
 func (a *App) showSpreadsheetNewCommentDialog() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
@@ -38,10 +45,15 @@ func (a *App) showSpreadsheetNewCommentDialog() {
 			Cell:   cellName,
 			Text:   text,
 		}
-		a.runSpreadsheetCommentCommand("新建批注", "spreadsheet.comment.add", map[string]any{"sheet": sheet, "cell": cellName, "author": comment.Author, "text": comment.Text}, func(ed document.SpreadsheetCommentEditor) error {
+		a.runSpreadsheetCommentCommand("新建批注", "spreadsheet.comment.add", spreadsheetCommentAddArguments{Sheet: sheet, Cell: cellName, Author: comment.Author, Text: comment.Text}, func(ed document.SpreadsheetCommentEditor) error {
 			return ed.AddComment(sheet, comment)
 		})
 	}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+}
+
+type spreadsheetCommentDeleteArguments struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
 }
 
 func (a *App) deleteSpreadsheetComment() {
@@ -62,7 +74,7 @@ func (a *App) deleteSpreadsheetComment() {
 	}
 
 	sheet := state.sheet
-	a.runSpreadsheetCommentCommand("删除批注", "spreadsheet.comment.delete", map[string]any{"sheet": sheet, "cell": cellName}, func(ed document.SpreadsheetCommentEditor) error {
+	a.runSpreadsheetCommentCommand("删除批注", "spreadsheet.comment.delete", spreadsheetCommentDeleteArguments{Sheet: sheet, Cell: cellName}, func(ed document.SpreadsheetCommentEditor) error {
 		return ed.DeleteComment(sheet, cellName)
 	})
 }

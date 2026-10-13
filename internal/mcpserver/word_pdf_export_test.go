@@ -12,6 +12,17 @@ import (
 	"glance/internal/application"
 )
 
+type testWordpdfDocumentIdExpectedRevisionArguments struct {
+	DocumentId       string `json:"document_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+	TargetPath       string `json:"target_path"`
+	Orientation      string `json:"orientation"`
+}
+
+type testWordpdfFormatArguments struct {
+	Format string `json:"format"`
+}
+
 func TestMCPWordExportPDFCreatesPDFFromLiveDocument(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := application.NewRuntime(ctx, application.RuntimeOptions{})
@@ -29,7 +40,7 @@ func TestMCPWordExportPDFCreatesPDFFromLiveDocument(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closeSession() })
 
-	created, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.create", Arguments: map[string]any{"format": "docx"}})
+	created, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.create", Arguments: testWordpdfFormatArguments{Format: "docx"}})
 	if err != nil || created.IsError {
 		t.Fatalf("create Word tool result = %+v, %v", created, err)
 	}
@@ -37,10 +48,7 @@ func TestMCPWordExportPDFCreatesPDFFromLiveDocument(t *testing.T) {
 	documentID := stringValue(t, createdData["document_id"])
 	revision := uint64(numberValue(t, createdData["revision"]))
 	path := filepath.Join(t.TempDir(), "mcp-export.pdf")
-	exported, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.document.export_pdf", Arguments: map[string]any{
-		"document_id": documentID, "expected_revision": revision,
-		"target_path": path, "orientation": "document",
-	}})
+	exported, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.document.export_pdf", Arguments: testWordpdfDocumentIdExpectedRevisionArguments{DocumentId: documentID, ExpectedRevision: revision, TargetPath: path, Orientation: "document"}})
 	if err != nil || exported.IsError {
 		t.Fatalf("export Word PDF tool result = %+v, %v", exported, err)
 	}

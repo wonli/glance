@@ -10,6 +10,18 @@ import (
 	"strings"
 )
 
+type wordTextInsertArguments struct {
+	Target           string `json:"target"`
+	AfterParagraphId string `json:"after_paragraph_id"`
+	Text             string `json:"text"`
+}
+
+type wordTextInsertArgumentsTarget struct {
+	Target string `json:"target"`
+	RunId  string `json:"run_id"`
+	Text   string `json:"text"`
+}
+
 func (a *App) showWordDictateDialog() {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
@@ -31,15 +43,11 @@ func (a *App) showWordDictateDialog() {
 				return
 			}
 			if hasRun && run.Editable {
-				if !a.runWordApplicationCommand("语音听写录入", "word.text.insert", map[string]any{
-					"target": "run", "run_id": run.ID, "text": text,
-				}) {
+				if !a.runWordApplicationCommand("语音听写录入", "word.text.insert", wordTextInsertArgumentsTarget{Target: "run", RunId: run.ID, Text: text}) {
 					a.setStatus("无法启动 Word 听写插入操作")
 				}
 			} else if _, ok := any(state.word).(document.WordTextBoxEditor); ok {
-				if !a.runWordApplicationCommand("语音听写录入", "word.text.insert", map[string]any{
-					"target": "textbox", "after_paragraph_id": state.selectedWordParagraphID, "text": text,
-				}) {
+				if !a.runWordApplicationCommand("语音听写录入", "word.text.insert", wordTextInsertArguments{Target: "textbox", AfterParagraphId: state.selectedWordParagraphID, Text: text}) {
 					a.setStatus("无法启动 Word 听写插入操作")
 				}
 			} else {
@@ -49,6 +57,9 @@ func (a *App) showWordDictateDialog() {
 		modalDialogActionSpec{ID: "confirm", Label: "插入到正文"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+type showWordAddInsDialogPayload struct {
 }
 
 func (a *App) showWordAddInsDialog() {
@@ -61,7 +72,7 @@ func (a *App) showWordAddInsDialog() {
 		a.setStatus("Word Agent 能力目录不可用")
 		return
 	}
-	arguments, _ := json.Marshal(map[string]any{})
+	arguments, _ := json.Marshal(showWordAddInsDialogPayload{})
 	result, err := runtime.applicationRuntime.InvokeCapability(context.Background(), application.CapabilityRequest{
 		RequestID:  fmt.Sprintf("word-capabilities-%s-%d", state.documentID, a.applicationRequestSeq.Add(1)),
 		DocumentID: state.documentID, CapabilityID: "word.addins.list", ExpectedRevision: state.wordRevisionAtomic.Load(),

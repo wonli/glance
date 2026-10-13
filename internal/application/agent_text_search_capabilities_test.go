@@ -10,6 +10,21 @@ import (
 	"testing"
 )
 
+type markdownEditArguments struct {
+	Action      string `json:"action"`
+	Start       int    `json:"start"`
+	End         int    `json:"end"`
+	Destination string `json:"destination,omitempty"`
+	Label       string `json:"label,omitempty"`
+	Display     bool   `json:"display,omitempty"`
+}
+
+type markdownEditOptions struct {
+	Destination string
+	Label       string
+	Display     bool
+}
+
 func TestMarkdownEditCapabilityUsesRuneRangesAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -29,16 +44,16 @@ func TestMarkdownEditCapabilityUsesRuneRangesAndRoundTrips(t *testing.T) {
 	documentID := doc.DocumentID
 	revision := doc.Revision
 	requestNumber := 0
-	invoke := func(action, selected string, extra map[string]any) (CapabilityInvocationResult, error) {
+	invoke := func(action, selected string, extra markdownEditOptions) (CapabilityInvocationResult, error) {
 		t.Helper()
 		content := readMarkdownCapabilityText(t, runtime, documentID)
 		start, end, ok := markdownRuneRange(content, selected)
 		if !ok {
 			t.Fatalf("selected Markdown text %q missing from %q", selected, content)
 		}
-		args := map[string]any{"action": action, "start": start, "end": end}
-		for key, value := range extra {
-			args[key] = value
+		args := markdownEditArguments{
+			Action: action, Start: start, End: end,
+			Destination: extra.Destination, Label: extra.Label, Display: extra.Display,
 		}
 		requestNumber++
 		result, invokeErr := runtime.InvokeCapability(ctx, CapabilityRequest{
@@ -56,18 +71,18 @@ func TestMarkdownEditCapabilityUsesRuneRangesAndRoundTrips(t *testing.T) {
 	for _, operation := range []struct {
 		action   string
 		selected string
-		extra    map[string]any
+		extra    markdownEditOptions
 	}{
 		{action: "bold", selected: "工资表"},
 		{action: "italic", selected: "周报"},
 		{action: "code", selected: "已核对"},
-		{action: "link", selected: "周报", extra: map[string]any{"destination": "https://example.test/周报?week=42"}},
-		{action: "image", selected: "工资表", extra: map[string]any{"destination": "file:///tmp/payroll.png", "label": "工资统计图"}},
+		{action: "link", selected: "周报", extra: markdownEditOptions{Destination: "https://example.test/周报?week=42"}},
+		{action: "image", selected: "工资表", extra: markdownEditOptions{Destination: "file:///tmp/payroll.png", Label: "工资统计图"}},
 		{action: "heading", selected: "本周"},
 		{action: "todo", selected: "周报"},
 		{action: "quote", selected: "待办："},
 		{action: "list", selected: "整理资料"},
-		{action: "math", selected: "1 + 1", extra: map[string]any{"label": "salary_total/5", "display": true}},
+		{action: "math", selected: "1 + 1", extra: markdownEditOptions{Label: "salary_total/5", Display: true}},
 	} {
 		before := readMarkdownCapabilityText(t, runtime, documentID)
 		result, invokeErr := invoke(operation.action, operation.selected, operation.extra)
@@ -100,7 +115,7 @@ func TestMarkdownEditCapabilityUsesRuneRangesAndRoundTrips(t *testing.T) {
 	if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "markdown-edit-invalid-range", DocumentID: documentID, CapabilityID: "markdown.text.edit",
 		ExpectedRevision: revision, Operator: Operator{ID: "markdown-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"action": "bold", "start": 0, "end": len([]rune(finalText)) + 1}),
+		Arguments: mustJSON(t, markdownEditArguments{Action: "bold", Start: 0, End: len([]rune(finalText)) + 1}),
 	}); err == nil {
 		t.Fatal("Markdown edit accepted a rune range beyond document end")
 	}
@@ -110,7 +125,7 @@ func TestMarkdownEditCapabilityUsesRuneRangesAndRoundTrips(t *testing.T) {
 	if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "markdown-edit-invalid-destination", DocumentID: documentID, CapabilityID: "markdown.text.edit",
 		ExpectedRevision: revision, Operator: Operator{ID: "markdown-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"action": "link", "start": 0, "end": 0}),
+		Arguments: mustJSON(t, markdownEditArguments{Action: "link", Start: 0, End: 0}),
 	}); err == nil {
 		t.Fatal("Markdown link edit accepted a missing destination")
 	}
@@ -132,6 +147,19 @@ func TestMarkdownEditCapabilityUsesRuneRangesAndRoundTrips(t *testing.T) {
 	if got := readMarkdownCapabilityText(t, runtime, reopened.DocumentID); got != finalText {
 		t.Fatalf("Markdown after save/reopen differs:\n got: %q\nwant: %q", got, finalText)
 	}
+}
+
+type testAgenttextEmptyArguments struct {
+}
+
+type testAgenttextQueryArguments struct {
+	Query string `json:"query"`
+}
+
+type testAgenttextQueryCaseSensitiveArguments struct {
+	Query         string `json:"query"`
+	CaseSensitive bool   `json:"case_sensitive"`
+	Limit         int    `json:"limit"`
 }
 
 func TestJSONSearchCapabilityReturnsEscapedPointersWithoutMutation(t *testing.T) {
@@ -156,7 +184,7 @@ func TestJSONSearchCapabilityReturnsEscapedPointersWithoutMutation(t *testing.T)
 		result, invokeErr := runtime.InvokeCapability(ctx, CapabilityRequest{
 			RequestID: requestID, DocumentID: doc.DocumentID, CapabilityID: "json.document.search",
 			ExpectedRevision: doc.Revision, Operator: Operator{ID: "json-agent", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{"query": query, "case_sensitive": caseSensitive, "limit": limit}),
+			Arguments: mustJSON(t, testAgenttextQueryCaseSensitiveArguments{Query: query, CaseSensitive: caseSensitive, Limit: limit}),
 		})
 		if invokeErr != nil {
 			t.Fatalf("JSON search %q: %v", query, invokeErr)
@@ -182,13 +210,13 @@ func TestJSONSearchCapabilityReturnsEscapedPointersWithoutMutation(t *testing.T)
 	if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "json-search-empty", DocumentID: doc.DocumentID, CapabilityID: "json.document.search",
 		ExpectedRevision: doc.Revision, Operator: Operator{ID: "json-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"query": "  "}),
+		Arguments: mustJSON(t, testAgenttextQueryArguments{Query: "  "}),
 	}); err == nil {
 		t.Fatal("JSON search accepted a blank query")
 	}
 	read, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "json-read-text-after-search", DocumentID: doc.DocumentID, CapabilityID: "json.document.read_text",
-		ExpectedRevision: doc.Revision, Operator: Operator{ID: "json-agent", Kind: OperatorExternalAgent}, Arguments: mustJSON(t, map[string]any{}),
+		ExpectedRevision: doc.Revision, Operator: Operator{ID: "json-agent", Kind: OperatorExternalAgent}, Arguments: mustJSON(t, testAgenttextEmptyArguments{}),
 	})
 	var readOutput struct {
 		Text string `json:"text"`

@@ -7,6 +7,29 @@ import (
 	"testing"
 )
 
+type spreadsheetGridlinesSetPayload struct {
+	Sheet string `json:"sheet"`
+	Show  bool   `json:"show"`
+}
+
+type spreadsheetPanesSetFreezeAtPayload struct {
+	Sheet     string `json:"sheet"`
+	Operation string `json:"operation"`
+	Rows      int    `json:"rows"`
+	Columns   int    `json:"columns"`
+}
+
+type spreadsheetPageLayoutSetPayload struct {
+	Sheet       string `json:"sheet"`
+	Operation   string `json:"operation"`
+	Orientation string `json:"orientation"`
+}
+
+type spreadsheetViewRulerSetPayload struct {
+	Sheet     string `json:"sheet"`
+	ShowRuler bool   `json:"show_ruler"`
+}
+
 func TestSpreadsheetViewAndPageSetupCapabilitiesRoundTripAndNoop(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -116,11 +139,11 @@ func TestSpreadsheetViewAndPageSetupCapabilitiesRoundTripAndNoop(t *testing.T) {
 	if err != nil || modeNoOp.Revision != revision || !containsJSONText(modeNoOp.Data, `"changed":false`) {
 		t.Fatalf("repeated worksheet view mode should be a no-op: result=%s revision=%d error=%v", modeNoOp.Data, modeNoOp.Revision, err)
 	}
-	ruler, err := invoke("spreadsheet.view.ruler.set", map[string]any{"sheet": sheet, "show_ruler": wantedRuler})
+	ruler, err := invoke("spreadsheet.view.ruler.set", spreadsheetViewRulerSetPayload{Sheet: sheet, ShowRuler: wantedRuler})
 	if err != nil || !containsJSONText(ruler.Data, `"changed":true`) {
 		t.Fatalf("show worksheet ruler: result=%s error=%v", ruler.Data, err)
 	}
-	rulerNoOp, err := invoke("spreadsheet.view.ruler.set", map[string]any{"sheet": sheet, "show_ruler": wantedRuler})
+	rulerNoOp, err := invoke("spreadsheet.view.ruler.set", spreadsheetViewRulerSetPayload{Sheet: sheet, ShowRuler: wantedRuler})
 	if err != nil || rulerNoOp.Revision != revision || !containsJSONText(rulerNoOp.Data, `"changed":false`) {
 		t.Fatalf("repeated ruler setting should be a no-op: result=%s revision=%d error=%v", rulerNoOp.Data, rulerNoOp.Revision, err)
 	}
@@ -133,11 +156,11 @@ func TestSpreadsheetViewAndPageSetupCapabilitiesRoundTripAndNoop(t *testing.T) {
 	if err != nil || panes.Frozen {
 		t.Fatalf("initial panes=%+v error=%v", panes, err)
 	}
-	freeze, err := invoke("spreadsheet.panes.set", map[string]any{"sheet": sheet, "operation": "freeze_at", "rows": 1, "columns": 2})
+	freeze, err := invoke("spreadsheet.panes.set", spreadsheetPanesSetFreezeAtPayload{Sheet: sheet, Operation: "freeze_at", Rows: 1, Columns: 2})
 	if err != nil || !containsJSONText(freeze.Data, `"changed":true`) {
 		t.Fatalf("freeze worksheet panes: result=%s error=%v", freeze.Data, err)
 	}
-	freezeNoOp, err := invoke("spreadsheet.panes.set", map[string]any{"sheet": sheet, "operation": "freeze_at", "rows": 1, "columns": 2})
+	freezeNoOp, err := invoke("spreadsheet.panes.set", spreadsheetPanesSetFreezeAtPayload{Sheet: sheet, Operation: "freeze_at", Rows: 1, Columns: 2})
 	if err != nil || freezeNoOp.Revision != revision || !containsJSONText(freezeNoOp.Data, `"changed":false`) {
 		t.Fatalf("repeated pane freeze should be a no-op: result=%s revision=%d error=%v", freezeNoOp.Data, freezeNoOp.Revision, err)
 	}
@@ -150,11 +173,11 @@ func TestSpreadsheetViewAndPageSetupCapabilitiesRoundTripAndNoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read initial gridlines: %v", err)
 	}
-	gridlineSet, err := invoke("spreadsheet.gridlines.set", map[string]any{"sheet": sheet, "show": !gridlinesBefore})
+	gridlineSet, err := invoke("spreadsheet.gridlines.set", spreadsheetGridlinesSetPayload{Sheet: sheet, Show: !gridlinesBefore})
 	if err != nil || !containsJSONText(gridlineSet.Data, `"changed":true`) {
 		t.Fatalf("toggle gridlines: result=%s error=%v", gridlineSet.Data, err)
 	}
-	gridlineNoOp, err := invoke("spreadsheet.gridlines.set", map[string]any{"sheet": sheet, "show": !gridlinesBefore})
+	gridlineNoOp, err := invoke("spreadsheet.gridlines.set", spreadsheetGridlinesSetPayload{Sheet: sheet, Show: !gridlinesBefore})
 	if err != nil || gridlineNoOp.Revision != revision || !containsJSONText(gridlineNoOp.Data, `"changed":false`) {
 		t.Fatalf("repeated gridline setting should be a no-op: result=%s revision=%d error=%v", gridlineNoOp.Data, gridlineNoOp.Revision, err)
 	}
@@ -171,11 +194,11 @@ func TestSpreadsheetViewAndPageSetupCapabilitiesRoundTripAndNoop(t *testing.T) {
 	if layoutBefore.Layout.Orientation == wantedOrientation {
 		wantedOrientation = "portrait"
 	}
-	pageLayout, err := invoke("spreadsheet.page_layout.set", map[string]any{"sheet": sheet, "operation": "orientation", "orientation": wantedOrientation})
+	pageLayout, err := invoke("spreadsheet.page_layout.set", spreadsheetPageLayoutSetPayload{Sheet: sheet, Operation: "orientation", Orientation: wantedOrientation})
 	if err != nil || !containsJSONText(pageLayout.Data, `"changed":true`) {
 		t.Fatalf("set page orientation: result=%s error=%v", pageLayout.Data, err)
 	}
-	pageLayoutNoOp, err := invoke("spreadsheet.page_layout.set", map[string]any{"sheet": sheet, "operation": "orientation", "orientation": wantedOrientation})
+	pageLayoutNoOp, err := invoke("spreadsheet.page_layout.set", spreadsheetPageLayoutSetPayload{Sheet: sheet, Operation: "orientation", Orientation: wantedOrientation})
 	if err != nil || pageLayoutNoOp.Revision != revision || !containsJSONText(pageLayoutNoOp.Data, `"changed":false`) {
 		t.Fatalf("repeated page orientation should be a no-op: result=%s revision=%d error=%v", pageLayoutNoOp.Data, pageLayoutNoOp.Revision, err)
 	}
@@ -188,13 +211,13 @@ func TestSpreadsheetViewAndPageSetupCapabilitiesRoundTripAndNoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDocument before invalid view target: %v", err)
 	}
-	if _, err := invoke("spreadsheet.page_layout.set", map[string]any{"sheet": sheet, "operation": "orientation", "orientation": "diagonal"}); err == nil {
+	if _, err := invoke("spreadsheet.page_layout.set", spreadsheetPageLayoutSetPayload{Sheet: sheet, Operation: "orientation", Orientation: "diagonal"}); err == nil {
 		t.Fatal("page layout accepted an invalid orientation")
 	}
-	if _, err := invoke("spreadsheet.panes.set", map[string]any{"sheet": sheet, "operation": "freeze_at", "rows": 0, "columns": 0}); err == nil {
+	if _, err := invoke("spreadsheet.panes.set", spreadsheetPanesSetFreezeAtPayload{Sheet: sheet, Operation: "freeze_at", Rows: 0, Columns: 0}); err == nil {
 		t.Fatal("pane freeze accepted an empty frozen region")
 	}
-	if _, err := invoke("spreadsheet.gridlines.set", map[string]any{"sheet": "MissingSheet", "show": false}); err == nil {
+	if _, err := invoke("spreadsheet.gridlines.set", spreadsheetGridlinesSetPayload{Sheet: "MissingSheet", Show: false}); err == nil {
 		t.Fatal("gridline update accepted a missing worksheet")
 	}
 	stateAfterInvalid, err := runtime.GetDocument(ctx, doc.DocumentID)

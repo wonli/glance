@@ -64,6 +64,10 @@ func (a *App) applyShareCopyResult(state *documentSessionState, path string, err
 	}
 }
 
+type documentExportCopyArguments struct {
+	Path string `json:"path"`
+}
+
 func (a *App) startDocumentExportCopy(state *documentSessionState, path string, revision uint64, publish func(string, error)) bool {
 	if state == nil || publish == nil {
 		return false
@@ -78,7 +82,7 @@ func (a *App) startDocumentExportCopy(state *documentSessionState, path string, 
 	}
 	window := a.window
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "document.export_copy", "document_file", path, "", map[string]any{"path": path})
+		result, err := a.executeRibbonApplicationCommand(token, "document.export_copy", "document_file", path, "", documentExportCopyArguments{Path: path})
 		outputPath := path
 		if err == nil {
 			var output struct {

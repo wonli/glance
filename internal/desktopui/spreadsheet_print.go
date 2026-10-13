@@ -71,6 +71,12 @@ func (a *App) requestSpreadsheetPrint() {
 	)
 }
 
+type spreadsheetDocumentPrintArguments struct {
+	Sheet       string             `json:"sheet"`
+	Bounds      document.CellRange `json:"bounds"`
+	Orientation string             `json:"orientation"`
+}
+
 func (a *App) beginSpreadsheetPrint(state *documentSessionState, sheet string, bounds document.CellRange) {
 	if state == nil || state.book == nil || state.closed.Load() || a.documentSessionState != state {
 		return
@@ -99,9 +105,7 @@ func (a *App) beginSpreadsheetPrint(state *documentSessionState, sheet string, b
 	generation := a.documentGeneration
 	a.launchManagedBackground(func() {
 		result := spreadsheetPrintResult{state: state, generation: generation, revision: token.revision}
-		command, err := a.executeRibbonApplicationCommandWithContext(ctx, token, "spreadsheet.document.print", "spreadsheet_range", sheet, sheet, map[string]any{
-			"sheet": sheet, "bounds": bounds, "orientation": "portrait",
-		})
+		command, err := a.executeRibbonApplicationCommandWithContext(ctx, token, "spreadsheet.document.print", "spreadsheet_range", sheet, sheet, spreadsheetDocumentPrintArguments{Sheet: sheet, Bounds: bounds, Orientation: "portrait"})
 		result.err = err
 		if err == nil {
 			result.revision = command.Revision

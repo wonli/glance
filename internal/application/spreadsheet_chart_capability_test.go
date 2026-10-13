@@ -13,6 +13,19 @@ import (
 	"glance/internal/document"
 )
 
+type testSpreadsheetchartSheetKindArguments struct {
+	Sheet  string             `json:"sheet"`
+	Kind   string             `json:"kind"`
+	Bounds document.CellRange `json:"bounds"`
+	Cell   string             `json:"cell"`
+	Title  string             `json:"title"`
+}
+
+type testSpreadsheetchartSheetEditsArguments struct {
+	Sheet string                       `json:"sheet"`
+	Edits []spreadsheetCellEditFixture `json:"edits"`
+}
+
 func TestSpreadsheetChartCapabilityUsesExplicitRangeAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -38,25 +51,21 @@ func TestSpreadsheetChartCapabilityUsesExplicitRangeAndRoundTrips(t *testing.T) 
 		})
 	}
 
-	seed := []map[string]any{
-		{"row": 1, "column": 1, "value": "季度"}, {"row": 1, "column": 2, "value": "营收"},
-		{"row": 2, "column": 1, "value": "第一季度"}, {"row": 2, "column": 2, "value": "120"},
-		{"row": 3, "column": 1, "value": "第二季度"}, {"row": 3, "column": 2, "value": "150"},
+	seed := []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "季度"}, {Row: 1, Column: 2, Value: "营收"},
+		{Row: 2, Column: 1, Value: "第一季度"}, {Row: 2, Column: 2, Value: "120"},
+		{Row: 3, Column: 1, Value: "第二季度"}, {Row: 3, Column: 2, Value: "150"},
 	}
 	if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "xlsx-chart-seed", DocumentID: documentID, CapabilityID: "spreadsheet.cells.set",
 		ExpectedRevision: doc.Revision, Operator: Operator{ID: "chart-agent-test", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "edits": seed}),
+		Arguments: mustJSON(t, testSpreadsheetchartSheetEditsArguments{Sheet: "Sheet1", Edits: seed}),
 	}); err != nil {
 		t.Fatalf("seed chart source: %v", err)
 	}
 
 	invalidTargetRevision := mustGetDocumentInfo(t, runtime, documentID)
-	_, err = invoke(map[string]any{
-		"sheet": "Missing", "kind": "col",
-		"bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2},
-		"cell":   "E2", "title": "季度营收",
-	})
+	_, err = invoke(testSpreadsheetchartSheetKindArguments{Sheet: "Missing", Kind: "col", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}, Cell: "E2", Title: "季度营收"})
 	if err == nil {
 		t.Fatal("chart creation accepted a missing source worksheet")
 	}
@@ -65,11 +74,7 @@ func TestSpreadsheetChartCapabilityUsesExplicitRangeAndRoundTrips(t *testing.T) 
 	}
 
 	before := mustGetDocumentInfo(t, runtime, documentID)
-	result, err := invoke(map[string]any{
-		"sheet": "Sheet1", "kind": "col",
-		"bounds": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2},
-		"cell":   "E2", "title": "季度营收",
-	})
+	result, err := invoke(testSpreadsheetchartSheetKindArguments{Sheet: "Sheet1", Kind: "col", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}, Cell: "E2", Title: "季度营收"})
 	if err != nil {
 		t.Fatalf("InvokeCapability(spreadsheet.chart.create): %v", err)
 	}

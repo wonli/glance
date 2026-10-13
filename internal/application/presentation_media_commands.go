@@ -39,6 +39,66 @@ type presentationMediaInput struct {
 	Decorative bool    `json:"decorative"`
 }
 
+type mediaSchemaField struct {
+	Type        string   `json:"type"`
+	Minimum     *float64 `json:"minimum,omitempty"`
+	Maximum     *float64 `json:"maximum,omitempty"`
+	MinLength   *int     `json:"minLength,omitempty"`
+	MaxLength   *int     `json:"maxLength,omitempty"`
+	Enum        []string `json:"enum,omitempty"`
+	Description string   `json:"description,omitempty"`
+}
+
+type mediaInputPropertiesSchema struct {
+	SlideID    mediaSchemaField  `json:"slide_id"`
+	SourcePath mediaSchemaField  `json:"source_path"`
+	MediaType  mediaSchemaField  `json:"media_type"`
+	X          mediaSchemaField  `json:"x"`
+	Y          mediaSchemaField  `json:"y"`
+	Width      mediaSchemaField  `json:"width"`
+	Height     mediaSchemaField  `json:"height"`
+	Role       *mediaSchemaField `json:"role,omitempty"`
+	AltText    *mediaSchemaField `json:"alt_text,omitempty"`
+	Decorative *mediaSchemaField `json:"decorative,omitempty"`
+}
+
+type mediaBoundsSchema struct {
+	Type                 string                `json:"type"`
+	Properties           mediaBoundsProperties `json:"properties"`
+	Required             []string              `json:"required"`
+	AdditionalProperties bool                  `json:"additionalProperties"`
+}
+
+type mediaBoundsProperties struct {
+	X      mediaSchemaField `json:"x"`
+	Y      mediaSchemaField `json:"y"`
+	Width  mediaSchemaField `json:"width"`
+	Height mediaSchemaField `json:"height"`
+}
+
+type mediaOutputPropertiesSchema struct {
+	SlideID       mediaSchemaField  `json:"slide_id"`
+	ElementID     mediaSchemaField  `json:"element_id"`
+	MediaType     mediaSchemaField  `json:"media_type"`
+	MediaSizeByte mediaSchemaField  `json:"media_size_bytes"`
+	Bounds        mediaBoundsSchema `json:"bounds"`
+	Changed       mediaSchemaField  `json:"changed"`
+}
+
+type mediaInputSchema struct {
+	Type                 string                     `json:"type"`
+	Properties           mediaInputPropertiesSchema `json:"properties"`
+	Required             []string                   `json:"required"`
+	AdditionalProperties bool                       `json:"additionalProperties"`
+}
+
+type mediaOutputSchema struct {
+	Type                 string                      `json:"type"`
+	Properties           mediaOutputPropertiesSchema `json:"properties"`
+	Required             []string                    `json:"required"`
+	AdditionalProperties bool                        `json:"additionalProperties"`
+}
+
 func registerPresentationMediaCapabilities(catalog *Catalog) error {
 	if err := registerPresentationMediaCapability(catalog, false); err != nil {
 		return err
@@ -53,44 +113,50 @@ func registerPresentationMediaCapability(catalog *Catalog, video bool) error {
 		capabilityID, name, description, maxBytes = "presentation.element.video.create", "在幻灯片上插入视频", "在明确的 PPTX 幻灯片上嵌入本机文件系统中的 MP4 或 WebM 视频文件。source_path 是运行 Glance Runtime 的机器上的文件路径；位置和尺寸使用 point。最多读取 128 MiB。先用 document.inspect 获取稳定 slide_id 和 expected_revision。Ribbon 视频入口选择文件后调用同一能力。", maxPresentationVideoFileBytes
 		mediaTypes = []string{"video/mp4", "video/webm"}
 	}
-	properties := map[string]any{
-		"slide_id":    map[string]any{"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "document.inspect 返回的稳定幻灯片 ID。"},
-		"source_path": map[string]any{"type": "string", "minLength": 1, "maxLength": 4096, "description": "运行 Glance Runtime 的机器上可读取的媒体文件路径。"},
-		"media_type":  map[string]any{"type": "string", "enum": mediaTypes, "description": "必须与文件扩展名及媒体内容匹配。"},
-		"x":           map[string]any{"type": "number", "description": "媒体左上角 X 坐标，单位 point。"},
-		"y":           map[string]any{"type": "number", "description": "媒体左上角 Y 坐标，单位 point。"},
-		"width":       map[string]any{"type": "number", "minimum": 8, "maximum": 10000, "description": "媒体宽度，单位 point。"},
-		"height":      map[string]any{"type": "number", "minimum": 8, "maximum": 10000, "description": "媒体高度，单位 point。"},
+	one, maxSlideID := float64(1), float64(^uint32(0))
+	eight, maxDimension := float64(8), float64(10000)
+	oneChar, maxPath, maxAltText := 1, 4096, 1000
+	inputSchemaValue := mediaInputSchema{
+		Type:                 "object",
+		Required:             []string{"slide_id", "source_path", "media_type", "x", "y", "width", "height"},
+		AdditionalProperties: false,
 	}
+	inputSchemaValue.Properties.SlideID = mediaSchemaField{Type: "integer", Minimum: &one, Maximum: &maxSlideID, Description: "document.inspect 返回的稳定幻灯片 ID。"}
+	inputSchemaValue.Properties.SourcePath = mediaSchemaField{Type: "string", MinLength: &oneChar, MaxLength: &maxPath, Description: "运行 Glance Runtime 的机器上可读取的媒体文件路径。"}
+	inputSchemaValue.Properties.MediaType = mediaSchemaField{Type: "string", Enum: mediaTypes, Description: "必须与文件扩展名及媒体内容匹配。"}
+	inputSchemaValue.Properties.X = mediaSchemaField{Type: "number", Description: "媒体左上角 X 坐标，单位 point。"}
+	inputSchemaValue.Properties.Y = mediaSchemaField{Type: "number", Description: "媒体左上角 Y 坐标，单位 point。"}
+	inputSchemaValue.Properties.Width = mediaSchemaField{Type: "number", Minimum: &eight, Maximum: &maxDimension, Description: "媒体宽度，单位 point。"}
+	inputSchemaValue.Properties.Height = mediaSchemaField{Type: "number", Minimum: &eight, Maximum: &maxDimension, Description: "媒体高度，单位 point。"}
 	if video {
-		properties["alt_text"] = map[string]any{"type": "string", "maxLength": 1000, "description": "视频的无障碍替代文本；装饰性视频留空。"}
-		properties["decorative"] = map[string]any{"type": "boolean", "description": "视频是否仅作装饰。"}
+		inputSchemaValue.Properties.AltText = &mediaSchemaField{Type: "string", MaxLength: &maxAltText, Description: "视频的无障碍替代文本；装饰性视频留空。"}
+		inputSchemaValue.Properties.Decorative = &mediaSchemaField{Type: "boolean", Description: "视频是否仅作装饰。"}
 	} else {
-		properties["role"] = map[string]any{"type": "string", "enum": []string{"narration", "background", "effect"}, "description": "音频角色，省略时为 effect。"}
+		inputSchemaValue.Properties.Role = &mediaSchemaField{Type: "string", Enum: []string{"narration", "background", "effect"}, Description: "音频角色，省略时为 effect。"}
 	}
-	inputSchema, err := json.Marshal(map[string]any{
-		"type": "object", "properties": properties,
-		"required":             []string{"slide_id", "source_path", "media_type", "x", "y", "width", "height"},
-		"additionalProperties": false,
-	})
+	inputSchema, err := json.Marshal(inputSchemaValue)
 	if err != nil {
 		return err
 	}
-	outputSchema, err := json.Marshal(map[string]any{
-		"type": "object", "properties": map[string]any{
-			"slide_id":         map[string]any{"type": "integer", "minimum": 1, "maximum": 4294967295},
-			"element_id":       map[string]any{"type": "integer", "minimum": 1, "maximum": 4294967295},
-			"media_type":       map[string]any{"type": "string", "enum": mediaTypes},
-			"media_size_bytes": map[string]any{"type": "integer", "minimum": 1, "maximum": maxBytes},
-			"bounds": map[string]any{"type": "object", "properties": map[string]any{
-				"x": map[string]any{"type": "number"}, "y": map[string]any{"type": "number"},
-				"width": map[string]any{"type": "number"}, "height": map[string]any{"type": "number"},
-			}, "required": []string{"x", "y", "width", "height"}, "additionalProperties": false},
-			"changed": map[string]any{"type": "boolean"},
-		},
-		"required":             []string{"slide_id", "element_id", "media_type", "media_size_bytes", "bounds", "changed"},
-		"additionalProperties": false,
-	})
+	outputSchemaValue := mediaOutputSchema{
+		Type:                 "object",
+		Required:             []string{"slide_id", "element_id", "media_type", "media_size_bytes", "bounds", "changed"},
+		AdditionalProperties: false,
+	}
+	outputSchemaValue.Properties.SlideID = mediaSchemaField{Type: "integer", Minimum: &one, Maximum: &maxSlideID}
+	outputSchemaValue.Properties.ElementID = mediaSchemaField{Type: "integer", Minimum: &one, Maximum: &maxSlideID}
+	outputSchemaValue.Properties.MediaType = mediaSchemaField{Type: "string", Enum: mediaTypes}
+	maxBytesNumber := float64(maxBytes)
+	outputSchemaValue.Properties.MediaSizeByte = mediaSchemaField{Type: "integer", Minimum: &one, Maximum: &maxBytesNumber}
+	outputSchemaValue.Properties.Bounds.Type = "object"
+	outputSchemaValue.Properties.Bounds.Required = []string{"x", "y", "width", "height"}
+	outputSchemaValue.Properties.Bounds.AdditionalProperties = false
+	outputSchemaValue.Properties.Bounds.Properties.X = mediaSchemaField{Type: "number"}
+	outputSchemaValue.Properties.Bounds.Properties.Y = mediaSchemaField{Type: "number"}
+	outputSchemaValue.Properties.Bounds.Properties.Width = mediaSchemaField{Type: "number"}
+	outputSchemaValue.Properties.Bounds.Properties.Height = mediaSchemaField{Type: "number"}
+	outputSchemaValue.Properties.Changed = mediaSchemaField{Type: "boolean"}
+	outputSchema, err := json.Marshal(outputSchemaValue)
 	if err != nil {
 		return err
 	}

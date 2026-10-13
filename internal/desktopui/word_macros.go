@@ -12,6 +12,8 @@ type wordMacrosInspectionResult struct {
 	data       []byte
 	err        error
 }
+type wordMacrosInspectArguments struct {
+}
 
 func (a *App) showWordMacrosDialog() {
 	state := a.documentSessionState
@@ -41,7 +43,7 @@ func (a *App) showWordMacrosDialog() {
 		}
 	}, modalDialogActionSpec{ID: "close", Label: "关闭"})
 	a.launchManagedBackground(func() {
-		command, err := a.executeRibbonApplicationCommand(token, "word.macros.inspect", "word_document", state.documentID, "", map[string]any{})
+		command, err := a.executeRibbonApplicationCommand(token, "word.macros.inspect", "word_document", state.documentID, "", wordMacrosInspectArguments{})
 		state.finishOperation(token)
 		result := wordMacrosInspectionResult{
 			state: state, generation: generation, request: request,

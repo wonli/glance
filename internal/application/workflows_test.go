@@ -8,6 +8,30 @@ import (
 	"glance/internal/document"
 )
 
+type testWorkflowsSheetCellValueArguments struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+	Value string `json:"value"`
+}
+
+type testWorkflowsCapabilityIdArgumentsArguments struct {
+	CapabilityId string                               `json:"capability_id"`
+	Arguments    testWorkflowsSheetCellValueArguments `json:"arguments"`
+}
+
+type testWorkflowsCommandsArguments struct {
+	Commands []testWorkflowsCapabilityIdArgumentsArguments `json:"commands"`
+}
+
+type testWorkflowsLeftDocumentIdRightDocumentIdArguments struct {
+	LeftDocumentId        string             `json:"left_document_id"`
+	RightDocumentId       string             `json:"right_document_id"`
+	LeftExpectedRevision  uint64             `json:"left_expected_revision"`
+	RightExpectedRevision uint64             `json:"right_expected_revision"`
+	Sheet                 string             `json:"sheet"`
+	Range                 document.CellRange `json:"range"`
+}
+
 func TestDocumentCompareAndPlanPreviewAreReadOnly(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -28,7 +52,7 @@ func TestDocumentCompareAndPlanPreviewAreReadOnly(t *testing.T) {
 		RequestID: "workflow-fixture-cell", DocumentID: right.DocumentID,
 		CapabilityID: "spreadsheet.cell.set", ExpectedRevision: right.Revision,
 		Operator:  Operator{ID: "workflow-fixture", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "cell": "A1", "value": "changed"}),
+		Arguments: mustJSON(t, testWorkflowsSheetCellValueArguments{Sheet: "Sheet1", Cell: "A1", Value: "changed"}),
 	})
 	if err != nil {
 		t.Fatalf("set comparison fixture: %v", err)
@@ -45,12 +69,8 @@ func TestDocumentCompareAndPlanPreviewAreReadOnly(t *testing.T) {
 	}
 	comparison, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "workflow-document-compare", CapabilityID: "document.compare",
-		Operator: Operator{ID: "workflow-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{
-			"left_document_id": left.DocumentID, "right_document_id": right.DocumentID,
-			"left_expected_revision": leftBefore.Revision, "right_expected_revision": rightBefore.Revision,
-			"sheet": "Sheet1", "range": document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1},
-		}),
+		Operator:  Operator{ID: "workflow-agent", Kind: OperatorExternalAgent},
+		Arguments: mustJSON(t, testWorkflowsLeftDocumentIdRightDocumentIdArguments{LeftDocumentId: left.DocumentID, RightDocumentId: right.DocumentID, LeftExpectedRevision: leftBefore.Revision, RightExpectedRevision: rightBefore.Revision, Sheet: "Sheet1", Range: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}}),
 	})
 	if err != nil {
 		t.Fatalf("Invoke document.compare: %v", err)
@@ -70,11 +90,8 @@ func TestDocumentCompareAndPlanPreviewAreReadOnly(t *testing.T) {
 	validated, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "workflow-plan-validate", DocumentID: left.DocumentID,
 		CapabilityID: "document.plan.validate", ExpectedRevision: leftBefore.Revision,
-		Operator: Operator{ID: "workflow-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"commands": []any{map[string]any{
-			"capability_id": "spreadsheet.cell.set",
-			"arguments":     map[string]any{"sheet": "Sheet1", "cell": "B1", "value": "would be written"},
-		}}}),
+		Operator:  Operator{ID: "workflow-agent", Kind: OperatorExternalAgent},
+		Arguments: mustJSON(t, testWorkflowsCommandsArguments{Commands: []testWorkflowsCapabilityIdArgumentsArguments{{CapabilityId: "spreadsheet.cell.set", Arguments: testWorkflowsSheetCellValueArguments{Sheet: "Sheet1", Cell: "B1", Value: "would be written"}}}}),
 	})
 	if err != nil {
 		t.Fatalf("Invoke document.plan.validate: %v", err)
@@ -125,7 +142,7 @@ func TestDocumentPlanApplyRequiresHumanAndReportsPartialFailure(t *testing.T) {
 	agent := Operator{ID: "workflow-agent", Kind: OperatorExternalAgent}
 	human := Operator{ID: "desktop-user", Kind: OperatorHuman}
 
-	applyPlan := func(doc DocumentInfo, suffix string, commands []any) struct {
+	applyPlan := func(doc DocumentInfo, suffix string, commands []testWorkflowsCapabilityIdArgumentsArguments) struct {
 		StartRevision uint64 `json:"start_revision"`
 		EndRevision   uint64 `json:"end_revision"`
 		Status        string `json:"status"`
@@ -139,7 +156,7 @@ func TestDocumentPlanApplyRequiresHumanAndReportsPartialFailure(t *testing.T) {
 		validated, validateErr := runtime.InvokeCapability(ctx, CapabilityRequest{
 			RequestID: "validate-plan-" + suffix, DocumentID: doc.DocumentID, CapabilityID: "document.plan.validate",
 			ExpectedRevision: doc.Revision, Operator: agent,
-			Arguments: mustJSON(t, map[string]any{"commands": commands}),
+			Arguments: mustJSON(t, testWorkflowsCommandsArguments{Commands: commands}),
 		})
 		if validateErr != nil {
 			t.Fatalf("validate plan %s: %v", suffix, validateErr)
@@ -197,10 +214,7 @@ func TestDocumentPlanApplyRequiresHumanAndReportsPartialFailure(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateDocument: %v", err)
 		}
-		result := applyPlan(doc, "success", []any{
-			map[string]any{"capability_id": "spreadsheet.cell.set", "arguments": map[string]any{"sheet": "Sheet1", "cell": "A1", "value": "已核对"}},
-			map[string]any{"capability_id": "spreadsheet.cell.set", "arguments": map[string]any{"sheet": "Sheet1", "cell": "B1", "value": "完成"}},
-		})
+		result := applyPlan(doc, "success", []testWorkflowsCapabilityIdArgumentsArguments{{CapabilityId: "spreadsheet.cell.set", Arguments: testWorkflowsSheetCellValueArguments{Sheet: "Sheet1", Cell: "A1", Value: "已核对"}}, {CapabilityId: "spreadsheet.cell.set", Arguments: testWorkflowsSheetCellValueArguments{Sheet: "Sheet1", Cell: "B1", Value: "完成"}}})
 		if result.Status != "applied" || result.StartRevision != doc.Revision || result.EndRevision != doc.Revision+2 || len(result.Commands) != 2 || result.Commands[0].Status != "completed" || result.Commands[1].Status != "completed" || result.Commands[0].Revision != doc.Revision+1 || result.Commands[1].Revision != doc.Revision+2 {
 			t.Fatalf("applied plan result=%+v", result)
 		}
@@ -230,11 +244,7 @@ func TestDocumentPlanApplyRequiresHumanAndReportsPartialFailure(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateDocument: %v", err)
 		}
-		result := applyPlan(doc, "partial", []any{
-			map[string]any{"capability_id": "spreadsheet.cell.set", "arguments": map[string]any{"sheet": "Sheet1", "cell": "A1", "value": "先完成"}},
-			map[string]any{"capability_id": "spreadsheet.cell.set", "arguments": map[string]any{"sheet": "MissingSheet", "cell": "B1", "value": "应失败"}},
-			map[string]any{"capability_id": "spreadsheet.cell.set", "arguments": map[string]any{"sheet": "Sheet1", "cell": "C1", "value": "不得执行"}},
-		})
+		result := applyPlan(doc, "partial", []testWorkflowsCapabilityIdArgumentsArguments{{CapabilityId: "spreadsheet.cell.set", Arguments: testWorkflowsSheetCellValueArguments{Sheet: "Sheet1", Cell: "A1", Value: "先完成"}}, {CapabilityId: "spreadsheet.cell.set", Arguments: testWorkflowsSheetCellValueArguments{Sheet: "MissingSheet", Cell: "B1", Value: "应失败"}}, {CapabilityId: "spreadsheet.cell.set", Arguments: testWorkflowsSheetCellValueArguments{Sheet: "Sheet1", Cell: "C1", Value: "不得执行"}}})
 		if result.Status != "partial_failed" || result.StartRevision != doc.Revision || result.EndRevision != doc.Revision+1 || len(result.Commands) != 3 || result.Commands[0].Status != "completed" || result.Commands[1].Status != "failed" || result.Commands[2].Status != "not_run" {
 			t.Fatalf("partial plan result=%+v", result)
 		}

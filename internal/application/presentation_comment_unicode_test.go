@@ -11,6 +11,19 @@ import (
 	"glance/internal/format/pptx"
 )
 
+type testPresentationcommentSlideIdLimitArguments struct {
+	SlideId uint32 `json:"slide_id"`
+	Limit   int    `json:"limit"`
+}
+
+type testPresentationcommentSlideIdXPtArguments struct {
+	SlideId uint32 `json:"slide_id"`
+	XPt     int    `json:"x_pt"`
+	YPt     int    `json:"y_pt"`
+	Author  string `json:"author"`
+	Text    string `json:"text"`
+}
+
 func TestPresentationCommentUsesUnicodeCharacterLimitsAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -41,7 +54,7 @@ func TestPresentationCommentUsesUnicodeCharacterLimitsAndRoundTrips(t *testing.T
 	added, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "long-pptx-comment-add", DocumentID: doc.DocumentID, CapabilityID: "presentation.comment.add",
 		ExpectedRevision: doc.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "x_pt": 72, "y_pt": 72, "author": author, "text": text}),
+		Arguments: mustJSON(t, testPresentationcommentSlideIdXPtArguments{SlideId: slideID, XPt: 72, YPt: 72, Author: author, Text: text}),
 	})
 	if err != nil {
 		t.Fatalf("add schema-sized Unicode presentation comment: %v", err)
@@ -60,7 +73,7 @@ func TestPresentationCommentUsesUnicodeCharacterLimitsAndRoundTrips(t *testing.T
 	listed, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "long-pptx-comment-list", DocumentID: doc.DocumentID, CapabilityID: "presentation.comments.list",
 		ExpectedRevision: state.Revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"slide_id": slideID, "limit": 1}),
+		Arguments: mustJSON(t, testPresentationcommentSlideIdLimitArguments{SlideId: slideID, Limit: 1}),
 	})
 	if err != nil {
 		t.Fatalf("list long presentation comment: %v", err)

@@ -47,6 +47,14 @@ func (a *App) showPresentationPaletteOptions(view *presentationViewState) {
 	)
 }
 
+type startPresentationThemeMutationPayload struct {
+	ThemeID string `json:"theme_id"`
+}
+
+type presentationthemePaletteIdArguments struct {
+	PaletteID string `json:"palette_id"`
+}
+
 func (a *App) startPresentationThemeMutation(view *presentationViewState, operation, value string) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -71,12 +79,16 @@ func (a *App) startPresentationThemeMutation(view *presentationViewState, operat
 	view.commandPending = true
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
-	commandID, argumentName := "presentation.theme.set", "theme_id"
+	commandID := "presentation.theme.set"
+	var arguments any
 	if operation == "palette" {
-		commandID, argumentName = "presentation.theme.palette.set", "palette_id"
+		commandID = "presentation.theme.palette.set"
+		arguments = presentationthemePaletteIdArguments{PaletteID: value}
+	} else {
+		arguments = startPresentationThemeMutationPayload{ThemeID: value}
 	}
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, commandID, "presentation_document", token.documentID, "", map[string]any{argumentName: value})
+		result, err := a.executeRibbonApplicationCommand(token, commandID, "presentation_document", token.documentID, "", arguments)
 		state.finishOperation(token)
 		out := presentationCommandResult{
 			state: state, view: view, generation: generation, presentationTheme: true,
@@ -110,6 +122,11 @@ func (a *App) startPresentationThemeMutation(view *presentationViewState, operat
 		}
 	})
 	return true
+}
+
+type presentationElementGroupSetArguments struct {
+	SlideId    uint32   `json:"slide_id"`
+	ElementIds []uint32 `json:"element_ids"`
 }
 
 func (a *App) startPresentationGroup(view *presentationViewState) bool {
@@ -159,9 +176,7 @@ func (a *App) startPresentationGroup(view *presentationViewState) bool {
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.group.set", "presentation_slide", fmt.Sprint(slide.ID), "", map[string]any{
-			"slide_id": slide.ID, "element_ids": elementIDs,
-		})
+		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.group.set", "presentation_slide", fmt.Sprint(slide.ID), "", presentationElementGroupSetArguments{SlideId: slide.ID, ElementIds: elementIDs})
 		state.finishOperation(token)
 		out := presentationCommandResult{
 			state: state, view: view, generation: generation, presentationGroup: true,

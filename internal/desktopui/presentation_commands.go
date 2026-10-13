@@ -106,6 +106,8 @@ type presentationCommandResult struct {
 	alignmentChanged                     bool
 	err                                  error
 }
+type presentationSlideAddArguments struct {
+}
 
 func (a *App) startPresentationAddSlide(v *presentationViewState) bool {
 	state := a.documentSessionState
@@ -124,7 +126,7 @@ func (a *App) startPresentationAddSlide(v *presentationViewState) bool {
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "presentation.slide.add", "presentation_document", token.documentID, "", map[string]any{})
+		result, err := a.executeRibbonApplicationCommand(token, "presentation.slide.add", "presentation_document", token.documentID, "", presentationSlideAddArguments{})
 		state.finishOperation(token)
 		out := presentationCommandResult{state: state, view: v, generation: generation, err: err}
 		if err == nil {
@@ -500,6 +502,12 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 	}
 }
 
+type documentInspectArguments struct {
+	Start    int `json:"start"`
+	Limit    int `json:"limit"`
+	MaxBytes int `json:"max_bytes"`
+}
+
 func (a *App) startPresentationAccessibilityReview(v *presentationViewState) bool {
 	state := a.documentSessionState
 	if v == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -527,9 +535,7 @@ func (a *App) startPresentationAccessibilityReview(v *presentationViewState) boo
 		out := presentationCommandResult{state: state, view: v, generation: generation, accessibility: true}
 		var report presentationAccessibilityReviewResult
 		for start := 0; start < maxSlides; {
-			result, err := a.executeRibbonApplicationCommand(token, "document.inspect", "presentation_document", token.documentID, "", map[string]any{
-				"start": start, "limit": pageSize, "max_bytes": application.MaxQueryResultBytes,
-			})
+			result, err := a.executeRibbonApplicationCommand(token, "document.inspect", "presentation_document", token.documentID, "", documentInspectArguments{Start: start, Limit: pageSize, MaxBytes: application.MaxQueryResultBytes})
 			if err != nil {
 				out.err = err
 				break
@@ -677,6 +683,10 @@ func (a *App) handlePresentationDeleteSlide(v *presentationViewState) {
 	a.setStatus("已删除幻灯片")
 }
 
+type presentationSlideDeleteArguments struct {
+	SlideId uint32 `json:"slide_id"`
+}
+
 func (a *App) startPresentationDeleteSlide(v *presentationViewState) bool {
 	if v == nil {
 		return false
@@ -700,7 +710,7 @@ func (a *App) startPresentationDeleteSlide(v *presentationViewState) bool {
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "presentation.slide.delete", "presentation_slide", fmt.Sprint(deletedSlideID), "", map[string]any{"slide_id": deletedSlideID})
+		result, err := a.executeRibbonApplicationCommand(token, "presentation.slide.delete", "presentation_slide", fmt.Sprint(deletedSlideID), "", presentationSlideDeleteArguments{SlideId: deletedSlideID})
 		state.finishOperation(token)
 		out := presentationCommandResult{state: state, view: v, generation: generation, deleted: true, deletedSlideIndex: deletedSlideIndex, err: err}
 		if err == nil {
@@ -771,6 +781,15 @@ func (a *App) addPresentationTextBoxAt(v *presentationViewState, slideID uint32,
 	a.setStatus("已新建文本框；双击文本框可编辑内容")
 }
 
+type startPresentationCreateTextBoxPayload struct {
+	SlideID uint32  `json:"slide_id"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Width   float64 `json:"width"`
+	Height  float64 `json:"height"`
+	Text    string  `json:"text"`
+}
+
 func (a *App) startPresentationCreateTextBox(v *presentationViewState, slideID uint32, bounds document.PresentationRect, text string) bool {
 	state := a.documentSessionState
 	if v == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -788,10 +807,7 @@ func (a *App) startPresentationCreateTextBox(v *presentationViewState, slideID u
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
-		arguments := map[string]any{
-			"slide_id": slideID, "x": bounds.X, "y": bounds.Y,
-			"width": bounds.W, "height": bounds.H, "text": text,
-		}
+		arguments := startPresentationCreateTextBoxPayload{SlideID: slideID, X: bounds.X, Y: bounds.Y, Width: bounds.W, Height: bounds.H, Text: text}
 		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.textbox.create", "presentation_slide", fmt.Sprint(slideID), "", arguments)
 		state.finishOperation(token)
 		out := presentationCommandResult{state: state, view: v, generation: generation, createdTextBox: true, createdSlideID: slideID, err: err}
@@ -863,6 +879,16 @@ func (a *App) addPresentationShapeAt(v *presentationViewState, slideID uint32, b
 	a.setStatus("已新建矩形；可调整其大小和样式")
 }
 
+type startPresentationCreateShapePayload struct {
+	SlideID  uint32  `json:"slide_id"`
+	Geometry string  `json:"geometry"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	Width    float64 `json:"width"`
+	Height   float64 `json:"height"`
+	Text     string  `json:"text"`
+}
+
 func (a *App) startPresentationCreateShape(v *presentationViewState, slideID uint32, bounds document.PresentationRect, geometry, text string) bool {
 	state := a.documentSessionState
 	if v == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -880,10 +906,7 @@ func (a *App) startPresentationCreateShape(v *presentationViewState, slideID uin
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
-		arguments := map[string]any{
-			"slide_id": slideID, "geometry": geometry, "x": bounds.X, "y": bounds.Y,
-			"width": bounds.W, "height": bounds.H, "text": text,
-		}
+		arguments := startPresentationCreateShapePayload{SlideID: slideID, Geometry: geometry, X: bounds.X, Y: bounds.Y, Width: bounds.W, Height: bounds.H, Text: text}
 		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.shape.create", "presentation_slide", fmt.Sprint(slideID), "", arguments)
 		state.finishOperation(token)
 		out := presentationCommandResult{state: state, view: v, generation: generation, createdShape: true, createdSlideID: slideID, err: err}
@@ -937,6 +960,17 @@ func (a *App) addPresentationPictureAt(v *presentationViewState, slideID uint32,
 	a.setStatus("已插入图片；可调整大小和样式")
 }
 
+type startPresentationCreatePicturePayload struct {
+	SlideID     uint32  `json:"slide_id"`
+	X           float64 `json:"x"`
+	Y           float64 `json:"y"`
+	Width       float64 `json:"width"`
+	Height      float64 `json:"height"`
+	Fit         string  `json:"fit"`
+	MediaType   string  `json:"media_type"`
+	ImageBase64 []byte  `json:"image_base64"`
+}
+
 func (a *App) startPresentationCreatePicture(v *presentationViewState, slideID uint32, bounds document.PresentationRect, fit, mediaType string, data []byte) bool {
 	state := a.documentSessionState
 	if v == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
@@ -954,11 +988,7 @@ func (a *App) startPresentationCreatePicture(v *presentationViewState, slideID u
 	generation := a.documentGeneration
 	window, shutdown := a.window, a.shutdown
 	a.launchManagedBackground(func() {
-		arguments := map[string]any{
-			"slide_id": slideID, "x": bounds.X, "y": bounds.Y,
-			"width": bounds.W, "height": bounds.H, "fit": fit,
-			"media_type": mediaType, "image_base64": data,
-		}
+		arguments := startPresentationCreatePicturePayload{SlideID: slideID, X: bounds.X, Y: bounds.Y, Width: bounds.W, Height: bounds.H, Fit: fit, MediaType: mediaType, ImageBase64: data}
 		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.picture.create", "presentation_slide", fmt.Sprint(slideID), "", arguments)
 		state.finishOperation(token)
 		out := presentationCommandResult{state: state, view: v, generation: generation, createdPicture: true, createdSlideID: slideID, err: err}

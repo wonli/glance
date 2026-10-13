@@ -59,16 +59,18 @@ func TestDispatchRenderPrintsPerFileDiagnostics(t *testing.T) {
 	}
 }
 
+type testCliIdPathArguments struct {
+	Id       string   `json:"id"`
+	Path     string   `json:"path"`
+	Format   string   `json:"format"`
+	Features []string `json:"features"`
+	Expected string   `json:"expected"`
+}
+
 func TestDispatchRenderFailsWhenManifestExpectationIsUnmet(t *testing.T) {
 	input, output := t.TempDir(), filepath.Join(t.TempDir(), "render-output")
 	writeInput(t, input, "one.xlsx", []byte("xlsx"))
-	writeManifestFile(t, input, []map[string]any{{
-		"id":       "expected-diagnostic",
-		"path":     "one.xlsx",
-		"format":   "xlsx",
-		"features": []string{"basic"},
-		"expected": "completed_with_diagnostics",
-	}})
+	writeManifestFile(t, input, manifestFixtureJSON(t, testCliIdPathArguments{Id: "expected-diagnostic", Path: "one.xlsx", Format: "xlsx", Features: []string{"basic"}, Expected: "completed_with_diagnostics"}))
 	renderer := &fakeRenderer{results: map[string]fakeRenderResult{
 		"one.xlsx": {targets: []Target{officeTarget("worksheet-1", color.NRGBA{R: 45, G: 60, B: 75, A: 255})}},
 	}}
@@ -125,7 +127,7 @@ func TestManifestForInputIgnoresUnrelatedWorkingDirectoryCorpus(t *testing.T) {
 	}
 	input := writeInput(t, inputDirectory, "single.xlsx", []byte("xlsx"))
 	brokenCorpus := filepath.Join(workingDirectory, "testdata", "office-corpus")
-	writeManifestFile(t, brokenCorpus, []map[string]any{manifestCase("stale", "missing.docx", "docx")})
+	writeManifestFile(t, brokenCorpus, manifestCase("stale", "missing.docx", "docx"))
 	previousDirectory, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

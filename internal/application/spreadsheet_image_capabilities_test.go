@@ -14,6 +14,51 @@ import (
 	"testing"
 )
 
+type testSpreadsheetimageSheetImageIdArguments struct {
+	Sheet   string `json:"sheet"`
+	ImageId string `json:"image_id"`
+}
+
+type testSpreadsheetimageSheetImageIdMediaTypeArguments struct {
+	Sheet       string `json:"sheet"`
+	ImageId     string `json:"image_id"`
+	MediaType   string `json:"media_type"`
+	ImageBase64 string `json:"image_base64"`
+}
+
+type spreadsheetImageResizePayload struct {
+	Sheet   string `json:"sheet"`
+	ImageId string `json:"image_id"`
+	WidthPx int    `json:"width_px"`
+}
+
+type spreadsheetImageMovePayload struct {
+	Sheet   string `json:"sheet"`
+	ImageId string `json:"image_id"`
+	Row     int    `json:"row"`
+	Column  int    `json:"column"`
+	OffsetX int    `json:"offset_x"`
+	OffsetY int    `json:"offset_y"`
+}
+
+type spreadsheetImageInsertPayload struct {
+	Sheet       string `json:"sheet"`
+	Row         int    `json:"row"`
+	Column      int    `json:"column"`
+	OffsetX     int    `json:"offset_x"`
+	OffsetY     int    `json:"offset_y"`
+	WidthPx     int    `json:"width_px"`
+	HeightPx    int    `json:"height_px"`
+	MediaType   string `json:"media_type"`
+	Name        string `json:"name"`
+	AltText     string `json:"alt_text"`
+	ImageBase64 string `json:"image_base64"`
+}
+
+type spreadsheetImagesListPayload struct {
+	Sheet string `json:"sheet"`
+}
+
 func TestSpreadsheetImageCapabilitiesRequireHumanForDestructiveEditsAndRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -48,7 +93,7 @@ func TestSpreadsheetImageCapabilitiesRequireHumanForDestructiveEditsAndRoundTrip
 		MediaType string `json:"media_type"`
 	} {
 		t.Helper()
-		result, invokeErr := invoke("spreadsheet.images.list", map[string]any{"sheet": "Sheet1"})
+		result, invokeErr := invoke("spreadsheet.images.list", spreadsheetImagesListPayload{Sheet: "Sheet1"})
 		if invokeErr != nil {
 			t.Fatalf("InvokeCapability(spreadsheet.images.list): %v", invokeErr)
 		}
@@ -137,11 +182,7 @@ func TestSpreadsheetImageCapabilitiesRequireHumanForDestructiveEditsAndRoundTrip
 	}
 	initial := mustGetDocumentInfo(t, runtime, documentID)
 	pngBytes := spreadsheetCapabilityPNG(t, 20, 10, color.NRGBA{R: 20, G: 90, B: 180, A: 255})
-	inserted := assertChanged("spreadsheet.image.insert", map[string]any{
-		"sheet": "Sheet1", "row": 2, "column": 2, "offset_x": 3, "offset_y": 4,
-		"width_px": 40, "height_px": 20, "media_type": "image/png",
-		"name": "Agent chart", "alt_text": "quarterly chart", "image_base64": base64.StdEncoding.EncodeToString(pngBytes),
-	}, true)
+	inserted := assertChanged("spreadsheet.image.insert", spreadsheetImageInsertPayload{Sheet: "Sheet1", Row: 2, Column: 2, OffsetX: 3, OffsetY: 4, WidthPx: 40, HeightPx: 20, MediaType: "image/png", Name: "Agent chart", AltText: "quarterly chart", ImageBase64: base64.StdEncoding.EncodeToString(pngBytes)}, true)
 	var insertedResult struct {
 		ImageID string `json:"image_id"`
 		Cell    string `json:"cell"`
@@ -159,30 +200,30 @@ func TestSpreadsheetImageCapabilitiesRequireHumanForDestructiveEditsAndRoundTrip
 
 	imageID := images[0].ImageID
 	beforeInvalidTarget := mustGetDocumentInfo(t, runtime, documentID)
-	if _, err := invoke("spreadsheet.image.move", map[string]any{"sheet": "Sheet1", "image_id": "stale-image-id", "row": 5, "column": 4, "offset_x": 0, "offset_y": 0}); err == nil {
+	if _, err := invoke("spreadsheet.image.move", spreadsheetImageMovePayload{Sheet: "Sheet1", ImageId: "stale-image-id", Row: 5, Column: 4, OffsetX: 0, OffsetY: 0}); err == nil {
 		t.Fatal("move accepted a stale image ID")
 	}
 	if afterInvalidTarget := mustGetDocumentInfo(t, runtime, documentID); afterInvalidTarget.Revision != beforeInvalidTarget.Revision || afterInvalidTarget.Dirty != beforeInvalidTarget.Dirty {
 		t.Fatalf("invalid image target partially changed workbook: before=%+v after=%+v", beforeInvalidTarget, afterInvalidTarget)
 	}
-	assertChanged("spreadsheet.image.move", map[string]any{"sheet": "Sheet1", "image_id": imageID, "row": 2, "column": 2, "offset_x": 3, "offset_y": 4}, false)
-	assertChanged("spreadsheet.image.resize", map[string]any{"sheet": "Sheet1", "image_id": imageID, "width_px": 40}, false)
-	assertChanged("spreadsheet.image.move", map[string]any{"sheet": "Sheet1", "image_id": imageID, "row": 5, "column": 4, "offset_x": 5, "offset_y": 7}, true)
+	assertChanged("spreadsheet.image.move", spreadsheetImageMovePayload{Sheet: "Sheet1", ImageId: imageID, Row: 2, Column: 2, OffsetX: 3, OffsetY: 4}, false)
+	assertChanged("spreadsheet.image.resize", spreadsheetImageResizePayload{Sheet: "Sheet1", ImageId: imageID, WidthPx: 40}, false)
+	assertChanged("spreadsheet.image.move", spreadsheetImageMovePayload{Sheet: "Sheet1", ImageId: imageID, Row: 5, Column: 4, OffsetX: 5, OffsetY: 7}, true)
 	images = listImages()
 	if len(images) != 1 || images[0].Cell != "D5" || images[0].WidthPx != 40 || images[0].HeightPx != 20 {
 		t.Fatalf("moved image metadata = %+v", images)
 	}
 	imageID = images[0].ImageID
-	assertChanged("spreadsheet.image.resize", map[string]any{"sheet": "Sheet1", "image_id": imageID, "width_px": 80}, true)
+	assertChanged("spreadsheet.image.resize", spreadsheetImageResizePayload{Sheet: "Sheet1", ImageId: imageID, WidthPx: 80}, true)
 	images = listImages()
 	if len(images) != 1 || images[0].Cell != "D5" || images[0].WidthPx != 80 || images[0].HeightPx != 40 {
 		t.Fatalf("resized image metadata = %+v; want 80x40 with preserved aspect ratio", images)
 	}
 	imageID = images[0].ImageID
-	assertChanged("spreadsheet.image.resize", map[string]any{"sheet": "Sheet1", "image_id": imageID, "width_px": 80}, false)
+	assertChanged("spreadsheet.image.resize", spreadsheetImageResizePayload{Sheet: "Sheet1", ImageId: imageID, WidthPx: 80}, false)
 
 	replacement := spreadsheetCapabilityJPEG(t, 16, 8, color.NRGBA{R: 210, G: 60, B: 30, A: 255})
-	replacementArgs := map[string]any{"sheet": "Sheet1", "image_id": imageID, "media_type": "image/jpeg", "image_base64": base64.StdEncoding.EncodeToString(replacement)}
+	replacementArgs := testSpreadsheetimageSheetImageIdMediaTypeArguments{Sheet: "Sheet1", ImageId: imageID, MediaType: "image/jpeg", ImageBase64: base64.StdEncoding.EncodeToString(replacement)}
 	rejectID, beforeReject := stageHighRisk("spreadsheet.image.replace", replacementArgs)
 	if info := resolve(rejectID, false); info.Result != nil {
 		t.Fatalf("rejected replace unexpectedly returned result: %+v", info)
@@ -237,7 +278,7 @@ func TestSpreadsheetImageCapabilitiesRequireHumanForDestructiveEditsAndRoundTrip
 		t.Fatalf("replacement image bytes after save/reopen differ: err=%v size=%d want=%d", err, len(reopenedBytes), len(replacement))
 	}
 
-	deleteArgs := map[string]any{"sheet": "Sheet1", "image_id": reopenedImages[0].ImageID}
+	deleteArgs := testSpreadsheetimageSheetImageIdArguments{Sheet: "Sheet1", ImageId: reopenedImages[0].ImageID}
 	deleteID, beforeDelete := stageHighRisk("spreadsheet.image.delete", deleteArgs)
 	completedDelete := resolve(deleteID, true)
 	if completedDelete.Result == nil || completedDelete.Result.Revision != beforeDelete.Revision+1 {

@@ -23,6 +23,18 @@ type presentationMediaPickerResult struct {
 	err        error
 }
 
+type presentationMediaCommandArguments struct {
+	SlideID    uint32  `json:"slide_id"`
+	SourcePath string  `json:"source_path"`
+	MediaType  string  `json:"media_type"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	Width      float64 `json:"width"`
+	Height     float64 `json:"height"`
+	Role       *string `json:"role,omitempty"`
+	Decorative *bool   `json:"decorative,omitempty"`
+}
+
 func presentationMediaTypeForPath(path, kind string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".mp3":
@@ -160,14 +172,16 @@ func (a *App) handlePresentationMediaPickerResult(result presentationMediaPicker
 	if result.kind == "video" {
 		capabilityID = "presentation.element.video.create"
 	}
-	arguments := map[string]any{
-		"slide_id": result.slideID, "source_path": result.path, "media_type": mediaType,
-		"x": result.bounds.X, "y": result.bounds.Y, "width": result.bounds.W, "height": result.bounds.H,
+	arguments := presentationMediaCommandArguments{
+		SlideID: result.slideID, SourcePath: result.path, MediaType: mediaType,
+		X: result.bounds.X, Y: result.bounds.Y, Width: result.bounds.W, Height: result.bounds.H,
 	}
 	if result.kind == "audio" {
-		arguments["role"] = "effect"
+		role := "effect"
+		arguments.Role = &role
 	} else {
-		arguments["decorative"] = false
+		decorative := false
+		arguments.Decorative = &decorative
 	}
 	state, view, generation := result.state, result.view, result.generation
 	window, shutdown := a.window, a.shutdown

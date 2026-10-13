@@ -111,6 +111,15 @@ func (a *App) markPresentationCropDraft(v *presentationViewState, dirty bool) {
 	a.documentSessionState.setPresentationDraftDirty(a.windowID, presentationCropDraft, dirty)
 }
 
+type presentationpictureSlideIdElementIdArguments struct {
+	SlideId   uint32 `json:"slide_id"`
+	ElementId int64  `json:"element_id"`
+	Left      int    `json:"left"`
+	Top       int    `json:"top"`
+	Right     int    `json:"right"`
+	Bottom    int    `json:"bottom"`
+}
+
 func (a *App) commitPresentationPictureCrop(v *presentationViewState) {
 	if v == nil || !v.pictureCrop.active || v.pictureCrop.committing || a.pptxDoc == nil || a.documentSessionState == nil {
 		return
@@ -165,11 +174,7 @@ func (a *App) commitPresentationPictureCrop(v *presentationViewState) {
 	a.launchManagedBackground(func() {
 		beforeRevision := doc.Revision()
 		if a.applicationSessionRegistered(token.documentID) {
-			commandResult, err := a.executeRibbonApplicationCommand(token, "presentation.element.picture.crop.set", "presentation_picture", fmt.Sprint(result.shapeID), "", map[string]any{
-				"slide_id": slideID, "element_id": result.shapeID,
-				"left": result.crop.Left, "top": result.crop.Top,
-				"right": result.crop.Right, "bottom": result.crop.Bottom,
-			})
+			commandResult, err := a.executeRibbonApplicationCommand(token, "presentation.element.picture.crop.set", "presentation_picture", fmt.Sprint(result.shapeID), "", presentationpictureSlideIdElementIdArguments{SlideId: slideID, ElementId: result.shapeID, Left: result.crop.Left, Top: result.crop.Top, Right: result.crop.Right, Bottom: result.crop.Bottom})
 			result.err = err
 			if err == nil {
 				var payload struct {

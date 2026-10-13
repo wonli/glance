@@ -13,6 +13,18 @@ import (
 	"glance/internal/document"
 )
 
+type testSpreadsheettableSheetBoundsArguments struct {
+	Sheet     string             `json:"sheet"`
+	Bounds    document.CellRange `json:"bounds"`
+	Name      string             `json:"name"`
+	StyleName string             `json:"style_name"`
+}
+
+type spreadsheetCellsSetPayload struct {
+	Sheet string                       `json:"sheet"`
+	Edits []spreadsheetCellEditFixture `json:"edits"`
+}
+
 func TestSpreadsheetTableCapabilityCreatesExplicitTableAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -38,16 +50,16 @@ func TestSpreadsheetTableCapabilityCreatesExplicitTableAndRoundTrips(t *testing.
 		})
 	}
 	bounds := document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}
-	seed := []map[string]any{
-		{"row": 1, "column": 1, "value": "季度"}, {"row": 1, "column": 2, "value": "营收"},
-		{"row": 2, "column": 1, "value": "第一季度"}, {"row": 2, "column": 2, "value": "120"},
-		{"row": 3, "column": 1, "value": "第二季度"}, {"row": 3, "column": 2, "value": "150"},
+	seed := []spreadsheetCellEditFixture{
+		{Row: 1, Column: 1, Value: "季度"}, {Row: 1, Column: 2, Value: "营收"},
+		{Row: 2, Column: 1, Value: "第一季度"}, {Row: 2, Column: 2, Value: "120"},
+		{Row: 3, Column: 1, Value: "第二季度"}, {Row: 3, Column: 2, Value: "150"},
 	}
-	if _, err := invoke("spreadsheet.cells.set", map[string]any{"sheet": "Sheet1", "edits": seed}); err != nil {
+	if _, err := invoke("spreadsheet.cells.set", spreadsheetCellsSetPayload{Sheet: "Sheet1", Edits: seed}); err != nil {
 		t.Fatalf("seed table source: %v", err)
 	}
-	arguments := map[string]any{"sheet": "Sheet1", "bounds": bounds, "name": "RevenueTable", "style_name": "TableStyleMedium2"}
-	invalid := map[string]any{"sheet": "Missing", "bounds": bounds, "name": "RevenueTable", "style_name": "TableStyleMedium2"}
+	arguments := testSpreadsheettableSheetBoundsArguments{Sheet: "Sheet1", Bounds: bounds, Name: "RevenueTable", StyleName: "TableStyleMedium2"}
+	invalid := testSpreadsheettableSheetBoundsArguments{Sheet: "Missing", Bounds: bounds, Name: "RevenueTable", StyleName: "TableStyleMedium2"}
 	beforeInvalid := mustGetDocumentInfo(t, runtime, documentID)
 	if _, err := invoke("spreadsheet.table.create", invalid); err == nil {
 		t.Fatal("table creation accepted a missing worksheet")

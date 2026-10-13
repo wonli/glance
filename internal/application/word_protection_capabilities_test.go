@@ -8,6 +8,13 @@ import (
 	"testing"
 )
 
+type testWordprotectionEnabledArguments struct {
+	Enabled bool `json:"enabled"`
+}
+
+type testWordprotectionEmptyArguments struct {
+}
+
 func TestWordDocumentProtectionCapabilityRequiresHumanAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -26,7 +33,7 @@ func TestWordDocumentProtectionCapabilityRequiresHumanAndRoundTrips(t *testing.T
 		t.Helper()
 		result, invokeErr := runtime.InvokeCapability(ctx, CapabilityRequest{
 			RequestID: requestID, DocumentID: documentID, CapabilityID: "word.document.protection.get",
-			ExpectedRevision: revision, Operator: agent, Arguments: mustJSON(t, map[string]any{}),
+			ExpectedRevision: revision, Operator: agent, Arguments: mustJSON(t, testWordprotectionEmptyArguments{}),
 		})
 		if invokeErr != nil {
 			t.Fatalf("read Word protection: %v", invokeErr)
@@ -43,7 +50,7 @@ func TestWordDocumentProtectionCapabilityRequiresHumanAndRoundTrips(t *testing.T
 	pending, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "word-protection-agent-enable", DocumentID: doc.DocumentID,
 		CapabilityID: "word.document.protection.set", ExpectedRevision: doc.Revision,
-		Operator: agent, Arguments: mustJSON(t, map[string]any{"enabled": true}),
+		Operator: agent, Arguments: mustJSON(t, testWordprotectionEnabledArguments{Enabled: true}),
 	})
 	if err != nil {
 		t.Fatalf("stage Word protection: %v", err)
@@ -85,7 +92,7 @@ func TestWordDocumentProtectionCapabilityRequiresHumanAndRoundTrips(t *testing.T
 	noOp, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "word-protection-enable-noop", DocumentID: doc.DocumentID,
 		CapabilityID: "word.document.protection.set", ExpectedRevision: enabledInfo.Revision,
-		Operator: human, Arguments: mustJSON(t, map[string]any{"enabled": true}),
+		Operator: human, Arguments: mustJSON(t, testWordprotectionEnabledArguments{Enabled: true}),
 	})
 	if err != nil {
 		t.Fatalf("repeat Word protection setting: %v", err)
@@ -104,7 +111,7 @@ func TestWordDocumentProtectionCapabilityRequiresHumanAndRoundTrips(t *testing.T
 	disabled, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "word-protection-disable", DocumentID: doc.DocumentID,
 		CapabilityID: "word.document.protection.set", ExpectedRevision: enabledInfo.Revision,
-		Operator: human, Arguments: mustJSON(t, map[string]any{"enabled": false}),
+		Operator: human, Arguments: mustJSON(t, testWordprotectionEnabledArguments{Enabled: false}),
 	})
 	if err != nil || disabled.Revision != enabledInfo.Revision+1 {
 		t.Fatalf("disable Word protection: result=%+v error=%v", disabled, err)

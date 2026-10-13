@@ -8,6 +8,9 @@ import (
 	"testing"
 )
 
+type testSpreadsheetdefinedEmptyArguments struct {
+}
+
 func TestSpreadsheetDefinedNameCapabilitiesRoundTripAndNoop(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -27,7 +30,7 @@ func TestSpreadsheetDefinedNameCapabilitiesRoundTripAndNoop(t *testing.T) {
 		t.Helper()
 		result, invokeErr := runtime.InvokeCapability(ctx, CapabilityRequest{
 			RequestID: requestID, DocumentID: documentID, CapabilityID: "spreadsheet.defined_names.get",
-			ExpectedRevision: revision, Operator: operator, Arguments: mustJSON(t, map[string]any{}),
+			ExpectedRevision: revision, Operator: operator, Arguments: mustJSON(t, testSpreadsheetdefinedEmptyArguments{}),
 		})
 		if invokeErr != nil {
 			return nil, invokeErr

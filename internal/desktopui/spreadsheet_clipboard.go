@@ -95,6 +95,11 @@ func pasteFits(bounds document.CellRange, rows [][]string) bool {
 
 func documentCellLimit(document.CellRange) (int, int) { return 1048576, 16384 }
 
+type spreadsheetRangeCopyArguments struct {
+	Sheet  string             `json:"sheet"`
+	Bounds document.CellRange `json:"bounds"`
+}
+
 func (a *App) copySelection() (string, error) {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || !state.selectionSet {
@@ -110,9 +115,7 @@ func (a *App) copySelection() (string, error) {
 			return "", fmt.Errorf("表格正在处理其他操作")
 		}
 		bounds := state.selection.Bounds()
-		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.range.copy", "spreadsheet_range", "clipboard", state.sheet, map[string]any{
-			"sheet": state.sheet, "bounds": bounds,
-		})
+		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.range.copy", "spreadsheet_range", "clipboard", state.sheet, spreadsheetRangeCopyArguments{Sheet: state.sheet, Bounds: bounds})
 		a.completeSessionOperation(state, token, err, false)
 		if err != nil {
 			return "", err

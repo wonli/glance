@@ -157,6 +157,11 @@ func wordEditorReviewMessage(data []byte) (string, error) {
 	return report, nil
 }
 
+type wordTextRunReplaceArguments struct {
+	RunId string `json:"run_id"`
+	Value string `json:"value"`
+}
+
 func (a *App) showWordTranslateDialog() {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
@@ -212,9 +217,7 @@ func (a *App) showWordTranslateDialog() {
 			if translated == "" {
 				return
 			}
-			if !a.runWordApplicationCommand("翻译替换", "word.text_run.replace", map[string]any{
-				"run_id": activeRunID, "value": translated,
-			}) {
+			if !a.runWordApplicationCommand("翻译替换", "word.text_run.replace", wordTextRunReplaceArguments{RunId: activeRunID, Value: translated}) {
 				a.setStatus("无法启动 Word 翻译替换操作")
 			}
 		},
@@ -346,6 +349,15 @@ func wordCompareDocumentLabel(info application.DocumentInfo) string {
 	return name
 }
 
+type documentCompareArguments struct {
+	LeftDocumentId        string `json:"left_document_id"`
+	RightDocumentId       string `json:"right_document_id"`
+	LeftExpectedRevision  uint64 `json:"left_expected_revision"`
+	RightExpectedRevision uint64 `json:"right_expected_revision"`
+	Start                 int    `json:"start"`
+	Limit                 int    `json:"limit"`
+}
+
 func (a *App) startWordDocumentCompare(state *documentSessionState, other application.DocumentInfo, pickerRequest uint64) {
 	if state == nil || state != a.documentSessionState || pickerRequest != a.wordCompareRequest {
 		return
@@ -370,11 +382,7 @@ func (a *App) startWordDocumentCompare(state *documentSessionState, other applic
 		}
 	}, modalDialogActionSpec{ID: "close", Label: "关闭"})
 	a.launchManagedBackground(func() {
-		command, err := a.executeRibbonApplicationCommand(token, "document.compare", "two_word_documents", state.documentID, "", map[string]any{
-			"left_document_id": state.documentID, "right_document_id": other.DocumentID,
-			"left_expected_revision": token.revision, "right_expected_revision": other.Revision,
-			"start": 0, "limit": 1000,
-		})
+		command, err := a.executeRibbonApplicationCommand(token, "document.compare", "two_word_documents", state.documentID, "", documentCompareArguments{LeftDocumentId: state.documentID, RightDocumentId: other.DocumentID, LeftExpectedRevision: token.revision, RightExpectedRevision: other.Revision, Start: 0, Limit: 1000})
 		state.finishOperation(token)
 		result := wordCompareAsyncResult{
 			state: state, generation: generation, request: request,

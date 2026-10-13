@@ -44,6 +44,13 @@ type WordParagraphSpacingSetter interface {
 	SetWordParagraphSpacing(context.Context, string, *int64, *int64) (bool, error)
 }
 
+type wordParagraphSpacingResult struct {
+	Changed      bool     `json:"changed"`
+	ParagraphID  string   `json:"paragraph_id"`
+	BeforePoints *float64 `json:"before_points,omitempty"`
+	AfterPoints  *float64 `json:"after_points,omitempty"`
+}
+
 func registerWordFormatCapabilities(catalog *Catalog) error {
 	registration := CapabilityRegistration{
 		Descriptor: CapabilityDescriptor{
@@ -301,12 +308,14 @@ func registerWordFormatCapabilities(catalog *Catalog) error {
 				if err != nil {
 					return CapabilityResult{}, err
 				}
-				result := map[string]any{"changed": changed, "paragraph_id": input.ParagraphID}
+				result := wordParagraphSpacingResult{Changed: changed, ParagraphID: input.ParagraphID}
 				if input.Before != nil {
-					result["before_points"] = float64(*before) / 20
+					value := float64(*before) / 20
+					result.BeforePoints = &value
 				}
 				if input.After != nil {
-					result["after_points"] = float64(*after) / 20
+					value := float64(*after) / 20
+					result.AfterPoints = &value
 				}
 				return capabilityJSONResult(result, changed)
 			},

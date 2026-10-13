@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+type wordEquationArguments struct {
+	Target           string `json:"target"`
+	RunID            string `json:"run_id,omitempty"`
+	AfterParagraphID string `json:"after_paragraph_id,omitempty"`
+	Expression       string `json:"expression"`
+}
+
 func (a *App) showWordWordArtDialog() {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
@@ -42,10 +49,7 @@ func (a *App) showWordWordArtDialog() {
 			}
 			afterPID := state.selectedWordParagraphID
 			content := fmt.Sprintf("%s %s", stylePrefix, text)
-			if !a.runWordApplicationCommand("插入艺术字", "word.text_box.insert", map[string]any{
-				"after_paragraph_id": afterPID,
-				"text":               content,
-			}) {
+			if !a.runWordApplicationCommand("插入艺术字", "word.text_box.insert", wordTextBoxInsertArguments{AfterParagraphId: afterPID, Text: content}) {
 				a.setStatus("当前会话无法通过能力目录插入艺术字")
 				return
 			}
@@ -87,15 +91,15 @@ func (a *App) showWordEquationDialog() {
 				return
 			}
 			run, hasRun := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
-			arguments := map[string]any{}
+			var arguments wordEquationArguments
 			if hasRun && run.Editable {
 				expression := formula
 				if run.Text != "" {
 					expression = run.Text + " " + formula
 				}
-				arguments = map[string]any{"target": "run", "run_id": run.ID, "expression": expression}
+				arguments = wordEquationArguments{Target: "run", RunID: run.ID, Expression: expression}
 			} else if _, hasTextBox := any(state.word).(document.WordTextBoxEditor); hasTextBox {
-				arguments = map[string]any{"target": "textbox", "after_paragraph_id": state.selectedWordParagraphID, "expression": "【公式】" + formula}
+				arguments = wordEquationArguments{Target: "textbox", AfterParagraphID: state.selectedWordParagraphID, Expression: "【公式】" + formula}
 			} else {
 				a.setStatus("请先选择可编辑的文字段落以插入公式")
 				return
@@ -110,6 +114,11 @@ func (a *App) showWordEquationDialog() {
 		modalDialogActionSpec{ID: "pythagorean", Label: "勾股定理"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+type wordTextBoxInsertArguments struct {
+	AfterParagraphId string `json:"after_paragraph_id"`
+	Text             string `json:"text"`
 }
 
 func (a *App) showWordShapesDialog() {
@@ -150,10 +159,7 @@ func (a *App) showWordShapesDialog() {
 			}
 			afterPID := state.selectedWordParagraphID
 			content := fmt.Sprintf("【形状·%s】%s", shapeType, text)
-			if !a.runWordApplicationCommand("插入形状", "word.text_box.insert", map[string]any{
-				"after_paragraph_id": afterPID,
-				"text":               content,
-			}) {
+			if !a.runWordApplicationCommand("插入形状", "word.text_box.insert", wordTextBoxInsertArguments{AfterParagraphId: afterPID, Text: content}) {
 				a.setStatus("当前会话无法通过能力目录插入形状文本框")
 				return
 			}
@@ -164,6 +170,12 @@ func (a *App) showWordShapesDialog() {
 		modalDialogActionSpec{ID: "flowchart", Label: "流程框"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+type wordTableInsertArguments struct {
+	AfterParagraphId string `json:"after_paragraph_id"`
+	Rows             int    `json:"rows"`
+	Columns          int    `json:"columns"`
 }
 
 func (a *App) showWordChartDialog() {
@@ -196,11 +208,7 @@ func (a *App) showWordChartDialog() {
 			default:
 				return
 			}
-			if !a.runWordApplicationCommand("插入图表基础数据表", "word.table.insert", map[string]any{
-				"after_paragraph_id": state.selectedWordParagraphID,
-				"rows":               rows,
-				"columns":            cols,
-			}) {
+			if !a.runWordApplicationCommand("插入图表基础数据表", "word.table.insert", wordTableInsertArguments{AfterParagraphId: state.selectedWordParagraphID, Rows: rows, Columns: cols}) {
 				a.setStatus("当前会话无法通过能力目录插入图表数据表")
 				return
 			}

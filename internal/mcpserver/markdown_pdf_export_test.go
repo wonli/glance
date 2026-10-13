@@ -12,6 +12,17 @@ import (
 	"glance/internal/application"
 )
 
+type testMarkdownpdfDocumentIdExpectedRevisionArguments struct {
+	DocumentId       string `json:"document_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+	TargetPath       string `json:"target_path"`
+	Orientation      string `json:"orientation"`
+}
+
+type testMarkdownpdfPathArguments struct {
+	Path string `json:"path"`
+}
+
 func TestMCPMarkdownExportPDFCreatesPDFFromLiveDocument(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := application.NewRuntime(ctx, application.RuntimeOptions{})
@@ -33,7 +44,7 @@ func TestMCPMarkdownExportPDFCreatesPDFFromLiveDocument(t *testing.T) {
 	if err := os.WriteFile(source, []byte("# MCP Markdown 报告\n\n实时会话通过 MCP 导出。\n"), 0o600); err != nil {
 		t.Fatalf("write Markdown source: %v", err)
 	}
-	opened, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.open", Arguments: map[string]any{"path": source}})
+	opened, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.open", Arguments: testMarkdownpdfPathArguments{Path: source}})
 	if err != nil || opened.IsError {
 		t.Fatalf("open Markdown tool result = %+v, %v", opened, err)
 	}
@@ -41,10 +52,7 @@ func TestMCPMarkdownExportPDFCreatesPDFFromLiveDocument(t *testing.T) {
 	documentID := stringValue(t, openedData["document_id"])
 	revision := uint64(numberValue(t, openedData["revision"]))
 	target := filepath.Join(t.TempDir(), "mcp-markdown.pdf")
-	exported, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "markdown.document.export_pdf", Arguments: map[string]any{
-		"document_id": documentID, "expected_revision": revision,
-		"target_path": target, "orientation": "portrait",
-	}})
+	exported, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "markdown.document.export_pdf", Arguments: testMarkdownpdfDocumentIdExpectedRevisionArguments{DocumentId: documentID, ExpectedRevision: revision, TargetPath: target, Orientation: "portrait"}})
 	if err != nil || exported.IsError {
 		t.Fatalf("export Markdown PDF tool result = %+v, %v", exported, err)
 	}

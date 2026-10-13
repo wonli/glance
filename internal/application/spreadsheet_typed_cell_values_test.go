@@ -14,6 +14,22 @@ import (
 	"glance/internal/document"
 )
 
+type testSpreadsheettypedSheetEditsArguments struct {
+	Sheet string                       `json:"sheet"`
+	Edits []spreadsheetCellEditFixture `json:"edits"`
+}
+
+type testSpreadsheettypedSheetEditsArguments119 struct {
+	Sheet string                       `json:"sheet"`
+	Edits []spreadsheetCellEditFixture `json:"edits"`
+}
+
+type testSpreadsheettypedSheetCellArguments struct {
+	Sheet string `json:"sheet"`
+	Cell  string `json:"cell"`
+	Value any    `json:"value"`
+}
+
 func TestSpreadsheetCellCommandsPreserveExplicitJSONValueTypes(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -32,7 +48,7 @@ func TestSpreadsheetCellCommandsPreserveExplicitJSONValueTypes(t *testing.T) {
 		result, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: requestID, DocumentID: doc.DocumentID, CommandID: "spreadsheet.cell.set",
 			ExpectedRevision: revision, Operator: operator,
-			Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "cell": cell, "value": value}),
+			Arguments: mustJSON(t, testSpreadsheettypedSheetCellArguments{Sheet: "Sheet1", Cell: cell, Value: value}),
 		})
 		if err != nil {
 			t.Fatalf("set %s (%T): %v", cell, value, err)
@@ -62,17 +78,17 @@ func TestSpreadsheetCellCommandsPreserveExplicitJSONValueTypes(t *testing.T) {
 	longUnicodeText := strings.Repeat("中", 11000)
 	setCell("typed-cell-long-unicode", "E1", longUnicodeText, true)
 
-	batch := []map[string]any{
-		{"row": 2, "column": 1, "value": "00045"},
-		{"row": 2, "column": 2, "value": 45.25},
-		{"row": 2, "column": 3, "value": false},
+	batch := []spreadsheetCellEditFixture{
+		{Row: 2, Column: 1, Value: "00045"},
+		{Row: 2, Column: 2, Value: 45.25},
+		{Row: 2, Column: 3, Value: false},
 	}
 	setBatch := func(requestID string, wantChanged bool) {
 		t.Helper()
 		result, err := runtime.Commands().Execute(ctx, CommandRequest{
 			RequestID: requestID, DocumentID: doc.DocumentID, CommandID: "spreadsheet.cells.set",
 			ExpectedRevision: revision, Operator: operator,
-			Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "edits": batch}),
+			Arguments: mustJSON(t, testSpreadsheettypedSheetEditsArguments119{Sheet: "Sheet1", Edits: batch}),
 		})
 		if err != nil {
 			t.Fatalf("batch set: %v", err)
@@ -95,7 +111,7 @@ func TestSpreadsheetCellCommandsPreserveExplicitJSONValueTypes(t *testing.T) {
 	if _, err := runtime.Commands().Execute(ctx, CommandRequest{
 		RequestID: "typed-cell-invalid-object", DocumentID: doc.DocumentID, CommandID: "spreadsheet.cells.set",
 		ExpectedRevision: revision, Operator: operator,
-		Arguments: mustJSON(t, map[string]any{"sheet": "Sheet1", "edits": []map[string]any{{"row": 3, "column": 1, "value": map[string]string{"bad": "value"}}}}),
+		Arguments: mustJSON(t, testSpreadsheettypedSheetEditsArguments{Sheet: "Sheet1", Edits: []spreadsheetCellEditFixture{{Row: 3, Column: 1, Value: map[string]string{"bad": "value"}}}}),
 	}); err == nil {
 		t.Fatal("batch cell set accepted a JSON object as a cell value")
 	}

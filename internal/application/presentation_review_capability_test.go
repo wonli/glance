@@ -7,6 +7,23 @@ import (
 	"testing"
 )
 
+type presentationTextProofreadPayload struct {
+	Start int `json:"start"`
+	Limit int `json:"limit"`
+}
+
+type presentationElementTextboxCreatePayload struct {
+	SlideId uint32 `json:"slide_id"`
+	X       int    `json:"x"`
+	Y       int    `json:"y"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Text    string `json:"text"`
+}
+
+type presentationSlideAddPayload struct {
+}
+
 func TestPresentationProofreadCapabilityPaginatesStableFindingsWithoutMutation(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})
@@ -47,7 +64,7 @@ func TestPresentationProofreadCapabilityPaginatesStableFindingsWithoutMutation(t
 		t.Fatalf("initial PPTX snapshot=%s error=%v", snapshot.Content, err)
 	}
 	firstSlideID := initial.Slides[0].ID
-	added, err := invoke("presentation.slide.add", map[string]any{})
+	added, err := invoke("presentation.slide.add", presentationSlideAddPayload{})
 	if err != nil {
 		t.Fatalf("add second slide: %v", err)
 	}
@@ -66,10 +83,7 @@ func TestPresentationProofreadCapabilityPaginatesStableFindingsWithoutMutation(t
 		t.Fatalf("PPTX snapshot after add=%s error=%v", snapshot.Content, err)
 	}
 	secondSlideID := initial.Slides[1].ID
-	textBox, err := invoke("presentation.element.textbox.create", map[string]any{
-		"slide_id": secondSlideID, "x": 50, "y": 50, "width": 320, "height": 80,
-		"text": "预算，，（待复核",
-	})
+	textBox, err := invoke("presentation.element.textbox.create", presentationElementTextboxCreatePayload{SlideId: secondSlideID, X: 50, Y: 50, Width: 320, Height: 80, Text: "预算，，（待复核"})
 	if err != nil {
 		t.Fatalf("create proofread text: %v", err)
 	}
@@ -81,7 +95,7 @@ func TestPresentationProofreadCapabilityPaginatesStableFindingsWithoutMutation(t
 	}
 	before := mustGetDocumentInfo(t, runtime, doc.DocumentID)
 
-	firstPage, err := invoke("presentation.text.proofread", map[string]any{"start": 0, "limit": 1})
+	firstPage, err := invoke("presentation.text.proofread", presentationTextProofreadPayload{Start: 0, Limit: 1})
 	if err != nil {
 		t.Fatalf("proofread first page: %v", err)
 	}
@@ -105,7 +119,7 @@ func TestPresentationProofreadCapabilityPaginatesStableFindingsWithoutMutation(t
 		t.Fatalf("first proofread page=%+v", firstResult)
 	}
 
-	secondPage, err := invoke("presentation.text.proofread", map[string]any{"start": 1, "limit": 1})
+	secondPage, err := invoke("presentation.text.proofread", presentationTextProofreadPayload{Start: 1, Limit: 1})
 	if err != nil {
 		t.Fatalf("proofread second page: %v", err)
 	}
@@ -138,7 +152,7 @@ func TestPresentationProofreadCapabilityPaginatesStableFindingsWithoutMutation(t
 	if len(wantCodes) != 0 {
 		t.Fatalf("missing proofread findings: %v", wantCodes)
 	}
-	if _, err := invoke("presentation.text.proofread", map[string]any{"start": 3, "limit": 1}); err == nil {
+	if _, err := invoke("presentation.text.proofread", presentationTextProofreadPayload{Start: 3, Limit: 1}); err == nil {
 		t.Fatal("proofread accepted a page start beyond the slide count")
 	}
 	if after := mustGetDocumentInfo(t, runtime, doc.DocumentID); after.Revision != before.Revision || after.Dirty != before.Dirty {

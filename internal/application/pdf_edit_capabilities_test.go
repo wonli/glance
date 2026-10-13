@@ -13,6 +13,57 @@ import (
 	"github.com/SalvioniDigitalSolutions/gopdf"
 )
 
+type pdfPageRotatePayload struct // Undo and redo target the last effective edit (the ink operation).
+
+{
+	PageNumber int `json:"page_number"`
+}
+
+type pdfHistoryApplyPayload struct {
+	Operation string `json:"operation"`
+}
+
+type pdfAnnotationNotePayload struct {
+	PageNumber int    `json:"page_number"`
+	X          int    `json:"x"`
+	Y          int    `json:"y"`
+	Text       string `json:"text"`
+}
+
+type pdfAnnotationInkPayload struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+type pdfAnnotationInkPayloadPageNumber struct {
+	PageNumber int                       `json:"page_number"`
+	Points     []pdfAnnotationInkPayload `json:"points"`
+}
+
+type pdfAnnotationHighlightPayload struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
+}
+
+type pdfAnnotationHighlightPayloadPageNumber struct {
+	PageNumber int                           `json:"page_number"`
+	Bounds     pdfAnnotationHighlightPayload `json:"bounds"`
+	Text       string                        `json:"text"`
+}
+
+type pdfTextReplacePayload struct {
+	PageNumber int    `json:"page_number"`
+	Run        int    `json:"run"`
+	Text       string `json:"text"`
+}
+
+type pdfAnnotationHighlightPayloadPageNumber2 struct {
+	PageNumber int                           `json:"page_number"`
+	Bounds     pdfAnnotationHighlightPayload `json:"bounds"`
+}
+
 func TestPDFEditCapabilitiesValidateAtomicityHistoryAndSaveReopen(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -106,45 +157,32 @@ func TestPDFEditCapabilitiesValidateAtomicityHistoryAndSaveReopen(t *testing.T) 
 	}
 
 	t.Run("invalid targets preserve the live snapshot", func(t *testing.T) {
-		assertAtomicFailure("pdf.page.rotate", map[string]any{"page_number": 99})
-		assertAtomicFailure("pdf.annotation.note", map[string]any{"page_number": 1, "x": 100000, "y": 20, "text": "outside"})
-		assertAtomicFailure("pdf.annotation.highlight", map[string]any{
-			"page_number": 1,
-			"bounds":      map[string]any{"x": 10, "y": 10, "w": 100000, "h": 20},
-		})
-		assertAtomicFailure("pdf.annotation.ink", map[string]any{
-			"page_number": 1,
-			"points":      []map[string]any{{"x": 20, "y": 20}, {"x": 100000, "y": 100000}},
-		})
+		assertAtomicFailure("pdf.page.rotate", pdfPageRotatePayload{PageNumber: 99})
+		assertAtomicFailure("pdf.annotation.note", pdfAnnotationNotePayload{PageNumber: 1, X: 100000, Y: 20, Text: "outside"})
+		assertAtomicFailure("pdf.annotation.highlight", pdfAnnotationHighlightPayloadPageNumber2{PageNumber: 1, Bounds: pdfAnnotationHighlightPayload{X: 10, Y: 10, W: 100000, H: 20}})
+		assertAtomicFailure("pdf.annotation.ink", pdfAnnotationInkPayloadPageNumber{PageNumber: 1, Points: []pdfAnnotationInkPayload{{X: 20, Y: 20}, {X: 100000, Y: 100000}}})
 	})
 
 	t.Run("empty history is a clean no-op", func(t *testing.T) {
-		assertChanged("pdf.history.apply", map[string]any{"operation": "undo"}, false)
+		assertChanged("pdf.history.apply", pdfHistoryApplyPayload{Operation: "undo"}, false)
 	})
 
 	t.Run("replace is a revisioned edit with idempotent no-op", func(t *testing.T) {
-		assertChanged("pdf.text.replace", map[string]any{"page_number": 1, "run": 0, "text": "Hello PDF"}, false)
-		assertAtomicFailure("pdf.text.replace", map[string]any{"page_number": 1, "run": 99, "text": "invalid run"})
-		assertChanged("pdf.text.replace", map[string]any{"page_number": 1, "run": 0, "text": "Updated PDF"}, true)
+		assertChanged("pdf.text.replace", pdfTextReplacePayload{PageNumber: 1, Run: 0, Text: "Hello PDF"}, false)
+		assertAtomicFailure("pdf.text.replace", pdfTextReplacePayload{PageNumber: 1, Run: 99, Text: "invalid run"})
+		assertChanged("pdf.text.replace", pdfTextReplacePayload{PageNumber: 1, Run: 0, Text: "Updated PDF"}, true)
 		_, query := inspect()
 		if query.Pages[0].Text[0].Text != "Updated PDF" {
 			t.Fatalf("replacement missing from live query: %+v", query.Pages[0].Text)
 		}
-		assertChanged("pdf.text.replace", map[string]any{"page_number": 1, "run": 0, "text": "Updated PDF"}, false)
+		assertChanged("pdf.text.replace", pdfTextReplacePayload{PageNumber: 1, Run: 0, Text: "Updated PDF"}, false)
 	})
 
 	t.Run("annotations and ink apply to explicit page geometry", func(t *testing.T) {
 		page := initialQuery.Pages[0]
-		assertChanged("pdf.annotation.note", map[string]any{"page_number": 1, "x": 120, "y": 160, "text": "Review this section"}, true)
-		assertChanged("pdf.annotation.highlight", map[string]any{
-			"page_number": 1,
-			"bounds":      map[string]any{"x": 35, "y": 45, "w": 80, "h": 16},
-			"text":        "Reviewed text",
-		}, true)
-		assertChanged("pdf.annotation.ink", map[string]any{
-			"page_number": 1,
-			"points":      []map[string]any{{"x": 180, "y": 180}, {"x": 210, "y": 210}, {"x": 240, "y": 180}},
-		}, true)
+		assertChanged("pdf.annotation.note", pdfAnnotationNotePayload{PageNumber: 1, X: 120, Y: 160, Text: "Review this section"}, true)
+		assertChanged("pdf.annotation.highlight", pdfAnnotationHighlightPayloadPageNumber{PageNumber: 1, Bounds: pdfAnnotationHighlightPayload{X: 35, Y: 45, W: 80, H: 16}, Text: "Reviewed text"}, true)
+		assertChanged("pdf.annotation.ink", pdfAnnotationInkPayloadPageNumber{PageNumber: 1, Points: []pdfAnnotationInkPayload{{X: 180, Y: 180}, {X: 210, Y: 210}, {X: 240, Y: 180}}}, true)
 		_, query := inspect()
 		if len(query.Pages[0].Annotations) < 3 {
 			t.Fatalf("note/highlight missing from PDF query: %+v", query.Pages[0].Annotations)
@@ -152,14 +190,14 @@ func TestPDFEditCapabilitiesValidateAtomicityHistoryAndSaveReopen(t *testing.T) 
 		if page.Width <= 240 || page.Height <= 210 {
 			t.Fatalf("fixture page too small for test geometry: %+v", page)
 		}
-		assertChanged("pdf.annotation.note", map[string]any{"page_number": 1, "x": 120, "y": 160, "text": ""}, false)
+		assertChanged("pdf.annotation.note", pdfAnnotationNotePayload{PageNumber: 1, X: 120, Y: 160, Text: ""}, false)
 	})
 
 	t.Run("history and rotation retain consistency through save and reopen", func(t *testing.T) {
-		// Undo and redo target the last effective edit (the ink operation).
-		assertChanged("pdf.history.apply", map[string]any{"operation": "undo"}, true)
-		assertChanged("pdf.history.apply", map[string]any{"operation": "redo"}, true)
-		assertChanged("pdf.page.rotate", map[string]any{"page_number": 1}, true)
+
+		assertChanged("pdf.history.apply", pdfHistoryApplyPayload{Operation: "undo"}, true)
+		assertChanged("pdf.history.apply", pdfHistoryApplyPayload{Operation: "redo"}, true)
+		assertChanged("pdf.page.rotate", pdfPageRotatePayload{PageNumber: 1}, true)
 		_, query := inspect()
 		if query.Pages[0].Rotation != 90 || len(query.Pages[0].Annotations) < 3 {
 			t.Fatalf("rotated page lost state: %+v", query.Pages[0])
@@ -199,6 +237,13 @@ func TestPDFEditCapabilitiesValidateAtomicityHistoryAndSaveReopen(t *testing.T) 
 	})
 }
 
+type testPdfeditQueryStartPageArguments struct {
+	Query      string `json:"query"`
+	StartPage  int    `json:"start_page"`
+	PageLimit  int    `json:"page_limit"`
+	MaxResults int    `json:"max_results"`
+}
+
 func TestPDFSearchCapabilityPaginatesWithoutMutation(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "search.pdf")
@@ -217,9 +262,7 @@ func TestPDFSearchCapabilityPaginatesWithoutMutation(t *testing.T) {
 		result, invokeErr := runtime.InvokeCapability(ctx, CapabilityRequest{
 			RequestID: requestID, DocumentID: doc.DocumentID, CapabilityID: "pdf.document.search",
 			ExpectedRevision: doc.Revision, Operator: Operator{ID: "pdf-search-agent", Kind: OperatorExternalAgent},
-			Arguments: mustJSON(t, map[string]any{
-				"query": query, "start_page": startPage, "page_limit": 1, "max_results": 10,
-			}),
+			Arguments: mustJSON(t, testPdfeditQueryStartPageArguments{Query: query, StartPage: startPage, PageLimit: 1, MaxResults: 10}),
 		})
 		if invokeErr != nil {
 			t.Fatalf("PDF search %q from page %d: %v", query, startPage, invokeErr)
@@ -248,7 +291,7 @@ func TestPDFSearchCapabilityPaginatesWithoutMutation(t *testing.T) {
 	if _, err := runtime.InvokeCapability(ctx, CapabilityRequest{
 		RequestID: "pdf-search-past-end", DocumentID: doc.DocumentID, CapabilityID: "pdf.document.search",
 		ExpectedRevision: doc.Revision, Operator: Operator{ID: "pdf-search-agent", Kind: OperatorExternalAgent},
-		Arguments: mustJSON(t, map[string]any{"query": "none", "start_page": 3, "page_limit": 1, "max_results": 10}),
+		Arguments: mustJSON(t, testPdfeditQueryStartPageArguments{Query: "none", StartPage: 3, PageLimit: 1, MaxResults: 10}),
 	}); err == nil {
 		t.Fatal("PDF search accepted a start page beyond document end")
 	}
