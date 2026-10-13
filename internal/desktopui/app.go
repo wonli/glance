@@ -409,6 +409,9 @@ func Run(initialPath string) <-chan struct{} {
 		log.Printf("start desktop MCP endpoint: %v", err)
 		a.setStatus("MCP 服务启动失败：" + err.Error())
 	}
+	if err := runtime.startSystemTray(); err != nil {
+		log.Printf("start system tray: %v", err)
+	}
 	restoreCtx, cancelRestore := context.WithCancel(context.Background())
 	if a.launchManagedBackground(func() {
 		select {

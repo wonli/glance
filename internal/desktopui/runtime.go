@@ -66,6 +66,17 @@ type desktopRuntime struct {
 	completion              chan struct{}
 	completionOnce          sync.Once
 	windowLauncher          windowLauncher
+	trayReady               bool
+	quitRequested           bool
+	trayActions             chan trayAction
+	trayCancel              context.CancelFunc
+	trayDone                <-chan struct{}
+	trayError               error
+	mainWindowCreating      bool
+	mainWindowCreationDone  chan struct{}
+	closingWindows          map[uint64]bool
+	pendingMainWindowShow   bool
+	resumeActiveTabID       string
 	sessions                map[string]*sharedDocumentSession
 	sessionsByCanonicalPath map[string]string
 	openingPaths            map[string]chan struct{}

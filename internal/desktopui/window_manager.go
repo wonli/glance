@@ -97,6 +97,7 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 		e := a.window.Event()
 		switch e := e.(type) {
 		case app.DestroyEvent:
+			a.ensureDesktopRuntime().markWindowClosing(a.windowID)
 			if e.Err != nil {
 				log.Printf("desktop window destroyed: %v", e.Err)
 				if source := a.windowOpenSource; source != nil {

@@ -11,6 +11,9 @@ func (r *desktopRuntime) attachWindow(windowID uint64, app *App) {
 	if r.windowAttachmentOrder == nil {
 		r.windowAttachmentOrder = make(map[uint64]uint64)
 	}
+	if r.closingWindows == nil {
+		r.closingWindows = make(map[uint64]bool)
+	}
 	if windowID == 0 {
 		r.nextWindowID++
 		windowID = r.nextWindowID
@@ -47,6 +50,7 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 	}
 	delete(r.windows, windowID)
 	delete(r.windowAttachmentOrder, windowID)
+	delete(r.closingWindows, windowID)
 	wasPrimary := r.primaryWindowID == windowID
 	if wasPrimary {
 		r.primaryWindowID = 0
@@ -88,6 +92,20 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 	if wasPrimary {
 		r.promotePrimaryWindow()
 	}
+}
+
+func (r *desktopRuntime) markWindowClosing(windowID uint64) {
+	if r == nil || windowID == 0 {
+		return
+	}
+	r.mu.Lock()
+	if r.windows[windowID] != nil {
+		if r.closingWindows == nil {
+			r.closingWindows = make(map[uint64]bool)
+		}
+		r.closingWindows[windowID] = true
+	}
+	r.mu.Unlock()
 }
 
 // promotePrimaryWindow assigns the oldest attached window and asks that

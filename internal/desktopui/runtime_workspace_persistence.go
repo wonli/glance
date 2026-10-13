@@ -169,12 +169,25 @@ func (r *desktopRuntime) shutdown() {
 		return
 	}
 	r.shutdownOnce.Do(func() {
+		r.mu.Lock()
+		r.shuttingDown = true
+		r.quitRequested = true
+		r.trayReady = false
+		cancelTray := r.trayCancel
+		r.trayCancel = nil
+		trayDone := r.trayDone
+		r.mu.Unlock()
+		if cancelTray != nil {
+			cancelTray()
+		}
+		if trayDone != nil {
+			<-trayDone
+		}
 		if r.applicationEventCancel != nil {
 			r.applicationEventCancel()
 			r.applicationEventCancel = nil
 		}
 		r.mu.Lock()
-		r.shuttingDown = true
 		mcpEndpoint := r.mcpEndpoint
 		r.mcpEndpoint = nil
 		r.mu.Unlock()

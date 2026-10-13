@@ -268,6 +268,9 @@ func (a *App) closeWorkspace() {
 	a.processPrimaryPromotion()
 	a.persistActiveSession()
 	runtime.drainWorkspaceWriter()
+	if runtime.shouldKeepAlive() && runtime.windowCount() == 1 && runtime.isPrimaryWindow(a.windowID) {
+		runtime.recordResumeActiveTab(a.activeTabID)
+	}
 	if a.windowID != 0 {
 		runtime.detachWindow(a.windowID)
 	} else {
@@ -282,7 +285,8 @@ func (a *App) closeWorkspace() {
 			closeSessionState(a.documentSessionState)
 		}
 	}
-	if !runtime.hasWindows() {
+	runtime.showPendingMainWindow()
+	if !runtime.hasWindows() && !runtime.shouldKeepAlive() {
 		runtime.shutdown()
 	}
 }

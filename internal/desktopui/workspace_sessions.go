@@ -167,11 +167,19 @@ func (a *App) initializeWorkspace() {
 		a.sessions[record.Tab.ID] = state
 	}
 	runtime.workspaceInitialized = true
-	// Restore all document sessions, but start on Glance's home tab.
+	// Restore all document sessions, but only resume the prior active tab when
+	// a tray-hidden window is being recreated in the same process.
+	primaryWindow := runtime.isPrimaryWindow(a.windowID)
+	resumeActiveTabID := ""
+	if primaryWindow {
+		resumeActiveTabID = runtime.takeResumeActiveTab()
+	}
 	a.activeTabID = workspace.RecentTabID
 	a.documentSessionState = newDocumentSessionState("")
-	if runtime.isPrimaryWindow(a.windowID) {
-		if err := collection.Activate(workspace.RecentTabID); err != nil {
+	if primaryWindow {
+		if resumeActiveTabID != "" && resumeActiveTabID != workspace.RecentTabID && a.sessions[resumeActiveTabID] != nil {
+			a.activateSession(resumeActiveTabID, a.sessions[resumeActiveTabID])
+		} else if err := collection.Activate(workspace.RecentTabID); err != nil {
 			a.setStatus(err.Error())
 		}
 	}

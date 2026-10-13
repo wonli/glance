@@ -18,6 +18,7 @@ const (
 
 type systemTray struct {
 	actions chan<- trayAction
+	ready   chan struct{}
 }
 
 func newSystemTray(actions chan<- trayAction) (*systemTray, error) {
@@ -27,7 +28,7 @@ func newSystemTray(actions chan<- trayAction) (*systemTray, error) {
 	if err := trayHostAvailable(); err != nil {
 		return nil, err
 	}
-	return &systemTray{actions: actions}, nil
+	return &systemTray{actions: actions, ready: make(chan struct{})}, nil
 }
 
 func (t *systemTray) run(ctx context.Context) error {
@@ -46,6 +47,7 @@ func (t *systemTray) run(ctx context.Context) error {
 	menu.Add("Quit Glance", func() { t.send(trayActionQuit) })
 	tray.SetAppName("Glance").SetTooltip("Glance").SetIcon(trayIconPNG()).SetMenu(menu)
 	tray.OnClick(func() { t.send(trayActionShow) }).Show()
+	close(t.ready)
 
 	go func() {
 		<-ctx.Done()
