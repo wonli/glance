@@ -45,15 +45,36 @@ type desktopEndpointConfiguration struct {
 	Headers map[string]string `json:"headers"`
 }
 
+const DefaultDesktopMCPPort = 50628
+
+// DesktopEndpointOptions configures the local desktop MCP endpoint.
+type DesktopEndpointOptions struct {
+	Port     int
+	Listener net.Listener
+}
+
 // StartDesktopEndpoint binds only to IPv4 loopback and starts a bearer-protected
 // Streamable HTTP endpoint.
 func StartDesktopEndpoint(runtime *application.Runtime) (*DesktopEndpoint, error) {
+	return StartDesktopEndpointWithOptions(runtime, DesktopEndpointOptions{})
+}
+
+// StartDesktopEndpointWithOptions starts a loopback endpoint with the given options.
+func StartDesktopEndpointWithOptions(runtime *application.Runtime, opts DesktopEndpointOptions) (*DesktopEndpoint, error) {
 	if runtime == nil {
 		return nil, errors.New("application runtime is required")
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, fmt.Errorf("listen on loopback: %w", err)
+	listener := opts.Listener
+	if listener == nil {
+		bindAddr := "127.0.0.1:0"
+		if opts.Port > 0 {
+			bindAddr = fmt.Sprintf("127.0.0.1:%d", opts.Port)
+		}
+		var err error
+		listener, err = net.Listen("tcp", bindAddr)
+		if err != nil {
+			return nil, fmt.Errorf("listen on loopback %s: %w", bindAddr, err)
+		}
 	}
 	closeListener := true
 	defer func() {
@@ -101,6 +122,17 @@ func (e *DesktopEndpoint) Info() DesktopEndpointInfo {
 		return DesktopEndpointInfo{}
 	}
 	return e.info
+}
+
+// Port returns the TCP port the endpoint is listening on.
+func (e *DesktopEndpoint) Port() int {
+	if e == nil || e.listener == nil {
+		return 0
+	}
+	if addr, ok := e.listener.Addr().(*net.TCPAddr); ok {
+		return addr.Port
+	}
+	return 0
 }
 
 // Close stops accepting requests and waits briefly for active MCP requests to

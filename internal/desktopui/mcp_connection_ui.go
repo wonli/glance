@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"strconv"
 	"strings"
 
 	"gioui.org/font"
@@ -51,14 +52,27 @@ func (a *App) prepareMCPConnectionPage() {
 	a.mcpConfigCopied = false
 	a.mcpURLCopied = false
 	a.mcpTokenCopied = false
+	a.mcpPortSaveSuccess = false
+	a.mcpPortError = ""
+
+	a.mcpPortInput.SingleLine = true
+	port := a.desktopRuntime.currentDesktopMCPPort()
+	if port == 0 {
+		port = a.desktopRuntime.loadConfiguredMCPPort()
+	}
+	portStr := strconv.Itoa(port)
+	a.mcpPortInput.SetText(portStr)
+	a.mcpLastPortDraft = portStr
 
 	info, available, err := a.desktopMCPConnectionInfo()
 	if err != nil {
 		a.mcpConnectionError = err.Error()
+		a.mcpPortError = err.Error()
 		return
 	}
 	if !available {
 		a.mcpConnectionError = "桌面 MCP 服务尚未启动，请重启 Glance 后重试。"
+		a.mcpPortError = a.mcpConnectionError
 		return
 	}
 	a.mcpConnectionURL = info.URL
@@ -95,12 +109,6 @@ func (a *App) layoutMCPSettingsPage(gtx layout.Context) layout.Dimensions {
 		copyDesktopMCPValue(gtx, a.mcpConnectionConfig)
 		a.mcpConfigCopied = true
 	}
-	if a.mcpConnectionError != "" {
-		style := material.Body2(a.theme, a.mcpConnectionError)
-		style.Color = settingsBlack
-		style.MaxLines = 3
-		return style.Layout(gtx)
-	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			guideWidth := gtx.Dp(unit.Dp(272))
@@ -127,10 +135,141 @@ func copyDesktopMCPValue(gtx layout.Context, value string) {
 	gtx.Execute(clipboard.WriteCmd{Type: "text/plain", Data: io.NopCloser(strings.NewReader(value))})
 }
 
+func (a *App) layoutMCPPortSection(gtx layout.Context) layout.Dimensions {
+	if a.mcpSavePortButton.Clicked(gtx) {
+		a.handleMCPSavePort()
+	}
+	currentText := a.mcpPortInput.Text()
+	if currentText != a.mcpLastPortDraft {
+		a.mcpLastPortDraft = currentText
+		a.mcpPortSaveSuccess = false
+	}
+
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			style := material.Caption(a.theme, "监听端口")
+			style.TextSize = unit.Sp(13)
+			style.Color = color.NRGBA{R: 0x7D, G: 0x87, B: 0x92, A: 255}
+			style.MaxLines = 1
+			return style.Layout(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(9)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						width := gtx.Dp(unit.Dp(188))
+						height := gtx.Dp(unit.Dp(40))
+						gtx.Constraints.Min = image.Pt(width, height)
+						gtx.Constraints.Max = image.Pt(width, height)
+						return homeRoundedPanel(gtx, homeSurface, homeBorder, unit.Dp(6), func(gtx layout.Context) layout.Dimensions {
+							settingsFieldFocus(gtx, &a.mcpPortInput)
+							return layout.Inset{Left: unit.Dp(14), Right: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								gtx.Constraints.Min.Y = 0
+								style := material.Editor(a.theme, &a.mcpPortInput, "50628")
+								style.TextSize = unit.Sp(14)
+								style.Color = color.NRGBA{R: 0x46, G: 0x51, B: 0x5E, A: 255}
+								style.HintColor = color.NRGBA{R: 0x7D, G: 0x87, B: 0x92, A: 255}
+								style.Font.Typeface = font.Typeface("monospace")
+								return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)
+							})
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(12)), 0)}
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return a.layoutMCPSavePortButton(gtx)
+					}),
+				)
+			})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(9)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				hintText := "可用范围 1024–65535。保存后重启 MCP 服务生效，请同步更新客户端地址。"
+				hintColor := color.NRGBA{R: 0x7D, G: 0x87, B: 0x92, A: 255}
+				if a.mcpPortError != "" {
+					hintText = a.mcpPortError
+					hintColor = color.NRGBA{R: 217, G: 48, B: 37, A: 255}
+				}
+				style := material.Caption(a.theme, hintText)
+				style.TextSize = unit.Sp(12)
+				style.Color = hintColor
+				style.MaxLines = 2
+				return style.Layout(gtx)
+			})
+		}),
+	)
+}
+
+func (a *App) layoutMCPSavePortButton(gtx layout.Context) layout.Dimensions {
+	btnColor := color.NRGBA{R: 0x34, G: 0x3B, B: 0x45, A: 255}
+	if a.mcpSavePortButton.Hovered() {
+		btnColor = color.NRGBA{R: 0x46, G: 0x51, B: 0x5E, A: 255}
+	}
+	label := "保存端口"
+	if a.mcpPortSaveSuccess {
+		label = "已保存"
+	}
+	return a.mcpSavePortButton.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		width, height := gtx.Dp(unit.Dp(89)), gtx.Dp(unit.Dp(40))
+		gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
+		return homeRoundedPanel(gtx, btnColor, btnColor, unit.Dp(6), func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(18), Right: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return homeTextLabel(gtx, a.theme, label, 13, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, true)
+					})
+				})
+			})
+		})
+	})
+}
+
+func (a *App) handleMCPSavePort() {
+	text := strings.TrimSpace(a.mcpPortInput.Text())
+	if text == "" {
+		a.mcpPortError = "请输入有效的端口号（1024–65535）"
+		a.mcpPortSaveSuccess = false
+		return
+	}
+	port, err := strconv.Atoi(text)
+	if err != nil || !isValidMCPPort(port) {
+		a.mcpPortError = "可用范围 1024–65535。请输入有效端口"
+		a.mcpPortSaveSuccess = false
+		return
+	}
+
+	runtime := a.ensureDesktopRuntime()
+	if err := runtime.restartDesktopMCPEndpoint(port); err != nil {
+		a.mcpPortError = err.Error()
+		a.mcpPortSaveSuccess = false
+		return
+	}
+
+	a.mcpPortError = ""
+	a.mcpPortSaveSuccess = true
+	a.mcpConnectionError = ""
+	info, available, _ := runtime.desktopMCPConnectionInfo()
+	if available {
+		a.mcpConnectionURL = info.URL
+		a.mcpConnectionToken = info.Token
+		a.mcpConnectionConfig = mcpConnectionDisplayConfig(info.Configuration)
+		a.mcpConnectionViewConfig = a.mcpConnectionConfig
+	}
+	a.mcpURLCopied = false
+	a.mcpTokenCopied = false
+	a.mcpConfigCopied = false
+}
+
 func (a *App) layoutMCPConnectionDetailsPage(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutMCPConnectionValueField(gtx, "服务地址", a.mcpConnectionURL, &a.mcpCopyURLButton, a.mcpURLCopied)
+			return a.layoutMCPPortSection(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return a.layoutMCPConnectionValueField(gtx, "服务地址", a.mcpConnectionURL, &a.mcpCopyURLButton, a.mcpURLCopied)
+			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -269,7 +408,7 @@ func (a *App) layoutMCPConnectionGuide(gtx layout.Context) layout.Dimensions {
 	}{
 		{"01", "打开客户端 MCP 设置", "在支持 HTTP MCP 的 Agent 中，添加一个新的 MCP 服务。"},
 		{"02", "填入连接信息", "设置服务地址，并添加 Authorization 请求头，值为 Bearer + 空格 + Token。"},
-		{"03", "建立连接", "保存后连接服务器，即可通过 Agent 操作当前桌面会话。"},
+		{"03", "建立连接", "保存后连接服务，即可通过 Agent 操作当前桌面会话。"},
 	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Start}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {

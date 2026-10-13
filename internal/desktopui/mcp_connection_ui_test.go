@@ -23,6 +23,7 @@ type testMcpconnectionDocumentIdExpectedRevisionArguments struct {
 }
 
 func TestDesktopMCPHTTPEditsTheLiveGioSession(t *testing.T) {
+	t.Setenv("GLANCE_MCP_PORT", "0")
 	ctx := context.Background()
 	desktop := newDesktopRuntime()
 	t.Cleanup(desktop.shutdown)
@@ -83,6 +84,7 @@ func TestDesktopMCPHTTPEditsTheLiveGioSession(t *testing.T) {
 }
 
 func TestDesktopRuntimeShutdownStopsMCPHTTPEndpoint(t *testing.T) {
+	t.Setenv("GLANCE_MCP_PORT", "0")
 	desktop := newDesktopRuntime()
 	if err := desktop.startDesktopMCPEndpoint(); err != nil {
 		t.Fatalf("start desktop MCP endpoint: %v", err)
@@ -99,6 +101,7 @@ func TestDesktopRuntimeShutdownStopsMCPHTTPEndpoint(t *testing.T) {
 }
 
 func TestMCPConnectionDialogShowsEphemeralClientConfiguration(t *testing.T) {
+	t.Setenv("GLANCE_MCP_PORT", "0")
 	desktop := newDesktopRuntime()
 	t.Cleanup(desktop.shutdown)
 	if err := desktop.startDesktopMCPEndpoint(); err != nil {
