@@ -94,6 +94,20 @@ func TestHomeFolderIconsRenderFromHomeAssets(t *testing.T) {
 	}
 }
 
+func TestHomeFolderTreeGlyphFollowsSelectedState(t *testing.T) {
+	for _, test := range []struct {
+		selected bool
+		want     string
+	}{
+		{selected: true, want: "folder-open"},
+		{selected: false, want: "folder"},
+	} {
+		if got := homeFolderTreeGlyph(test.selected); got != test.want {
+			t.Errorf("homeFolderTreeGlyph(%v)=%q; want %q", test.selected, got, test.want)
+		}
+	}
+}
+
 func TestHomeGreetingMatchesTimeOfDay(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

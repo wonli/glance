@@ -30,6 +30,13 @@ type homeFolderRowWidgets struct {
 	menuItems    map[string]*widget.Clickable
 }
 
+func homeFolderTreeGlyph(selected bool) string {
+	if selected {
+		return "folder-open"
+	}
+	return "folder"
+}
+
 func (a *App) layoutHomeFolderTree(gtx layout.Context) layout.Dimensions {
 	if a.homeFolderRows == nil {
 		a.homeFolderRows = make(map[string]*homeFolderRowWidgets)
@@ -229,10 +236,7 @@ func (a *App) layoutHomeFolderTreeRowContents(gtx layout.Context, row homeFolder
 			return layout.Inset{Left: unit.Dp(12 + row.depth*20), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						glyph := "folder"
-						if a.homeFolderExpanded[row.folder.ID] {
-							glyph = "folder-open"
-						}
+						glyph := homeFolderTreeGlyph(a.homeSelectedFolderID == row.folder.ID)
 						fg := color.NRGBA{R: 122, G: 131, B: 142, A: 255}
 						if a.homeSelectedFolderID == row.folder.ID || a.homeFolderExpanded[row.folder.ID] {
 							fg = color.NRGBA{R: 60, G: 70, B: 82, A: 255}
