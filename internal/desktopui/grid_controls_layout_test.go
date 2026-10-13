@@ -35,7 +35,8 @@ func TestFormulaEditorFieldCentersTextVertically(t *testing.T) {
 	style := material.Editor(app.theme, naturalEditor, "A1")
 	style.TextSize = unit.Sp(13)
 	naturalDims := style.Layout(naturalGtx)
-	wantBaseline := naturalDims.Baseline + (height-naturalDims.Size.Y)/2
+	opticalInset := fieldGtx.Dp(formulaEditorOpticalCenterTopInset)
+	wantBaseline := naturalDims.Baseline + (height-naturalDims.Size.Y-opticalInset)/2
 	if fieldDims.Size.Y != height {
 		t.Fatalf("formula editor field height=%d; want %d", fieldDims.Size.Y, height)
 	}

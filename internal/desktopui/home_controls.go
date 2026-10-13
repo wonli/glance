@@ -135,7 +135,7 @@ func homeFilterGroup(gtx layout.Context, theme *material.Theme, buttons map[stri
 			return layout.Dimensions{Size: image.Pt(width, height)}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(4 * scale), Left: unit.Dp(6 * scale)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(4 * scale), Bottom: unit.Dp(4 * scale), Left: unit.Dp(6 * scale)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				children := make([]layout.FlexChild, 0, len(homeFilters))
 				for index, label := range homeFilters {
 					filter := label

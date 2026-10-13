@@ -14,6 +14,8 @@ import (
 	"gioui.org/widget/material"
 )
 
+const formulaEditorOpticalCenterTopInset unit.Dp = 4
+
 func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 	for ev, ok := a.nameBox.Update(gtx); ok; ev, ok = a.nameBox.Update(gtx) {
 		if _, submit := ev.(widget.SubmitEvent); submit {
@@ -107,7 +109,8 @@ func layoutFormulaEditorField(gtx layout.Context, theme *material.Theme, editor 
 			return layout.Dimensions{Size: bounds.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			settingsFieldFocus(gtx, editor)
+			return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10), Top: formulaEditorOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = 0
 				style := material.Editor(theme, editor, hint)
 				style.TextSize = unit.Sp(13)
