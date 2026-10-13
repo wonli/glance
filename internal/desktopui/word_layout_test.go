@@ -197,7 +197,6 @@ func TestWordFlowExposesReferenceRibbonRulersAndStatus(t *testing.T) {
 	want := map[string]bool{
 		"Word 功能区":  false,
 		"Word 水平标尺": false,
-		"Word 垂直标尺": false,
 		"Word 状态栏":  false,
 	}
 	var visit func([]input.SemanticNode)

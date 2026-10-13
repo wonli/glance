@@ -329,7 +329,7 @@ func TestWordPageColumnCentersAndFitsNarrowWindows(t *testing.T) {
 	}
 }
 
-func TestWordCanvasAndRulersMatchPenClpgmGeometry(t *testing.T) {
+func TestWordCanvasAndHorizontalRulerMatchPenClpgmGeometry(t *testing.T) {
 	state, closeDocument := newLongWordFlowState(t, 2)
 	defer closeDocument()
 	app := &App{documentSessionState: state, theme: material.NewTheme()}
@@ -352,20 +352,26 @@ func TestWordCanvasAndRulersMatchPenClpgmGeometry(t *testing.T) {
 		"粘贴":        {Min: image.Pt(64, 86), Max: image.Pt(108, 134)},
 		"Word 水平标尺": {Min: image.Pt(0, 144), Max: image.Pt(1440, 177)},
 		"Word 文档画布": {Min: image.Pt(270, 193), Max: image.Pt(1170, 793)},
-		"Word 垂直标尺": {Min: image.Pt(231, 197), Max: image.Pt(256, 833)},
 		"Word 状态栏":  {Min: image.Pt(0, 866), Max: image.Pt(1440, 900)},
 	}
 	found := make(map[string]image.Rectangle, len(want))
+	verticalRulerVisible := false
 	var visit func([]input.SemanticNode)
 	visit = func(nodes []input.SemanticNode) {
 		for _, node := range nodes {
 			if _, ok := want[node.Desc.Description]; ok {
 				found[node.Desc.Description] = node.Desc.Bounds
 			}
+			if node.Desc.Description == "Word 垂直标尺" && !node.Desc.Bounds.Empty() {
+				verticalRulerVisible = true
+			}
 			visit(node.Children)
 		}
 	}
 	visit(router.AppendSemantics(nil))
+	if verticalRulerVisible {
+		t.Error("Word page layout still exposes a vertical ruler")
+	}
 	for description, expected := range want {
 		if got := found[description]; got != expected {
 			t.Errorf("Pen Clpgm %q bounds = %v; want %v", description, got, expected)

@@ -21,12 +21,7 @@ import (
 )
 
 const (
-	wordRulerHeightDP         = 33
-	wordRulerWidthDP          = 25
-	wordRulerGapDP            = 14
-	wordVerticalRulerTopDP    = 20
-	wordVerticalRulerBottomDP = 33
-	wordRulerMajorStepDP      = 60
+	wordRulerHeightDP = 33
 )
 
 var wordRulerBackground = color.NRGBA{R: 250, G: 251, B: 252, A: 255}
@@ -228,43 +223,6 @@ func paintWordRulerResizeHandle(gtx layout.Context, x, height int) {
 	handleHeight := gtx.Dp(unit.Dp(19))
 	top := (height - handleHeight) / 2
 	paint.FillShape(gtx.Ops, rulerResizeHandleColor, clip.UniformRRect(image.Rect(x-width/2, top, x+(width+1)/2, top+handleHeight), gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-}
-
-func layoutWordVerticalRuler(gtx layout.Context, theme *material.Theme) layout.Dimensions {
-	width := gtx.Dp(unit.Dp(wordRulerWidthDP))
-	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
-	return layout.Background{}.Layout(gtx,
-		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, wordRulerBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
-			paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Min: image.Pt(width-gtx.Dp(unit.Dp(1)), 0), Max: gtx.Constraints.Max}.Op())
-			bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
-			semantic.DescriptionOp("Word 垂直标尺").Add(gtx.Ops)
-			bounds.Pop()
-			return layout.Dimensions{Size: gtx.Constraints.Max}
-		},
-		func(gtx layout.Context) layout.Dimensions {
-			step := max(1, gtx.Dp(unit.Dp(12)))
-			majorStep := max(1, gtx.Dp(unit.Dp(wordRulerMajorStepDP)))
-			for y := 0; y < gtx.Constraints.Max.Y; y += step {
-				relative := y
-				major := relative%majorStep == 0
-				medium := relative%(majorStep/2) == 0
-				tickWidth := gtx.Dp(unit.Dp(5))
-				if medium {
-					tickWidth = gtx.Dp(unit.Dp(8))
-				}
-				if major {
-					tickWidth = gtx.Dp(unit.Dp(12))
-				}
-				paint.FillShape(gtx.Ops, rulerTickColor, clip.Rect{Min: image.Pt(width-tickWidth, y), Max: image.Pt(width-gtx.Dp(unit.Dp(1)), y+gtx.Dp(unit.Dp(1)))}.Op())
-				if major {
-					label := strconv.Itoa(relative/majorStep + 1)
-					layoutWordRulerLabelAt(gtx, theme, label, image.Pt(gtx.Dp(unit.Dp(2)), y+gtx.Dp(unit.Dp(2))))
-				}
-			}
-			return layout.Dimensions{Size: gtx.Constraints.Max}
-		},
-	)
 }
 
 func layoutWordRulerLabelAt(gtx layout.Context, theme *material.Theme, value string, position image.Point) {

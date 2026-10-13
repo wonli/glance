@@ -14,7 +14,7 @@ import (
 	"glance/internal/format/docx"
 )
 
-func TestWordViewRulerActionTogglesBothRulers(t *testing.T) {
+func TestWordViewRulerActionTogglesHorizontalRuler(t *testing.T) {
 	word, err := docx.NewBlank()
 	if err != nil {
 		t.Fatal(err)
@@ -58,17 +58,24 @@ func assertWordRulerSemantics(t *testing.T, app *App, visible bool) {
 	}
 	app.layoutWordFlow(gtx)
 	router.Frame(&ops)
-	want := map[string]bool{"Word 水平标尺": false, "Word 垂直标尺": false}
+	want := map[string]bool{"Word 水平标尺": false}
+	verticalVisible := false
 	var visit func([]input.SemanticNode)
 	visit = func(nodes []input.SemanticNode) {
 		for _, node := range nodes {
 			if _, ok := want[node.Desc.Description]; ok && !node.Desc.Bounds.Empty() {
 				want[node.Desc.Description] = true
 			}
+			if node.Desc.Description == "Word 垂直标尺" && !node.Desc.Bounds.Empty() {
+				verticalVisible = true
+			}
 			visit(node.Children)
 		}
 	}
 	visit(router.AppendSemantics(nil))
+	if verticalVisible {
+		t.Error("Word view still exposes a vertical ruler")
+	}
 	for label, found := range want {
 		if found != visible {
 			t.Errorf("ruler %q visible=%v; want %v", label, found, visible)

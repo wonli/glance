@@ -227,19 +227,6 @@ func (a *App) layoutWordCanvas(gtx layout.Context, state *documentSessionState, 
 						return dimensions
 					})
 				}),
-				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-					if state.wordRulerHidden || state.wordReadingMode || webMode {
-						return layout.Dimensions{}
-					}
-					rulerWidth := gtx.Dp(unit.Dp(wordRulerWidthDP))
-					left := max(0, canvasLeftPx-rulerWidth-gtx.Dp(unit.Dp(wordRulerGapDP)))
-					leftDP := float32(left) / max32(0.1, gtx.Metric.PxPerDp)
-					topDP := float32(min(gtx.Dp(unit.Dp(wordVerticalRulerTopDP)), gtx.Constraints.Max.Y)) / max32(0.1, gtx.Metric.PxPerDp)
-					bottomDP := float32(min(gtx.Dp(unit.Dp(wordVerticalRulerBottomDP)), max(0, gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(wordVerticalRulerTopDP))))) / max32(0.1, gtx.Metric.PxPerDp)
-					return layout.Inset{Top: unit.Dp(topDP), Bottom: unit.Dp(bottomDP), Left: unit.Dp(leftDP)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layoutWordVerticalRuler(gtx, a.theme)
-					})
-				}),
 			)
 		},
 	)

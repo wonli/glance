@@ -33,35 +33,7 @@ func (a *App) layoutWordPageView(gtx layout.Context, state *documentSessionState
 	if state.wordViewMode == wordViewPrintLayout {
 		presentation = wordPagePrint
 	}
-	if state.wordRulerHidden || state.wordReadingMode {
-		return a.layoutWordPages(gtx, state, presentation)
-	}
-	return layout.Stack{}.Layout(gtx,
-		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutWordPages(gtx, state, presentation)
-		}),
-		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			rulerWidth := gtx.Dp(unit.Dp(wordRulerWidthDP))
-			totalWidth := gtx.Dp(unit.Dp(state.wordCanvasWidthDP))
-			if totalWidth <= 0 {
-				totalWidth = gtx.Dp(unit.Dp(wordPaperMaxWidthDP))
-			}
-			if state.wordLayoutResult != nil && len(state.wordLayoutResult.Pages) > 0 {
-				first := state.wordLayoutResult.Pages[0]
-				scale := wordScenePixelsPerPoint(gtx, first, state.wordLayoutZoom)
-				firstWidth := max(1, int(math.Ceil(first.Clip.WidthPT*scale)))
-				totalWidth = firstWidth
-			}
-			canvasLeft := max(0, (gtx.Constraints.Max.X-totalWidth)/2) - int(math.Round(state.wordPageScrollX))
-			left := max(0, canvasLeft-rulerWidth-gtx.Dp(unit.Dp(wordRulerGapDP)))
-			leftDP := float32(left) / max32(0.1, gtx.Metric.PxPerDp)
-			topDP := float32(min(gtx.Dp(unit.Dp(wordVerticalRulerTopDP)), gtx.Constraints.Max.Y)) / max32(0.1, gtx.Metric.PxPerDp)
-			bottomDP := float32(min(gtx.Dp(unit.Dp(wordVerticalRulerBottomDP)), max(0, gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(wordVerticalRulerTopDP))))) / max32(0.1, gtx.Metric.PxPerDp)
-			return layout.Inset{Top: unit.Dp(topDP), Bottom: unit.Dp(bottomDP), Left: unit.Dp(leftDP)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layoutWordVerticalRuler(gtx, a.theme)
-			})
-		}),
-	)
+	return a.layoutWordPages(gtx, state, presentation)
 }
 
 func wordPageFitZoom(page wordlayout.PageScene, availableWidthPX, availableHeightPX, pixelsPerDP float64) float64 {

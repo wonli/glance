@@ -41,7 +41,7 @@ func TestWordReadingModeSimplifiesChromeAndRestoresViewState(t *testing.T) {
 		t.Fatal("Reading Mode should be inactive initially")
 	}
 	normalSemantics := wordGridlineSemantics(app)
-	for _, visible := range []string{"Word 功能区", "Word 水平标尺", "Word 垂直标尺", "Word 网格线", "Word 状态栏"} {
+	for _, visible := range []string{"Word 功能区", "Word 水平标尺", "Word 网格线", "Word 状态栏"} {
 		if !strings.Contains(normalSemantics, visible) {
 			t.Fatalf("normal view is missing %q: %s", visible, normalSemantics)
 		}
@@ -92,7 +92,7 @@ func TestWordReadingModeSimplifiesChromeAndRestoresViewState(t *testing.T) {
 	if state.selectedWordImageID != "" {
 		t.Fatal("a Reading Mode image click was replayed after exiting")
 	}
-	for _, visible := range []string{"Word 功能区", "Word 水平标尺", "Word 垂直标尺", "Word 网格线", "Word 状态栏"} {
+	for _, visible := range []string{"Word 功能区", "Word 水平标尺", "Word 网格线", "Word 状态栏"} {
 		if !strings.Contains(restoredSemantics, visible) {
 			t.Errorf("restored view is missing %q: %s", visible, restoredSemantics)
 		}
