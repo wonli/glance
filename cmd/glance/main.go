@@ -4,11 +4,7 @@ import (
 	"io"
 	"os"
 
-	"glance/internal/desktopui"
-	"glance/internal/mcpserver"
-	"glance/internal/officeqa"
-
-	"gioui.org/app"
+	"glance/internal/desktoplaunch"
 )
 
 func main() {
@@ -19,17 +15,9 @@ func main() {
 	if len(os.Args) > 1 {
 		path = os.Args[1]
 	}
-	done := desktopui.Run(path)
-	go func() {
-		<-done
-		os.Exit(0)
-	}()
-	app.Main()
+	desktoplaunch.RunDesktop(path)
 }
 
 func dispatchBeforeDesktop(args []string, stdout, stderr io.Writer) (bool, int) {
-	if handled, exitCode := mcpserver.DispatchCLI(args, stdout, stderr); handled {
-		return true, exitCode
-	}
-	return officeqa.DispatchCLI(args, headlessOfficeRenderer{}, stdout, stderr)
+	return desktoplaunch.DispatchCLI(args, stdout, stderr)
 }

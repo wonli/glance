@@ -7,6 +7,8 @@ import (
 	"strings"
 	_ "time/tzdata"
 
+	"glance/internal/desktoplaunch"
+
 	"github.com/spf13/cobra"
 	"github.com/wonli/aqi/service"
 )
@@ -31,8 +33,14 @@ var runApp = filepath.Base(strings.TrimLeft(os.Args[0], "./"))
 var rootCmd = &cobra.Command{
 	Use:     runApp,
 	Version: "glance",
-	Run: func(cmd *cobra.Command, args []string) {
-		_ = cmd.Help()
+	Args:    cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		path := ""
+		if len(args) == 1 {
+			path = args[0]
+		}
+		desktoplaunch.RunDesktop(path)
+		return nil
 	},
 }
 
