@@ -208,7 +208,7 @@ func (a *App) layoutJSONTree(gtx layout.Context) layout.Dimensions {
 			}
 			return layout.UniformInset(24).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				style := material.Body2(a.theme, text)
-				style.TextSize = 13
+				style.TextSize = a.tokens().Typography.Body
 				style.Color = mutedText
 				return style.Layout(gtx)
 			})
@@ -263,7 +263,7 @@ func (a *App) layoutJSONTreeRow(gtx layout.Context, index int, row jsonTreeRow, 
 						if n.Kind == "array" {
 							mark = "]"
 						}
-						return jsonLabel(gtx, a, mark, 13, jsonKeyColor, false, true)
+						return jsonLabel(gtx, a, mark, a.tokens().Typography.Body, jsonKeyColor, false, true)
 					}
 					key := fmt.Sprintf("%q", jsonTextPreview(n.Key, 1024)) + " : "
 					if n.Parent >= 0 && v.tree.Nodes[n.Parent].Kind == "array" {
@@ -286,10 +286,10 @@ func (a *App) layoutJSONTreeRow(gtx layout.Context, index int, row jsonTreeRow, 
 					}
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return jsonLabel(gtx, a, key, 13, jsonKeyColor, v.selected == row.node, true)
+							return jsonLabel(gtx, a, key, a.tokens().Typography.Body, jsonKeyColor, v.selected == row.node, true)
 						}),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return jsonLabel(gtx, a, value, 13, jsonNodeColor(n), false, true)
+							return jsonLabel(gtx, a, value, a.tokens().Typography.Body, jsonNodeColor(n), false, true)
 						}),
 					)
 				}),

@@ -321,7 +321,7 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 				return tab.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						style := material.Body2(a.theme, label)
-						style.TextSize = a.tokens().Typography.Secondary
+						style.TextSize = a.tokens().Typography.Body
 						style.MaxLines = 1
 						style.Color = color.NRGBA{R: 93, G: 102, B: 113, A: 255}
 						if active {

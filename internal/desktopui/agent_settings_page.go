@@ -492,7 +492,7 @@ func agentSettingsPageFieldHelp(gtx layout.Context, theme *material.Theme, label
 							return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								gtx.Constraints.Min.Y = 0
 								style := material.Editor(theme, editor, hint)
-								style.TextSize = unit.Sp(14)
+								style.TextSize = defaultShellTokens.Typography.Body
 								style.Color = settingsBlack
 								style.HintColor = settingsBlack
 								return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)
@@ -559,7 +559,7 @@ func (a *App) layoutAgentSettingsKeyField(gtx layout.Context) layout.Dimensions 
 								hint := a.agentSettingsKeyHint()
 
 								style := material.Editor(a.theme, editor, hint)
-								style.TextSize = unit.Sp(14)
+								style.TextSize = a.tokens().Typography.Body
 								style.Color, style.HintColor = settingsBlack, settingsBlack
 								return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)
 							})

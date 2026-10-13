@@ -20,8 +20,8 @@ func TestTypographyScale(t *testing.T) {
 	if typo.Title != unit.Sp(14) {
 		t.Errorf("Title: got %v, want 14sp", typo.Title)
 	}
-	if typo.Body != unit.Sp(13) {
-		t.Errorf("Body: got %v, want 13sp", typo.Body)
+	if typo.Body != unit.Sp(14) {
+		t.Errorf("Body: got %v, want 14sp", typo.Body)
 	}
 	if typo.Secondary != unit.Sp(12) {
 		t.Errorf("Secondary: got %v, want 12sp", typo.Secondary)
@@ -85,7 +85,7 @@ func TestDesignTokensResolution(t *testing.T) {
 
 	t.Run("system fallback", func(t *testing.T) {
 		tokens := ResolveDesignTokens(ThemeModeSystem, Typography{})
-		if tokens.Typography.Body != unit.Sp(13) {
+		if tokens.Typography.Body != unit.Sp(14) {
 			t.Errorf("expected fallback to DefaultTypography, got Body=%v", tokens.Typography.Body)
 		}
 		if tokens.Mode != ThemeModeSystem {

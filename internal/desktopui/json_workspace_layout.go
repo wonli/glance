@@ -270,7 +270,7 @@ func (a *App) layoutJSONComparison(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: 16}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								style := material.Editor(a.theme, &v.original, "")
 								style.Font.Typeface = jsonMonoFace
-								style.TextSize = 13
+								style.TextSize = a.tokens().Typography.Body
 								return style.Layout(gtx)
 							})
 						}),
