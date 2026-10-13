@@ -62,9 +62,13 @@ func (a *App) handleAgentSettingsAction(action string) {
 	case "test":
 		a.cancelAgentModelLookup(true)
 		settings := agentsettings.ModelSettings{
-			ProviderID: a.agentUI.providerInput.Text(),
-			BaseURL:    a.agentUI.baseURLInput.Text(),
-			Model:      a.agentUI.modelInput.Text(),
+			ProviderID: strings.TrimSpace(a.agentUI.providerInput.Text()),
+			BaseURL:    strings.TrimSpace(a.agentUI.baseURLInput.Text()),
+			Model:      strings.TrimSpace(a.agentUI.modelInput.Text()),
+		}
+		if settings.Model == "" {
+			tab := settingsTabFor(settings.ProviderID, settings.BaseURL)
+			settings.Model = defaultAgentModelForTab(tab)
 		}
 		apiKey := a.agentUI.apiKeyInput.Text()
 		if settings.ProviderID == "openai-compatible" && strings.TrimSpace(settings.BaseURL) == "" {
@@ -93,9 +97,13 @@ func (a *App) handleAgentSettingsAction(action string) {
 	case "save", "confirm":
 		a.cancelAgentModelLookup(true)
 		settings := agentsettings.ModelSettings{
-			ProviderID: a.agentUI.providerInput.Text(),
-			BaseURL:    a.agentUI.baseURLInput.Text(),
-			Model:      a.agentUI.modelInput.Text(),
+			ProviderID: strings.TrimSpace(a.agentUI.providerInput.Text()),
+			BaseURL:    strings.TrimSpace(a.agentUI.baseURLInput.Text()),
+			Model:      strings.TrimSpace(a.agentUI.modelInput.Text()),
+		}
+		if settings.Model == "" {
+			tab := settingsTabFor(settings.ProviderID, settings.BaseURL)
+			settings.Model = defaultAgentModelForTab(tab)
 		}
 		apiKey := a.agentUI.apiKeyInput.Text()
 		if settings.ProviderID == "openai-compatible" && strings.TrimSpace(settings.BaseURL) == "" {

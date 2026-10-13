@@ -118,6 +118,15 @@ type App struct {
 	homeSortButton          widget.Clickable
 	homeFavorites           map[string]bool
 	homeMetadata            map[string]homeFileMetadata
+	aiHistoryDrawerOpen     bool
+	aiHistoryDrawerOverlay  widget.Clickable
+	aiHistoryDrawerCloseBtn widget.Clickable
+	aiDrawerOpenBtn         widget.Clickable
+	aiSuggestionButtons     [3]widget.Clickable
+	aiAttachButton          widget.Clickable
+	aiModelSelectButton     widget.Clickable
+	aiClearHistoryButton    widget.Clickable
+	aiChatList              widget.List
 	homeMetadataResults     chan homeMetadataResult
 	homeMetadataGeneration  uint64
 	fileCommandResults      chan fileCommandResult
@@ -279,6 +288,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		homeMetadataResults:           make(chan homeMetadataResult, 8),
 		workspaceTabsList:             widget.List{List: layout.List{Axis: layout.Horizontal}},
 		createActionsList:             widget.List{List: layout.List{Axis: layout.Horizontal}},
+		aiChatList:                    widget.List{List: layout.List{Axis: layout.Vertical}},
 		homeContentList:               widget.List{List: layout.List{Axis: layout.Vertical}},
 		recentList:                    widget.List{List: layout.List{Axis: layout.Vertical}},
 
@@ -352,6 +362,13 @@ func Run(initialPath string) <-chan struct{} {
 			defer cancelRestore()
 			if err := runtime.restoreAgentHost(restoreCtx); err != nil {
 				log.Printf("restore configured Agent: %v", err)
+			}
+			_, settings := runtime.currentAgentHost()
+			if settings.ProviderID != "" || settings.Model != "" {
+				a.agentUI.settings = settings
+				if a.window != nil {
+					a.window.Invalidate()
+				}
 			}
 		}) {
 			cancelRestore()

@@ -22,7 +22,7 @@ import (
 
 func (a *App) showAgentChat() {
 	view := a.agentViewContext()
-	if view.DocumentID != "" {
+	if view.DocumentID != "" && view.DocumentID != GlobalAIAssistantDocumentID {
 		a.agentUI.sidebarVisible = true
 		a.ensureAgentChatDocument(view.DocumentID)
 		if a.modal.Visible && a.modal.Title == "AI 助手" {
@@ -30,7 +30,12 @@ func (a *App) showAgentChat() {
 		}
 		return
 	}
-	a.setStatus("请先打开一份文档，再从文档工具栏打开 AI 助手。")
+	a.resetHomeContentScroll()
+	a.ensureGlobalAIAssistant()
+	a.homeSection = homeSectionAIAssistant
+	if a.modal.Visible && a.modal.Title == "AI 助手" {
+		a.modal.Hide()
+	}
 }
 
 // layoutAgentChat keeps the existing interaction harness pointed at the same
@@ -742,6 +747,10 @@ func (a *App) completeActiveAgentProcessLines() {
 func (a *App) agentViewContext() application.ViewContext {
 	view := application.ViewContext{WindowID: a.windowID}
 	state := a.documentSessionState
+	if a.homeSection == homeSectionAIAssistant && (a.activeTabID == "" || a.activeTabID == "recent" || state == nil || state.sharedDocumentSession == nil) {
+		view.DocumentID = GlobalAIAssistantDocumentID
+		return view
+	}
 	if state == nil || state.sharedDocumentSession == nil {
 		return view
 	}

@@ -29,6 +29,7 @@ type homeSection uint8
 const (
 	homeSectionRecent homeSection = iota
 	homeSectionFavorites
+	homeSectionAIAssistant
 	homeSectionSettings
 )
 
@@ -118,6 +119,9 @@ func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
 	}
 	if a.homeSection == homeSectionSettings {
 		return a.layoutSettingsWorkspace(gtx)
+	}
+	if a.homeSection == homeSectionAIAssistant {
+		return a.layoutAIAssistantWorkspace(gtx)
 	}
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions { return fill(gtx, homeCanvas) },
@@ -299,7 +303,14 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return a.layoutHomeNavRow(gtx, "favorites", "star-outline", "收藏", len(a.homeFavorites), a.homeSection == homeSectionFavorites)
+						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return a.layoutHomeNavRow(gtx, "favorites", "star-outline", "收藏", len(a.homeFavorites), a.homeSection == homeSectionFavorites)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return a.layoutHomeNavRow(gtx, "ai-assistant", "sparkles", "AI 助手", -1, a.homeSection == homeSectionAIAssistant)
+						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return a.layoutHomeNavRow(gtx, "agent-settings", "settings-2", "设置", -1, a.homeSection == homeSectionSettings)
@@ -365,6 +376,21 @@ func (a *App) processHomeNavClicks(gtx layout.Context) {
 		if a.homeNavButton(navigation.id).Clicked(gtx) {
 			a.resetHomeContentScroll()
 			a.homeSection = navigation.section
+		}
+	}
+	if a.homeNavButton("ai-assistant").Clicked(gtx) {
+		if a.homeSection == homeSectionAIAssistant {
+			draft := a.agentUI.chatInput.Text()
+			if len(a.agentUI.chatLines) > 0 {
+				a.createAgentConversation()
+				if draft != "" {
+					a.agentUI.chatInput.SetText(draft)
+				}
+			}
+		} else {
+			a.resetHomeContentScroll()
+			a.ensureGlobalAIAssistant()
+			a.homeSection = homeSectionAIAssistant
 		}
 	}
 	if a.homeNavButton("agent-settings").Clicked(gtx) {

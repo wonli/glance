@@ -87,6 +87,7 @@ type agentUIState struct {
 	settingsInfo       string
 	settingsError      string
 	settings           agentsettings.ModelSettings
+	settingsLoading    bool
 	settingsPageTab    string
 	settingsPageTabs   map[string]*widget.Clickable
 	settingsTab        string

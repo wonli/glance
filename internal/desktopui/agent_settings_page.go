@@ -42,13 +42,34 @@ func settingsTabFor(providerID, baseURL string) string {
 		return providerID
 	case "deepseek":
 		return "deepseek"
+	case "openai":
+		return "openai"
 	case "openai-compatible":
 		if baseURL == "" || baseURL == "https://api.openai.com/v1" {
 			return "openai"
 		}
 		return "custom"
+	case "":
+		return "openai"
 	default:
 		return "custom"
+	}
+}
+
+func defaultAgentModelForTab(tab string) string {
+	switch tab {
+	case "openai":
+		return "gpt-4.1"
+	case "deepseek":
+		return "deepseek-chat"
+	case "minimax":
+		return "abab6.5s-chat"
+	case "kimi":
+		return "moonshot-v1-8k"
+	case "ollama":
+		return "llama3"
+	default:
+		return "gpt-4.1"
 	}
 }
 

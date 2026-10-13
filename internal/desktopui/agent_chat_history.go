@@ -38,7 +38,7 @@ func (a *App) ensureAgentChatDocument(documentID string) {
 				a.subscribeToAgent(host)
 			}
 		}
-		if a.agentUI.sidebarVisible && a.agentUI.conversationHistory == nil &&
+		if (a.agentUI.sidebarVisible || a.homeSection == homeSectionAIAssistant) && a.agentUI.conversationHistory == nil &&
 			!a.agentUI.conversationHistoryLoaded && !a.agentUI.conversationHistoryLoading {
 			a.refreshAgentConversationHistory(true)
 		}
@@ -87,7 +87,12 @@ func (a *App) cancelAgentChatHistoryRequest() {
 func (a *App) refreshAgentConversationHistory(selectLatest bool) {
 	documentID := a.agentUI.conversationDocumentID
 	if documentID == "" {
-		return
+		if a.homeSection == homeSectionAIAssistant {
+			documentID = GlobalAIAssistantDocumentID
+			a.agentUI.conversationDocumentID = documentID
+		} else {
+			return
+		}
 	}
 	if a.desktopRuntime == nil || a.desktopRuntime.workspaceStore == nil {
 		a.agentUI.conversationHistoryLoaded = true
@@ -147,8 +152,12 @@ func (a *App) startAgentChatHistoryTask(kind, documentID string, selectLatest bo
 
 func (a *App) createAgentConversation() {
 	if a.agentUI.conversationDocumentID == "" {
-		a.agentUI.conversationHistoryError = "请先打开一份文档。"
-		return
+		if a.homeSection == homeSectionAIAssistant {
+			a.agentUI.conversationDocumentID = GlobalAIAssistantDocumentID
+		} else {
+			a.agentUI.conversationHistoryError = "请先打开一份文档。"
+			return
+		}
 	}
 	runtime := a.ensureDesktopRuntime()
 	documentID := a.agentUI.conversationDocumentID
