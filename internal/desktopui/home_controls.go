@@ -190,7 +190,9 @@ func homeFilterChip(gtx layout.Context, theme *material.Theme, button *widget.Cl
 					style.Color = color.NRGBA{R: 37, G: 43, B: 51, A: 255}
 					style.Font.Weight = font.SemiBold
 				}
-				return layout.Center.Layout(gtx, style.Layout)
+				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: unit.Dp(float32(homeTextOpticalCenterTopInset) * scale)}.Layout(gtx, style.Layout)
+				})
 			},
 		)
 	})

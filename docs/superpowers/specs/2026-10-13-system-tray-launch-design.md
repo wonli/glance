@@ -2,7 +2,7 @@
 
 ## Goal
 
-Use the Glance mark from Pen node `aHpKc` (inside frame `Cgywc`) as the desktop and tray identity. Let users reopen Glance from a system tray icon after closing its window, and make the Windows double-click launch path reliable while preserving command-line tools.
+Use the Glance mark from Pen node `aHpKc` (inside frame `Cgywc`) as the desktop and tray identity. Let users reopen Glance from a system tray icon after closing its window, make Windows double-click launch reliable, preserve command-line tools in the same Windows executable, and provide a portable macOS app package.
 
 The implementation follows the existing Gio -> desktop runtime -> workspace/session architecture. The sibling `/Users/mima1234/project/photo/photo` is a reference for `github.com/gogpu/systray` setup and Windows GUI linking, not a source of Glance product assets.
 
@@ -13,7 +13,8 @@ The implementation follows the existing Gio -> desktop runtime -> workspace/sess
 - Closing the last workspace window persists its current workspace and view state, closes window-owned work, and leaves the tray and desktop runtime available. It does not terminate the process.
 - Choosing **Quit Glance** is the explicit process-exit action. It closes any open windows, drains workspace persistence, stops the tray, and shuts down runtime-owned services.
 - If the platform has no usable tray host, closing the last window exits normally instead of leaving an invisible process. The launch diagnostics record why tray residency was unavailable.
-- Windows users can double-click the GUI artifact. CLI commands remain available through a console artifact, with their stdout/stderr intact.
+- Windows users can double-click one GUI-subsystem executable. Explicit CLI commands remain in that same executable and attach to a usable console so stdout/stderr stay visible.
+- macOS users can unzip a self-contained `.app` bundle and run it without an installer. The bundle contains the app icon and embedded resources.
 
 ## Design
 
@@ -33,7 +34,9 @@ Initialize tray availability before enabling close-to-tray behavior. On Linux, u
 
 The Cobra root command is also a desktop launch path: its no-argument `Run` opens the workspace instead of printing help, and it accepts at most one positional document path for path-based launch. Explicit CLI subcommands retain their current behavior. This makes a shell or Explorer launch with no arguments useful without requiring a special `gui` argument; the Windows GUI artifact uses the same root entrypoint.
 
-Build a dedicated Windows GUI artifact from the Cobra desktop entrypoint with the Windows GUI subsystem flag (`-H=windowsgui`) so double-clicking does not flash a console. Keep a console build for Cobra/MCP/office CLI use so command output and errors remain visible. Do not apply the GUI linker flag indiscriminately to CLI artifacts. The existing `cmd/glance` desktop/utility entrypoint must use the same tray-aware desktop lifecycle. Record startup failures to a per-user Glance log and show a Windows startup error dialog when the GUI cannot initialize, since a GUI-subsystem process has no console for diagnostics.
+Build one Windows executable from the Cobra desktop entrypoint with the Windows GUI subsystem flag (`-H=windowsgui`) so double-clicking does not flash a console. The no-argument root command opens the workspace; explicit Cobra, MCP, and office CLI commands continue to run in this same binary. Before running a CLI command, attach to the parent console and refresh standard handles; honor inherited redirection and allocate a console only when no usable output destination exists. This uses the Windows console APIs intended for GUI applications that need console I/O. The existing `cmd/glance` dispatch must be folded into or delegated by this single packaged entrypoint so users do not need a second executable. Record GUI startup failures to a per-user Glance log and show a Windows startup error dialog when the GUI cannot initialize, since a GUI-subsystem process has no console for diagnostics.
+
+For macOS, build a standard `Glance.app` bundle with `Info.plist`, executable, and a multi-resolution `.icns` made from the same Pen logo. Add Makefile targets for building the app bundle and a portable ZIP containing that bundle, with arm64 and amd64 variants. The ZIP is the distribution artifact: users can extract it and launch the `.app`; no DMG, installer, or second helper binary is required. Keep architecture-specific outputs distinct rather than claiming a universal binary unless both slices are actually built and verified.
 
 ## State and error handling
 
@@ -56,7 +59,8 @@ Build a dedicated Windows GUI artifact from the Cobra desktop entrypoint with th
 - Closing the last window with an available tray keeps the process alive; tray click and **Open Glance** reopen the workspace; **Quit Glance** exits after clean shutdown.
 - Repeated Open/Quit and close/open races do not create duplicate windows, leak runtime workers, or lose the last persisted workspace state.
 - Without a Linux tray host, closing the final window exits and a diagnostic explains the fallback.
-- Windows GUI artifact starts by double-click without a console flash; CLI artifact continues to display command output and errors.
+- The single Windows executable starts the workspace by double-click without a console flash and preserves command output for CLI commands from a terminal, including redirected output.
+- The macOS Makefile targets produce a runnable `.app` and a portable ZIP for each advertised architecture; the extracted app shows the Pen logo in Finder/Dock and the tray.
 - Existing CLI subcommands and path-based desktop launch remain intact.
 
 ## Approaches considered
@@ -65,4 +69,4 @@ Build a dedicated Windows GUI artifact from the Cobra desktop entrypoint with th
 2. **Destroy windows while retaining the desktop runtime and recreate them on tray open (recommended).** This follows the existing window/session boundaries, runs normal per-window cleanup, works without relying on minimize/raise support for a hidden window, and preserves runtime sessions.
 3. **Run tray as a separate helper process.** This isolates OS tray code but adds IPC, process coordination, and packaging complexity for a single-window workspace.
 
-Approach 2 is selected. The tray is process-wide; Gio widgets remain window-owned.
+Approach 2 is selected. The tray is process-wide; Gio widgets remain window-owned. For packaging, one Windows executable with GUI-subsystem console reattachment is selected over separate GUI/CLI executables. The macOS portable deliverable is a ZIP containing one `.app` bundle.
