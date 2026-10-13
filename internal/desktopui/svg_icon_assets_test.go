@@ -64,6 +64,40 @@ func TestEveryBundledSVGIconRendersInGioImageFormat(t *testing.T) {
 	}
 }
 
+func TestHomeFolderPlusGlyphMatchesPenVerticalCenterline(t *testing.T) {
+	for _, size := range []int{18, 36} {
+		icon, err := renderSVGIcon("home", "folder-plus", size, &homeText)
+		if err != nil {
+			t.Fatalf("render home/folder-plus at %dpx: %v", size, err)
+		}
+
+		first, last := size, -1
+		for y := size * 32 / 100; y < size*78/100; y++ {
+			for x := size * 45 / 100; x <= size*55/100; x++ {
+				pixel := color.NRGBAModel.Convert(icon.At(x, y)).(color.NRGBA)
+				if pixel.A >= 128 {
+					first = min(first, y)
+					last = max(last, y)
+				}
+			}
+		}
+		if last < first {
+			t.Fatalf("folder-plus has no visible plus at %dpx", size)
+		}
+
+		// Pen's Lucide folder-plus puts the crossbar at y=13 in a 24-unit viewBox.
+		center := float64(first+last) / 2
+		wantCenter := float64(size) * 13 / 24
+		delta := center - wantCenter
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > float64(size)/18 {
+			t.Fatalf("folder-plus plus center is %.1fpx at %dpx; Pen center is %.1fpx", center, size, wantCenter)
+		}
+	}
+}
+
 func TestSVGIconTintKeepsEveryVisiblePixelOneSolidColor(t *testing.T) {
 	want := color.NRGBA{R: 13, G: 104, B: 204, A: 255}
 	icon, err := renderSVGIcon("excel", "scissors", 32, &want)
