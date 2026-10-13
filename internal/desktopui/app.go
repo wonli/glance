@@ -31,11 +31,12 @@ const preferredSystemTypeface = font.Typeface("Inter, PingFang SC, Hiragino Sans
 type App struct {
 	*documentSessionState
 	*desktopRuntime
-	window       *app.Window
-	ops          op.Ops
-	theme        *material.Theme
-	themeMode    ThemeMode
-	designTokens DesignTokens
+	window        *app.Window
+	renderedFrame bool
+	ops           op.Ops
+	theme         *material.Theme
+	themeMode     ThemeMode
+	designTokens  DesignTokens
 
 	actionOpenFile        widget.Clickable
 	actionOpenFolder      widget.Clickable
@@ -395,8 +396,13 @@ func (a *App) setDesignThemeMode(mode ThemeMode) {
 }
 
 func Run(initialPath string) <-chan struct{} {
+	return RunWithStartupError(initialPath, nil)
+}
+
+func RunWithStartupError(initialPath string, reportStartupError func(error)) <-chan struct{} {
 	runtime := newDesktopRuntime()
 	runtime.completion = make(chan struct{})
+	runtime.startupErrorReporter = reportStartupError
 	w := new(app.Window)
 	configureDesktopWindow(w)
 	a := newAppWithRuntime(w, runtime)

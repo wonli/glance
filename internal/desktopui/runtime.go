@@ -77,6 +77,7 @@ type desktopRuntime struct {
 	closingWindows          map[uint64]bool
 	pendingMainWindowShow   bool
 	resumeActiveTabID       string
+	startupErrorReporter    func(error)
 	sessions                map[string]*sharedDocumentSession
 	sessionsByCanonicalPath map[string]string
 	openingPaths            map[string]chan struct{}

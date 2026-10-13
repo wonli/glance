@@ -19,14 +19,15 @@ endif
 
 # support包名称
 FLAGS_PKG = github.com/wonli/aqi
-LDFLAGS = "-X '$(FLAGS_PKG).BuildDate=$(BUILD_DATE)' \
+
+LDFLAGS = -X '$(FLAGS_PKG).BuildDate=$(BUILD_DATE)' \
 		   -X '$(FLAGS_PKG).Branch=$(GIT_BRANCH)' \
 		   -X '$(FLAGS_PKG).CommitVersion=$(GIT_COMMIT)' \
 		   -X '$(FLAGS_PKG).Revision=$(GIT_REVISION)' \
-		   -s -w"
+		   -s -w
 
 # 编译参数
-GO_FLAGS = -ldflags $(LDFLAGS) -trimpath -tags netgo
+GO_FLAGS = -ldflags "$(LDFLAGS)" -trimpath -tags netgo
 
 # Go编译命令 1-GOOS 2-GOARCH 3-FILE EXT
 define go/build
@@ -59,4 +60,5 @@ linux:
 	$(call go/build,linux,amd64)
 
 windows:
-	$(call go/build,windows,amd64,.exe)
+	mkdir -p $(BUILD_PATH)
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS) -H=windowsgui" -trimpath -tags netgo -o $(BUILD_PATH)/$(APP_NAME)-windows-amd64-latest.exe .

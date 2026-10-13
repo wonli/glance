@@ -97,9 +97,18 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 		e := a.window.Event()
 		switch e := e.(type) {
 		case app.DestroyEvent:
-			a.ensureDesktopRuntime().markWindowClosing(a.windowID)
+			runtime := a.ensureDesktopRuntime()
+			runtime.markWindowClosing(a.windowID)
 			if e.Err != nil {
 				log.Printf("desktop window destroyed: %v", e.Err)
+				if !a.renderedFrame {
+					runtime.mu.Lock()
+					reportStartupError := runtime.startupErrorReporter
+					runtime.mu.Unlock()
+					if reportStartupError != nil {
+						reportStartupError(e.Err)
+					}
+				}
 				if source := a.windowOpenSource; source != nil {
 					select {
 					case source.windowOpenResults <- e.Err:
@@ -123,6 +132,7 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 			gtx := app.NewContext(&a.ops, e)
 			a.layout(gtx)
 			e.Frame(gtx.Ops)
+			a.renderedFrame = true
 		}
 	}
 }
