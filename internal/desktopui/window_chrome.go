@@ -8,6 +8,9 @@ import (
 func (a *App) applyWindowConfig(config app.Config) {
 	a.windowMode = config.Mode
 	a.clientTitlebar = !config.Decorated
+	if a.themeMode == ThemeModeSystem {
+		a.designTokens = ResolveDesignTokens(a.themeMode, a.designTokens.Typography)
+	}
 }
 
 func windowModeToggleAction(mode app.WindowMode) system.Action {

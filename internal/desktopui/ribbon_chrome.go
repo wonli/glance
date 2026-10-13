@@ -255,17 +255,7 @@ var (
 )
 
 func ribbonLabelTextSize(label string) unit.Sp {
-	runes := len([]rune(label))
-	switch {
-	case runes <= 2:
-		return unit.Sp(10)
-	case runes == 3:
-		return unit.Sp(9.5)
-	case runes == 4:
-		return unit.Sp(9)
-	default:
-		return unit.Sp(8.5)
-	}
+	return ribbonLabelTextSizeWithTypography(defaultShellTokens.Typography, label)
 }
 
 func layoutToolbarActionItem(gtx layout.Context, action ribbonAction, index int, actions []ribbonAction, child layout.Widget) layout.Dimensions {

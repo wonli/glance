@@ -154,7 +154,7 @@ func (a *App) layoutModalInputs(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							label := material.Caption(a.theme, a.modal.FormLabels[fieldIndex])
-							label.TextSize = unit.Sp(12)
+							label.TextSize = a.tokens().Typography.Secondary
 							label.Font.Weight = font.SemiBold
 							label.Color = color.NRGBA{R: 78, G: 87, B: 98, A: 255}
 							return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, label.Layout)
@@ -191,7 +191,7 @@ func layoutModalInputField(gtx layout.Context, theme *material.Theme, editor *wi
 			return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12), Top: unit.Dp(8), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = 0
 				style := material.Editor(theme, editor, hint)
-				style.TextSize = unit.Sp(13)
+				style.TextSize = defaultShellTokens.Typography.Body
 				style.Color = color.NRGBA{R: 31, G: 37, B: 45, A: 255}
 				style.HintColor = color.NRGBA{R: 122, G: 131, B: 142, A: 255}
 				return style.Layout(gtx)
@@ -210,7 +210,7 @@ func (a *App) layoutConfirmDialogHeader(gtx layout.Context) layout.Dimensions {
 		children := []layout.FlexChild{
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				label := material.Body1(a.theme, a.modal.Title)
-				label.TextSize = unit.Sp(17)
+				label.TextSize = a.tokens().Typography.Heading
 				label.Color = color.NRGBA{R: 31, G: 37, B: 45, A: 255}
 				label.Font.Weight = font.SemiBold
 				label.MaxLines = 2
@@ -221,7 +221,7 @@ func (a *App) layoutConfirmDialogHeader(gtx layout.Context) layout.Dimensions {
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					label := material.Body2(a.theme, a.modal.Message)
-					label.TextSize = unit.Sp(13)
+					label.TextSize = a.tokens().Typography.Body
 					label.Color = color.NRGBA{R: 104, G: 113, B: 124, A: 255}
 					return label.Layout(gtx)
 				})

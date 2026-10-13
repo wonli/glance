@@ -321,7 +321,7 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 				return tab.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						style := material.Body2(a.theme, label)
-						style.TextSize = unit.Sp(12)
+						style.TextSize = a.tokens().Typography.Secondary
 						style.MaxLines = 1
 						style.Color = color.NRGBA{R: 93, G: 102, B: 113, A: 255}
 						if active {
@@ -340,7 +340,7 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 			return close.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(5), Right: unit.Dp(9)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					style := material.Body2(a.theme, "×")
-					style.TextSize = unit.Sp(18)
+					style.TextSize = a.tokens().Typography.Heading + unit.Sp(1)
 					style.Color = color.NRGBA{R: 104, G: 113, B: 123, A: 255}
 					return layout.Center.Layout(gtx, style.Layout)
 				})
@@ -372,7 +372,7 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 		var dims layout.Dimensions
 		if label == "+" {
 			style := material.Body2(a.theme, label)
-			style.TextSize = unit.Sp(18)
+			style.TextSize = a.tokens().Typography.Heading + unit.Sp(1)
 			style.Color = color.NRGBA{R: 88, G: 97, B: 108, A: 255}
 			dims = layout.Center.Layout(gtx, style.Layout)
 		} else {
@@ -403,7 +403,7 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							style := material.Body2(a.theme, "Glance")
-							style.TextSize = unit.Sp(13)
+							style.TextSize = a.tokens().Typography.Body
 							style.Color = color.NRGBA{R: 104, G: 113, B: 123, A: 255}
 							if active {
 								style.Color = color.NRGBA{R: 52, G: 95, B: 150, A: 255}

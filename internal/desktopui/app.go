@@ -30,8 +30,10 @@ type App struct {
 	*documentSessionState
 	*desktopRuntime
 	window *app.Window
-	ops    op.Ops
-	theme  *material.Theme
+	ops          op.Ops
+	theme        *material.Theme
+	themeMode    ThemeMode
+	designTokens DesignTokens
 
 	actionOpenFile        widget.Clickable
 	actionOpenFolder      widget.Clickable
@@ -300,7 +302,27 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 	a.theme.Face = preferredSystemTypeface
 	a.feedback.initialized = true
 	a.feedback.lastStatus = a.status
+	a.themeMode = ThemeModeSystem
+	a.designTokens = ResolveDesignTokens(a.themeMode, DefaultTypography)
 	return a
+}
+
+func (a *App) tokens() DesignTokens {
+	if a == nil || a.designTokens.Typography.Body == 0 {
+		return defaultShellTokens
+	}
+	return a.designTokens
+}
+
+func (a *App) setDesignThemeMode(mode ThemeMode) {
+	if a == nil {
+		return
+	}
+	a.themeMode = mode
+	a.designTokens = ResolveDesignTokens(mode, a.designTokens.Typography)
+	if a.window != nil {
+		a.window.Invalidate()
+	}
 }
 
 func Run(initialPath string) <-chan struct{} {

@@ -31,7 +31,7 @@ func homeLabelStyle(theme *material.Theme, text string, size unit.Sp, fg color.N
 }
 
 func homeRecentCountStyle(theme *material.Theme, text string, scale float32) material.LabelStyle {
-	return homeLabelStyle(theme, text, unit.Sp(14*scale), homeMuted, font.SemiBold)
+	return homeLabelStyle(theme, text, unit.Sp(float32(defaultShellTokens.Typography.Title)*scale), homeMuted, font.SemiBold)
 }
 
 func homeIcon(gtx layout.Context, name string, size unit.Dp, tint color.NRGBA) layout.Dimensions {
@@ -72,9 +72,9 @@ func homeActionCard(gtx layout.Context, theme *material.Theme, button *widget.Cl
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							style := material.Caption(theme, action.extension)
-							style.TextSize = unit.Sp(13)
+							style.TextSize = defaultShellTokens.Typography.Body
 							if action.id == "open" {
-								style.TextSize = unit.Sp(11)
+								style.TextSize = defaultShellTokens.Typography.Caption
 							}
 							style.Color = homeMuted
 							style.MaxLines = 1
@@ -183,7 +183,7 @@ func homeFilterChip(gtx layout.Context, theme *material.Theme, button *widget.Cl
 			},
 			func(gtx layout.Context) layout.Dimensions {
 				style := material.Body2(theme, label)
-				style.TextSize = unit.Sp(15 * scale)
+				style.TextSize = unit.Sp(float32(defaultShellTokens.Typography.Nav) * scale)
 				style.Color = color.NRGBA{R: 104, G: 113, B: 124, A: 255}
 				style.Font.Weight = font.Normal
 				if selected {
@@ -239,7 +239,7 @@ func homeSearchField(gtx layout.Context, theme *material.Theme, editor *widget.E
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = 0
 				style := material.Editor(theme, editor, homeSearchPlaceholder)
-				style.TextSize = unit.Sp(15 * scale)
+				style.TextSize = unit.Sp(float32(defaultShellTokens.Typography.Nav) * scale)
 				style.Color = homeText
 				style.HintColor = color.NRGBA{R: 150, G: 157, B: 166, A: 255}
 				return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)

@@ -496,7 +496,7 @@ func (a *App) layoutHomeGreeting(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	gtx.Execute(op.InvalidateCmd{At: nextHomeGreetingChange(gtx.Now)})
 	style := material.H4(a.theme, homeGreetingForTime(gtx.Now)+"\n今天想创建点什么？")
-	style.TextSize = unit.Sp(34)
+	style.TextSize = a.tokens().Typography.Display
 	style.LineHeightScale = 1.15
 	style.MaxLines = 2
 	style.Color = color.NRGBA{R: 35, G: 40, B: 48, A: 255}
