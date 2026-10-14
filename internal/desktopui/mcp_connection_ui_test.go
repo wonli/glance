@@ -2,14 +2,16 @@ package desktopui
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"glance/internal/application"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
+	"glance/internal/mcpserver"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -22,9 +24,22 @@ type testMcpconnectionDocumentIdExpectedRevisionArguments struct {
 	Value            string `json:"value"`
 }
 
-func TestDesktopMCPHTTPEditsTheLiveGioSession(t *testing.T) {
-	t.Setenv("GLANCE_MCP_PORT", "0")
-	ctx := context.Background()
+func runDesktopMCPUIStdioSubprocessIfRequested() {
+	if os.Getenv("GLANCE_DESKTOP_UI_MCP_STDIO_SUBPROCESS") != "1" {
+		return
+	}
+	instanceID := os.Getenv("GLANCE_DESKTOP_UI_MCP_INSTANCE_ID")
+	handled, exitCode := mcpserver.DispatchCLI([]string{"mcp", "serve", "--stdio", "--instance-id", instanceID}, os.Stdout, os.Stderr)
+	if !handled {
+		os.Exit(127)
+	}
+	os.Exit(exitCode)
+}
+
+func TestDesktopMCPStdioEditsTheLiveGioSession(t *testing.T) {
+	runDesktopMCPUIStdioSubprocessIfRequested()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	desktop := newDesktopRuntime()
 	t.Cleanup(desktop.shutdown)
 	app := newAppWithRuntime(nil, desktop)
@@ -32,28 +47,23 @@ func TestDesktopMCPHTTPEditsTheLiveGioSession(t *testing.T) {
 	if err := app.installDocument(loadedDocument{book: book, sheets: book.SheetNames()}); err != nil {
 		t.Fatalf("install workbook: %v", err)
 	}
-	if err := desktop.startDesktopMCPEndpoint(); err != nil {
-		t.Fatalf("start desktop MCP endpoint: %v", err)
+	if err := desktop.startDesktopMCPIPC(); err != nil {
+		t.Fatalf("start desktop MCP IPC endpoint: %v", err)
 	}
-	info, available, err := desktop.desktopMCPConnectionInfo()
+	instance, available, err := desktop.desktopMCPIPCInstance()
 	if err != nil || !available {
-		t.Fatalf("desktop MCP connection info available=%v error=%v", available, err)
-	}
-	if err := desktop.startDesktopMCPEndpoint(); err != nil {
-		t.Fatalf("repeat desktop MCP endpoint start: %v", err)
-	}
-	secondInfo, secondAvailable, secondErr := desktop.desktopMCPConnectionInfo()
-	if secondErr != nil || !secondAvailable || secondInfo.URL != info.URL || secondInfo.Token != info.Token {
-		t.Fatalf("repeat start changed endpoint: first=%+v second=%+v available=%v error=%v", info, secondInfo, secondAvailable, secondErr)
+		t.Fatalf("desktop MCP IPC instance available=%v error=%v", available, err)
 	}
 
-	client := mcp.NewClient(&mcp.Implementation{Name: "desktop-live-session-test", Version: "1"}, nil)
-	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint:   info.URL,
-		HTTPClient: &http.Client{Transport: desktopMCPAuthTransport{token: info.Token, base: http.DefaultTransport}},
-	}, nil)
+	command := exec.Command(os.Args[0], "-test.run=^TestDesktopMCPStdioEditsTheLiveGioSession$")
+	command.Env = append(os.Environ(),
+		"GLANCE_DESKTOP_UI_MCP_STDIO_SUBPROCESS=1",
+		"GLANCE_DESKTOP_UI_MCP_INSTANCE_ID="+instance.ID,
+	)
+	client := mcp.NewClient(&mcp.Implementation{Name: "desktop-live-session-stdio-test", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
 	if err != nil {
-		t.Fatalf("connect to desktop MCP: %v", err)
+		t.Fatalf("connect stdio child to live desktop session: %v", err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
 
@@ -61,7 +71,9 @@ func TestDesktopMCPHTTPEditsTheLiveGioSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get live document: %v", err)
 	}
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "spreadsheet.cell.set", Arguments: testMcpconnectionDocumentIdExpectedRevisionArguments{DocumentId: app.documentID, ExpectedRevision: documentInfo.Revision, Sheet: "Sheet1", Cell: "A1", Value: "由桌面 MCP 写入"}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "spreadsheet.cell.set", Arguments: testMcpconnectionDocumentIdExpectedRevisionArguments{
+		DocumentId: app.documentID, ExpectedRevision: documentInfo.Revision, Sheet: "Sheet1", Cell: "A1", Value: "由桌面 MCP 写入",
+	}})
 	if err != nil || result.IsError {
 		t.Fatalf("MCP spreadsheet edit result=%+v error=%v", result, err)
 	}
@@ -81,61 +93,4 @@ func TestDesktopMCPHTTPEditsTheLiveGioSession(t *testing.T) {
 	if !strings.Contains(string(snapshot.Content), "由桌面 MCP 写入") {
 		t.Fatalf("desktop MCP change is missing from live query: %s", snapshot.Content)
 	}
-}
-
-func TestDesktopRuntimeShutdownStopsMCPHTTPEndpoint(t *testing.T) {
-	t.Setenv("GLANCE_MCP_PORT", "0")
-	desktop := newDesktopRuntime()
-	if err := desktop.startDesktopMCPEndpoint(); err != nil {
-		t.Fatalf("start desktop MCP endpoint: %v", err)
-	}
-	info, available, err := desktop.desktopMCPConnectionInfo()
-	if err != nil || !available {
-		t.Fatalf("desktop MCP connection info available=%v error=%v", available, err)
-	}
-	desktop.shutdown()
-	if _, err := http.Get(info.URL); err == nil {
-		t.Fatal("MCP endpoint still accepted connections after desktop runtime shutdown")
-	}
-	desktop.shutdown()
-}
-
-func TestMCPConnectionDialogShowsEphemeralClientConfiguration(t *testing.T) {
-	t.Setenv("GLANCE_MCP_PORT", "0")
-	desktop := newDesktopRuntime()
-	t.Cleanup(desktop.shutdown)
-	if err := desktop.startDesktopMCPEndpoint(); err != nil {
-		t.Fatalf("start desktop MCP endpoint: %v", err)
-	}
-	app := newAppWithRuntime(nil, desktop)
-	app.showMCPConnectionDialog()
-	if !app.modal.Visible || app.modal.Title != "MCP 连接" || app.modal.CustomLayout == nil {
-		t.Fatalf("MCP connection dialog is incomplete: visible=%v title=%q custom=%v", app.modal.Visible, app.modal.Title, app.modal.CustomLayout != nil)
-	}
-	info, available, err := desktop.desktopMCPConnectionInfo()
-	if err != nil || !available {
-		t.Fatalf("desktop MCP info available=%v error=%v", available, err)
-	}
-	var configuration struct {
-		URL     string            `json:"url"`
-		Headers map[string]string `json:"headers"`
-	}
-	if err := json.Unmarshal([]byte(app.mcpConnectionConfig), &configuration); err != nil {
-		t.Fatalf("decode displayed MCP connection config: %v", err)
-	}
-	if configuration.URL != info.URL || configuration.Headers["Authorization"] != "Bearer "+info.Token {
-		t.Fatalf("displayed MCP config does not match endpoint info: %+v", configuration)
-	}
-}
-
-type desktopMCPAuthTransport struct {
-	token string
-	base  http.RoundTripper
-}
-
-func (t desktopMCPAuthTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	clone := request.Clone(request.Context())
-	clone.Header = request.Header.Clone()
-	clone.Header.Set("Authorization", "Bearer "+t.token)
-	return t.base.RoundTrip(clone)
 }

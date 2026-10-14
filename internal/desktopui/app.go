@@ -17,6 +17,7 @@ import (
 	"gioui.org/widget/material"
 
 	wordpdf "glance/internal/format/pdf"
+	"glance/internal/mcpserver"
 	"glance/internal/printservice"
 	"glance/internal/workspace"
 )
@@ -80,21 +81,16 @@ type App struct {
 	modal                        modalDialog
 	agentUI                      agentUIState
 	mcpCopyConfigButton          widget.Clickable
-	mcpCopyURLButton             widget.Clickable
-	mcpCopyTokenButton           widget.Clickable
-	mcpConnectionURL             string
-	mcpConnectionToken           string
 	mcpConnectionViewConfig      string
 	mcpConnectionConfig          string
 	mcpConnectionError           string
+	mcpTempExecutable            bool
+	mcpInstances                 []mcpserver.DesktopMCPInstance
+	mcpSelectedInstanceID        string
+	mcpInstanceButtons           map[string]*widget.Clickable
+	mcpInstancesList             widget.List
+	mcpConfigurationList         widget.List
 	mcpConfigCopied              bool
-	mcpURLCopied                 bool
-	mcpTokenCopied               bool
-	mcpPortInput                 widget.Editor
-	mcpSavePortButton            widget.Clickable
-	mcpPortSaveSuccess           bool
-	mcpPortError                 string
-	mcpLastPortDraft             string
 	wordSymbolPickerVisible      bool
 	wordSymbolPickerScrim        widget.Clickable
 	wordSymbolPickerClose        widget.Clickable
@@ -316,6 +312,9 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		wordVersionHistoryRowButtons:  make(map[int64]*widget.Clickable),
 		wordCompareDocumentList:       widget.List{List: layout.List{Axis: layout.Vertical}},
 		wordCompareDocumentButtons:    make(map[string]*widget.Clickable),
+		mcpInstanceButtons:            make(map[string]*widget.Clickable),
+		mcpInstancesList:              widget.List{List: layout.List{Axis: layout.Vertical}},
+		mcpConfigurationList:          widget.List{List: layout.List{Axis: layout.Vertical}},
 		shutdown:                      make(chan struct{}),
 		agentUI:                       newAgentUIState(),
 		sessions:                      make(map[string]*documentSessionState),
@@ -411,8 +410,8 @@ func RunWithStartupError(initialPath string, reportStartupError func(error)) <-c
 			a.setStatus(err.Error())
 		}
 	}
-	if err := runtime.startDesktopMCPEndpoint(); err != nil {
-		log.Printf("start desktop MCP endpoint: %v", err)
+	if err := runtime.startDesktopMCPIPC(); err != nil {
+		log.Printf("start desktop MCP IPC endpoint: %v", err)
 		a.setStatus("MCP 服务启动失败：" + err.Error())
 	}
 	if !trayStartupDeferredUntilWindowFrame() {

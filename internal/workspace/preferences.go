@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-const PreferenceMCPServerPort = "mcp.server.port"
-
 // Preference returns a user's personalization value independently of document state.
 func (s *Store) Preference(key string) (string, bool, error) {
 	var value string

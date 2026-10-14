@@ -1,6 +1,6 @@
 # Desktop MCP over stdio and local IPC
 
-**Status:** Draft for user review
+**Status:** Implemented
 
 **Date:** 2026-10-14
 
@@ -14,7 +14,7 @@ The desktop runtime remains the owner of its live document sessions. MCP edits m
 
 - The MCP settings page lists live Glance instances. Each row identifies the app copy and process, and may show its active document to help distinguish instances.
 - The user selects the target instance and copies a stdio MCP configuration. With one matching instance, Glance selects it automatically. With multiple candidates, Glance requires an explicit choice.
-- The configuration's `command` is the selected instance's actual executable path, obtained from the process itself rather than guessed from an installation location. Its arguments include the MCP stdio command and a target instance identifier when needed.
+- The configuration's `command` is the selected instance's actual executable path, obtained from the process itself rather than guessed from an installation location. Its arguments include the MCP stdio command and the target instance identifier.
 - If a selected process exits, the connector must fail clearly. It may resolve by executable path only when exactly one live instance matches that path; it must never choose arbitrarily among multiple matches.
 - The desktop MCP page no longer requires a fixed TCP port or bearer token. Users with an old HTTP MCP entry must replace it with the generated stdio entry.
 

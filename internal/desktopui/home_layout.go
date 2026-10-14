@@ -286,6 +286,9 @@ func (a *App) layoutSettingsNavItem(gtx layout.Context, id, label, icon string) 
 
 func (a *App) layoutSettingsMain(gtx layout.Context) layout.Dimensions {
 	return layout.Inset{Top: unit.Dp(76), Left: unit.Dp(60), Right: unit.Dp(48), Bottom: unit.Dp(36)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		if a.agentUI.settingsPageTab == "mcp" {
+			return a.layoutAgentSettingsPage(gtx)
+		}
 		return a.homeContentList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 			return a.layoutAgentSettingsPage(gtx)
 		})

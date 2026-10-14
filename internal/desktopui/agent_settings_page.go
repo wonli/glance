@@ -185,22 +185,27 @@ func (a *App) layoutAgentSettingsPage(gtx layout.Context) layout.Dimensions {
 			a.openAgentAPIKeyHelp()
 		}
 	}
+	settingsBody := func(gtx layout.Context) layout.Dimensions {
+		bodyTop := unit.Dp(21)
+		if a.agentUI.settingsPageTab == "mcp" {
+			bodyTop = 23
+		}
+		return layout.Inset{Top: bodyTop}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			if a.agentUI.settingsPageTab == "mcp" {
+				return a.layoutMCPSettingsPage(gtx)
+			}
+			return a.layoutSettingsProviderPage(gtx)
+		})
+	}
+	body := layout.Rigid(settingsBody)
+	if a.agentUI.settingsPageTab == "mcp" {
+		body = layout.Flexed(1, settingsBody)
+	}
 	dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return a.layoutSettingsPageHeading(gtx)
 		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			bodyTop := unit.Dp(21)
-			if a.agentUI.settingsPageTab == "mcp" {
-				bodyTop = 23
-			}
-			return layout.Inset{Top: bodyTop}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				if a.agentUI.settingsPageTab == "mcp" {
-					return a.layoutMCPSettingsPage(gtx)
-				}
-				return a.layoutSettingsProviderPage(gtx)
-			})
-		}),
+		body,
 	)
 	a.observeAgentModelLookup()
 	return dims

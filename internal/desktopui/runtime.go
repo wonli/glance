@@ -5,11 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -38,8 +36,9 @@ type desktopRuntime struct {
 	agentMu                 sync.RWMutex
 	agentConfigMu           sync.Mutex
 	applicationEventCancel  func()
-	mcpEndpoint             *mcpserver.DesktopEndpoint
-	mcpEndpointErr          error
+	mcpIPC                  *mcpserver.DesktopIPCServer
+	mcpIPCErr               error
+	mcpIPCOptions           mcpserver.DesktopIPCOptions
 	shuttingDown            bool
 	mu                      sync.Mutex
 	workspaceQueueMu        sync.Mutex
@@ -91,50 +90,7 @@ type desktopRuntime struct {
 	nextWindowAttachment    uint64
 }
 
-func isValidMCPPort(port int) bool {
-	return port >= 1024 && port <= 65535
-}
-
-func (r *desktopRuntime) loadConfiguredMCPPort() int {
-	if envPort := os.Getenv("GLANCE_MCP_PORT"); envPort != "" {
-		if p, err := strconv.Atoi(strings.TrimSpace(envPort)); err == nil {
-			if p == 0 || isValidMCPPort(p) {
-				return p
-			}
-		}
-	}
-	r.mu.Lock()
-	store := r.workspaceStore
-	r.mu.Unlock()
-	if store != nil {
-		if val, found, err := store.Preference(workspace.PreferenceMCPServerPort); err == nil && found {
-			if p, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && isValidMCPPort(p) {
-				return p
-			}
-		}
-	}
-	return mcpserver.DefaultDesktopMCPPort
-}
-
-func (r *desktopRuntime) saveConfiguredMCPPort(port int) error {
-	if !isValidMCPPort(port) {
-		return errors.New("端口超出可用范围（1024–65535）")
-	}
-	r.mu.Lock()
-	store := r.workspaceStore
-	r.mu.Unlock()
-	if store == nil {
-		return errors.New("工作区数据库不可用")
-	}
-	return store.SetPreference(workspace.PreferenceMCPServerPort, strconv.Itoa(port))
-}
-
-func (r *desktopRuntime) startDesktopMCPEndpoint() error {
-	port := r.loadConfiguredMCPPort()
-	return r.startDesktopMCPEndpointWithPort(port)
-}
-
-func (r *desktopRuntime) startDesktopMCPEndpointWithPort(port int) error {
+func (r *desktopRuntime) startDesktopMCPIPC() error {
 	if r == nil {
 		return errors.New("desktop runtime is unavailable")
 	}
@@ -143,116 +99,63 @@ func (r *desktopRuntime) startDesktopMCPEndpointWithPort(port int) error {
 		r.mu.Unlock()
 		return errors.New("desktop runtime is shutting down")
 	}
-	if r.mcpEndpoint != nil {
+	if r.mcpIPC != nil {
 		r.mu.Unlock()
 		return nil
 	}
-	if r.mcpEndpointErr != nil {
-		err := r.mcpEndpointErr
+	if r.mcpIPCErr != nil {
+		err := r.mcpIPCErr
 		r.mu.Unlock()
 		return err
 	}
-	applicationRuntime := r.applicationRuntime
+	applicationRuntime, options := r.applicationRuntime, r.mcpIPCOptions
 	r.mu.Unlock()
 	if applicationRuntime == nil {
 		return errors.New("application runtime is unavailable")
 	}
-	endpoint, err := mcpserver.StartDesktopEndpointWithOptions(applicationRuntime, mcpserver.DesktopEndpointOptions{Port: port})
-	r.mu.Lock()
-	if r.shuttingDown {
-		r.mu.Unlock()
-		if endpoint != nil {
-			_ = endpoint.Close()
+	executablePath, err := os.Executable()
+	if err != nil {
+		err = fmt.Errorf("resolve Glance executable path: %w", err)
+	} else {
+		var endpoint *mcpserver.DesktopIPCServer
+		endpoint, err = mcpserver.StartDesktopIPCServer(applicationRuntime, executablePath, options)
+		if err == nil {
+			r.mu.Lock()
+			if r.shuttingDown {
+				r.mu.Unlock()
+				_ = endpoint.Close()
+				return errors.New("desktop runtime is shutting down")
+			}
+			if r.mcpIPC != nil {
+				r.mu.Unlock()
+				_ = endpoint.Close()
+				return nil
+			}
+			r.mcpIPC = endpoint
+			r.mu.Unlock()
+			return nil
 		}
-		return errors.New("desktop runtime is shutting down")
-	}
-	if err != nil {
-		r.mcpEndpointErr = err
-		r.mu.Unlock()
-		return err
-	}
-	if r.mcpEndpoint != nil {
-		r.mu.Unlock()
-		_ = endpoint.Close()
-		return nil
-	}
-	r.mcpEndpoint = endpoint
-	r.mu.Unlock()
-	return nil
-}
-
-func (r *desktopRuntime) restartDesktopMCPEndpoint(port int) error {
-	if r == nil {
-		return errors.New("desktop runtime is unavailable")
-	}
-	if !isValidMCPPort(port) {
-		return errors.New("端口超出可用范围（1024–65535）")
 	}
 	r.mu.Lock()
 	if r.shuttingDown {
 		r.mu.Unlock()
 		return errors.New("desktop runtime is shutting down")
 	}
-	applicationRuntime := r.applicationRuntime
+	r.mcpIPCErr = err
 	r.mu.Unlock()
-	if applicationRuntime == nil {
-		return errors.New("application runtime is unavailable")
-	}
-
-	bindAddr := fmt.Sprintf("127.0.0.1:%d", port)
-	listener, err := net.Listen("tcp", bindAddr)
-	if err != nil {
-		return fmt.Errorf("端口 %d 已被占用或无法监听: %w", port, err)
-	}
-
-	if err := r.saveConfiguredMCPPort(port); err != nil {
-		_ = listener.Close()
-		return fmt.Errorf("保存端口配置失败: %w", err)
-	}
-
-	endpoint, err := mcpserver.StartDesktopEndpointWithOptions(applicationRuntime, mcpserver.DesktopEndpointOptions{
-		Port:     port,
-		Listener: listener,
-	})
-	if err != nil {
-		_ = listener.Close()
-		return err
-	}
-
-	r.mu.Lock()
-	oldEndpoint := r.mcpEndpoint
-	r.mcpEndpoint = endpoint
-	r.mcpEndpointErr = nil
-	r.mu.Unlock()
-
-	if oldEndpoint != nil {
-		_ = oldEndpoint.Close()
-	}
-	return nil
+	return err
 }
 
-func (r *desktopRuntime) currentDesktopMCPPort() int {
+func (r *desktopRuntime) desktopMCPIPCInstance() (mcpserver.DesktopMCPInstance, bool, error) {
 	if r == nil {
-		return 0
+		return mcpserver.DesktopMCPInstance{}, false, errors.New("desktop runtime is unavailable")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.mcpEndpoint != nil {
-		return r.mcpEndpoint.Port()
+	if r.mcpIPC != nil {
+		return r.mcpIPC.Instance(), true, nil
 	}
-	return 0
-}
-
-func (r *desktopRuntime) desktopMCPConnectionInfo() (mcpserver.DesktopEndpointInfo, bool, error) {
-	if r == nil {
-		return mcpserver.DesktopEndpointInfo{}, false, errors.New("desktop runtime is unavailable")
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.mcpEndpoint != nil {
-		return r.mcpEndpoint.Info(), true, nil
-	}
-	return mcpserver.DesktopEndpointInfo{}, false, r.mcpEndpointErr
+	return mcpserver.DesktopMCPInstance{}, false, r.mcpIPCErr
 }
 
 type desktopPrintService struct {

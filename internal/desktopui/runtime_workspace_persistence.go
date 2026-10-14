@@ -188,12 +188,12 @@ func (r *desktopRuntime) shutdown() {
 			r.applicationEventCancel = nil
 		}
 		r.mu.Lock()
-		mcpEndpoint := r.mcpEndpoint
-		r.mcpEndpoint = nil
+		mcpIPC := r.mcpIPC
+		r.mcpIPC = nil
 		r.mu.Unlock()
-		if mcpEndpoint != nil {
-			if err := mcpEndpoint.Close(); err != nil {
-				log.Printf("stop desktop MCP endpoint: %v", err)
+		if mcpIPC != nil {
+			if err := mcpIPC.Close(); err != nil {
+				log.Printf("stop desktop MCP IPC endpoint: %v", err)
 			}
 		}
 		r.closeAgent()

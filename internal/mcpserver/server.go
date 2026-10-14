@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
+	"io"
+	"net"
 	"sort"
 	"sync/atomic"
 
@@ -64,6 +65,34 @@ func (s *Server) RunStdio(ctx context.Context) error {
 	return s.server.Run(ctx, &mcp.StdioTransport{})
 }
 
+// RunStdioWithIO runs the MCP server over caller-provided newline-delimited
+// streams. The caller retains ownership of both stream objects.
+func (s *Server) RunStdioWithIO(ctx context.Context, reader io.ReadCloser, writer io.WriteCloser) error {
+	if s == nil || s.server == nil {
+		return errors.New("MCP server is not initialized")
+	}
+	if reader == nil || writer == nil {
+		return errors.New("MCP stdio streams are required")
+	}
+	return s.server.Run(ctx, &mcp.IOTransport{Reader: reader, Writer: writer})
+}
+
+// ServeConn serves one MCP session over a bidirectional newline-delimited
+// JSON-RPC connection. The caller owns and closes conn.
+func (s *Server) ServeConn(ctx context.Context, conn net.Conn) error {
+	if s == nil || s.server == nil {
+		return errors.New("MCP server is not initialized")
+	}
+	if conn == nil {
+		return errors.New("MCP connection is required")
+	}
+	session, err := s.server.Connect(ctx, &mcp.IOTransport{Reader: conn, Writer: conn}, nil)
+	if err != nil {
+		return err
+	}
+	return session.Wait()
+}
+
 // CloseSessions terminates connected MCP sessions. Call it after the transport
 // owner stops accepting new connections.
 func (s *Server) CloseSessions() error {
@@ -77,15 +106,6 @@ func (s *Server) CloseSessions() error {
 		}
 	}
 	return errors.Join(closeErrors...)
-}
-
-func (s *Server) HTTPHandler(options *mcp.StreamableHTTPOptions) http.Handler {
-	if s == nil || s.server == nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "MCP server is not initialized", http.StatusServiceUnavailable)
-		})
-	}
-	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s.server }, options)
 }
 
 func (s *Server) ConnectInMemory(ctx context.Context) (*mcp.ClientSession, func() error, error) {

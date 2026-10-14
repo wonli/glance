@@ -34,7 +34,8 @@ type testStdioprocessEmptyArguments struct {
 
 func TestMCPStdioSubprocessHasIndependentRuntimeAndSavesWord(t *testing.T) {
 	if os.Getenv("GLANCE_MCP_STDIO_SUBPROCESS") == "1" {
-		handled, exitCode := DispatchCLI([]string{"mcp", "serve", "--stdio"}, os.Stdout, os.Stderr)
+		openPath := os.Getenv("GLANCE_MCP_STDIO_OPEN_PATH")
+		handled, exitCode := DispatchCLI([]string{"mcp", "serve", "--stdio", "--open", openPath}, os.Stdout, os.Stderr)
 		if !handled {
 			os.Exit(127)
 		}
@@ -61,9 +62,13 @@ func TestMCPStdioSubprocessHasIndependentRuntimeAndSavesWord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("edit desktop document: %v", err)
 	}
+	headlessSeedPath := filepath.Join(t.TempDir(), "seed.json")
+	if err := os.WriteFile(headlessSeedPath, []byte(`{"headless":true}`), 0o600); err != nil {
+		t.Fatalf("create headless seed document: %v", err)
+	}
 
 	command := exec.Command(os.Args[0], "-test.run=^TestMCPStdioSubprocessHasIndependentRuntimeAndSavesWord$")
-	command.Env = append(os.Environ(), "GLANCE_MCP_STDIO_SUBPROCESS=1")
+	command.Env = append(os.Environ(), "GLANCE_MCP_STDIO_SUBPROCESS=1", "GLANCE_MCP_STDIO_OPEN_PATH="+headlessSeedPath)
 	client := mcp.NewClient(&mcp.Implementation{Name: "stdio-process-isolation-test", Version: "1"}, nil)
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
 	if err != nil {
@@ -80,8 +85,8 @@ func TestMCPStdioSubprocessHasIndependentRuntimeAndSavesWord(t *testing.T) {
 	if err != nil || listed.IsError {
 		t.Fatalf("list subprocess documents = %+v, %v", listed, err)
 	}
-	if items := rawArray(t, mapValue(t, listed.StructuredContent)["data"]); len(items) != 0 {
-		t.Fatalf("stdio process saw desktop sessions: %#v", listed.StructuredContent)
+	if items := rawArray(t, mapValue(t, listed.StructuredContent)["data"]); len(items) != 1 {
+		t.Fatalf("headless --open process listed %d documents; want only the explicitly opened seed: %#v", len(items), listed.StructuredContent)
 	}
 
 	created, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "document.create", Arguments: testStdioprocessFormatArguments{Format: "docx"}})
@@ -117,4 +122,127 @@ func TestMCPStdioSubprocessHasIndependentRuntimeAndSavesWord(t *testing.T) {
 		t.Fatalf("close MCP subprocess session: %v", err)
 	}
 	closed = true
+}
+
+func runDesktopMCPStdioSubprocessIfRequested() {
+	if os.Getenv("GLANCE_MCP_DESKTOP_STDIO_SUBPROCESS") != "1" {
+		return
+	}
+	options := DesktopIPCOptions{
+		RuntimeDir: os.Getenv("GLANCE_MCP_DESKTOP_STDIO_RUNTIME_DIR"),
+		SocketDir:  os.Getenv("GLANCE_MCP_DESKTOP_STDIO_SOCKET_DIR"),
+	}
+	args := []string{"mcp", "serve", "--stdio"}
+	if instanceID := os.Getenv("GLANCE_MCP_DESKTOP_STDIO_INSTANCE_ID"); instanceID != "" {
+		args = append(args, "--instance-id", instanceID)
+	}
+	handled, exitCode := dispatchCLIWithOptions(args, os.Stdout, os.Stderr, options, "", os.Stdin, os.Stdout)
+	if !handled {
+		os.Exit(127)
+	}
+	os.Exit(exitCode)
+}
+
+func newDesktopMCPStdioSubprocessCommand(testName string, options DesktopIPCOptions, instanceID string) *exec.Cmd {
+	command := exec.Command(os.Args[0], "-test.run=^"+testName+"$")
+	command.Env = append(os.Environ(),
+		"GLANCE_MCP_DESKTOP_STDIO_SUBPROCESS=1",
+		"GLANCE_MCP_DESKTOP_STDIO_RUNTIME_DIR="+options.RuntimeDir,
+		"GLANCE_MCP_DESKTOP_STDIO_SOCKET_DIR="+options.SocketDir,
+		"GLANCE_MCP_DESKTOP_STDIO_INSTANCE_ID="+instanceID,
+	)
+	return command
+}
+
+func TestMCPStdioSubprocessTargetsSelectedDesktopRuntime(t *testing.T) {
+	runDesktopMCPStdioSubprocessIfRequested()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	firstRuntime := newDesktopIPCTestRuntime(t)
+	selectedRuntime := newDesktopIPCTestRuntime(t)
+	firstDocument, err := firstRuntime.CreateDocument(ctx, application.FormatDocx)
+	if err != nil {
+		t.Fatalf("create first runtime document: %v", err)
+	}
+	selectedDocument, err := selectedRuntime.CreateDocument(ctx, application.FormatDocx)
+	if err != nil {
+		t.Fatalf("create selected runtime document: %v", err)
+	}
+	options := newDesktopIPCOptions(t)
+	executable := desktopIPCExecutablePath(t)
+	firstEndpoint, err := StartDesktopIPCServer(firstRuntime, executable, options)
+	if err != nil {
+		t.Fatalf("start first same-path desktop endpoint: %v", err)
+	}
+	t.Cleanup(func() { _ = firstEndpoint.Close() })
+	selectedEndpoint, err := StartDesktopIPCServer(selectedRuntime, executable, options)
+	if err != nil {
+		t.Fatalf("start selected same-path desktop endpoint: %v", err)
+	}
+	t.Cleanup(func() { _ = selectedEndpoint.Close() })
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "desktop-instance-routing-test", Version: "1"}, nil)
+	command := newDesktopMCPStdioSubprocessCommand("TestMCPStdioSubprocessTargetsSelectedDesktopRuntime", options, selectedEndpoint.Instance().ID)
+	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
+	if err != nil {
+		t.Fatalf("connect stdio child to selected desktop instance: %v", err)
+	}
+	defer session.Close()
+	appended, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.paragraph.append", Arguments: testStdioprocessDocumentIdExpectedRevisionTextArguments{
+		DocumentId: selectedDocument.DocumentID, ExpectedRevision: selectedDocument.Revision, Text: "写入第二个 Glance 实例",
+	}})
+	if err != nil || appended.IsError {
+		t.Fatalf("append through selected desktop instance = %+v, %v", appended, err)
+	}
+	updatedSelected, err := selectedRuntime.GetDocument(ctx, selectedDocument.DocumentID)
+	if err != nil {
+		t.Fatalf("read selected runtime document: %v", err)
+	}
+	updatedFirst, err := firstRuntime.GetDocument(ctx, firstDocument.DocumentID)
+	if err != nil {
+		t.Fatalf("read unselected runtime document: %v", err)
+	}
+	if updatedSelected.Revision != selectedDocument.Revision+1 || !updatedSelected.Dirty {
+		t.Fatalf("selected runtime was not edited: before=%+v after=%+v", selectedDocument, updatedSelected)
+	}
+	if updatedFirst.Revision != firstDocument.Revision || updatedFirst.Dirty != firstDocument.Dirty {
+		t.Fatalf("request reached the unselected same-path runtime: before=%+v after=%+v", firstDocument, updatedFirst)
+	}
+}
+
+func TestMCPStdioSubprocessFallsBackFromStaleIDWhenUnique(t *testing.T) {
+	runDesktopMCPStdioSubprocessIfRequested()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	appRuntime := newDesktopIPCTestRuntime(t)
+	document, err := appRuntime.CreateDocument(ctx, application.FormatDocx)
+	if err != nil {
+		t.Fatalf("create desktop document: %v", err)
+	}
+	options := newDesktopIPCOptions(t)
+	endpoint, err := StartDesktopIPCServer(appRuntime, desktopIPCExecutablePath(t), options)
+	if err != nil {
+		t.Fatalf("start desktop IPC server: %v", err)
+	}
+	t.Cleanup(func() { _ = endpoint.Close() })
+	client := mcp.NewClient(&mcp.Implementation{Name: "desktop-stale-id-fallback-test", Version: "1"}, nil)
+	command := newDesktopMCPStdioSubprocessCommand("TestMCPStdioSubprocessFallsBackFromStaleIDWhenUnique", options, "stale-after-restart")
+	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
+	if err != nil {
+		t.Fatalf("connect stdio child through unique-path stale-ID fallback: %v", err)
+	}
+	defer session.Close()
+	appended, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.paragraph.append", Arguments: testStdioprocessDocumentIdExpectedRevisionTextArguments{
+		DocumentId: document.DocumentID, ExpectedRevision: document.Revision, Text: "重启后唯一实例回退",
+	}})
+	if err != nil || appended.IsError {
+		t.Fatalf("append through stale-ID fallback = %+v, %v", appended, err)
+	}
+	updated, err := appRuntime.GetDocument(ctx, document.DocumentID)
+	if err != nil {
+		t.Fatalf("read desktop document after stale-ID fallback: %v", err)
+	}
+	if updated.Revision != document.Revision+1 {
+		t.Fatalf("stale-ID fallback revision = %d; want %d", updated.Revision, document.Revision+1)
+	}
 }
