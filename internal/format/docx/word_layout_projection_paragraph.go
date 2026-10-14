@@ -71,14 +71,14 @@ func parseWordParagraphLayout(properties *wordXMLNode) document.WordParagraphLay
 	}
 	if indentation := firstChild(properties, "ind"); indentation != nil {
 		if value, present := attrValuePresent(indentation, "firstLineChars"); present {
-			if amount, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil && amount == 0 {
-				layout.FirstLineIndentEMU = 0
-				layout.Set |= document.WordParagraphFirstLineIndentSet
+			if amount, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+				layout.FirstLineIndentChars = amount
+				layout.Set |= document.WordParagraphFirstLineIndentSet | document.WordParagraphFirstLineIndentCharsSet
 			}
 		} else if value, present := attrValuePresent(indentation, "hangingChars"); present {
-			if amount, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil && amount == 0 {
-				layout.HangingIndentEMU = 0
-				layout.Set |= document.WordParagraphHangingIndentSet
+			if amount, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+				layout.HangingIndentChars = amount
+				layout.Set |= document.WordParagraphHangingIndentSet | document.WordParagraphHangingIndentCharsSet
 			}
 		} else if value := attrValue(indentation, "firstLine"); value != "" {
 			layout.FirstLineIndentEMU = parseWordIndentEMU(value)

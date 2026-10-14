@@ -179,9 +179,6 @@ func (a *App) layoutAgentSidebar(gtx layout.Context) layout.Dimensions {
 							return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}
 						})
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return agentSidebarContentInset(gtx, a.layoutAgentConfirmations)
-					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(8), Right: unit.Dp(4)}.Layout(gtx, a.layoutAgentSidebarMessages)
 					}),
@@ -327,7 +324,7 @@ func agentSidebarTextAction(gtx layout.Context, theme *material.Theme, button *w
 					}
 					gtx.Constraints.Min.Y = 0
 					// Compensate the font line box so text ink shares the icons' center.
-					return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						style := material.Caption(theme, label)
 						style.TextSize = unit.Sp(10)
 						style.Color = color.NRGBA{R: 67, G: 95, B: 128, A: 255}

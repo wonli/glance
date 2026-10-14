@@ -66,9 +66,12 @@ type agentModelLookupState struct {
 }
 
 type agentConfirmationCard struct {
-	info    application.ConfirmationInfo
-	approve widget.Clickable
-	reject  widget.Clickable
+	info        application.ConfirmationInfo
+	approve     widget.Clickable
+	reject      widget.Clickable
+	alwaysAllow widget.Clickable
+	allowOnce   widget.Clickable
+	scrim       widget.Clickable
 }
 
 type agentChatGroupHeightEntry struct {
@@ -105,6 +108,7 @@ type agentUIState struct {
 	confirmationList   widget.List
 	confirmations      map[string]*agentConfirmationCard
 	confirmationOrder  []string
+	permissionGrants   map[string]bool
 
 	chatInput                        widget.Editor
 	chatList                         widget.List

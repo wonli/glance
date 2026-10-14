@@ -45,6 +45,12 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
+	if len(os.Args) == 1 {
+		// A double-clicked GUI executable has no CLI arguments. Launch the
+		// desktop directly instead of relying on Cobra's no-argument dispatch.
+		desktoplaunch.RunDesktop("")
+		return
+	}
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)

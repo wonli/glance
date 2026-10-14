@@ -35,6 +35,14 @@
       "notes": "Sample retains its visible text and actual page break; stale last-rendered pagination hints are ignored."
     },
     {
+      "id": "docx-character-based-indent",
+      "path": "docx/character-based-indent.docx",
+      "format": "docx",
+      "features": ["paragraphs", "character-based-indents", "line-wrapping"],
+      "expected": "rendered",
+      "notes": "Long Chinese paragraphs exercise style-inherited firstLineChars and direct hangingChars with wrapped-line geometry."
+    },
+    {
       "id": "docx-numbered-lists",
       "path": "docx/numbered-lists.docx",
       "format": "docx",

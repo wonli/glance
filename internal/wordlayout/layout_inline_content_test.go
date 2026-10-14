@@ -63,6 +63,34 @@ func TestFloatingImageFallbackKeepsAdjacentTextAndWarnsWithoutBlocking(t *testin
 	t.Fatalf("diagnostics = %+v; want a located warning for inline fallback", result.Diagnostics)
 }
 
+func TestUnsupportedListIsReportedAsApproximationAndKeepsParagraphPreview(t *testing.T) {
+	paragraph := document.WordParagraph{
+		ID: "numbered-paragraph", ListKind: document.WordListUnsupported,
+		Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{
+			ID: "numbered-run", Text: "This paragraph remains readable.", Editable: true,
+		}}},
+	}
+	input := layoutTestInput(180, 100, 10, document.WordBlock{
+		ID: paragraph.ID, Kind: document.WordParagraphBlock, Paragraph: &paragraph,
+	})
+	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.CanPreview || len(result.Pages) == 0 {
+		t.Fatalf("unsupported numbering blocked page preview: pages=%d diagnostics=%+v", len(result.Pages), result.Diagnostics)
+	}
+	if got := joinPageText(result.Pages[0]); !strings.Contains(got, "This paragraph remains readable.") {
+		t.Fatalf("paragraph text = %q; want readable text with the unsupported list marker omitted", got)
+	}
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.SourceID == paragraph.ID && diagnostic.Code == "unsupported-list" && diagnostic.Severity == DiagnosticWarning {
+			return
+		}
+	}
+	t.Fatalf("diagnostics = %+v; want a located non-blocking unsupported-list warning", result.Diagnostics)
+}
+
 func TestLayoutScalesInlineImageToIndentedTextWidth(t *testing.T) {
 	paragraph := document.WordParagraph{
 		ID:        "p0",

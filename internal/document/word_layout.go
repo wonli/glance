@@ -59,6 +59,8 @@ const (
 	WordParagraphPageBreakBeforeSet
 	WordParagraphBottomBorderSet
 	WordParagraphTabStopsSet
+	WordParagraphFirstLineIndentCharsSet
+	WordParagraphHangingIndentCharsSet
 )
 
 // WordTabStop describes one paragraph tab position in points.
@@ -78,7 +80,8 @@ type WordParagraphBorder struct {
 }
 
 // WordParagraphLayout contains the neutral paragraph metrics used by page
-// layout. Lengths are points except indentation values preserved in EMU.
+// layout. Lengths are points except indentation values preserved in EMU or
+// hundredths-of-a-character units.
 type WordParagraphLayout struct {
 	BeforePT            float64
 	AfterPT             float64
@@ -87,15 +90,19 @@ type WordParagraphLayout struct {
 	LineSpacingRule     string
 	FirstLineIndentEMU  int64
 	HangingIndentEMU    int64
-	Alignment           WordAlignment
-	LeftIndentEMU       int64
-	RightIndentEMU      int64
-	KeepWithNext        bool
-	KeepTogether        bool
-	PageBreakBefore     bool
-	BottomBorder        WordParagraphBorder
-	TabStops            []WordTabStop
-	Set                 WordParagraphLayoutMask
+	// Character-based indents retain OOXML's hundredths-of-a-character units.
+	// The corresponding *CharsSet mask bit selects these over EMU values.
+	FirstLineIndentChars int64
+	HangingIndentChars   int64
+	Alignment            WordAlignment
+	LeftIndentEMU        int64
+	RightIndentEMU       int64
+	KeepWithNext         bool
+	KeepTogether         bool
+	PageBreakBefore      bool
+	BottomBorder         WordParagraphBorder
+	TabStops             []WordTabStop
+	Set                  WordParagraphLayoutMask
 }
 
 // WordTableLayout contains source grid widths in EMU and table-level shading.

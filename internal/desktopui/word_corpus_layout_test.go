@@ -6,8 +6,10 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
+	"glance/internal/document"
 	"glance/internal/format/docx"
 	"glance/internal/wordlayout"
 )
@@ -44,6 +46,132 @@ func TestOfficeCorpusDOCXFilesProducePreviewablePageScenes(t *testing.T) {
 				t.Errorf("page preview blocked: pages=%d diagnostics=%+v", len(result.Pages), result.Diagnostics)
 			}
 		})
+	}
+}
+
+func TestCharacterBasedIndentCorpusUsesWrappedLineGeometry(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "office-corpus", "docx", "character-based-indent.docx")
+	doc, err := docx.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	layout := doc.WordLayoutData()
+	var inheritedIndent bool
+	for _, style := range layout.Styles {
+		if style.ID == "FirstLineChars" {
+			inheritedIndent = style.Paragraph.FirstLineIndentChars == 200 &&
+				style.Paragraph.Set&document.WordParagraphFirstLineIndentCharsSet != 0
+		}
+	}
+	if !inheritedIndent {
+		t.Fatal("styles part did not retain the firstLineChars indentation")
+	}
+	if len(blocks) < 2 || blocks[1].Paragraph == nil || blocks[1].Paragraph.Layout.HangingIndentChars != 100 ||
+		blocks[1].Paragraph.Layout.Set&document.WordParagraphHangingIndentCharsSet == 0 {
+		t.Fatal("document paragraph did not retain the hangingChars indentation")
+	}
+
+	shaper, err := newWordTextShaper()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := wordlayout.NewEngine(shaper).Layout(context.Background(), wordlayout.Input{
+		DocumentID: path, Blocks: blocks, Layout: layout,
+		DefaultPageSetup: defaultWordPageSetup, EditorParagraphInsets: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.CanPreview || len(result.Pages) == 0 {
+		t.Fatalf("character-based indents blocked page preview: pages=%d diagnostics=%+v", len(result.Pages), result.Diagnostics)
+	}
+
+	paragraphRuns := make([]string, 0, 2)
+	for _, block := range blocks {
+		if block.Paragraph == nil {
+			continue
+		}
+		for _, inline := range block.Paragraph.Inlines {
+			if inline.Text != nil && inline.Text.Text != "" {
+				paragraphRuns = append(paragraphRuns, inline.Text.ID)
+				break
+			}
+		}
+	}
+	if len(paragraphRuns) != 2 {
+		t.Fatalf("projected %d text paragraphs, want 2", len(paragraphRuns))
+	}
+
+	lineStarts := func(runID string) []struct {
+		page     int
+		baseline float64
+		x        float64
+	} {
+		type lineKey struct {
+			page     int
+			baseline float64
+		}
+		byBaseline := make(map[lineKey]float64)
+		for _, page := range result.Pages {
+			for _, fragment := range page.Text {
+				if fragment.RunID != runID || len(fragment.Glyphs) == 0 {
+					continue
+				}
+				key := lineKey{page: page.Index, baseline: fragment.BaselineYPT}
+				if current, ok := byBaseline[key]; !ok || fragment.XPT < current {
+					byBaseline[key] = fragment.XPT
+				}
+			}
+		}
+		lines := make([]struct {
+			page     int
+			baseline float64
+			x        float64
+		}, 0, len(byBaseline))
+		for key, x := range byBaseline {
+			lines = append(lines, struct {
+				page     int
+				baseline float64
+				x        float64
+			}{page: key.page, baseline: key.baseline, x: x})
+		}
+		sort.Slice(lines, func(i, j int) bool {
+			if lines[i].page != lines[j].page {
+				return lines[i].page < lines[j].page
+			}
+			return lines[i].baseline < lines[j].baseline
+		})
+		return lines
+	}
+	firstLineStarts := lineStarts(paragraphRuns[0])
+	hangingLineStarts := lineStarts(paragraphRuns[1])
+	if len(firstLineStarts) < 2 || len(hangingLineStarts) < 2 {
+		t.Fatalf("expected wrapped paragraphs; first-line=%v hanging=%v", firstLineStarts, hangingLineStarts)
+	}
+
+	paragraphFontSize := layout.Defaults.Text.FontSize
+	if paragraphFontSize <= 0 {
+		paragraphFontSize = 11
+	}
+	paragraphTextStyle := layout.Defaults.Text
+	paragraphTextStyle.FontSize = paragraphFontSize
+	space, err := shaper.Shape("　", paragraphTextStyle)
+	if err != nil || len(space.Glyphs) == 0 {
+		t.Fatalf("shape ideographic space: glyphs=%d err=%v", len(space.Glyphs), err)
+	}
+	charWidthPT := 0.0
+	for _, glyph := range space.Glyphs {
+		charWidthPT += glyph.AdvanceXPT
+	}
+	firstIndentPT := firstLineStarts[0].x - firstLineStarts[1].x
+	if math.Abs(firstIndentPT-2*charWidthPT) > 0.75 {
+		t.Errorf("first-line character indent = %.2fpt; want two shaped character widths (%.2fpt); lines=%v", firstIndentPT, 2*charWidthPT, firstLineStarts)
+	}
+	hangingIndentPT := hangingLineStarts[1].x - hangingLineStarts[0].x
+	if math.Abs(hangingIndentPT-charWidthPT) > 0.75 {
+		t.Errorf("hanging character indent = %.2fpt; want one shaped character width (%.2fpt); lines=%v", hangingIndentPT, charWidthPT, hangingLineStarts)
 	}
 }
 

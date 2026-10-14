@@ -3,16 +3,14 @@ package desktopui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"image/color"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"gioui.org/layout"
-	"gioui.org/unit"
 	"gioui.org/widget"
-	"gioui.org/widget/material"
 
 	"glance/internal/agent"
 	"glance/internal/application"
@@ -45,78 +43,7 @@ func (a *App) layoutAgentChat(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutAgentConfirmations(gtx layout.Context) layout.Dimensions {
-	ids := make([]string, 0, len(a.agentUI.confirmationOrder))
-	for _, id := range a.agentUI.confirmationOrder {
-		card := a.agentUI.confirmations[id]
-		if card != nil && (card.info.Status == application.ConfirmationPending || card.info.Status == application.ConfirmationRunning) {
-			ids = append(ids, id)
-		}
-	}
-	if len(ids) == 0 {
-		return layout.Dimensions{}
-	}
-	maxHeight := gtx.Dp(unit.Dp(220))
-	if gtx.Constraints.Max.Y > 0 && gtx.Constraints.Max.Y < maxHeight {
-		maxHeight = gtx.Constraints.Max.Y
-	}
-	gtx.Constraints.Min.Y = 0
-	gtx.Constraints.Max.Y = maxHeight
-	return material.List(a.theme, &a.agentUI.confirmationList).Layout(gtx, len(ids), func(gtx layout.Context, index int) layout.Dimensions {
-		card := a.agentUI.confirmations[ids[index]]
-		if card == nil {
-			return layout.Dimensions{}
-		}
-		return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return homeRoundedPanel(gtx, color.NRGBA{R: 255, G: 250, B: 235, A: 255}, color.NRGBA{R: 224, G: 180, B: 95, A: 255}, unit.Dp(8), func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(9), Bottom: unit.Dp(9), Left: unit.Dp(11), Right: unit.Dp(11)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return material.Body1(a.theme, "等待人类确认："+card.info.CapabilityName).Layout(gtx)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							text := card.info.ImpactSummary
-							if card.info.DocumentID != "" {
-								label := card.info.DocumentLabel
-								if label == "" {
-									label = card.info.DocumentID
-								}
-								text += fmt.Sprintf("\n文档 %s (%s) · 修订版本 %d", label, card.info.DocumentID, card.info.ExpectedRevision)
-							}
-							text += "\n有效至 " + card.info.ExpiresAt.Local().Format("15:04:05")
-							style := material.Caption(a.theme, text)
-							style.MaxLines = 5
-							return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, style.Layout)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if card.info.Status == application.ConfirmationRunning {
-								style := material.Caption(a.theme, "已批准，正在执行…")
-								return layout.Inset{Top: unit.Dp(5)}.Layout(gtx, style.Layout)
-							}
-							approveClicked := card.approve.Clicked(gtx)
-							rejectClicked := card.reject.Clicked(gtx)
-							dimensions := layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return material.Button(a.theme, &card.reject, "拒绝").Layout(gtx)
-									}),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return material.Button(a.theme, &card.approve, "批准并执行").Layout(gtx)
-									}),
-								)
-							})
-							if approveClicked {
-								a.resolveAgentConfirmation(card, true)
-							} else if rejectClicked {
-								a.resolveAgentConfirmation(card, false)
-							}
-							return dimensions
-						}),
-					)
-				})
-			})
-		})
-	})
+	return a.layoutAgentConfirmationModal(gtx)
 }
 
 func (a *App) resolveAgentConfirmation(card *agentConfirmationCard, approved bool) {
@@ -125,13 +52,24 @@ func (a *App) resolveAgentConfirmation(card *agentConfirmationCard, approved boo
 	}
 	runtime := a.ensureDesktopRuntime().applicationRuntime
 	if runtime == nil {
-		a.setStatus("确认操作失败：应用运行时不可用")
+		card.info.ResolvedBy = fmt.Sprintf("desktop-window-%d", a.windowID)
+		if approved {
+			card.info.Status = application.ConfirmationRunning
+		} else {
+			card.info.Status = application.ConfirmationRejected
+		}
+		a.updateAgentConfirmationChatLine(card.info, false)
+		if a.window != nil {
+			a.window.Invalidate()
+		}
 		return
 	}
 	operator := application.Operator{ID: fmt.Sprintf("desktop-window-%d", a.windowID), Kind: application.OperatorHuman}
 	if err := runtime.ResolveConfirmation(context.Background(), card.info.ConfirmationID, approved, operator); err != nil {
-		a.setStatus("确认操作失败：" + err.Error())
-		return
+		if !errors.Is(err, application.ErrConfirmationNotFound) {
+			a.setStatus("确认操作失败：" + err.Error())
+			return
+		}
 	}
 	card.info.ResolvedBy = operator.ID
 	if approved {

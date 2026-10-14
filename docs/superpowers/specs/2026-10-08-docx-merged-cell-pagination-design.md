@@ -18,7 +18,7 @@ Extend `document.WordTableCell` with a horizontal grid span and a vertical merge
 
 Project `w:gridSpan` and `w:vMerge` into the neutral cell fields. An absent `w:vMerge/@w:val` means `continue`, as specified by WordprocessingML. Valid spans and merge chains are no longer emitted as unsupported diagnostics. Invalid or out-of-grid spans, orphan or mismatched continuations, and unsupported legacy `w:hMerge` remain located errors. Nested tables and other unsupported structures remain unchanged.
 
-Zero `w:firstLineChars` or `w:hangingChars` values remain explicit zero indents and do not block layout. Nonzero character-unit indents remain diagnosed until the renderer can derive their width reliably.
+Zero `w:firstLineChars` or `w:hangingChars` values remain explicit zero indents and do not block layout. At the time this design was written, nonzero character-unit indents remained diagnosed. They are now retained through paragraph-style inheritance and approximated from the effective paragraph font's shaped ideographic-space advance; see `TestCharacterBasedIndentCorpusUsesWrappedLineGeometry` and `docs/office-support.md` for the implemented boundary and fallback behavior.
 
 ### Shared pagination scene
 

@@ -181,6 +181,7 @@ func mergeTextStyle(target *document.WordTextStyle, source document.WordTextStyl
 
 func mergeParagraphLayout(target *document.WordParagraphLayout, source document.WordParagraphLayout) {
 	mask := source.Set
+	characterIndentMask := source.Set & (document.WordParagraphFirstLineIndentCharsSet | document.WordParagraphHangingIndentCharsSet)
 	if mask == 0 {
 		if source.BeforePT != 0 {
 			mask |= document.WordParagraphBeforeSet
@@ -194,8 +195,16 @@ func mergeParagraphLayout(target *document.WordParagraphLayout, source document.
 		if source.FirstLineIndentEMU != 0 {
 			mask |= document.WordParagraphFirstLineIndentSet
 		}
+		if source.FirstLineIndentChars != 0 {
+			mask |= document.WordParagraphFirstLineIndentSet | document.WordParagraphFirstLineIndentCharsSet
+			characterIndentMask |= document.WordParagraphFirstLineIndentCharsSet
+		}
 		if source.HangingIndentEMU != 0 {
 			mask |= document.WordParagraphHangingIndentSet
+		}
+		if source.HangingIndentChars != 0 {
+			mask |= document.WordParagraphHangingIndentSet | document.WordParagraphHangingIndentCharsSet
+			characterIndentMask |= document.WordParagraphHangingIndentCharsSet
 		}
 		if source.Alignment != document.WordAlignDefault {
 			mask |= document.WordParagraphAlignmentSet
@@ -235,9 +244,15 @@ func mergeParagraphLayout(target *document.WordParagraphLayout, source document.
 	}
 	if mask&document.WordParagraphFirstLineIndentSet != 0 {
 		target.FirstLineIndentEMU = source.FirstLineIndentEMU
+		target.FirstLineIndentChars = source.FirstLineIndentChars
+		target.Set &^= document.WordParagraphFirstLineIndentCharsSet
+		target.Set |= characterIndentMask & document.WordParagraphFirstLineIndentCharsSet
 	}
 	if mask&document.WordParagraphHangingIndentSet != 0 {
 		target.HangingIndentEMU = source.HangingIndentEMU
+		target.HangingIndentChars = source.HangingIndentChars
+		target.Set &^= document.WordParagraphHangingIndentCharsSet
+		target.Set |= characterIndentMask & document.WordParagraphHangingIndentCharsSet
 	}
 	if mask&document.WordParagraphAlignmentSet != 0 {
 		target.Alignment = source.Alignment

@@ -45,6 +45,7 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 				layout.Stacked(a.layoutWordSymbolPicker),
 				layout.Expanded(a.layoutFeedback),
 				layout.Expanded(a.layoutModalDialog),
+				layout.Expanded(a.layoutAgentConfirmationModal),
 			)
 		},
 	)

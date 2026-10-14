@@ -133,8 +133,8 @@ func projectWordParagraphLayoutDiagnostics(parts []part, partIndexes map[string]
 	if properties == nil {
 		return
 	}
-	if indentation := firstChild(properties, "ind"); hasNonzeroCharacterIndent(indentation) {
-		appendLayoutUnsupported(&data.Unsupported, document.WordLayoutUnsupported{SourceID: sourceID, Code: "character-indent", Description: "Nonzero character-based paragraph indents are not supported by page layout yet."})
+	if indentation := firstChild(properties, "ind"); hasInvalidCharacterIndent(indentation) {
+		appendLayoutUnsupported(&data.Unsupported, document.WordLayoutUnsupported{SourceID: sourceID, Code: "invalid-character-indent", Description: "A character-based paragraph indent is malformed and cannot be laid out."})
 	}
 	if sectionProperties := firstChild(properties, "sectPr"); sectionProperties != nil {
 		data.Sections = append(data.Sections, projectWordSection(parts, partIndexes, relationships, *sectionStart, sectionProperties, "section-"+strconv.Itoa(len(data.Sections)), &data.Unsupported))
@@ -142,7 +142,7 @@ func projectWordParagraphLayoutDiagnostics(parts []part, partIndexes map[string]
 	}
 }
 
-func hasNonzeroCharacterIndent(indentation *wordXMLNode) bool {
+func hasInvalidCharacterIndent(indentation *wordXMLNode) bool {
 	if indentation == nil {
 		return false
 	}
@@ -151,8 +151,7 @@ func hasNonzeroCharacterIndent(indentation *wordXMLNode) bool {
 		if !present {
 			continue
 		}
-		amount, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
-		if err != nil || amount != 0 {
+		if _, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err != nil {
 			return true
 		}
 	}

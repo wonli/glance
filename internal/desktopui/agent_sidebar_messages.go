@@ -289,9 +289,11 @@ func (a *App) measureAgentSidebarMessageGroupOffscreen(gtx layout.Context, width
 		val widget.Clickable
 	}
 	type savedCardState struct {
-		card    *agentConfirmationCard
-		approve widget.Clickable
-		reject  widget.Clickable
+		card        *agentConfirmationCard
+		approve     widget.Clickable
+		reject      widget.Clickable
+		alwaysAllow widget.Clickable
+		allowOnce   widget.Clickable
 	}
 	var savedToggles []savedToggleState
 	var savedCards []savedCardState
@@ -302,7 +304,13 @@ func (a *App) measureAgentSidebarMessageGroupOffscreen(gtx layout.Context, width
 		}
 		if line.confirmationID != "" && a.agentUI.confirmations != nil {
 			if card := a.agentUI.confirmations[line.confirmationID]; card != nil {
-				savedCards = append(savedCards, savedCardState{card: card, approve: card.approve, reject: card.reject})
+				savedCards = append(savedCards, savedCardState{
+					card:        card,
+					approve:     card.approve,
+					reject:      card.reject,
+					alwaysAllow: card.alwaysAllow,
+					allowOnce:   card.allowOnce,
+				})
 			}
 		}
 	}
@@ -318,6 +326,8 @@ func (a *App) measureAgentSidebarMessageGroupOffscreen(gtx layout.Context, width
 		for _, sc := range savedCards {
 			sc.card.approve = sc.approve
 			sc.card.reject = sc.reject
+			sc.card.alwaysAllow = sc.alwaysAllow
+			sc.card.allowOnce = sc.allowOnce
 		}
 	}()
 
