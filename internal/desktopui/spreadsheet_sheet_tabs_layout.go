@@ -63,8 +63,6 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 						} else if editor := a.formulaReferenceEditor(); editor != nil {
 							gtx.Execute(key.FocusCmd{Tag: editor})
 						}
-					} else if err := a.loadSheet(); err != nil {
-						a.setStatus(err.Error())
 					}
 					if !formulaReferenceActive {
 						a.persistViewState()

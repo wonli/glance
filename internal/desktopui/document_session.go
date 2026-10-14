@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"glance/internal/application"
 	"glance/internal/document"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
@@ -25,6 +26,8 @@ type liveDocumentState struct {
 	documentID         string
 	wordRevision       uint64
 	path               string
+	sourceFormat       application.Format
+	saveAsRequired     bool
 	book               document.Spreadsheet
 	word               *docx.Document
 	wordBlocks         []document.WordBlock
@@ -138,7 +141,6 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 		wordViewMode:             wordViewContinuous,
 		wordLayoutZoom:           1,
 		spreadsheetZoom:          1,
-		gridList:                 widget.List{List: layout.List{Axis: layout.Vertical}},
 		wordListState:            widget.List{List: layout.List{Axis: layout.Vertical}},
 		wordPageListState:        widget.List{List: layout.List{Axis: layout.Vertical}},
 		wordNavigationList:       widget.List{List: layout.List{Axis: layout.Vertical}},

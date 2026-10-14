@@ -57,6 +57,13 @@ type DocumentAdapter interface {
 	Close(context.Context) error
 }
 
+// SourceFormatAdapter declares the on-disk format when an adapter imports a
+// document into another editable format. Runtime accepts the format alias only
+// when it exactly matches the source extension being opened.
+type SourceFormatAdapter interface {
+	SourceFormat() Format
+}
+
 // DocumentSnapshotReader exposes a format adapter's current serialized bytes
 // to read-only workflows such as inspection, export, and printing.
 type DocumentSnapshotReader interface {
@@ -464,7 +471,10 @@ func (r *Runtime) OpenDocument(ctx context.Context, path string) (DocumentInfo, 
 			openErr = errors.New("format factory returned a nil document adapter")
 		}
 		if openErr == nil && adapter.Format() != format {
-			openErr = fmt.Errorf("format factory for %s returned adapter for %s", format, adapter.Format())
+			declared, ok := adapter.(SourceFormatAdapter)
+			if !ok || declared.SourceFormat() != format {
+				openErr = fmt.Errorf("format factory for %s returned adapter for %s", format, adapter.Format())
+			}
 		}
 		if openErr == nil {
 			openErr = ctx.Err()

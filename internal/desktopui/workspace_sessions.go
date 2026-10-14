@@ -28,7 +28,6 @@ type sessionViewSnapshot struct {
 	Sheet                      string         `json:"sheet"`
 	SelectedCell               string         `json:"selected_cell"`
 	SelectedBlock              int            `json:"selected_block"`
-	GridFirst                  int            `json:"grid_first"`
 	WordFirst                  int            `json:"word_first"`
 	WordAutoSave               bool           `json:"word_auto_save"`
 	GridX                      float64        `json:"grid_x"`
@@ -307,7 +306,6 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		state.selectedCell = "A1"
 	}
 	state.selectedBlock = view.SelectedBlock
-	state.gridList.Position.First = view.GridFirst
 	state.wordListState.Position.First = view.WordFirst
 	state.wordAutoSave = view.WordAutoSave
 	if state.word != nil {

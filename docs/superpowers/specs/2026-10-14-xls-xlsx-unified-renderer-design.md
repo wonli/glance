@@ -1,6 +1,6 @@
 # 将 `.xls` 导入统一的 XLSX 网格
 
-**状态：**待审阅草案  
+**状态：**已审阅通过，已实现
 **日期：**2026-10-14
 
 ## 目标
@@ -9,7 +9,7 @@
 
 公式表达式和单元格样式都是必须保留的数据，不能当成可选的预览细节。转换不能悄悄把公式替换成缓存值、抹平样式，或截断工作簿。
 
-## 当前实现情况
+## 实现前发现的缺陷
 
 - `internal/desktopui/layout.go` 会为实现了 `document.GridReader` 的工作簿选择虚拟网格；旧版 XLS 读取器仍走另一套行列表布局。
 - `internal/format/xls/reader.go` 当前把预览范围硬编码为 300 行、16 列，调用 `ReadAllCells`，并且只保存 `document.Cell.Value`。这些数字是实现时选定的常量，不是 BIFF8 工作表的格式限制，也没有记录过相关性能基准。
@@ -35,7 +35,7 @@
 - 不得启用任何会将内容自动写回 `.xls` 的自动保存或路径接管行为。
 - 保存 XLSX 失败时必须保留脏状态。导入、编辑、取消保存或保存失败之后，原 `.xls` 文件的字节内容都必须保持不变。
 
-## 保真范围
+## 首版保真范围
 
 首个实现版本必须保留以下单元格级数据：
 
@@ -43,8 +43,9 @@
 - 单元格值及类型，包括文本、数字、布尔值和错误值。
 - 公式表达式和源文件保存的公式缓存结果。本功能不负责重新计算公式。
 - 能映射到生成的 XLSX 中的单元格 XF 样式，包括字体、填充、边框、对齐和数字格式。应用现有渲染器仍只绘制当前支持的样式属性；这不代表条件格式等尚未支持的视觉功能也会被渲染。
+- BIFF 行高、默认列宽及自定义列宽；隐藏、分组、自动适配和非默认行/列 XF 等暂不支持的几何或格式元数据必须拒绝导入。
 
-无法由转换器保留的工作簿功能，必须在发布转换结果之前检测并报告，不能悄悄消失。首个支持的 BIFF 版本和准确的报错边界，将在实施计划中根据解析器证据和测试样本确定。
+无法由转换器保留的工作簿功能，必须在发布转换结果之前检测并报告，不能悄悄消失。首个支持的 BIFF 版本和准确的报错边界，在实施计划中根据解析器证据和测试样本确定；合并区域、超链接、隐藏工作表和图表/对象等未映射内容会明确拒绝。
 
 ## 验收证据
 
@@ -66,4 +67,5 @@
 ## 参考资料
 
 - Microsoft 的 [Excel 97–2007 二进制文件格式（`.xls`）规范](https://www.loc.gov/preservation/digital/formats/digformatspecs/Excel97-2007BinaryFileFormat%28xls%29Specification.pdf)
-- 当前实现：`internal/format/xls/reader.go`、`internal/format/xlsx/workbook.go` 和 `internal/desktopui/layout.go`
+- 实现前代码：`internal/format/xls/reader.go`、`internal/format/xlsx/workbook.go` 和 `internal/desktopui/layout.go`
+- 实现后支持范围：`docs/office-support.md` 与 `docs/office-library-evaluation.md`

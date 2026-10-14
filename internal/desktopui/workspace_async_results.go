@@ -341,7 +341,7 @@ func (a *App) processAsyncResults() {
 		a.opening = false
 		openSucceeded := false
 		if result.err != nil {
-			a.setStatus(result.err.Error())
+			a.setStatus(documentOpenFailureStatus(result.err))
 		} else if err := a.installDocument(result.loaded); err != nil {
 			a.setStatus(err.Error())
 		} else {

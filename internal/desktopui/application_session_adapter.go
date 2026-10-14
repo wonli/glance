@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"strings"
 
 	"glance/internal/application"
@@ -27,6 +28,14 @@ type desktopSessionAdapter struct {
 
 func (a *desktopSessionAdapter) DocumentID() string         { return a.session.documentID }
 func (a *desktopSessionAdapter) Format() application.Format { return a.format }
+func (a *desktopSessionAdapter) SourceFormat() application.Format {
+	a.session.adapterMu.RLock()
+	defer a.session.adapterMu.RUnlock()
+	if a.session.sourceFormat != "" {
+		return a.session.sourceFormat
+	}
+	return a.format
+}
 func (a *desktopSessionAdapter) Path() string {
 	a.session.adapterMu.RLock()
 	defer a.session.adapterMu.RUnlock()
@@ -2118,6 +2127,12 @@ func (a *desktopSessionAdapter) SaveWithSnapshot(ctx context.Context) ([]byte, e
 	if s.finalized.Load() {
 		return nil, errors.New("document session is closed")
 	}
+	s.adapterMu.RLock()
+	saveAsRequired := s.saveAsRequired
+	s.adapterMu.RUnlock()
+	if saveAsRequired {
+		return nil, errors.New("旧版 .xls 导入的工作簿不能覆盖源文件，请另存为 .xlsx")
+	}
 	if s.pptxDoc != nil && s.hasPendingPresentationDraft() {
 		return nil, application.ErrPendingEditorDraft
 	}
@@ -2222,6 +2237,9 @@ func (a *desktopSessionAdapter) SaveAsWithSnapshot(ctx context.Context, path str
 	if s.finalized.Load() {
 		return nil, errors.New("document session is closed")
 	}
+	if strings.EqualFold(filepath.Ext(path), ".xls") {
+		return nil, errors.New("旧版 .xls 导入的工作簿只能另存为 .xlsx")
+	}
 	if s.pptxDoc != nil && s.hasPendingPresentationDraft() {
 		return nil, application.ErrPendingEditorDraft
 	}
@@ -2230,8 +2248,13 @@ func (a *desktopSessionAdapter) SaveAsWithSnapshot(ctx context.Context, path str
 	var err error
 	switch {
 	case s.book != nil:
-		if saver, ok := s.book.(interface{ SaveAs(string) error }); ok {
-			err = saver.SaveAs(path)
+		if saver, ok := s.book.(interface{ SaveAsDocument(string) error }); ok {
+			if snapshoter, ok := s.book.(interface{ Snapshot() ([]byte, error) }); ok {
+				snapshot, err = snapshoter.Snapshot()
+			}
+			if err == nil {
+				err = saver.SaveAsDocument(path)
+			}
 		} else {
 			err = application.ErrReadOnlyDocument
 		}

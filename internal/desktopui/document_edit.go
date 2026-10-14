@@ -7,39 +7,12 @@ import (
 	"strings"
 )
 
-func (a *App) loadSheet() error {
-	if a.book == nil {
-		return nil
-	}
-	unlock := lockSessionAdapterRead(a.documentSessionState)
-	rows, err := a.book.Range(a.sheet, maxPreviewRows, maxPreviewColumns)
-	unlock()
-	if err != nil {
-		return err
-	}
-	a.grid = rows
-	a.gridList.Position.First = 0
-	nonEmpty := 0
-	for _, row := range rows {
-		for _, cell := range row {
-			if cell.Value != "" {
-				nonEmpty++
-			}
-		}
-	}
-	if len(rows) == 0 {
-		a.setStatus(fmt.Sprintf("工作表「%s」为空（未读到单元格内容）", a.sheet))
-	} else if len(rows) == maxPreviewRows {
-		a.setStatus(fmt.Sprintf("工作表「%s」：已读入前 %d 行，%d 个非空单元格", a.sheet, len(rows), nonEmpty))
-	} else {
-		a.setStatus(fmt.Sprintf("工作表「%s」：已读入 %d 行，%d 个非空单元格", a.sheet, len(rows), nonEmpty))
-	}
-	return nil
-}
-
 func (a *App) applyCellEdit() error {
 	if a.book == nil || a.selectedCell == "" {
 		return fmt.Errorf("请先选择单元格")
+	}
+	if _, ok := a.book.(document.GridReader); !ok {
+		return fmt.Errorf("当前工作簿未提供统一网格读取能力")
 	}
 	state := a.documentSessionState
 	token, ok := state.beginOperation(sessionOperationMutation)
@@ -67,7 +40,6 @@ func (a *App) applyCellEdit() error {
 		unlock()
 		changed = err == nil
 	}
-	_, isGridReader := a.book.(document.GridReader)
 	a.completeSessionOperation(state, token, err, err == nil && !commandRouted)
 	if err != nil {
 		return err
@@ -75,16 +47,9 @@ func (a *App) applyCellEdit() error {
 	if !changed {
 		return nil
 	}
-	if isGridReader {
-		if a.virtualGrid != nil {
-			a.virtualGrid.invalidateWindow()
-		}
-		return nil
+	if a.virtualGrid != nil {
+		a.virtualGrid.invalidateWindow()
 	}
-	if err := a.loadSheet(); err != nil {
-		return err
-	}
-	a.persistActiveSession()
 	return nil
 }
 
@@ -251,7 +216,7 @@ func (a *App) closeDocument() error {
 		a.pptxDoc = nil
 	}
 	a.pptxView = nil
-	a.sheets, a.sheet, a.grid = nil, "", nil
+	a.sheets, a.sheet = nil, ""
 	a.virtualGrid = nil
 	shared := a.cellEdit.session
 	a.cellEdit.cancel()

@@ -75,8 +75,6 @@ type documentSessionState struct {
 	spreadsheetStatusZoomResetBtn       widget.Clickable
 	spreadsheetStatusZoomDrag           gesture.Drag
 	sheet                               string
-	grid                                [][]document.Cell
-	gridList                            widget.List
 	wordListState                       widget.List
 	wordBodyScroll                      gesture.Scroll
 	wordCanvasBlankClick                gesture.Click

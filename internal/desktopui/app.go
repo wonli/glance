@@ -21,11 +21,6 @@ import (
 	"glance/internal/workspace"
 )
 
-const (
-	maxPreviewRows    = 300
-	maxPreviewColumns = 16
-)
-
 const preferredSystemTypeface = font.Typeface("Inter, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif")
 
 type App struct {

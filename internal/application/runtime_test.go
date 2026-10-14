@@ -136,6 +136,44 @@ func TestRuntimeOpenDocumentReusesCanonicalSession(t *testing.T) {
 	}
 }
 
+func TestRuntimeOpenAcceptsAdapterDeclaredSourceFormat(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "legacy.xls")
+	adapter := &declaredSourceFormatAdapter{testDocumentAdapter: &testDocumentAdapter{format: FormatXLSX}, source: FormatXLS}
+	factory := &testFormatFactory{format: FormatXLS, openDoc: adapter}
+	runtime, err := NewRuntime(ctx, RuntimeOptions{Factories: []FormatFactory{factory}})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background()) })
+
+	info, err := runtime.OpenDocument(ctx, path)
+	if err != nil {
+		t.Fatalf("OpenDocument declared XLS-to-XLSX adapter: %v", err)
+	}
+	if info.Format != FormatXLSX || info.SourcePath != canonicalPath(path) {
+		t.Fatalf("opened info = %+v; want XLSX editor format and original XLS source path", info)
+	}
+}
+
+func TestRuntimeOpenRejectsUndeclaredFormatMismatch(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "legacy.xls")
+	adapter := &testDocumentAdapter{format: FormatXLSX}
+	factory := &testFormatFactory{format: FormatXLS, openDoc: adapter}
+	runtime, err := NewRuntime(ctx, RuntimeOptions{Factories: []FormatFactory{factory}})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background()) })
+	if _, err := runtime.OpenDocument(ctx, path); err == nil {
+		t.Fatal("OpenDocument accepted a format mismatch without an exact source-format declaration")
+	}
+	if adapter.closeCalls != 1 {
+		t.Fatalf("rejected mismatched adapter close calls = %d; want 1", adapter.closeCalls)
+	}
+}
+
 func TestRuntimeSaveFailurePreservesDirtySessionAndDirtyCloseIsRejected(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "report.json")

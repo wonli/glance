@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 type adapterFuncs struct {
 	mu                               sync.RWMutex
 	format                           Format
+	sourceFormat                     Format
 	path                             string
 	dirty                            func() bool
 	readOnly                         bool
@@ -203,6 +205,14 @@ var _ WordCommentAccess = (*adapterFuncs)(nil)
 var _ PresentationCommentAccess = (*adapterFuncs)(nil)
 
 func (a *adapterFuncs) Format() Format { return a.format }
+func (a *adapterFuncs) SourceFormat() Format {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.sourceFormat != "" {
+		return a.sourceFormat
+	}
+	return a.format
+}
 func (a *adapterFuncs) Path() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -234,6 +244,9 @@ func (a *adapterFuncs) Save(ctx context.Context) error {
 	}
 	if a.readOnly {
 		return ErrReadOnlyDocument
+	}
+	if source := a.SourceFormat(); source != a.format {
+		return fmt.Errorf("%s 来源的导入工作簿不能覆盖源文件，请另存为 .%s", source, a.format)
 	}
 	if a.save == nil {
 		return errors.New("save is not supported by this document format")
@@ -267,6 +280,7 @@ func (a *adapterFuncs) SaveAs(ctx context.Context, path string) error {
 	}
 	a.mu.Lock()
 	a.path = path
+	a.sourceFormat = a.format
 	a.mu.Unlock()
 	return nil
 }
@@ -284,6 +298,7 @@ func (a *adapterFuncs) SaveAsWithSnapshot(ctx context.Context, path string) ([]b
 		}
 		a.mu.Lock()
 		a.path = path
+		a.sourceFormat = a.format
 		a.mu.Unlock()
 		return data, nil
 	}
@@ -2057,11 +2072,26 @@ func (f builtInFormatFactory) Open(ctx context.Context, path string) (DocumentAd
 		}
 		return spreadsheetAdapter(FormatXLSX, path, d, !d.Editable(), d.Save, d.SaveAsDocument, d.Close), nil
 	case FormatXLS:
-		d, err := legacyxls.Open(path)
+		converted, err := legacyxls.ConvertToTempXLSX(ctx, path)
 		if err != nil {
 			return nil, err
 		}
-		return spreadsheetAdapter(FormatXLS, path, d, true, d.Save, nil, d.Close), nil
+		d, openErr := xlsx.Open(converted.Path)
+		cleanupErr := converted.Cleanup()
+		if openErr != nil {
+			return nil, errors.Join(openErr, cleanupErr)
+		}
+		if cleanupErr != nil {
+			return nil, errors.Join(cleanupErr, d.Close())
+		}
+		d.SetSourcePath("")
+		if len(d.SheetNames()) == 0 {
+			_ = d.Close()
+			return nil, errors.New("converted XLSX has no worksheets")
+		}
+		adapter := spreadsheetAdapter(FormatXLSX, path, d, false, d.Save, d.SaveAsDocument, d.Close).(*adapterFuncs)
+		adapter.sourceFormat = FormatXLS
+		return adapter, nil
 	case FormatPPTX:
 		d, err := pptx.Open(path)
 		if err != nil {

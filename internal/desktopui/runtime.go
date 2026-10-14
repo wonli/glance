@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -866,6 +867,8 @@ func sharedSessionFromLoadedDocument(loaded loadedDocument) *sharedDocumentSessi
 		session.documentID = newDraftSessionID(format)
 	}
 	session.book = loaded.book
+	session.sourceFormat = loaded.sourceFormat
+	session.saveAsRequired = loaded.saveAsRequired
 	session.word = loaded.word
 	session.wordBlocks = cloneWordBlockSnapshot(loaded.wordBlocks)
 	if loaded.word != nil && loaded.wordBlocks == nil {
@@ -884,16 +887,18 @@ func loadedDocumentFromSharedSession(session *sharedDocumentSession) loadedDocum
 		return loadedDocument{}
 	}
 	return loadedDocument{
-		shared:      session,
-		path:        session.path,
-		book:        session.book,
-		word:        session.word,
-		wordBlocks:  cloneWordBlockSnapshot(session.wordBlocks),
-		jsonDoc:     session.jsonDoc,
-		markdownDoc: session.markdownDoc,
-		pdfDoc:      session.pdfDoc,
-		pptxDoc:     session.pptxDoc,
-		sheets:      append([]string(nil), session.sheets...),
+		shared:         session,
+		path:           session.path,
+		sourceFormat:   session.sourceFormat,
+		saveAsRequired: session.saveAsRequired,
+		book:           session.book,
+		word:           session.word,
+		wordBlocks:     cloneWordBlockSnapshot(session.wordBlocks),
+		jsonDoc:        session.jsonDoc,
+		markdownDoc:    session.markdownDoc,
+		pdfDoc:         session.pdfDoc,
+		pptxDoc:        session.pptxDoc,
+		sheets:         append([]string(nil), session.sheets...),
 	}
 }
 
@@ -949,6 +954,10 @@ func (r *desktopRuntime) updateSessionPath(session *sharedDocumentSession, path 
 			delete(r.sessionsByCanonicalPath, oldKey)
 		}
 		session.path = path
+		if session.saveAsRequired && strings.EqualFold(filepath.Ext(path), ".xlsx") {
+			session.sourceFormat = application.FormatXLSX
+			session.saveAsRequired = false
+		}
 		if key := canonicalSessionPath(path); key != "" {
 			r.sessionsByCanonicalPath[key] = session.documentID
 		}
@@ -973,6 +982,10 @@ func (r *desktopRuntime) updateSessionPathFromApplication(session *sharedDocumen
 			delete(r.sessionsByCanonicalPath, oldKey)
 		}
 		session.path = path
+		if session.saveAsRequired && strings.EqualFold(filepath.Ext(path), ".xlsx") {
+			session.sourceFormat = application.FormatXLSX
+			session.saveAsRequired = false
+		}
 		if key := canonicalSessionPath(path); key != "" {
 			r.sessionsByCanonicalPath[key] = session.documentID
 		}

@@ -1,7 +1,10 @@
 package desktopui
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"glance/internal/application"
 	"glance/internal/document"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
@@ -40,22 +43,34 @@ func (a *App) open(path string) error {
 }
 
 type loadedDocument struct {
-	shared      *sharedDocumentSession
-	path        string
-	book        document.Spreadsheet
-	word        *docx.Document
-	wordBlocks  []document.WordBlock
-	jsonDoc     *jsondoc.Document
-	markdownDoc *markdowndoc.Document
-	pdfDoc      *pdfdoc.Document
-	pptxDoc     *pptx.Document
-	sheets      []string
+	shared         *sharedDocumentSession
+	path           string
+	book           document.Spreadsheet
+	word           *docx.Document
+	wordBlocks     []document.WordBlock
+	jsonDoc        *jsondoc.Document
+	markdownDoc    *markdowndoc.Document
+	pdfDoc         *pdfdoc.Document
+	pptxDoc        *pptx.Document
+	sheets         []string
+	sourceFormat   application.Format
+	saveAsRequired bool
 }
 
 type openResult struct {
 	loaded     loadedDocument
 	err        error
 	historyErr error
+}
+
+func documentOpenFailureStatus(err error) string {
+	if err == nil {
+		return ""
+	}
+	if strings.Contains(err.Error(), "cannot be preserved by the XLSX importer") {
+		return "无法安全导入此 .xls：当前版本尚不能无损保留其中的内容；原文件未修改。"
+	}
+	return err.Error()
 }
 
 func cloneWordBlockSnapshot(blocks []document.WordBlock) []document.WordBlock {
@@ -75,7 +90,7 @@ func loadDocument(path string) (loadedDocument, error) {
 			_ = book.Close()
 			return loadedDocument{}, fmt.Errorf("工作簿没有可显示的工作表")
 		}
-		return loadedDocument{path: path, book: book, sheets: sheets}, nil
+		return loadedDocument{path: path, book: book, sheets: sheets, sourceFormat: application.FormatXLSX}, nil
 	case ".pdf":
 		d, err := pdfdoc.Open(path)
 		if err != nil {
@@ -107,22 +122,39 @@ func loadDocument(path string) (loadedDocument, error) {
 		}
 		return loadedDocument{path: path, pptxDoc: d}, nil
 	case ".xls":
-		book, err := legacyxls.Open(path)
+		converted, err := legacyxls.ConvertToTempXLSX(context.Background(), path)
 		if err != nil {
 			return loadedDocument{}, err
 		}
+		book, openErr := xlsx.Open(converted.Path)
+		cleanupErr := converted.Cleanup()
+		if openErr != nil {
+			return loadedDocument{}, errors.Join(openErr, cleanupErr)
+		}
+		if cleanupErr != nil {
+			_ = book.Close()
+			return loadedDocument{}, cleanupErr
+		}
+		// The imported package is a staging file; saving must go through Save As.
+		book.SetSourcePath("")
 		sheets := book.SheetNames()
 		if len(sheets) == 0 {
 			_ = book.Close()
-			return loadedDocument{}, fmt.Errorf("旧版工作簿没有可显示的工作表")
+			return loadedDocument{}, fmt.Errorf("导入后的工作簿没有可显示的工作表")
 		}
-		return loadedDocument{path: path, book: book, sheets: sheets}, nil
+		return loadedDocument{path: path, book: book, sheets: sheets, sourceFormat: application.FormatXLS, saveAsRequired: true}, nil
 	default:
 		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx、.docx、.pptx、.pdf、.json 和 Markdown", filepath.Ext(path))
 	}
 }
 
 func (a *App) installDocument(loaded loadedDocument) error {
+	if loaded.book != nil {
+		if _, ok := loaded.book.(document.GridReader); !ok {
+			closeLoadedDocument(loaded)
+			return fmt.Errorf("工作簿适配器未提供统一网格读取能力")
+		}
+	}
 	a.prepareMarkdownDeparture()
 	runtime := a.ensureDesktopRuntime()
 	a.reconcileWorkspaceTabs()
@@ -271,23 +303,21 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	if loaded.book != nil {
 		a.sheet = loaded.sheets[0]
 		a.cellButtons = make(map[string]*widget.Clickable)
-		if _, ok := loaded.book.(document.GridReader); ok {
-			a.virtualGrid = newGridViewport()
-			a.selectedCell = "A1"
-			state.selection = CellSelection{}
-			state.selectionSet = true
-			a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn = 1, 1
-			a.virtualGrid.PendingSelectionLoad = true
-			a.cellEdit.selectCell("A1", "")
-			a.nameBox.SetText("A1")
-			a.formulaEditor.SetText("")
+		a.virtualGrid = newGridViewport()
+		a.selectedCell = "A1"
+		state.selection = CellSelection{}
+		state.selectionSet = true
+		a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn = 1, 1
+		a.virtualGrid.PendingSelectionLoad = true
+		a.cellEdit.selectCell("A1", "")
+		a.nameBox.SetText("A1")
+		a.formulaEditor.SetText("")
+		if loaded.sourceFormat == application.FormatXLS {
+			a.setStatus(fmt.Sprintf("已导入旧版 .xls 工作表「%s」：可浏览和编辑；请另存为 .xlsx", a.sheet))
+		} else {
 			a.setStatus(fmt.Sprintf("工作表「%s」：虚拟网格就绪，可浏览并编辑完整 XLSX 地址范围", a.sheet))
-			return nil
 		}
-		a.sheet = loaded.sheets[0]
-		a.cellButtons = make(map[string]*widget.Clickable)
-		a.setStatus("旧版 .xls 只读预览（当前显示首张工作表）")
-		return a.loadSheet()
+		return nil
 	}
 	a.blockButtons = make(map[int]*widget.Clickable)
 	a.selectedBlock = -1

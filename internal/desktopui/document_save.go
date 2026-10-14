@@ -75,6 +75,10 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 	if state == nil {
 		return
 	}
+	if state.saveAsRequired {
+		a.startSaveAsPicker("xlsx")
+		return
+	}
 	token, ok := state.beginOperation(sessionOperationSave)
 	if !ok {
 		return
