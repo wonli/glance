@@ -31,6 +31,7 @@ const preferredSystemTypeface = font.Typeface("Inter, PingFang SC, Hiragino Sans
 type App struct {
 	*documentSessionState
 	*desktopRuntime
+	windowID             uint64
 	window               *app.Window
 	renderedFrame        bool
 	trayStartupScheduled bool
@@ -279,6 +280,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 	}
 	a := &App{
 		desktopRuntime:                runtime,
+		windowID:                      windowID,
 		window:                        window,
 		theme:                         material.NewTheme(),
 		documentSessionState:          newDocumentSessionState(initialPath),

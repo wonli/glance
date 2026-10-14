@@ -75,6 +75,16 @@ static NSStatusItem *activeStatusItem;
 static GlanceTrayMenuTarget *activeTarget;
 static NSMenu *activeMenu;
 
+static BOOL handleAppReopen(id self, SEL _cmd, NSApplication *sender, BOOL hasVisibleWindows) {
+	(void)self;
+	(void)_cmd;
+	(void)sender;
+	if (!hasVisibleWindows && activeTrayID != 0) {
+		goGlanceTrayAction(activeTrayID, GlanceTrayActionShow);
+	}
+	return YES;
+}
+
 static void createStatusItem(void *rawContext) {
 	GlanceTrayCreateContext *context = (GlanceTrayCreateContext *)rawContext;
 	@autoreleasepool {
@@ -84,6 +94,14 @@ static void createStatusItem(void *rawContext) {
 			free(context->png2xBytes);
 			free(context);
 			return;
+		}
+
+		if (NSApp.delegate != nil) {
+			Class delClass = [NSApp.delegate class];
+			SEL reopenSel = @selector(applicationShouldHandleReopen:hasVisibleWindows:);
+			if (!class_getInstanceMethod(delClass, reopenSel)) {
+				class_addMethod(delClass, reopenSel, (IMP)handleAppReopen, "c@:@c");
+			}
 		}
 
 		NSData *png1x = [NSData dataWithBytesNoCopy:context->png1xBytes
@@ -212,7 +230,42 @@ static void hideActiveWindow(void *rawContext) {
 		if (window == nil) {
 			window = NSApp.mainWindow;
 		}
-		[window orderOut:nil];
+		if (window == nil) {
+			Class statusBarClass = NSClassFromString(@"NSStatusBarWindow");
+			for (NSWindow *w in NSApp.windows) {
+				if (statusBarClass != nil && [w isKindOfClass:statusBarClass]) {
+					continue;
+				}
+				if (activeStatusItem != nil && w == activeStatusItem.button.window) {
+					continue;
+				}
+				if ([w isVisible]) {
+					window = w;
+					break;
+				}
+			}
+		}
+		if (window != nil) {
+			[window orderOut:nil];
+		}
+	}
+}
+
+static void showActiveWindow(void *rawContext) {
+	(void)rawContext;
+	@autoreleasepool {
+		[NSApp activateIgnoringOtherApps:YES];
+		Class statusBarClass = NSClassFromString(@"NSStatusBarWindow");
+		for (NSWindow *w in NSApp.windows) {
+			if (statusBarClass != nil && [w isKindOfClass:statusBarClass]) {
+				continue;
+			}
+			if (activeStatusItem != nil && w == activeStatusItem.button.window) {
+				continue;
+			}
+			[w makeKeyAndOrderFront:nil];
+			[w orderFrontRegardless];
+		}
 	}
 }
 
@@ -253,5 +306,13 @@ int glance_tray_hide_active_window(void) {
 		return 0;
 	}
 	dispatch_async_f(dispatch_get_main_queue(), NULL, hideActiveWindow);
+	return 1;
+}
+
+int glance_tray_show_active_window(void) {
+	if (NSApp == nil) {
+		return 0;
+	}
+	dispatch_async_f(dispatch_get_main_queue(), NULL, showActiveWindow);
 	return 1;
 }

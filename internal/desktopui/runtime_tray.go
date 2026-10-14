@@ -237,6 +237,7 @@ func (r *desktopRuntime) showMainWindow() {
 		window := primary.window
 		r.mu.Unlock()
 		if window != nil {
+			raiseActiveWindow()
 			window.Perform(system.ActionRaise)
 			window.Invalidate()
 		}

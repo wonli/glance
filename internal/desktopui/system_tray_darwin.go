@@ -42,12 +42,18 @@ func (a *App) hideMainWindowToTray() bool {
 	runtime := a.ensureDesktopRuntime()
 	runtime.mu.Lock()
 	canHide := runtime.trayReady && !runtime.shuttingDown && !runtime.quitRequested &&
-		runtime.primaryWindowID == a.windowID && runtime.windows[a.windowID] == a
+		runtime.primaryWindowID == a.windowID && runtime.windows[a.windowID] == a &&
+		len(runtime.windows) == 1
 	runtime.mu.Unlock()
 	if !canHide {
 		return false
 	}
+	a.persistActiveSession()
 	return C.glance_tray_hide_active_window() != 0
+}
+
+func raiseActiveWindow() {
+	C.glance_tray_show_active_window()
 }
 
 func newSystemTray(actions chan trayAction) (*systemTray, error) {
