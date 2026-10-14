@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	maxDocumentPlanCommands = 32
 	maxDocumentPlanBytes    = 256 << 10
 	maxDocumentPlans        = 128
 	documentPlanTTL         = 30 * time.Minute
@@ -159,9 +158,9 @@ func registerDocumentPlanCapabilities(catalog *Catalog) error {
 		{
 			Descriptor: CapabilityDescriptor{
 				ID: "document.plan.validate", Name: "校验文档修改计划",
-				Description: "校验同一文档上的一组已注册修改命令、参数 Schema、格式支持和基准修订，并生成短期有效的计划 ID。计划最多 32 条命令、总参数 256 KiB；校验只读，不会修改文档。",
+				Description: "校验同一文档上的一组已注册修改命令、参数 Schema、格式支持和基准修订，并生成短期有效的计划 ID。计划总参数量最多 256 KiB；校验只读，不会修改文档。",
 				Category:    CapabilityWorkflow, Risk: RiskLow, RequiresDocument: true, RequiresRevision: true,
-				InputSchema:  json.RawMessage(`{"type":"object","properties":{"commands":{"type":"array","minItems":1,"maxItems":32,"items":{"type":"object","properties":{"capability_id":{"type":"string","minLength":1,"maxLength":128},"arguments":{"type":"object"}},"required":["capability_id","arguments"],"additionalProperties":false}}},"required":["commands"],"additionalProperties":false}`),
+				InputSchema:  json.RawMessage(`{"type":"object","properties":{"commands":{"type":"array","minItems":1,"items":{"type":"object","properties":{"capability_id":{"type":"string","minLength":1,"maxLength":128},"arguments":{"type":"object"}},"required":["capability_id","arguments"],"additionalProperties":false}}},"required":["commands"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"plan_id":{"type":"string"},"valid":{"type":"boolean"},"document_id":{"type":"string"},"base_revision":{"type":"integer"},"created_at":{"type":"string"},"expires_at":{"type":"string"},"commands":{"type":"array","items":{"type":"object","properties":{"capability_id":{"type":"string"},"name":{"type":"string"},"risk":{"type":"string"},"arguments":{"type":"object"}},"required":["capability_id","name","risk","arguments"],"additionalProperties":false}},"issues":{"type":"array","items":{"type":"object","properties":{"index":{"type":"integer"},"capability_id":{"type":"string"},"code":{"type":"string"},"message":{"type":"string"}},"required":["index","code","message"],"additionalProperties":false}}},"required":["plan_id","valid","document_id","base_revision","created_at","expires_at","commands","issues"],"additionalProperties":false}`),
 			},
 			Handler: handleDocumentPlanValidate,
@@ -237,8 +236,8 @@ func handleDocumentPlanValidate(_ context.Context, capability CapabilityContext,
 			Risk: registration.descriptor.Risk, Arguments: arguments,
 		})
 	}
-	if len(input.Commands) == 0 || len(input.Commands) > maxDocumentPlanCommands {
-		issues = append(issues, documentPlanIssue{Index: 0, Code: "invalid_command_count", Message: "计划必须包含 1 到 32 条命令。"})
+	if len(input.Commands) == 0 {
+		issues = append(issues, documentPlanIssue{Index: 0, Code: "invalid_command_count", Message: "计划至少包含一条命令。"})
 	}
 	valid := len(issues) == 0 && len(commands) == len(input.Commands)
 	createdAt := time.Now().UTC()
