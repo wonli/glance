@@ -133,10 +133,10 @@ func normalizeHostOptions(options HostOptions) HostOptions {
 		options.ModelTimeout = 3 * time.Minute
 	}
 	if options.MaxToolRounds <= 0 {
-		options.MaxToolRounds = 8
+		options.MaxToolRounds = 200
 	}
 	if options.MaxToolCalls <= 0 {
-		options.MaxToolCalls = 24
+		options.MaxToolCalls = 600
 	}
 	if options.MaxPromptBytes <= 0 {
 		options.MaxPromptBytes = 1 << 20
