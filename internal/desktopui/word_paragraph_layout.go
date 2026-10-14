@@ -143,8 +143,15 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 		} else {
 			a.handleWordArrowNavigation(gtx, paragraph, run, editor)
 			for event, ok := editor.Update(gtx); ok; event, ok = editor.Update(gtx) {
-				if _, submit := event.(widget.SubmitEvent); submit {
+				switch event.(type) {
+				case widget.SelectEvent:
 					selectionStart, selectionEnd := editor.Selection()
+					logWordDebug("flow_selection_change revision=%d paragraph=%q run=%q selection=%d:%d length=%d focused=%v",
+						state.wordRevisionAtomic.Load(), paragraph.ID, run.ID, selectionStart, selectionEnd, editor.Len(), gtx.Focused(editor))
+				case widget.SubmitEvent:
+					selectionStart, selectionEnd := editor.Selection()
+					logWordDebug("flow_submit_event revision=%d run=%q selection=%d:%d length=%d",
+						state.wordRevisionAtomic.Load(), run.ID, selectionStart, selectionEnd, editor.Len())
 					a.queueWordParagraphSplit(run.ID, editor.Text(), selectionStart, selectionEnd)
 					if state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID {
 						editor.ReadOnly = true

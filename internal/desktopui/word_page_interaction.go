@@ -176,6 +176,12 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 			state.wordCanvasContentClickHandled = true
 			state.wordPageTextSelection = nil
 			hit := wordPageHitTestWithTolerance(page, pagePoint, wordPageDevicePixelTolerance(interaction.Transform.PixelsPerPoint))
+			currentEditor := state.wordRunEditors[state.selectedWordRunID]
+			currentStart, currentEnd, currentLength := wordDebugEditorSelection(currentEditor)
+			logWordDebug("page_pointer_press revision=%d layout_revision=%d page=%d scale=%.4f screen=(%.1f,%.1f) page_point=(%.2f,%.2f) hit=%v hit_run=%q hit_offset=%d hit_image=%q current_run=%q current_selection=%d:%d current_length=%d",
+				state.wordRevisionAtomic.Load(), wordDebugLayoutRevision(state), pageIndex, interaction.Transform.PixelsPerPoint,
+				float64(viewportPoint.X), float64(viewportPoint.Y), float64(pagePoint.X), float64(pagePoint.Y), hit.found, hit.runID, hit.runeOffset, hit.imageID,
+				state.selectedWordRunID, currentStart, currentEnd, currentLength)
 			if hit.imageID != "" {
 				clearWordImageSelection(state)
 				selectWordImage(state, hit.imageID)

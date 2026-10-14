@@ -60,6 +60,9 @@ func (a *App) queueWordParagraphSplit(runID, value string, selectionStart, selec
 		selectionStart: selectionStart,
 		selectionEnd:   selectionEnd,
 	}
+	logWordDebug("split_queued revision=%d run=%q selection=%d:%d length=%d pending_other_drafts=%v before=%s",
+		state.wordRevisionAtomic.Load(), runID, selectionStart, selectionEnd, len([]rune(value)), wordHasPendingTextDraftsExcept(state, runID),
+		wordDebugParagraphNeighborhood(wordBlocksForState(state), runID))
 	captureWordTextDraft(state, runID, value)
 	state.wordForceDraftFlush.Store(true)
 	state.wordFlushRequested.Store(true)
@@ -377,6 +380,9 @@ func (a *App) startWordParagraphSplit(state *documentSessionState) {
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
 		return
 	}
+	logWordDebug("split_begin revision=%d run=%q selection=%d:%d input_length=%d prefix_length=%d suffix_length=%d before=%s",
+		state.wordRevisionAtomic.Load(), intent.runID, intent.selectionStart, intent.selectionEnd, len([]rune(intent.value)), len([]rune(prefix)), len([]rune(suffix)),
+		wordDebugParagraphNeighborhood(wordBlocksForState(state), intent.runID))
 	generation := a.documentGeneration
 	a.launchManagedBackground(func() {
 		var paragraphID, runID string
@@ -385,6 +391,9 @@ func (a *App) startWordParagraphSplit(state *documentSessionState) {
 			paragraphID, runID, splitErr = splitter.SplitParagraphAt(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd)
 			return splitErr
 		})
+		logWordDebug("split_adapter_complete revision=%d source_run=%q new_paragraph=%q new_run=%q prefix_length=%d suffix_length=%d error=%q source_after=%s new_after=%s",
+			state.wordRevisionAtomic.Load(), intent.runID, paragraphID, runID, len([]rune(prefix)), len([]rune(suffix)), wordDebugError(err),
+			wordDebugParagraphNeighborhood(blocks, intent.runID), wordDebugParagraphNeighborhood(blocks, runID))
 		a.publishWordCommand(wordCommandResult{
 			state:            state,
 			generation:       generation,

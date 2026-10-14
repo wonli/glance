@@ -72,7 +72,7 @@ func wordNavigationRuns(blocks []document.WordBlock) []wordNavigationRun {
 	return runs
 }
 
-func (a *App) handleWordArrowNavigation(gtx layout.Context, paragraph document.WordParagraph, run document.WordTextRun, editor *widget.Editor) bool {
+func (a *App) handleWordArrowNavigation(gtx layout.Context, paragraph document.WordParagraph, run document.WordTextRun, editor *widget.Editor) (handled bool) {
 	state := a.documentSessionState
 	if state == nil || editor == nil || !gtx.Focused(editor) || editor.ReadOnly || state.formatRunning.Load() || a.isSaving() {
 		return false
@@ -99,7 +99,19 @@ func (a *App) handleWordArrowNavigation(gtx layout.Context, paragraph document.W
 		return false
 	}
 	keyEvent, ok := ev.(key.Event)
-	if !ok || keyEvent.State != key.Press || keyEvent.Modifiers != 0 {
+	if !ok {
+		return true
+	}
+	beforeStart, beforeEnd, beforeLength := wordDebugEditorSelection(editor)
+	defer func() {
+		afterEditor := state.wordRunEditors[state.selectedWordRunID]
+		afterStart, afterEnd, afterLength := wordDebugEditorSelection(afterEditor)
+		logWordDebug("flow_key_navigation revision=%d key=%q state=%d modifiers=%s handled=%v paragraph=%q before_run=%q before_selection=%d:%d before_length=%d after_run=%q after_selection=%d:%d after_length=%d preferred_x=%d preferred_x_set=%v",
+			state.wordRevisionAtomic.Load(), keyEvent.Name, keyEvent.State, keyEvent.Modifiers.String(), handled, paragraph.ID,
+			run.ID, beforeStart, beforeEnd, beforeLength, state.selectedWordRunID, afterStart, afterEnd, afterLength,
+			state.wordPreferredVerticalX, state.wordPreferredVerticalXSet)
+	}()
+	if keyEvent.State != key.Press || keyEvent.Modifiers != 0 {
 		return true
 	}
 

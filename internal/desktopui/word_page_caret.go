@@ -82,8 +82,15 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 		}
 	}
 	for event, ok := editor.Update(gtx); ok; event, ok = editor.Update(gtx) {
-		if _, submit := event.(widget.SubmitEvent); submit {
+		switch event.(type) {
+		case widget.SelectEvent:
 			start, end := editor.Selection()
+			logWordDebug("page_selection_change revision=%d run=%q selection=%d:%d length=%d focused=%v",
+				state.wordRevisionAtomic.Load(), runID, start, end, editor.Len(), gtx.Focused(editor))
+		case widget.SubmitEvent:
+			start, end := editor.Selection()
+			logWordDebug("page_submit_event revision=%d run=%q selection=%d:%d length=%d selected_run=%q layout_revision=%d",
+				state.wordRevisionAtomic.Load(), runID, start, end, editor.Len(), state.selectedWordRunID, wordDebugLayoutRevision(state))
 			a.queueWordParagraphSplit(runID, editor.Text(), start, end)
 			editor.ReadOnly = true
 		}
@@ -204,7 +211,7 @@ func wordClosestPageCaretOffset(page wordlayout.PageScene, runID string, x float
 	return max(0, min(length, bestOffset))
 }
 
-func (a *App) handleWordPageArrowNavigation(gtx layout.Context, state *documentSessionState, editor *widget.Editor) bool {
+func (a *App) handleWordPageArrowNavigation(gtx layout.Context, state *documentSessionState, editor *widget.Editor) (handled bool) {
 	if state == nil || editor == nil || !gtx.Focused(editor) || editor.ReadOnly {
 		return false
 	}
@@ -225,6 +232,16 @@ func (a *App) handleWordPageArrowNavigation(gtx layout.Context, state *documentS
 	if !ok || keyEvent.State != key.Press || keyEvent.Modifiers != 0 {
 		return false
 	}
+	beforeRun := state.selectedWordRunID
+	beforeStart, beforeEnd, beforeLength := wordDebugEditorSelection(editor)
+	defer func() {
+		afterEditor := state.wordRunEditors[state.selectedWordRunID]
+		afterStart, afterEnd, afterLength := wordDebugEditorSelection(afterEditor)
+		logWordDebug("page_key_navigation revision=%d layout_revision=%d key=%q handled=%v before_run=%q before_selection=%d:%d before_length=%d after_run=%q after_selection=%d:%d after_length=%d preferred_x=%.2f preferred_x_set=%v",
+			state.wordRevisionAtomic.Load(), wordDebugLayoutRevision(state), keyEvent.Name, handled,
+			beforeRun, beforeStart, beforeEnd, beforeLength, state.selectedWordRunID, afterStart, afterEnd, afterLength,
+			state.wordPagePreferredVerticalX, state.wordPagePreferredVerticalXSet)
+	}()
 	if keyEvent.Name == key.NameLeftArrow || keyEvent.Name == key.NameRightArrow {
 		start, end := editor.Selection()
 		runID := state.selectedWordRunID
