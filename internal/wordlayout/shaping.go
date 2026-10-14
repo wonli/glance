@@ -68,6 +68,7 @@ type ShapedText struct {
 	Glyphs    []ShapedGlyph
 	AscentPT  float64
 	DescentPT float64
+	LineGapPT float64
 }
 
 // ShapedGlyph is one glyph positioned relative to the previous glyph's pen.
@@ -85,6 +86,9 @@ type ShapedGlyph struct {
 // ValidateShapedText checks the geometry invariants shared by layout and output.
 // Multiple glyphs may share the same rune range when they form one cluster.
 func ValidateShapedText(input string, shaped ShapedText) error {
+	if math.IsNaN(shaped.LineGapPT) || math.IsInf(shaped.LineGapPT, 0) || shaped.LineGapPT < 0 {
+		return errors.New("shaped text has invalid line gap")
+	}
 	if math.IsNaN(shaped.AscentPT) || math.IsInf(shaped.AscentPT, 0) || shaped.AscentPT < 0 {
 		return errors.New("shaped text has invalid ascent")
 	}

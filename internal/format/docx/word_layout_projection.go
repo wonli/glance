@@ -59,6 +59,9 @@ func projectWordLayoutData(parts []part, partIndexes map[string]int, relationshi
 		if index, ok := partIndexes[relationship.target]; ok {
 			settings, err := parseWordXML(parts[index].data)
 			if err == nil {
+				if adjust := firstChild(firstChild(settings, "compat"), "adjustLineHeightInTable"); adjust != nil {
+					data.AdjustLineHeightInTable = toggleProperty(adjust)
+				}
 				if stop := firstChild(settings, "defaultTabStop"); stop != nil {
 					if twips, parseErr := strconv.ParseFloat(attrValue(stop, "val"), 64); parseErr == nil && twips > 0 {
 						data.DefaultTabStopPT = twips / 20
@@ -185,6 +188,16 @@ func wordLayoutValuesEquivalentWithinTwip(left, right float64) bool {
 
 func projectWordSection(parts []part, partIndexes map[string]int, relationships map[string]wordRelationship, startBlock int, node *wordXMLNode, sourceID string, unsupported *[]document.WordLayoutUnsupported) document.WordSection {
 	section := document.WordSection{StartBlock: startBlock, StartType: "nextpage", HeaderDistancePT: 36}
+	if grid := firstChild(node, "docGrid"); grid != nil {
+		section.Grid.Type = strings.ToLower(attrValue(grid, "type"))
+		section.Grid.LinePitchPT = wordTwipsToPoints(attrValue(grid, "linePitch"))
+		if section.Grid.Type == "lines" && (section.Grid.LinePitchPT <= 0 || math.IsNaN(section.Grid.LinePitchPT) || math.IsInf(section.Grid.LinePitchPT, 0)) {
+			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: sourceID, Code: "invalid-document-grid", Description: "The section's document grid has an invalid line pitch."})
+		}
+		if section.Grid.Type != "" && section.Grid.Type != "default" && section.Grid.Type != "lines" {
+			appendLayoutUnsupported(unsupported, document.WordLayoutUnsupported{SourceID: sourceID, Code: "character-document-grid", Description: "The section uses a character-spacing document grid that is not supported yet."})
+		}
+	}
 	if sectionType := firstChild(node, "type"); sectionType != nil {
 		if value := strings.TrimSpace(attrValue(sectionType, "val")); value != "" {
 			section.StartType = strings.ToLower(value)

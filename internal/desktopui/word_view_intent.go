@@ -71,7 +71,7 @@ func (a *App) applyWordAutosaveSettings(state *documentSessionState, raw json.Ra
 		switch {
 		case !*input.Enabled:
 			a.setStatus("已关闭自动保存")
-		case sessionPath(state) == "":
+		case sessionPath(state) == "" || state.saveAsRequired:
 			a.setStatus("自动保存将在文档另存为后启用")
 		default:
 			a.setStatus("已开启自动保存")
@@ -83,7 +83,7 @@ func (a *App) applyWordAutosaveSettings(state *documentSessionState, raw json.Ra
 		Enabled   bool   `json:"enabled"`
 		Effective bool   `json:"effective"`
 		Changed   bool   `json:"changed"`
-	}{a.windowID, state.wordAutoSave, state.wordAutoSave && sessionPath(state) != "", changed})
+	}{a.windowID, state.wordAutoSave, state.wordAutoSave && sessionPath(state) != "" && !state.saveAsRequired, changed})
 }
 
 func (a *App) applyWordViewSettings(state *documentSessionState, raw json.RawMessage) (json.RawMessage, error) {

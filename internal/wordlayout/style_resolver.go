@@ -11,6 +11,8 @@ type styleResolver struct {
 	defaultParagraphStyleID string
 	defaultTabStopPT        float64
 	cursor                  *layoutCursor
+	sections                []document.WordSection
+	adjustLineHeightInTable bool
 }
 
 func newStyleResolver(layout document.WordLayoutData, cursor *layoutCursor) *styleResolver {
@@ -19,6 +21,7 @@ func newStyleResolver(layout document.WordLayoutData, cursor *layoutCursor) *sty
 		defaultTabStop = 36
 	}
 	resolver := &styleResolver{defaults: layout.Defaults, styles: make(map[string]document.WordStyle, len(layout.Styles)), defaultTabStopPT: defaultTabStop, cursor: cursor}
+	resolver.sections, resolver.adjustLineHeightInTable = layout.Sections, layout.AdjustLineHeightInTable
 	for _, style := range layout.Styles {
 		if style.ID == "" {
 			continue
@@ -128,6 +131,18 @@ func (r *styleResolver) applyCharacterStyle(target *document.WordTextStyle, styl
 
 func mergeTextStyle(target *document.WordTextStyle, source document.WordTextStyle, mask document.WordTextStyleMask) {
 	if mask == 0 {
+		if source.FontFamilyASCII != "" {
+			mask |= document.WordTextFontASCIISet
+		}
+		if source.FontFamilyHighANSI != "" {
+			mask |= document.WordTextFontHighANSISet
+		}
+		if source.FontFamilyEastAsia != "" {
+			mask |= document.WordTextFontEastAsiaSet
+		}
+		if source.FontFamilyComplexScript != "" {
+			mask |= document.WordTextFontComplexScriptSet
+		}
 		if source.Bold {
 			mask |= document.WordTextBoldSet
 		}
@@ -167,6 +182,23 @@ func mergeTextStyle(target *document.WordTextStyle, source document.WordTextStyl
 	}
 	if mask&document.WordTextFontFamilySet != 0 {
 		target.FontFamily = source.FontFamily
+		// An explicit family edit applies to all scripts. Projected OOXML
+		// overrides retain independently inherited script font slots.
+		if mask&(document.WordTextFontASCIISet|document.WordTextFontHighANSISet|document.WordTextFontEastAsiaSet|document.WordTextFontComplexScriptSet) == 0 {
+			target.FontFamilyASCII, target.FontFamilyHighANSI, target.FontFamilyEastAsia, target.FontFamilyComplexScript = "", "", "", ""
+		}
+	}
+	if mask&document.WordTextFontASCIISet != 0 {
+		target.FontFamilyASCII = source.FontFamilyASCII
+	}
+	if mask&document.WordTextFontHighANSISet != 0 {
+		target.FontFamilyHighANSI = source.FontFamilyHighANSI
+	}
+	if mask&document.WordTextFontEastAsiaSet != 0 {
+		target.FontFamilyEastAsia = source.FontFamilyEastAsia
+	}
+	if mask&document.WordTextFontComplexScriptSet != 0 {
+		target.FontFamilyComplexScript = source.FontFamilyComplexScript
 	}
 	if mask&document.WordTextFontSizeSet != 0 {
 		target.FontSize = source.FontSize
@@ -181,6 +213,9 @@ func mergeTextStyle(target *document.WordTextStyle, source document.WordTextStyl
 
 func mergeParagraphLayout(target *document.WordParagraphLayout, source document.WordParagraphLayout) {
 	mask := source.Set
+	if mask&document.WordParagraphSnapToGridSet != 0 {
+		target.SnapToGrid = source.SnapToGrid
+	}
 	characterIndentMask := source.Set & (document.WordParagraphFirstLineIndentCharsSet | document.WordParagraphHangingIndentCharsSet)
 	if mask == 0 {
 		if source.BeforePT != 0 {

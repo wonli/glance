@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"glance/internal/application"
 	"glance/internal/document"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
@@ -253,7 +254,15 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 			state.wordTrackRevisions, _ = revEditor.GetTrackRevisions()
 		}
 		state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
-		word.SetSourcePath(record.Tab.SourcePath)
+		if strings.EqualFold(filepath.Ext(record.Tab.SourcePath), ".doc") {
+			// Recovery snapshots for imported DOC files contain the normalized
+			// DOCX package; never attach the legacy source path to its DOCX saver.
+			word.SetSourcePath("")
+			state.sourceFormat = application.FormatDOC
+			state.saveAsRequired = true
+		} else {
+			word.SetSourcePath(record.Tab.SourcePath)
+		}
 		word.SetDirty(record.Dirty)
 	case "pdf":
 		var d *pdfdoc.Document

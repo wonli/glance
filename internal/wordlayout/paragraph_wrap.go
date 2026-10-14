@@ -6,13 +6,24 @@ import (
 	"strings"
 )
 
-func wrapParagraphAtoms(atoms []paragraphAtom, maxWidth float64, paragraph document.WordParagraphLayout, defaultTabStopPT float64) []paragraphLine {
-	return wrapParagraphAtomsLimit(atoms, maxWidth, paragraph, defaultTabStopPT, 0)
+func wrapParagraphAtoms(atoms []paragraphAtom, maxWidth float64, paragraph document.WordParagraphLayout, defaultTabStopPT float64, gridPitch ...float64) []paragraphLine {
+	firstWidth := math.Max(1, maxWidth-emuToPoints(paragraph.FirstLineIndentEMU-paragraph.HangingIndentEMU))
+	return wrapParagraphAtomsWidths(atoms, firstWidth, maxWidth, paragraph, defaultTabStopPT, 0, gridPitch...)
 }
 
-func wrapParagraphAtomsLimit(atoms []paragraphAtom, maxWidth float64, paragraph document.WordParagraphLayout, defaultTabStopPT float64, lineLimit int) []paragraphLine {
+func wrapParagraphAtomsLimit(atoms []paragraphAtom, maxWidth float64, paragraph document.WordParagraphLayout, defaultTabStopPT float64, lineLimit int, gridPitch ...float64) []paragraphLine {
+	return wrapParagraphAtomsWidths(atoms, maxWidth, maxWidth, paragraph, defaultTabStopPT, lineLimit, gridPitch...)
+}
+
+func wrapParagraphAtomsWidths(atoms []paragraphAtom, firstWidth, maxWidth float64, paragraph document.WordParagraphLayout, defaultTabStopPT float64, lineLimit int, gridPitch ...float64) []paragraphLine {
 	lines := make([]paragraphLine, 0, 2)
 	current := make([]paragraphAtom, 0, 8)
+	lineWidth := func() float64 {
+		if len(lines) == 0 {
+			return firstWidth
+		}
+		return maxWidth
+	}
 	pendingPageBreak := false
 	stopped := false
 	flush := func(pageBreakAfter bool, nextAtomIndex int) {
@@ -30,7 +41,10 @@ func wrapParagraphAtomsLimit(atoms []paragraphAtom, maxWidth float64, paragraph 
 				line.descent = atom.descent
 			}
 		}
-		line.height = lineHeight(line, paragraph)
+		for _, atom := range current {
+			line.gap = math.Max(line.gap, atom.gap)
+		}
+		line.height = lineHeight(line, paragraph, gridPitch...)
 		lines = append(lines, line)
 		current = current[:0]
 		stopped = lineLimit > 0 && len(lines) >= lineLimit
@@ -55,16 +69,16 @@ func wrapParagraphAtomsLimit(atoms []paragraphAtom, maxWidth float64, paragraph 
 			continue
 		}
 		if atom.kind == atomTab {
-			atom.advance = paragraphTabAdvance(sumAdvance(current), atoms[atomIndex+1:], paragraph.TabStops, defaultTabStopPT, maxWidth)
+			atom.advance = paragraphTabAdvance(sumAdvance(current), atoms[atomIndex+1:], paragraph.TabStops, defaultTabStopPT, lineWidth())
 		}
-		if len(current) > 0 && sumAdvance(current)+atom.advance > maxWidth+epsilonPT {
+		if len(current) > 0 && sumAdvance(current)+atom.advance > lineWidth()+epsilonPT {
 			if atom.breakBefore {
 				flush(false, atom.sourceIndex)
 				if stopped {
 					break
 				}
 				if atom.kind == atomTab {
-					atom.advance = paragraphTabAdvance(0, atoms[atomIndex+1:], paragraph.TabStops, defaultTabStopPT, maxWidth)
+					atom.advance = paragraphTabAdvance(0, atoms[atomIndex+1:], paragraph.TabStops, defaultTabStopPT, lineWidth())
 				}
 			} else {
 				breakAt := -1
@@ -179,26 +193,30 @@ func sumAdvance(atoms []paragraphAtom) float64 {
 	return width
 }
 
-func lineHeight(line paragraphLine, paragraph document.WordParagraphLayout) float64 {
-	base := line.ascent + line.descent
+func lineHeight(line paragraphLine, paragraph document.WordParagraphLayout, gridPitch ...float64) float64 {
+	base := line.ascent + line.descent + math.Max(0, line.gap)
 	if base <= 0 {
 		base = 11
 	}
+	height := base
 	switch paragraph.LineSpacingRule {
 	case "exact":
 		if paragraph.LineSpacingPT > 0 {
 			return paragraph.LineSpacingPT
 		}
 	case "atleast":
-		return math.Max(base, paragraph.LineSpacingPT)
+		height = math.Max(base, paragraph.LineSpacingPT)
 	case "auto", "":
 		if paragraph.LineSpacingMultiple > 0 {
-			return base * paragraph.LineSpacingMultiple
+			height = base * paragraph.LineSpacingMultiple
 		}
 	default:
 		if paragraph.LineSpacingPT > 0 {
-			return math.Max(base, paragraph.LineSpacingPT)
+			height = math.Max(base, paragraph.LineSpacingPT)
 		}
 	}
-	return base
+	if len(gridPitch) > 0 && finite(gridPitch[0]) && gridPitch[0] > 0 && !(paragraph.Set&document.WordParagraphSnapToGridSet != 0 && !paragraph.SnapToGrid) {
+		height = math.Ceil((height-epsilonPT)/gridPitch[0]) * gridPitch[0]
+	}
+	return height
 }

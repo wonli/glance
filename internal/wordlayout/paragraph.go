@@ -36,6 +36,7 @@ type paragraphAtom struct {
 	advance         float64
 	ascent          float64
 	descent         float64
+	gap             float64
 	imageID         string
 	imageRotation   float64
 	imageWidth      float64
@@ -50,6 +51,7 @@ type paragraphLine struct {
 	width           float64
 	ascent          float64
 	descent         float64
+	gap             float64
 	height          float64
 	pageBreakBefore bool
 	pageBreakAfter  bool
@@ -66,6 +68,7 @@ type preparedParagraph struct {
 	uiAfterPT        float64
 	style            resolvedParagraphStyle
 	defaultTabStopPT float64
+	gridLinePitchPT  float64
 	atoms            []paragraphAtom
 	maxWidth         float64
 	floatingImages   []preparedFloatingImage
@@ -105,51 +108,17 @@ func paragraphBottomBorderExtent(paragraph document.WordParagraphLayout) float64
 	return border.SpacePT + border.SizePT
 }
 
-func resolveCharacterIndentUnits(ctx context.Context, shaper TextShaper, cursor *layoutCursor, sourceID string, textStyle document.WordTextStyle, paragraph *document.WordParagraphLayout) error {
-	firstLineChars := paragraph.Set&document.WordParagraphFirstLineIndentCharsSet != 0 || paragraph.FirstLineIndentChars != 0
-	hangingChars := paragraph.Set&document.WordParagraphHangingIndentCharsSet != 0 || paragraph.HangingIndentChars != 0
-	if !firstLineChars && !hangingChars {
-		return nil
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	charWidthPT := 0.0
-	if paragraph.FirstLineIndentChars != 0 || paragraph.HangingIndentChars != 0 {
-		shaped, err := shaper.Shape("　", textStyle)
-		if err == nil {
-			for _, glyph := range shaped.Glyphs {
-				charWidthPT += glyph.AdvanceXPT
-			}
-		}
-	}
-	if !finite(charWidthPT) || charWidthPT <= epsilonPT {
-		charWidthPT = textStyle.FontSize
-		if !finite(charWidthPT) || charWidthPT <= epsilonPT {
-			charWidthPT = 11
-		}
-		if paragraph.FirstLineIndentChars != 0 || paragraph.HangingIndentChars != 0 {
-			cursor.diagnostic(DiagnosticWarning, sourceID, "character-indent-width-fallback", "The ideographic-space font metric is unavailable; character-based indentation uses the paragraph font size as its character width.")
-		}
-	}
-	if firstLineChars {
-		paragraph.FirstLineIndentEMU = int64(math.Round(float64(paragraph.FirstLineIndentChars) * charWidthPT * emuPerPoint / 100))
-		paragraph.FirstLineIndentChars = 0
-		paragraph.Set &^= document.WordParagraphFirstLineIndentCharsSet
-	}
-	if hangingChars {
-		paragraph.HangingIndentEMU = int64(math.Round(float64(paragraph.HangingIndentChars) * charWidthPT * emuPerPoint / 100))
-		paragraph.HangingIndentChars = 0
-		paragraph.Set &^= document.WordParagraphHangingIndentCharsSet
-	}
-	return nil
-}
-
 func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResolver, paragraph document.WordParagraph, sourceID string, availableWidth float64, inCell, editorInsets bool) (preparedParagraph, error) {
 	if paragraph.PreviewWarning != "" {
 		styles.cursor.diagnostic(DiagnosticWarning, sourceID, "content-preview-fallback", paragraph.PreviewWarning)
 	}
 	prepared := preparedParagraph{sourceID: sourceID, borderSourceID: sourceID, style: styles.paragraphStyle(paragraph, sourceID), defaultTabStopPT: styles.defaultTabStopPT}
+	if sectionIndex := styles.cursor.sectionIndex; sectionIndex >= 0 && sectionIndex < len(styles.sections) && (!inCell || styles.adjustLineHeightInTable) {
+		grid := styles.sections[sectionIndex].Grid
+		if grid.Type == "lines" {
+			prepared.gridLinePitchPT = grid.LinePitchPT
+		}
+	}
 	if err := resolveCharacterIndentUnits(ctx, shaper, styles.cursor, sourceID, prepared.style.text, &prepared.style.paragraph); err != nil {
 		return preparedParagraph{}, err
 	}
@@ -350,16 +319,13 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 	}
 	if len(atoms) == 0 {
 		// Empty paragraph marks obey the same line-spacing rule as text.
-		prepared.lines = []paragraphLine{{ascent: prepared.style.text.FontSize * 0.8, descent: prepared.style.text.FontSize * 0.2}}
-		prepared.lines[0].height = lineHeight(prepared.lines[0], prepared.style.paragraph)
+		prepared.lines = []paragraphLine{paragraphMarkLine(prepared.style.text)}
+		prepared.lines[0].height = lineHeight(prepared.lines[0], prepared.style.paragraph, prepared.gridLinePitchPT)
 		prepared.atoms = atoms
 		return prepared, nil
 	}
 	maxWidth := availableWidth - leftIndent - rightIndent
-	if firstOffset > 0 {
-		maxWidth -= firstOffset
-	}
-	if maxWidth <= 0 {
+	if maxWidth <= 0 || maxWidth-firstOffset <= 0 {
 		styles.cursor.diagnostic(DiagnosticError, sourceID, "invalid-paragraph-width", "Paragraph indents leave no printable line width.")
 		maxWidth = 1
 	}
@@ -368,10 +334,10 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 	for index := range prepared.atoms {
 		prepared.atoms[index].sourceIndex = index
 	}
-	prepared.lines = wrapParagraphAtoms(atoms, maxWidth, prepared.style.paragraph, styles.defaultTabStopPT)
+	prepared.lines = wrapParagraphAtoms(atoms, maxWidth, prepared.style.paragraph, styles.defaultTabStopPT, prepared.gridLinePitchPT)
 	if len(prepared.lines) == 0 {
-		prepared.lines = []paragraphLine{{ascent: prepared.style.text.FontSize * 0.8, descent: prepared.style.text.FontSize * 0.2}}
-		prepared.lines[0].height = lineHeight(prepared.lines[0], prepared.style.paragraph)
+		prepared.lines = []paragraphLine{paragraphMarkLine(prepared.style.text)}
+		prepared.lines[0].height = lineHeight(prepared.lines[0], prepared.style.paragraph, prepared.gridLinePitchPT)
 		for _, atom := range atoms {
 			if atom.kind == atomPageBreak {
 				prepared.lines[0].pageBreakAfter = true
@@ -429,12 +395,10 @@ func shapeTextAtoms(ctx context.Context, shaper TextShaper, pathCache map[glyphP
 		return nil, err
 	}
 	if len(runes) == 0 {
-		size := style.FontSize
-		if size <= 0 {
-			size = 11
-		}
-		return []paragraphAtom{{kind: atomText, sourceID: sourceID, runID: runID, style: style, runeStart: runeOffset, runeEnd: runeOffset, ascent: size * 0.8, descent: size * 0.2}}, nil
+		mark := paragraphMarkLine(style)
+		return []paragraphAtom{{kind: atomText, sourceID: sourceID, runID: runID, style: style, runeStart: runeOffset, runeEnd: runeOffset, ascent: mark.ascent, descent: mark.descent, gap: mark.gap}}, nil
 	}
+
 	type cluster struct {
 		start  int
 		end    int
@@ -502,7 +466,7 @@ func shapeTextAtoms(ctx context.Context, shaper TextShaper, pathCache map[glyphP
 			runeStart: runeOffset + current.start, runeEnd: runeOffset + current.end,
 			glyphRuneOffset: runeOffset,
 			style:           style, glyphs: append([]ShapedGlyph(nil), current.glyphs...), outlines: outlines, advance: advance,
-			ascent: ascent, descent: descent, synthetic: synthetic,
+			ascent: ascent, descent: descent, gap: shaped.LineGapPT, synthetic: synthetic,
 			breakBefore: isCJK(first), breakAfter: unicode.IsSpace(last),
 		})
 	}
@@ -517,4 +481,14 @@ func isCJK(r rune) bool {
 
 func isRTL(r rune) bool {
 	return (r >= 0x0590 && r <= 0x08ff) || (r >= 0xfb1d && r <= 0xfdff) || (r >= 0xfe70 && r <= 0xfeff)
+}
+
+// Paragraph marks have no visible glyph. Preserve their nominal font size
+// instead of letting a substituted space glyph introduce extra font leading.
+func paragraphMarkLine(style document.WordTextStyle) paragraphLine {
+	size := style.FontSize
+	if size <= 0 {
+		size = 11
+	}
+	return paragraphLine{ascent: size * .8, descent: size * .2}
 }

@@ -171,6 +171,9 @@ func sessionFormat(meta workspace.Tab, state *documentSessionState) string {
 	if state != nil && state.markdownDoc != nil {
 		return "markdown"
 	}
+	if state != nil && state.sourceFormat == application.FormatDOC {
+		return "docx"
+	}
 	format := strings.TrimPrefix(strings.ToLower(filepath.Ext(meta.SourcePath)), ".")
 	if format == "" {
 		format = strings.TrimPrefix(strings.ToLower(filepath.Ext(meta.Title)), ".")

@@ -238,7 +238,7 @@ func (c *layoutCursor) placeFloatAwareParagraph(ctx context.Context, prepared pr
 			}
 			lineHeightGuess := prepared.lines[0].height
 			if lineHeightGuess <= 0 {
-				lineHeightGuess = lineHeight(paragraphLine{ascent: prepared.style.text.FontSize * 0.8, descent: prepared.style.text.FontSize * 0.2}, paragraph)
+				lineHeightGuess = lineHeight(paragraphLine{ascent: prepared.style.text.FontSize * 0.8, descent: prepared.style.text.FontSize * 0.2}, paragraph, prepared.gridLinePitchPT)
 			}
 			page, column := c.pageIndex, c.currentCol
 			if !c.ensureSpace(lineHeightGuess, prepared.sourceID) {
@@ -253,10 +253,10 @@ func (c *layoutCursor) placeFloatAwareParagraph(ctx context.Context, prepared pr
 			bandHeight := lineHeightGuess
 			var segments []paragraphFlowSegment
 			var nextAtomIndex int
-			var baselineHeight, baselineAscent, baselineDescent float64
+			var baselineHeight, baselineAscent, baselineDescent, baselineGap float64
 			for {
 				intervals, nextY := c.paragraphLineIntervals(area, paragraph, firstVisualLine, c.y, bandHeight)
-				segments, nextAtomIndex = wrapParagraphAtomsAcrossIntervals(atoms, atomIndex, intervals, baseInterval, paragraph, prepared.defaultTabStopPT)
+				segments, nextAtomIndex = wrapParagraphAtomsAcrossIntervals(atoms, atomIndex, intervals, baseInterval, paragraph, prepared.defaultTabStopPT, prepared.gridLinePitchPT)
 				if len(segments) == 0 {
 					if atoms[atomIndex].kind == atomPageBreak {
 						c.pendingBreak = true
@@ -279,12 +279,13 @@ func (c *layoutCursor) placeFloatAwareParagraph(ctx context.Context, prepared pr
 					c.diagnostic(DiagnosticError, prepared.sourceID, "paragraph-reflow-stalled", "Text wrapping could not advance through this paragraph.")
 					return nil
 				}
-				baselineHeight, baselineAscent, baselineDescent = 0, 0, 0
+				baselineHeight, baselineAscent, baselineDescent, baselineGap = 0, 0, 0, 0
 				for _, segment := range segments {
 					baselineAscent = math.Max(baselineAscent, segment.line.ascent)
 					baselineDescent = math.Max(baselineDescent, segment.line.descent)
+					baselineGap = math.Max(baselineGap, segment.line.gap)
 				}
-				baselineHeight = lineHeight(paragraphLine{ascent: baselineAscent, descent: baselineDescent}, paragraph)
+				baselineHeight = lineHeight(paragraphLine{ascent: baselineAscent, descent: baselineDescent, gap: baselineGap}, paragraph, prepared.gridLinePitchPT)
 				if baselineHeight <= bandHeight+epsilonPT {
 					break
 				}
@@ -346,7 +347,7 @@ type paragraphFlowSegment struct {
 	interval horizontalInterval
 }
 
-func wrapParagraphAtomsAcrossIntervals(atoms []paragraphAtom, start int, intervals []horizontalInterval, base horizontalInterval, paragraph document.WordParagraphLayout, defaultTabStopPT float64) ([]paragraphFlowSegment, int) {
+func wrapParagraphAtomsAcrossIntervals(atoms []paragraphAtom, start int, intervals []horizontalInterval, base horizontalInterval, paragraph document.WordParagraphLayout, defaultTabStopPT float64, gridPitch ...float64) ([]paragraphFlowSegment, int) {
 	segments := make([]paragraphFlowSegment, 0, len(intervals))
 	next := start
 	for _, interval := range intervals {
@@ -360,7 +361,7 @@ func wrapParagraphAtomsAcrossIntervals(atoms []paragraphAtom, start int, interva
 		if nextFlowAtomWidth(atoms[next:]) > width+epsilonPT && !sameHorizontalInterval(interval, base) {
 			continue
 		}
-		lines := wrapParagraphAtomsLimit(atoms[next:], width, paragraph, defaultTabStopPT, 1)
+		lines := wrapParagraphAtomsLimit(atoms[next:], width, paragraph, defaultTabStopPT, 1, gridPitch...)
 		if len(lines) == 0 {
 			continue
 		}

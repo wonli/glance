@@ -857,9 +857,19 @@ func (r *desktopRuntime) updateSessionPath(session *sharedDocumentSession, path 
 			delete(r.sessionsByCanonicalPath, oldKey)
 		}
 		session.path = path
-		if session.saveAsRequired && strings.EqualFold(filepath.Ext(path), ".xlsx") {
-			session.sourceFormat = application.FormatXLSX
-			session.saveAsRequired = false
+		if session.saveAsRequired {
+			switch session.sourceFormat {
+			case application.FormatXLS:
+				if strings.EqualFold(filepath.Ext(path), ".xlsx") {
+					session.sourceFormat = application.FormatXLSX
+					session.saveAsRequired = false
+				}
+			case application.FormatDOC:
+				if strings.EqualFold(filepath.Ext(path), ".docx") {
+					session.sourceFormat = application.FormatDocx
+					session.saveAsRequired = false
+				}
+			}
 		}
 		if key := canonicalSessionPath(path); key != "" {
 			r.sessionsByCanonicalPath[key] = session.documentID
@@ -885,9 +895,19 @@ func (r *desktopRuntime) updateSessionPathFromApplication(session *sharedDocumen
 			delete(r.sessionsByCanonicalPath, oldKey)
 		}
 		session.path = path
-		if session.saveAsRequired && strings.EqualFold(filepath.Ext(path), ".xlsx") {
-			session.sourceFormat = application.FormatXLSX
-			session.saveAsRequired = false
+		if session.saveAsRequired {
+			switch session.sourceFormat {
+			case application.FormatXLS:
+				if strings.EqualFold(filepath.Ext(path), ".xlsx") {
+					session.sourceFormat = application.FormatXLSX
+					session.saveAsRequired = false
+				}
+			case application.FormatDOC:
+				if strings.EqualFold(filepath.Ext(path), ".docx") {
+					session.sourceFormat = application.FormatDocx
+					session.saveAsRequired = false
+				}
+			}
 		}
 		if key := canonicalSessionPath(path); key != "" {
 			r.sessionsByCanonicalPath[key] = session.documentID

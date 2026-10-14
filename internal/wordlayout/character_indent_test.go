@@ -53,6 +53,27 @@ func TestCharacterIndentFallsBackToFontSizeWithWarning(t *testing.T) {
 	}
 }
 
+func TestEMUFirstLineIndentShiftsOnlyFirstLine(t *testing.T) {
+	input := layoutTestInput(120, 200, 10, paragraphBlock("p0", strings.Repeat("A", 40), document.WordTextStyle{}))
+	input.Blocks[0].Paragraph.Layout = document.WordParagraphLayout{
+		FirstLineIndentEMU: 24 * 12700,
+		Set:                document.WordParagraphFirstLineIndentSet,
+	}
+	input.Layout.Defaults.Text = document.WordTextStyle{FontFamily: "Test Sans", FontSize: 12}
+	input.Layout.Defaults.TextSet = document.WordTextFontFamilySet | document.WordTextFontSizeSet
+	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	starts := paragraphLineStarts(result, "p0.run")
+	if len(starts) < 2 {
+		t.Fatalf("paragraph did not wrap: %v", starts)
+	}
+	if got := starts[0].x - starts[1].x; math.Abs(got-24) > 0.01 {
+		t.Fatalf("first-line indent = %.2fpt; want 24pt", got)
+	}
+}
+
 func characterIndentTestInput() Input {
 	input := layoutTestInput(120, 200, 10, paragraphBlock("p0", strings.Repeat("A", 40), document.WordTextStyle{}))
 	paragraph := input.Blocks[0].Paragraph

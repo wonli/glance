@@ -28,6 +28,10 @@ func parseWordTextStyle(properties *wordXMLNode) document.WordTextStyle {
 		}
 	}
 	if fonts := firstChild(properties, "rFonts"); fonts != nil {
+		style.FontFamilyASCII = attrValue(fonts, "ascii")
+		style.FontFamilyHighANSI = attrValue(fonts, "hAnsi")
+		style.FontFamilyEastAsia = attrValue(fonts, "eastAsia")
+		style.FontFamilyComplexScript = attrValue(fonts, "cs")
 		for _, key := range []string{"eastAsia", "ascii", "hAnsi", "cs"} {
 			if value := attrValue(fonts, key); value != "" {
 				style.FontFamily = value

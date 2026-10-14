@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"glance/internal/application"
 	"glance/internal/document"
+	legacydoc "glance/internal/format/doc"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
 	"glance/internal/format/markdowndoc"
@@ -103,6 +104,24 @@ func loadDocument(path string) (loadedDocument, error) {
 			return loadedDocument{}, err
 		}
 		return loadedDocument{path: path, word: word, wordBlocks: cloneWordBlockSnapshot(word.WordBlocks())}, nil
+	case ".doc":
+		converted, err := legacydoc.ConvertToTempDOCX(context.Background(), path)
+		if err != nil {
+			return loadedDocument{}, err
+		}
+		word, openErr := docx.Open(converted.Path)
+		cleanupErr := converted.Cleanup()
+		if openErr != nil {
+			return loadedDocument{}, errors.Join(openErr, cleanupErr)
+		}
+		if cleanupErr != nil {
+			_ = word.Close()
+			return loadedDocument{}, cleanupErr
+		}
+		// The converted package is only a staging file. The loaded DOCX adapter
+		// owns the parsed package; edits must be saved to a new .docx destination.
+		word.SetSourcePath("")
+		return loadedDocument{path: path, word: word, wordBlocks: cloneWordBlockSnapshot(word.WordBlocks()), sourceFormat: application.FormatDOC, saveAsRequired: true}, nil
 	case ".md", ".markdown":
 		d, err := markdowndoc.Open(path)
 		if err != nil {
@@ -144,7 +163,7 @@ func loadDocument(path string) (loadedDocument, error) {
 		}
 		return loadedDocument{path: path, book: book, sheets: sheets, sourceFormat: application.FormatXLS, saveAsRequired: true}, nil
 	default:
-		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx、.docx、.pptx、.pdf、.json 和 Markdown", filepath.Ext(path))
+		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx、.xls、.doc、.docx、.pptx、.pdf、.json 和 Markdown", filepath.Ext(path))
 	}
 }
 
@@ -233,8 +252,17 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		kind = "draft"
 	}
 	format := strings.TrimPrefix(strings.ToLower(filepath.Ext(loaded.path)), ".")
+	if loaded.sourceFormat == application.FormatDOC {
+		// The workspace snapshot is the normalized Word package; the source path
+		// remains the original .doc and is reopened through the import adapter.
+		format = "docx"
+	}
 	if loaded.markdownDoc != nil {
 		format = "markdown"
+	}
+	recentFormat := format
+	if loaded.sourceFormat == application.FormatDOC {
+		recentFormat = "doc"
 	}
 	if format == "" {
 		switch {
@@ -293,7 +321,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 			}
 			a.reindexTabMetadata()
 			if loaded.path != "" {
-				a.collection.StageRecents([]workspace.Recent{{Path: loaded.path, Kind: format}})
+				a.collection.StageRecents([]workspace.Recent{{Path: loaded.path, Kind: recentFormat}})
 				a.refreshHomeMetadata()
 				a.persistRecentsAsync()
 			}
@@ -322,7 +350,11 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	a.blockButtons = make(map[int]*widget.Clickable)
 	a.selectedBlock = -1
 	if loaded.word != nil {
-		a.setStatus(fmt.Sprintf("已打开 %s；读取 %d 个内容块", loaded.path, len(a.word.Blocks())))
+		if loaded.sourceFormat == application.FormatDOC {
+			a.setStatus(fmt.Sprintf("已导入旧版 .doc；读取 %d 个内容块，编辑后请另存为 .docx", len(a.word.Blocks())))
+		} else {
+			a.setStatus(fmt.Sprintf("已打开 %s；读取 %d 个内容块", loaded.path, len(a.word.Blocks())))
+		}
 		a.startWordPagination(state)
 	} else if loaded.pptxDoc != nil {
 		snap := loaded.pptxDoc.Snapshot()

@@ -121,7 +121,11 @@ func (d *Document) SetTextRunFontFamily(runID, family string) error {
 		return fmt.Errorf("Word text run %q is not editable", runID)
 	}
 	properties := firstChild(target.run, "rPr")
-	if current := parseWordTextStyle(properties).FontFamily; current == family {
+	if current := parseWordTextStyle(properties); current.FontFamily == family &&
+		(current.FontFamilyASCII == "" || current.FontFamilyASCII == family) &&
+		(current.FontFamilyHighANSI == "" || current.FontFamilyHighANSI == family) &&
+		(current.FontFamilyEastAsia == "" || current.FontFamilyEastAsia == family) &&
+		(current.FontFamilyComplexScript == "" || current.FontFamilyComplexScript == family) {
 		return nil
 	}
 

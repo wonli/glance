@@ -22,6 +22,14 @@ func parseWordTextStyleSet(properties *wordXMLNode) document.WordTextStyleMask {
 		mask |= document.WordTextUnderlineSet
 	}
 	if fonts := firstChild(properties, "rFonts"); fonts != nil {
+		for _, f := range []struct {
+			name string
+			bit  document.WordTextStyleMask
+		}{{"ascii", document.WordTextFontASCIISet}, {"hAnsi", document.WordTextFontHighANSISet}, {"eastAsia", document.WordTextFontEastAsiaSet}, {"cs", document.WordTextFontComplexScriptSet}} {
+			if attrValue(fonts, f.name) != "" {
+				mask |= f.bit
+			}
+		}
 		for _, name := range []string{"eastAsia", "ascii", "hAnsi", "cs"} {
 			if attrValue(fonts, name) != "" {
 				mask |= document.WordTextFontFamilySet
@@ -80,7 +88,7 @@ func parseWordParagraphLayout(properties *wordXMLNode) document.WordParagraphLay
 				layout.HangingIndentChars = amount
 				layout.Set |= document.WordParagraphHangingIndentSet | document.WordParagraphHangingIndentCharsSet
 			}
-		} else if value := attrValue(indentation, "firstLine"); value != "" {
+		} else if value := wordFirstLineIndentValue(indentation); value != "" {
 			layout.FirstLineIndentEMU = parseWordIndentEMU(value)
 			layout.Set |= document.WordParagraphFirstLineIndentSet
 		} else if value := attrValue(indentation, "hanging"); value != "" {
@@ -120,6 +128,10 @@ func parseWordParagraphLayout(properties *wordXMLNode) document.WordParagraphLay
 		layout.PageBreakBefore = toggleProperty(node)
 		layout.Set |= document.WordParagraphPageBreakBeforeSet
 	}
+	if node := firstChild(properties, "snapToGrid"); node != nil {
+		layout.SnapToGrid = toggleProperty(node)
+		layout.Set |= document.WordParagraphSnapToGridSet
+	}
 	if borders := firstChild(properties, "pBdr"); borders != nil {
 		if bottom := firstChild(borders, "bottom"); bottom != nil {
 			layout.BottomBorder = parseWordParagraphBorder(bottom)
@@ -148,6 +160,16 @@ func parseWordParagraphLayout(properties *wordXMLNode) document.WordParagraphLay
 		}
 	}
 	return layout
+}
+
+// macOS textutil emits the nonstandard "first-line" spelling when converting
+// legacy .doc files to DOCX. Accept it alongside OOXML's standard firstLine so
+// imported paragraphs retain their first-line indentation in the shared layout.
+func wordFirstLineIndentValue(indentation *wordXMLNode) string {
+	if value := attrValue(indentation, "firstLine"); value != "" {
+		return value
+	}
+	return attrValue(indentation, "first-line")
 }
 
 func parseWordParagraphBorder(node *wordXMLNode) document.WordParagraphBorder {

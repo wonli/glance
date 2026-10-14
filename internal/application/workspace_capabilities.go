@@ -36,7 +36,7 @@ func registerWorkspaceCapabilities(catalog *Catalog) error {
 			ID: "workspace.recent.list", Name: "查询最近使用文件",
 			Description: "查询当前 Glance 工作区保存的最近文件，按打开时间从新到旧返回。可按格式和路径关键词筛选；使用 limit 与 offset 分页。每次最多返回 100 项，关键词按字面子串匹配。需要当前运行时已连接工作区存储。",
 			Category:    CapabilityQuery, Risk: RiskLow,
-			InputSchema:  json.RawMessage(`{"type":"object","properties":{"format":{"type":"string","description":"按文件格式筛选：docx、xlsx、xls、pptx、json、markdown 或 pdf。"},"query":{"type":"string","description":"路径中的字面子串，最多 256 个 Unicode 字符。"},"limit":{"type":"integer","description":"最多返回条数，默认为 20，最大为 100。","minimum":1,"maximum":100},"offset":{"type":"integer","description":"跳过符合筛选条件的最近项，范围为 0 到 10000。","minimum":0,"maximum":10000}},"additionalProperties":false}`),
+			InputSchema:  json.RawMessage(`{"type":"object","properties":{"format":{"type":"string","description":"按文件格式筛选：doc、docx、xlsx、xls、pptx、json、markdown 或 pdf。"},"query":{"type":"string","description":"路径中的字面子串，最多 256 个 Unicode 字符。"},"limit":{"type":"integer","description":"最多返回条数，默认为 20，最大为 100。","minimum":1,"maximum":100},"offset":{"type":"integer","description":"跳过符合筛选条件的最近项，范围为 0 到 10000。","minimum":0,"maximum":10000}},"additionalProperties":false}`),
 			OutputSchema: json.RawMessage(`{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"format":{"type":"string"},"opened_at":{"type":"string"}},"required":["path","format","opened_at"],"additionalProperties":false}},"has_more":{"type":"boolean"},"next_offset":{"type":"integer"}},"required":["items","has_more"],"additionalProperties":false}`),
 		},
 		Handler: func(_ context.Context, capability CapabilityContext, raw json.RawMessage) (CapabilityResult, error) {
@@ -58,7 +58,7 @@ func registerWorkspaceCapabilities(catalog *Catalog) error {
 			format := strings.ToLower(strings.TrimSpace(input.Format))
 			if format != "" {
 				switch Format(format) {
-				case FormatDocx, FormatXLSX, FormatXLS, FormatPPTX, FormatPDF, FormatJSON, FormatMarkdown:
+				case FormatDOC, FormatDocx, FormatXLSX, FormatXLS, FormatPPTX, FormatPDF, FormatJSON, FormatMarkdown:
 				default:
 					return CapabilityResult{}, ErrInvalidCommandArguments
 				}

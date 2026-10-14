@@ -33,6 +33,18 @@ func TestWordLayoutProjectionIgnoresZeroCharacterIndent(t *testing.T) {
 	}
 }
 
+func TestWordLayoutProjectionReadsTextutilHyphenatedFirstLineIndent(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:ind w:first-line="480" w:right="360"/></w:pPr><w:r><w:t>text</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`
+	doc := wordLayoutProjectionFixture(t, documentXML, "")
+	paragraph := doc.WordBlocks()[0].Paragraph
+	if paragraph.Layout.FirstLineIndentEMU != 480*635 || paragraph.Layout.Set&document.WordParagraphFirstLineIndentSet == 0 {
+		t.Fatalf("textutil first-line indent = %+v; want 480 twips retained as EMU", paragraph.Layout)
+	}
+	if paragraph.Layout.RightIndentEMU != 360*635 || paragraph.Layout.Set&document.WordParagraphRightIndentSet == 0 {
+		t.Fatalf("textutil right indent = %+v; want 360 twips retained as EMU", paragraph.Layout)
+	}
+}
+
 func TestWordLayoutProjectionReportsMalformedStylesPart(t *testing.T) {
 	documentXML := `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>text</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`
 	stylesXML := `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault></w:styles>`

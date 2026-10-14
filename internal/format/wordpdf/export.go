@@ -91,7 +91,6 @@ func ExportSnapshot(ctx context.Context, path string, snapshot []byte, documentI
 	layout, err := wordlayout.NewEngine(systemShaper.shaper).Layout(ctx, wordlayout.Input{
 		DocumentID: documentID, Revision: revision, Blocks: blocks,
 		Layout: layoutData, DefaultPageSetup: defaultPageSetup,
-		EditorParagraphInsets: true,
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("lay out Word snapshot for PDF export: %w", err)

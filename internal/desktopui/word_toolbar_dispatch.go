@@ -247,7 +247,7 @@ func (a *App) executeWordToolbarAction(actionID string) {
 }
 
 func (a *App) maybeAutoSaveWord(state *documentSessionState) {
-	if state == nil || state != a.documentSessionState || state.word == nil || !state.wordAutoSave || sessionPath(state) == "" || a.isSaving() || state.formatRunning.Load() || state.wordFlushRequested.Load() || !sessionDirty(state) {
+	if state == nil || state != a.documentSessionState || state.word == nil || !state.wordAutoSave || state.saveAsRequired || sessionPath(state) == "" || a.isSaving() || state.formatRunning.Load() || state.wordFlushRequested.Load() || !sessionDirty(state) {
 		return
 	}
 	a.startSaveForReason(wordSaveAuto)

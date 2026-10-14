@@ -19,6 +19,7 @@ type Format string
 
 const (
 	FormatDocx     Format = "docx"
+	FormatDOC      Format = "doc"
 	FormatXLSX     Format = "xlsx"
 	FormatXLS      Format = "xls"
 	FormatPPTX     Format = "pptx"
@@ -1061,6 +1062,8 @@ func formatForPath(path string) (Format, error) {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".docx":
 		return FormatDocx, nil
+	case ".doc":
+		return FormatDOC, nil
 	case ".xlsx":
 		return FormatXLSX, nil
 	case ".xls":
@@ -1083,6 +1086,8 @@ func extensionMatchesFormat(extension string, format Format) bool {
 	switch format {
 	case FormatDocx:
 		return extension == ".docx"
+	case FormatDOC:
+		return extension == ".doc"
 	case FormatXLSX:
 		return extension == ".xlsx"
 	case FormatXLS:

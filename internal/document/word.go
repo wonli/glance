@@ -132,14 +132,18 @@ type WordTextRun struct {
 
 // WordTextStyle is the format-neutral text style subset rendered by the UI.
 type WordTextStyle struct {
-	Bold       bool
-	Italic     bool
-	Underline  bool
-	Strike     bool
-	FontFamily string
-	FontSize   float64
-	FontColor  string
-	Highlight  string
+	Bold                    bool
+	Italic                  bool
+	Underline               bool
+	Strike                  bool
+	FontFamily              string
+	FontFamilyASCII         string
+	FontFamilyHighANSI      string
+	FontFamilyEastAsia      string
+	FontFamilyComplexScript string
+	FontSize                float64
+	FontColor               string
+	Highlight               string
 }
 
 // WordImage describes an image without exposing package relationships.

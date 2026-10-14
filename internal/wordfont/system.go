@@ -111,7 +111,7 @@ func (s *Shaper) Shape(value string, style document.WordTextStyle) (wordlayout.S
 		return wordlayout.ShapedText{}, err
 	}
 
-	fontMap := &wordTextFontMap{owner: s, candidates: s.orderedFonts(style)}
+	fontMap := &wordTextFontMap{owner: s, candidates: s.orderedFonts(style), style: style}
 	runes := []rune(value)
 	input := shaping.Input{
 		Text:      runes,
@@ -137,24 +137,46 @@ func (s *Shaper) Shape(value string, style document.WordTextStyle) (wordlayout.S
 		key := wordFontKey(location)
 		ascent := fixedToPoints(output.LineBounds.Ascent)
 		descent := math.Abs(fixedToPoints(output.LineBounds.Descent))
+		shaped.LineGapPT = math.Max(shaped.LineGapPT, fixedToPoints(output.LineBounds.Gap))
 		if ascent > shaped.AscentPT {
 			shaped.AscentPT = ascent
 		}
 		if descent > shaped.DescentPT {
 			shaped.DescentPT = descent
 		}
+		clusterGlyphCounts := map[int]int{}
+		for _, glyph := range output.Glyphs {
+			clusterGlyphCounts[glyph.TextIndex()]++
+		}
 		for _, glyph := range output.Glyphs {
 			start, end := glyph.TextIndex(), glyph.TextIndex()+glyph.RunesCount()
 			if start < 0 || end <= start || end > len(runes) {
 				return wordlayout.ShapedText{}, fmt.Errorf("font shaper returned invalid rune cluster [%d,%d)", start, end)
+			}
+			advance := fixedToPoints(glyph.Advance)
+			offset := fixedToPoints(glyph.XOffset)
+			// Missing legacy bi-width fonts need compatible advances as well
+			// as readable outlines. Installed originals always use their metrics.
+			family := fontFamilyForRune(style, runes[start])
+			if clusterGlyphCounts[start] == 1 && asciiCluster(runes[start:end]) && fontMap.missingBiWidthFamily(family) {
+				width := 0.0
+				for _, r := range runes[start:end] {
+					if r >= 0x20 && r <= 0x7e {
+						width += style.FontSize / 2
+					} else {
+						width += advance / float64(end-start)
+					}
+				}
+				offset += (width - advance) / 2
+				advance = width
 			}
 			shaped.Glyphs = append(shaped.Glyphs, wordlayout.ShapedGlyph{
 				FontKey:    key,
 				GlyphID:    uint32(glyph.GlyphID),
 				RuneStart:  start,
 				RuneEnd:    end,
-				AdvanceXPT: fixedToPoints(glyph.Advance),
-				OffsetXPT:  fixedToPoints(glyph.XOffset),
+				AdvanceXPT: advance,
+				OffsetXPT:  offset,
 				OffsetYPT:  fixedToPoints(glyph.YOffset),
 			})
 		}
@@ -232,7 +254,7 @@ func (s *Shaper) loadSystemFonts() error {
 }
 
 func (s *Shaper) orderedFonts(style document.WordTextStyle) []fontscan.Footprint {
-	families := splitWordFontFamilies(style.FontFamily)
+	families := wordFontFamilyCandidates(style.FontFamily)
 	families = append(families, wordFontFallbackFamilies...)
 	seen := make(map[fontscan.Location]bool)
 	ordered := make([]fontscan.Footprint, 0, len(s.fonts))
@@ -318,9 +340,12 @@ func fixedToPoints(value fixed.Int26_6) float64 {
 }
 
 type wordTextFontMap struct {
-	owner      *Shaper
-	candidates []fontscan.Footprint
-	resolved   map[rune]*font.Face
+	owner          *Shaper
+	candidates     []fontscan.Footprint
+	resolved       map[rune]*font.Face
+	style          document.WordTextStyle
+	byFamily       map[string][]fontscan.Footprint
+	biWidthMissing map[string]bool
 }
 
 func (m *wordTextFontMap) ResolveFace(r rune) *font.Face {
@@ -330,7 +355,22 @@ func (m *wordTextFontMap) ResolveFace(r rune) *font.Face {
 	if face, ok := m.resolved[r]; ok {
 		return face
 	}
-	for _, candidate := range m.candidates {
+	candidates := m.candidates
+	family := fontFamilyForRune(m.style, r)
+	if family != "" && family != m.style.FontFamily {
+		if m.byFamily == nil {
+			m.byFamily = map[string][]fontscan.Footprint{}
+		}
+		var ok bool
+		candidates, ok = m.byFamily[family]
+		if !ok {
+			style := m.style
+			style.FontFamily = family
+			candidates = m.owner.orderedFonts(style)
+			m.byFamily[family] = candidates
+		}
+	}
+	for _, candidate := range candidates {
 		if !candidate.Runes.Contains(r) {
 			continue
 		}

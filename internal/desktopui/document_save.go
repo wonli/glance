@@ -76,7 +76,14 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 		return
 	}
 	if state.saveAsRequired {
-		a.startSaveAsPicker("xlsx")
+		if reason == wordSaveAuto {
+			return
+		}
+		extension := "xlsx"
+		if state.sourceFormat == application.FormatDOC {
+			extension = "docx"
+		}
+		a.startSaveAsPicker(extension)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationSave)

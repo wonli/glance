@@ -11,7 +11,7 @@ import (
 )
 
 func chooseOfficeFile() (string, error) {
-	script := `set pickedFile to choose file with prompt "选择 Office、PDF、JSON 或 Markdown 文档" of type {"xlsx", "xls", "docx", "json", "md", "markdown", "pdf"}
+	script := `set pickedFile to choose file with prompt "选择 Office、PDF、JSON 或 Markdown 文档" of type {"xlsx", "xls", "doc", "docx", "json", "md", "markdown", "pdf"}
 POSIX path of pickedFile`
 	cmd := exec.Command("osascript", "-e", script)
 	var stderr bytes.Buffer

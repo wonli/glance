@@ -39,6 +39,13 @@ type WordSection struct {
 	HeaderText       string
 	HeaderDistancePT float64
 	HeaderSet        bool
+	Grid             WordDocumentGrid
+}
+
+// WordDocumentGrid stores the section's vertical text grid in points.
+type WordDocumentGrid struct {
+	Type        string
+	LinePitchPT float64
 }
 
 // WordParagraphLayoutMask records which values were explicitly supplied, so
@@ -61,6 +68,7 @@ const (
 	WordParagraphTabStopsSet
 	WordParagraphFirstLineIndentCharsSet
 	WordParagraphHangingIndentCharsSet
+	WordParagraphSnapToGridSet
 )
 
 // WordTabStop describes one paragraph tab position in points.
@@ -100,6 +108,7 @@ type WordParagraphLayout struct {
 	KeepWithNext         bool
 	KeepTogether         bool
 	PageBreakBefore      bool
+	SnapToGrid           bool
 	BottomBorder         WordParagraphBorder
 	TabStops             []WordTabStop
 	Set                  WordParagraphLayoutMask
@@ -123,6 +132,10 @@ const (
 	WordTextFontColorSet
 	WordTextHighlightSet
 	WordTextStrikeSet
+	WordTextFontASCIISet
+	WordTextFontHighANSISet
+	WordTextFontEastAsiaSet
+	WordTextFontComplexScriptSet
 )
 
 // WordStyle describes one paragraph or character style and its inheritance
@@ -155,11 +168,12 @@ type WordLayoutUnsupported struct {
 // WordLayoutData contains page settings and styles projected from the DOCX
 // package. It is a read-only neutral view and exposes no OOXML or ZIP types.
 type WordLayoutData struct {
-	Sections         []WordSection
-	Defaults         WordStyleDefaults
-	Styles           []WordStyle
-	DefaultTabStopPT float64
-	Unsupported      []WordLayoutUnsupported
+	Sections                []WordSection
+	Defaults                WordStyleDefaults
+	Styles                  []WordStyle
+	DefaultTabStopPT        float64
+	AdjustLineHeightInTable bool
+	Unsupported             []WordLayoutUnsupported
 }
 
 // WordLayoutReader is an optional DOCX capability for neutral layout metadata.

@@ -2128,9 +2128,12 @@ func (a *desktopSessionAdapter) SaveWithSnapshot(ctx context.Context) ([]byte, e
 		return nil, errors.New("document session is closed")
 	}
 	s.adapterMu.RLock()
-	saveAsRequired := s.saveAsRequired
+	saveAsRequired, sourceFormat := s.saveAsRequired, s.sourceFormat
 	s.adapterMu.RUnlock()
 	if saveAsRequired {
+		if sourceFormat == application.FormatDOC {
+			return nil, errors.New("旧版 .doc 导入的文档不能覆盖源文件，请另存为 .docx")
+		}
 		return nil, errors.New("旧版 .xls 导入的工作簿不能覆盖源文件，请另存为 .xlsx")
 	}
 	if s.pptxDoc != nil && s.hasPendingPresentationDraft() {
@@ -2236,6 +2239,12 @@ func (a *desktopSessionAdapter) SaveAsWithSnapshot(ctx context.Context, path str
 	s := a.session
 	if s.finalized.Load() {
 		return nil, errors.New("document session is closed")
+	}
+	s.adapterMu.RLock()
+	saveAsRequired, sourceFormat := s.saveAsRequired, s.sourceFormat
+	s.adapterMu.RUnlock()
+	if saveAsRequired && sourceFormat == application.FormatDOC && !strings.EqualFold(filepath.Ext(path), ".docx") {
+		return nil, errors.New("旧版 .doc 导入的文档只能另存为 .docx")
 	}
 	if strings.EqualFold(filepath.Ext(path), ".xls") {
 		return nil, errors.New("旧版 .xls 导入的工作簿只能另存为 .xlsx")
@@ -2656,6 +2665,7 @@ func newDesktopSessionAdapter(runtime *desktopRuntime, session *sharedDocumentSe
 func desktopApplicationFactories(runtime *desktopRuntime) []application.FormatFactory {
 	formats := []application.Format{
 		application.FormatDocx,
+		application.FormatDOC,
 		application.FormatXLSX,
 		application.FormatXLS,
 		application.FormatPPTX,
