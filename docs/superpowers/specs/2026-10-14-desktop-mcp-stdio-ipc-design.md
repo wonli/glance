@@ -1,6 +1,6 @@
 # Desktop MCP over stdio and local IPC
 
-**Status:** Implemented
+**Status:** Superseded by [2026-10-14-single-desktop-instance-and-mcp-design.md](2026-10-14-single-desktop-instance-and-mcp-design.md)
 
 **Date:** 2026-10-14
 

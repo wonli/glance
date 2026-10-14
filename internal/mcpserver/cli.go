@@ -17,9 +17,10 @@ func DispatchCLI(args []string, stdout, stderr io.Writer) (bool, int) {
 	return dispatchCLIWithOptions(args, stdout, stderr, DesktopIPCOptions{}, "", os.Stdin, stdout)
 }
 
-// dispatchCLIWithOptions isolates registry and stdio dependencies for tests;
+// dispatchCLIWithOptions isolates endpoint and stdio dependencies for tests;
 // production callers go through DispatchCLI and use the process defaults.
 func dispatchCLIWithOptions(args []string, stdout, stderr io.Writer, ipcOptions DesktopIPCOptions, executablePath string, stdin io.ReadCloser, protocolStdout io.Writer) (bool, int) {
+	_ = executablePath // Kept in the helper signature for existing callers; endpoint selection is per-user.
 	if len(args) == 0 || args[0] != "mcp" {
 		return false, 0
 	}
@@ -42,11 +43,11 @@ func dispatchCLIWithOptions(args []string, stdout, stderr io.Writer, ipcOptions 
 	flags := flag.NewFlagSet("glance mcp serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	stdio := flags.Bool("stdio", false, "serve MCP over standard input and output")
-	instanceID := flags.String("instance-id", "", "target a running desktop Glance instance")
+	flags.String("instance-id", "", "deprecated compatibility flag; ignored")
 	var openPaths stringListFlag
 	flags.Var(&openPaths, "open", "open a document path before serving; may be repeated for headless work")
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: glance mcp serve --stdio [--instance-id ID | --open PATH ...]")
+		fmt.Fprintln(stderr, "Usage: glance mcp serve --stdio [--open PATH ...]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args[2:]); err != nil {
@@ -59,33 +60,15 @@ func dispatchCLIWithOptions(args []string, stdout, stderr io.Writer, ipcOptions 
 		flags.Usage()
 		return true, 2
 	}
-	instanceIDProvided := false
-	flags.Visit(func(parsed *flag.Flag) {
-		if parsed.Name == "instance-id" {
-			instanceIDProvided = true
-		}
-	})
-	if instanceIDProvided && len(openPaths) != 0 {
-		fmt.Fprintln(stderr, "--instance-id and --open cannot be combined")
-		return true, 2
-	}
 	if len(openPaths) == 0 {
-		if executablePath == "" {
-			var err error
-			executablePath, err = os.Executable()
-			if err != nil {
-				fmt.Fprintf(stderr, "resolve Glance executable path: %v\n", err)
-				return true, 1
-			}
-		}
-		instance, err := ResolveDesktopMCPInstance(*instanceID, executablePath, ipcOptions)
+		address, err := desktopMCPAddressForOptions(ipcOptions)
 		if err != nil {
-			fmt.Fprintf(stderr, "resolve desktop MCP target: %v\n", err)
+			fmt.Fprintf(stderr, "resolve current Glance desktop MCP endpoint: %v\n", err)
 			return true, 1
 		}
-		conn, err := dialDesktopIPC(instance.Address)
+		conn, err := dialDesktopIPC(address)
 		if err != nil {
-			fmt.Fprintf(stderr, "connect to Glance desktop instance %s: %v\n", instance.ID, err)
+			fmt.Fprintf(stderr, "connect to the current Glance desktop MCP endpoint: %v\n", err)
 			return true, 1
 		}
 		if err := bridgeDesktopMCPStdio(stdin, protocolStdout, conn); err != nil {
@@ -179,7 +162,7 @@ func writerAsWriteCloser(writer io.Writer) io.WriteCloser {
 }
 
 func writeMCPUsage(stderr io.Writer) {
-	fmt.Fprintln(stderr, "Usage: glance mcp serve --stdio [--instance-id ID | --open PATH ...]")
+	fmt.Fprintln(stderr, "Usage: glance mcp serve --stdio [--open PATH ...]")
 	fmt.Fprintln(stderr, "       glance (without a subcommand starts the desktop application)")
 }
 

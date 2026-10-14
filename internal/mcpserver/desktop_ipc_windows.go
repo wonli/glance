@@ -3,10 +3,13 @@
 package mcpserver
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -46,9 +49,10 @@ type desktopNamedPipeConn struct {
 	addr desktopNamedPipeAddr
 }
 
-func listenDesktopIPC(_ string, instanceID string) (net.Listener, string, error) {
-	if !validDesktopMCPInstanceID(instanceID) {
-		return nil, "", errors.New("invalid desktop MCP instance ID")
+func listenDesktopIPC(socketDir, _ string) (net.Listener, string, error) {
+	address, err := desktopMCPAddress(socketDir)
+	if err != nil {
+		return nil, "", err
 	}
 	tokenUser, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
@@ -62,15 +66,31 @@ func listenDesktopIPC(_ string, instanceID string) (net.Listener, string, error)
 	if err != nil {
 		return nil, "", fmt.Errorf("create current-user named pipe ACL: %w", err)
 	}
-	name := fmt.Sprintf(`\\.\pipe\GlanceMCP-%s-%s`, compactSID(userSID), instanceID)
-	listener := &desktopNamedPipeListener{name: name, security: security, first: true, ready: make(chan struct{})}
+	listener := &desktopNamedPipeListener{name: address, security: security, first: true, ready: make(chan struct{})}
 	listener.mu.Lock()
 	listener.accepting, err = listener.createPipeLocked()
 	listener.mu.Unlock()
 	if err != nil {
 		return nil, "", fmt.Errorf("create initial desktop MCP named pipe: %w", err)
 	}
-	return listener, name, nil
+	return listener, address, nil
+}
+
+func desktopMCPAddress(socketDir string) (string, error) {
+	tokenUser, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return "", fmt.Errorf("read current user for named pipe address: %w", err)
+	}
+	userSID := tokenUser.User.Sid.String()
+	if userSID == "" {
+		return "", errors.New("current Windows user SID is unavailable")
+	}
+	name := fmt.Sprintf(`\\.\pipe\GlanceMCP-%s`, compactSID(userSID))
+	if socketDir != "" {
+		digest := sha256.Sum256([]byte(filepath.Clean(socketDir)))
+		name += "-" + hex.EncodeToString(digest[:8])
+	}
+	return name, nil
 }
 
 func defaultDesktopMCPSocketDirectory() (string, error) { return "", nil }
@@ -109,24 +129,6 @@ func removeStaleDesktopIPC(_, address string) error {
 		return fmt.Errorf("desktop MCP IPC address %q is not a Glance named pipe", address)
 	}
 	return nil
-}
-
-func processExists(pid int) (bool, error) {
-	if pid <= 0 || uint64(pid) > uint64(^uint32(0)) {
-		return false, nil
-	}
-	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
-	if err != nil {
-		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
-			return false, nil
-		}
-		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
-			return true, nil
-		}
-		return false, err
-	}
-	_ = windows.CloseHandle(handle)
-	return true, nil
 }
 
 func (l *desktopNamedPipeListener) Accept() (net.Conn, error) {

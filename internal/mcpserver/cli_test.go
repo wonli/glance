@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"bytes"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -42,7 +41,7 @@ func TestMCPCLIRejectsDesktopTargetWithoutMatchingInstance(t *testing.T) {
 	if !handled || exitCode != 1 {
 		t.Fatalf("missing desktop target = handled %v code %d; want handled with exit 1", handled, exitCode)
 	}
-	if !strings.Contains(stderr.String(), "no running Glance desktop instance") {
+	if !strings.Contains(stderr.String(), "current Glance desktop MCP endpoint") {
 		t.Fatalf("missing desktop target diagnostic = %q", stderr.String())
 	}
 	if stdout.Len() != 0 {
@@ -50,7 +49,7 @@ func TestMCPCLIRejectsDesktopTargetWithoutMatchingInstance(t *testing.T) {
 	}
 }
 
-func TestMCPCLIRejectsAmbiguousAndMismatchedDesktopTarget(t *testing.T) {
+func TestMCPCLIUsesStableEndpointRegardlessOfLegacyTarget(t *testing.T) {
 	appRuntime := newDesktopIPCTestRuntime(t)
 	options := newDesktopIPCOptions(t)
 	executable := desktopIPCExecutablePath(t)
@@ -60,36 +59,22 @@ func TestMCPCLIRejectsAmbiguousAndMismatchedDesktopTarget(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = first.Close() })
 	second, err := StartDesktopIPCServer(appRuntime, executable, options)
-	if err != nil {
-		t.Fatalf("start second desktop IPC server: %v", err)
+	if err == nil {
+		_ = second.Close()
+		t.Fatal("a second MCP server unexpectedly claimed the stable endpoint")
 	}
-	t.Cleanup(func() { _ = second.Close() })
-
+	fakeExecutable := filepath.Join(t.TempDir(), "different-glance-binary")
 	var stdout, stderr bytes.Buffer
 	handled, exitCode := dispatchCLIWithOptions(
-		[]string{"mcp", "serve", "--stdio"}, &stdout, &stderr, options, executable,
-		io.NopCloser(strings.NewReader("")), &stdout,
-	)
-	if !handled || exitCode != 1 || !strings.Contains(strings.ToLower(stderr.String()), "ambiguous") {
-		t.Fatalf("ambiguous desktop target = handled %v code %d stderr %q", handled, exitCode, stderr.String())
-	}
-
-	fakeExecutable := filepath.Join(t.TempDir(), "different-glance-binary")
-	if err := os.WriteFile(fakeExecutable, []byte("not an executable"), 0o600); err != nil {
-		t.Fatalf("create mismatched executable path: %v", err)
-	}
-	stdout.Reset()
-	stderr.Reset()
-	handled, exitCode = dispatchCLIWithOptions(
-		[]string{"mcp", "serve", "--stdio", "--instance-id", first.Instance().ID},
+		[]string{"mcp", "serve", "--stdio", "--instance-id", "stale-legacy-id"},
 		&stdout, &stderr, options, fakeExecutable, io.NopCloser(strings.NewReader("")), &stdout,
 	)
-	if !handled || exitCode != 1 || !strings.Contains(stderr.String(), "different executable") {
-		t.Fatalf("mismatched executable target = handled %v code %d stderr %q", handled, exitCode, stderr.String())
+	if !handled || exitCode != 0 || stderr.Len() != 0 {
+		t.Fatalf("legacy target ID and executable path affected stable routing: handled=%v code=%d stderr=%q", handled, exitCode, stderr.String())
 	}
 }
 
-func TestMCPCLIDesktopAndHeadlessModesAreExclusive(t *testing.T) {
+func TestMCPCLICompatibilityInstanceIDDoesNotBlockHeadlessOpen(t *testing.T) {
 	options := newDesktopIPCOptions(t)
 	for _, instanceArg := range []string{"--instance-id=instance", "--instance-id="} {
 		var stdout, stderr bytes.Buffer
@@ -97,8 +82,8 @@ func TestMCPCLIDesktopAndHeadlessModesAreExclusive(t *testing.T) {
 			[]string{"mcp", "serve", "--stdio", "--open", filepath.Join(t.TempDir(), "input.json"), instanceArg},
 			&stdout, &stderr, options, desktopIPCExecutablePath(t), io.NopCloser(strings.NewReader("")), &stdout,
 		)
-		if !handled || exitCode != 2 || !strings.Contains(stderr.String(), "cannot be combined") {
-			t.Fatalf("mixed MCP modes with %s = handled %v code %d stderr %q", instanceArg, handled, exitCode, stderr.String())
+		if !handled || exitCode != 1 || !strings.Contains(stderr.String(), "open document") || strings.Contains(stderr.String(), "cannot be combined") {
+			t.Fatalf("legacy ID affected explicit headless open with %s = handled %v code %d stderr %q", instanceArg, handled, exitCode, stderr.String())
 		}
 		if stdout.Len() != 0 {
 			t.Fatalf("invalid MCP mode wrote to stdout: %q", stdout.String())

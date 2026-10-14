@@ -154,63 +154,46 @@ func newDesktopMCPStdioSubprocessCommand(testName string, options DesktopIPCOpti
 	return command
 }
 
-func TestMCPStdioSubprocessTargetsSelectedDesktopRuntime(t *testing.T) {
+func TestMCPStdioSubprocessTargetsStableDesktopRuntime(t *testing.T) {
 	runDesktopMCPStdioSubprocessIfRequested()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	firstRuntime := newDesktopIPCTestRuntime(t)
 	selectedRuntime := newDesktopIPCTestRuntime(t)
-	firstDocument, err := firstRuntime.CreateDocument(ctx, application.FormatDocx)
-	if err != nil {
-		t.Fatalf("create first runtime document: %v", err)
-	}
 	selectedDocument, err := selectedRuntime.CreateDocument(ctx, application.FormatDocx)
 	if err != nil {
 		t.Fatalf("create selected runtime document: %v", err)
 	}
 	options := newDesktopIPCOptions(t)
 	executable := desktopIPCExecutablePath(t)
-	firstEndpoint, err := StartDesktopIPCServer(firstRuntime, executable, options)
+	endpoint, err := StartDesktopIPCServer(selectedRuntime, executable, options)
 	if err != nil {
-		t.Fatalf("start first same-path desktop endpoint: %v", err)
+		t.Fatalf("start stable desktop endpoint: %v", err)
 	}
-	t.Cleanup(func() { _ = firstEndpoint.Close() })
-	selectedEndpoint, err := StartDesktopIPCServer(selectedRuntime, executable, options)
-	if err != nil {
-		t.Fatalf("start selected same-path desktop endpoint: %v", err)
-	}
-	t.Cleanup(func() { _ = selectedEndpoint.Close() })
+	t.Cleanup(func() { _ = endpoint.Close() })
 
-	client := mcp.NewClient(&mcp.Implementation{Name: "desktop-instance-routing-test", Version: "1"}, nil)
-	command := newDesktopMCPStdioSubprocessCommand("TestMCPStdioSubprocessTargetsSelectedDesktopRuntime", options, selectedEndpoint.Instance().ID)
+	client := mcp.NewClient(&mcp.Implementation{Name: "desktop-stable-routing-test", Version: "1"}, nil)
+	command := newDesktopMCPStdioSubprocessCommand("TestMCPStdioSubprocessTargetsStableDesktopRuntime", options, "ignored-old-id")
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
 	if err != nil {
-		t.Fatalf("connect stdio child to selected desktop instance: %v", err)
+		t.Fatalf("connect stdio child to desktop runtime: %v", err)
 	}
 	defer session.Close()
 	appended, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.paragraph.append", Arguments: testStdioprocessDocumentIdExpectedRevisionTextArguments{
-		DocumentId: selectedDocument.DocumentID, ExpectedRevision: selectedDocument.Revision, Text: "写入第二个 Glance 实例",
+		DocumentId: selectedDocument.DocumentID, ExpectedRevision: selectedDocument.Revision, Text: "写入当前 Glance 会话",
 	}})
 	if err != nil || appended.IsError {
-		t.Fatalf("append through selected desktop instance = %+v, %v", appended, err)
+		t.Fatalf("append through current desktop runtime = %+v, %v", appended, err)
 	}
 	updatedSelected, err := selectedRuntime.GetDocument(ctx, selectedDocument.DocumentID)
 	if err != nil {
 		t.Fatalf("read selected runtime document: %v", err)
 	}
-	updatedFirst, err := firstRuntime.GetDocument(ctx, firstDocument.DocumentID)
-	if err != nil {
-		t.Fatalf("read unselected runtime document: %v", err)
-	}
 	if updatedSelected.Revision != selectedDocument.Revision+1 || !updatedSelected.Dirty {
-		t.Fatalf("selected runtime was not edited: before=%+v after=%+v", selectedDocument, updatedSelected)
-	}
-	if updatedFirst.Revision != firstDocument.Revision || updatedFirst.Dirty != firstDocument.Dirty {
-		t.Fatalf("request reached the unselected same-path runtime: before=%+v after=%+v", firstDocument, updatedFirst)
+		t.Fatalf("desktop runtime was not edited: before=%+v after=%+v", selectedDocument, updatedSelected)
 	}
 }
 
-func TestMCPStdioSubprocessFallsBackFromStaleIDWhenUnique(t *testing.T) {
+func TestMCPStdioSubprocessIgnoresStaleLegacyID(t *testing.T) {
 	runDesktopMCPStdioSubprocessIfRequested()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -225,18 +208,18 @@ func TestMCPStdioSubprocessFallsBackFromStaleIDWhenUnique(t *testing.T) {
 		t.Fatalf("start desktop IPC server: %v", err)
 	}
 	t.Cleanup(func() { _ = endpoint.Close() })
-	client := mcp.NewClient(&mcp.Implementation{Name: "desktop-stale-id-fallback-test", Version: "1"}, nil)
-	command := newDesktopMCPStdioSubprocessCommand("TestMCPStdioSubprocessFallsBackFromStaleIDWhenUnique", options, "stale-after-restart")
+	client := mcp.NewClient(&mcp.Implementation{Name: "desktop-stale-id-compatibility-test", Version: "1"}, nil)
+	command := newDesktopMCPStdioSubprocessCommand("TestMCPStdioSubprocessIgnoresStaleLegacyID", options, "stale-after-restart")
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
 	if err != nil {
-		t.Fatalf("connect stdio child through unique-path stale-ID fallback: %v", err)
+		t.Fatalf("connect stdio child with ignored stale ID: %v", err)
 	}
 	defer session.Close()
 	appended, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "word.paragraph.append", Arguments: testStdioprocessDocumentIdExpectedRevisionTextArguments{
 		DocumentId: document.DocumentID, ExpectedRevision: document.Revision, Text: "重启后唯一实例回退",
 	}})
 	if err != nil || appended.IsError {
-		t.Fatalf("append through stale-ID fallback = %+v, %v", appended, err)
+		t.Fatalf("append through stable desktop endpoint = %+v, %v", appended, err)
 	}
 	updated, err := appRuntime.GetDocument(ctx, document.DocumentID)
 	if err != nil {

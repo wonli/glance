@@ -28,8 +28,7 @@ func runDesktopMCPUIStdioSubprocessIfRequested() {
 	if os.Getenv("GLANCE_DESKTOP_UI_MCP_STDIO_SUBPROCESS") != "1" {
 		return
 	}
-	instanceID := os.Getenv("GLANCE_DESKTOP_UI_MCP_INSTANCE_ID")
-	handled, exitCode := mcpserver.DispatchCLI([]string{"mcp", "serve", "--stdio", "--instance-id", instanceID}, os.Stdout, os.Stderr)
+	handled, exitCode := mcpserver.DispatchCLI([]string{"mcp", "serve", "--stdio"}, os.Stdout, os.Stderr)
 	if !handled {
 		os.Exit(127)
 	}
@@ -50,7 +49,7 @@ func TestDesktopMCPStdioEditsTheLiveGioSession(t *testing.T) {
 	if err := desktop.startDesktopMCPIPC(); err != nil {
 		t.Fatalf("start desktop MCP IPC endpoint: %v", err)
 	}
-	instance, available, err := desktop.desktopMCPIPCInstance()
+	_, available, err := desktop.desktopMCPIPCInstance()
 	if err != nil || !available {
 		t.Fatalf("desktop MCP IPC instance available=%v error=%v", available, err)
 	}
@@ -58,7 +57,6 @@ func TestDesktopMCPStdioEditsTheLiveGioSession(t *testing.T) {
 	command := exec.Command(os.Args[0], "-test.run=^TestDesktopMCPStdioEditsTheLiveGioSession$")
 	command.Env = append(os.Environ(),
 		"GLANCE_DESKTOP_UI_MCP_STDIO_SUBPROCESS=1",
-		"GLANCE_DESKTOP_UI_MCP_INSTANCE_ID="+instance.ID,
 	)
 	client := mcp.NewClient(&mcp.Implementation{Name: "desktop-live-session-stdio-test", Version: "1"}, nil)
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)

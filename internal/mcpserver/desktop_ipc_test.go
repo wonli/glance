@@ -2,11 +2,9 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
@@ -51,114 +49,47 @@ func newDesktopIPCOptions(t *testing.T) DesktopIPCOptions {
 	return DesktopIPCOptions{RuntimeDir: t.TempDir(), SocketDir: socketDir}
 }
 
-func TestDesktopMCPRegistryKeepsDistinctLiveInstances(t *testing.T) {
+func TestDesktopMCPServesOneStableEndpoint(t *testing.T) {
 	runtime := newDesktopIPCTestRuntime(t)
 	options := newDesktopIPCOptions(t)
-	executable := desktopIPCExecutablePath(t)
-	first, err := StartDesktopIPCServer(runtime, executable, options)
+	first, err := StartDesktopIPCServer(runtime, desktopIPCExecutablePath(t), options)
 	if err != nil {
-		t.Fatalf("start first desktop IPC server: %v", err)
+		t.Fatalf("start desktop IPC server: %v", err)
 	}
 	t.Cleanup(func() { _ = first.Close() })
-	second, err := StartDesktopIPCServer(runtime, executable, options)
-	if err != nil {
-		t.Fatalf("start second desktop IPC server: %v", err)
-	}
-	t.Cleanup(func() { _ = second.Close() })
 
-	firstInstance, secondInstance := first.Instance(), second.Instance()
-	if firstInstance.ID == "" || secondInstance.ID == "" || firstInstance.ID == secondInstance.ID {
-		t.Fatalf("instance IDs are not unique: first=%q second=%q", firstInstance.ID, secondInstance.ID)
-	}
-	if firstInstance.Address == "" || secondInstance.Address == "" || firstInstance.Address == secondInstance.Address {
-		t.Fatalf("IPC addresses are not unique: first=%q second=%q", firstInstance.Address, secondInstance.Address)
-	}
-	if firstInstance.PID != os.Getpid() || secondInstance.PID != os.Getpid() {
-		t.Fatalf("instance PIDs = %d and %d; want %d", firstInstance.PID, secondInstance.PID, os.Getpid())
-	}
-	if firstInstance.ExecutablePath != secondInstance.ExecutablePath {
-		t.Fatalf("canonical executable paths differ: %q and %q", firstInstance.ExecutablePath, secondInstance.ExecutablePath)
-	}
-	instances, err := ListDesktopMCPInstances(options)
+	instance := first.Instance()
+	address, err := desktopMCPAddressForOptions(options)
 	if err != nil {
-		t.Fatalf("list desktop MCP instances: %v", err)
+		t.Fatalf("resolve stable desktop endpoint: %v", err)
 	}
-	if len(instances) != 2 {
-		t.Fatalf("listed %d instances; want 2: %+v", len(instances), instances)
+	if instance.ID != "" || instance.Address != address || instance.PID != os.Getpid() {
+		t.Fatalf("desktop MCP metadata = %+v; want stable address %q, empty ID, and current PID", instance, address)
 	}
-	if err := first.Close(); err != nil {
-		t.Fatalf("close first desktop IPC server: %v", err)
+	second, err := StartDesktopIPCServer(runtime, desktopIPCExecutablePath(t), options)
+	if err == nil {
+		_ = second.Close()
+		t.Fatal("a second server unexpectedly claimed the stable desktop MCP endpoint")
 	}
-	instances, err = ListDesktopMCPInstances(options)
+	conn, err := dialDesktopIPC(address)
 	if err != nil {
-		t.Fatalf("list instances after close: %v", err)
+		t.Fatalf("dial stable desktop MCP endpoint: %v", err)
 	}
-	if len(instances) != 1 || instances[0].ID != secondInstance.ID {
-		t.Fatalf("instances after close = %+v; want only %q", instances, secondInstance.ID)
-	}
+	_ = conn.Close()
 }
 
-func TestDesktopMCPInstanceResolutionRejectsAmbiguousPath(t *testing.T) {
+func TestDesktopMCPDoesNotCreateRegistryDirectory(t *testing.T) {
 	runtime := newDesktopIPCTestRuntime(t)
 	options := newDesktopIPCOptions(t)
-	executable := desktopIPCExecutablePath(t)
-	first, err := StartDesktopIPCServer(runtime, executable, options)
+	registryDir := filepath.Join(t.TempDir(), "unused-registry")
+	options.RuntimeDir = registryDir
+	endpoint, err := StartDesktopIPCServer(runtime, desktopIPCExecutablePath(t), options)
 	if err != nil {
-		t.Fatalf("start first desktop IPC server: %v", err)
+		t.Fatalf("start desktop IPC server: %v", err)
 	}
-	t.Cleanup(func() { _ = first.Close() })
-	second, err := StartDesktopIPCServer(runtime, executable, options)
-	if err != nil {
-		t.Fatalf("start second desktop IPC server: %v", err)
-	}
-	t.Cleanup(func() { _ = second.Close() })
-
-	selected, err := ResolveDesktopMCPInstance(second.Instance().ID, executable, options)
-	if err != nil || selected.ID != second.Instance().ID {
-		t.Fatalf("resolve explicit instance = %+v, %v; want %q", selected, err, second.Instance().ID)
-	}
-	if _, err := ResolveDesktopMCPInstance("", executable, options); err == nil || !strings.Contains(strings.ToLower(err.Error()), "ambiguous") {
-		t.Fatalf("resolve without ID among same-path instances error = %v; want ambiguity", err)
-	}
-	if _, err := ResolveDesktopMCPInstance("stale-instance-id", executable, options); err == nil || !strings.Contains(strings.ToLower(err.Error()), "ambiguous") {
-		t.Fatalf("resolve stale ID among same-path instances error = %v; want ambiguity", err)
-	}
-}
-
-func TestDesktopMCPRegistryPrunesOnlyDeadProcesses(t *testing.T) {
-	options := newDesktopIPCOptions(t)
-	dir := options.RuntimeDir
-	executable := desktopIPCExecutablePath(t)
-	dead := DesktopMCPInstance{
-		ID: "dead-process-instance", PID: 1 << 30, ExecutablePath: executable,
-		Address: filepath.Join(options.SocketDir, "dead-process.sock"), StartedAt: time.Now().UTC(),
-	}
-	liveWithoutEndpoint := DesktopMCPInstance{
-		ID: "live-process-instance", PID: os.Getpid(), ExecutablePath: executable,
-		Address: filepath.Join(options.SocketDir, "temporarily-unavailable.sock"), StartedAt: time.Now().UTC(),
-	}
-	for _, instance := range []DesktopMCPInstance{dead, liveWithoutEndpoint} {
-		data, err := json.Marshal(instance)
-		if err != nil {
-			t.Fatalf("encode instance %q: %v", instance.ID, err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, instance.ID+".json"), data, 0o600); err != nil {
-			t.Fatalf("write instance %q: %v", instance.ID, err)
-		}
-	}
-
-	instances, err := ListDesktopMCPInstances(options)
-	if err != nil {
-		t.Fatalf("list desktop MCP instances: %v", err)
-	}
-	if len(instances) != 1 || instances[0].ID != liveWithoutEndpoint.ID {
-		t.Fatalf("instances after stale cleanup = %+v; want live process only", instances)
-	}
-	if _, err := os.Stat(filepath.Join(dir, dead.ID+".json")); !os.IsNotExist(err) {
-		t.Fatalf("dead process record still exists, stat error = %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, liveWithoutEndpoint.ID+".json")); err != nil {
-		t.Fatalf("live process record was removed: %v", err)
+	t.Cleanup(func() { _ = endpoint.Close() })
+	if _, err := os.Stat(registryDir); !os.IsNotExist(err) {
+		t.Fatalf("stable desktop endpoint created an obsolete registry directory; stat error = %v", err)
 	}
 }
 
@@ -168,25 +99,17 @@ func TestDesktopMCPIPCUsesPrivateSocketAndCleansUp(t *testing.T) {
 	}
 	appRuntime := newDesktopIPCTestRuntime(t)
 	options := newDesktopIPCOptions(t)
-	dir := options.RuntimeDir
 	endpoint, err := StartDesktopIPCServer(appRuntime, desktopIPCExecutablePath(t), options)
 	if err != nil {
 		t.Fatalf("start desktop IPC server: %v", err)
 	}
 	instance := endpoint.Instance()
-	defer func() {
+	t.Cleanup(func() {
 		if err := endpoint.Close(); err != nil {
 			t.Errorf("close desktop IPC server: %v", err)
 		}
-	}()
+	})
 
-	dirInfo, err := os.Stat(dir)
-	if err != nil {
-		t.Fatalf("stat runtime directory: %v", err)
-	}
-	if got := dirInfo.Mode().Perm(); got != 0o700 {
-		t.Fatalf("runtime directory mode = %04o; want 0700", got)
-	}
 	socketDirInfo, err := os.Stat(options.SocketDir)
 	if err != nil {
 		t.Fatalf("stat socket directory: %v", err)
@@ -201,19 +124,14 @@ func TestDesktopMCPIPCUsesPrivateSocketAndCleansUp(t *testing.T) {
 	if got := socketInfo.Mode().Perm(); got != 0o600 {
 		t.Fatalf("Unix socket mode = %04o; want 0600", got)
 	}
-	if info, err := os.Stat(filepath.Join(dir, instance.ID+".json")); err != nil {
-		t.Fatalf("stat registry record: %v", err)
-	} else if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("registry record mode = %04o; want 0600", got)
+	if filepath.Base(instance.Address) != "glance-mcp.sock" {
+		t.Fatalf("Unix socket name = %q; want stable glance-mcp.sock", filepath.Base(instance.Address))
 	}
-
 	if err := endpoint.Close(); err != nil {
 		t.Fatalf("close desktop IPC server: %v", err)
 	}
-	for _, path := range []string{instance.Address, filepath.Join(dir, instance.ID+".json")} {
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Errorf("path %q remains after shutdown; stat error = %v", path, err)
-		}
+	if _, err := os.Stat(instance.Address); !os.IsNotExist(err) {
+		t.Errorf("socket %q remains after shutdown; stat error = %v", instance.Address, err)
 	}
 }
 
@@ -255,29 +173,28 @@ func TestDesktopMCPIPCServesExistingCapabilityCatalog(t *testing.T) {
 	t.Fatal("desktop IPC MCP session did not expose the existing document.list capability")
 }
 
-func TestDesktopMCPRegistrySortsInstancesByID(t *testing.T) {
+func TestDesktopMCPInstanceIDIsNotUsedForRouting(t *testing.T) {
 	runtime := newDesktopIPCTestRuntime(t)
 	options := newDesktopIPCOptions(t)
 	executable := desktopIPCExecutablePath(t)
-	var endpoints []*DesktopIPCServer
-	for range 3 {
-		endpoint, err := StartDesktopIPCServer(runtime, executable, options)
-		if err != nil {
-			t.Fatalf("start desktop IPC server: %v", err)
-		}
-		endpoints = append(endpoints, endpoint)
-		t.Cleanup(func() { _ = endpoint.Close() })
-	}
-	instances, err := ListDesktopMCPInstances(options)
+	first, err := StartDesktopIPCServer(runtime, executable, options)
 	if err != nil {
-		t.Fatalf("list desktop MCP instances: %v", err)
+		t.Fatalf("start desktop IPC server: %v", err)
 	}
-	if len(instances) != len(endpoints) {
-		t.Fatalf("listed %d instances; want %d", len(instances), len(endpoints))
+	t.Cleanup(func() { _ = first.Close() })
+	if first.Instance().ID != "" {
+		t.Fatalf("stable desktop IPC unexpectedly published instance ID %q", first.Instance().ID)
 	}
-	for i := 1; i < len(instances); i++ {
-		if instances[i-1].ID > instances[i].ID {
-			t.Fatalf("instances are not sorted by ID: %+v", instances)
-		}
+	second, err := StartDesktopIPCServer(runtime, executable, options)
+	if err == nil {
+		_ = second.Close()
+		t.Fatal("second desktop process endpoint was allowed in the same socket directory")
+	}
+	address, err := desktopMCPAddressForOptions(options)
+	if err != nil {
+		t.Fatalf("resolve stable desktop address: %v", err)
+	}
+	if first.Instance().Address != address {
+		t.Fatalf("desktop endpoint = %q; want stable address %q", first.Instance().Address, address)
 	}
 }

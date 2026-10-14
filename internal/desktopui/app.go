@@ -17,7 +17,6 @@ import (
 	"gioui.org/widget/material"
 
 	wordpdf "glance/internal/format/pdf"
-	"glance/internal/mcpserver"
 	"glance/internal/printservice"
 	"glance/internal/workspace"
 )
@@ -85,10 +84,6 @@ type App struct {
 	mcpConnectionConfig          string
 	mcpConnectionError           string
 	mcpTempExecutable            bool
-	mcpInstances                 []mcpserver.DesktopMCPInstance
-	mcpSelectedInstanceID        string
-	mcpInstanceButtons           map[string]*widget.Clickable
-	mcpInstancesList             widget.List
 	mcpConfigurationList         widget.List
 	mcpConfigCopied              bool
 	wordSymbolPickerVisible      bool
@@ -312,8 +307,6 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		wordVersionHistoryRowButtons:  make(map[int64]*widget.Clickable),
 		wordCompareDocumentList:       widget.List{List: layout.List{Axis: layout.Vertical}},
 		wordCompareDocumentButtons:    make(map[string]*widget.Clickable),
-		mcpInstanceButtons:            make(map[string]*widget.Clickable),
-		mcpInstancesList:              widget.List{List: layout.List{Axis: layout.Vertical}},
 		mcpConfigurationList:          widget.List{List: layout.List{Axis: layout.Vertical}},
 		shutdown:                      make(chan struct{}),
 		agentUI:                       newAgentUIState(),
@@ -399,12 +392,21 @@ func Run(initialPath string) <-chan struct{} {
 }
 
 func RunWithStartupError(initialPath string, reportStartupError func(error)) <-chan struct{} {
+	return RunWithActivation(initialPath, reportStartupError, nil)
+}
+
+// RunWithActivation starts the desktop UI and applies path-free activation
+// requests from the process-level single-instance coordinator.
+func RunWithActivation(initialPath string, reportStartupError func(error), activationRequests <-chan struct{}) <-chan struct{} {
 	runtime := newDesktopRuntime()
 	runtime.completion = make(chan struct{})
 	runtime.startupErrorReporter = reportStartupError
 	w := new(app.Window)
 	configureDesktopWindow(w)
 	a := newAppWithRuntime(w, runtime)
+	if activationRequests != nil {
+		go runtime.consumeActivationRequests(a, activationRequests)
+	}
 	if initialPath != "" {
 		if err := a.open(initialPath); err != nil {
 			a.setStatus(err.Error())
