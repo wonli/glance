@@ -43,6 +43,65 @@ type Diagnostic struct {
 	Detail   string
 }
 
+// SupportImpact describes how a known support gap affects the document.
+type SupportImpact string
+
+const (
+	// SupportImpactApproximation means content remains available through a
+	// documented fallback. Preview is allowed; print/PDF asks for confirmation.
+	SupportImpactApproximation SupportImpact = "approximation"
+	// SupportImpactBlocksPreview means page geometry cannot be represented
+	// reliably, so preview and page-based output are blocked.
+	SupportImpactBlocksPreview SupportImpact = "blocks-preview"
+	// SupportImpactBlocksExport means preview is useful, but page-based output
+	// would silently discard or misrepresent required content.
+	SupportImpactBlocksExport SupportImpact = "blocks-export"
+)
+
+// SupportFinding is one actionable result from the DOCX support preflight or
+// the layout pass. SourceID points back to the neutral source model.
+type SupportFinding struct {
+	SourceID string
+	Location string
+	Code     string
+	Detail   string
+	Impact   SupportImpact
+	Fallback string
+}
+
+// SupportReport summarizes known gaps without treating every one as a fatal
+// document error.
+type SupportReport struct {
+	Findings []SupportFinding
+}
+
+func (r SupportReport) BlocksPreview() bool {
+	for _, finding := range r.Findings {
+		if finding.Impact == SupportImpactBlocksPreview {
+			return true
+		}
+	}
+	return false
+}
+
+func (r SupportReport) BlocksExport() bool {
+	for _, finding := range r.Findings {
+		if finding.Impact == SupportImpactBlocksPreview || finding.Impact == SupportImpactBlocksExport {
+			return true
+		}
+	}
+	return false
+}
+
+func (r SupportReport) RequiresConfirmation() bool {
+	for _, finding := range r.Findings {
+		if finding.Impact == SupportImpactApproximation {
+			return true
+		}
+	}
+	return false
+}
+
 type Rect struct {
 	XPT      float64
 	YPT      float64
@@ -118,6 +177,7 @@ type Result struct {
 	Revision          uint64
 	Pages             []PageScene
 	Diagnostics       []Diagnostic
+	SupportReport     SupportReport
 	Locations         map[SourcePosition]Position
 	CanPreview        bool
 	blockFingerprints [][32]byte

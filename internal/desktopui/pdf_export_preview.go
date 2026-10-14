@@ -322,7 +322,7 @@ func (a *App) updateWordPreviewOrientation(orientation string) error {
 				Layout:           layoutData,
 				DefaultPageSetup: setup,
 			})
-			if result.err == nil && !result.result.CanPreview {
+			if result.err == nil && wordLayoutBlocksPageExport(result.result) {
 				result.err = errors.New(blockingWordLayoutMessage(result.result))
 			}
 		}

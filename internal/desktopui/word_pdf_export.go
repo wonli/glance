@@ -81,15 +81,9 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 		}
 		return
 	}
-	if !state.wordLayoutResult.CanPreview {
+	if wordLayoutBlocksPageExport(*state.wordLayoutResult) {
 		a.setStatus(blockingWordLayoutMessage(*state.wordLayoutResult))
 		return
-	}
-	for _, diagnostic := range state.wordLayoutResult.Diagnostics {
-		if diagnostic.Severity == wordlayout.DiagnosticError {
-			a.setStatus("无法导出 PDF：" + diagnostic.Detail)
-			return
-		}
 	}
 	if a.documentSessionState != state {
 		a.setStatus("Word 文档已切换，PDF 导出已取消")
@@ -121,7 +115,7 @@ func (a *App) layoutWordForExport(state *documentSessionState, key wordLayoutKey
 		return wordlayout.Result{}, errors.New("当前分页结果不可用")
 	}
 	preview := &a.pdfExportPreview
-	if preview.wordState == state && preview.wordKey == key && preview.Orientation == orientation && preview.wordResult != nil && preview.wordResult.CanPreview {
+	if preview.wordState == state && preview.wordKey == key && preview.Orientation == orientation && preview.wordResult != nil && !wordLayoutBlocksPageExport(*preview.wordResult) {
 		return cloneWordLayoutResult(*preview.wordResult), nil
 	}
 	pageResult := cloneWordLayoutResult(*state.wordLayoutResult)
@@ -180,7 +174,7 @@ func (a *App) layoutWordForExport(state *documentSessionState, key wordLayoutKey
 		if err != nil {
 			return wordlayout.Result{}, err
 		}
-		if !res.CanPreview {
+		if wordLayoutBlocksPageExport(res) {
 			return wordlayout.Result{}, errors.New(blockingWordLayoutMessage(res))
 		}
 		return res, nil
@@ -346,6 +340,35 @@ func wordPDFLayoutStillCurrent(state *documentSessionState, key wordLayoutKey) b
 
 func wordLayoutWarnings(result wordlayout.Result) []string {
 	warnings := make([]string, 0)
+	if len(result.SupportReport.Findings) > 0 {
+		for _, finding := range result.SupportReport.Findings {
+			if finding.Impact != wordlayout.SupportImpactApproximation {
+				continue
+			}
+			detail := wordSupportFindingDetail(finding)
+			if detail == "" {
+				detail = finding.Code
+			}
+			fallback := strings.TrimSpace(finding.Fallback)
+			if finding.Code == "unsupported-list" {
+				fallback = "正文文本仍会显示，编号标记会省略。"
+			} else if finding.Code == "invalid-image-size" || finding.Code == "unresolved-image" || finding.Code == "invalid-image-inline" {
+				fallback = "此处显示“图片无法显示”占位文本，文档其他内容保留。"
+			}
+			if fallback != "" {
+				detail += "\n 影响：" + fallback
+			}
+			location := strings.TrimSpace(finding.Location)
+			if location == "" {
+				location = finding.SourceID
+			}
+			if location != "" {
+				detail += "\n 位置：" + location
+			}
+			warnings = append(warnings, "• "+detail)
+		}
+		return warnings
+	}
 	for _, diagnostic := range result.Diagnostics {
 		if diagnostic.Severity == wordlayout.DiagnosticWarning {
 			detail := strings.TrimSpace(diagnostic.Detail)
@@ -358,13 +381,60 @@ func wordLayoutWarnings(result wordlayout.Result) []string {
 	return warnings
 }
 
-func blockingWordLayoutMessage(result wordlayout.Result) string {
-	for _, diagnostic := range result.Diagnostics {
-		if diagnostic.Severity == wordlayout.DiagnosticError {
-			return "无法导出 PDF：" + diagnostic.Detail
+func wordSupportFindingDetail(finding wordlayout.SupportFinding) string {
+	switch finding.Code {
+	case "unsupported-list":
+		return "此段落使用了当前未支持的列表编号定义。"
+	case "invalid-image-size":
+		return "图片尺寸缺失或无效，无法按原尺寸显示。"
+	case "unresolved-image":
+		return "无法读取这张图片的数据。"
+	case "invalid-image-inline":
+		return "图片内容结构不完整。"
+	default:
+		return strings.TrimSpace(finding.Detail)
+	}
+}
+
+func wordLayoutBlocksPageExport(result wordlayout.Result) bool {
+	if !result.CanPreview || result.SupportReport.BlocksExport() {
+		return true
+	}
+	if len(result.SupportReport.Findings) == 0 {
+		// Keep synthetic and older cached results safe until they are rebuilt
+		// with the structured support report.
+		for _, diagnostic := range result.Diagnostics {
+			if diagnostic.Severity == wordlayout.DiagnosticError {
+				return true
+			}
 		}
 	}
-	return "当前分页结果不能安全导出 PDF"
+	return false
+}
+
+func blockingWordLayoutMessage(result wordlayout.Result) string {
+	for _, finding := range result.SupportReport.Findings {
+		if finding.Impact == wordlayout.SupportImpactBlocksPreview || finding.Impact == wordlayout.SupportImpactBlocksExport {
+			message := "当前页面布局无法安全导出或打印：" + finding.Detail
+			location := strings.TrimSpace(finding.Location)
+			if location == "" {
+				location = strings.TrimSpace(finding.SourceID)
+			}
+			if location != "" {
+				message += "（位置：" + location + "）"
+			}
+			if fallback := strings.TrimSpace(finding.Fallback); fallback != "" {
+				message += "；" + fallback
+			}
+			return message
+		}
+	}
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Severity == wordlayout.DiagnosticError {
+			return "当前页面布局无法安全导出或打印：" + diagnostic.Detail
+		}
+	}
+	return "当前分页结果不能安全导出或打印"
 }
 
 func pathsReferToSameFile(left, right string) bool {
@@ -382,6 +452,7 @@ func pathsReferToSameFile(left, right string) bool {
 func cloneWordLayoutResult(result wordlayout.Result) wordlayout.Result {
 	clone := result
 	clone.Diagnostics = append([]wordlayout.Diagnostic(nil), result.Diagnostics...)
+	clone.SupportReport.Findings = append([]wordlayout.SupportFinding(nil), result.SupportReport.Findings...)
 	clone.Pages = make([]wordlayout.PageScene, len(result.Pages))
 	for pageIndex, page := range result.Pages {
 		pageClone := page

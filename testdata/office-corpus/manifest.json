@@ -51,6 +51,14 @@
       "notes": "Nested decimal and alphabetic numbering markers are projected read-only."
     },
     {
+      "id": "docx-unsupported-numbering",
+      "path": "docx/unsupported-numbering.docx",
+      "format": "docx",
+      "features": ["numbering", "unsupported-number-format", "support-report"],
+      "expected": "rendered-with-warning",
+      "notes": "One custom numbering format must be reported at its paragraph; readable text remains visible with the marker omitted."
+    },
+    {
       "id": "docx-table-width",
       "path": "docx/table-width.docx",
       "format": "docx",
@@ -302,6 +310,14 @@
       "features": ["inline-images", "rotated-images", "text-wrapping"],
       "expected": "rendered",
       "notes": "Text flows around a rotated inline image placeholder."
+    },
+    {
+      "id": "docx-invalid-inline-image-dimensions",
+      "path": "docx/invalid-inline-image-dimensions.docx",
+      "format": "docx",
+      "features": ["inline-images", "invalid-image-dimensions", "local-fallback"],
+      "expected": "rendered",
+      "notes": "A zero-width inline picture keeps the document readable and shows a local placeholder."
     },
     {
       "id": "docx-table-columns",

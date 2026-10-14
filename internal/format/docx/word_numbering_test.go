@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"glance/internal/document"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -35,6 +36,49 @@ func TestNumberedListsCorpusProjectsDecimalAndAlphabeticMarkers(t *testing.T) {
 			t.Errorf("list marker %d = %q; want %q", index, markers[index], want[index])
 		}
 	}
+}
+
+func TestUnsupportedNumberingCorpusRetainsParagraphTextAndMarksListUnsupported(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "testdata", "office-corpus", "docx", "unsupported-numbering.docx")
+	doc, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+
+	var unsupportedCount, supportedCount int
+	for _, block := range doc.WordBlocks() {
+		if block.Paragraph == nil {
+			continue
+		}
+		if block.Paragraph.ListKind == document.WordListBullet || block.Paragraph.ListKind == document.WordListNumbered {
+			supportedCount++
+			continue
+		}
+		if block.Paragraph.ListKind != document.WordListUnsupported {
+			continue
+		}
+		unsupportedCount++
+		if got := paragraphText(*block.Paragraph); got == "" {
+			t.Errorf("unsupported list paragraph %q lost its text", block.Paragraph.ID)
+		}
+	}
+	if unsupportedCount == 0 {
+		t.Fatal("corpus fixture did not project an unsupported numbering definition")
+	}
+	if supportedCount == 0 {
+		t.Fatal("corpus fixture lost all supported list definitions; no false-positive control remains")
+	}
+}
+
+func paragraphText(paragraph document.WordParagraph) string {
+	var text strings.Builder
+	for _, inline := range paragraph.Inlines {
+		if inline.Text != nil {
+			text.WriteString(inline.Text.Text)
+		}
+	}
+	return text.String()
 }
 
 func TestWordParagraphListsRoundTripContinuityAndPreserveOtherPackageParts(t *testing.T) {

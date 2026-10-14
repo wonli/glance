@@ -12,7 +12,6 @@ import (
 	"glance/internal/format/docx"
 	wordpdf "glance/internal/format/pdf"
 	"glance/internal/printservice"
-	"glance/internal/wordlayout"
 )
 
 type wordPrintResult struct {
@@ -75,15 +74,9 @@ func (a *App) beginWordPrint(state *documentSessionState) {
 		a.startWordPagination(state)
 		return
 	}
-	if !state.wordLayoutResult.CanPreview {
+	if wordLayoutBlocksPageExport(*state.wordLayoutResult) {
 		a.setStatus(blockingWordLayoutMessage(*state.wordLayoutResult))
 		return
-	}
-	for _, diagnostic := range state.wordLayoutResult.Diagnostics {
-		if diagnostic.Severity == wordlayout.DiagnosticError {
-			a.setStatus("无法打印：" + diagnostic.Detail)
-			return
-		}
 	}
 	if !wordPDFLayoutStillCurrent(state, key) {
 		a.setStatus("文档分页已变化，请重新打印")

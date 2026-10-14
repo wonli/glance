@@ -1,6 +1,6 @@
 # Office Render Corpus
 
-This directory contains 50 real `.xlsx`, `.docx`, and `.pptx` documents for headless render compatibility checks: 17 spreadsheets, 17 word-processing documents, and 16 presentations. The manifest records case IDs, relative paths, formats, feature tags, expected outcomes, and optional screenshot baselines. It intentionally has no per-document source or version fields.
+This directory contains 54 `.xlsx`, `.docx`, and `.pptx` documents for headless render compatibility checks: 17 spreadsheets, 21 word-processing documents, and 16 presentations. The manifest records case IDs, relative paths, formats, feature tags, expected outcomes, and optional screenshot baselines. It intentionally has no per-document source or version fields.
 
 Build and run the corpus from the repository root:
 

@@ -78,6 +78,7 @@ type sharedDocumentSession struct {
 	wordLayoutAcceptedKey        *wordLayoutKey
 	wordLayoutErrorKey           *wordLayoutKey
 	wordLayoutResult             *wordlayout.Result
+	wordSupportNoticeShown       bool
 	wordLayoutError              string
 	wordLayoutCancel             context.CancelFunc
 	wordLayoutPendingView        *documentSessionState

@@ -175,6 +175,7 @@ func cloneLayoutResult(source Result) Result {
 	clone := source
 	clone.Pages = append([]PageScene(nil), source.Pages...)
 	clone.Diagnostics = append([]Diagnostic(nil), source.Diagnostics...)
+	clone.SupportReport.Findings = append([]SupportFinding(nil), source.SupportReport.Findings...)
 	clone.blockFingerprints = append([][32]byte(nil), source.blockFingerprints...)
 	clone.blockKinds = append([]document.WordBlockKind(nil), source.blockKinds...)
 	clone.blockHazards = append([]bool(nil), source.blockHazards...)

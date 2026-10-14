@@ -123,6 +123,41 @@ func TestWordPaginationIgnoresResultForSupersededRevision(t *testing.T) {
 	}
 }
 
+func TestWordPaginationSurfacesKnownApproximationAfterOpening(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state := newDocumentSessionState("support-report.docx")
+	state.word = word
+	state.setWordBlocks(word.WordBlocks())
+	data, ok := wordLayoutDataForState(state)
+	if !ok {
+		t.Fatal("blank DOCX does not expose layout data")
+	}
+	key := wordLayoutKey{
+		DocumentID: state.documentID, Revision: state.wordRevisionAtomic.Load(), DraftEpoch: state.wordDraftEpoch.Load(),
+		PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup),
+	}
+	state.wordLayoutPendingKey = &key
+	app := &App{documentSessionState: state}
+	app.applyWordLayoutResult(wordLayoutResult{
+		state: state, key: key,
+		result: wordlayout.Result{
+			DocumentID: state.documentID, Revision: key.Revision,
+			CanPreview: true, Pages: []wordlayout.PageScene{{Index: 0}},
+			SupportReport: wordlayout.SupportReport{Findings: []wordlayout.SupportFinding{{
+				SourceID: "b4.p", Code: "unsupported-list", Detail: "Unsupported list format.",
+				Impact: wordlayout.SupportImpactApproximation, Fallback: "The marker is omitted.",
+			}}},
+		},
+	})
+	if !strings.Contains(app.status, "版式检查发现") || !strings.Contains(app.status, "需确认") {
+		t.Fatalf("opening status = %q; want a visible notice that known layout gaps need confirmation", app.status)
+	}
+}
+
 func TestWordPaginationPreservesVisiblePageWhenAcceptingReflow(t *testing.T) {
 	tests := []struct {
 		name          string

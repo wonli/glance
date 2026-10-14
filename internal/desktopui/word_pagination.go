@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"reflect"
 
 	"glance/internal/document"
@@ -384,6 +385,7 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 	if state == nil || state.closed.Load() || state.finalized.Load() || state.wordLayoutReleased.Load() || state.word == nil || state.wordLayoutPendingKey == nil || *state.wordLayoutPendingKey != result.key {
 		return
 	}
+	hadPageOperation := state.wordPDFExportAfterLayout || state.wordPrintAfterLayout
 	if state.documentID != result.key.DocumentID || state.wordRevisionAtomic.Load() != result.key.Revision || state.wordDraftEpoch.Load() != result.key.DraftEpoch {
 		return
 	}
@@ -440,6 +442,19 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 			a.setStatus("打印前分页失败：" + result.err.Error())
 		} else {
 			a.beginWordPrint(state)
+		}
+	}
+	if !hadPageOperation && result.err == nil && a.documentSessionState == state && !state.wordSupportNoticeShown &&
+		state.wordLayoutResult != nil && state.wordLayoutResult.CanPreview && state.wordLayoutResult.SupportReport.RequiresConfirmation() {
+		count := 0
+		for _, finding := range state.wordLayoutResult.SupportReport.Findings {
+			if finding.Impact == wordlayout.SupportImpactApproximation {
+				count++
+			}
+		}
+		if count > 0 {
+			a.setStatus(fmt.Sprintf("版式检查发现 %d 项已知差异，打印或导出 PDF 前需确认具体位置与回退方式。", count))
+			state.wordSupportNoticeShown = true
 		}
 	}
 }

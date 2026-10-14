@@ -80,6 +80,15 @@ type preparedFloatingImage struct {
 	geometry document.WordImageFloating
 }
 
+const unavailableWordImageLabel = "[图片无法显示]"
+
+func shapeUnavailableWordImage(ctx context.Context, shaper TextShaper, pathCache map[glyphPathCacheKey][]GlyphPathCommand, imageID, sourceID string, style document.WordTextStyle) ([]paragraphAtom, error) {
+	if imageID == "" {
+		imageID = sourceID
+	}
+	return shapeTextAtoms(ctx, shaper, pathCache, imageID+".image-fallback", unavailableWordImageLabel, 0, style, true, sourceID)
+}
+
 func (p preparedParagraph) totalHeight() float64 {
 	height := p.uiBeforePT + p.uiAfterPT + p.style.paragraph.BeforePT + p.style.paragraph.AfterPT + paragraphBottomBorderExtent(p.style.paragraph)
 	for _, line := range p.lines {
@@ -159,7 +168,7 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 	}
 	atoms := make([]paragraphAtom, 0, len(paragraph.Inlines)+1)
 	if paragraph.ListKind == document.WordListUnsupported {
-		styles.cursor.diagnostic(DiagnosticError, sourceID, "unsupported-list", "This paragraph uses a list definition that is outside the supported numbering subset.")
+		styles.cursor.diagnostic(DiagnosticWarning, sourceID, "unsupported-list", unsupportedListDetail)
 	} else if paragraph.ListKind != document.WordListNone && paragraph.ListMarker != "" {
 		marker := paragraph.ListMarker + "\t"
 		markerAtoms, err := shapeTextAtoms(ctx, shaper, styles.cursor.glyphPaths, paragraph.ID+".list-marker", marker, 0, prepared.style.text, true, sourceID)
@@ -197,31 +206,50 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 			atoms = append(atoms, textAtoms...)
 		case document.WordImageInline:
 			if inline.Image == nil {
-				styles.cursor.diagnostic(DiagnosticError, sourceID, "invalid-image-inline", "An image inline has no image data.")
+				styles.cursor.diagnostic(DiagnosticWarning, sourceID, "invalid-image-inline", "An image inline has no image data; a local placeholder is shown.")
+				placeholder, err := shapeUnavailableWordImage(ctx, shaper, styles.cursor.glyphPaths, "", sourceID, prepared.style.text)
+				if err != nil {
+					return preparedParagraph{}, err
+				}
+				atoms = append(atoms, placeholder...)
 				continue
 			}
 			image := inline.Image
+			imageSourceID := image.ID
+			if imageSourceID == "" {
+				imageSourceID = sourceID
+			}
 			if image.InlineFallback && image.Floating == nil {
-				styles.cursor.diagnostic(DiagnosticWarning, image.ID, "floating-image-inline-fallback", "A floating image is shown in the text flow because exact Word text wrapping is unavailable.")
+				styles.cursor.diagnostic(DiagnosticWarning, imageSourceID, "floating-image-inline-fallback", "A floating image is shown in the text flow because exact Word text wrapping is unavailable.")
 			}
 			if !image.Resolved {
-				styles.cursor.diagnostic(DiagnosticError, image.ID, "unresolved-image", "The inline image bytes are unavailable, so the page cannot be rendered faithfully.")
+				styles.cursor.diagnostic(DiagnosticWarning, imageSourceID, "unresolved-image", "The inline image bytes are unavailable; a local placeholder is shown.")
+				placeholder, err := shapeUnavailableWordImage(ctx, shaper, styles.cursor.glyphPaths, imageSourceID, sourceID, prepared.style.text)
+				if err != nil {
+					return preparedParagraph{}, err
+				}
+				atoms = append(atoms, placeholder...)
 				continue
 			}
 			width := emuToPoints(image.WidthEMU)
 			height := emuToPoints(image.HeightEMU)
 			if width <= 0 || height <= 0 || !finite(width) || !finite(height) {
-				styles.cursor.diagnostic(DiagnosticError, image.ID, "invalid-image-size", "The inline image has missing or invalid dimensions.")
+				styles.cursor.diagnostic(DiagnosticWarning, imageSourceID, "invalid-image-size", "The inline image has missing or invalid dimensions; a local placeholder is shown.")
+				placeholder, err := shapeUnavailableWordImage(ctx, shaper, styles.cursor.glyphPaths, imageSourceID, sourceID, prepared.style.text)
+				if err != nil {
+					return preparedParagraph{}, err
+				}
+				atoms = append(atoms, placeholder...)
 				continue
 			}
 			if image.Floating != nil {
 				switch {
 				case inCell:
-					styles.cursor.diagnostic(DiagnosticWarning, image.ID, "floating-image-table-fallback", "A floating image in a table cell is shown inline because table text flow has no polygon exclusion layout.")
+					styles.cursor.diagnostic(DiagnosticWarning, imageSourceID, "floating-image-table-fallback", "A floating image in a table cell is shown inline because table text flow has no polygon exclusion layout.")
 				case !validWordImageFloating(image):
-					styles.cursor.diagnostic(DiagnosticWarning, image.ID, "floating-image-geometry-fallback", "Floating-image geometry is outside the supported tight-wrap subset; the image is shown inline.")
+					styles.cursor.diagnostic(DiagnosticWarning, imageSourceID, "floating-image-geometry-fallback", "Floating-image geometry is outside the supported tight-wrap subset; the image is shown inline.")
 				case len(atoms) > 0:
-					styles.cursor.diagnostic(DiagnosticWarning, image.ID, "floating-image-inline-order-fallback", "A floating image after other paragraph content is shown inline to preserve source order.")
+					styles.cursor.diagnostic(DiagnosticWarning, imageSourceID, "floating-image-inline-order-fallback", "A floating image after other paragraph content is shown inline to preserve source order.")
 				default:
 					prepared.floatingImages = append(prepared.floatingImages, preparedFloatingImage{
 						id: image.ID, width: width, height: height, rotation: image.RotationDegrees,
@@ -234,7 +262,7 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 				ratio := imageWidth / width
 				width *= ratio
 				height *= ratio
-				styles.cursor.diagnostic(DiagnosticWarning, image.ID, "image-scaled-to-page", "The inline image was scaled down to fit the printable text width.")
+				styles.cursor.diagnostic(DiagnosticWarning, imageSourceID, "image-scaled-to-page", "The inline image was scaled down to fit the printable text width.")
 			}
 			maxHeight := styles.cursor.content.HeightPT
 			if maxHeight > 0 {
@@ -247,9 +275,9 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 				ratio := maxHeight / height
 				width *= ratio
 				height *= ratio
-				styles.cursor.diagnostic(DiagnosticWarning, image.ID, "image-scaled-to-page", "The inline image was scaled down to fit the printable page height.")
+				styles.cursor.diagnostic(DiagnosticWarning, imageSourceID, "image-scaled-to-page", "The inline image was scaled down to fit the printable page height.")
 			}
-			atoms = append(atoms, paragraphAtom{kind: atomImage, sourceID: image.ID, imageID: image.ID, imageRotation: image.RotationDegrees, imageWidth: width, imageHeight: height, advance: width, ascent: height, breakBefore: true, breakAfter: true})
+			atoms = append(atoms, paragraphAtom{kind: atomImage, sourceID: imageSourceID, imageID: image.ID, imageRotation: image.RotationDegrees, imageWidth: width, imageHeight: height, advance: width, ascent: height, breakBefore: true, breakAfter: true})
 		case document.WordPageBreakInline:
 			if inline.PageBreak == nil {
 				styles.cursor.diagnostic(DiagnosticError, sourceID, "invalid-page-break", "A page break inline has no source identity.")

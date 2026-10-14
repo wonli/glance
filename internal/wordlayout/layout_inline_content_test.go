@@ -63,6 +63,39 @@ func TestFloatingImageFallbackKeepsAdjacentTextAndWarnsWithoutBlocking(t *testin
 	t.Fatalf("diagnostics = %+v; want a located warning for inline fallback", result.Diagnostics)
 }
 
+func TestInvalidInlineImageDimensionsKeepDocumentVisibleWithLocalFallback(t *testing.T) {
+	paragraph := document.WordParagraph{ID: "p-image-dimensions", Inlines: []document.WordInline{
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "before-image", Text: "Before image", Editable: true}},
+		{Kind: document.WordImageInline, Image: &document.WordImage{ID: "bad-image-size", Resolved: true}},
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "after-image", Text: "after image", Editable: true}},
+	}}
+	input := layoutTestInput(180, 100, 10, document.WordBlock{
+		ID: paragraph.ID, Kind: document.WordParagraphBlock, Paragraph: &paragraph,
+	})
+	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.CanPreview || len(result.Pages) == 0 {
+		t.Fatalf("invalid inline-image dimensions blocked document preview: pages=%d diagnostics=%+v report=%+v", len(result.Pages), result.Diagnostics, result.SupportReport)
+	}
+	text := joinPageText(result.Pages[0])
+	for _, want := range []string{"Before image", "[图片无法显示]", "after image"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("page text = %q; want it to contain %q", text, want)
+		}
+	}
+	if result.SupportReport.BlocksPreview() || result.SupportReport.BlocksExport() || !result.SupportReport.RequiresConfirmation() {
+		t.Fatalf("support report = %+v; want an approximation warning without blocking preview or export", result.SupportReport)
+	}
+	for _, finding := range result.SupportReport.Findings {
+		if finding.SourceID == "bad-image-size" && finding.Code == "invalid-image-size" && finding.Impact == SupportImpactApproximation && finding.Location != "" && finding.Fallback != "" {
+			return
+		}
+	}
+	t.Fatalf("support report = %+v; want a located invalid-image-size finding with a fallback", result.SupportReport)
+}
+
 func TestUnsupportedListIsReportedAsApproximationAndKeepsParagraphPreview(t *testing.T) {
 	paragraph := document.WordParagraph{
 		ID: "numbered-paragraph", ListKind: document.WordListUnsupported,
@@ -73,6 +106,17 @@ func TestUnsupportedListIsReportedAsApproximationAndKeepsParagraphPreview(t *tes
 	input := layoutTestInput(180, 100, 10, document.WordBlock{
 		ID: paragraph.ID, Kind: document.WordParagraphBlock, Paragraph: &paragraph,
 	})
+	preflight := Preflight(input)
+	if preflight.BlocksPreview() || preflight.BlocksExport() || !preflight.RequiresConfirmation() {
+		t.Fatalf("preflight policy = preview-blocked:%v export-blocked:%v confirmation:%v; want preview/export with an explicit warning confirmation", preflight.BlocksPreview(), preflight.BlocksExport(), preflight.RequiresConfirmation())
+	}
+	if len(preflight.Findings) != 1 {
+		t.Fatalf("preflight findings = %+v; want one located unsupported-list finding", preflight.Findings)
+	}
+	finding := preflight.Findings[0]
+	if finding.SourceID != paragraph.ID || finding.Location == "" || finding.Code != "unsupported-list" || finding.Impact != SupportImpactApproximation || finding.Fallback == "" {
+		t.Fatalf("preflight finding = %+v; want paragraph location, approximation impact, and a stated fallback", finding)
+	}
 	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +129,9 @@ func TestUnsupportedListIsReportedAsApproximationAndKeepsParagraphPreview(t *tes
 	}
 	for _, diagnostic := range result.Diagnostics {
 		if diagnostic.SourceID == paragraph.ID && diagnostic.Code == "unsupported-list" && diagnostic.Severity == DiagnosticWarning {
+			if len(result.SupportReport.Findings) == 0 || result.SupportReport.BlocksPreview() || result.SupportReport.BlocksExport() {
+				t.Fatalf("layout support report = %+v; want a non-blocking approximation finding", result.SupportReport)
+			}
 			return
 		}
 	}

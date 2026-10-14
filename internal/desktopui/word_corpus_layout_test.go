@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"glance/internal/document"
@@ -172,6 +173,163 @@ func TestCharacterBasedIndentCorpusUsesWrappedLineGeometry(t *testing.T) {
 	hangingIndentPT := hangingLineStarts[1].x - hangingLineStarts[0].x
 	if math.Abs(hangingIndentPT-charWidthPT) > 0.75 {
 		t.Errorf("hanging character indent = %.2fpt; want one shaped character width (%.2fpt); lines=%v", hangingIndentPT, charWidthPT, hangingLineStarts)
+	}
+}
+
+func TestUnsupportedNumberingCorpusKeepsPreviewAndReportsExportImpact(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "office-corpus", "docx", "unsupported-numbering.docx")
+	doc, err := docx.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	var sourceID, expectedText string
+	unsupportedCount := 0
+	for _, block := range blocks {
+		if block.Paragraph == nil || block.Paragraph.ListKind != document.WordListUnsupported {
+			continue
+		}
+		unsupportedCount++
+		if sourceID == "" {
+			sourceID = block.ID
+			for _, inline := range block.Paragraph.Inlines {
+				if inline.Text != nil {
+					expectedText += inline.Text.Text
+				}
+			}
+		}
+	}
+	if sourceID == "" || expectedText == "" {
+		t.Fatal("fixture must project an unsupported list paragraph with retained text")
+	}
+	shaper, err := newWordTextShaper()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := wordlayout.NewEngine(shaper).Layout(context.Background(), wordlayout.Input{
+		DocumentID: path, Blocks: blocks, Layout: doc.WordLayoutData(),
+		DefaultPageSetup: defaultWordPageSetup, EditorParagraphInsets: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.CanPreview || len(result.Pages) == 0 {
+		t.Fatalf("unsupported numbering blocked the document preview: pages=%d diagnostics=%+v report=%+v", len(result.Pages), result.Diagnostics, result.SupportReport)
+	}
+	var previewText strings.Builder
+	for _, page := range result.Pages {
+		for _, fragment := range page.Text {
+			previewText.WriteString(fragment.Text)
+		}
+	}
+	if !strings.Contains(previewText.String(), expectedText) {
+		t.Fatalf("preview text = %q; want unsupported-list paragraph %q", previewText.String(), expectedText)
+	}
+	found := false
+	for _, finding := range result.SupportReport.Findings {
+		if finding.SourceID == sourceID && finding.Code == "unsupported-list" {
+			found = finding.Location == "正文第2段" && finding.Impact == wordlayout.SupportImpactApproximation && finding.Fallback != ""
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("support report = %+v; want a located approximation finding with its fallback", result.SupportReport)
+	}
+	listFindingCount := 0
+	for _, finding := range result.SupportReport.Findings {
+		if finding.Code == "unsupported-list" {
+			listFindingCount++
+		}
+	}
+	if listFindingCount != unsupportedCount {
+		t.Fatalf("unsupported-list finding count = %d; want one per source paragraph (%d): %+v", listFindingCount, unsupportedCount, result.SupportReport)
+	}
+	warnings := wordLayoutWarnings(result)
+	if len(warnings) == 0 || !strings.Contains(strings.Join(warnings, "\n"), "正文第2段") || !strings.Contains(strings.Join(warnings, "\n"), "编号标记会省略") {
+		t.Fatalf("export warning report = %+v; want location and visible fallback", warnings)
+	}
+}
+
+func TestInvalidInlineImageDimensionsCorpusKeepsDocumentReadable(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "office-corpus", "docx", "invalid-inline-image-dimensions.docx")
+	doc, err := docx.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	imageID := ""
+	beforeImage, afterImage := "", ""
+	seenImage := false
+	for _, block := range blocks {
+		if block.Paragraph == nil {
+			continue
+		}
+		for _, inline := range block.Paragraph.Inlines {
+			if inline.Kind == document.WordImageInline && inline.Image != nil {
+				if inline.Image.WidthEMU != 0 || inline.Image.HeightEMU <= 0 || !inline.Image.Resolved {
+					t.Fatalf("fixture image = %+v; want a resolved image with zero width and valid height", inline.Image)
+				}
+				imageID = inline.Image.ID
+				seenImage = true
+				continue
+			}
+			if inline.Text == nil || strings.TrimSpace(inline.Text.Text) == "" {
+				continue
+			}
+			if seenImage && afterImage == "" {
+				afterImage = strings.TrimSpace(inline.Text.Text)
+			} else if !seenImage && beforeImage == "" {
+				beforeImage = strings.TrimSpace(inline.Text.Text)
+			}
+		}
+	}
+	if imageID == "" || beforeImage == "" || afterImage == "" {
+		t.Fatalf("fixture content: image=%q, text before=%q, text after=%q", imageID, beforeImage, afterImage)
+	}
+	shaper, err := newWordTextShaper()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := wordlayout.NewEngine(shaper).Layout(context.Background(), wordlayout.Input{
+		DocumentID: path, Blocks: blocks, Layout: doc.WordLayoutData(),
+		DefaultPageSetup: defaultWordPageSetup, EditorParagraphInsets: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.CanPreview || len(result.Pages) == 0 {
+		t.Fatalf("invalid image dimensions blocked the whole document: pages=%d diagnostics=%+v report=%+v", len(result.Pages), result.Diagnostics, result.SupportReport)
+	}
+	var previewText strings.Builder
+	for _, page := range result.Pages {
+		for _, fragment := range page.Text {
+			previewText.WriteString(fragment.Text)
+		}
+	}
+	text := previewText.String()
+	for _, expected := range []string{beforeImage[:min(24, len(beforeImage))], "[图片无法显示]", afterImage[:min(24, len(afterImage))]} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("preview text = %q; want to preserve %q", text, expected)
+		}
+	}
+	if result.SupportReport.BlocksPreview() || result.SupportReport.BlocksExport() || !result.SupportReport.RequiresConfirmation() {
+		t.Fatalf("support report = %+v; want a non-blocking approximation finding", result.SupportReport)
+	}
+	found := false
+	for _, finding := range result.SupportReport.Findings {
+		if finding.SourceID == imageID && finding.Code == "invalid-image-size" {
+			found = finding.Location == "正文第1段" && finding.Impact == wordlayout.SupportImpactApproximation && finding.Fallback != ""
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("support report = %+v; want a located invalid-image-size fallback", result.SupportReport)
+	}
+	warnings := strings.Join(wordLayoutWarnings(result), "\n")
+	if !strings.Contains(warnings, "正文第1段") || !strings.Contains(warnings, "图片无法显示") {
+		t.Fatalf("export warning = %q; want the paragraph location and local fallback", warnings)
 	}
 }
 

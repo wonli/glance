@@ -37,6 +37,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 	if e == nil || e.shaper == nil {
 		return Result{}, errors.New("Word layout requires a text shaper")
 	}
+	preflight := Preflight(input)
 
 	setup := resolvePageSetup(input.Layout, input.DefaultPageSetup)
 	content := pageContentRect(setup)
@@ -50,6 +51,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 		Revision:          input.Revision,
 		Locations:         make(map[SourcePosition]Position),
 		CanPreview:        true,
+		SupportReport:     preflight,
 		blockFingerprints: fingerprints,
 		blockKinds:        wordBlockKinds(input.Blocks),
 		blockHazards:      wordBlockHazards(input.Blocks),
@@ -269,11 +271,7 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 	if err := appendSectionHeaders(ctx, e.shaper, input.Layout, cursor, &result); err != nil {
 		return Result{}, err
 	}
-	for _, diagnostic := range result.Diagnostics {
-		if diagnostic.Severity == DiagnosticError {
-			result.CanPreview = false
-			break
-		}
-	}
+	result.SupportReport = reportWithDiagnostics(preflight, result.Diagnostics)
+	result.CanPreview = !result.SupportReport.BlocksPreview()
 	return result, nil
 }
