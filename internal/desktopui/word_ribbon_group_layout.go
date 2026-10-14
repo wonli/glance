@@ -144,7 +144,7 @@ func (a *App) layoutWordFontRibbonGroup(gtx layout.Context, state *documentSessi
 			if len(fields) < 2 {
 				return layout.Dimensions{}
 			}
-			return a.layoutWordRibbonField(gtx, fields[1], 54, "11")
+			return a.layoutWordRibbonField(gtx, fields[1], 54, "13")
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return a.layoutWordRibbonActionRow(gtx, state, marks, 28, 26, false)
@@ -185,7 +185,7 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 		if action.id == "font-family" || action.id == "font-size" {
 			value := "等线 (正文)"
 			if action.id == "font-size" {
-				value = "11"
+				value = "13"
 			}
 			return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value)
 		}

@@ -61,8 +61,8 @@ func TestWordFontSizeToolbarActionsChangeSelectedRunByOnePoint(t *testing.T) {
 		action string
 		want   float64
 	}{
-		{action: "font-size-increase", want: 12},
-		{action: "font-size-decrease", want: 11},
+		{action: "font-size-increase", want: 14},
+		{action: "font-size-decrease", want: 13},
 	} {
 		app.executeWordToolbarAction(step.action)
 		if !state.formatRunning.Load() {

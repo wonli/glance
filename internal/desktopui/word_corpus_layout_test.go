@@ -154,7 +154,7 @@ func TestCharacterBasedIndentCorpusUsesWrappedLineGeometry(t *testing.T) {
 
 	paragraphFontSize := layout.Defaults.Text.FontSize
 	if paragraphFontSize <= 0 {
-		paragraphFontSize = 11
+		paragraphFontSize = wordlayout.DefaultFontSizePT
 	}
 	paragraphTextStyle := layout.Defaults.Text
 	paragraphTextStyle.FontSize = paragraphFontSize

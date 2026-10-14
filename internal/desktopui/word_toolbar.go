@@ -7,6 +7,7 @@ import (
 	"gioui.org/widget"
 
 	"glance/internal/document"
+	"glance/internal/wordlayout"
 )
 
 type wordToolbarTab uint8
@@ -24,7 +25,7 @@ const (
 )
 
 const (
-	wordDefaultFontSizePt      = 11.0
+	wordDefaultFontSizePt      = wordlayout.DefaultFontSizePT
 	wordMinFontSizePt          = 1.0
 	wordMaxFontSizePt          = 1638.0
 	wordFontSizeStepPt         = 1.0

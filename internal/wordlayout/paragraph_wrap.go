@@ -196,7 +196,7 @@ func sumAdvance(atoms []paragraphAtom) float64 {
 func lineHeight(line paragraphLine, paragraph document.WordParagraphLayout, gridPitch ...float64) float64 {
 	base := line.ascent + line.descent + math.Max(0, line.gap)
 	if base <= 0 {
-		base = 11
+		base = DefaultFontSizePT
 	}
 	height := base
 	switch paragraph.LineSpacingRule {

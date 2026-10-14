@@ -180,7 +180,7 @@ func wordPageZoomFromScale(gtx layout.Context, pageScale float64) float64 {
 }
 
 func wordPageSceneCaret(page wordlayout.PageScene, runID string, xPT, yPT, pageScale float64) key.Caret {
-	fontSize := 11.0
+	fontSize := wordlayout.DefaultFontSizePT
 	for _, fragment := range page.Text {
 		if fragment.RunID == runID && math.Abs(fragment.BaselineYPT-yPT) <= math.Max(1, fragment.Style.FontSize*0.8) {
 			fontSize = math.Max(1, fragment.Style.FontSize)
@@ -348,7 +348,7 @@ func (a *App) handleWordPageArrowNavigation(gtx layout.Context, state *documentS
 		state.wordPagePreferredVerticalX = position.XPT
 		state.wordPagePreferredVerticalXSet = true
 	}
-	fontSize := 11.0
+	fontSize := wordlayout.DefaultFontSizePT
 	for _, page := range result.Pages[max(0, position.PageIndex-1):min(len(result.Pages), position.PageIndex+2)] {
 		for _, fragment := range page.Text {
 			if fragment.RunID == state.selectedWordRunID {

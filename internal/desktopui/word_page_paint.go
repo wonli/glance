@@ -78,7 +78,7 @@ func drawWordPageCaret(gtx layout.Context, state *documentSessionState, result *
 	if !ok || position.PageIndex != pageIndex {
 		return
 	}
-	fontSize := 11.0
+	fontSize := wordlayout.DefaultFontSizePT
 	for _, fragment := range result.Pages[pageIndex].Text {
 		if fragment.RunID == state.selectedWordRunID {
 			fontSize = math.Max(1, fragment.Style.FontSize)

@@ -5,6 +5,9 @@ import (
 	"math"
 )
 
+// DefaultFontSizePT is the fallback size for Word text without an inherited size.
+const DefaultFontSizePT = 13.0
+
 type styleResolver struct {
 	defaults                document.WordStyleDefaults
 	styles                  map[string]document.WordStyle
@@ -89,7 +92,7 @@ func (r *styleResolver) paragraphStyle(paragraph document.WordParagraph, sourceI
 		out.paragraph.Set |= document.WordParagraphRightIndentSet
 	}
 	if out.text.FontSize <= 0 {
-		out.text.FontSize = 11
+		out.text.FontSize = DefaultFontSizePT
 	}
 	if out.text.FontFamily == "" {
 		out.text.FontFamily = "sans-serif"

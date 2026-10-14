@@ -272,7 +272,7 @@ func cellEditorStyle(theme *material.Theme, editor *widget.Editor, cellStyle doc
 	if len(zoom) > 0 && zoom[0] > 0 {
 		z = zoom[0]
 	}
-	result.TextSize = unit.Sp(gridCellTextSize * z)
+	result.TextSize = cellTextSize(cellStyle, z)
 	result.Color = style.Font
 	result.Font.Typeface = cellTypeface(style)
 	if style.Bold {
@@ -282,6 +282,19 @@ func cellEditorStyle(theme *material.Theme, editor *widget.Editor, cellStyle doc
 		result.Font.Style = font.Italic
 	}
 	return result
+}
+
+func cellTextSize(style document.CellStyle, zoom float64) unit.Sp {
+	if !finite(zoom) || zoom <= 0 {
+		zoom = 1
+	}
+	size := gridCellTextSize
+	if finite(style.FontSize) && style.FontSize > 0 {
+		// Excel stores font sizes in points; Gio text sizes use sp. At 96 DPI,
+		// one point maps to 96/72 logical pixels.
+		size = style.FontSize * (96.0 / 72.0)
+	}
+	return unit.Sp(size * zoom)
 }
 
 func paintCachedCell(gtx layout.Context, v *gridViewport, theme *material.Theme, cell document.Cell, fullRect, visibleRect image.Rectangle, style gridPaintStyle) {
@@ -375,7 +388,7 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	if len(zoom) > 0 && zoom[0] > 0 {
 		z = zoom[0]
 	}
-	label.TextSize = unit.Sp(gridCellTextSize * z)
+	label.TextSize = cellTextSize(cell.Style, z)
 	label.Color = style.Font
 	label.Font.Typeface = cellTypeface(style)
 	if style.Bold {

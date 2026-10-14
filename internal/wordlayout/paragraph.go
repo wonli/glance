@@ -162,7 +162,7 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 			styles.applyCharacterStyle(&runStyle, run.CharacterStyle, run.ID)
 			mergeTextStyle(&runStyle, run.Style, run.StyleSet)
 			if runStyle.FontSize <= 0 {
-				runStyle.FontSize = 11
+				runStyle.FontSize = DefaultFontSizePT
 			}
 			textAtoms, err := shapeTextAtoms(ctx, shaper, styles.cursor.glyphPaths, run.ID, run.Text, 0, runStyle, false, sourceID)
 			if err != nil {
@@ -488,7 +488,7 @@ func isRTL(r rune) bool {
 func paragraphMarkLine(style document.WordTextStyle) paragraphLine {
 	size := style.FontSize
 	if size <= 0 {
-		size = 11
+		size = DefaultFontSizePT
 	}
 	return paragraphLine{ascent: size * .8, descent: size * .2}
 }

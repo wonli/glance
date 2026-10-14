@@ -18,6 +18,7 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/wordfont"
+	"glance/internal/wordlayout"
 )
 
 type wordInlineLayoutChild struct {
@@ -193,9 +194,11 @@ func wordRunLabel(theme *material.Theme, paragraph document.WordParagraph, run d
 	if run.Style.Italic {
 		label.Font.Style |= font.Italic
 	}
-	if run.Style.FontSize > 0 {
-		label.TextSize = unit.Sp(run.Style.FontSize)
+	fontSizePT := run.Style.FontSize
+	if fontSizePT <= 0 || math.IsNaN(fontSizePT) || math.IsInf(fontSizePT, 0) {
+		fontSizePT = wordlayout.DefaultFontSizePT
 	}
+	label.TextSize = unit.Sp(fontSizePT * (96.0 / 72.0))
 	if fontColor, ok := parseWordRunColor(run.Style.FontColor); ok {
 		label.Color = fontColor
 	}

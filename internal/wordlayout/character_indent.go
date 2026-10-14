@@ -27,7 +27,7 @@ func resolveCharacterIndentUnits(ctx context.Context, shaper TextShaper, cursor 
 	if !finite(charWidthPT) || charWidthPT <= epsilonPT {
 		charWidthPT = textStyle.FontSize
 		if !finite(charWidthPT) || charWidthPT <= epsilonPT {
-			charWidthPT = 11
+			charWidthPT = DefaultFontSizePT
 		}
 		if paragraph.FirstLineIndentChars != 0 || paragraph.HangingIndentChars != 0 {
 			cursor.diagnostic(DiagnosticWarning, sourceID, "character-indent-width-fallback", "The ideographic-space font metric is unavailable; character-based indentation uses the paragraph font size as its character width.")
