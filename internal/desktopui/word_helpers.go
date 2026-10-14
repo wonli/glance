@@ -28,6 +28,27 @@ func selectedWordParagraph(blocks []document.WordBlock, id string) (document.Wor
 	return document.WordParagraph{}, false
 }
 
+func selectedWordParagraphForRun(blocks []document.WordBlock, runID string) (document.WordParagraph, bool) {
+	for _, paragraph := range allWordParagraphs(blocks) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text != nil && inline.Text.ID == runID {
+				return paragraph, true
+			}
+		}
+	}
+	return document.WordParagraph{}, false
+}
+
+func wordParagraphAfter(blocks []document.WordBlock, paragraphID string) (document.WordParagraph, bool) {
+	paragraphs := allWordParagraphs(blocks)
+	for index, paragraph := range paragraphs {
+		if paragraph.ID == paragraphID && index+1 < len(paragraphs) {
+			return paragraphs[index+1], true
+		}
+	}
+	return document.WordParagraph{}, false
+}
+
 func selectedWordImage(blocks []document.WordBlock, id string) bool {
 	return findWordImage(blocks, id) != nil
 }

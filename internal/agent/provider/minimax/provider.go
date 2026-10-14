@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -117,6 +118,7 @@ func (c *Client) Stream(ctx context.Context, request provider.ModelRequest, emit
 	id := &apic.ApiId{Name: "minimax.chat", Client: handler, Stream: true}
 	err := apic.NewApiClient().WithContext(streamCtx).WithHTTPClient(c.config.HTTPClient).Call(id, &apic.Options{Debug: false})
 	if id.Response != nil && id.Response.HttpStatus != http.StatusOK {
+		writeDiagnostic("API request failed: HTTP %d, content-type=%q", id.Response.HttpStatus, id.Response.Header.Get("Content-Type"))
 		return &provider.HTTPStatusError{StatusCode: id.Response.HttpStatus}
 	}
 	if handler.callbackErr != nil {
@@ -125,7 +127,19 @@ func (c *Client) Stream(ctx context.Context, request provider.ModelRequest, emit
 	if err != nil {
 		return redact(err, c.config.APIKey)
 	}
+	if !handler.done && handler.finishReason != "" {
+		writeDiagnostic("stream ended after finish_reason=%q without [DONE]; accepting completed response", handler.finishReason)
+		if err := emit(provider.ModelEvent{Done: true}); err != nil {
+			return err
+		}
+		handler.done = true
+	}
 	if !handler.done {
+		contentType := ""
+		if id.Response != nil {
+			contentType = id.Response.Header.Get("Content-Type")
+		}
+		writeDiagnostic("stream ended without completion marker: content-type=%q, response-bytes=%d, data-events=%d, finish-reason=%q", contentType, handler.responseBytes, handler.dataEvents, handler.finishReason)
 		return fmt.Errorf("%w: MiniMax stream ended without a completion marker", provider.ErrInvalidResponse)
 	}
 	return nil
@@ -195,12 +209,15 @@ func minimaxMessages(messages []provider.ModelMessage) []minimaxMessage {
 
 type chatRequest struct {
 	apic.Apic
-	url, apiKey string
-	body        any
-	emit        func(provider.ModelEvent) error
-	cancel      context.CancelFunc
-	callbackErr error
-	done        bool
+	url, apiKey   string
+	body          any
+	emit          func(provider.ModelEvent) error
+	cancel        context.CancelFunc
+	callbackErr   error
+	done          bool
+	finishReason  string
+	responseBytes int
+	dataEvents    int
 }
 
 func (a *chatRequest) Url() string                 { return a.url }
@@ -218,7 +235,12 @@ func (a *chatRequest) receive(line string) {
 		return
 	}
 	line = strings.TrimSpace(line)
+	a.responseBytes += len(line)
+	if line == "" {
+		return
+	}
 	if !strings.HasPrefix(line, "data:") {
+		a.handleNonSSEError(line)
 		return
 	}
 	data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
@@ -233,6 +255,7 @@ func (a *chatRequest) receive(line string) {
 		}
 		return
 	}
+	a.dataEvents++
 	var chunk struct {
 		Choices []struct {
 			Delta struct {
@@ -263,11 +286,13 @@ func (a *chatRequest) receive(line string) {
 		} `json:"base_resp"`
 	}
 	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		writeDiagnostic("could not decode SSE event: bytes=%d, error=%v", len(data), err)
 		a.fail(fmt.Errorf("%w: decode MiniMax stream event: %v", provider.ErrInvalidResponse, err))
 		return
 	}
 	if chunk.BaseResp != nil && chunk.BaseResp.StatusCode != 0 {
-		a.fail(fmt.Errorf("MiniMax rejected the request (status %d)", chunk.BaseResp.StatusCode))
+		a.logBaseResp(chunk.BaseResp.StatusCode, chunk.BaseResp.StatusMsg)
+		a.fail(a.baseRespError(chunk.BaseResp.StatusCode, chunk.BaseResp.StatusMsg))
 		return
 	}
 	if chunk.Usage != nil {
@@ -304,7 +329,8 @@ func (a *chatRequest) receive(line string) {
 			}
 		}
 		if choice.FinishReason != nil && *choice.FinishReason != "" && a.callbackErr == nil {
-			a.callbackErr = a.emit(provider.ModelEvent{FinishReason: *choice.FinishReason})
+			a.finishReason = *choice.FinishReason
+			a.callbackErr = a.emit(provider.ModelEvent{FinishReason: a.finishReason})
 		}
 	}
 	if a.callbackErr != nil {
@@ -313,6 +339,43 @@ func (a *chatRequest) receive(line string) {
 }
 
 func (a *chatRequest) fail(err error) { a.callbackErr = err; a.cancel() }
+
+func (a *chatRequest) handleNonSSEError(line string) {
+	var response struct {
+		BaseResp *struct {
+			StatusCode int    `json:"status_code"`
+			StatusMsg  string `json:"status_msg"`
+		} `json:"base_resp"`
+	}
+	if !strings.HasPrefix(line, "{") || json.Unmarshal([]byte(line), &response) != nil || response.BaseResp == nil || response.BaseResp.StatusCode == 0 {
+		return
+	}
+	a.logBaseResp(response.BaseResp.StatusCode, response.BaseResp.StatusMsg)
+	a.fail(a.baseRespError(response.BaseResp.StatusCode, response.BaseResp.StatusMsg))
+}
+
+func (a *chatRequest) logBaseResp(statusCode int, statusMsg string) {
+	statusMsg = strings.TrimSpace(statusMsg)
+	if a.apiKey != "" {
+		statusMsg = strings.ReplaceAll(statusMsg, a.apiKey, "[redacted]")
+	}
+	if len(statusMsg) > 512 {
+		statusMsg = statusMsg[:512] + "…"
+	}
+	writeDiagnostic("API error: base_resp.status_code=%d, base_resp.status_msg=%q", statusCode, statusMsg)
+}
+
+func writeDiagnostic(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "[minimax] "+format+"\n", args...)
+}
+
+func (a *chatRequest) baseRespError(statusCode int, statusMsg string) error {
+	message := fmt.Sprintf("MiniMax rejected the request (status %d)", statusCode)
+	if statusMsg = strings.TrimSpace(statusMsg); statusMsg != "" {
+		message += ": " + statusMsg
+	}
+	return redact(fmt.Errorf("%s", message), a.apiKey)
+}
 
 func minimaxHeaders(apiKey string) apic.Params {
 	headers := apic.Params{"Content-Type": "application/json"}

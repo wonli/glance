@@ -3,6 +3,10 @@ package desktopui
 import (
 	"sort"
 
+	"gioui.org/io/key"
+	"gioui.org/layout"
+	"gioui.org/widget"
+
 	"glance/internal/document"
 )
 
@@ -11,6 +15,8 @@ type wordParagraphSplitIntent struct {
 	value          string
 	selectionStart int
 	selectionEnd   int
+	boundaryInsert bool
+	insertBefore   bool
 }
 
 type wordParagraphJoinIntent struct {
@@ -50,7 +56,13 @@ func (a *App) queueWordParagraphSplit(runID, value string, selectionStart, selec
 		a.setStatus("无法按当前光标位置拆分段落，请重试")
 		return
 	}
-	if _, ok := any(state.word).(document.WordParagraphEditor); !ok {
+	boundaryInsert, insertBefore := wordParagraphBoundaryForEnter(state, runID, value, selectionStart, selectionEnd)
+	if boundaryInsert {
+		if _, ok := any(state.word).(document.WordParagraphBoundaryEditor); !ok {
+			a.setStatus("当前 DOCX 适配器不支持在段落边界插入段落")
+			return
+		}
+	} else if _, ok := any(state.word).(document.WordParagraphEditor); !ok {
 		a.setStatus("当前 DOCX 适配器不支持按光标拆分段落")
 		return
 	}
@@ -59,9 +71,11 @@ func (a *App) queueWordParagraphSplit(runID, value string, selectionStart, selec
 		value:          value,
 		selectionStart: selectionStart,
 		selectionEnd:   selectionEnd,
+		boundaryInsert: boundaryInsert,
+		insertBefore:   insertBefore,
 	}
-	logWordDebug("split_queued revision=%d run=%q selection=%d:%d length=%d pending_other_drafts=%v before=%s",
-		state.wordRevisionAtomic.Load(), runID, selectionStart, selectionEnd, len([]rune(value)), wordHasPendingTextDraftsExcept(state, runID),
+	logWordDebug("paragraph_enter_queued revision=%d run=%q selection=%d:%d length=%d boundary=%v insert_before=%v pending_drafts=%v before=%s",
+		state.wordRevisionAtomic.Load(), runID, selectionStart, selectionEnd, len([]rune(value)), boundaryInsert, insertBefore, wordHasPendingTextDrafts(state),
 		wordDebugParagraphNeighborhood(wordBlocksForState(state), runID))
 	captureWordTextDraft(state, runID, value)
 	state.wordForceDraftFlush.Store(true)
@@ -109,6 +123,68 @@ func (a *App) requestWordTextFlush(all bool) {
 	}
 }
 
+// handleWordHistoryShortcut routes Word undo and redo through the document
+// history. Gio's Editor records programmatic SetText calls in its private
+// undo stack, so its local Ctrl+Z can undo a paragraph split or a model sync
+// and leave the document draft inconsistent with the DOCX model.
+func (a *App) handleWordHistoryShortcut(gtx layout.Context, runID string, editor *widget.Editor) bool {
+	if editor == nil {
+		return false
+	}
+	event, ok := gtx.Event(key.Filter{
+		Focus:    editor,
+		Name:     key.Name("Z"),
+		Required: key.ModShortcut,
+		Optional: key.ModShift,
+	})
+	if !ok {
+		return false
+	}
+	keyEvent, ok := event.(key.Event)
+	if !ok || keyEvent.State != key.Press {
+		return true
+	}
+
+	state := a.documentSessionState
+	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
+		return true
+	}
+	// A targeted key filter may pull the shortcut ahead of earlier text or
+	// selection events already queued for the editor. Let Gio apply those first
+	// so the snapshot we flush includes the user's latest input.
+	for pending, ok := editor.Update(gtx); ok; pending, ok = editor.Update(gtx) {
+		if _, submit := pending.(widget.SubmitEvent); submit {
+			start, end := editor.Selection()
+			a.queueWordParagraphSplit(runID, editor.Text(), start, end)
+			if state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == runID {
+				return true
+			}
+		}
+	}
+	action := "undo"
+	if keyEvent.Modifiers.Contain(key.ModShift) {
+		action = "redo"
+	}
+
+	// The editor's value may have changed in this frame. Capture it before
+	// either the flush or the document history operation begins.
+	captureWordTextDraft(state, runID, editor.Text())
+	if wordHasPendingTextDrafts(state) {
+		if state.wordDeferredToolbarAction != "" {
+			return true
+		}
+		state.wordForceDraftFlush.Store(true)
+		state.wordFlushRequested.Store(true)
+		state.wordFlushAllDrafts.Store(true)
+		state.wordDeferredToolbarAction = action
+		a.startNextWordTextCommitFor(state)
+		return true
+	}
+
+	a.applyWordHistory(action == "undo")
+	return true
+}
+
 func (a *App) startNextWordTextCommit() {
 	a.startNextWordTextCommitFor(a.documentSessionState)
 }
@@ -122,9 +198,6 @@ func (a *App) startNextWordTextCommitFor(state *documentSessionState) {
 	for runID, value := range drafts {
 		if value == committed[runID] {
 			state.discardWordDraftIfCommitted(runID, value)
-			continue
-		}
-		if state.wordParagraphSplitIntent != nil && runID == state.wordParagraphSplitIntent.runID {
 			continue
 		}
 		if state.wordPageBreakIntent != nil && runID == state.wordPageBreakIntent.runID {
@@ -144,7 +217,7 @@ func (a *App) startNextWordTextCommitFor(state *documentSessionState) {
 			return
 		}
 		if intent := state.wordParagraphSplitIntent; intent != nil {
-			if wordHasPendingTextDraftsExcept(state, intent.runID) {
+			if wordHasPendingTextDrafts(state) {
 				return
 			}
 			a.finishWordTextFlush(state)
@@ -364,12 +437,6 @@ func (a *App) startWordParagraphSplit(state *documentSessionState) {
 	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || state.wordParagraphSplitIntent == nil {
 		return
 	}
-	splitter, ok := any(state.word).(document.WordParagraphEditor)
-	if !ok {
-		state.wordParagraphSplitIntent = nil
-		a.setStatus("当前 DOCX 适配器不支持按光标拆分段落")
-		return
-	}
 	intent := *state.wordParagraphSplitIntent
 	prefix, suffix, valid := wordTextAroundSelection(intent.value, intent.selectionStart, intent.selectionEnd)
 	if !valid {
@@ -377,35 +444,63 @@ func (a *App) startWordParagraphSplit(state *documentSessionState) {
 		a.setStatus("无法按当前光标位置拆分段落，请重试")
 		return
 	}
+	var splitter document.WordParagraphEditor
+	var boundaryEditor document.WordParagraphBoundaryEditor
+	if intent.boundaryInsert {
+		boundaryEditor, _ = any(state.word).(document.WordParagraphBoundaryEditor)
+		if boundaryEditor == nil {
+			state.wordParagraphSplitIntent = nil
+			a.setStatus("当前 DOCX 适配器不支持在段落边界插入段落")
+			return
+		}
+	} else {
+		splitter, _ = any(state.word).(document.WordParagraphEditor)
+		if splitter == nil {
+			state.wordParagraphSplitIntent = nil
+			a.setStatus("当前 DOCX 适配器不支持按光标拆分段落")
+			return
+		}
+	}
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
 		return
 	}
-	logWordDebug("split_begin revision=%d run=%q selection=%d:%d input_length=%d prefix_length=%d suffix_length=%d before=%s",
-		state.wordRevisionAtomic.Load(), intent.runID, intent.selectionStart, intent.selectionEnd, len([]rune(intent.value)), len([]rune(prefix)), len([]rune(suffix)),
+	logWordDebug("paragraph_enter_begin revision=%d run=%q selection=%d:%d input_length=%d prefix_length=%d suffix_length=%d boundary=%v insert_before=%v before=%s",
+		state.wordRevisionAtomic.Load(), intent.runID, intent.selectionStart, intent.selectionEnd, len([]rune(intent.value)), len([]rune(prefix)), len([]rune(suffix)), intent.boundaryInsert, intent.insertBefore,
 		wordDebugParagraphNeighborhood(wordBlocksForState(state), intent.runID))
 	generation := a.documentGeneration
 	a.launchManagedBackground(func() {
 		var paragraphID, runID string
 		blocks, err := runWordMutation(state, func() error {
+			if intent.boundaryInsert {
+				var insertErr error
+				paragraphID, runID, insertErr = boundaryEditor.InsertParagraphAtBoundary(intent.runID, intent.insertBefore)
+				return insertErr
+			}
 			var splitErr error
 			paragraphID, runID, splitErr = splitter.SplitParagraphAt(intent.runID, intent.value, intent.selectionStart, intent.selectionEnd)
 			return splitErr
 		})
-		logWordDebug("split_adapter_complete revision=%d source_run=%q new_paragraph=%q new_run=%q prefix_length=%d suffix_length=%d error=%q source_after=%s new_after=%s",
-			state.wordRevisionAtomic.Load(), intent.runID, paragraphID, runID, len([]rune(prefix)), len([]rune(suffix)), wordDebugError(err),
+		operation := "拆分段落"
+		resultPrefix, resultText := prefix, suffix
+		if intent.boundaryInsert {
+			operation = "插入段落"
+			resultPrefix, resultText = intent.value, ""
+		}
+		logWordDebug("paragraph_enter_adapter_complete revision=%d source_run=%q new_paragraph=%q new_run=%q prefix_length=%d suffix_length=%d boundary=%v insert_before=%v error=%q source_after=%s new_after=%s",
+			state.wordRevisionAtomic.Load(), intent.runID, paragraphID, runID, len([]rune(resultPrefix)), len([]rune(resultText)), intent.boundaryInsert, intent.insertBefore, wordDebugError(err),
 			wordDebugParagraphNeighborhood(blocks, intent.runID), wordDebugParagraphNeighborhood(blocks, runID))
 		a.publishWordCommand(wordCommandResult{
 			state:            state,
 			generation:       generation,
-			operation:        "拆分段落",
+			operation:        operation,
 			err:              err,
 			blocks:           blocks,
 			paragraphSplit:   true,
 			splitSourceRunID: intent.runID,
-			splitPrefix:      prefix,
+			splitPrefix:      resultPrefix,
 			splitParagraphID: paragraphID,
 			splitRunID:       runID,
-			splitRunText:     suffix,
+			splitRunText:     resultText,
 		})
 	})
 }
@@ -416,6 +511,35 @@ func wordTextAroundSelection(value string, selectionStart, selectionEnd int) (pr
 		return "", "", false
 	}
 	return string(runes[:selectionStart]), string(runes[selectionEnd:]), true
+}
+
+func wordParagraphBoundaryForEnter(state *documentSessionState, runID, value string, selectionStart, selectionEnd int) (insert bool, before bool) {
+	if state == nil || selectionStart != selectionEnd {
+		return false, false
+	}
+	paragraph, ok := selectedWordParagraphForRun(wordBlocksForState(state), runID)
+	if !ok {
+		return false, false
+	}
+	runes := []rune(value)
+	if len(runes) > 0 && selectionStart == 0 && wordParagraphHasRunAtBoundary(paragraph, runID, true) {
+		return true, true
+	}
+	if selectionStart == len(runes) && wordParagraphHasRunAtBoundary(paragraph, runID, false) {
+		return true, false
+	}
+	return false, false
+}
+
+func wordParagraphHasRunAtBoundary(paragraph document.WordParagraph, runID string, first bool) bool {
+	if len(paragraph.Inlines) == 0 {
+		return false
+	}
+	inline := paragraph.Inlines[0]
+	if !first {
+		inline = paragraph.Inlines[len(paragraph.Inlines)-1]
+	}
+	return inline.Text != nil && inline.Text.ID == runID && inline.Text.Editable
 }
 
 func (a *App) completeWordParagraphSplit(result wordCommandResult) {
@@ -443,8 +567,48 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 		return
 	}
 	if result.blocks != nil {
-		state.setWordBlocks(result.blocks)
+		if intent != nil && intent.boundaryInsert {
+			state.setWordBlocksAndTextState(result.blocks, true)
+			state.wordRunEditors = make(map[string]*widget.Editor)
+		} else {
+			state.setWordBlocks(result.blocks)
+		}
 		a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
+	}
+	if intent != nil && intent.boundaryInsert && intent.insertBefore {
+		paragraph, ok := wordParagraphAfter(wordBlocksForState(state), result.splitParagraphID)
+		if !ok || len(paragraph.Inlines) == 0 || paragraph.Inlines[0].Text == nil || !paragraph.Inlines[0].Text.Editable {
+			a.setStatus("段落已插入，但无法定位原段落")
+			a.persistActiveSession()
+			a.finishWordTextFlush(state)
+			return
+		}
+		sourceRun := *paragraph.Inlines[0].Text
+		state.setCommittedWordTextAndClearDraft(sourceRun.ID, intent.value)
+		sourceEditor := wordRunEditor(state, sourceRun)
+		if sourceEditor.Text() != intent.value {
+			sourceEditor.SetText(intent.value)
+		}
+		sourceEditor.SetCaret(0, 0)
+		state.selectedWordRunID = sourceRun.ID
+		state.selectedWordParagraphID = paragraph.ID
+		state.selectedWordImageID = ""
+		state.selectedBlock = -1
+		state.selectedBlockEditable = true
+		state.wordPageTextSelection = nil
+		state.wordFocusedRunID = sourceRun.ID
+		state.wordPendingFocusRunID = sourceRun.ID
+		state.wordPendingCaretRunID = sourceRun.ID
+		state.wordPendingCaretOffset = 0
+		state.wordPendingCaretByX = false
+		state.wordLayoutFocusedRunID = sourceRun.ID
+		state.wordPageFocusedMetaRunID = sourceRun.ID
+		state.wordPageFocusedMetaRevision = state.wordRevisionAtomic.Load()
+		state.wordPageFocusedParagraph = paragraph
+		a.setStatus("正在编辑 Word 正文")
+		a.persistActiveSession()
+		a.finishWordTextFlush(state)
+		return
 	}
 	if sourceEditor := state.wordRunEditors[result.splitSourceRunID]; sourceEditor != nil {
 		sourceEditor.SetText(result.splitPrefix)
@@ -454,7 +618,11 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 
 	newRun, ok := selectedWordRun(wordBlocksForState(state), result.splitRunID)
 	if !ok {
-		a.setStatus("段落已拆分，但无法定位后续文字")
+		if intent != nil && intent.boundaryInsert {
+			a.setStatus("段落已插入，但无法定位新段落文字")
+		} else {
+			a.setStatus("段落已拆分，但无法定位后续文字")
+		}
 		a.persistActiveSession()
 		a.finishWordTextFlush(state)
 		return

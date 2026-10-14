@@ -138,7 +138,9 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	editor.ReadOnly = state.wordReadingMode || !run.Editable || state.formatRunning.Load() || a.isSaving() || paragraphSplitPending || paragraphJoinPending || focusTargetPending
 	selectionStartBeforeUpdate, selectionEndBeforeUpdate := editor.Selection()
 	if !editor.ReadOnly {
-		if a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {
+		if a.handleWordHistoryShortcut(gtx, run.ID, editor) {
+			editor.ReadOnly = true
+		} else if a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {
 			editor.ReadOnly = true
 		} else {
 			a.handleWordArrowNavigation(gtx, paragraph, run, editor)

@@ -284,6 +284,13 @@ type WordParagraphEditor interface {
 	SplitParagraphAt(runID, value string, selectionStart, selectionEnd int) (paragraphID, newRunID string, err error)
 }
 
+// WordParagraphBoundaryEditor inserts an editable empty paragraph immediately
+// before or after the paragraph containing runID, preserving its paragraph and
+// run formatting.
+type WordParagraphBoundaryEditor interface {
+	InsertParagraphAtBoundary(runID string, before bool) (paragraphID, insertedRunID string, err error)
+}
+
 // WordParagraphJoinDirection selects the adjacent paragraph to join at a text boundary.
 type WordParagraphJoinDirection uint8
 

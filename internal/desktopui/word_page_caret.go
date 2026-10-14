@@ -64,8 +64,12 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 		gtx.Execute(key.FocusCmd{Tag: editor})
 		state.wordPendingFocusRunID = ""
 	}
-	if !editor.ReadOnly && a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {
-		editor.ReadOnly = true
+	if !editor.ReadOnly {
+		if a.handleWordHistoryShortcut(gtx, runID, editor) {
+			editor.ReadOnly = true
+		} else if a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {
+			editor.ReadOnly = true
+		}
 	}
 	if a.handleWordPageArrowNavigation(gtx, state, editor) {
 		state.wordPagePreferredVerticalXSet = false
