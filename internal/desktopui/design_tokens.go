@@ -34,6 +34,12 @@ type Typography struct {
 	// Body: 14sp - Default body text, form field labels, editors, tab labels, tree nodes
 	Body unit.Sp
 
+	// SettingsBody: 16sp - Primary text and fields on settings pages
+	SettingsBody unit.Sp
+
+	// SettingsSecondary: 14sp - Explanatory and supporting text on settings pages
+	SettingsSecondary unit.Sp
+
 	// Secondary: 12sp - Secondary body, agent chat messages, sheet tab labels, dialog buttons
 	Secondary unit.Sp
 
@@ -49,15 +55,17 @@ type Typography struct {
 
 // DefaultTypography is the baseline typographic scale matching current production layout.
 var DefaultTypography = Typography{
-	Display:   unit.Sp(34),
-	Heading:   unit.Sp(17),
-	Nav:       unit.Sp(15),
-	Title:     unit.Sp(14),
-	Body:      unit.Sp(14),
-	Secondary: unit.Sp(12),
-	Caption:   unit.Sp(11),
-	Micro10:   unit.Sp(10),
-	Micro:     unit.Sp(9),
+	Display:           unit.Sp(34),
+	Heading:           unit.Sp(17),
+	Nav:               unit.Sp(15),
+	Title:             unit.Sp(14),
+	Body:              unit.Sp(14),
+	SettingsBody:      unit.Sp(16),
+	SettingsSecondary: unit.Sp(14),
+	Secondary:         unit.Sp(12),
+	Caption:           unit.Sp(11),
+	Micro10:           unit.Sp(10),
+	Micro:             unit.Sp(9),
 }
 
 // TextColors defines semantic font colors for the desktop shell UI.
@@ -120,8 +128,8 @@ type ColorTokens struct {
 // LightColorTokens provides the baseline light palette matching production UI.
 var LightColorTokens = ColorTokens{
 	Text: TextColors{
-		Primary:   color.NRGBA{R: 52, G: 59, B: 69, A: 255},   // #343B45
-		Secondary: color.NRGBA{R: 89, G: 98, B: 109, A: 255},  // #59626D
+		Primary:   color.NRGBA{R: 52, G: 59, B: 69, A: 255},    // #343B45
+		Secondary: color.NRGBA{R: 89, G: 98, B: 109, A: 255},   // #59626D
 		Muted:     color.NRGBA{R: 138, G: 146, B: 157, A: 255}, // #8A929D
 		Disabled:  color.NRGBA{R: 165, G: 173, B: 182, A: 255}, // #A5ADB6
 		Brand:     color.NRGBA{R: 52, G: 95, B: 150, A: 255},   // #345F96
@@ -193,6 +201,12 @@ func ResolveDesignTokens(mode ThemeMode, typo Typography) DesignTokens {
 
 	if typo.Body == 0 {
 		typo = DefaultTypography
+	}
+	if typo.SettingsBody == 0 {
+		typo.SettingsBody = DefaultTypography.SettingsBody
+	}
+	if typo.SettingsSecondary == 0 {
+		typo.SettingsSecondary = DefaultTypography.SettingsSecondary
 	}
 
 	return DesignTokens{

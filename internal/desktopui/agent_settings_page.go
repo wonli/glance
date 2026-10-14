@@ -223,7 +223,7 @@ func (a *App) layoutSettingsPageHeading(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				style := material.Caption(a.theme, subtitle)
+				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, subtitle)
 				style.Color, style.MaxLines = settingsBlack, 2
 				return style.Layout(gtx)
 			})
@@ -253,7 +253,7 @@ func (a *App) layoutSettingsProviderPage(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return homeTextLabel(gtx, a.theme, "将 "+settingsTabLabel(a.agentUI.settingsTab)+" 设为默认 AI 提供商", 13, settingsBlack, false)
+								return homeTextLabel(gtx, a.theme, "将 "+settingsTabLabel(a.agentUI.settingsTab)+" 设为默认 AI 提供商", a.tokens().Typography.SettingsSecondary, settingsBlack, false)
 							})
 						})
 					}),
@@ -292,7 +292,7 @@ func (a *App) layoutSettingsProviderPage(gtx layout.Context) layout.Dimensions {
 				if a.agentUI.settingsError != "" {
 					message, textColor = a.agentUI.settingsError, settingsBlack
 				}
-				style := material.Caption(a.theme, message)
+				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, message)
 				style.Color, style.MaxLines = textColor, 2
 				return style.Layout(gtx)
 			})
@@ -305,7 +305,7 @@ func (a *App) layoutSettingsProviderPage(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							style := material.Caption(a.theme, "请勿分享 API Key；调用费用由对应模型提供商收取。")
+							style := settingsSecondaryLabel(a.theme, a.tokens().Typography, "请勿分享 API Key；调用费用由对应模型提供商收取。")
 							style.Color, style.MaxLines = settingsBlack, 2
 							return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)
 						})
@@ -436,7 +436,7 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Top: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									style := material.Caption(a.theme, "独立保存每个提供商的密钥与模型偏好。")
+									style := settingsSecondaryLabel(a.theme, a.tokens().Typography, "独立保存每个提供商的密钥与模型偏好。")
 									style.Color = settingsBlack
 									return style.Layout(gtx)
 								})
@@ -464,14 +464,14 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if a.agentUI.settingsTab == "custom" {
 				return layout.Inset{Bottom: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return agentSettingsPageField(gtx, a.theme, "服务商 ID", &a.agentUI.providerInput, "minimax / kimi / deepseek / ollama / openai-compatible")
+					return agentSettingsPageField(gtx, a.theme, a.tokens().Typography, "服务商 ID", &a.agentUI.providerInput, "minimax / kimi / deepseek / ollama / openai-compatible")
 				})
 			}
 			return layout.Dimensions{}
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if a.agentUI.providerInput.Text() == "ollama" {
-				style := material.Caption(a.theme, "Ollama 在本机运行，不需要 API Key。")
+				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, "Ollama 在本机运行，不需要 API Key。")
 				style.Color = settingsBlack
 				return layout.Inset{Bottom: unit.Dp(16)}.Layout(gtx, style.Layout)
 			}
@@ -481,11 +481,11 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Bottom: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return agentSettingsPageFieldHelp(gtx, a.theme, "API 地址", &a.agentUI.baseURLInput, "https://api.example.com/v1", "支持官方接口或兼容 OpenAI 的代理地址。")
+				return agentSettingsPageFieldHelp(gtx, a.theme, a.tokens().Typography, "API 地址", &a.agentUI.baseURLInput, "https://api.example.com/v1", "支持官方接口或兼容 OpenAI 的代理地址。")
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			dims := agentSettingsPageFieldHelp(gtx, a.theme, "默认模型", &a.agentUI.modelInput, "填写服务商提供的模型名", "用于新建 AI 对话，可在会话中切换。")
+			dims := agentSettingsPageFieldHelp(gtx, a.theme, a.tokens().Typography, "默认模型", &a.agentUI.modelInput, "填写服务商提供的模型名", "用于新建 AI 对话，可在会话中切换。")
 			a.observeAgentModelLookup()
 			return dims
 		}),
@@ -495,17 +495,14 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 	)
 }
 
-func agentSettingsPageField(gtx layout.Context, theme *material.Theme, label string, editor *widget.Editor, hint string) layout.Dimensions {
-	return agentSettingsPageFieldHelp(gtx, theme, label, editor, hint, "")
+func agentSettingsPageField(gtx layout.Context, theme *material.Theme, typography Typography, label string, editor *widget.Editor, hint string) layout.Dimensions {
+	return agentSettingsPageFieldHelp(gtx, theme, typography, label, editor, hint, "")
 }
 
-func agentSettingsPageFieldHelp(gtx layout.Context, theme *material.Theme, label string, editor *widget.Editor, hint, helper string) layout.Dimensions {
+func agentSettingsPageFieldHelp(gtx layout.Context, theme *material.Theme, typography Typography, label string, editor *widget.Editor, hint, helper string) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			style := material.Caption(theme, label)
-			style.Color = settingsBlack
-			style.MaxLines = 1
-			return style.Layout(gtx)
+			return settingsBodyLabel(gtx, theme, typography, label, settingsBlack, false)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -518,7 +515,7 @@ func agentSettingsPageFieldHelp(gtx layout.Context, theme *material.Theme, label
 							return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								gtx.Constraints.Min.Y = 0
 								style := material.Editor(theme, editor, hint)
-								style.TextSize = defaultShellTokens.Typography.Body
+								style.TextSize = typography.SettingsBody
 								style.Color = settingsBlack
 								style.HintColor = settingsBlack
 								return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)
@@ -541,7 +538,7 @@ func agentSettingsPageFieldHelp(gtx layout.Context, theme *material.Theme, label
 				return layout.Dimensions{}
 			}
 			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				style := material.Caption(theme, helper)
+				style := settingsSecondaryLabel(theme, typography, helper)
 				style.Color, style.MaxLines = settingsBlack, 1
 				return style.Layout(gtx)
 			})
@@ -554,9 +551,7 @@ func (a *App) layoutAgentSettingsKeyField(gtx layout.Context) layout.Dimensions 
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					style := material.Caption(a.theme, "API Key")
-					style.Color = settingsBlack
-					return style.Layout(gtx)
+					return settingsBodyLabel(gtx, a.theme, a.tokens().Typography, "API Key", settingsBlack, false)
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
@@ -585,7 +580,7 @@ func (a *App) layoutAgentSettingsKeyField(gtx layout.Context) layout.Dimensions 
 								hint := a.agentSettingsKeyHint()
 
 								style := material.Editor(a.theme, editor, hint)
-								style.TextSize = a.tokens().Typography.Body
+								style.TextSize = a.tokens().Typography.SettingsBody
 								style.Color, style.HintColor = settingsBlack, settingsBlack
 								return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)
 							})
@@ -615,7 +610,7 @@ func (a *App) layoutAgentSettingsKeyField(gtx layout.Context) layout.Dimensions 
 				help = "在 DeepSeek 开放平台创建密钥；保存后以掩码显示。"
 			}
 			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				style := material.Caption(a.theme, help)
+				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, help)
 				style.Color, style.MaxLines = settingsBlack, 1
 				return style.Layout(gtx)
 			})

@@ -132,19 +132,19 @@ func copyDesktopMCPValue(gtx layout.Context, value string) {
 func (a *App) layoutMCPConnectionDetailsPage(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return homeTextLabel(gtx, a.theme, "当前桌面会话", 15, settingsBlack, true)
+			return settingsBodyLabel(gtx, a.theme, a.tokens().Typography, "当前桌面会话", settingsBlack, true)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				message := "此配置连接当前 Glance 窗口中的文档和未保存更改。"
-				style := material.Caption(a.theme, message)
+				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, message)
 				style.Color, style.MaxLines = settingsBlack, 2
 				return style.Layout(gtx)
 			})
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			if a.mcpConnectionConfig == "" {
-				style := material.Caption(a.theme, a.mcpConnectionError)
+				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, a.mcpConnectionError)
 				style.Color, style.MaxLines = settingsBlack, 3
 				return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, style.Layout)
 			}
@@ -159,7 +159,7 @@ func (a *App) layoutMCPStdioConfiguration(gtx layout.Context) layout.Dimensions 
 			return layout.Inset{Top: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return homeTextLabel(gtx, a.theme, "MCP 客户端配置", 14, settingsBlack, true)
+						return settingsBodyLabel(gtx, a.theme, a.tokens().Typography, "MCP 客户端配置", settingsBlack, true)
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
@@ -176,7 +176,7 @@ func (a *App) layoutMCPStdioConfiguration(gtx layout.Context) layout.Dimensions 
 					return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(12), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return a.mcpConfigurationList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 							style := material.Body2(a.theme, a.mcpConnectionViewConfig)
-							style.TextSize, style.Color, style.MaxLines = unit.Sp(12), settingsBlack, 0
+							style.TextSize, style.Color, style.MaxLines = a.tokens().Typography.SettingsSecondary, settingsBlack, 0
 							style.Font.Typeface = font.Typeface("monospace")
 							return style.Layout(gtx)
 						})
@@ -190,7 +190,7 @@ func (a *App) layoutMCPStdioConfiguration(gtx layout.Context) layout.Dimensions 
 				if a.mcpTempExecutable {
 					message += " 当前程序位于临时目录，退出或重启后此路径可能失效。"
 				}
-				style := material.Caption(a.theme, message)
+				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, message)
 				style.Color, style.MaxLines = settingsBlack, 3
 				return style.Layout(gtx)
 			})
@@ -239,7 +239,7 @@ func (a *App) layoutMCPConnectionGuide(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return homeTextLabel(gtx, a.theme, "如何连接 MCP 客户端", 14, settingsBlack, true)
+						return settingsBodyLabel(gtx, a.theme, a.tokens().Typography, "如何连接 MCP 客户端", settingsBlack, true)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -256,14 +256,14 @@ func (a *App) layoutMCPConnectionGuide(gtx layout.Context) layout.Dimensions {
 													}),
 													layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 														return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-															return homeTextLabel(gtx, a.theme, step.title, 13, settingsBlack, true)
+															return homeTextLabel(gtx, a.theme, step.title, a.tokens().Typography.SettingsBody, settingsBlack, true)
 														})
 													}),
 												)
 											}),
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 												return layout.Inset{Top: unit.Dp(6), Left: unit.Dp(31)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-													style := material.Caption(a.theme, step.body)
+													style := settingsSecondaryLabel(a.theme, a.tokens().Typography, step.body)
 													style.Color, style.MaxLines = settingsBlack, 4
 													return style.Layout(gtx)
 												})

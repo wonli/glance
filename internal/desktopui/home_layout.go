@@ -406,9 +406,8 @@ func (a *App) processHomeNavClicks(gtx layout.Context) {
 		{id: "favorites", section: homeSectionFavorites},
 	} {
 		if a.homeNavButton(navigation.id).Clicked(gtx) {
-			a.resetHomeContentScroll()
-			a.homeSection = navigation.section
 			a.selectHomeFolder("")
+			a.homeSection = navigation.section
 		}
 	}
 	if a.homeNavButton("ai-assistant").Clicked(gtx) {
