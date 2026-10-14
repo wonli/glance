@@ -124,7 +124,9 @@ func (a *App) processWindowControlClicks(gtx layout.Context) {
 		return
 	}
 	if a.windowCloseButton.Clicked(gtx) {
-		a.window.Perform(system.ActionClose)
+		if !a.hideMainWindowToTray() {
+			a.window.Perform(system.ActionClose)
+		}
 	}
 	if a.windowMinimizeButton.Clicked(gtx) {
 		a.window.Perform(system.ActionMinimize)

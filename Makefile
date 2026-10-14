@@ -61,4 +61,51 @@ linux:
 
 windows:
 	mkdir -p $(BUILD_PATH)
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS) -H=windowsgui" -trimpath -tags netgo -o $(BUILD_PATH)/$(APP_NAME)-windows-amd64-latest.exe .
+	$(MAKE) brand-assets
+	@set -eu; \
+	icon_file="$(WINDOWS_ICON_ICO)"; \
+	exe_file="$(BUILD_PATH)/$(APP_NAME)-windows-amd64-latest.exe"; \
+	trap 'rm -f "$$icon_file"' EXIT; \
+	go run ./packaging/windows/iconbuilder "$(BRAND_ASSETS_DIR)/glance-dock-icon.png" "$$icon_file"; \
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS) -H=windowsgui" -trimpath -tags netgo -o "$$exe_file" .; \
+	go run ./packaging/windows/embedicon "$$exe_file" "$$icon_file"
+
+MACOS_ARCH ?= $(shell go env GOARCH)
+MACOS_APP_OUTPUT ?= $(BUILD_PATH)/Glance.app
+MACOS_LINKER_FLAGS = $(LDFLAGS) -extldflags=-Wl,-no_warn_duplicate_libraries
+MACOS_ICONSET = $(BUILD_PATH)/.macos-iconsets/$(MACOS_ARCH).iconset
+MACOS_DOCK_ICON = internal/desktopui/assets/brand/glance-dock-icon.png
+BRAND_ASSETS_DIR = internal/desktopui/assets/brand
+RSVG_CONVERT ?= rsvg-convert
+WINDOWS_ICON_ICO = $(BUILD_PATH)/glance-windows-amd64.ico
+
+.PHONY: brand-assets macos-app macos-portable macos-portable-arm64 macos-portable-amd64
+
+brand-assets:
+	@set -eu; \
+	if command -v "$(RSVG_CONVERT)" >/dev/null 2>&1; then \
+		"$(RSVG_CONVERT)" --width 512 --height 512 --output "$(BRAND_ASSETS_DIR)/glance-dock-icon.png" "$(BRAND_ASSETS_DIR)/glance-dock-icon.svg"; \
+		"$(RSVG_CONVERT)" --width 22 --height 22 --output "$(BRAND_ASSETS_DIR)/glance-tray-macos-22.png" "$(BRAND_ASSETS_DIR)/glance-tray-macos-22.svg"; \
+		"$(RSVG_CONVERT)" --width 44 --height 44 --output "$(BRAND_ASSETS_DIR)/glance-tray-macos-44.png" "$(BRAND_ASSETS_DIR)/glance-tray-macos-44.svg"; \
+	else \
+		echo "rsvg-convert not found; using the checked-in PNG brand assets" >&2; \
+	fi
+
+macos-app:
+	@test "$(shell go env GOOS)" = "darwin" || (echo "macOS app packaging requires a macOS host" >&2; exit 1)
+	$(MAKE) brand-assets
+	mkdir -p "$(MACOS_APP_OUTPUT)/Contents/MacOS" "$(MACOS_APP_OUTPUT)/Contents/Resources"
+	GOOS=darwin GOARCH=$(MACOS_ARCH) CGO_ENABLED=1 go build -ldflags "$(MACOS_LINKER_FLAGS)" -trimpath -tags netgo -o "$(MACOS_APP_OUTPUT)/Contents/MacOS/Glance" .
+	cp packaging/macos/Info.plist "$(MACOS_APP_OUTPUT)/Contents/Info.plist"
+	bash packaging/macos/build-icon.sh "$(MACOS_DOCK_ICON)" "$(MACOS_APP_OUTPUT)/Contents/Resources/Glance.icns" "$(MACOS_ICONSET)"
+
+macos-portable: macos-app
+	ditto -c -k --sequesterRsrc --keepParent "$(MACOS_APP_OUTPUT)" "$(BUILD_PATH)/Glance-macos-$(MACOS_ARCH)-portable.zip"
+
+macos-portable-arm64:
+	$(MAKE) macos-app MACOS_ARCH=arm64 MACOS_APP_OUTPUT=$(BUILD_PATH)/.macos-stage/arm64/Glance.app
+	ditto -c -k --sequesterRsrc --keepParent "$(BUILD_PATH)/.macos-stage/arm64/Glance.app" "$(BUILD_PATH)/Glance-macos-arm64-portable.zip"
+
+macos-portable-amd64:
+	$(MAKE) macos-app MACOS_ARCH=amd64 MACOS_APP_OUTPUT=$(BUILD_PATH)/.macos-stage/amd64/Glance.app
+	ditto -c -k --sequesterRsrc --keepParent "$(BUILD_PATH)/.macos-stage/amd64/Glance.app" "$(BUILD_PATH)/Glance-macos-amd64-portable.zip"

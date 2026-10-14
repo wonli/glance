@@ -2,14 +2,14 @@
 
 ## Goal
 
-Use the Glance mark from Pen node `aHpKc` (inside frame `Cgywc`) as the desktop and tray identity. Let users reopen Glance from a system tray icon after closing its window, make Windows double-click launch reliable, preserve command-line tools in the same Windows executable, and provide a portable macOS app package.
+Use the Glance mark from Pen node `aHpKc` (inside frame `Cgywc`) for Windows/Linux tray use, the monochrome macOS tray template variants from nodes `csn2I` and `w7wlV`, and the dedicated macOS Dock icon from node `pUWMi`. Let users reopen Glance from a system tray icon after closing its window, make Windows double-click launch reliable, preserve command-line tools in the same Windows executable, and provide a portable macOS app package.
 
 The implementation follows the existing Gio -> desktop runtime -> workspace/session architecture. The sibling `/Users/mima1234/project/photo/photo` is a reference for `github.com/gogpu/systray` setup and Windows GUI linking, not a source of Glance product assets.
 
 ## User-visible behavior
 
 - Double-clicking the app opens its normal main window. Starting it with a supported document path continues to open that document.
-- The tray icon uses the Pen Glance mark. Clicking the icon or choosing **Show Glance** brings the main window back with its workspace and view state restored.
+- On macOS, the tray uses the monochrome template G icon and automatically adapts to light/dark menu bars. Windows and Linux continue using the colored Pen Glance mark. Clicking the icon or choosing **Show Glance** brings the main window back with its workspace and view state restored.
 - Clicking the main window's close button sends the app to the tray: the window disappears, while the tray icon and process remain available. It does not terminate the process.
 - Choosing **Quit Glance** is the explicit process-exit action. It closes any open windows, drains workspace persistence, stops the tray, and shuts down runtime-owned services.
 - If the platform has no usable tray host, closing the last window exits normally instead of leaving an invisible process. The launch diagnostics record why tray residency was unavailable.
@@ -18,9 +18,9 @@ The implementation follows the existing Gio -> desktop runtime -> workspace/sess
 
 ## Design
 
-### Logo asset
+### Tray and Dock assets
 
-Export the symbol component `aHpKc` rather than the entire `Cgywc` presentation frame. Keep the transparent artwork and include it as an embedded application asset. Use the same source for the app identity and tray icon, scaling or converting at the asset boundary for platform requirements. Do not draw a replacement mark in code.
+Export the symbol component `aHpKc` rather than the entire `Cgywc` presentation frame as `glance-mark.png`; keep it transparent and embed it for Windows/Linux tray use. Export macOS tray template variants `csn2I` (22px) and `w7wlV` (44px) as separate transparent PNGs and add them to one `NSImage` as 1×/2× representations. Use `bDT83` to visually confirm that AppKit's template rendering yields dark artwork on a light menu bar and white artwork on a dark menu bar. Export the dedicated macOS Dock icon frame `pUWMi` as `glance-dock-icon.png` and use it only to generate the macOS `.icns`. Keep the tray and Dock assets separate; do not draw replacement artwork in code.
 
 ### Tray service and lifecycle
 
@@ -36,7 +36,7 @@ When Explorer or Finder starts the app by double-click, it supplies no command-l
 
 Build one Windows executable from the Cobra desktop entrypoint with the Windows GUI subsystem flag (`-H=windowsgui`) so double-clicking does not flash a console. The no-argument root command opens the workspace; explicit Cobra, MCP, and office CLI commands continue to run in this same binary. Before running a CLI command, attach to the parent console and refresh standard handles; honor inherited redirection and allocate a console only when no usable output destination exists. This uses the Windows console APIs intended for GUI applications that need console I/O ([Microsoft AttachConsole](https://learn.microsoft.com/en-us/windows/console/attachconsole), [AllocConsole](https://learn.microsoft.com/en-us/windows/console/allocconsole), and [GetStdHandle](https://learn.microsoft.com/en-us/windows/console/getstdhandle)). The packaged root Cobra entrypoint must include or delegate the existing `cmd/glance` MCP and office CLI dispatch so users do not need a second executable. Record GUI startup failures to a per-user Glance log and show a Windows startup error dialog when the GUI cannot initialize, since a GUI-subsystem process has no console for diagnostics.
 
-For macOS, build a standard `Glance.app` bundle with `Info.plist`, executable, and a multi-resolution `.icns` made from the same Pen logo. Add Makefile targets for building the app bundle and a portable ZIP containing that bundle, with arm64 and amd64 variants. The ZIP is the distribution artifact: users can extract it and launch the `.app`; no DMG, installer, or second helper binary is required. Keep architecture-specific outputs distinct rather than claiming a universal binary unless both slices are actually built and verified.
+For macOS, build a standard `Glance.app` bundle with `Info.plist`, executable, and a multi-resolution `.icns` made from the dedicated Pen Dock icon. Add Makefile targets for building the app bundle and a portable ZIP containing that bundle, with arm64 and amd64 variants. The ZIP is the distribution artifact: users can extract it and launch the `.app`; no DMG, installer, or second helper binary is required. Keep architecture-specific outputs distinct rather than claiming a universal binary unless both slices are actually built and verified.
 
 Expose these Makefile commands: `make windows` builds the single Windows GUI/CLI executable; `make macos-app` builds the host-architecture `.app`; `make macos-portable` builds and ZIPs the host-architecture app; and `make macos-portable-arm64` / `make macos-portable-amd64` build architecture-specific portable ZIPs. Keep generated bundles and archives under `dist/` and make each target reproducible from a clean checkout.
 
@@ -62,7 +62,7 @@ Expose these Makefile commands: `make windows` builds the single Windows GUI/CLI
 - Repeated Show/Quit and close/show races do not create duplicate windows, leak runtime workers, or lose the last persisted workspace state.
 - Without a Linux tray host, closing the final window exits and a diagnostic explains the fallback.
 - The single Windows executable starts the workspace by double-click without a console flash and preserves command output for CLI commands from a terminal, including redirected output.
-- The macOS Makefile targets produce a runnable `.app` and a portable ZIP for each advertised architecture; the extracted app shows the Pen logo in Finder/Dock and the tray.
+- The macOS Makefile targets produce a runnable `.app` and a portable ZIP for each advertised architecture; the extracted app shows the dedicated `pUWMi` icon in Finder/Dock and the template `csn2I`/`w7wlV` G in the tray, adapted for light and dark menu bars as previewed by `bDT83`.
 - Existing CLI subcommands and path-based desktop launch remain intact.
 
 ## Approaches considered

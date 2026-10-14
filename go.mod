@@ -19,6 +19,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
+	github.com/wonli/apic/v2 v2.4.2
 	github.com/wonli/aqi v1.11.0
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yuin/goldmark v1.7.13
@@ -30,6 +31,8 @@ require (
 	gorm.io/gorm v1.31.2
 	modernc.org/sqlite v1.59.0
 )
+
+replace github.com/gogpu/systray => ./internal/third_party/gogpu-systray
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
@@ -100,7 +103,6 @@ require (
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.2 // indirect
-	github.com/wonli/apic/v2 v2.4.2 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect

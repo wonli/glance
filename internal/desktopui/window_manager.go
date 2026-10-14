@@ -128,11 +128,37 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 			a.applyWindowConfig(e.Config)
 			a.window.Invalidate()
 		case app.FrameEvent:
+			select {
+			case err := <-a.trayStartupResults:
+				if err != nil {
+					a.setStatus("托盘启动失败：" + err.Error())
+				}
+			default:
+			}
 			a.processViewIntentRequests()
 			gtx := app.NewContext(&a.ops, e)
 			a.layout(gtx)
 			e.Frame(gtx.Ops)
 			a.renderedFrame = true
+			if trayStartupDeferredUntilWindowFrame() {
+				runtime := a.ensureDesktopRuntime()
+				if !a.trayStartupScheduled && !runtime.trayStartupWasAttempted() {
+					a.trayStartupScheduled = true
+					go func() {
+						err := runtime.startSystemTray()
+						if err != nil {
+							log.Printf("start system tray: %v", err)
+						}
+						select {
+						case a.trayStartupResults <- err:
+						default:
+						}
+						if a.window != nil {
+							a.window.Invalidate()
+						}
+					}()
+				}
+			}
 		}
 	}
 }

@@ -31,12 +31,14 @@ const preferredSystemTypeface = font.Typeface("Inter, PingFang SC, Hiragino Sans
 type App struct {
 	*documentSessionState
 	*desktopRuntime
-	window        *app.Window
-	renderedFrame bool
-	ops           op.Ops
-	theme         *material.Theme
-	themeMode     ThemeMode
-	designTokens  DesignTokens
+	window               *app.Window
+	renderedFrame        bool
+	trayStartupScheduled bool
+	trayStartupResults   chan error
+	ops                  op.Ops
+	theme                *material.Theme
+	themeMode            ThemeMode
+	designTokens         DesignTokens
 
 	actionOpenFile        widget.Clickable
 	actionOpenFolder      widget.Clickable
@@ -356,6 +358,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		wordMacrosInspectionResults: make(chan wordMacrosInspectionResult, 1),
 		wordLayoutResults:           make(chan wordLayoutResult, 8),
 		windowOpenResults:           make(chan error, 1),
+		trayStartupResults:          make(chan error, 1),
 	}
 
 	if window != nil {
@@ -415,8 +418,10 @@ func RunWithStartupError(initialPath string, reportStartupError func(error)) <-c
 		log.Printf("start desktop MCP endpoint: %v", err)
 		a.setStatus("MCP 服务启动失败：" + err.Error())
 	}
-	if err := runtime.startSystemTray(); err != nil {
-		log.Printf("start system tray: %v", err)
+	if !trayStartupDeferredUntilWindowFrame() {
+		if err := runtime.startSystemTray(); err != nil {
+			log.Printf("start system tray: %v", err)
+		}
 	}
 	restoreCtx, cancelRestore := context.WithCancel(context.Background())
 	if a.launchManagedBackground(func() {

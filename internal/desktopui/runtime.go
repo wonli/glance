@@ -67,6 +67,8 @@ type desktopRuntime struct {
 	completionOnce          sync.Once
 	windowLauncher          windowLauncher
 	trayReady               bool
+	trayStartupAttempted    bool
+	trayStartupDone         chan struct{}
 	quitRequested           bool
 	trayActions             chan trayAction
 	trayCancel              context.CancelFunc

@@ -21,18 +21,54 @@ func (r *desktopRuntime) startSystemTray() error {
 		r.mu.Unlock()
 		return errors.New("desktop runtime is shutting down")
 	}
-	if r.trayCancel != nil {
+	if r.trayReady {
 		r.mu.Unlock()
 		return nil
 	}
+	if r.trayStartupAttempted {
+		startupDone := r.trayStartupDone
+		r.mu.Unlock()
+		if startupDone != nil {
+			<-startupDone
+		}
+		r.mu.Lock()
+		ready, err := r.trayReady, r.trayError
+		shuttingDown := r.shuttingDown || r.quitRequested
+		r.mu.Unlock()
+		if ready {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if shuttingDown {
+			return errors.New("desktop runtime is shutting down")
+		}
+		return errors.New("system tray startup was already attempted")
+	}
+	r.trayStartupAttempted = true
+	startupDone := make(chan struct{})
+	r.trayStartupDone = startupDone
 	actions := make(chan trayAction, trayActionQueueSize)
 	r.trayActions = actions
 	r.mu.Unlock()
 
+	err := r.startSystemTrayAttempt(actions)
+	r.mu.Lock()
+	if err != nil {
+		r.trayError = err
+	}
+	close(startupDone)
+	r.mu.Unlock()
+	return err
+}
+
+func (r *desktopRuntime) startSystemTrayAttempt(actions chan trayAction) error {
 	tray, err := newSystemTray(actions)
 	if err != nil {
 		r.mu.Lock()
 		r.trayActions = nil
+		r.trayError = err
 		r.mu.Unlock()
 		return err
 	}
@@ -40,6 +76,7 @@ func (r *desktopRuntime) startSystemTray() error {
 	done := make(chan struct{})
 	r.mu.Lock()
 	if r.shuttingDown || r.quitRequested {
+		r.trayActions = nil
 		r.mu.Unlock()
 		cancel()
 		return errors.New("desktop runtime is shutting down")
@@ -51,7 +88,9 @@ func (r *desktopRuntime) startSystemTray() error {
 	go func() {
 		runErr := tray.run(ctx)
 		r.mu.Lock()
-		r.trayError = runErr
+		if runErr != nil || r.trayError == nil {
+			r.trayError = runErr
+		}
 		r.trayReady = false
 		close(done)
 		r.mu.Unlock()
@@ -70,7 +109,11 @@ func (r *desktopRuntime) startSystemTray() error {
 			return nil
 		}
 		r.mu.Unlock()
-		return errors.New("system tray stopped during initialization")
+		err := errors.New("system tray stopped during initialization")
+		r.mu.Lock()
+		r.trayError = err
+		r.mu.Unlock()
+		return err
 	case <-done:
 		r.mu.Lock()
 		err := r.trayError
@@ -78,11 +121,28 @@ func (r *desktopRuntime) startSystemTray() error {
 		if err == nil {
 			err = errors.New("system tray stopped during initialization")
 		}
+		r.mu.Lock()
+		r.trayError = err
+		r.mu.Unlock()
 		return err
 	case <-timer.C:
 		cancel()
-		return errors.New("timed out starting the system tray")
+		err := errors.New("timed out starting the system tray")
+		r.mu.Lock()
+		r.trayError = err
+		r.mu.Unlock()
+		return err
 	}
+}
+
+func (r *desktopRuntime) trayStartupWasAttempted() bool {
+	if r == nil {
+		return false
+	}
+	r.mu.Lock()
+	attempted := r.trayStartupAttempted
+	r.mu.Unlock()
+	return attempted
 }
 
 func (r *desktopRuntime) recordResumeActiveTab(tabID string) {
