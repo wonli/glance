@@ -93,7 +93,7 @@ The source-organization pass split Word toolbar functionality into same-package 
 
 ## Agent turn budgets and conversation switching
 
-Each send or resume starts a fresh tool budget. The defaults allow 8 tool execution rounds and 24 tool calls; explicit `HostOptions` can set smaller bounds. After the last permitted tool round or call, the model receives one final request without tools to report completed results and any unfinished work. A further tool request is rejected, and the final prompt remains subject to the context-size limit.
+Each send or resume starts a fresh tool budget. The defaults allow 200 tool execution rounds and 600 tool calls; explicit `HostOptions` can set smaller bounds. After the last permitted tool round or call, the model receives one final request without tools to report completed results and any unfinished work. A further tool request is rejected, and the final prompt remains subject to the context-size limit.
 
 Creating a conversation detaches the old subscription and clears its transient UI state before asynchronous persistence starts. A busy old turn is cancelled in the background; its stored history remains available. Conversation IDs and history generations reject late events and results from the previous conversation.
 

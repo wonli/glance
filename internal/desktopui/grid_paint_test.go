@@ -22,6 +22,43 @@ func TestGridPaintStyleUsesCellStyle(t *testing.T) {
 	}
 }
 
+func TestSelectedGridCellKeepsWorkbookFontAndFillColors(t *testing.T) {
+	state := newDocumentSessionState("colors.xlsx")
+	state.sheet = "Sheet1"
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	app.selection = CellSelection{Anchor: CellPosition{}, Active: CellPosition{}}
+	app.selectionSet = true
+	v := newGridViewport()
+	v.SelectedRow, v.SelectedColumn = 1, 1
+	v.WindowSheet = "Sheet1"
+	v.WindowRange = document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}
+	v.Window = document.SheetWindow{
+		StartRow: 1, StartColumn: 1,
+		Cells: [][]document.Cell{{{Value: "M", Style: document.CellStyle{FontColor: "#c02020", FillColor: "#abc123"}}}},
+	}
+
+	size := image.Pt(220, 100)
+	var ops op.Ops
+	gtx := layout.Context{Ops: &ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(size)}
+	paintVirtualGrid(gtx, app, v)
+
+	wantFont := color.NRGBA{R: 0xc0, G: 0x20, B: 0x20, A: 255}
+	wantFill := color.NRGBA{R: 0xab, G: 0xc1, B: 0x23, A: 255}
+	for key := range v.CellPaintCache {
+		if key.Value != "M" {
+			continue
+		}
+		if key.Style.Font != wantFont {
+			t.Fatalf("selected cell paint font=%v; want workbook font %v", key.Style.Font, wantFont)
+		}
+		if key.Style.Fill != wantFill {
+			t.Fatalf("selected cell fill=%v; want workbook fill %v", key.Style.Fill, wantFill)
+		}
+		return
+	}
+	t.Fatal("selected cell was not submitted to the cell renderer")
+}
+
 func TestCachedCellPaintReusesLayoutAfterScroll(t *testing.T) {
 	v := newGridViewport()
 	var ops op.Ops

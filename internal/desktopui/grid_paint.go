@@ -125,17 +125,6 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 					continue
 				}
 				style := paintStyle(cell.Style)
-				selected := rr == v.SelectedRow && cc == v.SelectedColumn || merged && mr == v.SelectedRow && mc == v.SelectedColumn
-				if hasSelection {
-					selected = selection.Contains(CellPosition{Row: rr - 1, Column: cc - 1}) ||
-						merged && selection.Contains(CellPosition{Row: mr - 1, Column: mc - 1})
-				}
-				if selected {
-					style.Fill = selectedFill
-					if rr == v.SelectedRow && cc == v.SelectedColumn {
-						style.Font = color.NRGBA{R: 62, G: 111, B: 169, A: 255}
-					}
-				}
 				if formulaReferenceContains(formulaReferences, rr, cc) || merged && formulaReferenceContains(formulaReferences, mr, mc) {
 					style.Fill = selectedFill
 				}
@@ -213,7 +202,6 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 			if !visibleRect.Empty() {
 				cell := windowCell(v.Window, row, col)
 				style := paintStyle(cell.Style)
-				style.Fill = selectedFill
 				paintCellEditor(gtx, a.theme, &a.cellEditor, fullRect, visibleRect, cell.Style, style, a.spreadsheetZoom())
 			}
 		}

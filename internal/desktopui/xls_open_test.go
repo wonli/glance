@@ -17,6 +17,7 @@ import (
 	"glance/internal/application"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
+	"glance/internal/workspace"
 )
 
 type nonGridSpreadsheet struct{}
@@ -130,6 +131,37 @@ func TestImportedXLSUsesVirtualGridAndTabsBelowHeaders(t *testing.T) {
 	}
 	if minTabY < 400 {
 		t.Fatalf("sheet tab blue ink begins at y=%d; expected below the visible grid and column header", minTabY)
+	}
+}
+
+func TestImportedXLSCellSelectionDoesNotReportMissingWorkspaceTab(t *testing.T) {
+	loaded, err := loadDocument(legacyXLSFixture(t))
+	if err != nil {
+		t.Fatalf("load legacy XLS: %v", err)
+	}
+	t.Cleanup(func() { closeLoadedDocument(loaded) })
+	store, err := workspace.Open(filepath.Join(t.TempDir(), "workspace.db"))
+	if err != nil {
+		t.Fatalf("open workspace store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	collection, err := workspace.OpenCollection(store)
+	if err != nil {
+		t.Fatalf("open workspace collection: %v", err)
+	}
+	desktop := newDesktopRuntime()
+	app := newAppWithRuntime(nil, desktop)
+	app.collection = collection
+	t.Cleanup(func() { app.ensureDesktopRuntime().shutdown(); close(app.shutdown) })
+	if err := app.installDocument(loaded); err != nil {
+		t.Fatalf("install imported workbook: %v", err)
+	}
+	statusBeforeSelection := app.status
+
+	app.updateGridSelection(app.virtualGrid, CellPosition{Row: 1, Column: 1}, false, true)
+
+	if app.status != statusBeforeSelection {
+		t.Fatalf("selecting a cell changed status from %q to %q", statusBeforeSelection, app.status)
 	}
 }
 

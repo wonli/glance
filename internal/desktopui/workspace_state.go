@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/application"
 	"glance/internal/workspace"
 	"path/filepath"
 	"strings"
@@ -120,6 +121,11 @@ func (a *App) persistViewState() {
 		return
 	}
 	if a.collection == nil || a.activeTabID == "" || a.activeTabID == workspace.RecentTabID {
+		return
+	}
+	if _, exists := a.collection.Get(a.activeTabID); !exists && a.documentSessionState != nil && a.documentSessionState.sourceFormat == application.FormatXLS {
+		// Imported XLS tabs stay local until Save As creates a durable XLSX
+		// workspace entry. Their view state already lives in this session.
 		return
 	}
 	if err := a.collection.SaveViewState(a.activeTabID, a.viewStateBytes()); err != nil {
