@@ -192,7 +192,7 @@ func (a *App) layoutStandardWindowButton(gtx layout.Context, click *widget.Click
 	gtx.Constraints.Max = gtx.Constraints.Min
 	return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		style := material.Body1(a.theme, label)
-		style.Color = color.NRGBA{R: 52, G: 57, B: 65, A: 255}
+		style.Color = a.tokens().Colors.Text.PureBlack
 		return layout.Center.Layout(gtx, style.Layout)
 	})
 }
@@ -325,10 +325,7 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 						style := material.Body2(a.theme, label)
 						style.TextSize = a.tokens().Typography.Body
 						style.MaxLines = 1
-						style.Color = color.NRGBA{R: 93, G: 102, B: 113, A: 255}
-						if active {
-							style.Color = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
-						}
+						style.Color = a.tokens().Colors.Text.PureBlack
 						return layout.Center.Layout(gtx, style.Layout)
 					})
 				})
@@ -343,7 +340,7 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 				return layout.Inset{Left: unit.Dp(5), Right: unit.Dp(9)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					style := material.Body2(a.theme, "×")
 					style.TextSize = a.tokens().Typography.Heading + unit.Sp(1)
-					style.Color = color.NRGBA{R: 104, G: 113, B: 123, A: 255}
+					style.Color = a.tokens().Colors.Text.PureBlack
 					return layout.Center.Layout(gtx, style.Layout)
 				})
 			})
@@ -375,7 +372,7 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 		if label == "+" {
 			style := material.Body2(a.theme, label)
 			style.TextSize = a.tokens().Typography.Heading + unit.Sp(1)
-			style.Color = color.NRGBA{R: 88, G: 97, B: 108, A: 255}
+			style.Color = a.tokens().Colors.Text.PureBlack
 			dims = layout.Center.Layout(gtx, style.Layout)
 		} else {
 			dims = layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -406,10 +403,7 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							style := material.Body2(a.theme, "Glance")
 							style.TextSize = a.tokens().Typography.Body
-							style.Color = color.NRGBA{R: 104, G: 113, B: 123, A: 255}
-							if active {
-								style.Color = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
-							}
+							style.Color = a.tokens().Colors.Text.PureBlack
 							return style.Layout(gtx)
 						}),
 					)

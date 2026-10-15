@@ -16,41 +16,28 @@ import (
 
 func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSessionState, tab wordToolbarTab) layout.Dimensions {
 	actions := wordToolbarActions(tab)
-	iconSize := toolbarIconSize
-	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(11), Right: unit.Dp(5)}.Layout(gtx, a.layoutAgentRibbonEntry)
-		}),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				// Keep short command lists full-width so Background does not center them.
-				gtx.Constraints.Min.X = gtx.Constraints.Max.X
-				return state.wordToolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
-					action := actions[index]
-					enabled := a.wordToolbarActionButtonEnabled(action)
-					button := wordToolbarButton(state, action.id)
-					description := a.wordToolbarActionDescription(action)
-					if action.id == "view-new-window" && !enabled {
-						if _, reason := wordNewWindowAvailability(state, a.desktopRuntime); reason != "" {
-							description += "，不可用：" + reason
-						}
-					}
-					active := enabled && wordToolbarActionActive(state, action)
-					background := a.tokens().Colors.Surface.Surface
-					if active {
-						background = a.tokens().Colors.Toolbar.ActiveBackground
-					}
-					icon, _ := a.themedWordToolbarActionIcon(action, enabled)
-					return layoutWordToolbarActionItem(gtx, action, index, actions, a.tokens().Colors.Toolbar.Divider, func(gtx layout.Context) layout.Dimensions {
-						btnGtx := gtx
-						btnGtx.Constraints.Min = image.Pt(gtx.Dp(toolbarButtonWidth), gtx.Dp(toolbarButtonHeight))
-						btnGtx.Constraints.Max = btnGtx.Constraints.Min
-						return toolbarIconButtonWithColors(btnGtx, a.theme, button, icon, iconSize, action.label, description, enabled, false, background, a.tokens().Colors)
+	if tab != wordTabHome && tab != wordTabPicture {
+		return a.layoutWordPenCommandList(gtx, state, tab, actions)
+	}
+	return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		groups := wordRibbonGroupsForTab(tab, actions)
+		state.wordToolbarGroupList.List.Axis = layout.Horizontal
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return a.layoutOfficeRibbonAIEntry(gtx, unit.Dp(80))
+				})
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.X = gtx.Constraints.Max.X
+					return state.wordToolbarGroupList.Layout(gtx, len(groups), func(gtx layout.Context, index int) layout.Dimensions {
+						return a.layoutWordRibbonGroupItem(gtx, state, groups[index], index == len(groups)-1)
 					})
 				})
-			})
-		}),
-	)
+			}),
+		)
+	})
 }
 
 func layoutWordToolbarActionItem(gtx layout.Context, action ribbonAction, index int, actions []ribbonAction, dividerColor color.NRGBA, child layout.Widget) layout.Dimensions {
@@ -134,13 +121,13 @@ func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentS
 		iconOffset.Pop()
 		label := material.Caption(a.theme, action.label)
 		label.TextSize = unit.Sp(10)
-		label.Color = a.toolbarIconColor(enabled)
+		label.Color = a.tokens().Colors.Text.PureBlack
 		labelOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(32)), gtx.Dp(unit.Dp(30)))).Push(gtx.Ops)
 		label.Layout(gtx)
 		labelOffset.Pop()
 		arrow := material.Caption(a.theme, "⌄")
 		arrow.TextSize = unit.Sp(10)
-		arrow.Color = a.toolbarIconColor(enabled)
+		arrow.Color = a.tokens().Colors.Text.PureBlack
 		arrowOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(54)), gtx.Dp(unit.Dp(47)))).Push(gtx.Ops)
 		arrow.Layout(gtx)
 		arrowOffset.Pop()
@@ -184,7 +171,7 @@ func (a *App) layoutWordRibbonIconLabelActionAt(gtx layout.Context, state *docum
 		iconOffset.Pop()
 		label := material.Caption(a.theme, action.label)
 		label.TextSize = unit.Sp(9)
-		label.Color = a.toolbarIconColor(enabled)
+		label.Color = a.tokens().Colors.Text.PureBlack
 		labelOffset := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(34)))).Push(gtx.Ops)
 		label.Layout(gtx)
 		labelOffset.Pop()
@@ -249,7 +236,7 @@ func (a *App) layoutWordRibbonInlineAction(gtx layout.Context, state *documentSe
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				label := material.Caption(a.theme, action.label)
 				label.TextSize = unit.Sp(9)
-				label.Color = a.toolbarIconColor(enabled)
+				label.Color = a.tokens().Colors.Text.PureBlack
 				return label.Layout(gtx)
 			}),
 		)

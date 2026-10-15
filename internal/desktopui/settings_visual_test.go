@@ -35,7 +35,7 @@ func TestSettingsFieldsVerticallyCenterText(t *testing.T) {
 					app.layoutAgentSettingsKeyField(gtx)
 					fieldTop = 27
 				} else {
-					agentSettingsPageField(gtx, app.theme, "默认模型", editor, "输入模型")
+					agentSettingsPageField(gtx, app.theme, app.tokens().Typography, "默认模型", editor, "输入模型")
 					fieldTop = 27
 				}
 				img := renderPresentationTestOps(t, &ops, image.Pt(400, 150))

@@ -93,6 +93,47 @@ func (a *App) layoutAgentRibbonEntry(gtx layout.Context) layout.Dimensions {
 	})
 }
 
+func (a *App) layoutOfficeRibbonAIEntry(gtx layout.Context, widthDP unit.Dp) layout.Dimensions {
+	button := &a.agentUI.ribbonEntryButton
+	if !a.modal.Visible && button.Clicked(gtx) {
+		a.toggleAgentSidebar()
+	}
+	width, height := gtx.Dp(widthDP), gtx.Dp(unit.Dp(72))
+	gtx.Constraints = layout.Exact(image.Pt(width, height))
+	colors := a.tokens().Colors
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
+		semantic.Button.Add(gtx.Ops)
+		semantic.DescriptionOp("AI 助手").Add(gtx.Ops)
+		semantic.EnabledOp(true).Add(gtx.Ops)
+		bounds.Pop()
+		background := colors.Toolbar.Background
+		if button.Hovered() || a.agentUI.sidebarVisible {
+			background = colors.Toolbar.HoverBackground
+		}
+		paint.FillShape(gtx.Ops, background, clip.Rect{Max: image.Pt(width, height)}.Op())
+		paint.FillShape(gtx.Ops, colors.Toolbar.Divider, clip.Rect{
+			Min: image.Pt(width-gtx.Dp(unit.Dp(1)), gtx.Dp(unit.Dp(9))),
+			Max: image.Pt(width, height-gtx.Dp(unit.Dp(9))),
+		}.Op())
+		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(11)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layoutBrandAssistantIcon(gtx, 20, colors.Toolbar)
+				})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				label := material.Caption(a.theme, "AI 助手")
+				label.TextSize = unit.Sp(12)
+				label.Color = colors.Toolbar.Label
+				return layout.Inset{Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Center.Layout(gtx, label.Layout)
+				})
+			}),
+		)
+	})
+}
+
 func (a *App) layoutAgentFallbackToolbar(gtx layout.Context) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(56))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height

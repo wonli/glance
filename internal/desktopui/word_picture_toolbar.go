@@ -47,8 +47,26 @@ func (a *App) layoutWordToolbarColorPicker(gtx layout.Context) layout.Dimensions
 		return layout.Dimensions{}
 	}
 	colors := wordFontColors
+	selectedValue := ""
+	if run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID); ok {
+		selectedValue = run.Style.FontColor
+	}
 	if state.wordToolbarHighlightPicker {
 		colors = wordHighlightColors
+		if run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID); ok {
+			selectedValue = run.Style.Highlight
+		}
+	}
+	selectedValue = strings.TrimPrefix(strings.TrimSpace(selectedValue), "#")
+	if !state.wordToolbarHighlightPicker && selectedValue == "" {
+		selectedValue = "000000"
+	}
+	selectedIndex := -1
+	for index, item := range colors {
+		if strings.EqualFold(selectedValue, item.value) || selectedValue == "" && item.value == "" {
+			selectedIndex = index
+			break
+		}
 	}
 	return layout.Inset{Top: unit.Dp(wordRibbonHeightDP + 8), Left: unit.Dp(440)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		width := gtx.Dp(unit.Dp(len(colors)*28 + (len(colors)-1)*6 + 16))
@@ -59,8 +77,9 @@ func (a *App) layoutWordToolbarColorPicker(gtx layout.Context) layout.Dimensions
 			func(gtx layout.Context) layout.Dimensions {
 				size := gtx.Constraints.Max
 				shadow := image.Rectangle{Max: size}.Add(image.Pt(1, 2))
-				paint.FillShape(gtx.Ops, color.NRGBA{R: 0, G: 0, B: 0, A: 22}, clip.UniformRRect(shadow, gtx.Dp(unit.Dp(5))).Op(gtx.Ops))
-				paint.FillShape(gtx.Ops, contentSurface, clip.UniformRRect(image.Rectangle{Max: size}, gtx.Dp(unit.Dp(5))).Op(gtx.Ops))
+				paint.FillShape(gtx.Ops, a.tokens().Colors.Menu.Shadow, clip.UniformRRect(shadow, gtx.Dp(unit.Dp(5))).Op(gtx.Ops))
+				paint.FillShape(gtx.Ops, a.tokens().Colors.Menu.Border, clip.UniformRRect(image.Rectangle{Max: size}, gtx.Dp(unit.Dp(5))).Op(gtx.Ops))
+				paint.FillShape(gtx.Ops, a.tokens().Colors.Menu.Surface, clip.UniformRRect(image.Rectangle{Max: size}.Inset(1), gtx.Dp(unit.Dp(4))).Op(gtx.Ops))
 				return layout.Dimensions{Size: size}
 			},
 			func(gtx layout.Context) layout.Dimensions {
@@ -73,10 +92,22 @@ func (a *App) layoutWordToolbarColorPicker(gtx layout.Context) layout.Dimensions
 							return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								size := gtx.Dp(unit.Dp(28))
 								bounds := image.Rect(0, 0, size, size)
-								paint.FillShape(gtx.Ops, item.color, clip.UniformRRect(bounds, gtx.Dp(unit.Dp(5))).Op(gtx.Ops))
+								background := a.tokens().Colors.Menu.Surface
+								if selectedIndex == index {
+									background = a.tokens().Colors.Menu.Selected
+								} else if button.Hovered() {
+									background = a.tokens().Colors.Menu.Hover
+								}
+								paint.FillShape(gtx.Ops, background, clip.UniformRRect(bounds, gtx.Dp(unit.Dp(5))).Op(gtx.Ops))
+								swatch := bounds.Inset(gtx.Dp(unit.Dp(2)))
+								paint.FillShape(gtx.Ops, item.color, clip.UniformRRect(swatch, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
 								if state.wordToolbarHighlightPicker && item.value == "" {
-									border := clip.UniformRRect(bounds, gtx.Dp(unit.Dp(5)))
+									border := clip.UniformRRect(swatch, gtx.Dp(unit.Dp(3)))
 									paint.FillShape(gtx.Ops, color.NRGBA{R: 170, G: 184, B: 199, A: 255}, clip.Stroke{Path: border.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+								}
+								if selectedIndex == index {
+									border := clip.UniformRRect(bounds, gtx.Dp(unit.Dp(5)))
+									paint.FillShape(gtx.Ops, a.tokens().Colors.Text.Brand, clip.Stroke{Path: border.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
 								}
 								semantic.Button.Add(gtx.Ops)
 								semantic.DescriptionOp(item.label).Add(gtx.Ops)

@@ -60,6 +60,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.toggleWordWebLayout()
 	case "view-navigation":
 		a.toggleWordNavigationPane()
+	case "view-zoom":
+		a.showWordZoomDialog()
 	case "view-single-page":
 		a.selectWordSinglePageView()
 	case "view-multiple-pages":

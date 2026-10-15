@@ -23,6 +23,7 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.closeOfficeRibbonMenu()
 			state.wordToolbarTab = tab
 			state.wordToolbarActionList.List.Position = layout.Position{}
+			state.wordToolbarGroupList.List.Position = layout.Position{}
 			state.wordToolbarColorPicker = false
 			state.wordToolbarHighlightPicker = false
 			break
@@ -178,7 +179,7 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordFooterDialog()
 		case "insert-page-number":
 			a.showWordPageNumberDialog()
-		case "view-side-by-side":
+		case "view-zoom", "view-side-by-side":
 			a.executeWordToolbarAction(action.id)
 		case "review-language":
 			a.showWordLanguageDialog()

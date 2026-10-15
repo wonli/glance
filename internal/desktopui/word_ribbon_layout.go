@@ -16,7 +16,7 @@ const (
 	wordRibbonCategoryHeightDP    = 34
 	wordRibbonCategoryTabWidthDP  = 31
 	wordRibbonCategoryTabHeightDP = 30
-	wordRibbonCommandHeightDP     = 68
+	wordRibbonCommandHeightDP     = 88
 	wordRibbonHeightDP            = wordRibbonCategoryHeightDP + wordRibbonCommandHeightDP
 	spreadsheetRibbonLeftInsetDP  = 16
 )
@@ -24,6 +24,124 @@ const (
 type wordRibbonGroup struct {
 	label   string
 	actions []ribbonAction
+	widthDP int
+}
+
+func wordRibbonGroupsForTab(tab wordToolbarTab, actions []ribbonAction) []wordRibbonGroup {
+	groups := wordRibbonGroups(actions)
+	if tab == wordTabHome {
+		paragraphActions := make(map[string]ribbonAction)
+		for _, action := range actions {
+			if action.group == "段落" {
+				paragraphActions[action.id] = action
+			}
+		}
+		paragraphOrder := []ribbonAction{
+			paragraphActions["bullet-list"],
+			paragraphActions["numbered-list"],
+			{id: "multilevel-list", label: "多级列表", group: "段落", icon: "list"},
+			paragraphActions["decrease-indent"],
+			paragraphActions["increase-indent"],
+			paragraphActions["align-left"],
+			paragraphActions["align-center"],
+			paragraphActions["align-right"],
+			paragraphActions["align-justify"],
+			{id: "paragraph-filter", label: "筛选", group: "段落", icon: "list-filter"},
+		}
+		for index := range groups {
+			if groups[index].label == "段落" {
+				groups[index].actions = paragraphOrder
+				break
+			}
+		}
+		visibleGroups := groups[:0]
+		for _, group := range groups {
+			if group.label != "编辑器" {
+				visibleGroups = append(visibleGroups, group)
+			}
+		}
+		groups = visibleGroups
+		insert := len(groups)
+		for i, group := range groups {
+			if group.label == "编辑" {
+				insert = i
+				break
+			}
+		}
+		groups = append(groups, wordRibbonGroup{})
+		copy(groups[insert+1:], groups[insert:])
+		groups[insert] = wordRibbonGroup{
+			label: "样式",
+			actions: []ribbonAction{
+				{id: "style-body", label: "正文", group: "样式"},
+				{id: "style-heading", label: "标题 1", group: "样式"},
+				{id: "style-heading-2", label: "标题 2", group: "样式"},
+			},
+		}
+	}
+	if tab == wordTabHome {
+		widths := map[string]int{"剪贴板": 155, "字体": 231, "段落": 176, "样式": 263, "编辑": 66, "编辑器": 230}
+		for i := range groups {
+			groups[i].widthDP = widths[groups[i].label]
+		}
+	} else {
+		for i := range groups {
+			groups[i].widthDP = wordRibbonGroupWidth(groups[i].label)
+		}
+	}
+	return groups
+}
+
+func wordRibbonActionAnchorOffset(groups []wordRibbonGroup, actionID string) int {
+	groupStart := 0
+	for _, group := range groups {
+		for index, action := range group.actions {
+			if action.id != actionID {
+				continue
+			}
+			switch group.label {
+			case "剪贴板":
+				if index == 0 {
+					return groupStart
+				}
+				return groupStart + 84
+			case "字体":
+				switch action.id {
+				case "font-family":
+					return groupStart
+				case "font-size-decrease":
+					return groupStart + 170
+				case "font-size-increase":
+					return groupStart + 198
+				case "bold":
+					return groupStart
+				case "italic":
+					return groupStart + 26
+				case "underline":
+					return groupStart + 52
+				case "text-highlight":
+					return groupStart + 78
+				case "font-color":
+					return groupStart + 104
+				}
+			case "段落":
+				return groupStart + (index%5)*30
+			case "编辑", "编辑器":
+				return groupStart
+			default:
+				return groupStart + index*44
+			}
+		}
+		width := group.widthDP
+		if width <= 0 {
+			width = wordRibbonGroupWidth(group.label)
+		}
+		groupStart += width
+		if groupStart > 0 {
+			groupStart += 4
+		}
+	}
+	return 0
 }
 
 func (a *App) layoutWordRibbon(gtx layout.Context) layout.Dimensions {
@@ -35,6 +153,7 @@ func (a *App) layoutWordRibbon(gtx layout.Context) layout.Dimensions {
 		state.wordToolbarTab = wordTabHome
 	}
 	state.wordToolbarActionList.List.Axis = layout.Horizontal
+	state.wordToolbarGroupList.List.Axis = layout.Horizontal
 	state.wordToolbarTabList.List.Axis = layout.Horizontal
 	height := gtx.Dp(unit.Dp(wordRibbonHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
@@ -84,10 +203,7 @@ func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentS
 		bounds.Pop()
 		style := material.Body2(a.theme, label)
 		style.TextSize = unit.Sp(13)
-		style.Color = a.tokens().Colors.Text.Secondary
-		if selected {
-			style.Color = a.tokens().Colors.Text.Brand
-		}
+		style.Color = a.tokens().Colors.Text.PureBlack
 		shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
 		layout.Center.Layout(gtx, style.Layout)
 		shift.Pop()
@@ -107,8 +223,8 @@ func (a *App) layoutWordRibbonCommands(gtx layout.Context, state *documentSessio
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
-			paint.FillShape(gtx.Ops, wordStatusTopRule, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
+			paint.FillShape(gtx.Ops, a.tokens().Colors.Toolbar.Background, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			paint.FillShape(gtx.Ops, a.tokens().Colors.Toolbar.Divider, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {

@@ -32,8 +32,6 @@ const (
 	gridCellTextSize    = 12.0
 )
 
-var activeCellBorder = color.NRGBA{R: 33, G: 115, B: 70, A: 255}
-
 type cellPaintKey struct {
 	Value     string
 	Source    document.CellStyle
@@ -135,7 +133,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	paintGridPictures(gtx, a, v)
 	if hasSelection {
 		selectionViewport := image.Rect(rowHead, colHead, size.X, size.Y)
-		outline := color.NRGBA{R: 91, G: 139, B: 188, A: 255}
+		outline := a.tokens().Colors.Grid.SelectionBorder
 		for _, reference := range formulaReferences {
 			referenceRect := selectionRectWithHeaders(v, CellSelection{
 				Anchor: CellPosition{Row: reference.StartRow - 1, Column: reference.StartColumn - 1},
@@ -166,7 +164,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 			}
 		}
 		activeRect := cellRect(v.Rows, v.Columns, activeRange, v.X, v.Y).Add(image.Pt(rowHead, colHead)).Intersect(selectionViewport)
-		paintActiveCellBorder(gtx, activeRect)
+		paintActiveCellBorder(gtx, activeRect, a.tokens().Colors.Grid.SelectionBorder)
 	}
 	startCol := v.Columns.IndexAt(v.X)
 	if startCol < 0 {
@@ -202,7 +200,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 			if !visibleRect.Empty() {
 				cell := windowCell(v.Window, row, col)
 				style := paintStyle(cell.Style)
-				paintCellEditor(gtx, a.theme, &a.cellEditor, fullRect, visibleRect, cell.Style, style, a.spreadsheetZoom())
+				paintCellEditor(gtx, a.theme, &a.cellEditor, fullRect, visibleRect, cell.Style, style, a.tokens().Colors.Grid.SelectionBorder, a.spreadsheetZoom())
 			}
 		}
 	}
@@ -233,7 +231,7 @@ func formulaReferenceContains(ranges []document.CellRange, row, column int) bool
 	return false
 }
 
-func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.Editor, rect, visible image.Rectangle, cellStyle document.CellStyle, style gridPaintStyle, zoom ...float64) {
+func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.Editor, rect, visible image.Rectangle, cellStyle document.CellStyle, style gridPaintStyle, selectionBorder color.NRGBA, zoom ...float64) {
 	area := clip.Rect(visible).Push(gtx.Ops)
 	defer area.Pop()
 	t := op.Offset(rect.Min).Push(gtx.Ops)
@@ -253,13 +251,13 @@ func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.E
 		)
 	})
 	paintCellBorders(gtx, sz, cellStyle.Borders)
-	paintActiveCellBorder(gtx, image.Rectangle{Max: sz})
+	paintActiveCellBorder(gtx, image.Rectangle{Max: sz}, selectionBorder)
 }
 
-func paintActiveCellBorder(gtx layout.Context, rect image.Rectangle) {
+func paintActiveCellBorder(gtx layout.Context, rect image.Rectangle, selectionBorder color.NRGBA) {
 	for _, edge := range selectionBorderRects(rect, max(1, gtx.Dp(unit.Dp(2)))) {
 		if !edge.Empty() {
-			paint.FillShape(gtx.Ops, activeCellBorder, clip.Rect(edge).Op())
+			paint.FillShape(gtx.Ops, selectionBorder, clip.Rect(edge).Op())
 		}
 	}
 }

@@ -43,6 +43,9 @@ func wordRibbonIcon(name string, enabled bool) (image.Image, bool) {
 }
 
 func wordToolbarActionIconWithTint(action wordToolbarAction, tint color.NRGBA) (image.Image, bool) {
+	if name, ok := penWordRibbonIcons[action.id]; ok {
+		return svgIconTintAtSize("ribbon", name, wordToolbarIconRasterSize, tint)
+	}
 	if _, err := svgIconAssets.ReadFile("assets/icons/word/" + action.id + ".svg"); err == nil {
 		return svgIconTintAtSize("word", action.id, wordToolbarIconRasterSize, tint)
 	}
@@ -54,5 +57,5 @@ func wordToolbarActionIcon(action wordToolbarAction, enabled bool) (image.Image,
 }
 
 func (a *App) themedWordToolbarActionIcon(action wordToolbarAction, enabled bool) (image.Image, bool) {
-	return wordToolbarActionIconWithTint(action, a.toolbarIconColor(enabled))
+	return wordToolbarActionIconWithTint(action, a.toolbarActionIconColor(action.id, enabled))
 }

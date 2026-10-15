@@ -30,7 +30,6 @@ var (
 	wordStatusTrack        = color.NRGBA{R: 193, G: 199, B: 207, A: 255}
 	wordStatusThumb        = color.NRGBA{R: 83, G: 120, B: 171, A: 255}
 	rulerTickColor         = color.NRGBA{R: 146, G: 154, B: 163, A: 255}
-	rulerLabelColor        = color.NRGBA{R: 91, G: 99, B: 109, A: 255}
 	rulerMarkerColor       = color.NRGBA{R: 74, G: 119, B: 177, A: 255}
 	rulerResizeHandleColor = color.NRGBA{R: 92, G: 111, B: 136, A: 255}
 )
@@ -164,7 +163,7 @@ func (a *App) drawWordStatusText(gtx layout.Context, xDP, yDP, widthDP, heightDP
 	semantic.DescriptionOp(description).Add(gtx.Ops)
 	label := material.Caption(a.theme, value)
 	label.TextSize = unit.Sp(10)
-	label.Color = wordStatusText
+	label.Color = a.tokens().Colors.Text.PureBlack
 	label.Layout(textGtx)
 	bounds.Pop()
 	transform.Pop()

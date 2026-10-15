@@ -108,8 +108,8 @@ var homeRibbonActions = []spreadsheetToolbarAction{
 	{slot: 9, label: "居中", group: "对齐", icon: "format_align_center"},
 	{slot: toolbarActionAlignRight, label: "右对齐", group: "对齐", icon: "format_align_right"},
 	{slot: toolbarActionWrapText, label: "自动换行", group: "对齐", icon: "text-wrap"},
-	{slot: toolbarActionPercentFormat, label: "百分比", group: "格式", icon: "percent"},
-	{slot: 10, label: "数字格式", group: "格式", icon: "hash"},
+	{slot: toolbarActionPercentFormat, label: "百分比", displayLabel: "%", group: "格式", icon: "percent"},
+	{slot: 10, label: "数字格式", displayLabel: "常规", group: "格式", icon: "hash"},
 	{slot: 12, label: "插入", group: "单元格", icon: "square-plus"},
 	{slot: 13, label: "删除", group: "单元格", icon: "trash-2"},
 	{slot: toolbarActionConditionalFormat, label: "条件格式", group: "单元格", icon: "sparkles"},
@@ -117,7 +117,7 @@ var homeRibbonActions = []spreadsheetToolbarAction{
 	{slot: toolbarActionFormat, label: "格式", group: "单元格", icon: "settings-2"},
 	{slot: toolbarActionTableFormat, label: "表格格式", group: "单元格", icon: "table"},
 	{slot: toolbarActionSum, label: "求和", group: "编辑", icon: "sigma"},
-	{slot: 18, label: "排序", group: "编辑", icon: "arrow-up-down"},
+	{slot: 18, label: "排序和筛选", group: "编辑", icon: "list-filter"},
 	{slot: 20, label: "筛选", group: "编辑", icon: "list-filter"},
 	{slot: toolbarActionFind, label: "查找", group: "编辑", icon: "search"},
 	{slot: 0, label: "撤销", group: "历史", icon: "undo-2"},
@@ -128,8 +128,8 @@ var fileToolbarActions = []spreadsheetToolbarAction{
 	{slot: toolbarActionOpenFile, label: "打开", group: "文件", icon: "folder-open"},
 	{slot: 17, label: "保存", group: "文件", icon: "save"},
 	{slot: toolbarActionSaveAs, label: "另存为", group: "文件", icon: "file-down"},
-	{slot: toolbarActionPrint, label: "打印", group: "文件", icon: "printer"},
 	{slot: toolbarActionExport, label: "导出", group: "文件", icon: "file-output"},
+	{slot: toolbarActionPrint, label: "打印", group: "文件", icon: "printer"},
 	{slot: toolbarActionShare, label: "共享", group: "文件", icon: "share-2"},
 }
 
@@ -150,8 +150,8 @@ var pageLayoutToolbarActions = []spreadsheetToolbarAction{
 	{slot: toolbarActionLayoutOrientation, label: "纸张方向", group: "页面设置", icon: "rotate-cw"},
 	{slot: toolbarActionLayoutSize, label: "纸张大小", group: "页面设置", icon: "file"},
 	{slot: toolbarActionPrintArea, label: "打印区域", group: "页面设置", icon: "scan"},
-	{slot: toolbarActionLayoutGridlines, label: "网格线", group: "页面设置", icon: "printer-check"},
-	{slot: toolbarActionHeaderRow, label: "标题行", group: "页面设置", icon: "heading"},
+	{slot: toolbarActionHeaderRow, label: "打印标题", group: "页面设置", icon: "heading"},
+	{slot: toolbarActionLayoutGridlines, label: "打印网格线", group: "页面设置", icon: "printer-check"},
 }
 
 var formulaToolbarActions = []spreadsheetToolbarAction{
@@ -186,7 +186,7 @@ var reviewToolbarActions = []spreadsheetToolbarAction{
 
 var viewToolbarActions = []spreadsheetToolbarAction{
 	{slot: toolbarActionNormalView, label: "普通视图", group: "工作簿视图", icon: "layout-grid"},
-	{slot: toolbarActionPageBreakPreview, label: "分页预览", group: "工作簿视图", icon: "file-spreadsheet"},
+	{slot: toolbarActionPageBreakPreview, label: "分页符预览", group: "工作簿视图", icon: "file-spreadsheet"},
 	{slot: toolbarActionRuler, label: "标尺", group: "显示", icon: "ruler"},
 	{slot: toolbarActionViewGridlines, label: "网格线", group: "显示", icon: "grid-3x3"},
 	{slot: toolbarActionZoomIn, label: "放大", group: "缩放", icon: "zoom-in"},

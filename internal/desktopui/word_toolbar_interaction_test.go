@@ -85,6 +85,7 @@ func TestWordRibbonSymbolButtonOpensCharacterPanel(t *testing.T) {
 	state := newDocumentSessionState("symbol-ribbon.docx")
 	state.word = word
 	state.wordToolbarTab = wordTabInsert
+	state.wordToolbarActionList.List.Position.First = 2
 	state.selectedWordParagraphID = paragraph.ID
 	state.selectedWordRunID = paragraph.Inlines[0].Text.ID
 	state.wordLayoutResult = &wordlayout.Result{CanPreview: true}

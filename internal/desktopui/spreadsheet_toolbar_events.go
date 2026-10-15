@@ -26,6 +26,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			state.toolbarTab = spreadsheetToolbarTab(index)
 			state.toolbarPicker = pickerNone
 			state.toolbarActionList.List.Position = layout.Position{}
+			state.toolbarGroupList.List.Position = layout.Position{}
 			break
 		}
 	}

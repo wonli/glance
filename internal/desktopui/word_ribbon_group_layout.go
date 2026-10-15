@@ -4,7 +4,6 @@ import (
 	"image"
 	"image/color"
 
-	"gioui.org/font"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -54,12 +53,16 @@ func wordRibbonGroupWidth(label string) int {
 }
 
 func (a *App) layoutWordRibbonGroup(gtx layout.Context, state *documentSessionState, group wordRibbonGroup, last bool) layout.Dimensions {
-	width := gtx.Dp(unit.Dp(wordRibbonGroupWidth(group.label)))
-	height := gtx.Dp(unit.Dp(wordRibbonCommandHeightDP - 9))
+	widthDP := group.widthDP
+	if widthDP <= 0 {
+		widthDP = wordRibbonGroupWidth(group.label)
+	}
+	width := gtx.Dp(unit.Dp(widthDP))
+	height := gtx.Dp(unit.Dp(72))
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
 	return layout.Stack{Alignment: layout.NW}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			if last {
+			if last || state.wordToolbarTab == wordTabHome {
 				return layout.Dimensions{Size: gtx.Constraints.Max}
 			}
 			x := gtx.Constraints.Max.X - gtx.Dp(unit.Dp(1))
@@ -67,18 +70,21 @@ func (a *App) layoutWordRibbonGroup(gtx layout.Context, state *documentSessionSt
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		}),
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(4), Right: unit.Dp(7), Top: unit.Dp(2), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return a.layoutWordRibbonGroupContent(gtx, state, group)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						style := material.Caption(a.theme, group.label)
-						style.Color = color.NRGBA{R: 111, G: 119, B: 128, A: 255}
-						return layout.Center.Layout(gtx, style.Layout)
-					}),
-				)
-			})
+			return a.layoutWordRibbonGroupContent(gtx, state, group)
+		}),
+	)
+}
+
+func (a *App) layoutWordRibbonGroupItem(gtx layout.Context, state *documentSessionState, group wordRibbonGroup, last bool) layout.Dimensions {
+	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return a.layoutWordRibbonGroup(gtx, state, group, last)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if last {
+				return layout.Dimensions{}
+			}
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(4)), 0)}
 		}),
 	)
 }
@@ -90,13 +96,24 @@ func (a *App) layoutWordRibbonGroupContent(gtx layout.Context, state *documentSe
 	case "字体":
 		return a.layoutWordFontRibbonGroup(gtx, state, group.actions)
 	case "段落":
-		return a.layoutWordRibbonActionRow(gtx, state, group.actions, 36, 28, false)
+		first := min(5, len(group.actions))
+		return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return a.layoutWordRibbonActionRow(gtx, state, group.actions[:first], 34, 32, false)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if first == len(group.actions) {
+					return layout.Dimensions{}
+				}
+				return a.layoutWordRibbonActionRow(gtx, state, group.actions[first:], 34, 32, false)
+			}),
+		)
 	case "样式":
 		return a.layoutWordStyleGallery(gtx, group.actions)
 	case "编辑":
-		return a.layoutWordRibbonActionRow(gtx, state, group.actions, 38, 32, true)
+		return a.layoutWordRibbonCompactStack(gtx, state, group.actions, 24)
 	case "编辑器":
-		return a.layoutWordRibbonActionRow(gtx, state, group.actions, 49, 52, true)
+		return a.layoutWordRibbonCompactStack(gtx, state, group.actions, 22)
 	case "历史":
 		return a.layoutWordRibbonActionRow(gtx, state, group.actions, 32, 44, false)
 	case "文档":
@@ -116,51 +133,137 @@ func (a *App) layoutWordClipboardRibbonGroup(gtx layout.Context, state *document
 	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutWordRibbonAction(gtx, state, actions[0], 52, 56, true)
+			return a.layoutWordRibbonAction(gtx, state, actions[0], 80, 68, true)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutWordRibbonActionRow(gtx, state, actions[1:], 36, 29, false)
+			return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return a.layoutWordRibbonCompactStack(gtx, state, actions[1:], 24)
+			})
 		}),
 	)
 }
 
-func (a *App) layoutWordFontRibbonGroup(gtx layout.Context, state *documentSessionState, actions []ribbonAction) layout.Dimensions {
-	var fields, marks []ribbonAction
+func (a *App) layoutWordRibbonCompactStack(gtx layout.Context, state *documentSessionState, actions []ribbonAction, rowHeightDP int) layout.Dimensions {
+	children := make([]layout.FlexChild, 0, len(actions))
 	for _, action := range actions {
-		if action.id == "font-family" || action.id == "font-size" {
-			fields = append(fields, action)
-		} else {
-			marks = append(marks, action)
-		}
+		action := action
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return a.layoutWordRibbonCompactAction(gtx, state, action, pxToRibbonDP(gtx, gtx.Constraints.Max.X), rowHeightDP, true)
+		}))
 	}
-	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceEnd}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if len(fields) == 0 {
-				return layout.Dimensions{}
+	return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx, children...)
+}
+
+func (a *App) layoutWordRibbonCompactAction(gtx layout.Context, state *documentSessionState, action ribbonAction, widthDP, heightDP int, showLabel bool) layout.Dimensions {
+	width, height := gtx.Dp(unit.Dp(widthDP)), gtx.Dp(unit.Dp(heightDP))
+	gtx.Constraints = layout.Exact(image.Pt(width, height))
+	button := wordToolbarButton(state, action.id)
+	enabled := a.wordToolbarActionButtonEnabled(action)
+	draw := func(gtx layout.Context) layout.Dimensions {
+		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
+		semantic.Button.Add(gtx.Ops)
+		semantic.DescriptionOp(action.label).Add(gtx.Ops)
+		semantic.EnabledOp(enabled).Add(gtx.Ops)
+		bounds.Pop()
+		background := a.tokens().Colors.Toolbar.Background
+		if enabled && (button.Hovered() || gtx.Focused(button)) {
+			background = a.tokens().Colors.Toolbar.HoverBackground
+		}
+		paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+		icon, _ := a.themedWordToolbarActionIcon(action, enabled)
+		iconSize := gtx.Dp(unit.Dp(20))
+		if !showLabel {
+			iconSize = gtx.Dp(unit.Dp(18))
+			if icon == nil {
+				return layout.Dimensions{Size: image.Pt(width, height)}
 			}
-			return a.layoutWordRibbonField(gtx, fields[0], 146, "等线 (正文)")
+			iconGtx := gtx
+			iconGtx.Constraints = layout.Exact(image.Pt(iconSize, iconSize))
+			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(20)}.Layout(iconGtx)
+			})
+		}
+		return layout.Inset{Left: unit.Dp(4), Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints = layout.Exact(image.Pt(iconSize, iconSize))
+					if icon == nil {
+						return layout.Dimensions{Size: image.Pt(iconSize, iconSize)}
+					}
+					return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(20)}.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					label := material.Caption(a.theme, action.label)
+					label.TextSize = unit.Sp(10)
+					label.Color = a.tokens().Colors.Text.PureBlack
+					return label.Layout(gtx)
+				}),
+			)
+		})
+	}
+	if enabled {
+		return button.Layout(gtx, draw)
+	}
+	return draw(gtx)
+}
+
+func (a *App) layoutWordFontRibbonGroup(gtx layout.Context, state *documentSessionState, actions []ribbonAction) layout.Dimensions {
+	fontFamily := findRibbonAction(actions, "font-family")
+	fontSize := ribbonAction{id: "font-size", label: "字号", group: "字体"}
+	increase := findRibbonAction(actions, "font-size-increase")
+	decrease := findRibbonAction(actions, "font-size-decrease")
+	marks := []ribbonAction{
+		findRibbonAction(actions, "bold"), findRibbonAction(actions, "italic"), findRibbonAction(actions, "underline"),
+		{id: "strikethrough", label: "删除线", icon: "strikethrough"}, findRibbonAction(actions, "text-highlight"), findRibbonAction(actions, "font-color"),
+	}
+	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return a.layoutWordRibbonField(gtx, fontFamily, 108, "宋体")
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return a.layoutWordRibbonField(gtx, fontSize, 54, "五号")
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return a.layoutWordRibbonCompactAction(gtx, state, increase, 28, 34, false)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return a.layoutWordRibbonCompactAction(gtx, state, decrease, 28, 34, false)
+				}),
+			)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if len(fields) < 2 {
-				return layout.Dimensions{}
-			}
-			return a.layoutWordRibbonField(gtx, fields[1], 54, "13")
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutWordRibbonActionRow(gtx, state, marks, 28, 26, false)
+			return a.layoutWordRibbonActionRow(gtx, state, marks, 34, 35, false)
 		}),
 	)
+}
+
+func findRibbonAction(actions []ribbonAction, id string) ribbonAction {
+	for _, action := range actions {
+		if action.id == id {
+			return action
+		}
+	}
+	return ribbonAction{id: id, label: id, icon: id}
 }
 
 func (a *App) layoutWordRibbonActionRow(gtx layout.Context, state *documentSessionState, actions []ribbonAction, heightDP, widthDP int, labels bool) layout.Dimensions {
 	children := make([]layout.FlexChild, 0, len(actions))
-	for _, action := range actions {
+	for index, action := range actions {
+		if index > 0 && state.wordToolbarTab == wordTabHome {
+			children = append(children, layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout))
+		}
 		action := action
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return a.layoutWordRibbonAction(gtx, state, action, widthDP, heightDP, labels)
 		}))
 	}
-	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceAround}.Layout(gtx, children...)
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceEnd}.Layout(gtx, children...)
 }
 
 func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionState, action ribbonAction, widthDP, heightDP int, showLabel bool) layout.Dimensions {
@@ -174,51 +277,33 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 		semantic.DescriptionOp(action.label).Add(gtx.Ops)
 		semantic.EnabledOp(enabled).Add(gtx.Ops)
 		semantics.Pop()
-		background := a.tokens().Colors.Surface.Surface
-		if enabled && wordToolbarActionActive(state, action) {
-			background = a.tokens().Colors.Toolbar.ActiveBackground
-		}
-		if enabled && (button.Hovered() || gtx.Focused(button)) {
-			background = a.tokens().Colors.Toolbar.HoverBackground
-		}
-		paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+		active := enabled && wordToolbarActionActive(state, action)
+		paintRibbonControlState(gtx, image.Pt(width, height), active, false, enabled && (button.Hovered() || gtx.Focused(button)), a.tokens().Colors.Toolbar)
 		if action.id == "font-family" || action.id == "font-size" {
 			value := "等线 (正文)"
 			if action.id == "font-size" {
 				value = "13"
 			}
-			return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value, a.tokens().Colors)
+			return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value, enabled, a.tokens().Colors)
 		}
 		icon, _ := a.themedWordToolbarActionIcon(action, enabled)
+		if active {
+			icon, _ = wordToolbarActionIconWithTint(action, a.tokens().Colors.Toolbar.ActiveGlyph)
+		}
 		if showLabel {
-			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle, Spacing: layout.SpaceAround}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					if icon == nil {
-						return layout.Dimensions{}
-					}
-					iconSize := min(gtx.Dp(unit.Dp(22)), min(width-gtx.Dp(unit.Dp(4)), height-gtx.Dp(unit.Dp(18))))
-					if iconSize <= 0 {
-						return layout.Dimensions{}
-					}
-					iconGtx := gtx
-					iconGtx.Constraints.Min = image.Pt(iconSize, iconSize)
-					iconGtx.Constraints.Max = iconGtx.Constraints.Min
-					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(iconSize)}.Layout(iconGtx)
-					})
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					label := material.Caption(a.theme, action.label)
-					label.TextSize = unit.Sp(9)
-					label.Color = a.toolbarIconColor(enabled)
-					return layout.Inset{Left: unit.Dp(1), Right: unit.Dp(1)}.Layout(gtx, label.Layout)
-				}),
-			)
+			label := action.label
+			if action.displayLabel != "" {
+				label = action.displayLabel
+			}
+			if penWordRibbonDropdowns[action.id] {
+				label += " ▾"
+			}
+			return layoutOfficeRibbonCommandContents(gtx, a.theme, icon, label)
 		}
 		if icon == nil {
 			return layout.Dimensions{Size: image.Pt(width, height)}
 		}
-		iconSize := min(gtx.Dp(unit.Dp(18)), min(width-gtx.Dp(unit.Dp(4)), height-gtx.Dp(unit.Dp(4))))
+		iconSize := min(gtx.Dp(unit.Dp(20)), min(width-gtx.Dp(unit.Dp(4)), height-gtx.Dp(unit.Dp(4))))
 		if iconSize <= 0 {
 			return layout.Dimensions{Size: image.Pt(width, height)}
 		}
@@ -236,29 +321,37 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 }
 
 func (a *App) layoutWordRibbonField(gtx layout.Context, action ribbonAction, widthDP int, value string) layout.Dimensions {
-	width, height := gtx.Dp(unit.Dp(widthDP)), gtx.Dp(unit.Dp(28))
+	width, height := gtx.Dp(unit.Dp(widthDP)), gtx.Dp(unit.Dp(34))
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
-	paint.FillShape(gtx.Ops, a.tokens().Colors.Toolbar.Divider, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-	return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value, a.tokens().Colors)
+	state := a.documentSessionState
+	button := wordToolbarButton(state, action.id)
+	enabled := a.wordToolbarActionButtonEnabled(action)
+	draw := func(gtx layout.Context) layout.Dimensions {
+		paint.FillShape(gtx.Ops, a.tokens().Colors.Toolbar.Divider, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+		return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value, enabled, a.tokens().Colors)
+	}
+	if enabled {
+		return button.Layout(gtx, draw)
+	}
+	return draw(gtx)
 }
 
-func drawWordRibbonDropdown(gtx layout.Context, theme *material.Theme, action ribbonAction, width, height int, value string, colors ColorTokens) layout.Dimensions {
+func drawWordRibbonDropdown(gtx layout.Context, theme *material.Theme, action ribbonAction, width, height int, value string, enabled bool, colors ColorTokens) layout.Dimensions {
 	bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
 	semantic.DescriptionOp(action.label).Add(gtx.Ops)
-	semantic.EnabledOp(false).Add(gtx.Ops)
+	semantic.EnabledOp(enabled).Add(gtx.Ops)
 	bounds.Pop()
-	paint.FillShape(gtx.Ops, colors.Surface.Surface, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-	textColor := colors.Toolbar.DisabledText
+	paint.FillShape(gtx.Ops, colors.Surface.Border, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(3)).Op(gtx.Ops))
+	paint.FillShape(gtx.Ops, colors.Surface.Surface, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}.Inset(gtx.Dp(1)), gtx.Dp(2)).Op(gtx.Ops))
+	textColor := colors.Text.PureBlack
 	style := material.Caption(theme, value)
-	style.TextSize = unit.Sp(10)
+	style.TextSize = unit.Sp(12)
 	style.Color = textColor
 	return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Flexed(1, style.Layout),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { gtx.Constraints.Min.Y = 0; return style.Layout(gtx) }),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				chevron := material.Caption(theme, "⌄")
-				chevron.Color = textColor
-				return chevron.Layout(gtx)
+				return layoutPenRibbonGlyph(gtx, "chevron-down", 12, textColor)
 			}),
 		)
 	})
@@ -268,23 +361,29 @@ func (a *App) layoutWordStyleGallery(gtx layout.Context, actions []ribbonAction)
 	children := make([]layout.FlexChild, 0, len(actions))
 	for _, action := range actions {
 		action := action
-		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			width, height := gtx.Dp(unit.Dp(38)), gtx.Dp(unit.Dp(56))
+		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			width, height := gtx.Constraints.Max.X, gtx.Dp(unit.Dp(60))
 			gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
-			paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Surface, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-			bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
+			cardBounds := image.Rectangle{Max: image.Pt(width, height)}
+			paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Border, clip.UniformRRect(cardBounds, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+			inner := cardBounds.Inset(gtx.Dp(unit.Dp(1)))
+			paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Surface, clip.UniformRRect(inner, gtx.Dp(unit.Dp(2))).Op(gtx.Ops))
+			semantics := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
 			semantic.DescriptionOp(action.label).Add(gtx.Ops)
 			semantic.EnabledOp(false).Add(gtx.Ops)
-			bounds.Pop()
-			preview := material.Body1(a.theme, "Aa")
-			preview.TextSize = unit.Sp(14)
-			preview.Color = a.tokens().Colors.Toolbar.DisabledText
+			semantics.Pop()
+			preview := material.Body1(a.theme, "AaBbCc")
+			preview.TextSize = unit.Sp(15)
+			preview.Color = a.tokens().Colors.Toolbar.Label
 			if action.id == "style-heading" {
-				preview.Font.Weight = font.Bold
+				preview.Color = color.NRGBA{R: 43, G: 87, B: 154, A: 255}
+			}
+			if action.id == "style-heading" {
+				preview.TextSize = unit.Sp(19)
 			}
 			label := material.Caption(a.theme, action.label)
-			label.TextSize = unit.Sp(8)
-			label.Color = a.tokens().Colors.Toolbar.DisabledText
+			label.TextSize = unit.Sp(12)
+			label.Color = a.tokens().Colors.Text.PureBlack
 			previewGtx := gtx
 			previewHeight := gtx.Dp(unit.Dp(18))
 			previewGtx.Constraints = layout.Constraints{Min: image.Pt(width, previewHeight), Max: image.Pt(width, previewHeight)}

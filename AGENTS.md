@@ -111,6 +111,16 @@
 - **异步动作和撤销：** OS 文件管理器操作、工作区数据库写入放后台执行，结果回到 UI 线程更新状态。错误要保留可重试入口。最近列表“移除”只删除最近记录，不删除源文件；撤销应恢复原始记录、时间和顺序，并在持久化成功后显示撤销操作。
 - **回归验证：** 覆盖唯一活动菜单、锚点右对齐/上下翻转/viewport 限界、点击外部透传、Escape/方向键/Enter、动作不触发行点击、失败重试与撤销。视觉检查应覆盖 1x 和 2x 的真实渲染像素；Metal/GPU 不可用导致的 `SKIP` 不是视觉通过，须明确记录限制或在可用环境重跑。
 
+### Ribbon 还原经验（2026-10-15）
+
+- `kiBim` / `nmShb` 是命令区总览：命令区 88dp，常规命令按钮 80×68dp、间隔 4dp；开始页分组高 72dp，上下各留 8dp。不要继续套用旧的 68dp 命令区或 44/48dp 通用按钮尺寸。
+- `pointer.PassOp` 的 Push/Pop 必须在同一个 Gio 录制边界内。不能在 `Clickable.Layout` 外 Push、在其回调内 Pop；这会在打开浮层时触发 `stack push and pop must not cross macro boundary`。需要透传时将 Push 和 defer Pop 都放在 `Clickable.Layout` 外。
+- `layout.Background` 会居中尺寸小于背景的内容。短 Ribbon 的横向列表必须报告完整视口宽度；开始页列表需要先扣除上下 8dp，再布局 72dp 分组，不能依靠外层 Middle 修复已经被列表撑满的交叉轴。
+- `Constraints.Max.X` 是物理像素，传给接收 dp 的紧凑按钮函数前必须通过统一转换。2x 下直接把像素再当 dp 会使按钮命中区域越过分组边界。
+- 图标按设计节点的实际 library/name 和矢量路径核对。`assets/icons/ribbon` 来自两个节点的 HTML 导出，包含 Lucide、Phosphor 和 Material 图形；对应清单在 `docs/ribbon-pen-icons.json`。不能用打印→文档、另存为→复制等近似图标掩盖映射缺失，也不能将填充轮廓资产当描边 SVG 再全局加粗。
+- 同一命令槽在不同分类可能使用不同图形，例如 Excel 开始页“排序和筛选”为 list-filter，数据页“排序”为 arrow-up-down。显示与菜单锚点必须共用当前按钮顺序、80dp 宽度和 4dp 间隔，并扣除当前列表滚动位置。
+- 每轮实际窗口验证前退出旧进程，再构建、启动新进程；同一个 App 窗口的截图不能证明进程已加载新代码。通过新进程确认 Word/Excel 菜单可展开，再检查 1x 和 2x 的真实 GPU 渲染。完整记录见 `docs/ribbon-pen-verification.md`。
+
 ## Document Safety
 
 - A format library's API surface is not a compatibility guarantee. Record selected dependencies and evidence in [docs/office-library-evaluation.md](docs/office-library-evaluation.md).
@@ -123,3 +133,10 @@
 
 - `../tools` is the reference for neutral document models, format adapters, session lifecycle, compatibility matrices, and round-trip save gates.
 - `../mysql-ai` is the reference for Gio event/layout practices, persistent widget state, dialogs, and coordinate-space lessons. Reuse proven patterns; avoid copying its unrelated domain structure or growing a monolithic UI file.
+
+### Ribbon 品牌图标与选中态（2026-10-15）
+
+- `kiBim`、`nmShb` 的开始页 AI 入口使用 `DwuIp` 叠页星芒图标。多色图形按 Pen 原始路径分层导出，分别通过 `Toolbar.AccentAISecondary`、`AccentAI`、`AccentAIStar` 着色；不要用单一 tint 把背页和白色星芒一起覆盖。
+- Ribbon 选中背景、描边、图标分别使用 `Toolbar.ActiveBackground`、`ActiveBorder`、`ActiveGlyph`，选中反馈优先于 hover。不要为局部 Ribbon 设计改动连带替换主页导航、工作区标签或文档内容颜色。
+- Excel 纯图标按钮先在完整按钮尺寸中居中，再对子级设置图标尺寸；提前缩小父约束会让图标靠在按钮左上角。图像 Scale 使用逻辑尺寸除以栅格像素尺寸，分别检查 1x 和 2x。
+- `TestPenRibbonBrandAndActiveStateVisual` 使用合成数据检查实际像素与 token 覆盖；小星芒在 1x 下可能全部是抗锯齿像素，不应强制断言存在完全不透明的前景色。自定义多色 token 的精确覆盖在 2x 检查。

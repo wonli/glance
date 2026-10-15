@@ -17,7 +17,7 @@ func TestSpreadsheetRibbonMeetsSelectedDocumentTabWithoutWideningTheSeam(t *test
 	const (
 		width       = 720
 		stripY      = 42
-		toolbarY    = 102
+		toolbarY    = 122
 		selectedX   = 140
 		unselectedX = 20
 	)

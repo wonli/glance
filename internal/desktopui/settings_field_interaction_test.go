@@ -32,7 +32,7 @@ func TestSettingsFieldBlankEdgesFocusEditor(t *testing.T) {
 					if isKey {
 						app.layoutAgentSettingsKeyField(gtx)
 					} else {
-						agentSettingsPageField(gtx, app.theme, "默认模型", editor, "输入模型")
+						agentSettingsPageField(gtx, app.theme, app.tokens().Typography, "默认模型", editor, "输入模型")
 					}
 					router.Frame(&ops)
 				}

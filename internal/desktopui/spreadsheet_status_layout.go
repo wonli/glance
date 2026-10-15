@@ -54,7 +54,7 @@ func (a *App) layoutSpreadsheetStatusBar(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return spreadsheetStatusText(gtx, a.theme, status)
+						return spreadsheetStatusText(gtx, a.theme, status, a.tokens().Colors.Text.PureBlack)
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return layout.Dimensions{Size: image.Pt(gtx.Constraints.Min.X, 0)}
@@ -143,18 +143,18 @@ func (a *App) layoutSpreadsheetZoomValue(gtx layout.Context) layout.Dimensions {
 	text := fmt.Sprintf("%d%%", int(math.Round(zoom*100)))
 
 	if state == nil {
-		return spreadsheetStatusText(gtx, a.theme, text)
+		return spreadsheetStatusText(gtx, a.theme, text, a.tokens().Colors.Text.PureBlack)
 	}
 	return state.spreadsheetStatusZoomResetBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return spreadsheetStatusText(gtx, a.theme, text)
+		return spreadsheetStatusText(gtx, a.theme, text, a.tokens().Colors.Text.PureBlack)
 	})
 }
 
-func spreadsheetStatusText(gtx layout.Context, theme *material.Theme, text string) layout.Dimensions {
+func spreadsheetStatusText(gtx layout.Context, theme *material.Theme, text string, textColor color.NRGBA) layout.Dimensions {
 	gtx.Constraints.Min.Y = 0
 	style := material.Body2(theme, text)
 	style.TextSize = unit.Sp(12)
-	style.Color = mutedText
+	style.Color = textColor
 	return layout.Inset{Top: unit.Dp(3)}.Layout(gtx, style.Layout)
 }
 

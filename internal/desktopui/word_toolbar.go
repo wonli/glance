@@ -90,8 +90,10 @@ var (
 		"layout-position|位置|排列|move", "layout-wrap|环绕文字|排列|wrap-text", "layout-align|对齐|排列|align-horizontal-justify-center",
 	)
 	wordReferenceActions = wordActions(
-		"references-toc|目录|目录|list", "references-footnotes|脚注和尾注|脚注|list-ordered",
-		"references-citations|引文|引文|bookmark", "references-caption|题注|题注|file-text",
+		"references-toc|目录|目录|list", "references-update-toc|更新目录|目录|refresh-cw",
+		"references-footnotes|插入脚注|脚注|list-ordered", "references-endnote|插入尾注|脚注|file-text",
+		"references-citations|插入引文|引文与书目|bookmark", "references-bibliography|书目|引文与书目|book-open",
+		"references-caption|插入题注|题注|file-text", "references-cross-reference|交叉引用|题注|link",
 	)
 	wordReviewActions = wordActions(
 		"review-editor|编辑器|校对|spell-check", "review-word-count|字数统计|校对|whole-word", "review-translate|翻译|语言|languages",
@@ -102,8 +104,9 @@ var (
 	wordViewActions = wordActions(
 		"view-reading|阅读模式|视图|book-open", "view-print-layout|打印布局|视图|printer", "view-web-layout|Web版式|视图|panels-top-left",
 		"view-ruler|标尺|显示|ruler", "view-gridlines|网格线|显示|grid-2x2", "view-navigation|导航窗格|显示|panel-left",
-		"view-single-page|单页|缩放|file", "view-multiple-pages|多页|缩放|files",
+		"view-zoom|缩放|缩放|zoom-in", "view-single-page|单页|缩放|file", "view-multiple-pages|多页|缩放|files",
 		"view-new-window|新建窗口|窗口|app-window", "view-side-by-side|并排查看|窗口|columns-2",
+		"view-macros|宏|宏|code-xml",
 	)
 	wordHistoryActions = wordActions("undo|撤销|历史|undo", "redo|重做|历史|redo")
 	wordPictureActions = []ribbonAction{
@@ -156,7 +159,7 @@ func wordActions(specs ...string) []ribbonAction {
 }
 
 func wordToolbarTabs(state *documentSessionState) []wordToolbarTab {
-	tabs := []wordToolbarTab{wordTabFile, wordTabHome, wordTabInsert, wordTabDesign, wordTabLayout, wordTabReferences, wordTabReview, wordTabView}
+	tabs := []wordToolbarTab{wordTabFile, wordTabHome, wordTabInsert, wordTabReferences, wordTabDesign, wordTabLayout, wordTabReview, wordTabView}
 	if state != nil && state.selectedWordImageID != "" {
 		tabs = append(tabs, wordTabPicture)
 	}
@@ -211,7 +214,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		return supported
 	case "view-reading", "view-print-layout", "view-web-layout", "view-navigation", "view-gridlines", "view-single-page", "view-multiple-pages":
 		return true
-	case "view-ruler":
+	case "view-ruler", "view-zoom":
 		return true
 	case "undo", "redo":
 		history, ok := any(state.word).(document.WordHistory)

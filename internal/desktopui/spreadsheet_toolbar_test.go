@@ -54,14 +54,14 @@ func TestSpreadsheetToolbarActionsCoverHomeAndDataGroups(t *testing.T) {
 		t.Fatalf("Excel categories = %v, want %v", gotCategories, wantCategories)
 	}
 	wantActions := map[spreadsheetToolbarTab][]string{
-		toolbarTabFile:       {"打开", "保存", "另存为", "打印", "导出", "共享"},
-		toolbarTabHome:       {"剪切", "复制", "粘贴", "格式刷", "字体", "加粗", "斜体", "下划线", "左对齐", "居中", "右对齐", "自动换行", "百分比", "数字格式", "插入", "删除", "条件格式", "表格格式", "求和", "排序", "筛选", "查找", "撤销", "重做"},
+		toolbarTabFile:       {"打开", "保存", "另存为", "导出", "打印", "共享"},
+		toolbarTabHome:       {"剪切", "复制", "粘贴", "格式刷", "字体", "字号", "加粗", "斜体", "下划线", "左对齐", "居中", "右对齐", "自动换行", "百分比", "数字格式", "插入", "删除", "条件格式", "单元格样式", "格式", "表格格式", "求和", "排序和筛选", "筛选", "查找", "撤销", "重做"},
 		toolbarTabInsert:     {"表格", "数据透视表", "图片", "形状", "柱状图", "折线图", "饼图", "链接", "文本框"},
-		toolbarTabPageLayout: {"页边距", "纸张方向", "纸张大小", "打印区域", "网格线", "标题行"},
+		toolbarTabPageLayout: {"页边距", "纸张方向", "纸张大小", "打印区域", "打印标题", "打印网格线"},
 		toolbarTabFormula:    {"插入函数", "自动求和", "最近使用", "逻辑函数", "文本函数", "日期时间", "名称管理器", "重新计算"},
 		toolbarTabData:       {"刷新全部", "排序", "筛选", "分列", "快速填充", "删除重复项", "数据验证"},
 		toolbarTabReview:     {"拼写检查", "翻译", "新建批注", "删除批注", "保护工作表", "保护工作簿"},
-		toolbarTabView:       {"普通视图", "分页预览", "标尺", "网格线", "放大", "100%显示", "冻结窗格"},
+		toolbarTabView:       {"普通视图", "分页符预览", "标尺", "网格线", "放大", "100%显示", "冻结窗格"},
 	}
 	for tab, want := range wantActions {
 		actions := toolbarActionsForTab(tab)
@@ -157,7 +157,7 @@ func TestToolbarIconTintWritesRequestedColorIntoPixels(t *testing.T) {
 }
 
 func TestToolbarIconsUseOfficeStyleMonochromeColors(t *testing.T) {
-	enabledColor := color.NRGBA{R: 75, G: 83, B: 94, A: 255}
+	enabledColor := color.NRGBA{A: 255}
 	checks := []struct {
 		slot int
 		icon string

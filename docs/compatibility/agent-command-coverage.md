@@ -10,7 +10,7 @@
 | `markdown` | 17 |
 | `pdf` | 23 |
 | `presentation` | 74 |
-| `spreadsheet` | 76 |
+| `spreadsheet` | 79 |
 | `word` | 104 |
 | **合计** | 306 |
 

@@ -327,6 +327,7 @@ func setSelectedGridPicture(state *documentSessionState, imageID string) {
 	}
 	if state.toolbarTab != toolbarTabPicture {
 		state.toolbarActionList.List.Position = layout.Position{}
+		state.toolbarGroupList.List.Position = layout.Position{}
 	}
 	state.toolbarTab = toolbarTabPicture
 }

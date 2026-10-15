@@ -31,11 +31,11 @@ func TestWordToolbarTabsActionsAndIcons(t *testing.T) {
 	defer word.Close()
 	word.SetDirty(false)
 	state.word = word
-	if tabs := wordToolbarTabs(state); len(tabs) != 7 {
-		t.Fatalf("Word tabs without an image selection = %#v; want the 7 Pen categories", tabs)
+	if tabs := wordToolbarTabs(state); len(tabs) != 8 {
+		t.Fatalf("Word tabs without an image selection = %#v; want the 8 Pen categories", tabs)
 	}
 	state.selectedWordImageID = "img-7"
-	if tabs := wordToolbarTabs(state); len(tabs) != 8 || tabs[7] != wordTabPicture {
+	if tabs := wordToolbarTabs(state); len(tabs) != 9 || tabs[8] != wordTabPicture {
 		t.Fatalf("Word tabs with an image selection = %#v; want contextual Picture tab", tabs)
 	}
 
@@ -85,13 +85,13 @@ func TestWordToolbarExposesPenReferenceCategories(t *testing.T) {
 	defer word.Close()
 	state.word = word
 
-	if got := len(wordToolbarTabs(state)); got != 7 {
-		t.Fatalf("Word category count = %d; want the 7 categories in Pen node kiBim", got)
+	if got := len(wordToolbarTabs(state)); got != 8 {
+		t.Fatalf("Word category count = %d; want the 8 categories in Pen node kiBim", got)
 	}
-	if got := len(wordToolbarTabLabels); got != 8 {
-		t.Fatalf("Word category labels = %d; want 7 reference labels and contextual Picture", got)
+	if got := len(wordToolbarTabLabels); got != 9 {
+		t.Fatalf("Word category labels = %d; want 8 reference labels and contextual Picture", got)
 	}
-	want := "文件,开始,插入,设计,布局,审阅,视图"
+	want := "文件,开始,插入,设计,布局,引用,审阅,视图"
 	if got := strings.Join(wordToolbarTabLabels, ","); got != want+",图片" {
 		t.Fatalf("Word category labels = %q; want %q plus contextual Picture", got, want)
 	}

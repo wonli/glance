@@ -32,8 +32,8 @@ func TestWordRibbonKeepsHeightAndPictureActionsStayOnOneRow(t *testing.T) {
 	}
 	app.layoutWordFlow(gtx)
 	router.Frame(&ops)
-	if wordRibbonCategoryHeightDP != 34 || wordRibbonCommandHeightDP != 68 || wordRibbonHeightDP != 102 {
-		t.Fatalf("Word ribbon heights = categories %d dp, commands %d dp, total %d dp; want Pen Clpgm 34/68/102 dp", wordRibbonCategoryHeightDP, wordRibbonCommandHeightDP, wordRibbonHeightDP)
+	if wordRibbonCategoryHeightDP != 34 || wordRibbonCommandHeightDP != 88 || wordRibbonHeightDP != 122 {
+		t.Fatalf("Word ribbon heights = categories %d dp, commands %d dp, total %d dp; want Pen kiBim 34/88/122 dp", wordRibbonCategoryHeightDP, wordRibbonCommandHeightDP, wordRibbonHeightDP)
 	}
 	want := map[string]image.Rectangle{
 		"替换图片": {}, "删除图片": {}, "调整大小": {}, "向左旋转 90°": {}, "向右旋转 90°": {},
@@ -96,16 +96,11 @@ func TestWordHomeRibbonKeepsCommandGeometryAfterAgentEntry(t *testing.T) {
 	app.layoutWordFlow(gtx)
 	router.Frame(&ops)
 	want := map[string]image.Rectangle{
-		"文件":    {Min: image.Pt(22, 2), Max: image.Pt(53, 32)},
-		"开始":    {Min: image.Pt(81, 2), Max: image.Pt(112, 32)},
-		"AI 助手": {Min: image.Pt(11, 40), Max: image.Pt(51, 96)},
-		"粘贴":    {Min: image.Pt(64, 44), Max: image.Pt(108, 92)},
-		"剪切":    {Min: image.Pt(114, 44), Max: image.Pt(158, 92)},
-		"字体":    {Min: image.Pt(283, 44), Max: image.Pt(327, 92)},
-		"加粗":    {Min: image.Pt(433, 44), Max: image.Pt(477, 92)},
-		"左对齐":   {Min: image.Pt(802, 44), Max: image.Pt(846, 92)},
-		"查找":    {Min: image.Pt(1121, 44), Max: image.Pt(1165, 92)},
-		"编辑器":   {Min: image.Pt(1290, 44), Max: image.Pt(1334, 92)},
+		"文件": image.Rect(22, 2, 53, 32), "开始": image.Rect(81, 2, 112, 32),
+		"AI 助手": image.Rect(12, 42, 92, 114), "粘贴": image.Rect(96, 44, 176, 112),
+		"剪切": image.Rect(180, 42, 251, 66), "字体": image.Rect(255, 42, 363, 76),
+		"加粗": image.Rect(255, 80, 290, 114), "左对齐": image.Rect(490, 80, 522, 114),
+		"查找": image.Rect(937, 42, 1003, 66),
 	}
 	found := make(map[string]image.Rectangle, len(want))
 	hasHistoryAction := false

@@ -11,7 +11,11 @@ import (
 func TestEveryWordToolbarActionHasSVGAsset(t *testing.T) {
 	for tab := wordTabFile; tab <= wordTabView; tab++ {
 		for _, action := range wordToolbarActions(tab) {
-			if _, err := os.Stat(filepath.Join("assets", "icons", "word", action.id+".svg")); err != nil {
+			family, name := "word", action.id
+			if mapped, ok := penWordRibbonIcons[action.id]; ok {
+				family, name = "ribbon", mapped
+			}
+			if _, err := os.Stat(filepath.Join("assets", "icons", family, name+".svg")); err != nil {
 				t.Errorf("Word action %q has no SVG asset: %v", action.id, err)
 				continue
 			}
@@ -42,7 +46,7 @@ func TestEveryPPTXToolbarActionHasDedicatedSVGAsset(t *testing.T) {
 }
 
 func TestEveryBundledSVGIconRendersInGioImageFormat(t *testing.T) {
-	for _, family := range []string{"word", "excel", "pptx"} {
+	for _, family := range []string{"word", "excel", "pptx", "ribbon", "brand"} {
 		entries, err := fs.ReadDir(svgIconAssets, "assets/icons/"+family)
 		if err != nil {
 			t.Fatalf("read %s icon directory: %v", family, err)

@@ -20,8 +20,8 @@ func TestRibbonHeightAndCommandStripUnified(t *testing.T) {
 	// Word: 34 dp categories + 68 dp command strip = 102 dp total
 	// Excel: 34 dp categories + 68 dp command strip = 102 dp total
 	// JSON: the same 68 dp command strip as Excel, without category tabs
-	if wordRibbonCategoryHeightDP != 34 || wordRibbonCommandHeightDP != 68 || wordRibbonHeightDP != 102 {
-		t.Fatalf("Word ribbon heights mismatch: category=%d, command=%d, total=%d; want 34/68/102",
+	if wordRibbonCategoryHeightDP != 34 || wordRibbonCommandHeightDP != 88 || wordRibbonHeightDP != 122 {
+		t.Fatalf("Word ribbon heights mismatch: category=%d, command=%d, total=%d; want 34/88/122",
 			wordRibbonCategoryHeightDP, wordRibbonCommandHeightDP, wordRibbonHeightDP)
 	}
 
@@ -62,8 +62,8 @@ func TestRibbonHeightAndCommandStripUnified(t *testing.T) {
 	app.documentSessionState = state
 	app.book = book
 	dimsExcel := app.layoutSpreadsheetToolbar(gtx)
-	if dimsExcel.Size.Y != 102 {
-		t.Fatalf("Excel ribbon height = %d px, want 102 px", dimsExcel.Size.Y)
+	if dimsExcel.Size.Y != 122 {
+		t.Fatalf("Excel ribbon height = %d px, want 122 px", dimsExcel.Size.Y)
 	}
 
 	// Test JSON toolbar height
@@ -187,7 +187,7 @@ func TestWordAndExcelAndJSONRibbonButtonsRenderUnifiedLabels(t *testing.T) {
 	appExcel.layoutSpreadsheetToolbar(gtxExcel)
 	routerExcel.Frame(opsExcel)
 
-	wantedExcelLabels := []string{"剪切", "复制", "粘贴", "加粗", "排序"}
+	wantedExcelLabels := []string{"剪切", "复制", "粘贴", "加粗", "排序和筛选"}
 	foundExcelLabels := make(map[string]bool)
 	var visitExcel func([]input.SemanticNode)
 	visitExcel = func(nodes []input.SemanticNode) {
@@ -291,8 +291,8 @@ func TestWordRibbonSubmenuScrollableAndLeftAligned(t *testing.T) {
 		}
 	}
 	visit(router.AppendSemantics(nil))
-	if pasteBounds.Min.X != 64 {
-		t.Errorf("Word Ribbon '粘贴' Min.X = %d; want 64 (56dp AI entry area + 8dp inset)", pasteBounds.Min.X)
+	if pasteBounds.Min.X != 96 {
+		t.Errorf("Word Ribbon '粘贴' Min.X = %d; want 96 (12dp inset + 80dp AI entry + 4dp gap)", pasteBounds.Min.X)
 	}
 
 	// Test 2: narrow width scrolling capability via wordToolbarActionList
@@ -308,7 +308,7 @@ func TestWordRibbonSubmenuScrollableAndLeftAligned(t *testing.T) {
 		},
 	}
 	// Simulate scrolling to item index 4 ("字体")
-	state.wordToolbarActionList.List.Position.First = 4
+	state.wordToolbarGroupList.List.Position.First = 1
 	app.layoutWordRibbon(narrowGtx)
 	narrowRouter.Frame(narrowOps)
 
@@ -324,8 +324,8 @@ func TestWordRibbonSubmenuScrollableAndLeftAligned(t *testing.T) {
 	if fontBounds.Empty() {
 		t.Error("Word Ribbon did not render '字体' after scrolling horizontally")
 	}
-	if fontBounds.Min.X != 64 && fontBounds.Min.X != 66 {
-		t.Errorf("scrolled '字体' Min.X = %d; want 64 or 66 (scrolled to start after AI entry)", fontBounds.Min.X)
+	if fontBounds.Min.X != 96 {
+		t.Errorf("scrolled '字体' Min.X = %d; want 96 (scrolled group starts after AI entry)", fontBounds.Min.X)
 	}
 }
 
@@ -335,7 +335,7 @@ func TestWordRibbonShortMenusStayLeftAligned(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer word.Close()
-	for _, tab := range []wordToolbarTab{wordTabInsert, wordTabDesign, wordTabLayout, wordTabReview, wordTabView, wordTabPicture} {
+	for _, tab := range []wordToolbarTab{wordTabInsert, wordTabDesign, wordTabLayout, wordTabReferences, wordTabReview, wordTabView} {
 		for _, width := range []int{1440, 2000} {
 			state := newDocumentSessionState("test.docx")
 			state.word = word
@@ -363,8 +363,12 @@ func TestWordRibbonShortMenusStayLeftAligned(t *testing.T) {
 				}
 			}
 			visit(router.AppendSemantics(nil))
-			if bounds.Empty() || bounds.Min.X != 64 {
-				t.Errorf("tab %v at width %d: first command %q bounds = %v; want left edge 64 after AI entry", tab, width, firstLabel, bounds)
+			left := 12
+			if tab == wordTabInsert {
+				left = 6
+			}
+			if bounds.Empty() || bounds.Min.X != left {
+				t.Errorf("tab %v at width %d: first command %q bounds = %v; want Pen left inset %d", tab, width, firstLabel, bounds, left)
 			}
 		}
 	}

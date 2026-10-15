@@ -16,11 +16,12 @@ import (
 )
 
 type ribbonAction struct {
-	slot  int
-	id    string
-	label string
-	group string
-	icon  string
+	slot         int
+	id           string
+	label        string
+	displayLabel string
+	group        string
+	icon         string
 }
 
 type spreadsheetToolbarAction = ribbonAction
@@ -76,6 +77,28 @@ func toolbarIconColor(enabled bool) color.NRGBA {
 		return colors.DisabledText
 	}
 	return colors.Glyph
+}
+
+func toolbarActionIconColor(actionID string, enabled bool, colors ToolbarColors) color.NRGBA {
+	if !enabled {
+		return colors.DisabledText
+	}
+	switch actionID {
+	case "insert-wordart":
+		return colors.AccentWordArt
+	case "paste", "clipboard-paste", "format-painter", "paintbrush":
+		return colors.AccentClipboard
+	case "text-highlight", "highlighter", "paint-bucket":
+		return colors.AccentHighlight
+	case "font-color", "baseline":
+		return colors.AccentFontColor
+	default:
+		return colors.Glyph
+	}
+}
+
+func (a *App) toolbarActionIconColor(actionID string, enabled bool) color.NRGBA {
+	return toolbarActionIconColor(actionID, enabled, a.tokens().Colors.Toolbar)
 }
 
 func (a *App) toolbarIconColor(enabled bool) color.NRGBA {
@@ -260,7 +283,7 @@ const (
 )
 
 var (
-	toolbarLabelText = defaultShellTokens.Colors.Text.Secondary
+	toolbarLabelText = defaultShellTokens.Colors.Text.PureBlack
 )
 
 func ribbonLabelTextSize(label string) unit.Sp {
@@ -361,15 +384,11 @@ func toolbarIconButtonWithColors(gtx layout.Context, theme *material.Theme, butt
 					return layout.Dimensions{}
 				}
 				return layout.Inset{Bottom: unit.Dp(4), Left: unit.Dp(1), Right: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					textColor := colors.Text.Secondary
-					if !enabled {
-						textColor = colors.Toolbar.DisabledText
-					}
 					gtx.Constraints.Min = image.Point{}
 					caption := material.Caption(theme, label)
 					caption.Alignment = text.Middle
 					caption.TextSize = ribbonLabelTextSize(label)
-					caption.Color = textColor
+					caption.Color = colors.Text.PureBlack
 					caption.MaxLines = 1
 					return layout.Center.Layout(gtx, caption.Layout)
 				})
@@ -397,10 +416,7 @@ func toolbarTabButtonWithColors(gtx layout.Context, theme *material.Theme, butto
 		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 		style := material.Body2(theme, label)
 		style.TextSize = unit.Sp(13)
-		style.Color = colors.Text.Secondary
-		if selected {
-			style.Color = colors.Text.Brand
-		}
+		style.Color = colors.Text.PureBlack
 		dims := layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
 			dims := layout.Center.Layout(gtx, style.Layout)
@@ -409,7 +425,7 @@ func toolbarTabButtonWithColors(gtx layout.Context, theme *material.Theme, butto
 		})
 		if selected {
 			lineY := height - gtx.Dp(unit.Dp(1))
-			paint.FillShape(gtx.Ops, style.Color, clip.Rect{Min: image.Pt(0, lineY), Max: image.Pt(dims.Size.X, height)}.Op())
+			paint.FillShape(gtx.Ops, colors.Text.Brand, clip.Rect{Min: image.Pt(0, lineY), Max: image.Pt(dims.Size.X, height)}.Op())
 		}
 		dims.Size.Y = height
 		return dims

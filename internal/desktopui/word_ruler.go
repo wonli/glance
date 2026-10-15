@@ -98,7 +98,7 @@ func (a *App) layoutWordHorizontalRuler(gtx layout.Context, state *documentSessi
 			for index := 0; index < tickCount; index++ {
 				x := wordRulerTickX(tickStart, tickEnd, index, tickCount-1)
 				paint.FillShape(gtx.Ops, rulerTickColor, clip.Rect{Min: image.Pt(x, baseline-majorTickHeight), Max: image.Pt(x+gtx.Dp(unit.Dp(1)), baseline)}.Op())
-				layoutWordRulerLabelAt(gtx, a.theme, strconv.Itoa(index+1), image.Pt(x+gtx.Dp(unit.Dp(3)), gtx.Dp(unit.Dp(1))))
+				a.layoutWordRulerLabelAt(gtx, strconv.Itoa(index+1), image.Pt(x+gtx.Dp(unit.Dp(3)), gtx.Dp(unit.Dp(1))))
 				if index == tickCount-1 {
 					continue
 				}
@@ -225,10 +225,10 @@ func paintWordRulerResizeHandle(gtx layout.Context, x, height int) {
 	paint.FillShape(gtx.Ops, rulerResizeHandleColor, clip.UniformRRect(image.Rect(x-width/2, top, x+(width+1)/2, top+handleHeight), gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
 }
 
-func layoutWordRulerLabelAt(gtx layout.Context, theme *material.Theme, value string, position image.Point) {
-	label := material.Caption(theme, value)
+func (a *App) layoutWordRulerLabelAt(gtx layout.Context, value string, position image.Point) {
+	label := material.Caption(a.theme, value)
 	label.TextSize = unit.Sp(9)
-	label.Color = rulerLabelColor
+	label.Color = a.tokens().Colors.Text.PureBlack
 	recorder := op.Record(gtx.Ops)
 	label.Layout(gtx)
 	call := recorder.Stop()

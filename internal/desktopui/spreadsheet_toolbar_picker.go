@@ -190,6 +190,57 @@ func toolbarPickerOptions(kind spreadsheetToolbarPicker) []string {
 	}
 }
 
+func toolbarPickerOptionSelected(kind spreadsheetToolbarPicker, index int, style document.CellStyle) bool {
+	normalize := func(value string) string {
+		return strings.ToUpper(strings.TrimPrefix(strings.TrimSpace(value), "#"))
+	}
+	switch kind {
+	case pickerFontColor:
+		values := [...]string{"000000", "F44336", "FF9800", "FFC107", "4CAF50", "2196F3", "9C27B0", "FFFFFF"}
+		if index < 0 || index >= len(values) {
+			return false
+		}
+		current := normalize(style.FontColor)
+		if current == "" {
+			current = "000000"
+		}
+		return current == values[index]
+	case pickerFillColor:
+		values := [...]string{"", "FCE4D6", "FCE4D6", "FFF2CC", "E2F0D9", "DDEBF7", "E4DFEC", "D9E1F2"}
+		if index < 0 || index >= len(values) {
+			return false
+		}
+		for previous := 0; previous < index; previous++ {
+			if values[previous] == values[index] {
+				return false
+			}
+		}
+		return normalize(style.FillColor) == values[index]
+	case pickerAlignment:
+		values := [...]string{"general", "left", "center", "right"}
+		if index < 0 || index >= len(values) {
+			return false
+		}
+		current := strings.TrimSpace(style.HorizontalAlignment)
+		if current == "" {
+			current = "general"
+		}
+		return strings.EqualFold(current, values[index])
+	case pickerNumberFormat:
+		values := [...]string{"General", "0", "0.00", "yyyy-mm-dd"}
+		if index < 0 || index >= len(values) {
+			return false
+		}
+		current := strings.TrimSpace(style.NumberFormat)
+		if current == "" {
+			current = "General"
+		}
+		return strings.EqualFold(current, values[index])
+	default:
+		return false
+	}
+}
+
 func toolbarPickerPatch(kind spreadsheetToolbarPicker, index int) (document.CellFormatPatch, bool) {
 	values := map[spreadsheetToolbarPicker][]string{pickerFontColor: {"000000", "F44336", "FF9800", "FFC107", "4CAF50", "2196F3", "9C27B0", "FFFFFF"}, pickerFillColor: {"", "FCE4D6", "FCE4D6", "FFF2CC", "E2F0D9", "DDEBF7", "E4DFEC", "D9E1F2"}, pickerAlignment: {"general", "left", "center", "right"}, pickerNumberFormat: {"General", "0", "0.00", "yyyy-mm-dd"}, pickerBorder: {"all", "outside", "bottom", "none"}}
 	items, ok := values[kind]

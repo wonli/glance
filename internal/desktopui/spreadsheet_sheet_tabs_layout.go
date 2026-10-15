@@ -3,7 +3,6 @@ package desktopui
 import (
 	"glance/internal/document"
 	"image"
-	"image/color"
 
 	"gioui.org/font"
 	"gioui.org/io/key"
@@ -70,7 +69,7 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 				}
 				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layoutSheetTab(gtx, a.theme, button, sheetName, sheetName == a.sheet)
+						return layoutSheetTab(gtx, a.theme, a.tokens().Colors, button, sheetName, sheetName == a.sheet)
 					})
 				}))
 			}
@@ -78,7 +77,7 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 				a.applyStructure(document.StructureEdit{Kind: document.StructureCreateSheet})
 			}
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layoutSheetPlusTab(gtx, a.theme, &a.documentSessionState.sheetCreateButton)
+				return layoutSheetPlusTab(gtx, a.theme, &a.documentSessionState.sheetCreateButton, a.tokens().Colors)
 			}))
 			return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layoutSheetTabRow(gtx, children...)
@@ -95,15 +94,14 @@ func layoutSheetTabRow(gtx layout.Context, children ...layout.FlexChild) layout.
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceEnd}.Layout(gtx, children...)
 }
 
-func layoutSheetTab(gtx layout.Context, theme *material.Theme, button *widget.Clickable, name string, selected bool) layout.Dimensions {
+func layoutSheetTab(gtx layout.Context, theme *material.Theme, colors ColorTokens, button *widget.Clickable, name string, selected bool) layout.Dimensions {
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		tabHeight := gtx.Dp(unit.Dp(26))
 		bg := chromeSurface
-		fg := color.NRGBA{R: 104, G: 113, B: 123, A: 255}
+		fg := colors.Text.PureBlack
 		weight := font.Normal
 		if selected {
 			bg = contentSurface
-			fg = color.NRGBA{R: 62, G: 111, B: 169, A: 255}
 			weight = font.SemiBold
 		}
 		label := material.Body2(theme, name)
@@ -125,13 +123,13 @@ func layoutSheetTab(gtx layout.Context, theme *material.Theme, button *widget.Cl
 	})
 }
 
-func layoutSheetPlusTab(gtx layout.Context, theme *material.Theme, button *widget.Clickable) layout.Dimensions {
+func layoutSheetPlusTab(gtx layout.Context, theme *material.Theme, button *widget.Clickable, colors ColorTokens) layout.Dimensions {
 	gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(28)), gtx.Dp(unit.Dp(26)))
 	gtx.Constraints.Max = gtx.Constraints.Min
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		label := material.Body1(theme, "+")
 		label.TextSize = unit.Sp(17)
-		label.Color = color.NRGBA{R: 89, G: 99, B: 110, A: 255}
+		label.Color = colors.Text.PureBlack
 		return layout.Center.Layout(gtx, label.Layout)
 	})
 }

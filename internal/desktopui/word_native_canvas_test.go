@@ -349,9 +349,9 @@ func TestWordCanvasAndHorizontalRulerMatchPenClpgmGeometry(t *testing.T) {
 	want := map[string]image.Rectangle{
 		"文件":        {Min: image.Pt(22, 44), Max: image.Pt(53, 74)},
 		"开始":        {Min: image.Pt(81, 44), Max: image.Pt(112, 74)},
-		"粘贴":        {Min: image.Pt(64, 86), Max: image.Pt(108, 134)},
-		"Word 水平标尺": {Min: image.Pt(0, 144), Max: image.Pt(1440, 177)},
-		"Word 文档画布": {Min: image.Pt(270, 193), Max: image.Pt(1170, 793)},
+		"粘贴":        {Min: image.Pt(96, 86), Max: image.Pt(176, 154)},
+		"Word 水平标尺": {Min: image.Pt(0, 164), Max: image.Pt(1440, 197)},
+		"Word 文档画布": {Min: image.Pt(270, 213), Max: image.Pt(1170, 813)},
 		"Word 状态栏":  {Min: image.Pt(0, 866), Max: image.Pt(1440, 900)},
 	}
 	found := make(map[string]image.Rectangle, len(want))

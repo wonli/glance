@@ -1,0 +1,1574 @@
+{
+  "nodes": [
+    {
+      "id": "kiBim",
+      "icons": [
+        {
+          "command": "新建 ▾ 命令",
+          "category": "文件 子菜单展示",
+          "icon": "file-plus",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "打开 命令",
+          "category": "文件 子菜单展示",
+          "icon": "folder-open",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "最近使用 命令",
+          "category": "文件 子菜单展示",
+          "icon": "history",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "保存 ▾ 命令",
+          "category": "文件 子菜单展示",
+          "icon": "save",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "另存为 命令",
+          "category": "文件 子菜单展示",
+          "icon": "copy-plus",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "自动保存 命令",
+          "category": "文件 子菜单展示",
+          "icon": "cloud-upload",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "打印 ▾ 命令",
+          "category": "文件 子菜单展示",
+          "icon": "printer",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "导出 PDF 命令",
+          "category": "文件 子菜单展示",
+          "icon": "file-pdf",
+          "library": "phosphor",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "共享 命令",
+          "category": "文件 子菜单展示",
+          "icon": "share-2",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "文档信息 ▾ 命令",
+          "category": "文件 子菜单展示",
+          "icon": "info",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "保护文档 命令",
+          "category": "文件 子菜单展示",
+          "icon": "shield-check",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "版本历史 命令",
+          "category": "文件 子菜单展示",
+          "icon": "history",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "AI 助手 命令",
+          "category": "开始 子菜单展示",
+          "icon": "sparkles",
+          "library": "lucide",
+          "color": "#216341",
+          "size": 20
+        },
+        {
+          "command": "粘贴 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "clipboard-paste",
+          "library": "lucide",
+          "color": "#B88B35",
+          "size": 20
+        },
+        {
+          "command": "剪切 命令",
+          "category": "开始 子菜单展示",
+          "icon": "scissors",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "复制 命令",
+          "category": "开始 子菜单展示",
+          "icon": "copy",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "格式刷 命令",
+          "category": "开始 子菜单展示",
+          "icon": "paintbrush",
+          "library": "lucide",
+          "color": "#B88B35",
+          "size": 20
+        },
+        {
+          "command": "宋体 下拉框",
+          "category": "开始 子菜单展示",
+          "icon": "chevron-down",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 12
+        },
+        {
+          "command": "五号 下拉框",
+          "category": "开始 子菜单展示",
+          "icon": "chevron-down",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 12
+        },
+        {
+          "command": "A↑ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "a-arrow-up",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "A↓ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "a-arrow-down",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "bold 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "bold",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "italic 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "italic",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "underline 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "underline",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "strikethrough 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "strikethrough",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "highlighter 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "highlighter",
+          "library": "lucide",
+          "color": "#B18B00",
+          "size": 20
+        },
+        {
+          "command": "baseline 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "baseline",
+          "library": "lucide",
+          "color": "#C34343",
+          "size": 20
+        },
+        {
+          "command": "list",
+          "category": "开始 子菜单展示",
+          "icon": "list",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "list-ordered",
+          "category": "开始 子菜单展示",
+          "icon": "list-ordered",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "list-tree",
+          "category": "开始 子菜单展示",
+          "icon": "list-tree",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "outdent",
+          "category": "开始 子菜单展示",
+          "icon": "format_indent_decrease",
+          "library": "Material Symbols Rounded",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "indent",
+          "category": "开始 子菜单展示",
+          "icon": "format_indent_increase",
+          "library": "Material Symbols Rounded",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "align-left",
+          "category": "开始 子菜单展示",
+          "icon": "text-align-start",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "align-center",
+          "category": "开始 子菜单展示",
+          "icon": "text-align-center",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "align-right",
+          "category": "开始 子菜单展示",
+          "icon": "text-align-end",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "align-justify",
+          "category": "开始 子菜单展示",
+          "icon": "text-align-justify",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "list-filter",
+          "category": "开始 子菜单展示",
+          "icon": "list-filter",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "更多 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "chevron-down",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "查找 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "search",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "替换 命令",
+          "category": "开始 子菜单展示",
+          "icon": "replace",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "选择 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "mouse-pointer-2",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "封面 ▾ 命令",
+          "category": "插入 子菜单展示",
+          "icon": "book-open",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "空白页 命令",
+          "category": "插入 子菜单展示",
+          "icon": "file-plus",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "分页 命令",
+          "category": "插入 子菜单展示",
+          "icon": "file-output",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "表格 ▾ 命令",
+          "category": "插入 子菜单展示",
+          "icon": "table",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "图片 ▾ 命令",
+          "category": "插入 子菜单展示",
+          "icon": "image",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "形状 命令",
+          "category": "插入 子菜单展示",
+          "icon": "shapes",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "图表 命令",
+          "category": "插入 子菜单展示",
+          "icon": "chart-column",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "链接 ▾ 命令",
+          "category": "插入 子菜单展示",
+          "icon": "link",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "书签 命令",
+          "category": "插入 子菜单展示",
+          "icon": "bookmark",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "页眉 ▾ 命令",
+          "category": "插入 子菜单展示",
+          "icon": "panel-top",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "页脚 命令",
+          "category": "插入 子菜单展示",
+          "icon": "panel-bottom",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "页码 命令",
+          "category": "插入 子菜单展示",
+          "icon": "hash",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "文本框 ▾ 命令",
+          "category": "插入 子菜单展示",
+          "icon": "text-cursor-input",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "艺术字 命令",
+          "category": "插入 子菜单展示",
+          "icon": "sparkles",
+          "library": "lucide",
+          "color": "#216341",
+          "size": 20
+        },
+        {
+          "command": "公式 ▾ 命令",
+          "category": "插入 子菜单展示",
+          "icon": "sigma",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "符号 命令",
+          "category": "插入 子菜单展示",
+          "icon": "omega",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "目录 ▾ 命令",
+          "category": "引用 子菜单展示",
+          "icon": "list-tree",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "更新目录 命令",
+          "category": "引用 子菜单展示",
+          "icon": "refresh-cw",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "插入脚注 ▾ 命令",
+          "category": "引用 子菜单展示",
+          "icon": "notebook-tabs",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "插入尾注 命令",
+          "category": "引用 子菜单展示",
+          "icon": "notebook-pen",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "插入引文 ▾ 命令",
+          "category": "引用 子菜单展示",
+          "icon": "quote",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "书目 命令",
+          "category": "引用 子菜单展示",
+          "icon": "book-open",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "插入题注 ▾ 命令",
+          "category": "引用 子菜单展示",
+          "icon": "captions",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "交叉引用 命令",
+          "category": "引用 子菜单展示",
+          "icon": "repeat-2",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "主题 ▾ 命令",
+          "category": "设计 子菜单展示",
+          "icon": "palette",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "颜色 命令",
+          "category": "设计 子菜单展示",
+          "icon": "swatch-book",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "字体 命令",
+          "category": "设计 子菜单展示",
+          "icon": "type",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "效果 命令",
+          "category": "设计 子菜单展示",
+          "icon": "layers",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "紧凑 ▾ 命令",
+          "category": "设计 子菜单展示",
+          "icon": "align-vertical-space-around",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "宽松 命令",
+          "category": "设计 子菜单展示",
+          "icon": "align-vertical-space-between",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "水印 ▾ 命令",
+          "category": "设计 子菜单展示",
+          "icon": "stamp",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "页面颜色 命令",
+          "category": "设计 子菜单展示",
+          "icon": "paint-bucket",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "页面边框 命令",
+          "category": "设计 子菜单展示",
+          "icon": "frame",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "页边距 ▾ 命令",
+          "category": "布局 子菜单展示",
+          "icon": "panel-left-right-dashed",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "方向 命令",
+          "category": "布局 子菜单展示",
+          "icon": "rotate-cw",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "纸张大小 命令",
+          "category": "布局 子菜单展示",
+          "icon": "file",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "分栏 命令",
+          "category": "布局 子菜单展示",
+          "icon": "columns-3",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "分隔符 ▾ 命令",
+          "category": "布局 子菜单展示",
+          "icon": "between-horizontal-start",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "行号 命令",
+          "category": "布局 子菜单展示",
+          "icon": "list-ordered",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "缩进 ▾ 命令",
+          "category": "布局 子菜单展示",
+          "icon": "format_indent_increase",
+          "library": "Material Symbols Rounded",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "段前 命令",
+          "category": "布局 子菜单展示",
+          "icon": "arrow-up-to-line",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "段后 命令",
+          "category": "布局 子菜单展示",
+          "icon": "arrow-down-to-line",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "位置 ▾ 命令",
+          "category": "布局 子菜单展示",
+          "icon": "move",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "环绕文字 命令",
+          "category": "布局 子菜单展示",
+          "icon": "text-wrap",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "对齐 命令",
+          "category": "布局 子菜单展示",
+          "icon": "align-horizontal-space-around",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "编辑器 ▾ 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "spell-check-2",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "字数统计 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "list-checks",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "翻译 ▾ 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "languages",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "语言 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "globe",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "新建批注 ▾ 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "message-square-plus",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "删除批注 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "message-square-x",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "修订 ▾ 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "git-compare-arrows",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "接受 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "check",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "拒绝 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "x",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "比较 ▾ 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "files",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "限制编辑 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "lock-keyhole",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "阅读模式 ▾ 命令",
+          "category": "视图 子菜单展示",
+          "icon": "book-open",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "打印布局 命令",
+          "category": "视图 子菜单展示",
+          "icon": "file-text",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "Web版式 命令",
+          "category": "视图 子菜单展示",
+          "icon": "monitor",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "标尺 ▾ 命令",
+          "category": "视图 子菜单展示",
+          "icon": "ruler",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "网格线 命令",
+          "category": "视图 子菜单展示",
+          "icon": "grid-3x3",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "导航窗格 命令",
+          "category": "视图 子菜单展示",
+          "icon": "panel-left",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "缩放 ▾ 命令",
+          "category": "视图 子菜单展示",
+          "icon": "zoom-in",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "单页 命令",
+          "category": "视图 子菜单展示",
+          "icon": "file",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "多页 命令",
+          "category": "视图 子菜单展示",
+          "icon": "files",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "新建窗口 ▾ 命令",
+          "category": "视图 子菜单展示",
+          "icon": "panel-top-open",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "并排查看 命令",
+          "category": "视图 子菜单展示",
+          "icon": "columns-2",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "宏 ▾ 命令",
+          "category": "视图 子菜单展示",
+          "icon": "terminal",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        }
+      ]
+    },
+    {
+      "id": "nmShb",
+      "icons": [
+        {
+          "command": "打开 ▾ 命令",
+          "category": "文件 子菜单展示",
+          "icon": "folder-open",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "保存 命令",
+          "category": "文件 子菜单展示",
+          "icon": "save",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "另存为 命令",
+          "category": "文件 子菜单展示",
+          "icon": "file-down",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "导出 命令",
+          "category": "文件 子菜单展示",
+          "icon": "file-pdf",
+          "library": "phosphor",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "打印 命令",
+          "category": "文件 子菜单展示",
+          "icon": "printer",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "共享 命令",
+          "category": "文件 子菜单展示",
+          "icon": "share-2",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "AI 助手 命令",
+          "category": "开始 子菜单展示",
+          "icon": "sparkles",
+          "library": "lucide",
+          "color": "#216341",
+          "size": 20
+        },
+        {
+          "command": "粘贴 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "clipboard-paste",
+          "library": "lucide",
+          "color": "#B88B35",
+          "size": 20
+        },
+        {
+          "command": "剪切 命令",
+          "category": "开始 子菜单展示",
+          "icon": "scissors",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "复制 命令",
+          "category": "开始 子菜单展示",
+          "icon": "copy",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "格式刷 命令",
+          "category": "开始 子菜单展示",
+          "icon": "paintbrush",
+          "library": "lucide",
+          "color": "#B88B35",
+          "size": 20
+        },
+        {
+          "command": "等线 下拉框",
+          "category": "开始 子菜单展示",
+          "icon": "chevron-down",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 12
+        },
+        {
+          "command": "11 下拉框",
+          "category": "开始 子菜单展示",
+          "icon": "chevron-down",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 12
+        },
+        {
+          "command": "A↑ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "a-arrow-up",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "A↓ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "a-arrow-down",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "bold 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "bold",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "italic 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "italic",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "underline 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "underline",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "strikethrough 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "strikethrough",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "highlighter 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "highlighter",
+          "library": "lucide",
+          "color": "#B18B00",
+          "size": 20
+        },
+        {
+          "command": "baseline 格式按钮",
+          "category": "开始 子菜单展示",
+          "icon": "baseline",
+          "library": "lucide",
+          "color": "#C34343",
+          "size": 20
+        },
+        {
+          "command": "align-start-vertical",
+          "category": "开始 子菜单展示",
+          "icon": "align-start-vertical",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "align-center-vertical",
+          "category": "开始 子菜单展示",
+          "icon": "align-center-vertical",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "align-end-vertical",
+          "category": "开始 子菜单展示",
+          "icon": "align-end-vertical",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "text-wrap",
+          "category": "开始 子菜单展示",
+          "icon": "text-wrap",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "align-left",
+          "category": "开始 子菜单展示",
+          "icon": "text-align-start",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "align-center",
+          "category": "开始 子菜单展示",
+          "icon": "text-align-center",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "align-right",
+          "category": "开始 子菜单展示",
+          "icon": "text-align-end",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "align-justify",
+          "category": "开始 子菜单展示",
+          "icon": "text-align-justify",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "list-filter",
+          "category": "开始 子菜单展示",
+          "icon": "list-filter",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "自动换行 命令",
+          "category": "开始 子菜单展示",
+          "icon": "text-wrap",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "合并后居中 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "merge",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "常规 下拉框",
+          "category": "开始 子菜单展示",
+          "icon": "chevron-down",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 12
+        },
+        {
+          "command": "¥ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "banknote",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "% 命令",
+          "category": "开始 子菜单展示",
+          "icon": "percent",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": ".00 命令",
+          "category": "开始 子菜单展示",
+          "icon": "hash",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "条件格式 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "chart-no-axes-combined",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "套用表格格式 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "table",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "单元格样式 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "grid-2x2",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "插入 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "square-plus",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "删除 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "square-minus",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "格式 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "table-properties",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "自动求和 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "sigma",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "排序和筛选 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "list-filter",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "查找和选择 ▾ 命令",
+          "category": "开始 子菜单展示",
+          "icon": "search",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "表格 ▾ 命令",
+          "category": "插入 子菜单展示",
+          "icon": "table",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "数据透视表 命令",
+          "category": "插入 子菜单展示",
+          "icon": "layout-grid",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "图片 命令",
+          "category": "插入 子菜单展示",
+          "icon": "image",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "形状 命令",
+          "category": "插入 子菜单展示",
+          "icon": "shapes",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "柱状图 命令",
+          "category": "插入 子菜单展示",
+          "icon": "chart-column",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "折线图 命令",
+          "category": "插入 子菜单展示",
+          "icon": "route",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "饼图 命令",
+          "category": "插入 子菜单展示",
+          "icon": "chart-pie",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "链接 命令",
+          "category": "插入 子菜单展示",
+          "icon": "link",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "文本框 命令",
+          "category": "插入 子菜单展示",
+          "icon": "text-cursor-input",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "页边距 ▾ 命令",
+          "category": "页面布局 子菜单展示",
+          "icon": "panel-left",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "纸张方向 命令",
+          "category": "页面布局 子菜单展示",
+          "icon": "rotate-cw",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "纸张大小 命令",
+          "category": "页面布局 子菜单展示",
+          "icon": "file",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "打印区域 命令",
+          "category": "页面布局 子菜单展示",
+          "icon": "scan",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "打印标题 命令",
+          "category": "页面布局 子菜单展示",
+          "icon": "printer",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "打印网格线 命令",
+          "category": "页面布局 子菜单展示",
+          "icon": "printer-check",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "自动求和 ▾ 命令",
+          "category": "公式 子菜单展示",
+          "icon": "sigma",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "最近使用 命令",
+          "category": "公式 子菜单展示",
+          "icon": "clock-3",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "逻辑函数 命令",
+          "category": "公式 子菜单展示",
+          "icon": "git-compare-arrows",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "文本函数 命令",
+          "category": "公式 子菜单展示",
+          "icon": "type",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "日期时间 命令",
+          "category": "公式 子菜单展示",
+          "icon": "calendar-days",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "名称管理器 命令",
+          "category": "公式 子菜单展示",
+          "icon": "tag",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "重新计算 命令",
+          "category": "公式 子菜单展示",
+          "icon": "rotate-cw",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "刷新全部 ▾ 命令",
+          "category": "数据 子菜单展示",
+          "icon": "rotate-cw",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "排序 命令",
+          "category": "数据 子菜单展示",
+          "icon": "arrow-up-down",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "筛选 命令",
+          "category": "数据 子菜单展示",
+          "icon": "list-filter",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "分列 命令",
+          "category": "数据 子菜单展示",
+          "icon": "columns-3",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "快速填充 命令",
+          "category": "数据 子菜单展示",
+          "icon": "wand-sparkles",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "删除重复项 命令",
+          "category": "数据 子菜单展示",
+          "icon": "trash-2",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "数据验证 命令",
+          "category": "数据 子菜单展示",
+          "icon": "circle-check",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "拼写检查 ▾ 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "spell-check-2",
+          "library": "lucide",
+          "color": "#9AA3AE",
+          "size": 20
+        },
+        {
+          "command": "翻译 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "languages",
+          "library": "lucide",
+          "color": "#9AA3AE",
+          "size": 20
+        },
+        {
+          "command": "新建批注 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "message-square-plus",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "删除批注 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "message-square-x",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "保护工作表 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "lock-keyhole",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "保护工作簿 命令",
+          "category": "审阅 子菜单展示",
+          "icon": "shield-check",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "普通视图 ▾ 命令",
+          "category": "视图 子菜单展示",
+          "icon": "layout-grid",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "分页符预览 命令",
+          "category": "视图 子菜单展示",
+          "icon": "file-spreadsheet",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "标尺 命令",
+          "category": "视图 子菜单展示",
+          "icon": "ruler",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "网格线 命令",
+          "category": "视图 子菜单展示",
+          "icon": "grid-3x3",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "缩放 命令",
+          "category": "视图 子菜单展示",
+          "icon": "zoom-in",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        },
+        {
+          "command": "冻结窗格 命令",
+          "category": "视图 子菜单展示",
+          "icon": "panels-top-left",
+          "library": "lucide",
+          "color": "#000000",
+          "size": 20
+        }
+      ]
+    }
+  ]
+}

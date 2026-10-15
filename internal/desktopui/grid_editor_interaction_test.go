@@ -43,7 +43,7 @@ func TestClickInsideEditingCellPlacesCaretWithoutChangingCell(t *testing.T) {
 		for _, ok := gtx.Event(pointer.Filter{Target: &parentTag, Kinds: pointer.Press}); ok; _, ok = gtx.Event(pointer.Filter{Target: &parentTag, Kinds: pointer.Press}) {
 			gridPresses++
 		}
-		paintCellEditor(gtx, theme, editor, image.Rect(0, 0, 220, 40), image.Rect(0, 0, 220, 40), cellStyle, style)
+		paintCellEditor(gtx, theme, editor, image.Rect(0, 0, 220, 40), image.Rect(0, 0, 220, 40), cellStyle, style, LightColorTokens.Grid.SelectionBorder)
 		pass.Pop()
 	}
 	draw()
