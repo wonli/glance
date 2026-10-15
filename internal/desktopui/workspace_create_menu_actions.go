@@ -27,7 +27,7 @@ func (a *App) layoutCreateMenuOpenAction(gtx layout.Context, click *widget.Click
 	if click.Clicked(gtx) {
 		a.showNewMenu = false
 		if folder {
-			a.startFolderPicker()
+			a.startHomeFolderDirectoryPicker()
 		} else {
 			a.startOpenFilePicker()
 		}
