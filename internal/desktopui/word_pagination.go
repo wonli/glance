@@ -9,6 +9,7 @@ import (
 	"reflect"
 
 	"glance/internal/document"
+	"glance/internal/fontcatalog"
 	"glance/internal/wordlayout"
 )
 
@@ -21,6 +22,7 @@ const (
 )
 
 type wordLayoutKey struct {
+	FontVersion  uint64
 	DocumentID   string
 	Revision     uint64
 	DraftEpoch   uint64
@@ -291,9 +293,13 @@ func (a *App) startWordPagination(state *documentSessionState) {
 		Revision:     revision,
 		DraftEpoch:   draftEpoch,
 		PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup),
+		FontVersion:  fontcatalog.Default().Version,
 	}
 	sameKey := func(existing *wordLayoutKey) bool {
 		if existing == nil {
+			return false
+		}
+		if existing.FontVersion != key.FontVersion {
 			return false
 		}
 		if existing.PageSetupKey == "" {

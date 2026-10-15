@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/SalvioniDigitalSolutions/gopdf"
 
@@ -31,16 +30,12 @@ type Result struct {
 	WarningsTruncated bool     `json:"warnings_truncated"`
 }
 
-var systemFonts struct {
-	once   sync.Once
-	shaper *wordfont.Shaper
-	err    error
-}
-
 func textSource() (*wordfont.Shaper, error) {
-	systemFonts.once.Do(func() {
-		systemFonts.shaper, systemFonts.err = wordfont.NewSystem()
-	})
+	systemFonts := struct {
+		shaper *wordfont.Shaper
+		err    error
+	}{}
+	systemFonts.shaper, systemFonts.err = wordfont.NewSystem()
 	return systemFonts.shaper, systemFonts.err
 }
 

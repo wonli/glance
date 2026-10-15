@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
@@ -44,12 +43,6 @@ func (s imageSource) ImageBytes(imageID string) ([]byte, error) {
 	return s.document.WordImageBytes(imageID)
 }
 
-var systemShaper struct {
-	once   sync.Once
-	shaper *wordfont.Shaper
-	err    error
-}
-
 // ExportSnapshot renders a complete DOCX snapshot, validates the generated
 // PDF, and creates path without replacing an existing file.
 func ExportSnapshot(ctx context.Context, path string, snapshot []byte, documentID string, revision uint64, orientation string, guard CommitGuard) (Result, error) {
@@ -72,9 +65,11 @@ func ExportSnapshot(ctx context.Context, path string, snapshot []byte, documentI
 	}
 	defer word.Close()
 
-	systemShaper.once.Do(func() {
-		systemShaper.shaper, systemShaper.err = wordfont.NewSystem()
-	})
+	systemShaper := struct {
+		shaper *wordfont.Shaper
+		err    error
+	}{}
+	systemShaper.shaper, systemShaper.err = wordfont.NewSystem()
 	if systemShaper.err != nil {
 		return Result{}, systemShaper.err
 	}

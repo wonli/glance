@@ -28,6 +28,7 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 		a.updateMarkdownInput(gtx)
 	}
 	a.processAsyncResults()
+	a.processFontPickerEvents(gtx)
 	a.reconcileWorkspaceTabs()
 	syncWindowViewFromSharedSession(gtx, a.documentSessionState)
 	gtx.Constraints.Min = gtx.Constraints.Max

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/SalvioniDigitalSolutions/gopdf"
 
@@ -34,12 +33,6 @@ type CommitGuard = func() (release func(), err error)
 type ImageSource interface {
 	SpreadsheetImages(sheet string) ([]document.SpreadsheetImage, error)
 	SpreadsheetImageBytes(imageID string) ([]byte, error)
-}
-
-var systemFont struct {
-	once   sync.Once
-	shaper *wordfont.Shaper
-	err    error
 }
 
 // ExportWindow renders an explicit bounded sheet window and atomically creates
@@ -72,9 +65,11 @@ func ExportWindow(ctx context.Context, path string, sheet string, window documen
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	systemFont.once.Do(func() {
-		systemFont.shaper, systemFont.err = wordfont.NewSystem()
-	})
+	systemFont := struct {
+		shaper *wordfont.Shaper
+		err    error
+	}{}
+	systemFont.shaper, systemFont.err = wordfont.NewSystem()
 	if systemFont.err != nil {
 		return Result{}, fmt.Errorf("load spreadsheet PDF fonts: %w", systemFont.err)
 	}

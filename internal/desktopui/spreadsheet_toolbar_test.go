@@ -447,12 +447,10 @@ func TestSpreadsheetFontFamilyDialog(t *testing.T) {
 	}
 
 	app.showSpreadsheetFontFamilyDialog()
-	if !app.modal.Visible {
-		t.Fatal("font family modal dialog should be visible")
+	if !app.fontPicker.open {
+		t.Fatal("font picker did not open")
 	}
-
-	app.modal.Input.SetText("Microsoft YaHei")
-	app.modal.OnAction("confirm")
+	app.applyFontChoice("Microsoft YaHei")
 
 	select {
 	case res := <-app.formatResults:

@@ -128,6 +128,9 @@ func (a *App) officeRibbonMenuOptionEnabled(option officeRibbonMenuOption) bool 
 }
 
 func (a *App) toggleWordOfficeRibbonMenu(actionID string) bool {
+	if actionID != "font-family" {
+		a.fontPicker.open = false
+	}
 	definition := wordOfficeRibbonMenu(actionID)
 	state := a.documentSessionState
 	if state == nil || definition.title == "" {
@@ -146,6 +149,13 @@ func (a *App) toggleWordOfficeRibbonMenu(actionID string) bool {
 }
 
 func (a *App) toggleSpreadsheetOfficeRibbonMenu(slot int) bool {
+	if slot == toolbarActionFontFamily && a.toolbarActionEnabled(slot) {
+		a.showSpreadsheetFontFamilyDialog()
+		return true
+	}
+	if a.fontPicker.open {
+		a.fontPicker.open = false
+	}
 	definition := spreadsheetOfficeRibbonMenu(slot)
 	state := a.documentSessionState
 	if state == nil || definition.title == "" {
@@ -325,6 +335,9 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 }
 
 func (a *App) layoutOfficeRibbonDropdown(gtx layout.Context) layout.Dimensions {
+	if a.fontPicker.open {
+		return a.layoutFontPicker(gtx)
+	}
 	state := a.documentSessionState
 	if state == nil || state.officeRibbonMenu.kind == officeRibbonMenuClosed {
 		return layout.Dimensions{}

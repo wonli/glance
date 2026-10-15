@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"glance/internal/document"
 	"math"
-	"strings"
 )
 
 func (a *App) toggleWordTextStyle(property string) {
@@ -97,32 +96,14 @@ func (a *App) showWordFontFamilyDialog() {
 	if state == nil || state.word == nil {
 		return
 	}
-	if _, ok := any(state.word).(document.WordTextFontFamilyEditor); !ok {
-		return
-	}
 	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
 	if !ok || !run.Editable {
 		return
 	}
-	runID := run.ID
-	a.modal.ShowInput("设置字体", "输入字体名称", run.Style.FontFamily, "字体名称", func(action string) {
-		value := strings.TrimSpace(a.modal.Input.Text())
-		a.modal.Hide()
-		if action != "confirm" {
-			return
-		}
-		if value == "" {
-			a.setStatus("字体名称不能为空")
-			return
-		}
-		a.runWordCommand("字体", func(editor document.WordTextEditor) error {
-			fontFamilyEditor, ok := any(editor).(document.WordTextFontFamilyEditor)
-			if !ok {
-				return fmt.Errorf("DOCX adapter does not support font-family editing")
-			}
-			return fontFamilyEditor.SetTextRunFontFamily(runID, value)
-		})
-	}, modalDialogActionSpec{ID: "confirm", Label: "应用"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	if _, ok := any(state.word).(document.WordTextFontFamilyEditor); !ok {
+		return
+	}
+	a.openFontPicker(fontPickerTarget{state: state, runID: run.ID, revision: state.wordRevisionAtomic.Load(), current: run.Style.FontFamily, word: true})
 }
 
 func (a *App) toggleWordFormatPainter() {

@@ -8,6 +8,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"glance/internal/fontcatalog"
 	"glance/internal/format/docx"
 	"glance/internal/wordlayout"
 )
@@ -29,7 +30,7 @@ func TestWordMultiplePagesShowsPairsFromSharedLayoutWithoutDirtyingDocument(t *t
 			{Index: 2, Clip: wordlayout.Rect{WidthPT: 595, HeightPT: 842}},
 		},
 	}
-	state.wordLayoutAcceptedKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision}
+	state.wordLayoutAcceptedKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision, FontVersion: fontcatalog.Default().Version}
 	app := &App{documentSessionState: state, theme: material.NewTheme()}
 	action := findWordViewTestAction(t, "view-multiple-pages")
 	if !app.wordToolbarActionEnabled(action) {
@@ -97,7 +98,7 @@ func TestWordMultiplePagesStatusTracksLaterVisibleRow(t *testing.T) {
 			{RunID: "run", RuneOffset: 0}: {PageIndex: 0},
 		},
 	}
-	state.wordLayoutAcceptedKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision}
+	state.wordLayoutAcceptedKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision, FontVersion: fontcatalog.Default().Version}
 	app := &App{documentSessionState: state, theme: material.NewTheme()}
 
 	semantics := wordGridlineSemantics(app)
@@ -105,7 +106,7 @@ func TestWordMultiplePagesStatusTracksLaterVisibleRow(t *testing.T) {
 		t.Fatalf("visible row=%d active page=%d; want row 2 / page index 4", state.wordPageListState.Position.First, state.wordLayoutActivePage)
 	}
 	if got := wordPaginationStatusText(state); !strings.Contains(got, "第 5 页") {
-		t.Fatalf("print status = %q; want the first page in the visible later spread", got)
+		t.Fatalf("print status = %q; want the first page in the visible later spread (accepted=%+v pending=%+v)", got, state.wordLayoutAcceptedKey, state.wordLayoutPendingKey)
 	}
 	if !strings.Contains(semantics, "Word 第 5 页，共 10 页") {
 		t.Fatalf("the later page spread was not laid out: %s", semantics)

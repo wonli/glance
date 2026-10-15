@@ -281,7 +281,10 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 			paint.FillShape(gtx.Ops, colors.Surface.Surface, clip.UniformRRect(inner, gtx.Dp(unit.Dp(2))).Op(gtx.Ops))
 			value := spreadsheetRibbonActionDisplayLabel(action)
 			if action.slot == toolbarActionFontFamily {
-				value = "等线"
+				value = a.fontPickerDisplayFamilyName(style.FontFamily)
+				if value == "" {
+					value = "字体"
+				}
 			} else if action.slot == toolbarActionFontSize {
 				value = "11"
 			}
@@ -292,7 +295,9 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						gtx.Constraints.Min.Y = 0
-						gtx.Constraints.Min.Y = 0
+						if action.slot == toolbarActionFontFamily || action.slot == toolbarActionFontSize {
+							return layout.Inset{Top: spreadsheetFontFieldTextOpticalTopInset}.Layout(gtx, label.Layout)
+						}
 						return label.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -357,6 +362,8 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 	}
 	return draw(gtx)
 }
+
+const spreadsheetFontFieldTextOpticalTopInset unit.Dp = 5
 
 func (a *App) layoutSpreadsheetToolbarActionList(gtx layout.Context, state *documentSessionState, actions []spreadsheetToolbarAction) layout.Dimensions {
 	return a.layoutSpreadsheetPenCommandList(gtx, state, actions)

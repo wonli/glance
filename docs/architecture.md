@@ -115,3 +115,14 @@ Creating a conversation detaches the old subscription and clears its transient U
 - `../mysql-ai/docs/drag-patterns.md` — stable preview/persist separation and pointer-coordinate normalization.
 
 These sibling paths are local references, not build dependencies. When documenting a rule in this repository, keep its rationale and actionable form here so the project remains understandable if siblings move.
+
+
+## Shared font library (2026-10-15)
+
+`fontcatalog` owns neutral family/face metadata, localized aliases, content identities, platform scanning and the atomic disk index. It streams metadata and hashes without parsing all glyphs. `application.FontService` serializes scans, private registration and source preferences; the desktop runtime shares it across windows. Windows subscribe to immutable versions. Startup publishes a compatible index before background verification; explicit refresh hashes files again rather than using go-text's process-wide `SystemFonts` cache. Unchanged scans update `CheckedAt` without changing the rendering version.
+
+`fontdownload` accepts a trusted, versioned HTTPS manifest, validates the byte limit, SHA-256, static TrueType format and family, then publishes a private object and license declaration. Objects live in the user configuration/data area; the index lives in the user cache area. Cache eviction does not remove font objects. The production provider initially returns no entries. Download/register and apply-format are separate intents.
+
+The shared Gio picker stores its editor, list and clickables in stable window state. It captures session/revision/selection identity before applying through existing Word or spreadsheet commands. Document font summaries, scanning, downloading and construction of Gio font collections run in managed background jobs. The picker has document fonts first, followed by the local catalog and optional online rows. It does not contain empty online sections.
+
+Word shaping and each PDF export acquire a catalog snapshot; loaded bytes remain owned by that task's shaper. Resource reads verify the captured digest. If an external font changes before first use, the task reports a resource error instead of switching outlines. Word pagination keys include font version; publication clears Word/Gio grid text caches without modifying document formats, row/column dimensions or canceling prepared exports. Gio receives bounded collections of the selected/visible fonts, leaving UI typography tokens unchanged. A same-name source preference is local and cached, never written as a new document family name.

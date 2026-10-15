@@ -7,6 +7,7 @@ import (
 
 func (a *App) processAsyncResults() {
 	a.ensureDesktopRuntime()
+	a.pollFontResults()
 	a.processAgentSettingsResult()
 	a.processAgentModelLookupResult()
 	a.processAgentChatHistoryResults()

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"image"
 	"strings"
-	"sync"
 
 	"glance/internal/document"
 	"glance/internal/format/markdowndoc"
@@ -34,12 +33,6 @@ type Result struct {
 }
 
 type CommitGuard = wordpdf.CommitGuard
-
-var systemShaper struct {
-	once   sync.Once
-	shaper *wordfont.Shaper
-	err    error
-}
 
 // ExportSnapshot parses, renders, validates, and exclusively creates a PDF
 // from the supplied exact Markdown source. Unavailable images become explicit
@@ -72,9 +65,11 @@ func ExportSnapshot(ctx context.Context, path string, source []byte, sourcePath,
 	}
 	missingImages, warnings := missingImageWarnings(snapshot, resources)
 
-	systemShaper.once.Do(func() {
-		systemShaper.shaper, systemShaper.err = wordfont.NewSystem()
-	})
+	systemShaper := struct {
+		shaper *wordfont.Shaper
+		err    error
+	}{}
+	systemShaper.shaper, systemShaper.err = wordfont.NewSystem()
 	if systemShaper.err != nil {
 		return Result{}, systemShaper.err
 	}

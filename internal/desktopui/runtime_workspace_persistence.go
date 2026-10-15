@@ -196,6 +196,9 @@ func (r *desktopRuntime) shutdown() {
 				log.Printf("stop desktop MCP IPC endpoint: %v", err)
 			}
 		}
+		if r.fonts != nil {
+			r.fonts.Close()
+		}
 		r.closeAgent()
 		r.workspaceWriterStopOnce.Do(func() {
 			r.workspaceQueueMu.Lock()

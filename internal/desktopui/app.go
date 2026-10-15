@@ -16,14 +16,16 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"glance/internal/fontfallback"
 	wordpdf "glance/internal/format/pdf"
 	"glance/internal/printservice"
 	"glance/internal/workspace"
 )
 
-const preferredSystemTypeface = font.Typeface("Inter, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif")
+var preferredSystemTypeface = font.Typeface(fontfallback.PreferredTypeface())
 
 type App struct {
+	fontPicker fontPickerState
 	*documentSessionState
 	*desktopRuntime
 	windowID             uint64
@@ -361,6 +363,9 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		log.Printf("prepare Word/system font scanner: %v", err)
 	}
 	a.theme.Shaper = text.NewShaper()
+	if window != nil {
+		a.startFontService()
+	}
 	a.theme.Face = preferredSystemTypeface
 	a.feedback.initialized = true
 	a.feedback.lastStatus = a.status

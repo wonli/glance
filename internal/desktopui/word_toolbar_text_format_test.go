@@ -131,13 +131,12 @@ func TestWordFontFamilyToolbarActionOpensDialogAndChangesSelectedRun(t *testing.
 	app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 1)}
 
 	app.executeWordToolbarAction("font-family")
-	if !app.modal.Visible || !app.modal.HasInput {
-		t.Fatal("font-family action did not open a text input dialog")
+	if !app.fontPicker.open {
+		t.Fatal("font picker did not open")
 	}
-	app.modal.Input.SetText("Noto Sans CJK SC")
-	app.modal.OnAction("confirm")
-	if app.modal.Visible {
-		t.Fatal("font-family dialog remained open after confirm")
+	app.applyFontChoice("Noto Sans CJK SC")
+	if app.fontPicker.open {
+		t.Fatal("font picker remained open")
 	}
 	if !state.formatRunning.Load() {
 		t.Fatal("confirm did not start a Word formatting command")

@@ -57,7 +57,8 @@ func TestSetCellFormatsPreservesUntouchedPropertiesAndRoundTrips(t *testing.T) {
 	}
 	bold := false
 	fontColor := "#FF0000"
-	if err := formatter.SetCellFormats("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, document.CellFormatPatch{Bold: &bold, FontColor: &fontColor}); err != nil {
+	family := "Glance Synthetic Font"
+	if err := formatter.SetCellFormats("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, document.CellFormatPatch{Bold: &bold, FontColor: &fontColor, FontFamily: &family}); err != nil {
 		t.Fatal(err)
 	}
 	window, err := wb.Window("Sheet1", 1, 1, 1, 5)
@@ -65,7 +66,7 @@ func TestSetCellFormatsPreservesUntouchedPropertiesAndRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := window.Cells[0][0].Style
-	if got.Bold || !got.Italic || !got.Underline || got.FontColor != fontColor || got.FillColor != "#FFFF00" || got.HorizontalAlignment != "center" || got.NumberFormat != "0.00" || got.Borders[3].Style != 1 {
+	if got.FontFamily != family || got.Bold || !got.Italic || !got.Underline || got.FontColor != fontColor || got.FillColor != "#FFFF00" || got.HorizontalAlignment != "center" || got.NumberFormat != "0.00" || got.Borders[3].Style != 1 {
 		t.Fatalf("format patch lost or misapplied properties: %+v", got)
 	}
 	if err := wb.Save(); err != nil {
@@ -82,7 +83,7 @@ func TestSetCellFormatsPreservesUntouchedPropertiesAndRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = window.Cells[0][0].Style
-	if got.Bold || !got.Italic || !got.Underline || got.FontColor != fontColor || got.FillColor != "#FFFF00" || got.HorizontalAlignment != "center" || got.NumberFormat != "0.00" || got.Borders[3].Style != 1 {
+	if got.FontFamily != family || got.Bold || !got.Italic || !got.Underline || got.FontColor != fontColor || got.FillColor != "#FFFF00" || got.HorizontalAlignment != "center" || got.NumberFormat != "0.00" || got.Borders[3].Style != 1 {
 		t.Fatalf("reopened format=%+v", got)
 	}
 	if value, err := reopened.Value("Sheet1", "B1"); err != nil || value != "untouched" {

@@ -194,6 +194,7 @@ func (a *App) layoutWordRibbonCompactAction(gtx layout.Context, state *documentS
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.Y = 0
 					label := material.Caption(a.theme, action.label)
 					label.TextSize = unit.Sp(10)
 					label.Color = a.tokens().Colors.Text.PureBlack
@@ -221,7 +222,7 @@ func (a *App) layoutWordFontRibbonGroup(gtx layout.Context, state *documentSessi
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return a.layoutWordRibbonField(gtx, fontFamily, 108, "宋体")
+					return a.layoutWordRibbonField(gtx, fontFamily, 108, a.fontPickerDisplayFamilyName(selectedWordFontFamilyName(state)))
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -280,7 +281,7 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 		active := enabled && wordToolbarActionActive(state, action)
 		paintRibbonControlState(gtx, image.Pt(width, height), active, false, enabled && (button.Hovered() || gtx.Focused(button)), a.tokens().Colors.Toolbar)
 		if action.id == "font-family" || action.id == "font-size" {
-			value := "等线 (正文)"
+			value := a.fontPickerDisplayFamilyName(selectedWordFontFamilyName(state))
 			if action.id == "font-size" {
 				value = "13"
 			}

@@ -7,6 +7,7 @@ import (
 	"gioui.org/widget/material"
 	"glance/internal/document"
 
+	"glance/internal/fontcatalog"
 	"glance/internal/format/docx"
 	"glance/internal/wordlayout"
 )
@@ -69,7 +70,7 @@ func TestWordNavigationMovesPrintLayoutPageAndStatusFollowsVisibleSpread(t *test
 			{RunID: "run", RuneOffset: 3}: {PageIndex: 0},
 		},
 	}
-	state.wordLayoutAcceptedKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision}
+	state.wordLayoutAcceptedKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision, FontVersion: fontcatalog.Default().Version}
 	state.wordNavigationSearchEditor.SetText("needle")
 	app := &App{documentSessionState: state, theme: material.NewTheme()}
 	app.toggleWordNavigationPane()
@@ -86,7 +87,7 @@ func TestWordNavigationMovesPrintLayoutPageAndStatusFollowsVisibleSpread(t *test
 	state.wordRunEditors["run"].SetCaret(3, 3)
 	wordGridlineSemantics(app)
 	if got := wordPaginationStatusText(state); !strings.Contains(got, "第 3 页") {
-		t.Fatalf("print status = %q; want the visible page, even when the selected caret maps elsewhere", got)
+		t.Fatalf("print status = %q; want the visible page, even when the selected caret maps elsewhere (accepted=%+v pending=%+v)", got, state.wordLayoutAcceptedKey, state.wordLayoutPendingKey)
 	}
 	if word.Dirty() {
 		t.Fatal("navigating in Print Layout changed DOCX dirty state")
@@ -103,7 +104,7 @@ func TestWordNavigationPaneShowsHeadingsAndLiveSearchResults(t *testing.T) {
 
 	state := newDocumentSessionState("navigation-index.docx")
 	state.word = word
-	state.wordLayoutPendingKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision}
+	state.wordLayoutPendingKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision, FontVersion: fontcatalog.Default().Version}
 	state.wordBlocks = []document.WordBlock{
 		{ID: "heading-block", Kind: document.WordParagraphBlock, Paragraph: &document.WordParagraph{
 			ID: "heading-paragraph", Style: "Heading1", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "heading-run", Text: "项目规划", Editable: true}}},
@@ -158,7 +159,7 @@ func TestWordNavigationPaneCloseButtonClosesPane(t *testing.T) {
 	word.SetDirty(false)
 	state := newDocumentSessionState("navigation-close.docx")
 	state.word = word
-	state.wordLayoutPendingKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision}
+	state.wordLayoutPendingKey = &wordLayoutKey{DocumentID: state.documentID, Revision: state.wordRevision, FontVersion: fontcatalog.Default().Version}
 	app := &App{documentSessionState: state, theme: material.NewTheme()}
 	app.toggleWordNavigationPane()
 	wordGridlineSemantics(app)

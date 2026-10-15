@@ -3,6 +3,7 @@ package wordfont
 import (
 	"bytes"
 	"container/list"
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -21,23 +22,14 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	"glance/internal/document"
+	"glance/internal/fontcatalog"
+	"glance/internal/fontfallback"
 	"glance/internal/wordlayout"
+	"io"
 )
 
-var wordFontFallbackFamilies = []string{
-	"Noto Sans CJK SC",
-	"PingFang SC",
-	"Hiragino Sans GB",
-	"Microsoft YaHei",
-	"WenQuanYi Micro Hei",
-	"Noto Sans",
-	"Arial",
-	"Helvetica",
-	"sans-serif",
-}
-
 func FallbackFamilies() []string {
-	return append([]string(nil), wordFontFallbackFamilies...)
+	return fontfallback.CJKFamilies()
 }
 
 func SplitFamilies(value string) []string {
@@ -47,10 +39,12 @@ func SplitFamilies(value string) []string {
 type Shaper struct {
 	mu sync.Mutex
 
-	cacheDir string
-	loaded   bool
-	loadErr  error
-	fonts    []fontscan.Footprint
+	snapshot    *fontcatalog.Snapshot
+	resourceIDs map[fontscan.Location]fontcatalog.ResourceID
+	cacheDir    string
+	loaded      bool
+	loadErr     error
+	fonts       []fontscan.Footprint
 
 	facesByID map[fontscan.Location]*font.Face
 	idsByFace map[*font.Face]fontscan.Location
@@ -61,6 +55,22 @@ type Shaper struct {
 }
 
 func NewSystem() (*Shaper, error) {
+	if snapshot := fontcatalog.Default(); snapshot.Version > 0 {
+		return NewWithSnapshot(snapshot)
+	}
+	if cache, objects, e := fontcatalog.DefaultPaths(); e == nil {
+		if cached, e := fontcatalog.LoadCache(cache); e == nil {
+			return NewWithSnapshot(cached)
+		}
+		if entries, e := os.ReadDir(objects); e == nil && len(entries) > 0 {
+			if dirs, e := fontcatalog.SystemDirectories(); e == nil {
+				snapshot, e := fontcatalog.LoadResources(context.Background(), cache, objects, dirs)
+				if e == nil {
+					return NewWithSnapshot(snapshot)
+				}
+			}
+		}
+	}
 	return newWordTextShaperWithCacheDir("")
 }
 
@@ -123,6 +133,9 @@ func (s *Shaper) Shape(value string, style document.WordTextStyle) (wordlayout.S
 	}
 	var segmenter shaping.Segmenter
 	segments := segmenter.Split(input, fontMap)
+	if fontMap.resourceErr != nil {
+		return wordlayout.ShapedText{}, fontMap.resourceErr
+	}
 	var harfbuzz shaping.HarfbuzzShaper
 	shaped := wordlayout.ShapedText{}
 	for _, segment := range segments {
@@ -200,12 +213,10 @@ func (s *Shaper) FontData(fontKey string) ([]byte, error) {
 	}
 	for _, footprint := range s.fonts {
 		if wordFontKey(footprint.Location) == fontKey {
-			data, err := os.ReadFile(footprint.Location.File)
-			if err != nil {
-				return nil, fmt.Errorf("read font source %q: %w", footprint.Location.File, err)
+			if s.loadFace(footprint.Location) == nil {
+				return nil, fmt.Errorf("font source changed or unavailable: %s", footprint.Location.File)
 			}
-			s.dataByID[footprint.Location] = data
-			return bytes.Clone(data), nil
+			return bytes.Clone(s.dataByID[footprint.Location]), nil
 		}
 	}
 	return nil, fmt.Errorf("font key %q: %w", fontKey, wordlayout.ErrUnknownFont)
@@ -255,7 +266,7 @@ func (s *Shaper) loadSystemFonts() error {
 
 func (s *Shaper) orderedFonts(style document.WordTextStyle) []fontscan.Footprint {
 	families := wordFontFamilyCandidates(style.FontFamily)
-	families = append(families, wordFontFallbackFamilies...)
+	families = append(families, FallbackFamilies()...)
 	seen := make(map[fontscan.Location]bool)
 	ordered := make([]fontscan.Footprint, 0, len(s.fonts))
 	for _, family := range families {
@@ -340,6 +351,7 @@ func fixedToPoints(value fixed.Int26_6) float64 {
 }
 
 type wordTextFontMap struct {
+	resourceErr    error
 	owner          *Shaper
 	candidates     []fontscan.Footprint
 	resolved       map[rune]*font.Face
@@ -371,11 +383,18 @@ func (m *wordTextFontMap) ResolveFace(r rune) *font.Face {
 		}
 	}
 	for _, candidate := range candidates {
-		if !candidate.Runes.Contains(r) {
+		if candidate.Runes.Len() > 0 && !candidate.Runes.Contains(r) {
 			continue
 		}
 		face := m.owner.loadFace(candidate.Location)
+		if face == nil && m.owner.snapshot != nil {
+			m.resourceErr = fmt.Errorf("font resource unavailable or changed: %s; refresh fonts", candidate.Location.File)
+			return nil
+		}
 		if face != nil {
+			if _, ok := face.NominalGlyph(r); !ok {
+				continue
+			}
 			m.resolved[r] = face
 			return face
 		}
@@ -387,7 +406,18 @@ func (s *Shaper) loadFace(location fontscan.Location) *font.Face {
 	if face := s.facesByID[location]; face != nil {
 		return face
 	}
-	data, err := os.ReadFile(location.File)
+	var data []byte
+	var err error
+	if s.snapshot != nil {
+		var reader io.ReadCloser
+		reader, err = s.snapshot.OpenFace(s.resourceIDs[location])
+		if err == nil {
+			data, err = io.ReadAll(reader)
+			reader.Close()
+		}
+	} else {
+		data, err = os.ReadFile(location.File)
+	}
 	if err != nil {
 		return nil
 	}

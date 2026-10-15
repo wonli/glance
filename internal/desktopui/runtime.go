@@ -16,6 +16,7 @@ import (
 	"glance/internal/agent/provider"
 	"glance/internal/agentsettings"
 	"glance/internal/application"
+	"glance/internal/fontdownload"
 	"glance/internal/mcpserver"
 	"glance/internal/printservice"
 	"glance/internal/workspace"
@@ -24,6 +25,10 @@ import (
 // desktopRuntime is the process-level owner of workspace persistence, shared
 // document sessions, and the set of live windows.
 type desktopRuntime struct {
+	fontInit                sync.Once
+	fonts                   *application.FontService
+	fontDownloads           *fontdownload.Downloader
+	fontProvider            fontdownload.Provider
 	applicationRuntime      *application.Runtime
 	applicationRuntimeErr   error
 	nativePrinter           printservice.Printer

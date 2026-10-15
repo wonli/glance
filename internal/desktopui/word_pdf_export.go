@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"glance/internal/document"
+	"glance/internal/fontcatalog"
 	"glance/internal/format/docx"
 	"glance/internal/format/wordpdf"
 	"glance/internal/wordlayout"
@@ -329,7 +330,7 @@ func currentWordLayoutKey(state *documentSessionState) (wordLayoutKey, document.
 	}
 	return wordLayoutKey{
 		DocumentID: state.documentID, Revision: state.wordRevisionAtomic.Load(),
-		DraftEpoch: state.wordDraftEpoch.Load(), PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup),
+		DraftEpoch: state.wordDraftEpoch.Load(), PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup), FontVersion: fontcatalog.Default().Version,
 	}, data, true
 }
 

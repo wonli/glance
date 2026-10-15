@@ -170,3 +170,16 @@ Regression evidence: `internal/format/pdfdoc/document_test.go` and `internal/des
 ## PPTX editing follow-up (2026-10-08)
 
 The reported edit-mode layout changes are still unresolved for imported multi-paragraph content. In `slidetemplate.pptx`, slide 1 shape 4 contains two paragraphs and a DrawingML soft break; the current run projection omits that break, and the text mutation adapter rejects multi-paragraph/special-break edits. Preview stacks paragraph layouts while edit mode uses one plain `widget.Editor`; mixed run typography, wrap bounds, paragraph boundaries, and vertical positioning are not guaranteed to match. Existing single-paragraph baseline regressions do not prove that sample fixed. The shared object-frame/text-layout plan is recorded in [PPTX shared editing components](superpowers/plans/2026-10-08-pptx-shared-editing-components.md); its implementation is deferred.
+
+
+## Shared Word/Excel font library (2026-10-15)
+
+Word and Excel share the compact font picker, local font search (including parsed Chinese aliases), document-font summary, inline previews, cache state and manual refresh/retry. Missing document families remain named and marked missing; choosing a replacement goes through the existing formatting command. The Ribbon displays the selected run/cell family. Downloading alone does not modify a document.
+
+Supported system discovery covers readable TTF/OTF/TTC/OTC resources reported by platform font directories, including metadata for large macOS collections. Individual invalid files are skipped with diagnostics. This is not a guarantee that every protected OS font, collection face, variable/color font or PDF embedding mode can render/export. Gio custom font collections are limited to 128 MiB; its fallback and Word's script/compatibility rules remain distinct renderer adaptations.
+
+Online support is implemented behind `fontdownload.Provider`; the initial production manifest is empty. No public font catalog or network download is advertised in the UI until verified entries are supplied. Downloads currently accept single-face static TrueType fonts (64 MiB maximum), with a fixed version, license, HTTPS URL, SHA-256 and expected family. Files remain private to Glance. DOCX/XLSX save canonical family names and do not embed these fonts; another application/machine still needs an equivalent font.
+
+Excel's summary reads the workbook's declared style-font table, including offscreen styles. It can include unused declarations and does not promise a complete rich-text-run inventory. Word's summary follows the neutral projected text runs, so unsupported original package content is outside that summary. Neither summary is a new full Office text engine.
+
+Evidence and limits, including full-suite baseline failures and native-input coverage: [font-library-verification.md](font-library-verification.md).

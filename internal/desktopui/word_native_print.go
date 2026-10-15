@@ -15,11 +15,12 @@ import (
 )
 
 type wordPrintResult struct {
-	state    *documentSessionState
-	key      wordLayoutKey
-	prepared bool
-	data     []byte
-	err      error
+	state     *documentSessionState
+	key       wordLayoutKey
+	prepared  bool
+	pageCount int
+	data      []byte
+	err       error
 }
 
 func (a *App) requestWordPrint() {
@@ -153,7 +154,7 @@ func (a *App) startWordPrintPreparation(state *documentSessionState, key wordLay
 	stateCopy := state
 	a.launchManagedBackground(func() {
 		defer stateCopy.finishOperation(token)
-		result := wordPrintResult{state: stateCopy, key: key, prepared: true}
+		result := wordPrintResult{state: stateCopy, key: key, prepared: true, pageCount: len(pageResult.Pages)}
 		unlock := lockSessionAdapterRead(stateCopy)
 		snapshot, err := doc.Snapshot()
 		unlock()
@@ -194,7 +195,7 @@ func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKe
 	if state == nil || state.word == nil || state.closed.Load() || a.documentSessionState != state || a.nativePrinter == nil || !a.nativePrinter.Available() {
 		return
 	}
-	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
+	if !wordPreparedPrintStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
 		a.setStatus("文档已更改，打印已取消；请重新打印")
 		return
 	}
@@ -288,7 +289,7 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 	if state.closed.Load() {
 		return
 	}
-	if state.wordRevisionAtomic.Load() != result.key.Revision || !wordPDFLayoutStillCurrent(state, result.key) {
+	if state.wordRevisionAtomic.Load() != result.key.Revision || !wordPreparedPrintStillCurrent(state, result.key) {
 		if state == a.documentSessionState {
 			a.setStatus("文档已更改，旧打印页面已丢弃")
 		}
@@ -314,7 +315,10 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 			a.setStatus("打印页面为空，无法打印")
 			return
 		}
-		pageCount := len(state.wordLayoutResult.Pages)
+		pageCount := result.pageCount
+		if pageCount == 0 && state.wordLayoutResult != nil {
+			pageCount = len(state.wordLayoutResult.Pages)
+		}
 		message := fmt.Sprintf("共 %d 页。将使用当前打印布局生成的同一份页面内容。继续后打开系统打印面板，可在面板中选择打印机和份数。", pageCount)
 		printData := append([]byte(nil), result.data...)
 		a.showConfirmDialog("打印预览已准备", message, modalDialogPrintConfirmStyle, func(action string) {
@@ -323,7 +327,7 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 				a.setStatus("已取消打印")
 				return
 			}
-			if !wordPDFLayoutStillCurrent(state, result.key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
+			if !wordPreparedPrintStillCurrent(state, result.key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
 				a.setStatus("文档在确认期间已更改，请重新打印")
 				return
 			}
@@ -335,4 +339,11 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 	if result.err == nil {
 		a.setStatus("已发送到系统打印队列")
 	}
+}
+
+// Prepared PDF bytes retain their font snapshot. Only document changes invalidate them.
+func wordPreparedPrintStillCurrent(state *documentSessionState, key wordLayoutKey) bool {
+	current, _, ok := currentWordLayoutKey(state)
+	current.FontVersion = key.FontVersion
+	return ok && current == key
 }

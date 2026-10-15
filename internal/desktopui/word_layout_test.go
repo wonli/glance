@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/png"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
+	"glance/internal/wordfont"
 	"glance/internal/wordlayout"
 )
 
@@ -65,7 +67,16 @@ func TestWordCanvasUsesDocumentPageMargins(t *testing.T) {
 func TestWordRunLabelUsesPaginationFontFallbackOrder(t *testing.T) {
 	run := document.WordTextRun{Style: document.WordTextStyle{FontFamily: "PingFang SC", Bold: true}}
 	label := wordRunLabel(material.NewTheme(), document.WordParagraph{}, run)
-	wantTypeface := font.Typeface("PingFang SC, Noto Sans CJK SC, Hiragino Sans GB, Microsoft YaHei, WenQuanYi Micro Hei, Noto Sans, Arial, Helvetica, sans-serif")
+	families := []string{"PingFang SC"}
+	seen := map[string]bool{"pingfang sc": true}
+	for _, family := range wordfont.FallbackFamilies() {
+		key := strings.ToLower(strings.TrimSpace(family))
+		if key != "" && !seen[key] {
+			seen[key] = true
+			families = append(families, family)
+		}
+	}
+	wantTypeface := font.Typeface(strings.Join(families, ", "))
 	if label.Font.Typeface != wantTypeface {
 		t.Fatalf("Word editor typeface = %q; want DOCX family followed by pagination fallbacks %q", label.Font.Typeface, wantTypeface)
 	}

@@ -158,3 +158,23 @@ func TestWordPrintCancelAtPreviewDoesNotInvokePrinter(t *testing.T) {
 		t.Fatalf("cancel status = %q", app.status)
 	}
 }
+
+func TestWordPreparedPrintSurvivesFontCatalogRefresh(t *testing.T) {
+	printer := &testWordPrinter{available: true, calls: make(chan printedWordPDF, 1)}
+	app, state, _ := newNativePrintTestApp(t, printer)
+	key := *state.wordLayoutAcceptedKey
+	// Refresh invalidates the live layout; prepared bytes still belong to the unchanged document.
+	state.wordLayoutAcceptedKey = nil
+	state.wordLayoutResult = nil
+	app.applyWordPrintResult(wordPrintResult{state: state, key: key, prepared: true, data: []byte("prepared PDF")})
+	if !app.modal.Visible || app.modal.Title != "打印预览已准备" {
+		t.Fatalf("prepared print discarded after refresh: %s", app.status)
+	}
+	state.wordRevisionAtomic.Add(1)
+	app.modal.OnAction("confirm")
+	select {
+	case <-printer.calls:
+		t.Fatal("printed after document changed")
+	default:
+	}
+}
