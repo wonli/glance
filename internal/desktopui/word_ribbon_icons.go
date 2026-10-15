@@ -1,6 +1,9 @@
 package desktopui
 
-import "image"
+import (
+	"image"
+	"image/color"
+)
 
 const wordToolbarIconRasterSize = 192
 
@@ -39,9 +42,17 @@ func wordRibbonIcon(name string, enabled bool) (image.Image, bool) {
 	return tintedToolbarIconAtSize(wordExcelIconName(name), toolbarIconColor(enabled), wordToolbarIconRasterSize)
 }
 
-func wordToolbarActionIcon(action wordToolbarAction, enabled bool) (image.Image, bool) {
+func wordToolbarActionIconWithTint(action wordToolbarAction, tint color.NRGBA) (image.Image, bool) {
 	if _, err := svgIconAssets.ReadFile("assets/icons/word/" + action.id + ".svg"); err == nil {
-		return svgIconTintAtSize("word", action.id, wordToolbarIconRasterSize, toolbarIconColor(enabled))
+		return svgIconTintAtSize("word", action.id, wordToolbarIconRasterSize, tint)
 	}
-	return wordRibbonIcon(action.icon, enabled)
+	return tintedToolbarIconAtSize(wordExcelIconName(action.icon), tint, wordToolbarIconRasterSize)
+}
+
+func wordToolbarActionIcon(action wordToolbarAction, enabled bool) (image.Image, bool) {
+	return wordToolbarActionIconWithTint(action, toolbarIconColor(enabled))
+}
+
+func (a *App) themedWordToolbarActionIcon(action wordToolbarAction, enabled bool) (image.Image, bool) {
+	return wordToolbarActionIconWithTint(action, a.toolbarIconColor(enabled))
 }

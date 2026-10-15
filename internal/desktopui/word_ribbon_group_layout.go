@@ -63,7 +63,7 @@ func (a *App) layoutWordRibbonGroup(gtx layout.Context, state *documentSessionSt
 				return layout.Dimensions{Size: gtx.Constraints.Max}
 			}
 			x := gtx.Constraints.Max.X - gtx.Dp(unit.Dp(1))
-			paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Min: image.Pt(x, gtx.Dp(unit.Dp(5))), Max: image.Pt(x+gtx.Dp(unit.Dp(1)), gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(14)))}.Op())
+			paint.FillShape(gtx.Ops, a.tokens().Colors.Toolbar.Divider, clip.Rect{Min: image.Pt(x, gtx.Dp(unit.Dp(5))), Max: image.Pt(x+gtx.Dp(unit.Dp(1)), gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(14)))}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		}),
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
@@ -166,7 +166,7 @@ func (a *App) layoutWordRibbonActionRow(gtx layout.Context, state *documentSessi
 func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionState, action ribbonAction, widthDP, heightDP int, showLabel bool) layout.Dimensions {
 	width, height := gtx.Dp(unit.Dp(widthDP)), gtx.Dp(unit.Dp(heightDP))
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
-	enabled := a.wordToolbarActionEnabled(action)
+	enabled := a.wordToolbarActionButtonEnabled(action)
 	button := wordToolbarButton(state, action.id)
 	draw := func(gtx layout.Context) layout.Dimensions {
 		semantics := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
@@ -174,12 +174,12 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 		semantic.DescriptionOp(action.label).Add(gtx.Ops)
 		semantic.EnabledOp(enabled).Add(gtx.Ops)
 		semantics.Pop()
-		background := contentSurface
+		background := a.tokens().Colors.Surface.Surface
 		if enabled && wordToolbarActionActive(state, action) {
-			background = toolbarActiveBackground
+			background = a.tokens().Colors.Toolbar.ActiveBackground
 		}
 		if enabled && (button.Hovered() || gtx.Focused(button)) {
-			background = toolbarHoverBackground
+			background = a.tokens().Colors.Toolbar.HoverBackground
 		}
 		paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
 		if action.id == "font-family" || action.id == "font-size" {
@@ -187,9 +187,9 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 			if action.id == "font-size" {
 				value = "13"
 			}
-			return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value)
+			return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value, a.tokens().Colors)
 		}
-		icon, _ := wordToolbarActionIcon(action, enabled)
+		icon, _ := a.themedWordToolbarActionIcon(action, enabled)
 		if showLabel {
 			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle, Spacing: layout.SpaceAround}.Layout(gtx,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -210,7 +210,7 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					label := material.Caption(a.theme, action.label)
 					label.TextSize = unit.Sp(9)
-					label.Color = toolbarIconColor(enabled)
+					label.Color = a.toolbarIconColor(enabled)
 					return layout.Inset{Left: unit.Dp(1), Right: unit.Dp(1)}.Layout(gtx, label.Layout)
 				}),
 			)
@@ -238,17 +238,17 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 func (a *App) layoutWordRibbonField(gtx layout.Context, action ribbonAction, widthDP int, value string) layout.Dimensions {
 	width, height := gtx.Dp(unit.Dp(widthDP)), gtx.Dp(unit.Dp(28))
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
-	paint.FillShape(gtx.Ops, ribbonDividerColor, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-	return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value)
+	paint.FillShape(gtx.Ops, a.tokens().Colors.Toolbar.Divider, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+	return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value, a.tokens().Colors)
 }
 
-func drawWordRibbonDropdown(gtx layout.Context, theme *material.Theme, action ribbonAction, width, height int, value string) layout.Dimensions {
+func drawWordRibbonDropdown(gtx layout.Context, theme *material.Theme, action ribbonAction, width, height int, value string, colors ColorTokens) layout.Dimensions {
 	bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
 	semantic.DescriptionOp(action.label).Add(gtx.Ops)
 	semantic.EnabledOp(false).Add(gtx.Ops)
 	bounds.Pop()
-	paint.FillShape(gtx.Ops, contentSurface, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-	textColor := disabledToolbarText
+	paint.FillShape(gtx.Ops, colors.Surface.Surface, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+	textColor := colors.Toolbar.DisabledText
 	style := material.Caption(theme, value)
 	style.TextSize = unit.Sp(10)
 	style.Color = textColor
@@ -271,20 +271,20 @@ func (a *App) layoutWordStyleGallery(gtx layout.Context, actions []ribbonAction)
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			width, height := gtx.Dp(unit.Dp(38)), gtx.Dp(unit.Dp(56))
 			gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
-			paint.FillShape(gtx.Ops, contentSurface, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+			paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Surface, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
 			bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
 			semantic.DescriptionOp(action.label).Add(gtx.Ops)
 			semantic.EnabledOp(false).Add(gtx.Ops)
 			bounds.Pop()
 			preview := material.Body1(a.theme, "Aa")
 			preview.TextSize = unit.Sp(14)
-			preview.Color = disabledToolbarText
+			preview.Color = a.tokens().Colors.Toolbar.DisabledText
 			if action.id == "style-heading" {
 				preview.Font.Weight = font.Bold
 			}
 			label := material.Caption(a.theme, action.label)
 			label.TextSize = unit.Sp(8)
-			label.Color = disabledToolbarText
+			label.Color = a.tokens().Colors.Toolbar.DisabledText
 			previewGtx := gtx
 			previewHeight := gtx.Dp(unit.Dp(18))
 			previewGtx.Constraints = layout.Constraints{Min: image.Pt(width, previewHeight), Max: image.Pt(width, previewHeight)}

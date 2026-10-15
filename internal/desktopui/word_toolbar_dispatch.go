@@ -66,8 +66,6 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.selectWordMultiplePagesView()
 	case "view-reading":
 		a.toggleWordReadingMode()
-	case "view-zoom":
-		a.showWordZoomDialog()
 	case "view-ruler":
 		state.wordRulerHidden = !state.wordRulerHidden
 		if state.wordRulerHidden {
@@ -217,8 +215,6 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.showWordDictateDialog()
 	case "add-ins":
 		a.showWordAddInsDialog()
-	case "view-macros":
-		a.showWordMacrosDialog()
 	case "ruler-indents":
 		intent := state.wordRulerIndentIntent
 		if intent == nil {

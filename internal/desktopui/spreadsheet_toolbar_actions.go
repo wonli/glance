@@ -74,7 +74,13 @@ const (
 	toolbarActionPrint
 	toolbarActionExport
 	toolbarActionShare
-	toolbarActionLast = toolbarActionShare
+)
+
+const (
+	toolbarActionFontSize = toolbarActionShare + 1 + iota
+	toolbarActionCellStyles
+	toolbarActionFormat
+	toolbarActionLast = toolbarActionFormat
 )
 
 var baseToolbarCategoryLabels = []string{"文件", "开始", "插入", "页面布局", "公式", "数据", "审阅", "视图"}
@@ -94,6 +100,7 @@ var homeRibbonActions = []spreadsheetToolbarAction{
 	{slot: 21, label: "粘贴", group: "剪贴板", icon: "clipboard-paste"},
 	{slot: toolbarActionFormatPainter, label: "格式刷", group: "剪贴板", icon: "paintbrush"},
 	{slot: toolbarActionFontFamily, label: "字体", group: "字体", icon: "type"},
+	{slot: toolbarActionFontSize, label: "字号", group: "字体", icon: "type"},
 	{slot: 4, label: "加粗", group: "字体", icon: "bold"},
 	{slot: 5, label: "斜体", group: "字体", icon: "italic"},
 	{slot: 6, label: "下划线", group: "字体", icon: "underline"},
@@ -106,6 +113,8 @@ var homeRibbonActions = []spreadsheetToolbarAction{
 	{slot: 12, label: "插入", group: "单元格", icon: "square-plus"},
 	{slot: 13, label: "删除", group: "单元格", icon: "trash-2"},
 	{slot: toolbarActionConditionalFormat, label: "条件格式", group: "单元格", icon: "sparkles"},
+	{slot: toolbarActionCellStyles, label: "单元格样式", group: "单元格", icon: "grid"},
+	{slot: toolbarActionFormat, label: "格式", group: "单元格", icon: "settings-2"},
 	{slot: toolbarActionTableFormat, label: "表格格式", group: "单元格", icon: "table"},
 	{slot: toolbarActionSum, label: "求和", group: "编辑", icon: "sigma"},
 	{slot: 18, label: "排序", group: "编辑", icon: "arrow-up-down"},
@@ -227,7 +236,7 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 	}
 	switch slot {
 	case toolbarActionOpenFile, toolbarActionSaveAs, toolbarActionPrint, toolbarActionExport, toolbarActionShare,
-		toolbarActionFormatPainter, toolbarActionFontFamily,
+		toolbarActionFormatPainter, toolbarActionFontFamily, toolbarActionFontSize, toolbarActionCellStyles, toolbarActionFormat,
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat,
 		toolbarActionSum, toolbarActionFind,
 		toolbarActionZoomIn, toolbarActionZoom100,

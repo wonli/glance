@@ -14,9 +14,13 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 	if state == nil || state.word == nil || a.modal.Visible || a.wordVersionHistoryVisible || a.wordSymbolPickerVisible {
 		return
 	}
+	if a.handleOfficeRibbonMenuEvents(gtx) {
+		return
+	}
 	tabs := wordToolbarTabs(state)
 	for index, tab := range tabs {
 		if state.wordToolbarTabs[index].Clicked(gtx) {
+			a.closeOfficeRibbonMenu()
 			state.wordToolbarTab = tab
 			state.wordToolbarActionList.List.Position = layout.Position{}
 			state.wordToolbarColorPicker = false
@@ -26,7 +30,15 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 	}
 	for _, action := range wordToolbarActions(state.wordToolbarTab) {
 		button := state.wordToolbarActionButtons[action.id]
-		if button == nil || !button.Clicked(gtx) || !a.wordToolbarActionEnabled(action) {
+		if button == nil || !button.Clicked(gtx) {
+			continue
+		}
+		if a.toggleWordOfficeRibbonMenu(action.id) {
+			state.wordToolbarColorPicker = false
+			state.wordToolbarHighlightPicker = false
+			continue
+		}
+		if !a.wordToolbarActionEnabled(action) {
 			continue
 		}
 		if action.id == "view-new-window" {
@@ -182,10 +194,6 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.acceptWordRevisions()
 		case "review-reject":
 			a.rejectWordRevisions()
-		case "review-editor", "editor":
-			a.showWordEditorDialog()
-		case "review-translate":
-			a.showWordTranslateDialog()
 		case "review-compare":
 			a.showWordCompareDialog()
 		case "layout-position":
@@ -220,9 +228,7 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.showWordDictateDialog()
 		case "add-ins":
 			a.showWordAddInsDialog()
-		case "view-macros":
-			a.showWordMacrosDialog()
-		case "view-print-layout", "view-web-layout", "view-navigation", "view-single-page", "view-multiple-pages", "view-reading", "view-zoom", "view-ruler", "view-gridlines":
+		case "view-print-layout", "view-web-layout", "view-navigation", "view-single-page", "view-multiple-pages", "view-reading", "view-ruler", "view-gridlines":
 			a.executeWordToolbarAction(action.id)
 		case "save":
 			a.startSave()

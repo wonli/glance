@@ -157,8 +157,9 @@ type documentSessionState struct {
 	toolbarPickerButtons                [9]widget.Clickable
 	toolbarPicker                       spreadsheetToolbarPicker
 	toolbarPickerSlot                   int
+	officeRibbonMenu                    officeRibbonDropdownState
 	wordToolbarTab                      wordToolbarTab
-	wordToolbarTabs                     [8]widget.Clickable
+	wordToolbarTabs                     [9]widget.Clickable
 	wordToolbarTabList                  widget.List
 	wordToolbarActionList               widget.List
 	wordToolbarActionButtons            map[string]*widget.Clickable

@@ -19,6 +19,7 @@ const (
 	wordTabInsert
 	wordTabDesign
 	wordTabLayout
+	wordTabReferences
 	wordTabReview
 	wordTabView
 	wordTabPicture
@@ -34,7 +35,7 @@ const (
 )
 
 var (
-	wordToolbarTabLabels = []string{"文件", "开始", "插入", "设计", "布局", "审阅", "视图", "图片"}
+	wordToolbarTabLabels = []string{"文件", "开始", "插入", "设计", "布局", "引用", "审阅", "视图", "图片"}
 	wordFileActions      = wordActions(
 		"new|新建|文档|file-plus", "open|打开|文档|folder-open", "recent|最近使用|文档|clock-3",
 		"save|保存|保存|save", "save-as|另存为|保存|copy", "autosave|自动保存|保存|refresh-cw",
@@ -88,6 +89,10 @@ var (
 		"layout-indent|缩进|段落|indent-increase", "layout-before|段前|段落|arrow-up-to-line", "layout-after|段后|段落|arrow-down-to-line",
 		"layout-position|位置|排列|move", "layout-wrap|环绕文字|排列|wrap-text", "layout-align|对齐|排列|align-horizontal-justify-center",
 	)
+	wordReferenceActions = wordActions(
+		"references-toc|目录|目录|list", "references-footnotes|脚注和尾注|脚注|list-ordered",
+		"references-citations|引文|引文|bookmark", "references-caption|题注|题注|file-text",
+	)
 	wordReviewActions = wordActions(
 		"review-editor|编辑器|校对|spell-check", "review-word-count|字数统计|校对|whole-word", "review-translate|翻译|语言|languages",
 		"review-language|语言|语言|languages", "review-new-comment|新建批注|批注|message-square-plus", "review-delete-comment|删除批注|批注|message-square-x",
@@ -97,8 +102,8 @@ var (
 	wordViewActions = wordActions(
 		"view-reading|阅读模式|视图|book-open", "view-print-layout|打印布局|视图|printer", "view-web-layout|Web版式|视图|panels-top-left",
 		"view-ruler|标尺|显示|ruler", "view-gridlines|网格线|显示|grid-2x2", "view-navigation|导航窗格|显示|panel-left",
-		"view-zoom|缩放|缩放|zoom-in", "view-single-page|单页|缩放|file", "view-multiple-pages|多页|缩放|files",
-		"view-new-window|新建窗口|窗口|app-window", "view-side-by-side|并排查看|窗口|columns-2", "view-macros|宏|宏|code-xml",
+		"view-single-page|单页|缩放|file", "view-multiple-pages|多页|缩放|files",
+		"view-new-window|新建窗口|窗口|app-window", "view-side-by-side|并排查看|窗口|columns-2",
 	)
 	wordHistoryActions = wordActions("undo|撤销|历史|undo", "redo|重做|历史|redo")
 	wordPictureActions = []ribbonAction{
@@ -151,7 +156,7 @@ func wordActions(specs ...string) []ribbonAction {
 }
 
 func wordToolbarTabs(state *documentSessionState) []wordToolbarTab {
-	tabs := []wordToolbarTab{wordTabFile, wordTabHome, wordTabInsert, wordTabDesign, wordTabLayout, wordTabReview, wordTabView}
+	tabs := []wordToolbarTab{wordTabFile, wordTabHome, wordTabInsert, wordTabDesign, wordTabLayout, wordTabReferences, wordTabReview, wordTabView}
 	if state != nil && state.selectedWordImageID != "" {
 		tabs = append(tabs, wordTabPicture)
 	}
@@ -170,6 +175,8 @@ func wordToolbarActions(tab wordToolbarTab) []ribbonAction {
 		return wordDesignActions
 	case wordTabLayout:
 		return wordLayoutActions
+	case wordTabReferences:
+		return wordReferenceActions
 	case wordTabReview:
 		return wordReviewActions
 	case wordTabView:
@@ -202,7 +209,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "doc-info":
 		_, supported := any(state.word).(document.WordDocumentPropertiesEditor)
 		return supported
-	case "view-reading", "view-print-layout", "view-web-layout", "view-navigation", "view-zoom", "view-gridlines", "view-single-page", "view-multiple-pages":
+	case "view-reading", "view-print-layout", "view-web-layout", "view-navigation", "view-gridlines", "view-single-page", "view-multiple-pages":
 		return true
 	case "view-ruler":
 		return true
@@ -361,10 +368,8 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "review-track", "review-accept", "review-reject":
 		_, ok := any(state.word).(document.WordTrackRevisionsEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
-	case "review-editor", "editor":
-		return state.word != nil && len(state.wordBlocks) > 0 && !state.formatRunning.Load() && !a.isSaving()
-	case "review-translate":
-		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
+	case "review-editor", "editor", "review-translate":
+		return false
 	case "review-compare":
 		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
 	case "layout-position":
@@ -405,11 +410,19 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		return ok && editor.CanSetWordThemeEffects() && !state.formatRunning.Load() && !a.isSaving()
 	case "designer", "dictate", "add-ins":
 		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
-	case "view-macros":
+	case "references-toc", "references-footnotes", "references-citations", "references-caption":
 		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
 	default:
 		return false
 	}
+}
+
+func (a *App) wordToolbarActionButtonEnabled(action ribbonAction) bool {
+	if action.id != "save" && action.id != "print" && action.id != "doc-info" {
+		return a.wordToolbarActionEnabled(action)
+	}
+	state := a.documentSessionState
+	return state != nil && state.word != nil && !state.formatRunning.Load() && !a.isSaving() && !a.fileCommandRunning && !a.wordImagePickerRunning
 }
 
 func wordToolbarButton(state *documentSessionState, id string) *widget.Clickable {

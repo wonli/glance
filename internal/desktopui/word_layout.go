@@ -58,6 +58,12 @@ func (a *App) layoutWordFlow(gtx layout.Context) layout.Dimensions {
 			}
 			return a.layoutWordToolbarColorPicker(gtx)
 		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			if state.wordReadingMode {
+				return layout.Dimensions{}
+			}
+			return a.layoutOfficeRibbonDropdown(gtx)
+		}),
 	)
 	state.wordNavLayouts = state.wordNavLayoutsNext
 	state.wordNavLayoutsNext = nil

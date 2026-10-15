@@ -129,6 +129,7 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 			)
 		}),
 		layout.Stacked(a.layoutSpreadsheetToolbarPickerOverlay),
+		layout.Stacked(a.layoutOfficeRibbonDropdown),
 	)
 }
 

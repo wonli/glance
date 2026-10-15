@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"image"
+	"image/color"
 
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
@@ -26,7 +27,7 @@ func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSession
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				return state.wordToolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
 					action := actions[index]
-					enabled := a.wordToolbarActionEnabled(action)
+					enabled := a.wordToolbarActionButtonEnabled(action)
 					button := wordToolbarButton(state, action.id)
 					description := a.wordToolbarActionDescription(action)
 					if action.id == "view-new-window" && !enabled {
@@ -35,16 +36,16 @@ func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSession
 						}
 					}
 					active := enabled && wordToolbarActionActive(state, action)
-					background := contentSurface
+					background := a.tokens().Colors.Surface.Surface
 					if active {
-						background = toolbarActiveBackground
+						background = a.tokens().Colors.Toolbar.ActiveBackground
 					}
-					icon, _ := wordToolbarActionIcon(action, enabled)
-					return layoutWordToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
+					icon, _ := a.themedWordToolbarActionIcon(action, enabled)
+					return layoutWordToolbarActionItem(gtx, action, index, actions, a.tokens().Colors.Toolbar.Divider, func(gtx layout.Context) layout.Dimensions {
 						btnGtx := gtx
 						btnGtx.Constraints.Min = image.Pt(gtx.Dp(toolbarButtonWidth), gtx.Dp(toolbarButtonHeight))
 						btnGtx.Constraints.Max = btnGtx.Constraints.Min
-						return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, description, enabled, false, background)
+						return toolbarIconButtonWithColors(btnGtx, a.theme, button, icon, iconSize, action.label, description, enabled, false, background, a.tokens().Colors)
 					})
 				})
 			})
@@ -52,7 +53,7 @@ func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSession
 	)
 }
 
-func layoutWordToolbarActionItem(gtx layout.Context, action ribbonAction, index int, actions []ribbonAction, child layout.Widget) layout.Dimensions {
+func layoutWordToolbarActionItem(gtx layout.Context, action ribbonAction, index int, actions []ribbonAction, dividerColor color.NRGBA, child layout.Widget) layout.Dimensions {
 	groupEnd := index == len(actions)-1 || actions[index+1].group != action.group
 	children := make([]layout.FlexChild, 0, 4)
 	children = append(children, layout.Rigid(child))
@@ -68,7 +69,7 @@ func layoutWordToolbarActionItem(gtx layout.Context, action ribbonAction, index 
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(1)), gtx.Dp(unit.Dp(32)))
 				gtx.Constraints.Max = gtx.Constraints.Min
-				paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Max: gtx.Constraints.Min}.Op())
+				paint.FillShape(gtx.Ops, dividerColor, clip.Rect{Max: gtx.Constraints.Min}.Op())
 				return layout.Dimensions{Size: gtx.Constraints.Min}
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -86,7 +87,7 @@ func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSe
 	defer transform.Pop()
 	buttonGtx := gtx
 	buttonGtx.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}
-	enabled := a.wordToolbarActionEnabled(action)
+	enabled := a.wordToolbarActionButtonEnabled(action)
 	button := wordToolbarButton(state, action.id)
 	description := a.wordToolbarActionDescription(action)
 	if action.id == "view-new-window" && !enabled {
@@ -95,12 +96,12 @@ func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSe
 		}
 	}
 	active := enabled && wordToolbarActionActive(state, action)
-	background := contentSurface
+	background := a.tokens().Colors.Surface.Surface
 	if active {
-		background = toolbarActiveBackground
+		background = a.tokens().Colors.Toolbar.ActiveBackground
 	}
-	icon, _ := wordToolbarActionIcon(action, enabled)
-	toolbarIconButton(buttonGtx, a.theme, button, icon, toolbarIconSize, action.label, description, enabled, false, background)
+	icon, _ := a.themedWordToolbarActionIcon(action, enabled)
+	toolbarIconButtonWithColors(buttonGtx, a.theme, button, icon, toolbarIconSize, action.label, description, enabled, false, background, a.tokens().Colors)
 }
 
 func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP, yDP int) {
@@ -109,7 +110,7 @@ func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentS
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
 	child := gtx
 	child.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}
-	enabled := a.wordToolbarActionEnabled(action)
+	enabled := a.wordToolbarActionButtonEnabled(action)
 	button := wordToolbarButton(state, action.id)
 	draw := func(gtx layout.Context) layout.Dimensions {
 		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
@@ -117,12 +118,12 @@ func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentS
 		semantic.DescriptionOp(action.label).Add(gtx.Ops)
 		semantic.EnabledOp(enabled).Add(gtx.Ops)
 		bounds.Pop()
-		background := contentSurface
+		background := a.tokens().Colors.Surface.Surface
 		if enabled && (button.Hovered() || gtx.Focused(button)) {
-			background = toolbarHoverBackground
+			background = a.tokens().Colors.Toolbar.HoverBackground
 		}
 		paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-		icon, _ := wordToolbarActionIcon(action, enabled)
+		icon, _ := a.themedWordToolbarActionIcon(action, enabled)
 		iconSize := gtx.Dp(unit.Dp(16))
 		iconOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(10)), gtx.Dp(unit.Dp(31)))).Push(gtx.Ops)
 		iconGtx := gtx
@@ -133,13 +134,13 @@ func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentS
 		iconOffset.Pop()
 		label := material.Caption(a.theme, action.label)
 		label.TextSize = unit.Sp(10)
-		label.Color = toolbarIconColor(enabled)
+		label.Color = a.toolbarIconColor(enabled)
 		labelOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(32)), gtx.Dp(unit.Dp(30)))).Push(gtx.Ops)
 		label.Layout(gtx)
 		labelOffset.Pop()
 		arrow := material.Caption(a.theme, "⌄")
 		arrow.TextSize = unit.Sp(10)
-		arrow.Color = toolbarIconColor(enabled)
+		arrow.Color = a.toolbarIconColor(enabled)
 		arrowOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(54)), gtx.Dp(unit.Dp(47)))).Push(gtx.Ops)
 		arrow.Layout(gtx)
 		arrowOffset.Pop()
@@ -159,7 +160,7 @@ func (a *App) layoutWordRibbonIconLabelActionAt(gtx layout.Context, state *docum
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
 	child := gtx
 	child.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}
-	enabled := a.wordToolbarActionEnabled(action)
+	enabled := a.wordToolbarActionButtonEnabled(action)
 	button := wordToolbarButton(state, action.id)
 	draw := func(gtx layout.Context) layout.Dimensions {
 		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
@@ -167,12 +168,12 @@ func (a *App) layoutWordRibbonIconLabelActionAt(gtx layout.Context, state *docum
 		semantic.DescriptionOp(action.label).Add(gtx.Ops)
 		semantic.EnabledOp(enabled).Add(gtx.Ops)
 		bounds.Pop()
-		background := contentSurface
+		background := a.tokens().Colors.Surface.Surface
 		if enabled && (button.Hovered() || gtx.Focused(button)) {
-			background = toolbarHoverBackground
+			background = a.tokens().Colors.Toolbar.HoverBackground
 		}
 		paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-		icon, _ := wordToolbarActionIcon(action, enabled)
+		icon, _ := a.themedWordToolbarActionIcon(action, enabled)
 		iconSize := gtx.Dp(unit.Dp(22))
 		iconOffset := op.Offset(image.Pt(gtx.Dp(unit.Dp(4)), gtx.Dp(unit.Dp(6)))).Push(gtx.Ops)
 		iconGtx := gtx
@@ -183,7 +184,7 @@ func (a *App) layoutWordRibbonIconLabelActionAt(gtx layout.Context, state *docum
 		iconOffset.Pop()
 		label := material.Caption(a.theme, action.label)
 		label.TextSize = unit.Sp(9)
-		label.Color = toolbarIconColor(enabled)
+		label.Color = a.toolbarIconColor(enabled)
 		labelOffset := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(34)))).Push(gtx.Ops)
 		label.Layout(gtx)
 		labelOffset.Pop()
@@ -220,7 +221,7 @@ func (a *App) layoutWordRibbonInlineActionAt(gtx layout.Context, state *document
 func (a *App) layoutWordRibbonInlineAction(gtx layout.Context, state *documentSessionState, action ribbonAction, widthDP, heightDP, iconDP int) layout.Dimensions {
 	width, height := gtx.Dp(unit.Dp(widthDP)), gtx.Dp(unit.Dp(heightDP))
 	gtx.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}
-	enabled := a.wordToolbarActionEnabled(action)
+	enabled := a.wordToolbarActionButtonEnabled(action)
 	button := wordToolbarButton(state, action.id)
 	draw := func(gtx layout.Context) layout.Dimensions {
 		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
@@ -228,12 +229,12 @@ func (a *App) layoutWordRibbonInlineAction(gtx layout.Context, state *documentSe
 		semantic.DescriptionOp(action.label).Add(gtx.Ops)
 		semantic.EnabledOp(enabled).Add(gtx.Ops)
 		bounds.Pop()
-		background := contentSurface
+		background := a.tokens().Colors.Surface.Surface
 		if enabled && (button.Hovered() || gtx.Focused(button)) {
-			background = toolbarHoverBackground
+			background = a.tokens().Colors.Toolbar.HoverBackground
 		}
 		paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(2))).Op(gtx.Ops))
-		icon, _ := wordToolbarActionIcon(action, enabled)
+		icon, _ := a.themedWordToolbarActionIcon(action, enabled)
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceStart}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				iconSize := gtx.Dp(unit.Dp(iconDP))
@@ -248,7 +249,7 @@ func (a *App) layoutWordRibbonInlineAction(gtx layout.Context, state *documentSe
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				label := material.Caption(a.theme, action.label)
 				label.TextSize = unit.Sp(9)
-				label.Color = toolbarIconColor(enabled)
+				label.Color = a.toolbarIconColor(enabled)
 				return label.Layout(gtx)
 			}),
 		)

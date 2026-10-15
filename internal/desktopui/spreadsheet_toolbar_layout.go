@@ -39,13 +39,13 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 	state := a.documentSessionState
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Surface, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layoutRibbonCategoryTabs(gtx, a.theme, toolbarCategoryLabelsForState(state), state.toolbarTabs[:], int(state.toolbarTab))
+					return layoutRibbonCategoryTabs(gtx, a.theme, toolbarCategoryLabelsForState(state), state.toolbarTabs[:], int(state.toolbarTab), a.tokens().Colors)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					stripHeight := gtx.Dp(unit.Dp(68))
@@ -71,27 +71,28 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 										(action.slot == toolbarActionProtectSheet && state != nil && state.spreadsheetSheetProtected) ||
 										(action.slot == toolbarActionProtectWorkbook && state != nil && state.spreadsheetWorkbookProtected)
 									active := action.slot >= 0 && !mixed && formatActive
-									enabled := action.slot >= 0 && a.toolbarActionEnabled(action.slot)
+									enabled := action.slot >= 0 && a.spreadsheetToolbarActionButtonEnabled(action.slot)
 									var button *widget.Clickable
 									if action.slot >= 0 {
 										button = &state.toolbarActionButtons[action.slot]
 									}
-									iconColor, background := toolbarIconColor(true), contentSurface
+									colors := a.tokens().Colors
+									iconColor, background := a.toolbarIconColor(enabled), colors.Surface.Surface
 									if active {
-										background = toolbarActiveBackground
+										background = colors.Toolbar.ActiveBackground
 									}
 									if mixed {
-										background = mixedToolbarBackground
+										background = colors.Toolbar.MixedBackground
 									}
 									if !enabled {
-										background = contentSurface
+										background = colors.Surface.Surface
 									}
 									icon, _ := tintedToolbarIcon(action.icon, iconColor)
-									return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
+									return layoutToolbarActionItemWithDivider(gtx, action, index, actions, colors.Toolbar.Divider, func(gtx layout.Context) layout.Dimensions {
 										btnGtx := gtx
 										btnGtx.Constraints.Min = image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight))
 										btnGtx.Constraints.Max = btnGtx.Constraints.Min
-										return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, action.label, enabled, mixed, background)
+										return toolbarIconButtonWithColors(btnGtx, a.theme, button, icon, iconSize, action.label, action.label, enabled, mixed, background, colors)
 									})
 								})
 							})

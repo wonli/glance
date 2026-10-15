@@ -52,9 +52,9 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	case toolbarActionNewComment, toolbarActionDeleteComment:
 		_, ok := state.book.(document.SpreadsheetCommentEditor)
 		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
-	case toolbarActionSpellCheck, toolbarActionTranslate:
-		return state.book != nil && !state.formatRunning.Load() && !a.isSaving()
-	case toolbarActionRecalculate, toolbarActionRefreshAll:
+	case toolbarActionSpellCheck, toolbarActionTranslate, toolbarActionRefreshAll:
+		return false
+	case toolbarActionRecalculate:
 		_, ok := state.book.(document.SpreadsheetRecalculateEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize, toolbarActionPrintArea, toolbarActionHeaderRow:
@@ -77,9 +77,12 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case 4, 5, 6, 7, 8, 9, 10, 11, 16,
 		toolbarActionFontFamily,
+		toolbarActionFontSize, toolbarActionCellStyles,
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat:
 		_, ok := state.book.(document.SpreadsheetFormatter)
 		return ok && state.selectionSet && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionFormat:
+		return state.book != nil && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionFormatPainter:
 		_, ok := state.book.(document.SpreadsheetFormatter)
 		return ok && (state.selectionSet || state.excelFormatPainterActive) && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
@@ -132,6 +135,21 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	default:
 		return false
 	}
+}
+
+func (a *App) spreadsheetToolbarActionButtonEnabled(slot int) bool {
+	if a.toolbarActionEnabled(slot) {
+		return true
+	}
+	if slot != 13 {
+		return false
+	}
+	state := a.documentSessionState
+	if state == nil || state.book == nil || len(state.sheets) <= 1 || state.formatRunning.Load() || a.isSaving() {
+		return false
+	}
+	_, editable := state.book.(document.SpreadsheetStructureEditor)
+	return editable
 }
 
 func selectionCellCount(bounds document.CellRange) int {

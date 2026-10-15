@@ -16,9 +16,13 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 	if state == nil || a.modal.Visible {
 		return
 	}
+	if a.handleOfficeRibbonMenuEvents(gtx) {
+		return
+	}
 	labels := toolbarCategoryLabelsForState(state)
 	for index := 0; index < len(labels) && index < len(state.toolbarTabs); index++ {
 		if state.toolbarTabs[index].Clicked(gtx) {
+			a.closeOfficeRibbonMenu()
 			state.toolbarTab = spreadsheetToolbarTab(index)
 			state.toolbarPicker = pickerNone
 			state.toolbarActionList.List.Position = layout.Position{}
@@ -28,6 +32,10 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 	actions := toolbarActionsForTab(state.toolbarTab)
 	for _, action := range actions {
 		if action.slot < 0 || !state.toolbarActionButtons[action.slot].Clicked(gtx) {
+			continue
+		}
+		if a.toggleSpreadsheetOfficeRibbonMenu(action.slot) {
+			state.toolbarPicker = pickerNone
 			continue
 		}
 		if unimplementedSpreadsheetToolbarAction(action.slot) {

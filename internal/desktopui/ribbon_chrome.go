@@ -71,10 +71,19 @@ func tintToolbarIcon(mask image.Image, tint color.NRGBA) *image.NRGBA {
 }
 
 func toolbarIconColor(enabled bool) color.NRGBA {
+	colors := defaultShellTokens.Colors.Toolbar
 	if !enabled {
-		return disabledToolbarText
+		return colors.DisabledText
 	}
-	return toolbarGlyphText
+	return colors.Glyph
+}
+
+func (a *App) toolbarIconColor(enabled bool) color.NRGBA {
+	colors := a.tokens().Colors.Toolbar
+	if !enabled {
+		return colors.DisabledText
+	}
+	return colors.Glyph
 }
 
 func toolbarPickerPanelX(slot int, actions []spreadsheetToolbarAction, position layout.Position, normalWidth, groupWidth, viewportWidth, panelWidth int) int {
@@ -192,16 +201,16 @@ var excelIconAssetNames = map[string]string{
 }
 
 var (
-	disabledToolbarBackground = color.NRGBA{R: 232, G: 235, B: 240, A: 255}
-	disabledToolbarText       = color.NRGBA{R: 150, G: 156, B: 165, A: 255}
-	mixedToolbarBackground    = color.NRGBA{R: 239, G: 241, B: 243, A: 255}
-	toolbarActiveBackground   = color.NRGBA{R: 241, G: 243, B: 245, A: 255}
-	toolbarHoverBackground    = color.NRGBA{R: 247, G: 248, B: 250, A: 255}
-	toolbarGlyphText          = color.NRGBA{R: 75, G: 83, B: 94, A: 255}
-	ribbonDividerColor        = color.NRGBA{R: 225, G: 228, B: 232, A: 255}
+	disabledToolbarBackground = defaultShellTokens.Colors.Toolbar.DisabledBackground
+	disabledToolbarText       = defaultShellTokens.Colors.Toolbar.DisabledText
+	mixedToolbarBackground    = defaultShellTokens.Colors.Toolbar.MixedBackground
+	toolbarActiveBackground   = defaultShellTokens.Colors.Toolbar.ActiveBackground
+	toolbarHoverBackground    = defaultShellTokens.Colors.Toolbar.HoverBackground
+	toolbarGlyphText          = defaultShellTokens.Colors.Toolbar.Glyph
+	ribbonDividerColor        = defaultShellTokens.Colors.Toolbar.Divider
 )
 
-func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, labels []string, buttons []widget.Clickable, selected int) layout.Dimensions {
+func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, labels []string, buttons []widget.Clickable, selected int, colors ColorTokens) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(34))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	gtx.Constraints.Min.X = gtx.Constraints.Max.X
@@ -210,13 +219,13 @@ func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, labels 
 		index, label := index, label
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Right: unit.Dp(28)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return toolbarTabButton(gtx, theme, &buttons[index], label, index == selected)
+				return toolbarTabButtonWithColors(gtx, theme, &buttons[index], label, index == selected, colors)
 			})
 		}))
 	}
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			paint.FillShape(gtx.Ops, colors.Surface.Surface, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
@@ -251,7 +260,7 @@ const (
 )
 
 var (
-	toolbarLabelText = color.NRGBA{R: 89, G: 98, B: 109, A: 255}
+	toolbarLabelText = defaultShellTokens.Colors.Text.Secondary
 )
 
 func ribbonLabelTextSize(label string) unit.Sp {
@@ -259,6 +268,10 @@ func ribbonLabelTextSize(label string) unit.Sp {
 }
 
 func layoutToolbarActionItem(gtx layout.Context, action ribbonAction, index int, actions []ribbonAction, child layout.Widget) layout.Dimensions {
+	return layoutToolbarActionItemWithDivider(gtx, action, index, actions, defaultShellTokens.Colors.Toolbar.Divider, child)
+}
+
+func layoutToolbarActionItemWithDivider(gtx layout.Context, action ribbonAction, index int, actions []ribbonAction, dividerColor color.NRGBA, child layout.Widget) layout.Dimensions {
 	groupStart := index == 0 || actions[index-1].group != action.group
 	groupEnd := index == len(actions)-1 || actions[index+1].group != action.group
 	children := make([]layout.FlexChild, 0, 5)
@@ -275,7 +288,7 @@ func layoutToolbarActionItem(gtx layout.Context, action ribbonAction, index int,
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(1)), gtx.Dp(excelToolbarDividerHeight))
 			gtx.Constraints.Max = gtx.Constraints.Min
-			paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Max: gtx.Constraints.Min}.Op())
+			paint.FillShape(gtx.Ops, dividerColor, clip.Rect{Max: gtx.Constraints.Min}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}))
 	}
@@ -283,6 +296,10 @@ func layoutToolbarActionItem(gtx layout.Context, action ribbonAction, index int,
 }
 
 func toolbarIconButton(gtx layout.Context, theme *material.Theme, button *widget.Clickable, icon image.Image, iconSize unit.Dp, label, description string, enabled, mixed bool, background color.NRGBA) layout.Dimensions {
+	return toolbarIconButtonWithColors(gtx, theme, button, icon, iconSize, label, description, enabled, mixed, background, defaultShellTokens.Colors)
+}
+
+func toolbarIconButtonWithColors(gtx layout.Context, theme *material.Theme, button *widget.Clickable, icon image.Image, iconSize unit.Dp, label, description string, enabled, mixed bool, background color.NRGBA, colors ColorTokens) layout.Dimensions {
 	if theme == nil {
 		theme = material.NewTheme()
 	}
@@ -308,7 +325,7 @@ func toolbarIconButton(gtx layout.Context, theme *material.Theme, button *widget
 
 		buttonBackground := background
 		if button != nil && enabled && (button.Hovered() || gtx.Focused(button)) && !mixed {
-			buttonBackground = toolbarHoverBackground
+			buttonBackground = colors.Toolbar.HoverBackground
 		}
 		paint.FillShape(gtx.Ops, buttonBackground, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(toolbarButtonCornerRadius)).Op(gtx.Ops))
 		layout.Flex{
@@ -344,9 +361,9 @@ func toolbarIconButton(gtx layout.Context, theme *material.Theme, button *widget
 					return layout.Dimensions{}
 				}
 				return layout.Inset{Bottom: unit.Dp(4), Left: unit.Dp(1), Right: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					textColor := toolbarLabelText
+					textColor := colors.Text.Secondary
 					if !enabled {
-						textColor = disabledToolbarText
+						textColor = colors.Toolbar.DisabledText
 					}
 					gtx.Constraints.Min = image.Point{}
 					caption := material.Caption(theme, label)
@@ -360,7 +377,7 @@ func toolbarIconButton(gtx layout.Context, theme *material.Theme, button *widget
 		)
 		if mixed {
 			dotSize, inset := gtx.Dp(unit.Dp(5)), gtx.Dp(unit.Dp(5))
-			paint.FillShape(gtx.Ops, toolbarGlyphText, clip.Ellipse(image.Rect(width-dotSize-inset, inset, width-inset, dotSize+inset)).Op(gtx.Ops))
+			paint.FillShape(gtx.Ops, colors.Toolbar.Glyph, clip.Ellipse(image.Rect(width-dotSize-inset, inset, width-inset, dotSize+inset)).Op(gtx.Ops))
 		}
 		return layout.Dimensions{Size: image.Pt(width, height)}
 	}
@@ -371,14 +388,18 @@ func toolbarIconButton(gtx layout.Context, theme *material.Theme, button *widget
 }
 
 func toolbarTabButton(gtx layout.Context, theme *material.Theme, button *widget.Clickable, label string, selected bool) layout.Dimensions {
+	return toolbarTabButtonWithColors(gtx, theme, button, label, selected, defaultShellTokens.Colors)
+}
+
+func toolbarTabButtonWithColors(gtx layout.Context, theme *material.Theme, button *widget.Clickable, label string, selected bool, colors ColorTokens) layout.Dimensions {
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		height := gtx.Dp(unit.Dp(30))
 		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 		style := material.Body2(theme, label)
 		style.TextSize = unit.Sp(13)
-		style.Color = color.NRGBA{R: 89, G: 98, B: 109, A: 255}
+		style.Color = colors.Text.Secondary
 		if selected {
-			style.Color = color.NRGBA{R: 53, G: 95, B: 150, A: 255}
+			style.Color = colors.Text.Brand
 		}
 		dims := layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)

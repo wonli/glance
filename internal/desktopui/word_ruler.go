@@ -47,7 +47,7 @@ func (a *App) layoutWordHorizontalRuler(gtx layout.Context, state *documentSessi
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, wordRulerBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
-			paint.FillShape(gtx.Ops, ribbonDividerColor, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
+			paint.FillShape(gtx.Ops, a.tokens().Colors.Toolbar.Divider, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
 			bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 			semantic.DescriptionOp("Word 水平标尺").Add(gtx.Ops)
 			bounds.Pop()

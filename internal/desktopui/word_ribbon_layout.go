@@ -2,7 +2,6 @@ package desktopui
 
 import (
 	"image"
-	"image/color"
 
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
@@ -41,7 +40,7 @@ func (a *App) layoutWordRibbon(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Surface, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 			semantic.DescriptionOp("Word 功能区").Add(gtx.Ops)
 			bounds.Pop()
@@ -64,7 +63,7 @@ func (a *App) layoutWordRibbonCategories(gtx layout.Context, state *documentSess
 	height := gtx.Dp(unit.Dp(wordRibbonCategoryHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	tabs := wordToolbarTabs(state)
-	paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+	paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Surface, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	for index, tab := range tabs {
 		x := 22 + index*(wordRibbonCategoryTabWidthDP+28)
 		a.layoutWordRibbonCategoryTabAt(gtx, state, index, x, 2, wordToolbarTabLabels[tab], tab == state.wordToolbarTab)
@@ -85,9 +84,9 @@ func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentS
 		bounds.Pop()
 		style := material.Body2(a.theme, label)
 		style.TextSize = unit.Sp(13)
-		style.Color = color.NRGBA{R: 72, G: 81, B: 92, A: 255}
+		style.Color = a.tokens().Colors.Text.Secondary
 		if selected {
-			style.Color = color.NRGBA{R: 52, G: 91, B: 146, A: 255}
+			style.Color = a.tokens().Colors.Text.Brand
 		}
 		shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
 		layout.Center.Layout(gtx, style.Layout)
@@ -98,7 +97,7 @@ func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentS
 	if selected {
 		lineX, lineY := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(yDP+wordRibbonCategoryTabHeightDP-1))
 		line := op.Offset(image.Pt(lineX, lineY)).Push(gtx.Ops)
-		paint.FillShape(gtx.Ops, color.NRGBA{R: 52, G: 91, B: 146, A: 255}, clip.Rect{Max: image.Pt(width, gtx.Dp(unit.Dp(1)))}.Op())
+		paint.FillShape(gtx.Ops, a.tokens().Colors.Text.Brand, clip.Rect{Max: image.Pt(width, gtx.Dp(unit.Dp(1)))}.Op())
 		line.Pop()
 	}
 }
@@ -138,6 +137,7 @@ func init() {
 		wordTabInsert,
 		wordTabDesign,
 		wordTabLayout,
+		wordTabReferences,
 		wordTabReview,
 		wordTabView,
 		wordTabPicture,

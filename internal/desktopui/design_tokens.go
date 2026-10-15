@@ -119,10 +119,32 @@ type SurfaceColors struct {
 	BorderMuted color.NRGBA
 }
 
+// MenuColors defines colors used by dropdown and context menus.
+type MenuColors struct {
+	Surface  color.NRGBA // Dropdown and context-menu panel fill
+	Hover    color.NRGBA // Pointer hover fill for enabled menu items
+	Selected color.NRGBA // Persistent selection fill for checked menu items
+	Border   color.NRGBA // Menu outline
+	Shadow   color.NRGBA // Menu drop shadow, including alpha
+}
+
+// ToolbarColors defines colors used by ribbon controls and their states.
+type ToolbarColors struct {
+	Glyph              color.NRGBA // Enabled icon and mixed-state indicator
+	DisabledText       color.NRGBA // Disabled labels and icons
+	DisabledBackground color.NRGBA // Disabled control fill where a fill is shown
+	MixedBackground    color.NRGBA // Mixed-value control fill
+	ActiveBackground   color.NRGBA // Selected or active control fill
+	HoverBackground    color.NRGBA // Pointer hover fill
+	Divider            color.NRGBA // Ribbon group separators
+}
+
 // ColorTokens encapsulates text and surface colors for a complete visual theme.
 type ColorTokens struct {
 	Text    TextColors
 	Surface SurfaceColors
+	Menu    MenuColors
+	Toolbar ToolbarColors
 }
 
 // LightColorTokens provides the baseline light palette matching production UI.
@@ -146,6 +168,22 @@ var LightColorTokens = ColorTokens{
 		Border:      color.NRGBA{R: 225, G: 229, B: 234, A: 255}, // #E1E5EA
 		BorderMuted: color.NRGBA{R: 238, G: 240, B: 242, A: 255}, // #EEF0F2
 	},
+	Menu: MenuColors{
+		Surface:  color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+		Hover:    color.NRGBA{R: 247, G: 248, B: 250, A: 255},
+		Selected: color.NRGBA{R: 241, G: 243, B: 245, A: 255},
+		Border:   color.NRGBA{R: 216, G: 221, B: 227, A: 255},
+		Shadow:   color.NRGBA{R: 28, G: 38, B: 54, A: 28},
+	},
+	Toolbar: ToolbarColors{
+		Glyph:              color.NRGBA{R: 75, G: 83, B: 94, A: 255},
+		DisabledText:       color.NRGBA{R: 150, G: 156, B: 165, A: 255},
+		DisabledBackground: color.NRGBA{R: 232, G: 235, B: 240, A: 255},
+		MixedBackground:    color.NRGBA{R: 239, G: 241, B: 243, A: 255},
+		ActiveBackground:   color.NRGBA{R: 241, G: 243, B: 245, A: 255},
+		HoverBackground:    color.NRGBA{R: 247, G: 248, B: 250, A: 255},
+		Divider:            color.NRGBA{R: 225, G: 228, B: 232, A: 255},
+	},
 }
 
 // DarkColorTokens provides an accessible dark palette for dark-mode shell chrome.
@@ -168,6 +206,22 @@ var DarkColorTokens = ColorTokens{
 		Hover:       color.NRGBA{R: 40, G: 45, B: 53, A: 255}, // #282D35
 		Border:      color.NRGBA{R: 52, G: 58, B: 66, A: 255}, // #343A42
 		BorderMuted: color.NRGBA{R: 42, G: 47, B: 54, A: 255}, // #2A2F36
+	},
+	Menu: MenuColors{
+		Surface:  color.NRGBA{R: 34, G: 38, B: 44, A: 255},
+		Hover:    color.NRGBA{R: 40, G: 45, B: 53, A: 255},
+		Selected: color.NRGBA{R: 45, G: 52, B: 62, A: 255},
+		Border:   color.NRGBA{R: 52, G: 58, B: 66, A: 255},
+		Shadow:   color.NRGBA{R: 0, G: 0, B: 0, A: 96},
+	},
+	Toolbar: ToolbarColors{
+		Glyph:              color.NRGBA{R: 235, G: 240, B: 245, A: 255},
+		DisabledText:       color.NRGBA{R: 125, G: 133, B: 144, A: 255},
+		DisabledBackground: color.NRGBA{R: 43, G: 47, B: 54, A: 255},
+		MixedBackground:    color.NRGBA{R: 54, G: 62, B: 73, A: 255},
+		ActiveBackground:   color.NRGBA{R: 45, G: 52, B: 62, A: 255},
+		HoverBackground:    color.NRGBA{R: 40, G: 45, B: 53, A: 255},
+		Divider:            color.NRGBA{R: 52, G: 58, B: 66, A: 255},
 	},
 }
 
