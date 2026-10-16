@@ -169,6 +169,9 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	if err := registerCoreCapabilities(runtime.catalog); err != nil {
 		return nil, err
 	}
+	if err := registerSpreadsheetRangeClearCapability(runtime.catalog); err != nil {
+		return nil, err
+	}
 	if err := registerSpreadsheetCapabilities(runtime.catalog); err != nil {
 		return nil, err
 	}

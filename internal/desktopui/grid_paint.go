@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"strconv"
 	"strings"
 
 	"gioui.org/font"
@@ -75,6 +74,10 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(rowHead, 0), Max: image.Pt(rowHead+1, size.Y)}.Op())
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(0, colHead), Max: image.Pt(size.X, colHead+1)}.Op())
 	selection, hasSelection := a.selection, a.selectionSet
+	if hasSelection && !a.cellEdit.Editing && (selection.Scope != selectionCells || selection.Anchor != selection.Active) {
+		selectedRect := selectionRectWithHeaders(v, selection, rowHead, colHead).Intersect(image.Rect(rowHead, colHead, size.X, size.Y))
+		paint.FillShape(gtx.Ops, selectedFill, clip.Rect(selectedRect).Op())
+	}
 	var formulaReferences []document.CellRange
 	if hasSelection && !a.cellEdit.Editing && !a.documentSessionState.formulaReference.Active && v.WindowSheet == a.sheet {
 		formulaReferences = formulaDependencyRanges(a.formulaEditor.Text(), a.sheet)
@@ -94,7 +97,6 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 			if y1 <= colHead || y0 >= size.Y {
 				continue
 			}
-			paintTextBox(gtx, a.theme, strconv.Itoa(rr), image.Rect(0, y0, rowHead, y1), color.NRGBA{R: 72, G: 72, B: 72, A: 255}, gridHeaderFill, false)
 			for j, cell := range row {
 				cc := v.Window.StartColumn + j
 				mr, mc, merged := mergeAnchorAt(v.Window.Merges, rr, cc)
@@ -123,6 +125,9 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 					continue
 				}
 				style := paintStyle(cell.Style)
+				if hasSelection && !a.cellEdit.Editing && selection.Contains(CellPosition{Row: rr - 1, Column: cc - 1}) && (selection.Active != (CellPosition{Row: rr - 1, Column: cc - 1})) {
+					style.Fill = selectedFill
+				}
 				if formulaReferenceContains(formulaReferences, rr, cc) || merged && formulaReferenceContains(formulaReferences, mr, mc) {
 					style.Fill = selectedFill
 				}
@@ -166,21 +171,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 		activeRect := cellRect(v.Rows, v.Columns, activeRange, v.X, v.Y).Add(image.Pt(rowHead, colHead)).Intersect(selectionViewport)
 		paintActiveCellBorder(gtx, activeRect, a.tokens().Colors.Grid.SelectionBorder)
 	}
-	startCol := v.Columns.IndexAt(v.X)
-	if startCol < 0 {
-		startCol = 0
-	}
-	endCol := v.Columns.IndexAt(v.X + float64(size.X-rowHead))
-	if endCol < startCol {
-		endCol = startCol
-	}
-	for c := startCol; c <= endCol; c++ {
-		x0f, _ := v.Columns.Boundary(c)
-		x1f, _ := v.Columns.Boundary(c + 1)
-		x0 := int(x0f-v.X) + rowHead
-		x1 := int(x1f-v.X) + rowHead
-		paintTextBox(gtx, a.theme, columnName(c+1), image.Rect(x0, 0, x1, colHead), mutedText, gridHeaderFill, false)
-	}
+	paintGridHeaders(gtx, a, v)
 	paintGridPictureSelection(gtx, a, v)
 	showCellEditor := a.cellEdit.Editing
 	if fr := a.documentSessionState.formulaReference; fr.Active && fr.InCell && fr.TargetSheet != a.sheet {

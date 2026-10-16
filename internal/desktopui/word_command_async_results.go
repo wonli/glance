@@ -60,6 +60,8 @@ func (a *App) processWordCommandAsyncResult() bool {
 			a.completeWordPageBreak(result, activeResult)
 		} else if result.paragraphJoin {
 			a.completeWordParagraphJoin(result, activeResult)
+		} else if result.textDraft && result.state.wordSelectionDeleteIntent != nil && !activeResult {
+			a.completeInactiveWordSelectionDeleteDraft(result)
 		} else if result.textDraft && result.state.pendingWordRestoreAfterDrafts() != 0 {
 			if result.err != nil {
 				message := "恢复历史版本已取消，" + wordCommandError(result.operation, result.err)

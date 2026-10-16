@@ -194,6 +194,12 @@ type SpreadsheetBatchEditor interface {
 type SpreadsheetBatchChangeEditor interface {
 	SetCellsChanged(sheet string, edits []CellEdit) (bool, error)
 }
+
+// SpreadsheetRangeContentEditor clears cell values and formulas while preserving formatting.
+type SpreadsheetRangeContentEditor interface {
+	ClearCellRange(sheet string, bounds CellRange) (changed bool, err error)
+}
+
 type SpreadsheetRangeReader interface {
 	ReadRange(sheet string, bounds CellRange) ([][]Cell, error)
 }

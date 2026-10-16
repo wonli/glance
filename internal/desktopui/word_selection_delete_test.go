@@ -150,3 +150,41 @@ func TestWordPageDoubleClickSelectsEntireFormattedParagraph(t *testing.T) {
 		t.Fatalf("double click selected %q, %v; want current paragraph", text, ok)
 	}
 }
+
+func TestWordPageDeleteReverseAndCrossParagraphSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		from, to   f32.Point
+	}{
+		{"reverse single run", `<w:p><w:r><w:t>甲乙丙丁</w:t></w:r></w:p>`, f32.Pt(40, 30), f32.Pt(20, 30)},
+		{"across paragraphs", `<w:p><w:r><w:t>甲乙</w:t></w:r></w:p><w:p><w:r><w:t>丙丁</w:t></w:r></w:p>`, f32.Pt(20, 30), f32.Pt(20, 60)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, state, router, frame := newWordSelectionPageTest(t, tc.body)
+			transform := state.wordPageVisibleInteractions[0].Transform
+			start, end := transform.PageToScreen(tc.from), transform.PageToScreen(tc.to)
+			router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: start, Time: time.Second})
+			frame()
+			router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: end, Time: time.Second + 20*time.Millisecond})
+			frame()
+			router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: end, Time: time.Second + 40*time.Millisecond})
+			frame()
+			router.Queue(key.Event{Name: key.NameDeleteBackward, State: key.Press})
+			frame()
+			waitWordInteraction(t, app, func() bool { return state.wordSelectionDeleteIntent == nil && !state.formatRunning.Load() })
+			blocks := state.word.WordBlocks()
+			if len(blocks) != 1 {
+				t.Fatalf("paragraph count=%d; want merged paragraph", len(blocks))
+			}
+			got := ""
+			for _, in := range blocks[0].Paragraph.Inlines {
+				if in.Text != nil {
+					got += in.Text.Text
+				}
+			}
+			if got != "甲丁" {
+				t.Fatalf("deleted range left %q; want 甲丁", got)
+			}
+		})
+	}
+}

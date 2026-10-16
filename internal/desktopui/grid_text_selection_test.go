@@ -26,6 +26,7 @@ type gridTextHarness struct {
 	draw               func(layout.Context)
 	now                time.Duration
 	app                *App
+	size               image.Point
 	paragraphSelection *textEditorParagraphSelection
 }
 
@@ -52,7 +53,11 @@ func newGridTextHarness(t *testing.T, formula bool, value string) *gridTextHarne
 }
 func (h *gridTextHarness) frame() {
 	h.ops.Reset()
-	h.draw(layout.Context{Ops: &h.ops, Source: h.router.Source(), Now: time.Unix(0, int64(h.now)), Constraints: layout.Exact(image.Pt(400, 90)), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}})
+	size := h.size
+	if size == (image.Point{}) {
+		size = image.Pt(400, 90)
+	}
+	h.draw(layout.Context{Ops: &h.ops, Source: h.router.Source(), Now: time.Unix(0, int64(h.now)), Constraints: layout.Exact(size), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}})
 	h.router.Frame(&h.ops)
 }
 func (h *gridTextHarness) point(kind pointer.Kind, x, y float32) {

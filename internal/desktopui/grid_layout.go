@@ -74,6 +74,11 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		}
 	}
 	for {
+		if _, ok := gtx.Event(key.FocusFilter{Target: &v.PointerTag}); !ok {
+			break
+		}
+	}
+	for {
 		if a.cellEdit.Editing {
 			if ev, ok := gtx.Event(key.Filter{Focus: &a.cellEditor, Name: key.NameEscape}); ok {
 				if ke, yes := ev.(key.Event); yes && ke.State == key.Press {
@@ -112,7 +117,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			break
 		}
 		if ke, yes := ev.(key.Event); yes && ke.State == key.Press {
-			if ke.Name == key.NameEscape && a.documentSessionState != nil && a.documentSessionState.excelFormatPainterActive {
+			if !a.cellEdit.Editing && (ke.Name == key.NameDeleteBackward || ke.Name == key.NameDeleteForward) {
+				a.clearSpreadsheetSelectionContents("清除内容")
+			} else if ke.Name == key.NameEscape && a.documentSessionState != nil && a.documentSessionState.excelFormatPainterActive {
 				a.cancelSpreadsheetFormatPainter()
 				a.window.Invalidate()
 			} else if ke.Name == key.NameF2 && a.selectedCell != "" {
@@ -216,6 +223,15 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				break
 			}
 			state := a.documentSessionState
+			if scope, position, hit := gridHeaderAtPoint(v, image.Pt(int(pe.Position.X), int(pe.Position.Y)), rowHeaderPx, columnHeaderPx); hit {
+				a.updateGridHeaderSelection(v, scope, position, pe.Modifiers.Contain(key.ModShift))
+				a.selectionDragging = true
+				v.LastClickTime = 0
+				gtx.Execute(pointer.GrabCmd{Tag: &v.PointerTag, ID: pe.PointerID})
+				gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
+				a.window.Invalidate()
+				break
+			}
 			pictureHit := gridPictureHitAt(v, activeGridPictures(state, a.sheet), state.selectedGridPictureID, image.Pt(int(pe.Position.X), int(pe.Position.Y)), image.Rect(rowHeaderPx, columnHeaderPx, gtx.Constraints.Max.X, gtx.Constraints.Max.Y), rowHeaderPx, columnHeaderPx, gridPictureResizeHandleSize(gtx))
 			if pictureHit.ImageID != "" {
 				setSelectedGridPicture(state, pictureHit.ImageID)
@@ -293,6 +309,11 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					a.window.Invalidate()
 				}
 			} else if a.selectionDragging {
+				if a.selection.Scope != selectionCells {
+					a.extendGridHeaderSelection(v, pe.Position, rowHeaderPx, columnHeaderPx)
+					a.window.Invalidate()
+					break
+				}
 				if position, hit := selectionAtPointWithHeaders(v, image.Pt(int(pe.Position.X), int(pe.Position.Y)), rowHeaderPx, columnHeaderPx); hit {
 					position = selectionAnchor(v.Window.Merges, position)
 					a.updateGridSelection(v, position, true, false)

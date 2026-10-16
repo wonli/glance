@@ -1200,7 +1200,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 		{
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.range.format.set", Name: "设置单元格区域格式",
-				Description: "为明确指定的工作表区域设置受支持的字体、颜色、对齐、数字格式、边框或换行属性。一次最多影响 10000 个单元格；未提供的属性保持不变。",
+				Description: "为明确指定的工作表区域设置受支持的字体、颜色、对齐、数字格式、边框或换行属性。普通区域最多影响 10000 个单元格；另支持整行、整列和全表格式。未提供的属性保持不变。",
 				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"patch":{"type":"object","properties":{"bold":{"type":"boolean"},"italic":{"type":"boolean"},"underline":{"type":"boolean"},"font_color":{"type":"string"},"fill_color":{"type":"string"},"horizontal_alignment":{"type":"string","enum":["general","left","center","right"]},"number_format":{"type":"string","enum":["General","0","0.00","0%","0.00%","yyyy-mm-dd"]},"border_preset":{"type":"string","enum":["all","outside","bottom","none"]},"wrap_text":{"type":"boolean"},"font_size":{"type":"number","exclusiveMinimum":0,"maximum":409},"font_family":{"type":"string"},"clear_format":{"type":"boolean"}},"additionalProperties":false}},"required":["sheet","bounds","patch"],"additionalProperties":false}`),
@@ -1215,7 +1215,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 				if err := json.Unmarshal(raw, &input); err != nil {
 					return CapabilityResult{}, fmt.Errorf("decode spreadsheet.range.format.set: %w", err)
 				}
-				if !validCellRange(input.Bounds, 10_000) || strings.TrimSpace(input.Sheet) == "" {
+				if !validSpreadsheetFormatRange(input.Bounds) || strings.TrimSpace(input.Sheet) == "" {
 					return CapabilityResult{}, ErrInvalidCommandArguments
 				}
 				formatter, ok := capability.Adapter.(SpreadsheetRangeFormatter)

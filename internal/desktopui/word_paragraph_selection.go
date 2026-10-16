@@ -25,9 +25,11 @@ func (a *App) selectWordPageParagraph(gtx layout.Context, state *documentSession
 	end := wordRunEditor(state, last).Len()
 	a.focusWordPageRun(gtx, state, first.ID, 0, 0)
 	state.wordPageTextSelection = &wordPageTextSelection{scope: "range", anchor: wordPageCaretPosition{runID: first.ID}, focus: wordPageCaretPosition{runID: last.ID, runeOffset: end}}
-	if first.ID == last.ID {
-		wordRunEditor(state, first).SetCaret(end, 0)
-	} else {
+	for _, run := range runs {
+		editor := wordRunEditor(state, run)
+		editor.SetCaret(editor.Len(), 0)
+	}
+	if first.ID != last.ID {
 		state.wordPageTextSelection.runOrder = make(map[string]int, len(runs))
 		for i, r := range runs {
 			state.wordPageTextSelection.runOrder[r.ID] = i

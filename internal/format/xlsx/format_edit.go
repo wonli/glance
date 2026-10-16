@@ -38,6 +38,9 @@ func (w *Workbook) SetCellFormatsChanged(sheet string, bounds document.CellRange
 	if bounds.StartRow < 1 || bounds.StartColumn < 1 || bounds.EndRow < bounds.StartRow || bounds.EndColumn < bounds.StartColumn || bounds.EndRow > maxXLSXRows || bounds.EndColumn > maxXLSXColumns {
 		return false, errors.New("cell format range is outside XLSX worksheet limits")
 	}
+	if wholeRowRange(bounds) || wholeColumnRange(bounds) {
+		return w.setScopedFormatsLocked(sheet, bounds, patch)
+	}
 	if (bounds.EndRow-bounds.StartRow+1)*(bounds.EndColumn-bounds.StartColumn+1) > maxClipboardCells {
 		return false, fmt.Errorf("format range exceeds %d cells", maxClipboardCells)
 	}

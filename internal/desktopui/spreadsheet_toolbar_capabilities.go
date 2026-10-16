@@ -80,7 +80,7 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		toolbarActionFontSize, toolbarActionCellStyles,
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat:
 		_, ok := state.book.(document.SpreadsheetFormatter)
-		return ok && state.selectionSet && selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
+		return ok && state.selectionSet && (state.selection.Scope != selectionCells || selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI) && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionFormat:
 		return state.book != nil && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionFormatPainter:

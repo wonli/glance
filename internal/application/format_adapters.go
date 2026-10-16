@@ -74,6 +74,7 @@ type adapterFuncs struct {
 	setCellFormula                   func(context.Context, string, string, string) (bool, error)
 	recalculateSpreadsheet           func(context.Context) error
 	setCells                         func(context.Context, string, []document.CellEdit) (bool, error)
+	clearCellRange                   func(context.Context, string, document.CellRange) (bool, error)
 	setCellFormats                   func(context.Context, string, document.CellRange, document.CellFormatPatch) (bool, error)
 	sortRange                        func(context.Context, document.SortRequest) (bool, error)
 	applyHistory                     func(context.Context, bool) (bool, error)
@@ -3083,6 +3084,16 @@ func spreadsheetAdapter(format Format, path string, d document.Spreadsheet, read
 				return false, ErrCapabilityUnsupported
 			}
 			return editor.SetCellsChanged(sheet, edits)
+		},
+		clearCellRange: func(ctx context.Context, sheet string, bounds document.CellRange) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			editor, ok := d.(document.SpreadsheetRangeContentEditor)
+			if !ok {
+				return false, ErrCapabilityUnsupported
+			}
+			return editor.ClearCellRange(sheet, bounds)
 		},
 		setCellFormats: func(ctx context.Context, sheet string, bounds document.CellRange, patch document.CellFormatPatch) (bool, error) {
 			if err := ctx.Err(); err != nil {

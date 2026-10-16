@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"glance/internal/document"
+	"glance/internal/wordlayout"
 	"image"
 	"image/color"
 	"math"
@@ -172,6 +173,9 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	style := material.Editor(a.theme, editor, "")
 	style.Font, style.TextSize, style.Color = label.Font, label.TextSize, label.Color
 	background := contentSurface
+	paragraphSelected := false
+	_, _, selectedText := wordPageTextSelectionRange(state.wordPageTextSelection, wordlayout.TextFragment{RunID: run.ID, RuneEnd: editor.Len()})
+	editor.PaintSelectionWhenUnfocused = selectedText
 	dimensions := wordMeasuredBackground(gtx, background, func(gtx layout.Context) layout.Dimensions {
 		if highlightColor, ok := wordHighlightDisplayColor(run.Style.Highlight); ok {
 			for _, rect := range wordTextHighlightRects(gtx, a.theme.Shaper, label, editor.Text()) {
@@ -188,6 +192,10 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 			state.wordParagraphSelections[run.ID] = selection
 		}
 		dims := selection.layout(gtx, editor, func(gtx layout.Context) layout.Dimensions { return layoutWordRunEditor(gtx, style, run.ID) })
+		if selection.paragraphSelected {
+			paragraphSelected = a.selectWordPageParagraph(gtx, state, run.ID)
+			gtx.Execute(op.InvalidateCmd{})
+		}
 		if run.Style.Underline && dims.Size.X > 0 && dims.Size.Y > 0 {
 			y := max(0, dims.Baseline)
 			thickness := max(1, gtx.Dp(unit.Dp(1)))
@@ -195,6 +203,12 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 		}
 		return dims
 	})
+	if !paragraphSelected && gtx.Focused(editor) {
+		start, end := editor.Selection()
+		if start != selectionStartBeforeUpdate || end != selectionEndBeforeUpdate {
+			state.wordPageTextSelection = nil
+		}
+	}
 	pendingImageFocus := state.selectedWordImageID != "" && state.wordImageFocusRequestID == state.selectedWordImageID
 	if gtx.Focused(editor) && run.Editable && !focusTargetPending && !pendingImageFocus {
 		state.wordCanvasContentClickHandled = true
@@ -224,7 +238,9 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	}
 	if state.wordPendingFocusRunID == run.ID {
 		if state.wordPendingCaretRunID == run.ID && !state.wordPendingCaretByX {
-			editor.SetCaret(state.wordPendingCaretOffset, state.wordPendingCaretOffset)
+			if !wordPageTextSelectionActive(state.wordPageTextSelection) {
+				editor.SetCaret(state.wordPendingCaretOffset, state.wordPendingCaretOffset)
+			}
 			state.wordPendingCaretRunID = ""
 		}
 		gtx.Execute(key.FocusCmd{Tag: editor})

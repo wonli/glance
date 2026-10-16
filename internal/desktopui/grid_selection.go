@@ -14,7 +14,17 @@ type CellPosition struct {
 // CellSelection stores a rectangular selection from its fixed anchor to its active cell.
 type CellSelection struct {
 	Anchor, Active CellPosition
+	Scope          cellSelectionScope
 }
+
+type cellSelectionScope uint8
+
+const (
+	selectionCells cellSelectionScope = iota
+	selectionRows
+	selectionColumns
+	selectionSheet
+)
 
 func updatedSelection(current CellSelection, hasSelection bool, active CellPosition, extend bool) CellSelection {
 	active = clampCellPosition(active)
@@ -22,6 +32,7 @@ func updatedSelection(current CellSelection, hasSelection bool, active CellPosit
 		return CellSelection{Anchor: active, Active: active}
 	}
 	current.Active = active
+	current.Scope = selectionCells
 	return current
 }
 
@@ -35,6 +46,12 @@ func (s CellSelection) Bounds() document.CellRange {
 	active := clampCellPosition(s.Active)
 	startRow, endRow := min(anchor.Row, active.Row), max(anchor.Row, active.Row)
 	startColumn, endColumn := min(anchor.Column, active.Column), max(anchor.Column, active.Column)
+	if s.Scope == selectionRows || s.Scope == selectionSheet {
+		startColumn, endColumn = 0, xlsxColumns-1
+	}
+	if s.Scope == selectionColumns || s.Scope == selectionSheet {
+		startRow, endRow = 0, xlsxRows-1
+	}
 	return document.CellRange{
 		StartRow: startRow + 1, StartColumn: startColumn + 1,
 		EndRow: endRow + 1, EndColumn: endColumn + 1,

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gioui.org/gpu/headless"
+	"gioui.org/io/input"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -115,23 +116,41 @@ func TestImportedXLSUsesVirtualGridAndTabsBelowHeaders(t *testing.T) {
 	if err := win.Screenshot(screenshot); err != nil {
 		t.Fatal(err)
 	}
-	minTabY := size.Y
-	for y := 250; y < size.Y; y++ {
-		for x := 8; x < 150; x++ {
+
+	// Locate the actual sheet label before inspecting pixels. Grid header text
+	// is neutral gray and must not be mistaken for an old blue sheet label.
+	var router input.Router
+	router.Frame(&ops)
+	var tabBounds image.Rectangle
+	var findTab func([]input.SemanticNode)
+	findTab = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if node.Desc.Label == app.sheet {
+				tabBounds = node.Desc.Bounds
+			}
+			findTab(node.Children)
+		}
+	}
+	findTab(router.AppendSemantics(nil))
+	if tabBounds.Empty() {
+		t.Fatal("selected imported-XLS sheet label has no bounds")
+	}
+	if tabBounds.Min.Y < 400 {
+		t.Fatalf("sheet tab begins at y=%d; expected below visible grid and column header", tabBounds.Min.Y)
+	}
+	visibleInk := false
+	for y := tabBounds.Min.Y; y < tabBounds.Max.Y; y++ {
+		for x := tabBounds.Min.X; x < tabBounds.Max.X; x++ {
 			pixel := screenshot.RGBAAt(x, y)
-			if pixel.R < 130 && pixel.G > 70 && pixel.G < 160 && pixel.B > 120 {
-				if y < minTabY {
-					minTabY = y
-				}
+			if pixel.R < 130 && pixel.G < 130 && pixel.B < 130 {
+				visibleInk = true
 			}
 		}
 	}
-	if minTabY == size.Y {
-		t.Fatal("selected imported-XLS sheet tab was not rendered in the lower grid strip")
+	if !visibleInk {
+		t.Fatal("selected imported-XLS sheet label was not visibly rendered")
 	}
-	if minTabY < 400 {
-		t.Fatalf("sheet tab blue ink begins at y=%d; expected below the visible grid and column header", minTabY)
-	}
+
 }
 
 func TestImportedXLSCellSelectionDoesNotReportMissingWorkspaceTab(t *testing.T) {
