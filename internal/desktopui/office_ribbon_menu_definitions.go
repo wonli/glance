@@ -98,7 +98,7 @@ func spreadsheetOfficeRibbonMenu(slot int) officeRibbonMenuDefinition {
 	case 18:
 		return officeRibbonMenuDefinition{"排序和筛选", []officeRibbonMenuOption{option("升序", "excel-sort-asc", true), option("降序", "excel-sort-desc", true), disabled("自定义排序…"), option("筛选", "excel-filter", true), option("清除筛选", "excel-clear-filter", true), disabled("重新应用")}}
 	case toolbarActionFind:
-		return officeRibbonMenuDefinition{"查找和选择", []officeRibbonMenuOption{option("查找…", "excel-find", true), disabled("替换…"), disabled("定位…"), disabled("定位条件…"), disabled("选择对象")}}
+		return officeRibbonMenuDefinition{"查找和选择", []officeRibbonMenuOption{option("查找…", "excel-find", true), option("替换…", "excel-replace", true), disabled("定位…"), disabled("定位条件…"), disabled("选择对象")}}
 	case toolbarActionInsertTable:
 		return officeRibbonMenuDefinition{"插入表格", []officeRibbonMenuOption{option("设置表格范围…", "excel-insert-table", true), disabled("表格大小选择网格")}}
 	case toolbarActionLayoutMargins:

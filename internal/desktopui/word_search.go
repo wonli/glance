@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"fmt"
 	"unicode"
 
 	"glance/internal/document"
@@ -109,34 +110,7 @@ func (a *App) showWordFindDialog() {
 	if _, ok := any(state.word).(document.WordContentReader); !ok {
 		return
 	}
-	a.modal.ShowInput("查找", "在当前文档中查找文字", state.wordFindQuery, "查找内容", func(action string) {
-		query := a.modal.Input.Text()
-		a.modal.Hide()
-		if action != "confirm" {
-			return
-		}
-		if query == "" {
-			a.setStatus("请输入要查找的文字")
-			return
-		}
-		state.wordFindQuery = query
-		blocks := wordBlocksForState(state)
-		drafts := state.wordDraftSnapshot()
-		for runID, editor := range state.wordRunEditors {
-			drafts[runID] = editor.Text()
-		}
-		currentEnd := 0
-		if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
-			_, currentEnd = editor.Selection()
-		}
-		match, found := findWordTextMatch(blocks, query, state.selectedWordRunID, currentEnd, drafts)
-		if !found {
-			a.setStatus("未找到：" + query)
-			return
-		}
-		a.focusWordTextMatch(state, blocks, match)
-		a.setStatus("已定位：" + query)
-	})
+	a.showWordSearchReplaceDialog(false)
 }
 
 func (a *App) showWordReplaceDialog() {
@@ -145,12 +119,38 @@ func (a *App) showWordReplaceDialog() {
 		return
 	}
 	if _, ok := any(state.word).(document.WordContentReader); !ok {
+		a.setStatus("当前文档暂不支持查找")
 		return
 	}
 	if _, ok := any(state.word).(document.WordTextRangeEditor); !ok {
+		a.setStatus("当前 DOCX 暂不支持文字替换")
 		return
 	}
-	a.modal.ShowDualInput("替换", "在当前文档中查找和替换文字", state.wordFindQuery, "查找内容", "", "替换为", func(action string) {
+	a.showWordSearchReplaceDialog(true)
+}
+
+func (a *App) showWordSearchReplaceDialog(replaceTab bool) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	if _, ok := any(state.word).(document.WordContentReader); !ok {
+		a.setStatus("当前文档暂不支持查找")
+		return
+	}
+	_, canReplace := any(state.word).(document.WordTextRangeEditor)
+	if replaceTab && !canReplace {
+		a.setStatus("当前 DOCX 暂不支持文字替换")
+		return
+	}
+	actions := []modalDialogActionSpec{{ID: "find-next", Label: "查找下一个", Style: modalDialogActionPrimary}}
+	if canReplace {
+		actions = []modalDialogActionSpec{
+			{ID: "replace", Label: "替换", Style: modalDialogActionSecondary, WidthDp: 76, TextSizeSp: 12},
+			{ID: "find-next", Label: "查找下一个", Style: modalDialogActionPrimary, WidthDp: 130, TextSizeSp: 12},
+		}
+	}
+	onAction := func(action string) {
 		if action == "close" {
 			a.modal.Hide()
 			return
@@ -159,30 +159,52 @@ func (a *App) showWordReplaceDialog() {
 		replacement := a.modal.SecondInput.Text()
 		if query == "" {
 			a.setStatus("请输入要查找的文字")
+			a.modal.SearchReplaceSummary = "请输入要查找的文字"
+			a.modal.FocusInputRequested = true
 			return
 		}
 		state.wordFindQuery = query
+		if canReplace {
+			state.wordReplaceText = replacement
+		}
+		if action == "replace" {
+			match, found := selectedWordTextQueryMatch(state, query)
+			if !found {
+				a.findNextWordText(query)
+				a.modal.FocusInputRequested = true
+				return
+			}
+			if !a.runWordRangeReplacement(match, query, replacement) {
+				a.setStatus("当前 DOCX 暂时无法替换文字")
+				a.modal.SearchReplaceSummary = "当前匹配项暂时无法替换"
+				a.modal.FocusInputRequested = true
+				return
+			}
+			a.modal.SearchReplaceSummary = "正在替换当前匹配项…"
+			a.modal.FocusInputRequested = true
+			return
+		}
 		if action == "confirm" {
 			a.findNextWordText(query)
+			a.modal.Hide()
 			return
 		}
-		if action != "replace" {
+		if action == "find-next" {
 			a.findNextWordText(query)
-			return
+			a.modal.FocusInputRequested = true
 		}
-		match, found := selectedWordTextQueryMatch(state, query)
-		if !found {
-			a.findNextWordText(query)
-			return
-		}
-		if !a.runWordRangeReplacement(match, query, replacement) {
-			a.setStatus("当前 DOCX 暂时无法替换文字")
-		}
-	},
-		modalDialogActionSpec{ID: "find-next", Label: "查找下一个"},
-		modalDialogActionSpec{ID: "replace", Label: "替换"},
-		modalDialogActionSpec{ID: "close", Label: "关闭"},
-	)
+	}
+	if canReplace {
+		a.modal.ShowDualInput("查找和替换", "", state.wordFindQuery, "查找内容", state.wordReplaceText, "替换为", onAction, actions...)
+	} else {
+		a.modal.ShowInput("查找和替换", "", state.wordFindQuery, "查找内容", onAction, actions...)
+	}
+	a.modal.SearchReplace = true
+	a.modal.SearchReplaceHasReplace = canReplace
+	a.modal.SearchReplaceReplaceTab = replaceTab
+	a.modal.SearchReplaceSummary = "输入查找内容后，点击“查找下一个”"
+	a.modal.CardWidthDp = 560
+	a.modal.FocusInputRequested = true
 }
 
 func (a *App) findNextWordText(query string) {
@@ -202,10 +224,71 @@ func (a *App) findNextWordText(query string) {
 	match, found := findWordTextMatch(blocks, query, state.selectedWordRunID, currentEnd, drafts)
 	if !found {
 		a.setStatus("未找到：" + query)
+		a.modal.SearchReplaceSummary = "未找到匹配项"
 		return
 	}
 	a.focusWordTextMatch(state, blocks, match)
+	a.updateWordSearchSummary(state, query, blocks, drafts, match)
 	a.setStatus("已定位：" + query)
+}
+
+func findAllWordTextMatches(blocks []document.WordBlock, query string, drafts map[string]string) []wordTextMatch {
+	needle := lowerWordRunes([]rune(query))
+	if len(needle) == 0 {
+		return nil
+	}
+	var matches []wordTextMatch
+	for _, paragraph := range allWordParagraphs(blocks) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text == nil || !inline.Text.Editable {
+				continue
+			}
+			value := inline.Text.Text
+			if draft, ok := drafts[inline.Text.ID]; ok {
+				value = draft
+			}
+			runes := lowerWordRunes([]rune(value))
+			for from := 0; from < len(runes); {
+				start := findWordRunes(runes, needle, from)
+				if start < 0 {
+					break
+				}
+				matches = append(matches, wordTextMatch{ParagraphID: paragraph.ID, RunID: inline.Text.ID, Start: start, End: start + len(needle)})
+				from = start + len(needle)
+			}
+		}
+	}
+	return matches
+}
+
+func (a *App) updateWordSearchSummary(state *documentSessionState, query string, blocks []document.WordBlock, drafts map[string]string, current wordTextMatch) {
+	matches := findAllWordTextMatches(blocks, query, drafts)
+	if len(matches) == 0 {
+		a.modal.SearchReplaceSummary = "未找到匹配项"
+		return
+	}
+	index := 0
+	for i, match := range matches {
+		if match.RunID == current.RunID && match.Start == current.Start {
+			index = i + 1
+			break
+		}
+	}
+	if index == 0 {
+		if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
+			start, _ := editor.Selection()
+			for i, match := range matches {
+				if match.RunID == state.selectedWordRunID && match.Start == start {
+					index = i + 1
+					break
+				}
+			}
+		}
+	}
+	if index == 0 {
+		index = 1
+	}
+	a.modal.SearchReplaceSummary = fmt.Sprintf("找到 %d 个匹配项 · 当前第 %d 项", len(matches), index)
 }
 
 func selectedWordTextQueryMatch(state *documentSessionState, query string) (wordTextMatch, bool) {
@@ -315,13 +398,26 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 	if found {
 		a.focusWordTextMatch(state, blocks, match)
 		a.setStatus("已替换，并已定位下一处")
+		if a.modal.Visible && a.modal.SearchReplace {
+			drafts := state.wordDraftSnapshot()
+			for runID, editor := range state.wordRunEditors {
+				drafts[runID] = editor.Text()
+			}
+			a.updateWordSearchSummary(state, result.replaceQuery, blocks, drafts, match)
+		}
 	} else {
 		startAfter = max(0, min(startAfter, len([]rune(run.Text))))
 		editor.SetCaret(startAfter, startAfter)
 		state.wordPendingFocusRunID = run.ID
 		a.setStatus("已替换；没有更多匹配项")
+		if a.modal.Visible && a.modal.SearchReplace {
+			a.modal.SearchReplaceSummary = "已替换当前匹配项；没有更多匹配项"
+		}
 	}
 	a.persistActiveSession()
+	if a.modal.Visible && a.modal.SearchReplace {
+		a.modal.FocusInputRequested = true
+	}
 	if a.window != nil {
 		a.window.Invalidate()
 	}

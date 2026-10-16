@@ -111,6 +111,11 @@ func (a *App) officeRibbonMenuOptionEnabled(option officeRibbonMenuOption) bool 
 			return a.toolbarActionEnabled(20)
 		case "excel-find":
 			return a.toolbarActionEnabled(toolbarActionFind)
+		case "excel-replace":
+			_, grid := state.book.(document.GridReader)
+			_, batch := state.book.(document.SpreadsheetBatchEditor)
+			_, valueKind := state.book.(document.SpreadsheetCellValueKindReader)
+			return a.toolbarActionEnabled(toolbarActionFind) && grid && batch && valueKind
 		case "excel-insert-table":
 			return a.toolbarActionEnabled(toolbarActionInsertTable)
 		case "excel-margin-normal", "excel-margin-narrow", "excel-margin-wide", "excel-margin-custom":
@@ -310,7 +315,15 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 			a.toggleValueFilter()
 		}
 	case "excel-find":
+		if !a.commitSpreadsheetEditorBeforeCommand(gtx, state) {
+			return
+		}
 		a.showSpreadsheetFindDialog()
+	case "excel-replace":
+		if !a.commitSpreadsheetEditorBeforeCommand(gtx, state) {
+			return
+		}
+		a.showSpreadsheetReplaceDialog()
 	case "excel-insert-table":
 		a.showSpreadsheetInsertTableDialog("")
 	case "excel-margin-normal", "excel-margin-narrow", "excel-margin-wide":

@@ -19,6 +19,19 @@ func CellName(column, row int) string {
 	return name
 }
 
+func documentCellValueKind(cellType excelize.CellType) document.CellValueKind {
+	switch cellType {
+	case excelize.CellTypeInlineString, excelize.CellTypeSharedString:
+		return document.CellValueText
+	case excelize.CellTypeNumber, excelize.CellTypeDate:
+		return document.CellValueNumber
+	case excelize.CellTypeBool:
+		return document.CellValueBoolean
+	default:
+		return ""
+	}
+}
+
 func (w *Workbook) SheetNames() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -70,6 +83,19 @@ func (w *Workbook) Value(sheet, cell string) (string, error) {
 		}
 	}
 	return value, nil
+}
+
+func (w *Workbook) StoredCellValueKind(sheet, cell string) (document.CellValueKind, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return "", err
+	}
+	cellType, err := w.file.GetCellType(sheet, cell)
+	if err != nil {
+		return "", err
+	}
+	return documentCellValueKind(cellType), nil
 }
 
 // Range returns a bounded, rectangular preview beginning at A1. Large sheets

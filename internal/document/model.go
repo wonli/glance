@@ -216,6 +216,12 @@ type SpreadsheetSearcher interface {
 	SearchSheet(sheet, query string) ([]CellMatch, error)
 }
 
+// SpreadsheetCellValueKindReader lets editing workflows preserve cell types
+// without exposing format-library values to the UI.
+type SpreadsheetCellValueKindReader interface {
+	StoredCellValueKind(sheet, cell string) (CellValueKind, error)
+}
+
 type StructureEditKind uint8
 
 const (

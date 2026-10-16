@@ -9,7 +9,10 @@ import (
 	"glance/internal/document"
 )
 
-var _ document.SpreadsheetSearcher = (*Workbook)(nil)
+var (
+	_ document.SpreadsheetSearcher            = (*Workbook)(nil)
+	_ document.SpreadsheetCellValueKindReader = (*Workbook)(nil)
+)
 
 func (w *Workbook) SearchSheet(sheet, query string) ([]document.CellMatch, error) {
 	w.mu.Lock()

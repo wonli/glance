@@ -311,7 +311,11 @@ func layoutConfirmDialogAction(gtx layout.Context, theme *material.Theme, action
 		if style == modalDialogActionSecondary {
 			weight = font.Medium
 		}
-		labelStyle := homeLabelStyle(theme, action.Label, unit.Sp(13), foreground, weight)
+		textSize := unit.Sp(13)
+		if action.TextSizeSp > 0 {
+			textSize = unit.Sp(action.TextSizeSp)
+		}
+		labelStyle := homeLabelStyle(theme, action.Label, textSize, foreground, weight)
 		labelOps := op.Record(gtx.Ops)
 		labelDims := layout.Inset{Left: unit.Dp(14), Right: unit.Dp(14)}.Layout(gtx, labelStyle.Layout)
 		labelCall := labelOps.Stop()
@@ -322,6 +326,12 @@ func layoutConfirmDialogAction(gtx layout.Context, theme *material.Theme, action
 		}
 		if size.X < minWidth {
 			size.X = minWidth
+		}
+		if action.WidthDp > 0 {
+			width := gtx.Dp(unit.Dp(action.WidthDp))
+			if width > labelDims.Size.X {
+				size.X = width
+			}
 		}
 		if minHeight := gtx.Dp(unit.Dp(36)); size.Y < minHeight {
 			size.Y = minHeight

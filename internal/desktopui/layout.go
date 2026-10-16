@@ -24,6 +24,7 @@ var (
 
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	a.ensureDesktopRuntime()
+	a.handleOverlayEscape(gtx)
 	if a.markdownDoc != nil && !a.modal.Visible {
 		a.updateMarkdownInput(gtx)
 	}
@@ -103,6 +104,7 @@ func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
+	a.handleOfficeShortcuts(gtx)
 	if _, ok := a.book.(document.GridReader); !ok {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return material.H6(a.theme, "当前工作簿未提供统一网格读取能力").Layout(gtx)
@@ -135,6 +137,7 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutWord(gtx layout.Context) layout.Dimensions {
+	a.handleOfficeShortcuts(gtx)
 	a.handleWordToolbarEvents(gtx)
 	a.handleWordClipboardEvents(gtx)
 	dimensions := a.layoutWordFlow(gtx)

@@ -26,6 +26,12 @@ func (a *App) processSpreadsheetFormatResult() bool {
 					a.setStatus("已完成" + result.operation)
 				}
 				switch result.operation {
+				case "替换单元格":
+					a.setStatus("已替换当前单元格")
+					if a.modal.Visible && a.modal.SearchReplace {
+						a.modal.SearchReplaceSummary = "已替换当前单元格"
+						a.modal.FocusInputRequested = true
+					}
 				case "重新计算公式":
 					a.setStatus("已刷新公式结果（不包含外部数据连接）")
 				case "刷新全部工作表":

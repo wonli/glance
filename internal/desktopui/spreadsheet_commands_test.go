@@ -256,8 +256,8 @@ func TestSpreadsheetFindDialogAndAutoSumIntegration(t *testing.T) {
 
 	// Test Find execution
 	app.showSpreadsheetFindDialog()
-	if app.modal.Title != "查找" {
-		t.Fatalf("modal title = %q; want 查找", app.modal.Title)
+	if app.modal.Title != "查找和替换" {
+		t.Fatalf("modal title = %q; want 查找和替换", app.modal.Title)
 	}
 	app.modal.Input.SetText("Apple")
 	app.modal.OnAction("confirm")

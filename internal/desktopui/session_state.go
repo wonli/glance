@@ -123,6 +123,7 @@ type documentSessionState struct {
 	wordAppendTarget                    widget.Clickable
 	wordDeferredToolbarAction           string
 	wordFindQuery                       string
+	wordReplaceText                     string
 	wordFormatPainterActive             bool
 	wordFormatPainterSourceRunID        string
 	wordFormatPainterPendingRunID       string
@@ -143,6 +144,7 @@ type documentSessionState struct {
 	blockButtons                        map[int]*widget.Clickable
 	selectedCell                        string
 	excelFindQuery                      string
+	excelReplaceText                    string
 	selection                           CellSelection
 	selectionSet                        bool
 	selectionDragging                   bool
