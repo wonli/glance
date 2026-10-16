@@ -48,7 +48,7 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 	caretStartBeforeUpdate, caretEndBeforeUpdate := editor.Selection()
 	editor.SingleLine = false
 	editor.Submit = true
-	editor.ReadOnly = state.wordReadingMode || !run.Editable || state.formatRunning.Load() || a.isSaving()
+	editor.ReadOnly = state.wordReadingMode || !run.Editable || wordEditorOperationPending(state)
 	paragraphJoinPending := state.wordParagraphJoinIntent != nil
 	paragraphSplitPending := state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == runID
 	focusTargetPending := state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != runID

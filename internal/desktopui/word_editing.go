@@ -24,6 +24,13 @@ type wordParagraphJoinIntent struct {
 	direction document.WordParagraphJoinDirection
 }
 
+// Word text remains in the per-view draft while a save serializes the shared
+// adapter. Other operations can change the run structure or formatting, so
+// keep editors read-only for those operations.
+func wordEditorOperationPending(state *documentSessionState) bool {
+	return state == nil || (state.formatRunning.Load() && !state.saveRunning.Load())
+}
+
 func wordHasPendingTextDrafts(state *documentSessionState) bool {
 	return wordHasPendingTextDraftsExcept(state, "")
 }
@@ -542,11 +549,17 @@ func wordParagraphHasRunAtBoundary(paragraph document.WordParagraph, runID strin
 	return inline.Text != nil && inline.Text.ID == runID && inline.Text.Editable
 }
 
-func (a *App) completeWordParagraphSplit(result wordCommandResult) {
+func (a *App) completeWordParagraphSplit(result wordCommandResult, active bool) {
 	state := result.state
 	if state == nil {
 		return
 	}
+	defer func() {
+		state.finishOperation(result.operationToken)
+		if active && result.err == nil {
+			a.finishWordTextFlush(state)
+		}
+	}()
 	intent := state.wordParagraphSplitIntent
 	state.wordParagraphSplitIntent = nil
 	if result.err != nil {
@@ -563,7 +576,9 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 				}
 			}
 		}
-		a.setStatus(wordCommandError(result.operation, result.err))
+		if active {
+			a.setStatus(wordCommandError(result.operation, result.err))
+		}
 		return
 	}
 	if result.blocks != nil {
@@ -578,9 +593,10 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 	if intent != nil && intent.boundaryInsert && intent.insertBefore {
 		paragraph, ok := wordParagraphAfter(wordBlocksForState(state), result.splitParagraphID)
 		if !ok || len(paragraph.Inlines) == 0 || paragraph.Inlines[0].Text == nil || !paragraph.Inlines[0].Text.Editable {
-			a.setStatus("段落已插入，但无法定位原段落")
-			a.persistActiveSession()
-			a.finishWordTextFlush(state)
+			if active {
+				a.setStatus("段落已插入，但无法定位原段落")
+				a.persistActiveSession()
+			}
 			return
 		}
 		sourceRun := *paragraph.Inlines[0].Text
@@ -605,9 +621,12 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 		state.wordPageFocusedMetaRunID = sourceRun.ID
 		state.wordPageFocusedMetaRevision = state.wordRevisionAtomic.Load()
 		state.wordPageFocusedParagraph = paragraph
-		a.setStatus("正在编辑 Word 正文")
-		a.persistActiveSession()
-		a.finishWordTextFlush(state)
+		if active {
+			a.setStatus("正在编辑 Word 正文")
+			a.persistActiveSession()
+		} else {
+			state.wordPendingFocusRunID = ""
+		}
 		return
 	}
 	if sourceEditor := state.wordRunEditors[result.splitSourceRunID]; sourceEditor != nil {
@@ -618,13 +637,14 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 
 	newRun, ok := selectedWordRun(wordBlocksForState(state), result.splitRunID)
 	if !ok {
-		if intent != nil && intent.boundaryInsert {
-			a.setStatus("段落已插入，但无法定位新段落文字")
-		} else {
-			a.setStatus("段落已拆分，但无法定位后续文字")
+		if active {
+			if intent != nil && intent.boundaryInsert {
+				a.setStatus("段落已插入，但无法定位新段落文字")
+			} else {
+				a.setStatus("段落已拆分，但无法定位后续文字")
+			}
+			a.persistActiveSession()
 		}
-		a.persistActiveSession()
-		a.finishWordTextFlush(state)
 		return
 	}
 	state.setCommittedWordTextAndClearDraft(result.splitRunID, result.splitRunText)
@@ -637,7 +657,10 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult) {
 	state.selectedBlock = -1
 	state.selectedBlockEditable = true
 	state.wordPendingFocusRunID = result.splitRunID
-	a.setStatus("正在编辑 Word 正文")
-	a.persistActiveSession()
-	a.finishWordTextFlush(state)
+	if active {
+		a.setStatus("正在编辑 Word 正文")
+		a.persistActiveSession()
+	} else {
+		state.wordPendingFocusRunID = ""
+	}
 }

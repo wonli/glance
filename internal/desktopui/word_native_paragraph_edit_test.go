@@ -18,6 +18,7 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
+	"glance/internal/wordlayout"
 )
 
 func TestWordEnterSplitsAtCaretAndFocusesFollowingParagraph(t *testing.T) {
@@ -95,6 +96,121 @@ func TestWordEnterSplitsAtCaretAndFocusesFollowingParagraph(t *testing.T) {
 	frame()
 	if newEditor.Text() != "YWorld" || state.wordRunDrafts[newRunID] != "YWorld" {
 		t.Fatalf("typing after the split did not continue in the new paragraph: editor=%q draft=%q", newEditor.Text(), state.wordRunDrafts[newRunID])
+	}
+}
+
+func TestWordTextAndEnterDuringSaveAreCommittedAfterSave(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	run := word.WordBlocks()[0].Paragraph.Inlines[0].Text
+	if err := word.ReplaceTextRun(run.ID, "Hello"); err != nil {
+		t.Fatal(err)
+	}
+	state := newDocumentSessionState("save-enter.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	app, router, frame := newWordJoinFrame(t, state)
+	editor := focusWordRunForInteraction(t, state, router, frame, run.ID)
+
+	token, ok := state.beginOperation(sessionOperationSave)
+	if !ok {
+		t.Fatal("could not start simulated save operation")
+	}
+	app.saving = true
+	defer func() {
+		app.saving = false
+		state.finishOperation(token)
+	}()
+
+	editor.SetCaret(editor.Len(), editor.Len())
+	frame()
+	router.Queue(key.EditEvent{Text: "!"})
+	frame()
+	if editor.ReadOnly {
+		t.Fatal("focused Word editor became read-only during save")
+	}
+	if got := editor.Text(); got != "!Hello" || state.wordRunDrafts[run.ID] != got {
+		t.Fatalf("save-time text draft = editor %q / draft %q; want !Hello", got, state.wordRunDrafts[run.ID])
+	}
+
+	editor.SetCaret(1, 1)
+	frame()
+	router.Queue(key.Event{Name: key.NameReturn, State: key.Press})
+	frame()
+	if state.wordParagraphSplitIntent == nil {
+		t.Fatal("Enter during save did not queue a paragraph split")
+	}
+	adapterBlocks := word.WordBlocks()
+	if len(adapterBlocks) != 1 {
+		t.Fatal("paragraph split reached the DOCX adapter before save finished")
+	}
+	if got := adapterBlocks[0].Paragraph.Inlines[0].Text.Text; got != "Hello" {
+		t.Fatalf("save-time draft reached the DOCX adapter before save finished: %q", got)
+	}
+
+	if !state.finishOperation(token) {
+		t.Fatal("simulated save operation did not finish")
+	}
+	app.saving = false
+	frame()
+	waitWordInteraction(t, app, func() bool { return len(state.wordBlocks) == 2 && !state.formatRunning.Load() })
+	blocks := word.WordBlocks()
+	if got := blocks[0].Paragraph.Inlines[0].Text.Text; got != "!" {
+		t.Fatalf("first paragraph after queued Enter = %q; want !", got)
+	}
+	if blocks[1].Paragraph == nil || len(blocks[1].Paragraph.Inlines) == 0 {
+		t.Fatalf("paragraph after queued Enter has no editable text run: %#v", blocks[1])
+	}
+	if got := blocks[1].Paragraph.Inlines[0].Text.Text; got != "Hello" {
+		t.Fatalf("second paragraph after queued Enter = %q; want Hello", got)
+	}
+}
+
+func TestWordPageFocusedEditorRemainsEditableDuringSave(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state := newDocumentSessionState("paged-save.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	run := state.wordBlocks[0].Paragraph.Inlines[0].Text
+	state.selectedWordRunID = run.ID
+	editor := wordRunEditor(state, *run)
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	token, ok := state.beginOperation(sessionOperationSave)
+	if !ok {
+		t.Fatal("could not start simulated save operation")
+	}
+	defer state.finishOperation(token)
+
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{
+		Source:      router.Source(),
+		Ops:         &ops,
+		Now:         time.Now(),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(800, 1100)},
+	}
+	page := wordlayout.PageScene{
+		Index:   0,
+		Content: wordlayout.Rect{WidthPT: 595, HeightPT: 842},
+		Text:    []wordlayout.TextFragment{{RunID: run.ID, Text: run.Text, Editable: true}},
+	}
+	state.wordLayoutResult = &wordlayout.Result{
+		Pages: []wordlayout.PageScene{page},
+		Locations: map[wordlayout.SourcePosition]wordlayout.Position{
+			{RunID: run.ID, RuneOffset: 0}: {PageIndex: 0},
+		},
+	}
+	app.layoutWordPageFocusedEditor(gtx, state, page, 0, image.Rect(0, 0, 800, 1100), 1)
+	if editor.ReadOnly {
+		t.Fatal("page-layout Word editor became read-only during save")
 	}
 }
 

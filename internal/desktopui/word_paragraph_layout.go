@@ -135,7 +135,7 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	focusTargetPending := state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != run.ID
 	paragraphSplitPending := state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID
 	paragraphJoinPending := state.wordParagraphJoinIntent != nil
-	editor.ReadOnly = state.wordReadingMode || !run.Editable || state.formatRunning.Load() || a.isSaving() || paragraphSplitPending || paragraphJoinPending || focusTargetPending
+	editor.ReadOnly = state.wordReadingMode || !run.Editable || wordEditorOperationPending(state) || paragraphSplitPending || paragraphJoinPending || focusTargetPending
 	selectionStartBeforeUpdate, selectionEndBeforeUpdate := editor.Selection()
 	if !editor.ReadOnly {
 		if a.handleWordHistoryShortcut(gtx, run.ID, editor) {

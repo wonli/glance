@@ -262,6 +262,7 @@ func closeSessionState(s *documentSessionState) {
 }
 
 func (a *App) closeWorkspace() {
+	a.completeQueuedWordSplitsOnClose()
 	runtime := a.ensureDesktopRuntime()
 	// A promoted window can be destroyed before its next frame. Apply the
 	// promotion on this App's own event loop before persisting its final state.

@@ -39,7 +39,16 @@ func (a *App) processWordCommandAsyncResult() bool {
 			result.state.setWordBlocks(result.blocks)
 			reconcileWordSelection(result.state, false)
 		}
-		if result.pageBreak {
+		if result.paragraphSplit {
+			// A split owns view-local draft and focus state even after a tab switch.
+			a.completeWordParagraphSplit(result, activeResult)
+			if activeResult && result.err == nil && !result.state.formatRunning.Load() && !result.state.wordFlushRequested.Load() {
+				a.maybeAutoSaveWord(result.state)
+			}
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		} else if result.pageBreak {
 			a.completeWordPageBreak(result, activeResult)
 		} else if result.paragraphJoin {
 			a.completeWordParagraphJoin(result, activeResult)
@@ -69,9 +78,7 @@ func (a *App) processWordCommandAsyncResult() bool {
 				a.maybeAutoSaveWord(result.state)
 			}
 		} else if activeResult {
-			if result.paragraphSplit {
-				a.completeWordParagraphSplit(result)
-			} else if result.textDraft {
+			if result.textDraft {
 				if result.err != nil {
 					a.setStatus(wordCommandError(result.operation, result.err))
 					result.state.wordFlushRequested.Store(false)
@@ -188,4 +195,17 @@ func (a *App) processWordCommandAsyncResult() bool {
 	default:
 	}
 	return false
+}
+
+// completeQueuedWordSplitsOnClose runs after managed workers stop and before
+// persistence drains: no more frames will acknowledge buffered split results.
+func (a *App) completeQueuedWordSplitsOnClose() {
+	for remaining := len(a.wordCommandResults); remaining > 0; remaining-- {
+		result := <-a.wordCommandResults
+		if result.paragraphSplit {
+			a.completeWordParagraphSplit(result, false)
+		} else {
+			a.wordCommandResults <- result
+		}
+	}
 }
