@@ -50,23 +50,20 @@ func (d *Document) render(index int, dpi float64) (image.Image, document.PDFPage
 	if pixels := p.Width * p.Height * dpi * dpi / (72 * 72); pixels > 8e6 {
 		dpi *= math.Sqrt(8e6 / pixels)
 	}
+	// The Go renderer currently ignores JPEG 2000 image decode errors. Detect
+	// images actually painted on this page before rendering so macOS can use
+	// CoreGraphics instead of silently publishing an empty or incomplete page.
+	if pageHasJPEG2000Image(d.reader, index) {
+		img, warning, err := d.renderNativePage(index, p, dpi, true)
+		return img, p, warning, err
+	}
 	// Native rendering also consumes this revision snapshot, not the original file.
 	// Keep gopdf for annotation appearances: CoreGraphics omits annotation overlays.
 	substituteOnce.Do(func() { substitute = gopdf.SystemFonts() })
 	img, report, e := d.reader.RenderPageDetail(index, gopdf.RenderOpts{DPI: dpi, IncludeText: true, IncludeVector: true, IncludeRasterImages: true, IncludeAnnotations: true, SubstituteFont: substitute})
 	if report.Missing > 0 || e != nil {
-		if native := renderNative(d.data, index, int(math.Ceil(p.Width*dpi/72)), int(math.Ceil(p.Height*dpi/72))); native != nil {
-			if len(p.Annotations) > 0 {
-				overlay, overlayErr := d.annotationOverlay(index, dpi)
-				if overlayErr != nil {
-					return native, p, "批注外观渲染失败，请查看右侧列表", nil
-				}
-				composed := image.NewRGBA(native.Bounds())
-				draw.Draw(composed, composed.Bounds(), native, native.Bounds().Min, draw.Src)
-				draw.Draw(composed, composed.Bounds(), overlay, overlay.Bounds().Min, draw.Over)
-				native = composed
-			}
-			return native, p, "已使用系统 PDF 渲染", nil
+		if native, warning, nativeErr := d.renderNativePage(index, p, dpi, false); native != nil || nativeErr != nil {
+			return native, p, warning, nativeErr
 		}
 	}
 	warning := ""
@@ -75,6 +72,43 @@ func (d *Document) render(index int, dpi float64) (image.Image, document.PDFPage
 	}
 	return img, p, warning, e
 }
+
+func pageHasJPEG2000Image(reader *gopdf.Reader, index int) bool {
+	images, err := reader.PageImages(index)
+	if err != nil {
+		return false
+	}
+	for _, imageRef := range images {
+		if imageRef.Filter == "JPXDecode" {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Document) renderNativePage(index int, page document.PDFPage, dpi float64, required bool) (image.Image, string, error) {
+	width := int(math.Ceil(page.Width * dpi / 72))
+	height := int(math.Ceil(page.Height * dpi / 72))
+	native := renderNative(d.data, index, width, height)
+	if native == nil {
+		if required {
+			return nil, "", errors.New("此页包含 JPEG 2000 图像，当前平台没有可用的系统 PDF 渲染器")
+		}
+		return nil, "", nil
+	}
+	if len(page.Annotations) > 0 {
+		overlay, err := d.annotationOverlay(index, dpi)
+		if err != nil {
+			return native, "批注外观渲染失败，请查看右侧列表", nil
+		}
+		composed := image.NewRGBA(native.Bounds())
+		draw.Draw(composed, composed.Bounds(), native, native.Bounds().Min, draw.Src)
+		draw.Draw(composed, composed.Bounds(), overlay, overlay.Bounds().Min, draw.Over)
+		native = composed
+	}
+	return native, "已使用系统 PDF 渲染", nil
+}
+
 func (d *Document) Save() error              { d.mu.Lock(); defer d.mu.Unlock(); return d.save(d.path) }
 func (d *Document) SaveAs(path string) error { d.mu.Lock(); defer d.mu.Unlock(); return d.save(path) }
 func (d *Document) save(path string) error {
