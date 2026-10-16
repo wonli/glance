@@ -68,7 +68,7 @@ func (w *Workbook) SetConditionalFormat(spec document.SpreadsheetConditionalForm
 			},
 		}
 	case document.ConditionalFormatDuplicate:
-		styleID, err := w.file.NewStyle(&excelize.Style{
+		styleID, err := w.file.NewConditionalStyle(&excelize.Style{
 			Font: &excelize.Font{Color: "9C0006"},
 			Fill: excelize.Fill{Type: "pattern", Color: []string{"FFC7CE"}, Pattern: 1},
 		})
@@ -83,7 +83,7 @@ func (w *Workbook) SetConditionalFormat(spec document.SpreadsheetConditionalForm
 			},
 		}
 	case document.ConditionalFormatAboveAvg:
-		styleID, err := w.file.NewStyle(&excelize.Style{
+		styleID, err := w.file.NewConditionalStyle(&excelize.Style{
 			Font: &excelize.Font{Color: "006100"},
 			Fill: excelize.Fill{Type: "pattern", Color: []string{"C6EFCE"}, Pattern: 1},
 		})
@@ -187,7 +187,7 @@ func conditionalStyleMatches(file *excelize.File, styleID *int, fontColor, fillC
 	if styleID == nil {
 		return false
 	}
-	style, err := file.GetStyle(*styleID)
+	style, err := file.GetConditionalStyle(*styleID)
 	if err != nil {
 		return false
 	}

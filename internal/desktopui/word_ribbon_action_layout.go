@@ -263,6 +263,6 @@ func (a *App) layoutWordStyleGalleryAt(gtx layout.Context, state *documentSessio
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
 	child := gtx
 	child.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}
-	a.layoutWordStyleGallery(child, actions)
+	a.layoutWordStyleGallery(child, state, actions)
 	transform.Pop()
 }

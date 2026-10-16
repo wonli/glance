@@ -131,6 +131,12 @@ func TestSpreadsheetToolbar_ConditionalFormat(t *testing.T) {
 	if !app.modal.Visible || app.modal.Title != "条件格式" {
 		t.Fatalf("expected 条件格式 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
 	}
+	if app.modal.HasInput {
+		t.Fatal("conditional format choices should not expose an editable internal rule ID")
+	}
+	if len(app.modal.Actions) != 6 || app.modal.Actions[0].ID != "data_bar" || app.modal.Actions[5].ID != "cancel" {
+		t.Fatalf("conditional format actions = %+v; want five rules and a cancel action", app.modal.Actions)
+	}
 	app.modal.OnAction("data_bar")
 	select {
 	case res := <-app.formatResults:

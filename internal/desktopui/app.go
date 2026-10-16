@@ -52,160 +52,165 @@ type App struct {
 	applyButton           widget.Clickable
 	goToCellButton        widget.Clickable
 
-	feedback                     feedbackState
-	status                       string
-	activeSessionDocumentID      atomic.Value
-	applicationRequestSeq        atomic.Uint64
-	sessions                     map[string]*documentSessionState
-	tabMeta                      map[string]workspace.Tab
-	activeTabID                  string
-	workspaceError               string
-	workspaceWriteError          string
-	tabButtons                   map[string]*widget.Clickable
-	tabCloseButtons              map[string]*widget.Clickable
-	newButton                    widget.Clickable
-	recentTabButton              widget.Clickable
-	workspaceTabsList            widget.List
-	createActionsList            widget.List
-	windowCloseButton            widget.Clickable
-	windowOpenResults            chan error
-	windowOpenSource             *App
-	primaryPromotionPending      atomic.Bool
-	windowMinimizeButton         widget.Clickable
-	windowMaximizeButton         widget.Clickable
-	windowMode                   app.WindowMode
-	clientTitlebar               bool
-	windowDecorations            widget.Decorations
-	showNewMenu                  bool
-	createMenuScrim              widget.Clickable
-	createMenuCardClick          widget.Clickable
-	modal                        modalDialog
-	agentUI                      agentUIState
-	mcpCopyConfigButton          widget.Clickable
-	mcpConnectionViewConfig      string
-	mcpConnectionConfig          string
-	mcpConnectionError           string
-	mcpTempExecutable            bool
-	mcpConfigurationList         widget.List
-	mcpConfigCopied              bool
-	wordSymbolPickerVisible      bool
-	wordSymbolPickerScrim        widget.Clickable
-	wordSymbolPickerClose        widget.Clickable
-	wordSymbolButtons            [len(wordSymbolChoices)]widget.Clickable
-	wordSymbolRunID              string
-	wordSymbolParagraphID        string
-	wordSymbolStart              int
-	wordSymbolEnd                int
-	wordSymbolRevision           uint64
-	wordSymbolDraftEpoch         uint64
-	pendingCloseTabID            string
-	recentList                   widget.List
-	homeSection                  homeSection
-	settingsReturnSection        homeSection
-	homeTypeFilter               string
-	homeSearch                   widget.Editor
-	homeSortOpenedDesc           bool
-	homeContentList              widget.List
-	homeActionButtons            map[string]*widget.Clickable
-	homeNavButtons               map[string]*widget.Clickable
-	homeFilterButtons            map[string]*widget.Clickable
-	homeOpenButtons              map[string]*widget.Clickable
-	homeFavoriteButtons          map[string]*widget.Clickable
-	homeMoreButtons              map[string]*widget.Clickable
-	homeRecentMenuPath           string
-	homeRecentOpenPath           string
-	homeRecentMenuIndex          int
-	homeRecentMenuDismiss        widget.Clickable
-	homeRecentMenuBounds         image.Rectangle
-	homeRecentMenuAnchorBounds   image.Rectangle
-	homeRecentMenuItems          [homeRecentMenuItemCount]widget.Clickable
-	homeRecentUndo               *homeRecentUndoRecord
-	homeRecentWriteGeneration    uint64
-	homeRecentWriteResults       chan homeRecentWriteResult
-	homeFolderButton             widget.Clickable
-	homeNewFolderButton          widget.Clickable
-	homeFolderAddButton          widget.Clickable
-	homeFolderTreeList           widget.List
-	homeFolderRows               map[string]*homeFolderRowWidgets
-	homeFolderExpanded           map[string]bool
-	homeSelectedFolderID         string
-	homeFolderMenuFolderID       string
-	homeFolderMenuIndex          int
-	homeFolderMenuDismiss        widget.Clickable
-	homeFolderBlank              widget.Clickable
-	homeFolderMenuBounds         image.Rectangle
-	homeFolderMenuAnchorBounds   image.Rectangle
-	homeFolderTreeRootOrigin     image.Point
-	homeFolderTreeViewport       image.Rectangle
-	homeFolderDropTargets        []homeFolderDropTarget
-	homeActiveDropFolderID       string
-	homeContentRootOrigin        image.Point
-	homeRecentTableRootOrigin    image.Point
-	homeRecentListRootOrigin     image.Point
-	homeDocumentDrags            map[string]*homeDocumentDragState
-	homeActiveDragPath           string
-	homeFolderPageID             string
-	homeFolderPageSize           int
-	homeContentViewportHeight    int
-	homeSortButton               widget.Clickable
-	homeFavorites                map[string]bool
-	homeMetadata                 map[string]homeFileMetadata
-	aiHistoryDrawerOpen          bool
-	aiHistoryDrawerOverlay       widget.Clickable
-	aiHistoryDrawerCloseBtn      widget.Clickable
-	aiDrawerOpenBtn              widget.Clickable
-	aiSuggestionButtons          [3]widget.Clickable
-	aiAttachButton               widget.Clickable
-	aiModelSelectButton          widget.Clickable
-	aiClearHistoryButton         widget.Clickable
-	aiChatList                   widget.List
-	homeMetadataResults          chan homeMetadataResult
-	homeMetadataGeneration       uint64
-	homeFolderContents           map[string][]workspace.Recent
-	homeFolderContentsResults    chan homeFolderContentsResult
-	homeFolderContentsGeneration uint64
-	homeFolderContentsLatest     map[string]uint64
-	homeFolderContentsLoading    map[string]bool
-	homeFolderContentsLastScan   map[string]time.Time
-	homeCanonicalPaths           map[string]string
-	fileCommandResults           chan fileCommandResult
-	fileCommandRunner            func(fileCommandKind, string) fileCommandResult
-	homeFolderWriteResults       chan homeFolderWriteResult
-	gridLoadResults              chan gridLoadResult
-	gridPictureMetaResults       chan gridPictureMetadataResult
-	gridPictureResults           chan gridPicturePreviewResult
-	gridPictureCommands          chan gridPictureCommandResult
-	formatResults                chan spreadsheetFormatResult
-	wordCommandResults           chan wordCommandResult
-	wordEditorReviewResults      chan wordEditorReviewAsyncResult
-	wordEditorReviewRequest      uint64
-	wordCompareResults           chan wordCompareAsyncResult
-	wordCompareRequest           uint64
-	wordImageResults             chan wordImageDecodeResult
-	wordImagePickerResults       chan wordImagePickerResult
-	wordImagePickerRunning       bool
-	wordImageFilePicker          func() (string, error)
-	pptxPicPickerResults         chan presentationPicturePickerResult
-	pptxPicCommandResults        chan presentationPictureCommandResult
-	pptxPicPickerRunning         bool
-	pptxPicFilePicker            func() (string, error)
-	pptxMediaPickerResults       chan presentationMediaPickerResult
-	pptxMediaPickerRunning       bool
-	pptxMediaFilePicker          func(string) (string, error)
-	xlsxImagePickerResults       chan spreadsheetImagePickerResult
-	xlsxImagePickerRunning       bool
-	xlsxImageFilePicker          func() (string, error)
-	saveResults                  chan saveResult
-	openResults                  chan openResult
-	saving                       bool
-	opening                      bool
-	fileCommandRunning           bool
-	documentGeneration           uint64
-	shutdown                     chan struct{}
-	shutdownOnce                 sync.Once
-	managedBackgroundMu          sync.Mutex
-	managedBackgroundClosed      bool
-	managedBackgroundTasks       sync.WaitGroup
+	feedback                      feedbackState
+	status                        string
+	activeSessionDocumentID       atomic.Value
+	applicationRequestSeq         atomic.Uint64
+	sessions                      map[string]*documentSessionState
+	tabMeta                       map[string]workspace.Tab
+	activeTabID                   string
+	workspaceError                string
+	workspaceWriteError           string
+	tabButtons                    map[string]*widget.Clickable
+	tabCloseButtons               map[string]*widget.Clickable
+	newButton                     widget.Clickable
+	recentTabButton               widget.Clickable
+	workspaceTabsList             widget.List
+	workspaceTabsRevealedActiveID string
+	workspaceTabsRevealedIndex    int
+	workspaceTabScrollTag         int
+	workspaceTabScrollRemainder   float32
+	createActionsList             widget.List
+	windowCloseButton             widget.Clickable
+	windowOpenResults             chan error
+	windowOpenSource              *App
+	primaryPromotionPending       atomic.Bool
+	windowMinimizeButton          widget.Clickable
+	windowMaximizeButton          widget.Clickable
+	windowMode                    app.WindowMode
+	clientTitlebar                bool
+	windowDecorations             widget.Decorations
+	showNewMenu                   bool
+	createMenuScrim               widget.Clickable
+	createMenuCardClick           widget.Clickable
+	modal                         modalDialog
+	agentUI                       agentUIState
+	mcpCopyConfigButton           widget.Clickable
+	mcpConnectionViewConfig       string
+	mcpConnectionConfig           string
+	mcpConnectionError            string
+	mcpTempExecutable             bool
+	mcpConfigurationList          widget.List
+	mcpConfigCopied               bool
+	wordSymbolPickerVisible       bool
+	wordSymbolPickerScrim         widget.Clickable
+	wordSymbolPickerClose         widget.Clickable
+	wordSymbolButtons             [len(wordSymbolChoices)]widget.Clickable
+	wordSymbolRunID               string
+	wordSymbolParagraphID         string
+	wordSymbolStart               int
+	wordSymbolEnd                 int
+	wordSymbolRevision            uint64
+	wordSymbolDraftEpoch          uint64
+	pendingCloseTabID             string
+	recentList                    widget.List
+	homeSection                   homeSection
+	settingsReturnSection         homeSection
+	homeTypeFilter                string
+	homeSearch                    widget.Editor
+	homeSortOpenedDesc            bool
+	homeContentList               widget.List
+	homeActionButtons             map[string]*widget.Clickable
+	homeNavButtons                map[string]*widget.Clickable
+	homeFilterButtons             map[string]*widget.Clickable
+	homeOpenButtons               map[string]*widget.Clickable
+	homeFavoriteButtons           map[string]*widget.Clickable
+	homeMoreButtons               map[string]*widget.Clickable
+	homeRecentMenuPath            string
+	homeRecentOpenPath            string
+	homeRecentMenuIndex           int
+	homeRecentMenuDismiss         widget.Clickable
+	homeRecentMenuBounds          image.Rectangle
+	homeRecentMenuAnchorBounds    image.Rectangle
+	homeRecentMenuItems           [homeRecentMenuItemCount]widget.Clickable
+	homeRecentUndo                *homeRecentUndoRecord
+	homeRecentWriteGeneration     uint64
+	homeRecentWriteResults        chan homeRecentWriteResult
+	homeFolderButton              widget.Clickable
+	homeNewFolderButton           widget.Clickable
+	homeFolderAddButton           widget.Clickable
+	homeFolderTreeList            widget.List
+	homeFolderRows                map[string]*homeFolderRowWidgets
+	homeFolderExpanded            map[string]bool
+	homeSelectedFolderID          string
+	homeFolderMenuFolderID        string
+	homeFolderMenuIndex           int
+	homeFolderMenuDismiss         widget.Clickable
+	homeFolderBlank               widget.Clickable
+	homeFolderMenuBounds          image.Rectangle
+	homeFolderMenuAnchorBounds    image.Rectangle
+	homeFolderTreeRootOrigin      image.Point
+	homeFolderTreeViewport        image.Rectangle
+	homeFolderDropTargets         []homeFolderDropTarget
+	homeActiveDropFolderID        string
+	homeContentRootOrigin         image.Point
+	homeRecentTableRootOrigin     image.Point
+	homeRecentListRootOrigin      image.Point
+	homeDocumentDrags             map[string]*homeDocumentDragState
+	homeActiveDragPath            string
+	homeFolderPageID              string
+	homeFolderPageSize            int
+	homeContentViewportHeight     int
+	homeSortButton                widget.Clickable
+	homeFavorites                 map[string]bool
+	homeMetadata                  map[string]homeFileMetadata
+	aiHistoryDrawerOpen           bool
+	aiHistoryDrawerOverlay        widget.Clickable
+	aiHistoryDrawerCloseBtn       widget.Clickable
+	aiDrawerOpenBtn               widget.Clickable
+	aiSuggestionButtons           [3]widget.Clickable
+	aiAttachButton                widget.Clickable
+	aiModelSelectButton           widget.Clickable
+	aiClearHistoryButton          widget.Clickable
+	aiChatList                    widget.List
+	homeMetadataResults           chan homeMetadataResult
+	homeMetadataGeneration        uint64
+	homeFolderContents            map[string][]workspace.Recent
+	homeFolderContentsResults     chan homeFolderContentsResult
+	homeFolderContentsGeneration  uint64
+	homeFolderContentsLatest      map[string]uint64
+	homeFolderContentsLoading     map[string]bool
+	homeFolderContentsLastScan    map[string]time.Time
+	homeCanonicalPaths            map[string]string
+	fileCommandResults            chan fileCommandResult
+	fileCommandRunner             func(fileCommandKind, string) fileCommandResult
+	homeFolderWriteResults        chan homeFolderWriteResult
+	gridLoadResults               chan gridLoadResult
+	gridNavigationResults         chan spreadsheetGridNavigationResult
+	gridPictureMetaResults        chan gridPictureMetadataResult
+	gridPictureResults            chan gridPicturePreviewResult
+	gridPictureCommands           chan gridPictureCommandResult
+	formatResults                 chan spreadsheetFormatResult
+	wordCommandResults            chan wordCommandResult
+	wordEditorReviewResults       chan wordEditorReviewAsyncResult
+	wordEditorReviewRequest       uint64
+	wordCompareResults            chan wordCompareAsyncResult
+	wordCompareRequest            uint64
+	wordImageResults              chan wordImageDecodeResult
+	wordImagePickerResults        chan wordImagePickerResult
+	wordImagePickerRunning        bool
+	wordImageFilePicker           func() (string, error)
+	pptxPicPickerResults          chan presentationPicturePickerResult
+	pptxPicCommandResults         chan presentationPictureCommandResult
+	pptxPicPickerRunning          bool
+	pptxPicFilePicker             func() (string, error)
+	pptxMediaPickerResults        chan presentationMediaPickerResult
+	pptxMediaPickerRunning        bool
+	pptxMediaFilePicker           func(string) (string, error)
+	xlsxImagePickerResults        chan spreadsheetImagePickerResult
+	xlsxImagePickerRunning        bool
+	xlsxImageFilePicker           func() (string, error)
+	saveResults                   chan saveResult
+	openResults                   chan openResult
+	saving                        bool
+	opening                       bool
+	fileCommandRunning            bool
+	documentGeneration            uint64
+	shutdown                      chan struct{}
+	shutdownOnce                  sync.Once
+	managedBackgroundMu           sync.Mutex
+	managedBackgroundClosed       bool
+	managedBackgroundTasks        sync.WaitGroup
 
 	wordDocumentInfoResults       chan wordDocumentInfoResult
 	wordMacrosInspectionResults   chan wordMacrosInspectionResult
@@ -275,6 +280,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		activeTabID:                   workspace.RecentTabID,
 		status:                        "打开一个 .xlsx 或 .docx 文件开始预览",
 		gridLoadResults:               make(chan gridLoadResult, 8),
+		gridNavigationResults:         make(chan spreadsheetGridNavigationResult, 16),
 		gridPictureMetaResults:        make(chan gridPictureMetadataResult, 8),
 		gridPictureResults:            make(chan gridPicturePreviewResult, 64),
 		gridPictureCommands:           make(chan gridPictureCommandResult, 8),

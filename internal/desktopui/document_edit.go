@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/document"
+	"math"
 	"strings"
 )
 
@@ -139,9 +140,69 @@ func (a *App) commitGridCell(value string) error {
 	a.formulaEditor.SetText(a.cellEdit.Original)
 	if changed {
 		a.setStatus(fmt.Sprintf("%s 已修改；点击保存写入原文件", a.selectedCell))
+	}
+	rowHeightChanged, rowHeightErr := a.persistCellEditRowHeightPreview(changed)
+	if rowHeightErr != nil {
+		a.setStatus("单元格已修改，但自动调整行高失败：" + rowHeightErr.Error())
+	} else if rowHeightChanged {
+		a.setStatus(fmt.Sprintf("%s 已修改并调整行高；点击保存写入原文件", a.selectedCell))
+	}
+	if changed || rowHeightChanged {
 		a.persistActiveSession()
 	}
 	return nil
+}
+
+func (a *App) persistCellEditRowHeightPreview(cellChanged bool) (bool, error) {
+	if a.virtualGrid == nil || a.virtualGrid.CellEditRowPreview == nil {
+		return false, nil
+	}
+	preview := a.virtualGrid.CellEditRowPreview
+	if !cellChanged || math.Abs(preview.PreviewPx-preview.OriginalPx) <= 0.5 {
+		a.virtualGrid.finishCellEditRowPreview(true)
+		return false, nil
+	}
+	setRowHeight := func() error {
+		if editor, ok := a.book.(document.SpreadsheetDimensionEditGrouper); ok {
+			return editor.SetRowHeightAsPartOfLatestEdit(preview.Sheet, preview.Row+1, devicePixelsToPoints(preview.PreviewPx, a.virtualGrid.Scale))
+		}
+		reader, ok := a.book.(interface {
+			SetRowHeight(string, int, float64) error
+		})
+		if !ok {
+			return fmt.Errorf("当前工作簿不支持自动调整行高")
+		}
+		return reader.SetRowHeight(preview.Sheet, preview.Row+1, devicePixelsToPoints(preview.PreviewPx, a.virtualGrid.Scale))
+	}
+	if a.book == nil {
+		a.virtualGrid.finishCellEditRowPreview(false)
+		return false, fmt.Errorf("当前工作簿不支持自动调整行高")
+	}
+	state := a.documentSessionState
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		a.virtualGrid.finishCellEditRowPreview(false)
+		return false, fmt.Errorf("表格正在处理其他操作")
+	}
+	unlock := lockSessionAdapterWrite(state)
+	err := setRowHeight()
+	unlock()
+	a.completeSessionOperation(state, token, err, err == nil)
+	if err != nil {
+		a.virtualGrid.finishCellEditRowPreview(false)
+		return false, err
+	}
+	key := gridAutoFitRow{Sheet: preview.Sheet, Row: preview.Row}
+	if preview.PreviewPx <= preview.BasePx+0.5 {
+		delete(state.spreadsheetAutoFitRowBasePoints, key)
+	} else {
+		if state.spreadsheetAutoFitRowBasePoints == nil {
+			state.spreadsheetAutoFitRowBasePoints = make(map[gridAutoFitRow]float64)
+		}
+		state.spreadsheetAutoFitRowBasePoints[key] = devicePixelsToPoints(preview.BasePx, a.virtualGrid.Scale)
+	}
+	a.virtualGrid.finishCellEditRowPreview(false)
+	return true, nil
 }
 
 func (a *App) applyWordEdit() error {

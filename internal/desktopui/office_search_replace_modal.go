@@ -5,6 +5,8 @@ import (
 	"image/color"
 
 	"gioui.org/font"
+	"gioui.org/io/pointer"
+	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -17,11 +19,16 @@ import (
 func (a *App) layoutOfficeSearchReplaceDialog(gtx layout.Context) layout.Dimensions {
 	if a.modal.searchReplaceClose.Clicked(gtx) {
 		if a.modal.OnAction != nil {
+			title := a.modal.Title
 			a.modal.OnAction("close")
+			if a.modal.Visible && a.modal.Title == title {
+				a.modal.Hide()
+			}
 		} else {
 			a.modal.Hide()
 		}
 		if !a.modal.Visible {
+			gtx.Execute(op.InvalidateCmd{})
 			return layout.Dimensions{}
 		}
 	}
@@ -62,7 +69,7 @@ func (a *App) layoutOfficeSearchReplaceCard(gtx layout.Context) layout.Dimension
 	}
 	compact := height < gtx.Dp(unit.Dp(float32(heightDP)))
 	a.modal.SearchReplaceCompact = compact
-	topPadding, bottomPadding := unit.Dp(18), unit.Dp(33)
+	topPadding, bottomPadding := unit.Dp(6), unit.Dp(33)
 	headerDividerGap, tabGap := unit.Dp(5), unit.Dp(6)
 	queryGap, summaryGap, fieldGap, footerGap := unit.Dp(17), unit.Dp(18), unit.Dp(12), unit.Dp(20)
 	if compact {
@@ -137,7 +144,9 @@ func (a *App) layoutOfficeSearchReplaceCard(gtx layout.Context) layout.Dimension
 	card := clip.RRect{Rect: bounds, NW: radius, NE: radius, SW: radius, SE: radius}
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, card.Op(gtx.Ops))
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 216, G: 222, B: 230, A: 255}, clip.Stroke{Path: card.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+	contentClip := card.Push(gtx.Ops)
 	call.Add(gtx.Ops)
+	contentClip.Pop()
 	return dims
 }
 
@@ -151,13 +160,20 @@ func (a *App) layoutOfficeSearchReplaceHeader(gtx layout.Context) layout.Dimensi
 			return label.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			width, height := gtx.Dp(unit.Dp(32)), gtx.Dp(unit.Dp(32))
+			width, height := gtx.Dp(unit.Dp(44)), gtx.Dp(unit.Dp(44))
 			if a.modal.SearchReplaceCompact {
-				width, height = gtx.Dp(unit.Dp(28)), gtx.Dp(unit.Dp(28))
+				width, height = gtx.Dp(unit.Dp(40)), gtx.Dp(unit.Dp(40))
 			}
 			gtx.Constraints.Min = image.Pt(width, height)
 			gtx.Constraints.Max = gtx.Constraints.Min
 			return a.modal.searchReplaceClose.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				pointer.CursorPointer.Add(gtx.Ops)
+				semantic.DescriptionOp("关闭查找和替换").Add(gtx.Ops)
+				bounds := image.Rectangle{Max: gtx.Constraints.Max}
+				if a.modal.searchReplaceClose.Hovered() {
+					shape := clip.RRect{Rect: bounds, NW: gtx.Dp(unit.Dp(6)), NE: gtx.Dp(unit.Dp(6)), SW: gtx.Dp(unit.Dp(6)), SE: gtx.Dp(unit.Dp(6))}
+					paint.FillShape(gtx.Ops, color.NRGBA{R: 242, G: 244, B: 247, A: 255}, shape.Op(gtx.Ops))
+				}
 				label := material.Body1(a.theme, "×")
 				label.TextSize = unit.Sp(22)
 				label.Color = color.NRGBA{R: 104, G: 113, B: 124, A: 255}
@@ -310,19 +326,13 @@ func (a *App) layoutOfficeSearchReplaceFullDivider(gtx layout.Context) layout.Di
 }
 
 func (a *App) layoutOfficeSearchReplaceActions(gtx layout.Context) layout.Dimensions {
-	buttons := make([]layout.FlexChild, 0, len(a.modal.Actions))
+	actions := make([]*modalDialogAction, 0, len(a.modal.Actions))
 	for index := range a.modal.Actions {
 		action := &a.modal.Actions[index]
-		if action.ID == "replace" && !a.modal.SearchReplaceReplaceTab {
+		if (action.ID == "replace" || action.ID == "replace-all") && !a.modal.SearchReplaceReplaceTab {
 			continue
 		}
-		buttons = append(buttons, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layoutConfirmDialogAction(gtx, a.theme, action, func() {
-				if a.modal.OnAction != nil {
-					a.modal.OnAction(action.ID)
-				}
-			})
-		}))
+		actions = append(actions, action)
 	}
-	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceStart, Gap: gtx.Dp(unit.Dp(8))}.Layout(gtx, buttons...)
+	return a.layoutModalActionButtons(gtx, actions, 8)
 }

@@ -54,6 +54,41 @@ func TestWordPageSelectionCrossesFormattedRunBoundaries(t *testing.T) {
 	}
 }
 
+func TestWordWebLayoutMirrorsCrossRunSelectionIntoEachEditor(t *testing.T) {
+	app, state, router, _ := newWordSelectionPageTest(t, `<w:p><w:r><w:t>abc</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>DEF</w:t></w:r></w:p>`)
+	paragraph := state.wordBlocks[0].Paragraph
+	startRunID := paragraph.Inlines[0].Text.ID
+	endRunID := paragraph.Inlines[1].Text.ID
+	startOffset, endOffset := 2, 2
+	if _, err := app.setWordTextSelection(state, wordTextSelectionRequest{
+		Scope: "range", StartRunID: &startRunID, StartOffset: &startOffset,
+		EndRunID: &endRunID, EndOffset: &endOffset,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var ops op.Ops
+	gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(600, 500)}}
+	app.layoutWordParagraph(gtx, *paragraph, false)
+	router.Frame(&ops)
+
+	for _, want := range []struct {
+		runID      string
+		start, end int
+	}{{startRunID, 2, 3}, {endRunID, 0, 2}} {
+		editor := state.wordRunEditors[want.runID]
+		if editor == nil {
+			t.Fatalf("run %q has no editor after layout", want.runID)
+		}
+		start, end := editor.Selection()
+		if start != want.start || end != want.end {
+			t.Errorf("run %q editor selection = [%d,%d), want [%d,%d)", want.runID, start, end, want.start, want.end)
+		}
+		if !editor.PaintSelectionWhenUnfocused {
+			t.Errorf("run %q does not paint its selection while unfocused", want.runID)
+		}
+	}
+}
+
 func TestWordPagePendingCaretDoesNotCollapseMouseDragSelection(t *testing.T) {
 	state := newDocumentSessionState("pending-caret-selection.docx")
 	editor := new(widget.Editor)

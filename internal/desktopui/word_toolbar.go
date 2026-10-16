@@ -228,6 +228,9 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "cut", "copy", "paste":
 		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
 		return ok && (action.id == "copy" || run.Editable)
+	case "style-body", "style-heading", "style-heading-2":
+		_, editable := any(state.word).(document.WordParagraphStyleEditor)
+		return editable
 	case "bold", "italic", "underline", "font-color", "text-highlight":
 		_, editable := any(state.word).(document.WordTextEditor)
 		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
@@ -371,8 +374,8 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "review-track", "review-accept", "review-reject":
 		_, ok := any(state.word).(document.WordTrackRevisionsEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
-	case "review-editor", "editor", "review-translate":
-		return false
+	case "review-editor", "editor", "review-translate", "view-macros":
+		return a.applicationSessionRegistered(state.documentID)
 	case "review-compare":
 		return state.word != nil && !state.formatRunning.Load() && !a.isSaving()
 	case "layout-position":
@@ -479,6 +482,9 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 	}
 	if action.id == "review-track" {
 		return state.wordTrackRevisions
+	}
+	if action.id == "style-body" || action.id == "style-heading" || action.id == "style-heading-2" {
+		return wordParagraphStyleActionActive(state, action.id)
 	}
 	blocks := wordBlocksForState(state)
 	if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok {

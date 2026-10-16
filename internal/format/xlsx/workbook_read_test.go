@@ -7,6 +7,50 @@ import (
 	"testing"
 )
 
+func TestWorkbookReadRangeIncludesFormulaAndStyleForClipboard(t *testing.T) {
+	f := excelize.NewFile()
+	if err := f.SetCellFormula("Sheet1", "A1", "SUM(B1:B2)"); err != nil {
+		t.Fatal(err)
+	}
+	styleID, err := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true},
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"#DDEEFF"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetCellStyle("Sheet1", "A1", "A1", styleID); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "clipboard-source.xlsx")
+	if err := f.SaveAs(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	wb, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wb.Close()
+
+	rows, err := wb.ReadRange("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cell := rows[0][0]
+	if cell.Formula != "SUM(B1:B2)" {
+		t.Errorf("formula = %q; want SUM(B1:B2)", cell.Formula)
+	}
+	if cell.StyleID != styleID {
+		t.Errorf("style ID = %d; want %d", cell.StyleID, styleID)
+	}
+	if !cell.Style.Bold || cell.Style.FillColor != "#DDEEFF" {
+		t.Errorf("neutral style = %+v; want bold and #DDEEFF fill", cell.Style)
+	}
+}
+
 func TestWorkbookParsesBasicConstantsAndIgnoresNoOp(t *testing.T) {
 	f := excelize.NewFile()
 	path := filepath.Join(t.TempDir(), "constants.xlsx")
@@ -105,6 +149,54 @@ func TestWorkbookWindowIncludesStylesMergesAndDimensions(t *testing.T) {
 	}
 	if len(window.ColumnWidthsChars) != 4 || window.ColumnWidthsChars[1] != 22 {
 		t.Fatalf("column widths = %#v; want column B to be 22 chars", window.ColumnWidthsChars)
+	}
+}
+
+func TestWorkbookWindowRendersConditionalFormatPresetColors(t *testing.T) {
+	f := excelize.NewFile()
+	for _, item := range []struct {
+		cell  string
+		value float64
+	}{
+		{"C1", 1}, {"C2", 3}, {"C3", 5},
+		{"E1", 4}, {"E2", 4}, {"E3", 5},
+		{"G1", 1}, {"G2", 3}, {"G3", 5},
+	} {
+		if err := f.SetCellValue("Sheet1", item.cell, item.value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := saveTestWorkbook(t, f)
+	wb, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wb.Close()
+	for _, spec := range []document.SpreadsheetConditionalFormatSpec{
+		{Sheet: "Sheet1", Range: document.CellRange{StartRow: 1, StartColumn: 3, EndRow: 3, EndColumn: 3}, Type: document.ConditionalFormat3ColorScale},
+		{Sheet: "Sheet1", Range: document.CellRange{StartRow: 1, StartColumn: 5, EndRow: 3, EndColumn: 5}, Type: document.ConditionalFormatDuplicate},
+		{Sheet: "Sheet1", Range: document.CellRange{StartRow: 1, StartColumn: 7, EndRow: 3, EndColumn: 7}, Type: document.ConditionalFormatAboveAvg},
+	} {
+		if changed, err := wb.SetConditionalFormat(spec); err != nil || !changed {
+			t.Fatalf("set %s conditional format changed=%t, err=%v", spec.Type, changed, err)
+		}
+	}
+	window, err := wb.Window("Sheet1", 1, 1, 3, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		row, column int
+		fill, font  string
+	}{
+		{0, 2, "#F8696B", ""}, {1, 2, "#FFEB84", ""}, {2, 2, "#63BE7B", ""},
+		{0, 4, "#FFC7CE", "#9C0006"}, {1, 4, "#FFC7CE", "#9C0006"}, {2, 4, "", ""},
+		{2, 6, "#C6EFCE", "#006100"}, {1, 6, "", ""},
+	} {
+		cell := window.Cells[item.row][item.column]
+		if cell.ConditionalDisplay.FillColor != item.fill || cell.ConditionalDisplay.FontColor != item.font {
+			t.Errorf("cell [%d][%d] conditional display colors = fill %q, font %q; want fill %q, font %q", item.row, item.column, cell.ConditionalDisplay.FillColor, cell.ConditionalDisplay.FontColor, item.fill, item.font)
+		}
 	}
 }
 

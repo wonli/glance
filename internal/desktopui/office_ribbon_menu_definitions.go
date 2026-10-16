@@ -84,7 +84,7 @@ func spreadsheetOfficeRibbonMenu(slot int) officeRibbonMenuDefinition {
 	case 21:
 		return officeRibbonMenuDefinition{"粘贴选项", []officeRibbonMenuOption{disabled("保留源格式"), disabled("合并格式"), option("仅保留文本", "excel-paste-text", true), disabled("选择性粘贴…")}}
 	case toolbarActionFontFamily:
-		return officeRibbonMenuDefinition{"字体", []officeRibbonMenuOption{option("等线", "excel-font-dengxian", true), option("宋体", "excel-font-simsun", true), option("微软雅黑", "excel-font-yahei", true), option("Arial", "excel-font-arial", true), option("更多字体…", "excel-font-custom", true)}}
+		return officeRibbonMenuDefinition{"字体", []officeRibbonMenuOption{option("Aptos Narrow", "excel-font-aptos-narrow", true), option("等线", "excel-font-dengxian", true), option("宋体", "excel-font-simsun", true), option("微软雅黑", "excel-font-yahei", true), option("Arial", "excel-font-arial", true), option("更多字体…", "excel-font-custom", true)}}
 	case toolbarActionFontSize:
 		return officeRibbonMenuDefinition{"字号", []officeRibbonMenuOption{option("10", "excel-size-10", true), option("11", "excel-size-11", true), option("12", "excel-size-12", true), option("14", "excel-size-14", true), option("16", "excel-size-16", true), option("自定义…", "excel-size-custom", true)}}
 	case toolbarActionCellStyles:
@@ -92,9 +92,28 @@ func spreadsheetOfficeRibbonMenu(slot int) officeRibbonMenuDefinition {
 	case 13:
 		return officeRibbonMenuDefinition{"删除", []officeRibbonMenuOption{disabled("删除单元格并上移"), disabled("删除单元格并左移"), option("删除整行", "excel-delete-row", true), option("删除整列", "excel-delete-column", true), option("删除工作表", "excel-delete-sheet", true)}}
 	case toolbarActionFormat:
-		return officeRibbonMenuDefinition{"单元格格式", []officeRibbonMenuOption{disabled("行高…"), disabled("自动调整行高"), disabled("列宽…"), disabled("自动调整列宽"), disabled("隐藏或取消隐藏"), disabled("设置单元格格式…")}}
+		return officeRibbonMenuDefinition{"单元格格式", []officeRibbonMenuOption{
+			option("设置单元格格式…", "excel-format-cells", true),
+			option("行高…", "excel-row-height", true),
+			option("自动调整行高", "excel-autofit-row", true),
+			option("列宽…", "excel-column-width", true),
+			option("自动调整列宽", "excel-autofit-column", true),
+		}}
+	case toolbarActionFreezePanes:
+		return officeRibbonMenuDefinition{"冻结窗格菜单", []officeRibbonMenuOption{
+			option("冻结窗格", "excel-freeze-selection", true),
+			option("冻结首行", "excel-freeze-first-row", true),
+			option("冻结首列", "excel-freeze-first-column", true),
+			option("取消冻结窗格", "excel-unfreeze-panes", true),
+		}}
 	case toolbarActionSum:
-		return officeRibbonMenuDefinition{"自动求和", []officeRibbonMenuOption{option("求和", "excel-sum", true), disabled("平均值"), disabled("计数"), disabled("最大值"), disabled("最小值"), disabled("其他函数…")}}
+		return officeRibbonMenuDefinition{"自动求和", []officeRibbonMenuOption{
+			option("求和", "excel-sum", true),
+			option("平均值", "excel-average", true),
+			option("计数", "excel-count", true),
+			option("最大值", "excel-max", true),
+			option("最小值", "excel-min", true),
+		}}
 	case 18:
 		return officeRibbonMenuDefinition{"排序和筛选", []officeRibbonMenuOption{option("升序", "excel-sort-asc", true), option("降序", "excel-sort-desc", true), disabled("自定义排序…"), option("筛选", "excel-filter", true), option("清除筛选", "excel-clear-filter", true), disabled("重新应用")}}
 	case toolbarActionFind:

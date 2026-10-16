@@ -76,7 +76,7 @@ func TestSelectionRectUsesVisibleGridGeometry(t *testing.T) {
 	columns, _ := NewAxisGeometry(10, gridDefaultColumn)
 	viewport := &gridViewport{Rows: rows, Columns: columns, X: 32, Y: 10, Scale: 1}
 	selection := CellSelection{Anchor: CellPosition{Row: 1, Column: 2}, Active: CellPosition{Row: 2, Column: 3}}
-	want := image.Rect(190, 54, 370, 118)
+	want := image.Rect(138, 42, 266, 82)
 	if got := selectionRect(viewport, selection); got != want {
 		t.Fatalf("selectionRect()=%v, want %v", got, want)
 	}

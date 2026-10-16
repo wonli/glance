@@ -1,13 +1,167 @@
 package desktopui
 
 import (
+	"errors"
+	"strings"
+
 	"gioui.org/io/key"
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"glance/internal/document"
 )
 
-type wordSelectionDeleteIntent struct{ start, end wordPageCaretPosition }
+type wordSelectionEditIntent struct {
+	start, end      wordPageCaretPosition
+	replacement     string
+	replaces        bool
+	formatPatch     *document.WordTextFormatPatch
+	inputRunID      string
+	inputText       string
+	inputCaretStart int
+	inputCaretEnd   int
+}
+
+type wordSelectionInputDraft struct {
+	runID      string
+	text       string
+	caretStart int
+	caretEnd   int
+	start      wordPageCaretPosition
+	end        wordPageCaretPosition
+}
+
+func beginWordSelectionInputDraft(state *documentSessionState, runID string, editor *widget.Editor, focused bool) bool {
+	if state == nil || editor == nil || !focused || !wordPageTextSelectionActive(state.wordPageTextSelection) || state.wordSelectionEditIntent != nil {
+		return state != nil && state.wordSelectionEditIntent != nil
+	}
+	if _, ok := any(state.word).(document.WordTextSelectionReplacer); !ok {
+		return false
+	}
+	start, end, ok := wordPageOrderedSelection(state.wordPageTextSelection)
+	if !ok {
+		return false
+	}
+	if existing := state.wordSelectionInputDraft; existing != nil && existing.runID == runID && existing.start == start && existing.end == end {
+		return false
+	}
+	caretStart, caretEnd := editor.Selection()
+	state.wordSelectionInputDraft = &wordSelectionInputDraft{
+		runID: runID, text: editor.Text(), caretStart: caretStart, caretEnd: caretEnd,
+		start: start, end: end,
+	}
+	return false
+}
+
+func (a *App) finishWordSelectionInput(state *documentSessionState, runID string, editor *widget.Editor) bool {
+	if state == nil || editor == nil {
+		return false
+	}
+	if state.wordSelectionEditIntent != nil {
+		return true
+	}
+	draft := state.wordSelectionInputDraft
+	if draft == nil || draft.runID != runID {
+		return false
+	}
+	if !wordPageTextSelectionActive(state.wordPageTextSelection) {
+		state.wordSelectionInputDraft = nil
+		return false
+	}
+	if state.wordParagraphSplitIntent != nil {
+		state.wordSelectionInputDraft = nil
+		return false
+	}
+	current := editor.Text()
+	if current == draft.text {
+		return editorHasActiveComposition(editor)
+	}
+	if editorHasActiveComposition(editor) {
+		return true
+	}
+	replacement := wordTextReplacementDiff(draft.text, current)
+	if strings.Contains(replacement, "\n") {
+		state.wordSelectionInputDraft = nil
+		return false
+	}
+	if !a.queueWordSelectionReplacement(state, editor, *draft, replacement) {
+		state.wordSelectionInputDraft = nil
+		return false
+	}
+	return true
+}
+
+func wordTextReplacementDiff(before, after string) string {
+	oldRunes, newRunes := []rune(before), []rune(after)
+	prefix := 0
+	for prefix < len(oldRunes) && prefix < len(newRunes) && oldRunes[prefix] == newRunes[prefix] {
+		prefix++
+	}
+	suffix := 0
+	for suffix < len(oldRunes)-prefix && suffix < len(newRunes)-prefix && oldRunes[len(oldRunes)-suffix-1] == newRunes[len(newRunes)-suffix-1] {
+		suffix++
+	}
+	return string(newRunes[prefix : len(newRunes)-suffix])
+}
+
+func (a *App) queueWordSelectionReplacement(state *documentSessionState, editor *widget.Editor, draft wordSelectionInputDraft, replacement string) bool {
+	if state == nil || editor == nil {
+		return false
+	}
+	if _, ok := any(state.word).(document.WordTextSelectionReplacer); !ok {
+		return false
+	}
+	// Gio applies EditEvent to the focused run first. Restore that transient edit
+	// so the adapter receives only the document-wide replacement intent.
+	editor.SetText(draft.text)
+	editor.SetCaret(draft.caretStart, draft.caretEnd)
+	state.wordSelectionInputDraft = nil
+	state.wordSelectionEditIntent = &wordSelectionEditIntent{
+		start: draft.start, end: draft.end, replacement: replacement, replaces: true,
+		inputRunID: draft.runID, inputText: draft.text, inputCaretStart: draft.caretStart, inputCaretEnd: draft.caretEnd,
+	}
+	editor.ReadOnly = true
+	for id, current := range state.wordRunEditors {
+		captureWordTextDraft(state, id, current.Text())
+	}
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
+	if !state.formatRunning.Load() {
+		a.startNextWordTextCommitFor(state)
+	}
+	return true
+}
+
+func restoreWordSelectionReplacementDraft(state *documentSessionState, intent wordSelectionEditIntent) {
+	if state == nil || intent.inputRunID == "" {
+		return
+	}
+	run, ok := selectedWordRun(wordBlocksForState(state), intent.inputRunID)
+	if !ok {
+		return
+	}
+	editor := wordRunEditor(state, run)
+	start, end := min(intent.inputCaretStart, intent.inputCaretEnd), max(intent.inputCaretStart, intent.inputCaretEnd)
+	runes := []rune(intent.inputText)
+	start = max(0, min(start, len(runes)))
+	end = max(start, min(end, len(runes)))
+	replacement := []rune(intent.replacement)
+	value := string(runes[:start]) + string(replacement) + string(runes[end:])
+	editor.SetText(value)
+	caret := start + len(replacement)
+	editor.SetCaret(caret, caret)
+	state.wordPageTextSelection = nil
+	state.wordPageSelectionDrag = nil
+	state.selectedWordRunID = intent.inputRunID
+	state.selectedWordParagraphID = wordParagraphIDForRun(wordBlocksForState(state), intent.inputRunID)
+	state.wordFocusedRunID = intent.inputRunID
+	state.wordLayoutFocusedRunID = intent.inputRunID
+	state.wordPendingCaretRunID = intent.inputRunID
+	state.wordPendingCaretOffset = caret
+	state.wordPendingCaretByX = false
+	state.wordPendingFocusRunID = intent.inputRunID
+	captureWordTextDraft(state, intent.inputRunID, value)
+}
 
 func (a *App) handleWordSelectionDeleteKey(gtx layout.Context, state *documentSessionState, editor *widget.Editor) bool {
 	if !wordPageTextSelectionActive(state.wordPageTextSelection) {
@@ -60,11 +214,39 @@ func (a *App) handleWordSelectionDeleteKey(gtx layout.Context, state *documentSe
 	if !ok {
 		return true
 	}
-	state.wordSelectionDeleteIntent = &wordSelectionDeleteIntent{start: start, end: end}
+	a.queueWordSelectionDeletion(state, start, end)
+	return true
+}
+
+func (a *App) queueWordSelectionDeletion(state *documentSessionState, start, end wordPageCaretPosition) bool {
+	if state == nil || state.word == nil || state.wordSelectionEditIntent != nil || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil {
+		return false
+	}
+	if _, ok := any(state.word).(document.WordTextSelectionEditor); !ok {
+		return false
+	}
+	if draft := state.wordSelectionInputDraft; draft != nil {
+		if editor := state.wordRunEditors[draft.runID]; editor != nil {
+			if editorHasActiveComposition(editor) {
+				return false
+			}
+			if editor.Text() != draft.text {
+				a.finishWordSelectionInput(state, draft.runID, editor)
+				return false
+			}
+		}
+		state.wordSelectionInputDraft = nil
+	}
+	for _, editor := range state.wordRunEditors {
+		if editorHasActiveComposition(editor) {
+			return false
+		}
+	}
+	state.wordSelectionEditIntent = &wordSelectionEditIntent{start: start, end: end}
 	// The selection can include drafts in several formatted runs. Commit those
 	// before the adapter resolves the rune offsets against the document.
-	for id, e := range state.wordRunEditors {
-		captureWordTextDraft(state, id, e.Text())
+	for id, editor := range state.wordRunEditors {
+		captureWordTextDraft(state, id, editor.Text())
 	}
 	state.wordForceDraftFlush.Store(true)
 	state.wordFlushRequested.Store(true)
@@ -75,39 +257,198 @@ func (a *App) handleWordSelectionDeleteKey(gtx layout.Context, state *documentSe
 	return true
 }
 
-func (a *App) startWordSelectionDelete(state *documentSessionState) {
-	if state == nil || state.wordSelectionDeleteIntent == nil || state.formatRunning.Load() {
+func (a *App) startPendingWordSelectionPaste(state *documentSessionState) {
+	if state == nil || state.word == nil || state.wordPendingPasteSelection == nil || state.formatRunning.Load() || state.wordSelectionEditIntent != nil {
 		return
 	}
-	editor, ok := any(state.word).(document.WordTextSelectionEditor)
-	if !ok {
+	pending := *state.wordPendingPasteSelection
+	if _, ok := any(state.word).(document.WordTextSelectionReplacer); !ok {
+		state.wordPendingPasteSelection = nil
+		a.setStatus("当前 DOCX 适配器不支持替换文字选区")
 		return
 	}
-	intent := *state.wordSelectionDeleteIntent
+	if draft := state.wordSelectionInputDraft; draft != nil {
+		if editor := state.wordRunEditors[draft.runID]; editor != nil {
+			if editorHasActiveComposition(editor) {
+				state.wordPendingPasteSelection = nil
+				a.setStatus("请先完成当前中文输入，再粘贴选区文字")
+				return
+			}
+			if editor.Text() != draft.text {
+				a.finishWordSelectionInput(state, draft.runID, editor)
+				return
+			}
+		}
+		state.wordSelectionInputDraft = nil
+	}
+	if !wordSelectionPasteTargetValid(state, pending.target) {
+		state.wordPendingPasteSelection = nil
+		a.setStatus("Word 粘贴选区已失效，请重新选择文字后粘贴")
+		return
+	}
+	for _, editor := range state.wordRunEditors {
+		if editorHasActiveComposition(editor) {
+			state.wordPendingPasteSelection = nil
+			a.setStatus("请先完成当前中文输入，再粘贴选区文字")
+			return
+		}
+	}
+	state.wordSelectionEditIntent = &wordSelectionEditIntent{
+		start: pending.target.start, end: pending.target.end,
+		replacement: pending.text, replaces: true,
+	}
+	state.wordPendingPasteSelection = nil
+	for id, editor := range state.wordRunEditors {
+		captureWordTextDraft(state, id, editor.Text())
+	}
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
+	if !state.formatRunning.Load() {
+		a.startNextWordTextCommitFor(state)
+	}
+}
+
+func wordSelectionPasteTargetValid(state *documentSessionState, target wordClipboardSelectionTarget) bool {
+	if state == nil || state.word == nil {
+		return false
+	}
+	startRun, startOK := selectedWordRun(wordBlocksForState(state), target.start.runID)
+	endRun, endOK := selectedWordRun(wordBlocksForState(state), target.end.runID)
+	if !startOK || !endOK || target.start.runeOffset < 0 || target.end.runeOffset < 0 {
+		return false
+	}
+	if target.start.runeOffset > len([]rune(startRun.Text)) || target.end.runeOffset > len([]rune(endRun.Text)) {
+		return false
+	}
+	if target.start.runID == target.end.runID {
+		return target.start.runeOffset <= target.end.runeOffset
+	}
+	order := make(map[string]int)
+	for _, paragraph := range allWordParagraphs(wordBlocksForState(state)) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text != nil && inline.Text.Editable {
+				if _, exists := order[inline.Text.ID]; !exists {
+					order[inline.Text.ID] = len(order)
+				}
+			}
+		}
+	}
+	startOrder, startFound := order[target.start.runID]
+	endOrder, endFound := order[target.end.runID]
+	return startFound && endFound && startOrder < endOrder
+}
+
+func wordSelectionPasteTargetHasPendingDraft(state *documentSessionState, target wordClipboardSelectionTarget) bool {
+	if state == nil {
+		return false
+	}
+	committed, drafts := state.wordTextStateSnapshot()
+	inside := false
+	for _, paragraph := range allWordParagraphs(wordBlocksForState(state)) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text == nil || !inline.Text.Editable {
+				continue
+			}
+			if inline.Text.ID == target.start.runID {
+				inside = true
+			}
+			if inside {
+				if draft, exists := drafts[inline.Text.ID]; exists && draft != committed[inline.Text.ID] {
+					return true
+				}
+			}
+			if inline.Text.ID == target.end.runID {
+				return false
+			}
+		}
+	}
+	return false
+}
+
+func (a *App) startWordSelectionEdit(state *documentSessionState) {
+	if state == nil || state.wordSelectionEditIntent == nil || state.formatRunning.Load() {
+		return
+	}
+	intent := *state.wordSelectionEditIntent
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
 		return
 	}
 	generation := a.documentGeneration
 	started := a.launchManagedBackground(func() {
-		var deleted document.WordTextSelectionDeleteResult
+		var edited document.WordTextSelectionEditResult
+		var formatted document.WordTextSelectionFormatResult
 		blocks, err := runWordMutation(state, func() error {
+			if intent.formatPatch != nil {
+				formatter, ok := any(state.word).(document.WordTextSelectionFormatter)
+				if !ok {
+					return errors.New("Word selection formatting is unsupported")
+				}
+				var formatErr error
+				formatted, formatErr = formatter.SetTextSelectionStyle(intent.start.runID, intent.start.runeOffset, intent.end.runID, intent.end.runeOffset, *intent.formatPatch)
+				return formatErr
+			}
+			if intent.replaces {
+				editor, ok := any(state.word).(document.WordTextSelectionReplacer)
+				if !ok {
+					return errors.New("Word text selection replacement is unsupported")
+				}
+				var err error
+				edited, err = editor.ReplaceTextSelection(intent.start.runID, intent.start.runeOffset, intent.end.runID, intent.end.runeOffset, intent.replacement)
+				return err
+			}
+			editor, ok := any(state.word).(document.WordTextSelectionEditor)
+			if !ok {
+				return errors.New("Word text selection deletion is unsupported")
+			}
 			var err error
-			deleted, err = editor.DeleteTextSelection(intent.start.runID, intent.start.runeOffset, intent.end.runID, intent.end.runeOffset)
+			edited, err = editor.DeleteTextSelection(intent.start.runID, intent.start.runeOffset, intent.end.runID, intent.end.runeOffset)
 			return err
 		})
-		a.publishWordCommand(wordCommandResult{state: state, operationToken: token, generation: generation, operation: "删除选区文字", blocks: blocks, err: err, selectionDelete: true, selectionDeleteResult: deleted})
+		operation := "删除选区文字"
+		if intent.replaces {
+			operation = "替换选区文字"
+		} else if intent.formatPatch != nil {
+			operation = "格式化选中文字"
+		}
+		a.publishWordCommand(wordCommandResult{state: state, operationToken: token, generation: generation, operation: operation, blocks: blocks, err: err, selectionEdit: true, selectionEditResult: edited, selectionFormatResult: formatted})
 	})
 	if !started {
 		state.finishOperation(token)
-		cancelWordSelectionDelete(state)
+		cancelWordSelectionEdit(state)
 	}
 }
 
-func (a *App) completeWordSelectionDelete(result wordCommandResult, active bool) {
+func (a *App) completeWordSelectionEdit(result wordCommandResult, active bool) {
 	state := result.state
 	if state == nil {
 		return
+	}
+	intent := state.wordSelectionEditIntent
+	if result.err == nil && intent != nil {
+		rebase := func(target *wordClipboardSelectionTarget) {
+			if target == nil {
+				return
+			}
+			if intent.formatPatch != nil {
+				formatted := result.selectionFormatResult
+				*target = wordClipboardSelectionTarget{
+					start: wordPageCaretPosition{runID: formatted.StartRunID, runeOffset: formatted.StartOffset},
+					end:   wordPageCaretPosition{runID: formatted.EndRunID, runeOffset: formatted.EndOffset},
+				}
+				return
+			}
+			caret := result.selectionEditResult
+			position := wordPageCaretPosition{runID: caret.RunID, runeOffset: caret.Caret}
+			*target = wordClipboardSelectionTarget{start: position, end: position}
+		}
+		rebase(state.wordClipboardSelection)
+		if pending := state.wordPendingPasteSelection; pending != nil {
+			rebase(&pending.target)
+		}
+	} else if state.wordPendingPasteSelection != nil && result.err != nil {
+		state.wordPendingPasteSelection = nil
 	}
 	defer func() {
 		state.finishOperation(result.operationToken)
@@ -115,21 +456,35 @@ func (a *App) completeWordSelectionDelete(result wordCommandResult, active bool)
 			a.finishWordTextFlush(state)
 		}
 	}()
-	state.wordSelectionDeleteIntent = nil
+	state.wordSelectionEditIntent = nil
+	state.wordSelectionInputDraft = nil
 	state.wordFlushRequested.Store(false)
 	state.wordFlushAllDrafts.Store(false)
 	state.wordForceDraftFlush.Store(false)
 	if result.err != nil {
+		if intent != nil && intent.replaces {
+			restoreWordSelectionReplacementDraft(state, *intent)
+		}
 		if active {
 			a.setStatus(wordCommandError(result.operation, result.err))
 		}
 		return
 	}
 	state.setWordBlocksAndTextState(result.blocks, true)
+	if intent != nil && intent.formatPatch == nil {
+		if editor := state.wordRunEditors[intent.end.runID]; editor != nil {
+			_, caret := editor.Selection()
+			editor.SetCaret(caret, caret)
+		}
+	}
 	state.wordRunEditors = make(map[string]*widget.Editor)
+	if intent != nil && intent.formatPatch != nil {
+		a.completeWordSelectionFormat(state, result.selectionFormatResult, active)
+		return
+	}
 	state.wordPageTextSelection = nil
 	state.wordPageSelectionDrag = nil
-	caret := result.selectionDeleteResult
+	caret := result.selectionEditResult
 	run, ok := selectedWordRun(wordBlocksForState(state), caret.RunID)
 	if !ok {
 		return
@@ -146,26 +501,91 @@ func (a *App) completeWordSelectionDelete(result wordCommandResult, active bool)
 	state.wordPendingFocusRunID = ""
 	if active {
 		state.wordPendingFocusRunID = caret.RunID
-		a.setStatus("已删除选区文字")
+		message := "已删除选区文字"
+		if intent != nil && intent.replaces {
+			message = "已替换选区文字"
+		}
+		a.setStatus(message)
 		a.persistActiveSession()
 	}
 }
 
-// A failed flush keeps the user's draft, but must release the pending intent
+func (a *App) completeWordSelectionFormat(state *documentSessionState, formatted document.WordTextSelectionFormatResult, active bool) {
+	if state == nil {
+		return
+	}
+	order := make(map[string]int)
+	for _, paragraph := range allWordParagraphs(wordBlocksForState(state)) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text == nil || !inline.Text.Editable {
+				continue
+			}
+			if _, exists := order[inline.Text.ID]; !exists {
+				order[inline.Text.ID] = len(order)
+			}
+		}
+	}
+	if _, exists := order[formatted.StartRunID]; !exists {
+		return
+	}
+	if _, exists := order[formatted.EndRunID]; !exists {
+		return
+	}
+	state.wordPageTextSelection = &wordPageTextSelection{
+		scope:    "range",
+		anchor:   wordPageCaretPosition{runID: formatted.StartRunID, runeOffset: formatted.StartOffset},
+		focus:    wordPageCaretPosition{runID: formatted.EndRunID, runeOffset: formatted.EndOffset},
+		runOrder: order,
+	}
+	state.wordPageSelectionDrag = nil
+	state.selectedWordRunID = formatted.EndRunID
+	state.selectedWordParagraphID = wordParagraphIDForRun(wordBlocksForState(state), formatted.EndRunID)
+	state.selectedWordImageID = ""
+	state.wordFocusedRunID = formatted.EndRunID
+	state.wordLayoutFocusedRunID = formatted.EndRunID
+	state.wordPendingCaretRunID = formatted.EndRunID
+	state.wordPendingCaretOffset = formatted.EndOffset
+	state.wordPendingCaretByX = false
+	state.wordPendingFocusRunID = ""
+	if active {
+		state.wordPendingFocusRunID = formatted.EndRunID
+	}
+	if run, ok := selectedWordRun(wordBlocksForState(state), formatted.EndRunID); ok {
+		editor := wordRunEditor(state, run)
+		if formatted.StartRunID == formatted.EndRunID {
+			editor.SetCaret(formatted.StartOffset, formatted.EndOffset)
+		} else {
+			editor.SetCaret(formatted.EndOffset, formatted.EndOffset)
+		}
+	}
+	if active {
+		a.setStatus("已格式化选中文字")
+		a.persistActiveSession()
+	}
+}
+
+// A failed flush keeps the user's text, but must release the pending intent
 // that makes its editors read-only. This also handles rejected worker dispatch.
-func cancelWordSelectionDelete(state *documentSessionState) {
-	state.wordSelectionDeleteIntent = nil
+func cancelWordSelectionEdit(state *documentSessionState) {
+	if state == nil {
+		return
+	}
+	if intent := state.wordSelectionEditIntent; intent != nil && intent.replaces {
+		restoreWordSelectionReplacementDraft(state, *intent)
+	}
+	state.wordSelectionEditIntent = nil
+	state.wordSelectionInputDraft = nil
 	state.wordFlushRequested.Store(false)
 	state.wordFlushAllDrafts.Store(false)
 	state.wordForceDraftFlush.Store(false)
 }
 
-// Only continue the deletion owned by this inactive view. Generic flush
+// Only continue the selection edit owned by this inactive view. Generic flush
 // completion may dispatch actions (such as Save) against the active App view.
-func (a *App) completeInactiveWordSelectionDeleteDraft(result wordCommandResult) {
+func (a *App) completeInactiveWordSelectionEditDraft(result wordCommandResult) {
 	state := result.state
 	if result.err != nil {
-		cancelWordSelectionDelete(state)
+		cancelWordSelectionEdit(state)
 		return
 	}
 	state.setCommittedWordTextAndClearDraft(result.runID, result.runText)
@@ -182,5 +602,5 @@ func (a *App) completeInactiveWordSelectionDeleteDraft(result wordCommandResult)
 	state.wordFlushRequested.Store(false)
 	state.wordFlushAllDrafts.Store(false)
 	state.wordForceDraftFlush.Store(false)
-	a.startWordSelectionDelete(state)
+	a.startWordSelectionEdit(state)
 }

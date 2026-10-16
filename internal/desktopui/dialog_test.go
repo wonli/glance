@@ -2,8 +2,16 @@ package desktopui
 
 import (
 	"image"
+	"image/color"
+	"reflect"
+	"runtime"
 	"testing"
+	"time"
 
+	"gioui.org/f32"
+	"gioui.org/gpu/headless"
+	"gioui.org/io/input"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -125,4 +133,264 @@ func TestPDFPreviewDialogFitsWindow(t *testing.T) {
 	if dims.Size.X > 680 || dims.Size.Y > 500 || dims.Size.Y < 300 {
 		t.Fatalf("PDF preview card should fit the window, got %v", dims.Size)
 	}
+}
+
+func TestModalActionRowsWrapWithinAvailableWidth(t *testing.T) {
+	widths := []int{93, 88, 93, 88, 88, 80}
+	rows := planDialogActionRows(widths, 392, 10)
+	want := [][]int{{0, 1, 2, 3}, {4, 5}}
+	if !reflect.DeepEqual(rows, want) {
+		t.Fatalf("planDialogActionRows(%v, 392, 10) = %v; want %v", widths, rows, want)
+	}
+	for rowIndex, row := range rows {
+		rowWidth := 0
+		for index, actionIndex := range row {
+			rowWidth += widths[actionIndex]
+			if index > 0 {
+				rowWidth += 10
+			}
+		}
+		if rowWidth > 392 {
+			t.Errorf("action row %d width = %d; exceeds available width 392", rowIndex, rowWidth)
+		}
+	}
+}
+
+func TestModalActionBeyondAvailableWidthIsNotClickable(t *testing.T) {
+	app := &App{theme: material.NewTheme()}
+	var clicked string
+	app.modal.Show("条件格式", "为选区 H7:H7 选择条件格式规则：", func(id string) { clicked = id },
+		modalDialogActionSpec{ID: "data_bar", Label: "渐变数据条"},
+		modalDialogActionSpec{ID: "3_color", Label: "三色色阶"},
+		modalDialogActionSpec{ID: "duplicate", Label: "高亮重复值"},
+		modalDialogActionSpec{ID: "above_avg", Label: "高于平均值"},
+		modalDialogActionSpec{ID: "clear", Label: "清除规则"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+	router := new(input.Router)
+	var ops op.Ops
+	frame := func() {
+		ops.Reset()
+		gtx := layout.Context{
+			Source: router.Source(), Ops: &ops,
+			Constraints: layout.Constraints{Max: image.Pt(392, 200)},
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		}
+		app.layoutConfirmDialogActions(gtx)
+		router.Frame(&ops)
+	}
+	frame()
+	point := f32.Pt(410, 18) // outside the 392px action area, over the old fifth button.
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 71, Buttons: pointer.ButtonPrimary, Position: point})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 71, Position: point})
+	frame()
+	if clicked != "" {
+		t.Fatalf("click outside the action area triggered %q", clicked)
+	}
+}
+
+func TestModalActionsStayWithinCardAtRetinaScale(t *testing.T) {
+	app := &App{theme: material.NewTheme()}
+	var clicked string
+	app.modal.Show("条件格式", "为选区 H7:H7 选择条件格式规则：", func(id string) { clicked = id },
+		modalDialogActionSpec{ID: "data_bar", Label: "渐变数据条"},
+		modalDialogActionSpec{ID: "3_color", Label: "三色色阶"},
+		modalDialogActionSpec{ID: "duplicate", Label: "高亮重复值"},
+		modalDialogActionSpec{ID: "above_avg", Label: "高于平均值"},
+		modalDialogActionSpec{ID: "clear", Label: "清除规则"},
+		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+	)
+	router := new(input.Router)
+	var ops op.Ops
+	const windowWidth, windowHeight = 960, 620
+	frame := func() {
+		ops.Reset()
+		gtx := layout.Context{
+			Source: router.Source(), Ops: &ops,
+			Constraints: layout.Exact(image.Pt(windowWidth, windowHeight)),
+			Metric:      unit.Metric{PxPerDp: 2, PxPerSp: 2},
+		}
+		app.layoutModalDialog(gtx)
+		router.Frame(&ops)
+	}
+	frame()
+	// On the screenshot's old single-row layout, the fifth button started just
+	// outside the 880px-wide card at this point. The wrapped layout keeps it in
+	// the next row and leaves this outside-card position inert.
+	point := f32.Pt(930, 455)
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 72, Buttons: pointer.ButtonPrimary, Position: point})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 72, Position: point})
+	frame()
+	if clicked != "" {
+		t.Fatalf("click outside the modal card triggered %q", clicked)
+	}
+}
+
+func TestModalActionButtonsDoNotPaintOutsideTheDialogCard(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	for _, tc := range []struct {
+		name                 string
+		width, height, scale int
+	}{
+		{name: "1x", width: 800, height: 600, scale: 1},
+		{name: "2x screenshot geometry", width: 960, height: 900, scale: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &App{theme: material.NewTheme()}
+			var clicked string
+			app.modal.Show("条件格式", "为选区 H7:H7 选择条件格式规则：", func(id string) { clicked = id },
+				modalDialogActionSpec{ID: "data_bar", Label: "渐变数据条"},
+				modalDialogActionSpec{ID: "3_color", Label: "三色色阶"},
+				modalDialogActionSpec{ID: "duplicate", Label: "高亮重复值"},
+				modalDialogActionSpec{ID: "above_avg", Label: "高于平均值"},
+				modalDialogActionSpec{ID: "clear", Label: "清除规则"},
+				modalDialogActionSpec{ID: "cancel", Label: "取消"},
+			)
+			size := image.Pt(tc.width, tc.height)
+			var ops op.Ops
+			metric := unit.Metric{PxPerDp: float32(tc.scale), PxPerSp: float32(tc.scale)}
+			gtx := layout.Context{Ops: &ops, Now: time.Now(), Constraints: layout.Exact(size), Metric: metric}
+			if got := app.layoutModalDialog(gtx).Size; got != size {
+				t.Fatalf("modal root size = %v; want %v", got, size)
+			}
+			window, err := headless.NewWindow(tc.width, tc.height)
+			if err != nil {
+				t.Skipf("headless GPU is unavailable: %v", err)
+			}
+			defer window.Release()
+			if err := window.Frame(&ops); err != nil {
+				t.Fatalf("render modal: %v", err)
+			}
+			screenshot := image.NewRGBA(image.Rect(0, 0, tc.width, tc.height))
+			if err := window.Screenshot(screenshot); err != nil {
+				t.Fatalf("capture modal: %v", err)
+			}
+			cardWidth := min(gtx.Dp(unit.Dp(440)), tc.width-gtx.Dp(unit.Dp(32)))
+			cardBounds := image.Rect((tc.width-cardWidth)/2, 0, (tc.width+cardWidth)/2, tc.height)
+			primaryBlue := color.NRGBA{R: 52, G: 120, B: 209, A: 255}
+			outsideButtonPixels := 0
+			for y := 0; y < tc.height; y++ {
+				for x := 0; x < cardBounds.Min.X; x++ {
+					pixel := color.NRGBAModel.Convert(screenshot.At(x, y)).(color.NRGBA)
+					if pixel == primaryBlue {
+						outsideButtonPixels++
+					}
+				}
+				for x := cardBounds.Max.X; x < tc.width; x++ {
+					pixel := color.NRGBAModel.Convert(screenshot.At(x, y)).(color.NRGBA)
+					if pixel == primaryBlue {
+						outsideButtonPixels++
+					}
+				}
+			}
+			if outsideButtonPixels != 0 {
+				t.Fatalf("found %d primary-button pixels outside dialog card bounds %v", outsideButtonPixels, cardBounds)
+			}
+
+			minButtonWidth := gtx.Dp(unit.Dp(72))
+			minButtonHeight := gtx.Dp(unit.Dp(24))
+			var blueButtons []image.Rectangle
+			for _, bounds := range exactColorComponents(screenshot, cardBounds, primaryBlue) {
+				if bounds.Dx() >= minButtonWidth && bounds.Dy() >= minButtonHeight {
+					blueButtons = append(blueButtons, bounds)
+				}
+			}
+			if len(blueButtons) != 5 {
+				t.Fatalf("found %d complete primary button regions inside card; want 5: %v", len(blueButtons), blueButtons)
+			}
+			rowTops := make(map[int]struct{})
+			for _, bounds := range blueButtons {
+				if bounds.Dx() < minButtonWidth {
+					t.Errorf("primary button is clipped to %dpx inside card; want at least %dpx: %v", bounds.Dx(), minButtonWidth, bounds)
+				}
+				rowTops[bounds.Min.Y] = struct{}{}
+			}
+			if len(rowTops) != 2 {
+				t.Errorf("primary buttons occupy %d rows inside card; want 2: %v", len(rowTops), blueButtons)
+			}
+
+			bottomRowTop := -1
+			var rightmostBottomButton image.Rectangle
+			for _, bounds := range blueButtons {
+				if bounds.Min.Y > bottomRowTop {
+					bottomRowTop = bounds.Min.Y
+					rightmostBottomButton = bounds
+				} else if bounds.Min.Y == bottomRowTop && bounds.Max.X > rightmostBottomButton.Max.X {
+					rightmostBottomButton = bounds
+				}
+			}
+			if bottomRowTop >= 0 {
+				router := new(input.Router)
+				var clickOps op.Ops
+				frame := func() {
+					clickOps.Reset()
+					clickGtx := layout.Context{
+						Source: router.Source(), Ops: &clickOps,
+						Constraints: layout.Exact(size),
+						Metric:      metric,
+					}
+					app.layoutModalDialog(clickGtx)
+					router.Frame(&clickOps)
+				}
+				frame()
+				point := f32.Pt(
+					float32(rightmostBottomButton.Max.X+gtx.Dp(unit.Dp(50))),
+					float32(bottomRowTop+gtx.Dp(unit.Dp(18))),
+				)
+				router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 73, Buttons: pointer.ButtonPrimary, Position: point})
+				frame()
+				router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 73, Position: point})
+				frame()
+				if clicked != "cancel" {
+					t.Errorf("clicking the expected in-card cancel button triggered %q; want cancel", clicked)
+				}
+			}
+		})
+	}
+}
+
+func exactColorComponents(img *image.RGBA, bounds image.Rectangle, target color.NRGBA) []image.Rectangle {
+	bounds = bounds.Intersect(img.Bounds())
+	if bounds.Empty() {
+		return nil
+	}
+	visited := make([]bool, bounds.Dx()*bounds.Dy())
+	indexAt := func(point image.Point) int {
+		return (point.Y-bounds.Min.Y)*bounds.Dx() + point.X - bounds.Min.X
+	}
+	var components []image.Rectangle
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			start := image.Pt(x, y)
+			if visited[indexAt(start)] || color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA) != target {
+				continue
+			}
+			visited[indexAt(start)] = true
+			queue := []image.Point{start}
+			component := image.Rectangle{Min: start, Max: start.Add(image.Pt(1, 1))}
+			for len(queue) > 0 {
+				point := queue[len(queue)-1]
+				queue = queue[:len(queue)-1]
+				component.Min.X = min(component.Min.X, point.X)
+				component.Min.Y = min(component.Min.Y, point.Y)
+				component.Max.X = max(component.Max.X, point.X+1)
+				component.Max.Y = max(component.Max.Y, point.Y+1)
+				for _, next := range [...]image.Point{
+					point.Add(image.Pt(-1, 0)), point.Add(image.Pt(1, 0)),
+					point.Add(image.Pt(0, -1)), point.Add(image.Pt(0, 1)),
+				} {
+					if !next.In(bounds) || visited[indexAt(next)] || color.NRGBAModel.Convert(img.At(next.X, next.Y)).(color.NRGBA) != target {
+						continue
+					}
+					visited[indexAt(next)] = true
+					queue = append(queue, next)
+				}
+			}
+			components = append(components, component)
+		}
+	}
+	return components
 }

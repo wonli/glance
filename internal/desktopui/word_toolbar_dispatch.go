@@ -19,6 +19,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		return
 	}
 	switch actionID {
+	case "style-body", "style-heading", "style-heading-2":
+		a.applyWordParagraphStyleAction(actionID)
 	case "new":
 		word, err := docx.NewBlank()
 		if err != nil {
@@ -89,6 +91,12 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	case "redo":
 		a.applyWordHistory(false)
 	case "cut":
+		if wordPageTextSelectionActive(state.wordPageTextSelection) {
+			if start, end, ok := wordPageOrderedSelection(state.wordPageTextSelection); ok {
+				a.queueWordSelectionDeletion(state, start, end)
+			}
+			return
+		}
 		runID := state.selectedWordRunID
 		a.runWordCommand("剪切文字", func(editor document.WordTextEditor) error { return editor.ReplaceTextRun(runID, "") })
 	case "paste":
@@ -217,6 +225,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.showWordDictateDialog()
 	case "add-ins":
 		a.showWordAddInsDialog()
+	case "view-macros":
+		a.showWordMacrosDialog()
 	case "ruler-indents":
 		intent := state.wordRulerIndentIntent
 		if intent == nil {

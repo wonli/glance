@@ -1,6 +1,7 @@
 package xlsx
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -56,5 +57,38 @@ func TestWorkbookSheetViewAndUndo(t *testing.T) {
 	view, err = wb.GetSheetView(sheet)
 	if err != nil || view.ViewMode != "normal" {
 		t.Fatalf("expected normal view mode after second undo, got %+v", view)
+	}
+}
+
+func TestWorkbookSheetZoomLimitsSaveAndReopenPerWorksheet(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+
+	firstSheet := wb.SheetNames()[0]
+	secondSheet, err := wb.file.NewSheet("Second")
+	if err != nil || secondSheet < 0 {
+		t.Fatalf("create second worksheet: index=%d err=%v", secondSheet, err)
+	}
+	for sheet, percent := range map[string]int{firstSheet: 10, "Second": 400} {
+		if err := wb.SetSheetZoom(sheet, percent); err != nil {
+			t.Fatalf("SetSheetZoom(%q, %d): %v", sheet, percent, err)
+		}
+	}
+
+	path := filepath.Join(t.TempDir(), "sheet-zoom-limits.xlsx")
+	if err := wb.SaveAs(path); err != nil {
+		t.Fatalf("SaveAs: %v", err)
+	}
+
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen workbook: %v", err)
+	}
+	defer reopened.Close()
+	for sheet, want := range map[string]int{firstSheet: 10, "Second": 400} {
+		view, err := reopened.GetSheetView(sheet)
+		if err != nil || view.ZoomPercent != want {
+			t.Errorf("reopened %q zoom = %d, err=%v; want %d", sheet, view.ZoomPercent, err, want)
+		}
 	}
 }

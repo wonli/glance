@@ -12,7 +12,8 @@ import (
 )
 
 // textEditorParagraphSelection observes native editor clicks without taking
-// their pointer grab. Keep one instance for each persistent editor.
+// their pointer grab. Keep it in stable state; Word shares a handler across
+// the formatted runs in one paragraph so double-click detection spans them.
 type textEditorParagraphSelection struct {
 	click             gesture.Click
 	paragraphSelected bool

@@ -24,6 +24,69 @@ func deleteSelection(t *testing.T, d *Document, a string, x int, b string, y int
 	return result
 }
 
+func replaceSelection(t *testing.T, d *Document, a string, x int, b string, y int, replacement string) document.WordTextSelectionEditResult {
+	t.Helper()
+	editor, ok := any(d).(interface {
+		ReplaceTextSelection(string, int, string, int, string) (document.WordTextSelectionEditResult, error)
+	})
+	if !ok {
+		t.Fatal("DOCX lacks selection replacement")
+	}
+	result, err := editor.ReplaceTextSelection(a, x, b, y, replacement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func TestReplaceWordTextSelectionInheritsStartFormattingAndIsAtomic(t *testing.T) {
+	d := selectionDeleteFixture(t, `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>甲AB</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>CD乙</w:t></w:r></w:p>`)
+	defer d.Close()
+	p := d.WordBlocks()[0].Paragraph
+	startID, endID := p.Inlines[0].Text.ID, p.Inlines[1].Text.ID
+	before := append([]byte(nil), d.parts[d.documentIdx].data...)
+	result := replaceSelection(t, d, startID, 1, endID, 2, "新🌱")
+	p = d.WordBlocks()[0].Paragraph
+	if got := p.Inlines[0].Text.Text; got != "甲新🌱" || !p.Inlines[0].Text.Style.Bold {
+		t.Fatalf("replacement run = %q, bold=%v; want %q with start formatting", got, p.Inlines[0].Text.Style.Bold, "甲新🌱")
+	}
+	if got := p.Inlines[1].Text.Text; got != "乙" || !p.Inlines[1].Text.Style.Italic {
+		t.Fatalf("untouched suffix = %q, italic=%v; want %q with original formatting", got, p.Inlines[1].Text.Style.Italic, "乙")
+	}
+	if result.ParagraphID != p.ID || result.RunID != startID || result.Caret != 3 {
+		t.Fatalf("replacement caret = %#v; want start run offset 3", result)
+	}
+	snapshot, err := d.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenSnapshot(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got := reopened.WordBlocks()[0].Paragraph.Inlines[0].Text.Text; got != "甲新🌱" {
+		t.Fatalf("snapshot replacement = %q", got)
+	}
+	if ok, err := d.Undo(); err != nil || !ok {
+		t.Fatalf("undo: %v %v", ok, err)
+	}
+	if !bytes.Equal(before, d.parts[d.documentIdx].data) || d.CanUndo() {
+		t.Fatal("selection replacement was not a single undo step")
+	}
+}
+
+func TestReplaceWordTextSelectionWithinOneRun(t *testing.T) {
+	d := selectionDeleteFixture(t, `<w:p><w:r><w:rPr><w:u/></w:rPr><w:t>A🌺BC</w:t></w:r></w:p>`)
+	defer d.Close()
+	id := d.WordBlocks()[0].Paragraph.Inlines[0].Text.ID
+	result := replaceSelection(t, d, id, 1, id, 3, "中")
+	p := d.WordBlocks()[0].Paragraph
+	if got := p.Inlines[0].Text.Text; got != "A中C" || !p.Inlines[0].Text.Style.Underline || result.Caret != 2 {
+		t.Fatalf("same-run replacement = %q, underline=%v, caret=%d", got, p.Inlines[0].Text.Style.Underline, result.Caret)
+	}
+}
+
 func TestDeleteWordTextSelectionFormattedRunsAtomic(t *testing.T) {
 	d := selectionDeleteFixture(t, `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>甲🌺AB</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>中间</w:t></w:r><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>CD乙</w:t></w:r></w:p>`)
 	defer d.Close()
@@ -97,6 +160,9 @@ func TestDeleteWordTextSelectionRejectsUnsafeContent(t *testing.T) {
 		before := append([]byte(nil), d.parts[d.documentIdx].data...)
 		if _, err := any(d).(document.WordTextSelectionEditor).DeleteTextSelection(a, 1, b, 2); err == nil {
 			t.Fatalf("accepted unsafe selection: %s", body)
+		}
+		if _, err := any(d).(document.WordTextSelectionReplacer).ReplaceTextSelection(a, 1, b, 2, "新"); err == nil {
+			t.Fatalf("replaced unsafe selection: %s", body)
 		}
 		if !bytes.Equal(before, d.parts[d.documentIdx].data) || d.CanUndo() || d.Dirty() {
 			t.Fatal("rejected edit mutated document")

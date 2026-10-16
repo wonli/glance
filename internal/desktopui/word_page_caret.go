@@ -52,7 +52,7 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 	paragraphJoinPending := state.wordParagraphJoinIntent != nil
 	paragraphSplitPending := state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == runID
 	focusTargetPending := state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != runID
-	editor.ReadOnly = editor.ReadOnly || paragraphJoinPending || paragraphSplitPending || focusTargetPending || state.wordSelectionDeleteIntent != nil
+	editor.ReadOnly = editor.ReadOnly || paragraphJoinPending || paragraphSplitPending || focusTargetPending || state.wordSelectionEditIntent != nil
 	pageOps := op.Offset(pageRect.Min).Push(gtx.Ops)
 	pageClip := clip.Rect{Max: pageRect.Size()}.Push(gtx.Ops)
 	event.Op(gtx.Ops, editor)
@@ -64,14 +64,22 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 		gtx.Execute(key.FocusCmd{Tag: editor})
 		state.wordPendingFocusRunID = ""
 	}
+	documentSelectionHandled := false
+	selectionInputPending := false
 	if !editor.ReadOnly {
 		if a.handleWordSelectionDeleteKey(gtx, state, editor) {
+			editor.ReadOnly = true
+		} else if a.handleWordSelectAllShortcut(gtx, state, runID, editor) {
+			documentSelectionHandled = true
 			editor.ReadOnly = true
 		} else if a.handleWordHistoryShortcut(gtx, runID, editor) {
 			editor.ReadOnly = true
 		} else if a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {
 			editor.ReadOnly = true
 		}
+	}
+	if !editor.ReadOnly {
+		selectionInputPending = beginWordSelectionInputDraft(state, runID, editor, gtx.Focused(editor))
 	}
 	if a.handleWordPageArrowNavigation(gtx, state, editor) {
 		state.wordPagePreferredVerticalXSet = false
@@ -97,9 +105,15 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 			start, end := editor.Selection()
 			logWordDebug("page_submit_event revision=%d run=%q selection=%d:%d length=%d selected_run=%q layout_revision=%d",
 				state.wordRevisionAtomic.Load(), runID, start, end, editor.Len(), state.selectedWordRunID, wordDebugLayoutRevision(state))
+			state.wordPageTextSelection = nil
+			state.wordPageSelectionDrag = nil
+			state.wordSelectionInputDraft = nil
 			a.queueWordParagraphSplit(runID, editor.Text(), start, end)
 			editor.ReadOnly = true
 		}
+	}
+	if a.finishWordSelectionInput(state, runID, editor) {
+		selectionInputPending = true
 	}
 	label := wordRunLabel(a.theme, paragraph, run)
 	label.TextSize = unit.Sp(float32(label.TextSize) * float32(wordPageZoomFromScale(gtx, pageScale)))
@@ -115,7 +129,9 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 	recorder := op.Record(editorGtx.Ops)
 	style.Layout(editorGtx)
 	_ = recorder.Stop()
-	captureWordTextDraft(state, runID, editor.Text())
+	if !selectionInputPending {
+		captureWordTextDraft(state, runID, editor.Text())
+	}
 	selectionStart, selectionEnd := editor.Selection()
 	if state.wordLayoutResult != nil {
 		if position, exists := state.wordLayoutResult.Locations[wordlayout.SourcePosition{RunID: runID, RuneOffset: selectionEnd}]; exists && position.PageIndex == pageIndex {
@@ -127,13 +143,13 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 			gtx.Execute(key.SelectionCmd{Tag: editor, Range: key.Range{Start: start, End: end}, Caret: caret})
 		}
 	}
-	if gtx.Focused(editor) && (selectionStart != caretStartBeforeUpdate || selectionEnd != caretEndBeforeUpdate) {
+	if gtx.Focused(editor) && !documentSelectionHandled && !selectionInputPending && (selectionStart != caretStartBeforeUpdate || selectionEnd != caretEndBeforeUpdate) {
 		state.wordPagePreferredVerticalXSet = false
 		if state.wordPageSelectionDrag == nil {
 			state.wordPageTextSelection = nil
 		}
 	}
-	if gtx.Focused(editor) && (state.wordPendingFocusRunID == "" || state.wordPendingFocusRunID == runID) {
+	if gtx.Focused(editor) && (state.wordPendingFocusRunID == "" || state.wordPendingFocusRunID == runID) && !wordPageTextSelectionActive(state.wordPageTextSelection) {
 		state.wordFocusedRunID = runID
 		state.wordLayoutFocusedRunID = runID
 		state.selectedWordRunID = runID
@@ -221,7 +237,7 @@ func (a *App) handleWordPageArrowNavigation(gtx layout.Context, state *documentS
 	if state == nil || editor == nil || !gtx.Focused(editor) || editor.ReadOnly {
 		return false
 	}
-	event, ok := gtx.Event(
+	filters := []event.Filter{
 		key.Filter{Focus: editor, Name: key.NameUpArrow},
 		key.Filter{Focus: editor, Name: key.NameDownArrow},
 		key.Filter{Focus: editor, Name: key.NameLeftArrow},
@@ -230,12 +246,27 @@ func (a *App) handleWordPageArrowNavigation(gtx layout.Context, state *documentS
 		key.Filter{Focus: editor, Name: key.NameEnd},
 		key.Filter{Focus: editor, Name: key.NamePageUp},
 		key.Filter{Focus: editor, Name: key.NamePageDown},
-	)
+	}
+	if !editorHasActiveComposition(editor) {
+		filters = append(filters,
+			key.Filter{Focus: editor, Name: key.NameHome, Required: key.ModShortcut, Optional: key.ModShift},
+			key.Filter{Focus: editor, Name: key.NameEnd, Required: key.ModShortcut, Optional: key.ModShift},
+		)
+	}
+	event, ok := gtx.Event(filters...)
 	if !ok {
 		return false
 	}
 	keyEvent, ok := event.(key.Event)
-	if !ok || keyEvent.State != key.Press || keyEvent.Modifiers != 0 {
+	if !ok || keyEvent.State != key.Press {
+		return false
+	}
+	if keyEvent.Name == key.NameHome || keyEvent.Name == key.NameEnd {
+		if keyEvent.Modifiers == key.ModShortcut || keyEvent.Modifiers == key.ModShortcut|key.ModShift {
+			return a.handleWordDocumentBoundaryShortcut(gtx, state, state.selectedWordRunID, editor, keyEvent.Name == key.NameEnd, keyEvent.Modifiers.Contain(key.ModShift), true)
+		}
+	}
+	if keyEvent.Modifiers != 0 {
 		return false
 	}
 	beforeRun := state.selectedWordRunID

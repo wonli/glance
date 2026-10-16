@@ -71,12 +71,8 @@ func wordRibbonGroupsForTab(tab wordToolbarTab, actions []ribbonAction) []wordRi
 		groups = append(groups, wordRibbonGroup{})
 		copy(groups[insert+1:], groups[insert:])
 		groups[insert] = wordRibbonGroup{
-			label: "样式",
-			actions: []ribbonAction{
-				{id: "style-body", label: "正文", group: "样式"},
-				{id: "style-heading", label: "标题 1", group: "样式"},
-				{id: "style-heading-2", label: "标题 2", group: "样式"},
-			},
+			label:   "样式",
+			actions: wordStyleGalleryActions(),
 		}
 	}
 	if tab == wordTabHome {

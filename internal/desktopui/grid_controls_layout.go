@@ -3,6 +3,7 @@ package desktopui
 import (
 	"image"
 	"image/color"
+	"strings"
 
 	"gioui.org/io/key"
 	"gioui.org/layout"
@@ -12,14 +13,24 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"glance/internal/document"
 )
 
 const formulaEditorOpticalCenterTopInset unit.Dp = 4
 
 func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 	for ev, ok := a.nameBox.Update(gtx); ok; ev, ok = a.nameBox.Update(gtx) {
-		if _, submit := ev.(widget.SubmitEvent); submit {
-			a.goToCell()
+		if _, submit := ev.(widget.SubmitEvent); submit && a.goToCell(gtx) {
+			a.focusSpreadsheetGrid(gtx)
+		}
+	}
+	if !editorHasActiveComposition(&a.nameBox) {
+		for ev, ok := gtx.Event(key.Filter{Focus: &a.nameBox, Name: key.NameEscape}); ok; ev, ok = gtx.Event(key.Filter{Focus: &a.nameBox, Name: key.NameEscape}) {
+			if pressed, yes := ev.(key.Event); yes && pressed.State == key.Press {
+				a.nameBox.SetText(a.selectedCell)
+				a.focusSpreadsheetGrid(gtx)
+				break
+			}
 		}
 	}
 	if ev, ok := gtx.Event(key.Filter{Focus: &a.formulaEditor, Name: key.NameEscape}); ok {
@@ -30,16 +41,19 @@ func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 			}
 		}
 	}
-	formulaCommitted := false
-	for ev, ok := a.formulaEditor.Update(gtx); ok; ev, ok = a.formulaEditor.Update(gtx) {
-		if _, submit := ev.(widget.SubmitEvent); submit {
-			if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
-				a.setStatus("修改失败：" + err.Error())
-				a.window.Invalidate()
-			} else {
-				formulaCommitted = true
-				if a.virtualGrid != nil {
-					gtx.Execute(key.FocusCmd{Tag: &a.virtualGrid.PointerTag})
+	formulaCommitted := a.handleSpreadsheetEditorNavigation(gtx, a.virtualGrid, &a.formulaEditor)
+	if !formulaCommitted {
+		for ev, ok := a.formulaEditor.Update(gtx); ok; ev, ok = a.formulaEditor.Update(gtx) {
+			if _, submit := ev.(widget.SubmitEvent); submit {
+				if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
+					a.setStatus("修改失败：" + err.Error())
+					a.window.Invalidate()
+				} else {
+					formulaCommitted = true
+					a.moveSpreadsheetSelectionAfterEntry(a.virtualGrid, key.NameDownArrow)
+					if a.virtualGrid != nil {
+						gtx.Execute(key.FocusCmd{Tag: &a.virtualGrid.PointerTag})
+					}
 				}
 			}
 		}
@@ -48,7 +62,9 @@ func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 		a.syncFormulaReferenceInput(gtx)
 	}
 	if a.goToCellButton.Clicked(gtx) {
-		a.goToCell()
+		if a.goToCell(gtx) {
+			a.focusSpreadsheetGrid(gtx)
+		}
 	}
 	if a.applyButton.Clicked(gtx) {
 		if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
@@ -132,27 +148,101 @@ func (a *App) layoutFormulaFunctionIcon(gtx layout.Context) layout.Dimensions {
 	return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 20.0 / 96.0}.Layout(gtx)
 }
 
-func (a *App) goToCell() {
-	r, c, ok := parseCellAddress(a.nameBox.Text())
-	if !ok || r > xlsxRows || c > xlsxColumns {
-		a.setStatus("单元格地址无效")
+func (a *App) focusSpreadsheetNameBox(gtx layout.Context) {
+	if a.selectedCell == "" {
 		return
 	}
-	a.navigateToCell(r, c)
+	a.nameBox.SetText(a.selectedCell)
+	a.nameBox.SetCaret(0, a.nameBox.Len())
+	gtx.Execute(key.FocusCmd{Tag: &a.nameBox})
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+
+func (a *App) focusSpreadsheetGrid(gtx layout.Context) {
+	if a.virtualGrid == nil {
+		return
+	}
+	gtx.Execute(key.FocusCmd{Tag: &a.virtualGrid.PointerTag})
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+
+func (a *App) goToCell(gtx layout.Context) bool {
+	state := a.documentSessionState
+	if state == nil || state.book == nil {
+		a.setStatus("当前工作簿不可用")
+		return false
+	}
+	reference := strings.TrimSpace(a.nameBox.Text())
+	targetSheet, start, end, ok := parseSpreadsheetGoToReference(reference, state.sheet, nil)
+	if !ok {
+		if reader, supported := state.book.(document.SpreadsheetDefinedNameEditor); supported {
+			names, err := reader.GetDefinedNames()
+			if err != nil {
+				a.setStatus("读取定义名称失败：" + err.Error())
+				return false
+			}
+			targetSheet, start, end, ok = parseSpreadsheetGoToReference(reference, state.sheet, names)
+		}
+	}
+	if !ok {
+		a.setStatus("单元格、区域地址或定义名称无效")
+		return false
+	}
+	if strings.EqualFold(targetSheet, state.sheet) {
+		targetSheet = state.sheet
+	} else {
+		canonicalSheet := ""
+		for _, sheet := range state.sheets {
+			if strings.EqualFold(sheet, targetSheet) {
+				canonicalSheet = sheet
+				break
+			}
+		}
+		if canonicalSheet == "" {
+			a.setStatus("目标工作表不存在：" + targetSheet)
+			return false
+		}
+		targetSheet = canonicalSheet
+	}
+	if targetSheet != state.sheet {
+		if !a.activateSpreadsheetSheet(gtx, targetSheet) {
+			return false
+		}
+	}
+	a.navigateToRange(start, end)
+	return true
 }
 
 func (a *App) navigateToCell(row, column int) {
-	if a.virtualGrid == nil || row < 1 || column < 1 || row > xlsxRows || column > xlsxColumns {
+	if row < 1 || column < 1 || row > xlsxRows || column > xlsxColumns {
 		return
 	}
-	v := a.virtualGrid
-	a.updateGridSelection(v, CellPosition{Row: row - 1, Column: column - 1}, false, false)
+	position := CellPosition{Row: row - 1, Column: column - 1}
+	a.navigateToRange(position, position)
+}
+
+func (a *App) navigateToRange(first, last CellPosition) {
+	if a.virtualGrid == nil || first.Row < 0 || first.Column < 0 || last.Row < 0 || last.Column < 0 ||
+		first.Row >= xlsxRows || first.Column >= xlsxColumns || last.Row >= xlsxRows || last.Column >= xlsxColumns {
+		return
+	}
+	state, v := a.documentSessionState, a.virtualGrid
+	if state == nil {
+		return
+	}
+	// Keep the first typed reference as Excel's active cell while the opposite
+	// endpoint provides the fixed selection anchor.
+	a.updateGridSelection(v, first, false, false)
+	state.selection = CellSelection{Anchor: last, Active: first}
+	state.selectionSet = true
 	a.persistViewState()
-	x, _ := v.Columns.Boundary(column - 1)
-	y, _ := v.Rows.Boundary(row - 1)
-	v.scroll(x-v.X, y-v.Y, gtxGridContentWidth(a), gtxGridContentHeight(a))
-	v.invalidateWindow()
+	revealGridCell(v, first, gtxGridContentWidth(a), gtxGridContentHeight(a))
 	v.PendingSelectionLoad = true
+	v.invalidateWindow()
 	if a.window != nil {
 		a.window.Invalidate()
 	}

@@ -1,6 +1,7 @@
 package xlsx
 
 import (
+	"path/filepath"
 	"testing"
 
 	"glance/internal/document"
@@ -82,5 +83,37 @@ func TestWorkbookPanesAndUndo(t *testing.T) {
 	panes, err = editor.GetSheetPanes(sheet)
 	if err != nil || panes.Frozen {
 		t.Fatalf("expected unfrozen panes, got %+v", panes)
+	}
+}
+
+func TestWorkbookPanesSaveReopenAndWindowMetadata(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	sheet := wb.SheetNames()[0]
+	want := document.SpreadsheetPaneFreeze{Frozen: true, XSplit: 2, YSplit: 3}
+	if err := wb.SetSheetPanes(sheet, want); err != nil {
+		t.Fatalf("SetSheetPanes failed: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "frozen.xlsx")
+	if err := wb.SaveAs(path); err != nil {
+		t.Fatalf("SaveAs failed: %v", err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen workbook: %v", err)
+	}
+	defer reopened.Close()
+
+	got, err := reopened.GetSheetPanes(sheet)
+	if err != nil || got != want {
+		t.Fatalf("reopened pane metadata = %+v, %v; want %+v", got, err, want)
+	}
+	window, err := reopened.Window(sheet, 1, 1, 1, 1)
+	if err != nil {
+		t.Fatalf("read reopened worksheet window: %v", err)
+	}
+	if window.Panes != want {
+		t.Fatalf("reopened worksheet window pane metadata = %+v; want %+v", window.Panes, want)
 	}
 }

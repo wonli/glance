@@ -17,6 +17,7 @@ type spreadsheetFormatResult struct {
 	err         error
 	history     bool
 	applied     bool
+	noOp        bool
 	undo        bool
 	operation   string
 	structure   *document.StructureEdit
@@ -24,6 +25,17 @@ type spreadsheetFormatResult struct {
 	filter      *ValueFilter
 	clearFilter bool
 	details     string
+	rangeEntry  *string
+	replaceAll  *spreadsheetReplaceAllPlan
+	dimensions  []spreadsheetDimensionChange
+	panes       *document.SpreadsheetPaneFreeze
+}
+
+type spreadsheetDimensionChange struct {
+	index   int
+	value   float64
+	row     bool
+	autoFit bool
 }
 
 func (a *App) applyHistory(undo bool) {
@@ -80,7 +92,14 @@ func (a *App) applyHistory(undo bool) {
 
 func (a *App) applyCellFormat(patch document.CellFormatPatch) {
 	state := a.documentSessionState
-	if state == nil || state.book == nil || !state.selectionSet || state.formatRunning.Load() {
+	if state == nil || !state.selectionSet {
+		return
+	}
+	a.applyCellFormatTo(state, state.sheet, state.selection.Bounds(), patch)
+}
+
+func (a *App) applyCellFormatTo(state *documentSessionState, sheet string, selection document.CellRange, patch document.CellFormatPatch) {
+	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return
 	}
 	formatter, ok := state.book.(document.SpreadsheetFormatter)
@@ -90,8 +109,7 @@ func (a *App) applyCellFormat(patch document.CellFormatPatch) {
 	if state.valueFilter != nil {
 		a.clearValueFilter(state)
 	}
-	selection := state.selection.Bounds()
-	sheet, generation, window := state.sheet, a.documentGeneration, state.virtualGrid
+	generation, window := a.documentGeneration, state.virtualGrid
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
 		return
@@ -132,9 +150,32 @@ func (a *App) applyCellFormat(patch document.CellFormatPatch) {
 }
 
 func (a *App) applyBatchEdits(edits []document.CellEdit, operation string) error {
+	return a.applyBatchEditsWithDetails(edits, operation, "")
+}
+
+func (a *App) applyBatchEditsWithDetails(edits []document.CellEdit, operation, details string) error {
+	return a.applyBatchEditsWithDetailsForSheet(edits, operation, details, "")
+}
+
+func (a *App) applyBatchEditsForSheet(edits []document.CellEdit, operation, sheet string) error {
+	return a.applyBatchEditsWithDetailsForSheet(edits, operation, "", sheet)
+}
+
+func (a *App) applyBatchEditsWithDetailsForSheet(edits []document.CellEdit, operation, details, sheet string) error {
+	return a.applyBatchEditsWithDetailsForSheetAndRangeEntry(edits, operation, details, sheet, nil)
+}
+
+func (a *App) applyBatchEditsForRangeEntry(edits []document.CellEdit, sheet, value string) error {
+	return a.applyBatchEditsWithDetailsForSheetAndRangeEntry(edits, "填充选区", "", sheet, &value)
+}
+
+func (a *App) applyBatchEditsWithDetailsForSheetAndRangeEntry(edits []document.CellEdit, operation, details, sheet string, rangeEntry *string) error {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return fmt.Errorf("表格正在处理其他操作")
+	}
+	if sheet == "" {
+		sheet = state.sheet
 	}
 	editor, ok := state.book.(document.SpreadsheetBatchEditor)
 	if !ok {
@@ -147,7 +188,7 @@ func (a *App) applyBatchEdits(edits []document.CellEdit, operation string) error
 	if !ok {
 		return fmt.Errorf("表格正在处理其他操作")
 	}
-	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	generation, window := a.documentGeneration, state.virtualGrid
 	a.launchManagedBackground(func() {
 		commandRouted := a.applicationSessionRegistered(token.documentID)
 		changed := len(edits) > 0
@@ -176,7 +217,67 @@ func (a *App) applyBatchEdits(edits []document.CellEdit, operation string) error
 		}
 		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed, details: details, rangeEntry: rangeEntry}:
+		case <-a.shutdown:
+		}
+	})
+	return nil
+}
+
+type spreadsheetCellTransferArguments struct {
+	Sheet        string             `json:"sheet"`
+	Source       document.CellRange `json:"source"`
+	TargetRow    int                `json:"target_row"`
+	TargetColumn int                `json:"target_column"`
+	Cells        [][]document.Cell  `json:"cells"`
+}
+
+func (a *App) applyCellRangeTransferForSheet(source document.CellRange, targetRow, targetColumn int, cells [][]document.Cell, sheet string) error {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || state.formatRunning.Load() {
+		return fmt.Errorf("表格正在处理其他操作")
+	}
+	if sheet == "" {
+		sheet = state.sheet
+	}
+	editor, ok := state.book.(document.SpreadsheetCellTransferEditor)
+	if !ok {
+		return fmt.Errorf("当前表格不支持保留公式和格式的粘贴")
+	}
+	if state.valueFilter != nil {
+		a.clearValueFilter(state)
+	}
+	token, ok := state.beginOperation(sessionOperationMutation)
+	if !ok {
+		return fmt.Errorf("表格正在处理其他操作")
+	}
+	generation, window := a.documentGeneration, state.virtualGrid
+	arguments := spreadsheetCellTransferArguments{
+		Sheet: sheet, Source: source, TargetRow: targetRow, TargetColumn: targetColumn,
+		Cells: cloneSpreadsheetClipboardCells(cells),
+	}
+	a.launchManagedBackground(func() {
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		changed := true
+		var err error
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.cells.transfer", "spreadsheet_cells", "batch", sheet, arguments)
+			err = commandErr
+			if err == nil {
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				changed = outcome.Changed
+			}
+		} else {
+			unlock := lockSessionAdapterWrite(state)
+			changed, err = editor.TransferCellRangeChanged(sheet, source, targetRow, targetColumn, arguments.Cells)
+			unlock()
+		}
+		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
+		select {
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "粘贴", applied: changed}:
 		case <-a.shutdown:
 		}
 	})

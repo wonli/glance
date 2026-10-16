@@ -175,6 +175,91 @@ func TestSearchReplaceCloseButtonClosesModal(t *testing.T) {
 	}
 }
 
+func TestSearchReplaceEnterUsesTheFocusedFieldAction(t *testing.T) {
+	tests := []struct {
+		name       string
+		focusInput bool
+		wantAction string
+	}{
+		{name: "find field", focusInput: true, wantAction: "find-next"},
+		{name: "replace field", focusInput: false, wantAction: "replace"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			app := &App{theme: material.NewTheme()}
+			var actions []string
+			app.modal.ShowDualInput("查找和替换", "", "needle", "查找内容", "replacement", "替换为", func(action string) {
+				actions = append(actions, action)
+			})
+			app.modal.SearchReplace = true
+			app.modal.SearchReplaceHasReplace = true
+			app.modal.SearchReplaceReplaceTab = true
+			var router input.Router
+			var ops op.Ops
+			frame := func() {
+				ops.Reset()
+				gtx := layout.Context{
+					Ops:         &ops,
+					Source:      router.Source(),
+					Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+					Constraints: layout.Exact(image.Pt(820, 500)),
+				}
+				app.layoutModalDialog(gtx)
+				router.Frame(&ops)
+			}
+			frame()
+			editor := &app.modal.SecondInput
+			if test.focusInput {
+				editor = &app.modal.Input
+			}
+			router.Source().Execute(key.FocusCmd{Tag: editor})
+			frame()
+			if !router.Source().Focused(editor) {
+				t.Fatal("requested search field did not receive focus")
+			}
+			router.Queue(key.Event{Name: key.NameReturn, State: key.Press})
+			frame()
+			if len(actions) != 1 || actions[0] != test.wantAction {
+				t.Fatalf("Enter actions = %v; want [%s]", actions, test.wantAction)
+			}
+		})
+	}
+}
+
+func TestSearchReplaceShiftEnterUsesPreviousMatchAction(t *testing.T) {
+	app := &App{theme: material.NewTheme()}
+	var actions []string
+	app.modal.ShowDualInput("查找和替换", "", "needle", "查找内容", "replacement", "替换为", func(action string) {
+		actions = append(actions, action)
+	})
+	app.modal.SearchReplace = true
+	app.modal.SearchReplaceHasReplace = true
+	app.modal.SearchReplaceReplaceTab = true
+	app.modal.FocusInputRequested = true
+	var router input.Router
+	var ops op.Ops
+	frame := func() {
+		ops.Reset()
+		gtx := layout.Context{
+			Ops:         &ops,
+			Source:      router.Source(),
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Exact(image.Pt(820, 500)),
+		}
+		app.layoutModalDialog(gtx)
+		router.Frame(&ops)
+	}
+	frame()
+	if !router.Source().Focused(&app.modal.Input) {
+		t.Fatal("requested search field did not receive focus")
+	}
+	router.Queue(key.Event{Name: key.NameReturn, State: key.Press, Modifiers: key.ModShift})
+	frame()
+	if len(actions) != 1 || actions[0] != "find-previous" {
+		t.Fatalf("Shift+Enter actions = %v; want [find-previous]", actions)
+	}
+}
+
 func TestEscapeCancelsCompositionBeforeClosingInputModal(t *testing.T) {
 	app := &App{theme: material.NewTheme()}
 	app.modal.ShowInput("输入", "", "", "值", nil)
@@ -236,6 +321,36 @@ func TestEscapeDismissesSymbolPicker(t *testing.T) {
 	frame()
 	if app.wordSymbolPickerVisible {
 		t.Fatal("Escape left the symbol picker open")
+	}
+}
+
+func TestEscapeDismissesWordToolbarColorPicker(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		set  func(*documentSessionState)
+	}{
+		{name: "font color", set: func(state *documentSessionState) { state.wordToolbarColorPicker = true }},
+		{name: "highlight color", set: func(state *documentSessionState) { state.wordToolbarHighlightPicker = true }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state := newDocumentSessionState("sample.docx")
+			test.set(state)
+			app := &App{documentSessionState: state}
+			var router input.Router
+			var ops op.Ops
+			frame := func() {
+				ops.Reset()
+				gtx := layout.Context{Ops: &ops, Source: router.Source()}
+				app.handleOverlayEscape(gtx)
+				router.Frame(&ops)
+			}
+			frame()
+			router.Queue(key.Event{Name: key.NameEscape, State: key.Press})
+			frame()
+			if state.wordToolbarColorPicker || state.wordToolbarHighlightPicker {
+				t.Fatal("Escape left the Word color picker open")
+			}
+		})
 	}
 }
 

@@ -68,11 +68,15 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 			return
 		}
 	}
-	if !a.isDirty() {
+	if !a.isDirty() && !a.documentSessionState.spreadsheetZoomNeedsSave() {
 		return
 	}
 	state := a.documentSessionState
 	if state == nil {
+		return
+	}
+	if state.book != nil && state.path == "" && state.spreadsheetZoomNeedsSave() {
+		a.startSaveAsPicker("xlsx")
 		return
 	}
 	if state.saveAsRequired {
@@ -109,7 +113,14 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 			unlock := lockSessionAdapterWrite(state)
 			switch {
 			case book != nil:
-				err = book.Save()
+				zoomRevision := state.spreadsheetZoomRevision.Load()
+				err = applySpreadsheetSheetZooms(state)
+				if err == nil {
+					err = book.Save()
+					if err == nil {
+						state.markSpreadsheetZoomSaved(zoomRevision)
+					}
+				}
 			case word != nil:
 				if saver, ok := any(word).(document.WordPackageSnapshotSaver); ok {
 					snapshot, err = saver.SaveWithSnapshot()
@@ -208,10 +219,16 @@ func (a *App) startSaveAs(path string) {
 		var historyErr error
 		switch {
 		case book != nil:
-			if saver, ok := book.(interface{ SaveAsDocument(string) error }); ok {
-				err = saver.SaveAsDocument(path)
-			} else {
-				err = fmt.Errorf("当前表格格式不支持另存为")
+			zoomRevision := state.spreadsheetZoomRevision.Load()
+			if err = applySpreadsheetSheetZooms(state); err == nil {
+				if saver, ok := book.(interface{ SaveAsDocument(string) error }); ok {
+					err = saver.SaveAsDocument(path)
+				} else {
+					err = fmt.Errorf("当前表格格式不支持另存为")
+				}
+				if err == nil {
+					state.markSpreadsheetZoomSaved(zoomRevision)
+				}
 			}
 		case word != nil:
 			var snapshot []byte
@@ -319,9 +336,14 @@ func (a *App) save() error {
 	defer unlock()
 	switch {
 	case a.book != nil:
+		zoomRevision := a.documentSessionState.spreadsheetZoomRevision.Load()
+		if err := applySpreadsheetSheetZooms(a.documentSessionState); err != nil {
+			return err
+		}
 		if err := a.book.Save(); err != nil {
 			return err
 		}
+		a.documentSessionState.markSpreadsheetZoomSaved(zoomRevision)
 	case a.word != nil:
 		if err := a.word.Save(); err != nil {
 			return err

@@ -17,7 +17,7 @@ func pendingWordSelectionDelete(t *testing.T) (*App, *documentSessionState, stri
 	first, last := p.Inlines[0].Text, p.Inlines[1].Text
 	wordRunEditor(state, *first)
 	wordRunEditor(state, *last)
-	state.wordSelectionDeleteIntent = &wordSelectionDeleteIntent{start: wordPageCaretPosition{runID: first.ID, runeOffset: 1}, end: wordPageCaretPosition{runID: last.ID, runeOffset: 2}}
+	state.wordSelectionEditIntent = &wordSelectionEditIntent{start: wordPageCaretPosition{runID: first.ID, runeOffset: 1}, end: wordPageCaretPosition{runID: last.ID, runeOffset: 2}}
 	state.wordFlushRequested.Store(true)
 	state.wordFlushAllDrafts.Store(true)
 	state.wordForceDraftFlush.Store(true)
@@ -31,13 +31,13 @@ func TestWordSelectionDeleteInactiveDraftFailureCancelsIntent(t *testing.T) {
 	app.documentGeneration++
 	app.wordCommandResults <- wordCommandResult{state: state, textDraft: true, runID: id, runText: "ABC新", err: errors.New("synthetic draft failure")}
 	app.processWordCommandAsyncResult()
-	if state.wordSelectionDeleteIntent != nil || state.wordFlushRequested.Load() || state.wordFlushAllDrafts.Load() || state.wordForceDraftFlush.Load() {
+	if state.wordSelectionEditIntent != nil || state.wordFlushRequested.Load() || state.wordFlushAllDrafts.Load() || state.wordForceDraftFlush.Load() {
 		t.Fatal("failed inactive flush kept deletion pending/read-only")
 	}
 	if value, ok := state.wordDraft(id); !ok || value != "ABC新" {
 		t.Fatal("failed inactive flush discarded draft")
 	}
-	if app.documentSessionState.wordSelectionDeleteIntent != nil {
+	if app.documentSessionState.wordSelectionEditIntent != nil {
 		t.Fatal("inactive failure touched current session")
 	}
 }
@@ -56,7 +56,7 @@ func TestWordSelectionDeleteInactiveDraftSuccessContinuesOwningSession(t *testin
 	app.processWordCommandAsyncResult()
 	select {
 	case result := <-app.wordCommandResults:
-		if !result.selectionDelete || result.state != state || result.err != nil {
+		if !result.selectionEdit || result.state != state || result.err != nil {
 			t.Fatalf("inactive flush result: %#v", result)
 		}
 		app.wordCommandResults <- result
@@ -64,7 +64,7 @@ func TestWordSelectionDeleteInactiveDraftSuccessContinuesOwningSession(t *testin
 	case <-time.After(time.Second):
 		t.Fatal("successful inactive draft flush did not continue deletion")
 	}
-	if state.wordSelectionDeleteIntent != nil || state.formatRunning.Load() || wordHasPendingTextDrafts(state) {
+	if state.wordSelectionEditIntent != nil || state.formatRunning.Load() || wordHasPendingTextDrafts(state) {
 		t.Fatal("inactive deletion did not reconcile drafts and release operation")
 	}
 	p := state.word.WordBlocks()[0].Paragraph
@@ -79,8 +79,8 @@ func TestWordSelectionDeleteInactiveDraftSuccessContinuesOwningSession(t *testin
 func TestWordSelectionDeleteRejectedDispatchReleasesOperation(t *testing.T) {
 	app, state, _ := pendingWordSelectionDelete(t)
 	app.managedBackgroundClosed = true
-	app.startWordSelectionDelete(state)
-	if state.formatRunning.Load() || state.wordSelectionDeleteIntent != nil || state.wordFlushRequested.Load() || state.wordForceDraftFlush.Load() {
+	app.startWordSelectionEdit(state)
+	if state.formatRunning.Load() || state.wordSelectionEditIntent != nil || state.wordFlushRequested.Load() || state.wordForceDraftFlush.Load() {
 		t.Fatal("rejected worker dispatch leaked operation or pending intent")
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
@@ -110,7 +110,7 @@ func TestWordSelectionDeleteDrainsEarlierEditEvent(t *testing.T) {
 	if got := editor.Text(); got != "A新BC" {
 		t.Fatalf("queued edit + native Delete = %q; want A新BC", got)
 	}
-	if state.wordSelectionDeleteIntent != nil || state.wordPageTextSelection != nil {
+	if state.wordSelectionEditIntent != nil || state.wordPageTextSelection != nil {
 		t.Fatal("queued edit applied stale cross-run deletion")
 	}
 	if value, _ := state.wordDraft(first.ID); value != "A新BC" {
@@ -135,7 +135,7 @@ func TestWordSelectionDeletePreservesEarlierSubmitEvent(t *testing.T) {
 	state.wordPageTextSelection = &wordPageTextSelection{anchor: wordPageCaretPosition{runID: first.ID, runeOffset: 1}, focus: wordPageCaretPosition{runID: last.ID, runeOffset: 2}, runOrder: map[string]int{first.ID: 0, last.ID: 1}, scope: "range"}
 	router.Queue(key.Event{Name: key.NameReturn, State: key.Press}, key.Event{Name: key.NameDeleteBackward, State: key.Press})
 	frame()
-	if state.wordSelectionDeleteIntent != nil || state.wordParagraphSplitIntent == nil {
+	if state.wordSelectionEditIntent != nil || state.wordParagraphSplitIntent == nil {
 		t.Fatal("earlier Submit event was discarded or also queued selection deletion")
 	}
 	waitWordInteraction(t, app, func() bool { return state.wordParagraphSplitIntent == nil && !state.formatRunning.Load() })

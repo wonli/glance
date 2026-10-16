@@ -40,7 +40,7 @@ func (a *App) refreshAfterStructure(state *documentSessionState, edit document.S
 	if state.virtualGrid != nil {
 		state.virtualGrid.SelectedRow, state.virtualGrid.SelectedColumn = active.Row+1, active.Column+1
 		state.virtualGrid.PendingSelectionLoad = true
-		state.virtualGrid.invalidateWindow()
+		state.virtualGrid.resetSheetWindow()
 	}
 	if state == a.documentSessionState {
 		a.sheet = state.sheet

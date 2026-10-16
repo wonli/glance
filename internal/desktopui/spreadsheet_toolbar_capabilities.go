@@ -77,8 +77,8 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case 4, 5, 6, 7, 8, 9, 10, 11, 16,
 		toolbarActionFontFamily,
-		toolbarActionFontSize, toolbarActionCellStyles,
-		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat:
+		toolbarActionFontSize, toolbarActionCellStyles, toolbarActionDecreaseFontSize, toolbarActionIncreaseFontSize,
+		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat, toolbarActionCurrencyFormat, toolbarActionIncreaseDecimal, toolbarActionDecreaseDecimal:
 		_, ok := state.book.(document.SpreadsheetFormatter)
 		return ok && state.selectionSet && (state.selection.Scope != selectionCells || selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI) && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionFormat:
@@ -88,7 +88,7 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		return ok && (state.selectionSet || state.excelFormatPainterActive) && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionSum:
 		_, reader := state.book.(document.SpreadsheetRangeReader)
-		_, editor := state.book.(document.SpreadsheetBatchEditor)
+		_, editor := state.book.(document.SpreadsheetFormulaBatchEditor)
 		return reader && editor && state.selectionSet && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionFind:
 		_, ok := state.book.(document.SpreadsheetSearcher)

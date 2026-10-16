@@ -145,12 +145,13 @@ func (a *App) applyValueFilterWindow(state *documentSessionState, v *gridViewpor
 	if f == nil || v == nil || f.Sheet != v.WindowSheet {
 		return
 	}
-	for row := maxInt(f.Bounds.StartRow, v.WindowRange.StartRow); row <= minInt(f.Bounds.EndRow, v.WindowRange.EndRow); row++ {
-		index := row - 1
-		if row == f.Bounds.StartRow || f.VisibleRows[row] {
-			continue
+	for _, loaded := range []document.CellRange{v.WindowRange, v.TopRange, v.LeftRange, v.CornerRange} {
+		for row := maxInt(f.Bounds.StartRow, loaded.StartRow); row <= minInt(f.Bounds.EndRow, loaded.EndRow); row++ {
+			if row == f.Bounds.StartRow || f.VisibleRows[row] {
+				continue
+			}
+			_ = v.Rows.SetSize(row-1, 0)
 		}
-		_ = v.Rows.SetSize(index, 0)
 	}
 }
 

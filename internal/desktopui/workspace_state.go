@@ -10,15 +10,20 @@ import (
 )
 
 func snapshotState(state *documentSessionState) ([]byte, error) {
+	if state != nil && state.book != nil {
+		unlock := lockSessionAdapterWrite(state)
+		defer unlock()
+		if err := applySpreadsheetSheetZooms(state); err != nil {
+			return nil, err
+		}
+		if snap, ok := state.book.(interface{ Snapshot() ([]byte, error) }); ok {
+			return snap.Snapshot()
+		}
+		return nil, fmt.Errorf("当前表格格式不支持工作区快照")
+	}
 	unlock := lockSessionAdapterRead(state)
 	defer unlock()
 	switch {
-	case state.book != nil:
-		if snap, ok := state.book.(interface{ Snapshot() ([]byte, error) }); ok {
-			return snap.Snapshot()
-		} else {
-			return nil, fmt.Errorf("当前表格格式不支持工作区快照")
-		}
 	case state.word != nil:
 		return state.word.Snapshot()
 	case state.pdfDoc != nil:
@@ -78,8 +83,10 @@ func (a *App) viewStateBytes() []byte {
 		view.MarkdownQuery = v.search.Text()
 	}
 	if a.virtualGrid != nil {
-		view.GridX, view.GridY, view.GridScale = a.virtualGrid.X, a.virtualGrid.Y, a.virtualGrid.Scale
+		view.GridX, view.GridY, view.GridScale = a.virtualGrid.scrollWorldX(), a.virtualGrid.scrollWorldY(), a.virtualGrid.Scale
 		view.SpreadsheetZoom = a.spreadsheetZoom()
+		view.SpreadsheetZooms = a.spreadsheetSheetZoomSnapshot()
+		view.SpreadsheetZoomPending = a.documentSessionState.spreadsheetZoomNeedsSave()
 		view.SelectedRow, view.SelectedColumn = a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn
 	}
 	data, _ := json.Marshal(view)

@@ -24,16 +24,21 @@ type gridPaintStyle struct {
 	Bold, Italic, Underline, Wrap bool
 	Align, FontFamily             string
 	Vertical                      string
+	DataBarColor                  color.NRGBA
+	DataBarStart, DataBarEnd      float64
+	HasDataBar                    bool
 }
 
 const (
-	maxCachedCellPaints = 1024
-	gridCellTextSize    = 12.0
+	maxCachedCellPaints       = 1024
+	gridCellDefaultFontSizePT = 11.0
+	gridCellTextSize          = gridCellDefaultFontSizePT * (96.0 / 72.0)
 )
 
 type cellPaintKey struct {
 	Value     string
 	Source    document.CellStyle
+	Display   document.CellConditionalDisplay
 	Style     gridPaintStyle
 	Size      image.Point
 	PxPerDp   float32
@@ -48,6 +53,25 @@ type cellPaintEntry struct {
 
 func paintStyle(style document.CellStyle) gridPaintStyle {
 	return gridPaintStyle{Fill: parseGridColor(style.FillColor, contentSurface), Font: parseGridColor(style.FontColor, color.NRGBA{R: 35, G: 39, B: 45, A: 255}), Bold: style.Bold, Italic: style.Italic, Underline: style.Underline, Wrap: style.WrapText, Align: style.HorizontalAlignment, FontFamily: style.FontFamily, Vertical: style.VerticalAlignment}
+}
+
+func paintCellStyle(cell document.Cell) gridPaintStyle {
+	style := paintStyle(cell.Style)
+	display := cell.ConditionalDisplay
+	if display.FillColor != "" {
+		style.Fill = parseGridColor(display.FillColor, style.Fill)
+	}
+	if display.FontColor != "" {
+		style.Font = parseGridColor(display.FontColor, style.Font)
+	}
+	if display.HasDataBar {
+		style.HasDataBar = true
+		style.DataBarColor = parseGridColor(display.DataBarColor, color.NRGBA{R: 99, G: 142, B: 198, A: 255})
+		style.DataBarColor.A = 150
+		style.DataBarStart = display.DataBarStart
+		style.DataBarEnd = display.DataBarEnd
+	}
+	return style
 }
 
 func parseGridColor(s string, fallback color.NRGBA) color.NRGBA {
@@ -65,6 +89,7 @@ func parseGridColor(s string, fallback color.NRGBA) color.NRGBA {
 }
 
 func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimensions {
+	updateGridCellRowPreview(gtx, a, v)
 	size := gtx.Constraints.Max
 	paint.FillShape(gtx.Ops, pageBackground, clip.Rect{Max: size}.Op())
 	rowHead := gtx.Dp(unit.Dp(gridRowHeader))
@@ -75,8 +100,10 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(0, colHead), Max: image.Pt(size.X, colHead+1)}.Op())
 	selection, hasSelection := a.selection, a.selectionSet
 	if hasSelection && !a.cellEdit.Editing && (selection.Scope != selectionCells || selection.Anchor != selection.Active) {
-		selectedRect := selectionRectWithHeaders(v, selection, rowHead, colHead).Intersect(image.Rect(rowHead, colHead, size.X, size.Y))
-		paint.FillShape(gtx.Ops, selectedFill, clip.Rect(selectedRect).Op())
+		selectionViewport := image.Rect(rowHead, colHead, size.X, size.Y)
+		for _, selectedRect := range v.selectionRects(selection.Bounds(), rowHead, colHead, selectionViewport) {
+			paint.FillShape(gtx.Ops, selectedFill, clip.Rect(selectedRect).Op())
+		}
 	}
 	var formulaReferences []document.CellRange
 	if hasSelection && !a.cellEdit.Editing && !a.documentSessionState.formulaReference.Active && v.WindowSheet == a.sheet {
@@ -86,74 +113,28 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	if a != nil && a.documentSessionState != nil && a.documentSessionState.spreadsheetGridlinesHidden {
 		gridlines = false
 	}
-	if v.WindowRange.StartRow > 0 {
-		paintedMerges := make(map[document.CellRange]bool, len(v.Window.Merges))
-		for i, row := range v.Window.Cells {
-			rr := v.Window.StartRow + i
-			y0f, _ := v.Rows.Boundary(rr - 1)
-			y1f, _ := v.Rows.Boundary(rr)
-			y0 := int(y0f-v.Y) + colHead
-			y1 := int(y1f-v.Y) + colHead
-			if y1 <= colHead || y0 >= size.Y {
-				continue
-			}
-			for j, cell := range row {
-				cc := v.Window.StartColumn + j
-				mr, mc, merged := mergeAnchorAt(v.Window.Merges, rr, cc)
-				cr := document.CellRange{StartRow: rr, StartColumn: cc, EndRow: rr, EndColumn: cc}
-				if merged {
-					draw := false
-					for _, m := range v.Window.Merges {
-						if m.Range.StartRow == mr && m.Range.StartColumn == mc {
-							if paintedMerges[m.Range] {
-								draw = true
-								break
-							}
-							paintedMerges[m.Range] = true
-							cr = m.Range
-							cell = m.Anchor
-							break
-						}
-					}
-					if draw {
-						continue
-					}
-				}
-				fullRect := cellRect(v.Rows, v.Columns, cr, v.X, v.Y).Add(image.Pt(rowHead, colHead))
-				visibleRect := fullRect.Intersect(image.Rect(rowHead, colHead, size.X, size.Y))
-				if visibleRect.Empty() {
-					continue
-				}
-				style := paintStyle(cell.Style)
-				if hasSelection && !a.cellEdit.Editing && selection.Contains(CellPosition{Row: rr - 1, Column: cc - 1}) && (selection.Active != (CellPosition{Row: rr - 1, Column: cc - 1})) {
-					style.Fill = selectedFill
-				}
-				if formulaReferenceContains(formulaReferences, rr, cc) || merged && formulaReferenceContains(formulaReferences, mr, mc) {
-					style.Fill = selectedFill
-				}
-				paintCachedCellWithGridlines(gtx, v, a.theme, cell, fullRect, visibleRect, style, gridlines)
-			}
-		}
+	for _, pane := range gridPaintPanes(v, size, rowHead, colHead) {
+		paintGridPaneCells(gtx, a, v, pane, selection, hasSelection, formulaReferences, gridlines)
 	}
 	paintGridPictures(gtx, a, v)
 	if hasSelection {
 		selectionViewport := image.Rect(rowHead, colHead, size.X, size.Y)
 		outline := a.tokens().Colors.Grid.SelectionBorder
 		for _, reference := range formulaReferences {
-			referenceRect := selectionRectWithHeaders(v, CellSelection{
-				Anchor: CellPosition{Row: reference.StartRow - 1, Column: reference.StartColumn - 1},
-				Active: CellPosition{Row: reference.EndRow - 1, Column: reference.EndColumn - 1},
-			}, rowHead, colHead).Intersect(selectionViewport)
-			for _, edge := range selectionBorderRects(referenceRect, max(1, gtx.Dp(unit.Dp(1)))) {
-				if !edge.Empty() {
-					paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
+			referenceRects := v.selectionRects(reference, rowHead, colHead, selectionViewport)
+			for _, referenceRect := range referenceRects {
+				for _, edge := range selectionBorderRects(referenceRect, max(1, gtx.Dp(unit.Dp(1)))) {
+					if !edge.Empty() {
+						paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
+					}
 				}
 			}
 		}
-		for _, edge := range selectionBorderRects(selectionRectWithHeaders(v, selection, rowHead, colHead), max(1, gtx.Dp(unit.Dp(1)))) {
-			edge = edge.Intersect(selectionViewport)
-			if !edge.Empty() {
-				paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
+		for _, selectedRect := range v.selectionRects(selection.Bounds(), rowHead, colHead, selectionViewport) {
+			for _, edge := range selectionBorderRects(selectedRect, max(1, gtx.Dp(unit.Dp(1)))) {
+				if !edge.Empty() {
+					paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
+				}
 			}
 		}
 		activeCell := selection.Active
@@ -161,17 +142,19 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 			StartRow: activeCell.Row + 1, StartColumn: activeCell.Column + 1,
 			EndRow: activeCell.Row + 1, EndColumn: activeCell.Column + 1,
 		}
-		for _, merge := range v.Window.Merges {
+		for _, merge := range v.merges() {
 			if activeRange.StartRow >= merge.Range.StartRow && activeRange.StartRow <= merge.Range.EndRow &&
 				activeRange.StartColumn >= merge.Range.StartColumn && activeRange.StartColumn <= merge.Range.EndColumn {
 				activeRange = merge.Range
 				break
 			}
 		}
-		activeRect := cellRect(v.Rows, v.Columns, activeRange, v.X, v.Y).Add(image.Pt(rowHead, colHead)).Intersect(selectionViewport)
-		paintActiveCellBorder(gtx, activeRect, a.tokens().Colors.Grid.SelectionBorder)
+		for _, activeRect := range v.selectionRects(activeRange, rowHead, colHead, selectionViewport) {
+			paintActiveCellBorder(gtx, activeRect, a.tokens().Colors.Grid.SelectionBorder)
+		}
 	}
 	paintGridHeaders(gtx, a, v)
+	paintGridFreezeDividers(gtx, v, size, rowHead, colHead)
 	paintGridPictureSelection(gtx, a, v)
 	showCellEditor := a.cellEdit.Editing
 	if fr := a.documentSessionState.formulaReference; fr.Active && fr.InCell && fr.TargetSheet != a.sheet {
@@ -180,17 +163,18 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	if showCellEditor {
 		if row, col, ok := parseCellAddress(a.cellEdit.Address); ok {
 			rng := document.CellRange{StartRow: row, StartColumn: col, EndRow: row, EndColumn: col}
-			for _, m := range v.Window.Merges {
+			for _, m := range v.merges() {
 				if row >= m.Range.StartRow && row <= m.Range.EndRow && col >= m.Range.StartColumn && col <= m.Range.EndColumn {
 					rng = m.Range
 					break
 				}
 			}
-			fullRect := cellRect(v.Rows, v.Columns, rng, v.X, v.Y).Add(image.Pt(rowHead, colHead))
-			visibleRect := fullRect.Intersect(image.Rect(rowHead, colHead, size.X, size.Y))
+			columnSplit, rowSplit := v.paneSplits()
+			fullRect := v.screenCellRect(rng, rowSplit > 0 && row <= rowSplit, columnSplit > 0 && col <= columnSplit, rowHead, colHead)
+			visibleRect := fullRect.Intersect(v.paneClipForCell(row, col, size, rowHead, colHead))
 			if !visibleRect.Empty() {
-				cell := windowCell(v.Window, row, col)
-				style := paintStyle(cell.Style)
+				cell := v.cell(row, col)
+				style := paintCellStyle(cell)
 				paintCellEditorWithSelection(gtx, a.theme, &a.cellEditor, &a.cellParagraphSelection, fullRect, visibleRect, cell.Style, style, a.tokens().Colors.Grid.SelectionBorder, a.spreadsheetZoom())
 			}
 		}
@@ -211,6 +195,21 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 		}
 	}
 	return layout.Dimensions{Size: size}
+}
+
+func paintGridFreezeDividers(gtx layout.Context, v *gridViewport, size image.Point, rowHeader, columnHeader int) {
+	columns, rows := v.paneSplits()
+	width, height := v.frozenViewportExtent(float64(size.X-rowHeader), float64(size.Y-columnHeader))
+	line := color.NRGBA{R: 144, G: 153, B: 165, A: 255}
+	thickness := max(1, gtx.Dp(unit.Dp(1)))
+	if rows > 0 && height > 0 {
+		y := columnHeader + int(height)
+		paint.FillShape(gtx.Ops, line, clip.Rect{Min: image.Pt(0, y-thickness/2), Max: image.Pt(size.X, y+(thickness+1)/2)}.Op())
+	}
+	if columns > 0 && width > 0 {
+		x := rowHeader + int(width)
+		paint.FillShape(gtx.Ops, line, clip.Rect{Min: image.Pt(x-thickness/2, 0), Max: image.Pt(x+(thickness+1)/2, size.Y)}.Op())
+	}
 }
 
 func formulaReferenceContains(ranges []document.CellRange, row, column int) bool {
@@ -262,7 +261,7 @@ func paintActiveCellBorder(gtx layout.Context, rect image.Rectangle, selectionBo
 
 func cellEditorStyle(theme *material.Theme, editor *widget.Editor, cellStyle document.CellStyle, style gridPaintStyle, zoom ...float64) material.EditorStyle {
 	editor.Alignment = cellTextAlignment(style.Align)
-	editor.SingleLine = !cellStyle.WrapText
+	editor.SingleLine = !cellStyle.WrapText && !strings.ContainsRune(editor.Text(), '\n')
 	result := material.Editor(theme, editor, "")
 	z := 1.0
 	if len(zoom) > 0 && zoom[0] > 0 {
@@ -298,7 +297,7 @@ func paintCachedCell(gtx layout.Context, v *gridViewport, theme *material.Theme,
 }
 
 func paintCachedCellWithGridlines(gtx layout.Context, v *gridViewport, theme *material.Theme, cell document.Cell, fullRect, visibleRect image.Rectangle, style gridPaintStyle, gridlines bool) {
-	key := cellPaintKey{Value: cell.Value, Source: cell.Style, Style: style, Size: fullRect.Size(), PxPerDp: gtx.Metric.PxPerDp, PxPerSp: gtx.Metric.PxPerSp, Gridlines: gridlines}
+	key := cellPaintKey{Value: cell.Value, Source: cell.Style, Display: cell.ConditionalDisplay, Style: style, Size: fullRect.Size(), PxPerDp: gtx.Metric.PxPerDp, PxPerSp: gtx.Metric.PxPerSp, Gridlines: gridlines}
 	zoom := 1.0
 	if v != nil && gtx.Metric.PxPerDp > 0 && v.Scale > 0 {
 		zoom = v.Scale / float64(gtx.Metric.PxPerDp)
@@ -378,6 +377,7 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	transform := op.Offset(rect.Min).Push(gtx.Ops)
 	defer transform.Pop()
 	size := rect.Size()
+	paintConditionalDataBar(gtx, size, style)
 	gtx.Constraints = layout.Constraints{Min: size, Max: size}
 	label := material.Body2(theme, cell.Value)
 	z := 1.0
@@ -409,6 +409,24 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 		paint.FillShape(gtx.Ops, style.Font, clip.Rect{Min: image.Pt(gtx.Dp(unit.Dp(5)), lineY), Max: image.Pt(size.X-gtx.Dp(unit.Dp(4)), lineY+1)}.Op())
 	}
 	paintCellBorders(gtx, size, cell.Style.Borders)
+}
+
+func paintConditionalDataBar(gtx layout.Context, size image.Point, style gridPaintStyle) {
+	if !style.HasDataBar || size.X <= 1 || size.Y <= 1 {
+		return
+	}
+	start := min(1, max(0, style.DataBarStart))
+	end := min(1, max(0, style.DataBarEnd))
+	if end < start {
+		start, end = end, start
+	}
+	inset := max(1, gtx.Dp(unit.Dp(1)))
+	minX := max(inset, int(float64(size.X)*start))
+	maxX := min(size.X-inset, int(float64(size.X)*end))
+	if maxX <= minX {
+		return
+	}
+	paint.FillShape(gtx.Ops, style.DataBarColor, clip.Rect{Min: image.Pt(minX, inset), Max: image.Pt(maxX, size.Y-inset)}.Op())
 }
 
 func cellFontWeight(bold bool) font.Weight {

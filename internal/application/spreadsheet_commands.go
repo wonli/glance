@@ -52,6 +52,48 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 		},
 		{
 			Descriptor: CapabilityDescriptor{
+				ID: "spreadsheet.formulas.fill", Name: "向选区输入公式",
+				Description: "将活动单元格输入的公式写入明确的单元格矩形，并按每个目标单元格相对于活动单元格的偏移调整相对 A1 引用；绝对引用保持固定。最多处理 10000 个单元格，整个矩形作为一个可撤销操作。",
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				RequiresDocument: true, RequiresRevision: true,
+				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"active":{"type":"object","properties":{"row":{"type":"integer","minimum":1,"maximum":1048576},"column":{"type":"integer","minimum":1,"maximum":16384}},"required":["row","column"],"additionalProperties":false},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"formula":{"type":"string","minLength":1,"maxLength":8192}},"required":["sheet","active","bounds","formula"],"additionalProperties":false}`),
+				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"bounds":{"type":"object"}},"required":["changed","sheet","bounds"],"additionalProperties":false}`),
+			},
+			Handler: func(ctx context.Context, capability CapabilityContext, raw json.RawMessage) (CapabilityResult, error) {
+				var input struct {
+					Sheet   string                  `json:"sheet"`
+					Active  document.CellCoordinate `json:"active"`
+					Bounds  document.CellRange      `json:"bounds"`
+					Formula string                  `json:"formula"`
+				}
+				if err := json.Unmarshal(raw, &input); err != nil {
+					return CapabilityResult{}, fmt.Errorf("decode spreadsheet.formulas.fill: %w", err)
+				}
+				input.Sheet = strings.TrimSpace(input.Sheet)
+				if input.Sheet == "" || !validCellRange(input.Bounds, 10_000) ||
+					input.Active.Row < input.Bounds.StartRow || input.Active.Row > input.Bounds.EndRow ||
+					input.Active.Column < input.Bounds.StartColumn || input.Active.Column > input.Bounds.EndColumn ||
+					strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input.Formula), "=")) == "" ||
+					!withinXLSXFormulaLimit(input.Formula) {
+					return CapabilityResult{}, ErrInvalidCommandArguments
+				}
+				setter, ok := capability.Adapter.(SpreadsheetFormulaRangeSetter)
+				if !ok {
+					return CapabilityResult{}, ErrCapabilityUnsupported
+				}
+				changed, err := setter.SetSpreadsheetFormulaRange(ctx, input.Sheet, input.Active, input.Bounds, input.Formula)
+				if err != nil {
+					return CapabilityResult{}, err
+				}
+				return capabilityJSONResult(struct {
+					Changed bool                `json:"changed"`
+					Sheet   string              `json:"sheet"`
+					Bounds  document.CellRange `json:"bounds"`
+				}{changed, input.Sheet, input.Bounds}, changed)
+			},
+		},
+		{
+			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.comment.add", Name: "新增或更新单元格批注",
 				Description: "为明确单元格新增或更新批注；同一单元格已有批注时会替换原批注。",
 				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
@@ -425,11 +467,11 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 		{
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.view.get", Name: "读取工作表视图",
-				Description: "读取明确工作表保存的显示模式和标尺状态。",
+				Description: "读取明确工作表保存的显示模式、标尺和缩放比例。",
 				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1}},"required":["sheet"],"additionalProperties":false}`),
-				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"view_mode":{"type":"string","enum":["normal","pageBreakPreview","pageLayout"]},"show_ruler":{"type":"boolean"}},"required":["sheet","view_mode","show_ruler"],"additionalProperties":false}`),
+				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"view_mode":{"type":"string","enum":["normal","pageBreakPreview","pageLayout"]},"show_ruler":{"type":"boolean"},"zoom_percent":{"type":"integer","minimum":10,"maximum":400}},"required":["sheet","view_mode","show_ruler","zoom_percent"],"additionalProperties":false}`),
 			},
 			Handler: func(ctx context.Context, capability CapabilityContext, raw json.RawMessage) (CapabilityResult, error) {
 				var input struct {
@@ -453,11 +495,16 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 				if view.ViewMode == "" {
 					view.ViewMode = "normal"
 				}
+				zoomPercent := view.ZoomPercent
+				if zoomPercent < 10 || zoomPercent > 400 {
+					zoomPercent = 100
+				}
 				return capabilityJSONResult(struct {
-					Sheet     string `json:"sheet"`
-					ViewMode  string `json:"view_mode"`
-					ShowRuler bool   `json:"show_ruler"`
-				}{input.Sheet, view.ViewMode, view.ShowRuler}, false)
+					Sheet       string `json:"sheet"`
+					ViewMode    string `json:"view_mode"`
+					ShowRuler   bool   `json:"show_ruler"`
+					ZoomPercent int    `json:"zoom_percent"`
+				}{input.Sheet, view.ViewMode, view.ShowRuler, zoomPercent}, false)
 			},
 		},
 		{
@@ -975,11 +1022,11 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 		{
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.range.copy", Name: "复制单元格区域内容",
-				Description: "读取明确工作表区域中的单元格值，矩阵最多 10000 个单元格。返回纯值，不包含格式；适合复制、剪切或后续粘贴。",
+				Description: "读取明确工作表区域中的单元格内容，矩阵最多 10000 个单元格。返回兼容 TSV 的显示值，以及供同一工作簿内复制/粘贴保留的公式、格式和类型信息。",
 				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false}},"required":["sheet","bounds"],"additionalProperties":false}`),
-				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"bounds":{"type":"object"},"rows":{"type":"array","items":{"type":"array","items":{"type":"string"}}}},"required":["sheet","bounds","rows"],"additionalProperties":false}`),
+				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"bounds":{"type":"object"},"rows":{"type":"array","items":{"type":"array","items":{"type":"string"}}},"cells":{"type":"array","items":{"type":"array","items":{"type":"object"}}}},"required":["sheet","bounds","rows","cells"],"additionalProperties":false}`),
 			},
 			Handler: func(ctx context.Context, capability CapabilityContext, raw json.RawMessage) (CapabilityResult, error) {
 				var input struct {
@@ -1011,7 +1058,8 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 					Sheet  string             `json:"sheet"`
 					Bounds document.CellRange `json:"bounds"`
 					Rows   [][]string         `json:"rows"`
-				}{input.Sheet, input.Bounds, rows}, false)
+					Cells  [][]document.Cell `json:"cells"`
+				}{input.Sheet, input.Bounds, rows, cells}, false)
 			},
 		},
 		{
@@ -1071,10 +1119,10 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 		{
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.range.search", Name: "查找工作表内容",
-				Description: "在明确指定的工作表中查找文本，忽略大小写，最多返回 1000 个单元格匹配并标记结果是否截断。可指定 max_results 限制返回数量。",
+				Description: "在明确指定的工作表中查找文本，忽略大小写，最多返回 10000 个单元格匹配并标记结果是否截断。可指定 max_results 限制返回数量。",
 				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
-				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"query":{"type":"string","minLength":1,"maxLength":256,"description":"要查找的文本，最多 256 个 Unicode 字符。"},"max_results":{"type":"integer","minimum":1,"maximum":1000}},"required":["sheet","query"],"additionalProperties":false}`),
+				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"query":{"type":"string","minLength":1,"maxLength":256,"description":"要查找的文本，最多 256 个 Unicode 字符。"},"max_results":{"type":"integer","minimum":1,"maximum":10000}},"required":["sheet","query"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"matches":{"type":"array","items":{"type":"object","properties":{"row":{"type":"integer"},"column":{"type":"integer"},"value":{"type":"string"}},"required":["row","column","value"],"additionalProperties":false}},"truncated":{"type":"boolean"}},"required":["matches","truncated"],"additionalProperties":false}`),
 			},
 			Handler: func(ctx context.Context, capability CapabilityContext, raw json.RawMessage) (CapabilityResult, error) {
@@ -1087,7 +1135,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 					return CapabilityResult{}, fmt.Errorf("decode spreadsheet.range.search: %w", err)
 				}
 				input.Sheet, input.Query = strings.TrimSpace(input.Sheet), strings.TrimSpace(input.Query)
-				if input.Sheet == "" || input.Query == "" || utf8.RuneCountInString(input.Query) > 256 || input.MaxResults < 0 || input.MaxResults > 1000 {
+				if input.Sheet == "" || input.Query == "" || utf8.RuneCountInString(input.Query) > 256 || input.MaxResults < 0 || input.MaxResults > 10000 {
 					return CapabilityResult{}, ErrInvalidCommandArguments
 				}
 				if input.MaxResults == 0 {
@@ -1146,11 +1194,58 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 		},
 		{
 			Descriptor: CapabilityDescriptor{
-				ID: "spreadsheet.cells.set", Name: "批量设置单元格内容",
-				Description: "在一个工作表中一次写入 1 至 1000 个明确坐标的单元格值，支持文本、数字和布尔值；字符串按文本原样保存，例如 \"00123\" 保持前导零。公式应调用 spreadsheet.formula.set；不接受重复坐标。适合 Agent 批量整理数据，调用前先查询并使用当前文档修订号。",
+				ID: "spreadsheet.formulas.set", Name: "批量设置单元格公式",
+				Description: "在同一工作表中一次写入 1 至 10000 个明确坐标的公式；每条公式含可选开头等号最多 8192 个 UTF-16 单元。整个批次是一个可撤销操作。此操作只写入公式，不承诺本地公式引擎已完成重算。请先查询目标单元格并使用当前文档修订号。",
 				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
-				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"edits":{"type":"array","minItems":1,"maxItems":1000,"items":{"type":"object","properties":{"row":{"type":"integer","minimum":1,"maximum":1048576},"column":{"type":"integer","minimum":1,"maximum":16384},"value":{"anyOf":[{"type":"string","maxLength":32767},{"type":"number"},{"type":"boolean"}]}},"required":["row","column","value"],"additionalProperties":false}}},"required":["sheet","edits"],"additionalProperties":false}`),
+				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"edits":{"type":"array","minItems":1,"maxItems":10000,"items":{"type":"object","properties":{"row":{"type":"integer","minimum":1,"maximum":1048576},"column":{"type":"integer","minimum":1,"maximum":16384},"formula":{"type":"string","minLength":1,"maxLength":8192,"description":"公式字符串含可选开头等号最多 8192 个 UTF-16 单元。"}},"required":["row","column","formula"],"additionalProperties":false}}},"required":["sheet","edits"],"additionalProperties":false}`),
+				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"requested_count":{"type":"integer","minimum":0}},"required":["changed","sheet","requested_count"],"additionalProperties":false}`),
+			},
+			Handler: func(ctx context.Context, capability CapabilityContext, raw json.RawMessage) (CapabilityResult, error) {
+				var input struct {
+					Sheet string                     `json:"sheet"`
+					Edits []document.CellFormulaEdit `json:"edits"`
+				}
+				if err := json.Unmarshal(raw, &input); err != nil {
+					return CapabilityResult{}, fmt.Errorf("decode spreadsheet.formulas.set: %w", err)
+				}
+				input.Sheet = strings.TrimSpace(input.Sheet)
+				if input.Sheet == "" || len(input.Edits) == 0 || len(input.Edits) > 10_000 {
+					return CapabilityResult{}, ErrInvalidCommandArguments
+				}
+				seen := make(map[[2]int]struct{}, len(input.Edits))
+				for _, edit := range input.Edits {
+					if edit.Row < 1 || edit.Row > 1_048_576 || edit.Column < 1 || edit.Column > 16_384 || strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(edit.Formula), "=")) == "" || !withinXLSXFormulaLimit(edit.Formula) {
+						return CapabilityResult{}, ErrInvalidCommandArguments
+					}
+					key := [2]int{edit.Row, edit.Column}
+					if _, duplicate := seen[key]; duplicate {
+						return CapabilityResult{}, ErrInvalidCommandArguments
+					}
+					seen[key] = struct{}{}
+				}
+				setter, ok := capability.Adapter.(SpreadsheetFormulaBatchSetter)
+				if !ok {
+					return CapabilityResult{}, ErrCapabilityUnsupported
+				}
+				changed, err := setter.SetSpreadsheetFormulas(ctx, input.Sheet, input.Edits)
+				if err != nil {
+					return CapabilityResult{}, err
+				}
+				return capabilityJSONResult(struct {
+					Changed        bool   `json:"changed"`
+					Sheet          string `json:"sheet"`
+					RequestedCount int    `json:"requested_count"`
+				}{changed, input.Sheet, len(input.Edits)}, changed)
+			},
+		},
+		{
+			Descriptor: CapabilityDescriptor{
+				ID: "spreadsheet.cells.set", Name: "批量设置单元格内容",
+				Description: "在一个工作表中一次写入 1 至 10000 个明确坐标的单元格值，支持文本、数字和布尔值；字符串按文本原样保存，例如 \"00123\" 保持前导零。单个公式调用 spreadsheet.formula.set，公式批次调用 spreadsheet.formulas.set；不接受重复坐标。适合 Agent 批量整理数据，调用前先查询并使用当前文档修订号。",
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				RequiresDocument: true, RequiresRevision: true,
+				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"edits":{"type":"array","minItems":1,"maxItems":10000,"items":{"type":"object","properties":{"row":{"type":"integer","minimum":1,"maximum":1048576},"column":{"type":"integer","minimum":1,"maximum":16384},"value":{"anyOf":[{"type":"string","maxLength":32767},{"type":"number"},{"type":"boolean"}]}},"required":["row","column","value"],"additionalProperties":false}}},"required":["sheet","edits"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"requested_count":{"type":"integer","minimum":0}},"required":["changed","sheet","requested_count"],"additionalProperties":false}`),
 			},
 			Handler: func(ctx context.Context, capability CapabilityContext, raw json.RawMessage) (CapabilityResult, error) {
@@ -1165,7 +1260,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 				if err := json.Unmarshal(raw, &input); err != nil {
 					return CapabilityResult{}, fmt.Errorf("decode spreadsheet.cells.set: %w", err)
 				}
-				if strings.TrimSpace(input.Sheet) == "" || len(input.Edits) == 0 || len(input.Edits) > 1000 {
+				if strings.TrimSpace(input.Sheet) == "" || len(input.Edits) == 0 || len(input.Edits) > 10000 {
 					return CapabilityResult{}, ErrInvalidCommandArguments
 				}
 				seen := make(map[[2]int]struct{}, len(input.Edits))
@@ -1200,10 +1295,10 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 		{
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.range.format.set", Name: "设置单元格区域格式",
-				Description: "为明确指定的工作表区域设置受支持的字体、颜色、对齐、数字格式、边框或换行属性。普通区域最多影响 10000 个单元格；另支持整行、整列和全表格式。未提供的属性保持不变。",
+				Description: "为明确指定的工作表区域设置受支持的字体、字号步进、颜色、水平和垂直对齐、数字格式、小数位、边框或换行属性。普通区域最多影响 10000 个单元格；另支持整行、整列和全表格式。未提供的属性保持不变。",
 				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
-				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"patch":{"type":"object","properties":{"bold":{"type":"boolean"},"italic":{"type":"boolean"},"underline":{"type":"boolean"},"font_color":{"type":"string"},"fill_color":{"type":"string"},"horizontal_alignment":{"type":"string","enum":["general","left","center","right"]},"number_format":{"type":"string","enum":["General","0","0.00","0%","0.00%","yyyy-mm-dd"]},"border_preset":{"type":"string","enum":["all","outside","bottom","none"]},"wrap_text":{"type":"boolean"},"font_size":{"type":"number","exclusiveMinimum":0,"maximum":409},"font_family":{"type":"string"},"clear_format":{"type":"boolean"}},"additionalProperties":false}},"required":["sheet","bounds","patch"],"additionalProperties":false}`),
+				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"patch":{"type":"object","properties":{"bold":{"type":"boolean"},"italic":{"type":"boolean"},"underline":{"type":"boolean"},"font_color":{"type":"string"},"fill_color":{"type":"string"},"horizontal_alignment":{"type":"string","enum":["general","left","center","right"]},"vertical_alignment":{"type":"string","enum":["top","center","bottom"]},"number_format":{"type":"string","enum":["General","0","0.00","0%","0.00%","yyyy-mm-dd","\"¥\"#,##0.00"]},"decimal_places_delta":{"type":"integer","enum":[-1,1]},"border_preset":{"type":"string","enum":["all","outside","bottom","none"]},"wrap_text":{"type":"boolean"},"font_size":{"type":"number","exclusiveMinimum":0,"maximum":409},"font_size_step":{"type":"integer","enum":[-1,1]},"font_family":{"type":"string"},"clear_format":{"type":"boolean"}},"additionalProperties":false}},"required":["sheet","bounds","patch"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"bounds":{"type":"object"}},"required":["changed","sheet","bounds"],"additionalProperties":false}`),
 			},
 			Handler: func(ctx context.Context, capability CapabilityContext, raw json.RawMessage) (CapabilityResult, error) {

@@ -109,7 +109,7 @@ func (a *App) layoutWordRibbonGroupContent(gtx layout.Context, state *documentSe
 			}),
 		)
 	case "样式":
-		return a.layoutWordStyleGallery(gtx, group.actions)
+		return a.layoutWordStyleGallery(gtx, state, group.actions)
 	case "编辑":
 		return a.layoutWordRibbonCompactStack(gtx, state, group.actions, 24)
 	case "编辑器":
@@ -358,46 +358,65 @@ func drawWordRibbonDropdown(gtx layout.Context, theme *material.Theme, action ri
 	})
 }
 
-func (a *App) layoutWordStyleGallery(gtx layout.Context, actions []ribbonAction) layout.Dimensions {
+func (a *App) layoutWordStyleGallery(gtx layout.Context, state *documentSessionState, actions []ribbonAction) layout.Dimensions {
 	children := make([]layout.FlexChild, 0, len(actions))
 	for _, action := range actions {
 		action := action
 		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			width, height := gtx.Constraints.Max.X, gtx.Dp(unit.Dp(60))
 			gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
-			cardBounds := image.Rectangle{Max: image.Pt(width, height)}
-			paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Border, clip.UniformRRect(cardBounds, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-			inner := cardBounds.Inset(gtx.Dp(unit.Dp(1)))
-			paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Surface, clip.UniformRRect(inner, gtx.Dp(unit.Dp(2))).Op(gtx.Ops))
-			semantics := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
-			semantic.DescriptionOp(action.label).Add(gtx.Ops)
-			semantic.EnabledOp(false).Add(gtx.Ops)
-			semantics.Pop()
-			preview := material.Body1(a.theme, "AaBbCc")
-			preview.TextSize = unit.Sp(15)
-			preview.Color = a.tokens().Colors.Toolbar.Label
-			if action.id == "style-heading" {
-				preview.Color = color.NRGBA{R: 43, G: 87, B: 154, A: 255}
+			button := wordToolbarButton(state, action.id)
+			enabled := a.wordToolbarActionButtonEnabled(action)
+			draw := func(gtx layout.Context) layout.Dimensions {
+				cardBounds := image.Rectangle{Max: image.Pt(width, height)}
+				active := enabled && wordToolbarActionActive(state, action)
+				borderColor := a.tokens().Colors.Surface.Border
+				background := a.tokens().Colors.Surface.Surface
+				if active {
+					borderColor = a.tokens().Colors.Toolbar.ActiveBorder
+					background = a.tokens().Colors.Toolbar.ActiveBackground
+				} else if enabled && (button.Hovered() || gtx.Focused(button)) {
+					background = a.tokens().Colors.Toolbar.HoverBackground
+				}
+				paint.FillShape(gtx.Ops, borderColor, clip.UniformRRect(cardBounds, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+				inner := cardBounds.Inset(gtx.Dp(unit.Dp(1)))
+				paint.FillShape(gtx.Ops, background, clip.UniformRRect(inner, gtx.Dp(unit.Dp(2))).Op(gtx.Ops))
+				semantics := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
+				semantic.Button.Add(gtx.Ops)
+				semantic.DescriptionOp(action.label).Add(gtx.Ops)
+				semantic.EnabledOp(enabled).Add(gtx.Ops)
+				semantics.Pop()
+				preview := material.Body1(a.theme, "AaBbCc")
+				preview.TextSize = unit.Sp(15)
+				preview.Color = a.tokens().Colors.Toolbar.Label
+				if action.id == "style-heading" {
+					preview.Color = color.NRGBA{R: 43, G: 87, B: 154, A: 255}
+					preview.TextSize = unit.Sp(19)
+				}
+				if action.id == "style-heading-2" {
+					preview.TextSize = unit.Sp(17)
+				}
+				label := material.Caption(a.theme, action.label)
+				label.TextSize = unit.Sp(12)
+				label.Color = a.tokens().Colors.Text.PureBlack
+				previewGtx := gtx
+				previewHeight := gtx.Dp(unit.Dp(18))
+				previewGtx.Constraints = layout.Constraints{Min: image.Pt(width, previewHeight), Max: image.Pt(width, previewHeight)}
+				previewOffset := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(8)))).Push(gtx.Ops)
+				layout.Center.Layout(previewGtx, preview.Layout)
+				previewOffset.Pop()
+				labelGtx := gtx
+				labelHeight := gtx.Dp(unit.Dp(14))
+				labelGtx.Constraints = layout.Constraints{Min: image.Pt(width, labelHeight), Max: image.Pt(width, labelHeight)}
+				labelOffset := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(30)))).Push(gtx.Ops)
+				layout.Center.Layout(labelGtx, label.Layout)
+				labelOffset.Pop()
+				return layout.Dimensions{Size: image.Pt(width, height)}
 			}
-			if action.id == "style-heading" {
-				preview.TextSize = unit.Sp(19)
+			if enabled {
+				return button.Layout(gtx, draw)
 			}
-			label := material.Caption(a.theme, action.label)
-			label.TextSize = unit.Sp(12)
-			label.Color = a.tokens().Colors.Text.PureBlack
-			previewGtx := gtx
-			previewHeight := gtx.Dp(unit.Dp(18))
-			previewGtx.Constraints = layout.Constraints{Min: image.Pt(width, previewHeight), Max: image.Pt(width, previewHeight)}
-			previewOffset := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(8)))).Push(gtx.Ops)
-			layout.Center.Layout(previewGtx, preview.Layout)
-			previewOffset.Pop()
-			labelGtx := gtx
-			labelHeight := gtx.Dp(unit.Dp(14))
-			labelGtx.Constraints = layout.Constraints{Min: image.Pt(width, labelHeight), Max: image.Pt(width, labelHeight)}
-			labelOffset := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(30)))).Push(gtx.Ops)
-			layout.Center.Layout(labelGtx, label.Layout)
-			labelOffset.Pop()
-			return layout.Dimensions{Size: image.Pt(width, height)}
+			return draw(gtx)
 		}))
 	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceAround}.Layout(gtx, children...)

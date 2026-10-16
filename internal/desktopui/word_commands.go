@@ -136,8 +136,9 @@ type wordCommandResult struct {
 	skipOperationTracking bool
 	confirmationPending   bool
 	wordTrackRevisions    *bool
-	selectionDelete       bool
-	selectionDeleteResult document.WordTextSelectionDeleteResult
+	selectionEdit         bool
+	selectionEditResult   document.WordTextSelectionEditResult
+	selectionFormatResult document.WordTextSelectionFormatResult
 	paragraphSplit        bool
 	paragraphJoin         bool
 	runID                 string
@@ -153,11 +154,15 @@ type wordCommandResult struct {
 	insertedParagraphID   string
 	bodyParagraphInsert   bool
 	wordRangeReplacement  bool
+	wordRangeRunIDs       []string
+	wordRangeInputTexts   map[string]string
+	replaceCaret          int
 	wordSymbolInsertion   bool
 	wordCommentList       bool
 	wordComments          []document.WordComment
 	wordCommentTotal      int
 	pageBreak             bool
+	wordReplaceAll        *wordReplaceAllResult
 	replaceRunID          string
 	replaceParagraphID    string
 	replaceStart          int
@@ -175,6 +180,10 @@ func (a *App) publishWordCommand(result wordCommandResult) {
 	}
 	if result.state != nil && result.operationToken.generation != 0 {
 		if result.applicationCommand {
+			if result.revision == 0 {
+				result.revision = result.state.wordRevisionAtomic.Load()
+			}
+		} else if (result.wordReplaceAll != nil || result.wordRangeReplacement) && !result.applied {
 			if result.revision == 0 {
 				result.revision = result.state.wordRevisionAtomic.Load()
 			}
@@ -196,13 +205,16 @@ func (a *App) publishWordCommand(result wordCommandResult) {
 				result.revision = result.state.wordRevisionAtomic.Load()
 			}
 		}
+		if result.wordReplaceAll != nil || result.wordRangeReplacement {
+			result.revision = result.state.wordRevisionAtomic.Load()
+		}
 		// Keep the split serialized until the UI reconciles its run IDs and drafts.
-		if !result.paragraphSplit && !result.selectionDelete {
+		if !result.paragraphSplit && !result.selectionEdit {
 			result.state.finishOperation(result.operationToken)
 		}
 	}
 	if a.wordCommandResults == nil {
-		if (result.paragraphSplit || result.selectionDelete) && result.state != nil {
+		if (result.paragraphSplit || result.selectionEdit) && result.state != nil {
 			result.state.finishOperation(result.operationToken)
 		}
 		return
@@ -213,7 +225,7 @@ func (a *App) publishWordCommand(result wordCommandResult) {
 			a.window.Invalidate()
 		}
 	case <-a.shutdown:
-		if (result.paragraphSplit || result.selectionDelete) && result.state != nil {
+		if (result.paragraphSplit || result.selectionEdit) && result.state != nil {
 			result.state.finishOperation(result.operationToken)
 		}
 	}

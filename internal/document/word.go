@@ -228,6 +228,11 @@ type WordTextEditor interface {
 	SetParagraphIndents(paragraphID string, leftEMU, rightEMU int64) error
 }
 
+// WordParagraphAlignmentEditor updates the selected paragraphs atomically.
+type WordParagraphAlignmentEditor interface {
+	SetParagraphAlignments(paragraphIDs []string, alignment WordAlignment) error
+}
+
 // WordParagraphSpacingEditor patches direct before/after spacing in DOCX
 // twips. A nil value leaves that side and its inherited spacing untouched.
 type WordParagraphSpacingEditor interface {
@@ -235,10 +240,44 @@ type WordParagraphSpacingEditor interface {
 	SetAllParagraphsSpacing(beforeTwips, afterTwips int64) error
 }
 
+// WordParagraphStyleEditor applies a paragraph style to one or more editable
+// paragraphs as a single document mutation.
+type WordParagraphStyleEditor interface {
+	SetParagraphStyles(paragraphIDs []string, styleID string) error
+}
+
 // WordTextRangeEditor exposes safe replacement within one editable text run.
 // Offsets are Unicode rune indices, matching WordTextRun text selection.
 type WordTextRangeEditor interface {
 	ReplaceTextRange(runID string, start, end int, replacement string) error
+}
+
+// WordTextSelectionFormatter applies text formatting only to the selected
+// Unicode rune range. Endpoint offsets use the projected editable text runs.
+type WordTextSelectionFormatter interface {
+	SetTextSelectionStyle(startRunID string, startOffset int, endRunID string, endOffset int, patch WordTextFormatPatch) (WordTextSelectionFormatResult, error)
+}
+
+// WordTextSelectionFormatResult identifies the same selection after formatting
+// has split text runs to preserve formatting outside the selected range.
+type WordTextSelectionFormatResult struct {
+	StartRunID  string
+	StartOffset int
+	EndRunID    string
+	EndOffset   int
+}
+
+// WordTextRunReplacement requests a checked update to one editable text run.
+// ExpectedText prevents a stale view from overwriting a newer document value.
+type WordTextRunReplacement struct {
+	RunID        string
+	ExpectedText string
+	Replacement  string
+}
+
+// WordTextBatchEditor atomically replaces multiple editable runs in one undo step.
+type WordTextBatchEditor interface {
+	ReplaceTextRuns([]WordTextRunReplacement) (bool, error)
 }
 
 // WordFormatPainter copies the supported direct text and paragraph formatting
@@ -315,17 +354,26 @@ type WordParagraphJoiner interface {
 	JoinParagraphAtBoundary(runID string, direction WordParagraphJoinDirection) (WordParagraphJoinResult, error)
 }
 
-// WordTextSelectionDeleteResult identifies the caret after deleting a text selection.
-type WordTextSelectionDeleteResult struct {
+// WordTextSelectionEditResult identifies the caret after an atomic selection edit.
+type WordTextSelectionEditResult struct {
 	ParagraphID string
 	RunID       string
 	Caret       int
 }
 
+// WordTextSelectionDeleteResult is retained for selection deletion callers.
+type WordTextSelectionDeleteResult = WordTextSelectionEditResult
+
 // WordTextSelectionEditor deletes an ordered selection atomically. Endpoint
 // offsets count Unicode runes in the identified editable text runs.
 type WordTextSelectionEditor interface {
 	DeleteTextSelection(startRunID string, startOffset int, endRunID string, endOffset int) (WordTextSelectionDeleteResult, error)
+}
+
+// WordTextSelectionReplacer atomically replaces an ordered editable selection.
+// Inserted text inherits the formatting at the selection's start.
+type WordTextSelectionReplacer interface {
+	ReplaceTextSelection(startRunID string, startOffset int, endRunID string, endOffset int, replacement string) (WordTextSelectionEditResult, error)
 }
 
 // WordImageEditor is an optional capability for inline raster image operations.

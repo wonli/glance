@@ -19,6 +19,9 @@ func (a *App) restoreFormulaReferenceTarget() {
 	state.formulaReference = formulaReferenceState{}
 	state.selectionDragging = false
 	state.cellEdit.cancel()
+	if state.virtualGrid != nil {
+		state.virtualGrid.cancelCellEditRowPreview()
+	}
 	state.cellEditor.SetText(state.cellEdit.Original)
 	state.formulaEditor.SetText(state.cellEdit.Original)
 	state.sheet = fr.TargetSheet
@@ -33,7 +36,7 @@ func (a *App) restoreFormulaReferenceTarget() {
 	}
 	state.nameBox.SetText(fr.TargetCell)
 	if state.virtualGrid != nil && state.virtualGrid.WindowSheet != fr.TargetSheet {
-		state.virtualGrid.invalidateWindow()
+		state.virtualGrid.resetSheetWindow()
 	}
 	if a.window != nil {
 		a.window.Invalidate()

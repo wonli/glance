@@ -72,10 +72,14 @@ type adapterFuncs struct {
 	setCellText                      func(context.Context, string, string, string) (bool, error)
 	setCellValue                     func(context.Context, string, string, document.CellValue) (bool, error)
 	setCellFormula                   func(context.Context, string, string, string) (bool, error)
+	setCellFormulas                  func(context.Context, string, []document.CellFormulaEdit) (bool, error)
+	setFormulaRange                  func(context.Context, string, document.CellCoordinate, document.CellRange, string) (bool, error)
 	recalculateSpreadsheet           func(context.Context) error
 	setCells                         func(context.Context, string, []document.CellEdit) (bool, error)
+	transferCellRange                func(context.Context, string, document.CellRange, int, int, [][]document.Cell) (bool, error)
 	clearCellRange                   func(context.Context, string, document.CellRange) (bool, error)
 	setCellFormats                   func(context.Context, string, document.CellRange, document.CellFormatPatch) (bool, error)
+	paintCellFormat                  func(context.Context, string, string, document.CellRange) (bool, error)
 	sortRange                        func(context.Context, document.SortRequest) (bool, error)
 	applyHistory                     func(context.Context, bool) (bool, error)
 	searchCells                      func(context.Context, string, string, int) ([]document.CellMatch, bool, error)
@@ -791,6 +795,32 @@ func (a *adapterFuncs) SetSpreadsheetCellFormula(ctx context.Context, sheet, cel
 	return a.setCellFormula(ctx, sheet, cell, formula)
 }
 
+func (a *adapterFuncs) SetSpreadsheetFormulas(ctx context.Context, sheet string, edits []document.CellFormulaEdit) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if a.readOnly {
+		return false, ErrReadOnlyDocument
+	}
+	if a.setCellFormulas == nil {
+		return false, ErrCapabilityUnsupported
+	}
+	return a.setCellFormulas(ctx, sheet, edits)
+}
+
+func (a *adapterFuncs) SetSpreadsheetFormulaRange(ctx context.Context, sheet string, active document.CellCoordinate, bounds document.CellRange, formula string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if a.readOnly {
+		return false, ErrReadOnlyDocument
+	}
+	if a.setFormulaRange == nil {
+		return false, ErrCapabilityUnsupported
+	}
+	return a.setFormulaRange(ctx, sheet, active, bounds, formula)
+}
+
 func (a *adapterFuncs) RecalculateSpreadsheet(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -817,6 +847,19 @@ func (a *adapterFuncs) SetSpreadsheetCells(ctx context.Context, sheet string, ed
 	return a.setCells(ctx, sheet, edits)
 }
 
+func (a *adapterFuncs) TransferSpreadsheetCellRange(ctx context.Context, sheet string, source document.CellRange, targetRow, targetColumn int, cells [][]document.Cell) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if a.readOnly {
+		return false, ErrReadOnlyDocument
+	}
+	if a.transferCellRange == nil {
+		return false, ErrCapabilityUnsupported
+	}
+	return a.transferCellRange(ctx, sheet, source, targetRow, targetColumn, cells)
+}
+
 func (a *adapterFuncs) SetSpreadsheetCellFormats(ctx context.Context, sheet string, bounds document.CellRange, patch document.CellFormatPatch) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -828,6 +871,19 @@ func (a *adapterFuncs) SetSpreadsheetCellFormats(ctx context.Context, sheet stri
 		return false, ErrCapabilityUnsupported
 	}
 	return a.setCellFormats(ctx, sheet, bounds, patch)
+}
+
+func (a *adapterFuncs) PaintSpreadsheetCellFormat(ctx context.Context, sheet, sourceCell string, targetBounds document.CellRange) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if a.readOnly {
+		return false, ErrReadOnlyDocument
+	}
+	if a.paintCellFormat == nil {
+		return false, ErrCapabilityUnsupported
+	}
+	return a.paintCellFormat(ctx, sheet, sourceCell, targetBounds)
 }
 
 func (a *adapterFuncs) SortSpreadsheetRange(ctx context.Context, request document.SortRequest) (bool, error) {
@@ -3075,6 +3131,26 @@ func spreadsheetAdapter(format Format, path string, d document.Spreadsheet, read
 			}
 			return true, nil
 		},
+		setCellFormulas: func(ctx context.Context, sheet string, edits []document.CellFormulaEdit) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			editor, ok := d.(document.SpreadsheetFormulaBatchEditor)
+			if !ok {
+				return false, ErrCapabilityUnsupported
+			}
+			return editor.SetCellFormulasChanged(sheet, edits)
+		},
+		setFormulaRange: func(ctx context.Context, sheet string, active document.CellCoordinate, bounds document.CellRange, formula string) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			editor, ok := d.(document.SpreadsheetFormulaRangeEntryEditor)
+			if !ok {
+				return false, ErrCapabilityUnsupported
+			}
+			return editor.SetCellFormulaRangeChanged(sheet, active, bounds, formula)
+		},
 		setCells: func(ctx context.Context, sheet string, edits []document.CellEdit) (bool, error) {
 			if err := ctx.Err(); err != nil {
 				return false, err
@@ -3084,6 +3160,16 @@ func spreadsheetAdapter(format Format, path string, d document.Spreadsheet, read
 				return false, ErrCapabilityUnsupported
 			}
 			return editor.SetCellsChanged(sheet, edits)
+		},
+		transferCellRange: func(ctx context.Context, sheet string, source document.CellRange, targetRow, targetColumn int, cells [][]document.Cell) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			editor, ok := d.(document.SpreadsheetCellTransferEditor)
+			if !ok {
+				return false, ErrCapabilityUnsupported
+			}
+			return editor.TransferCellRangeChanged(sheet, source, targetRow, targetColumn, cells)
 		},
 		clearCellRange: func(ctx context.Context, sheet string, bounds document.CellRange) (bool, error) {
 			if err := ctx.Err(); err != nil {
@@ -3104,6 +3190,16 @@ func spreadsheetAdapter(format Format, path string, d document.Spreadsheet, read
 				return false, ErrCapabilityUnsupported
 			}
 			return editor.SetCellFormatsChanged(sheet, bounds, patch)
+		},
+		paintCellFormat: func(ctx context.Context, sheet, sourceCell string, targetBounds document.CellRange) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			painter, ok := d.(document.SpreadsheetCellFormatPainter)
+			if !ok {
+				return false, ErrCapabilityUnsupported
+			}
+			return painter.PaintCellFormat(sheet, sourceCell, targetBounds)
 		},
 		sortRange: func(ctx context.Context, request document.SortRequest) (bool, error) {
 			if err := ctx.Err(); err != nil {
@@ -3168,6 +3264,9 @@ func spreadsheetAdapter(format Format, path string, d document.Spreadsheet, read
 		readSpreadsheetRange: func(ctx context.Context, sheet string, bounds document.CellRange) ([][]document.Cell, error) {
 			if err := ctx.Err(); err != nil {
 				return nil, err
+			}
+			if reader, ok := d.(document.SpreadsheetClipboardRangeReader); ok {
+				return reader.ReadClipboardRange(sheet, bounds)
 			}
 			reader, ok := d.(document.SpreadsheetRangeReader)
 			if !ok {

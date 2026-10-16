@@ -234,6 +234,8 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	a.path = loaded.path
 	if loaded.book != nil && len(loaded.sheets) > 0 {
 		a.sheet = loaded.sheets[0]
+		state.sheet = a.sheet
+		state.spreadsheetZoom = state.spreadsheetSheetZoom(a.sheet)
 	}
 	if loaded.book != nil {
 		a.cellButtons = make(map[string]*widget.Clickable)

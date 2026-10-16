@@ -9,6 +9,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 	"gioui.org/widget"
+	"gioui.org/widget/material"
 	"image"
 	"testing"
 	"time"
@@ -43,6 +44,54 @@ func TestFontPickerSearchBlankEdgesFocusAndChineseInput(t *testing.T) {
 				t.Fatal("lost Chinese input")
 			}
 		})
+	}
+}
+
+func TestFontPickerEscapeDoesNotDismissActiveIMEComposition(t *testing.T) {
+	state := newDocumentSessionState("x.xlsx")
+	state.book = &toolbarTestBook{editable: true}
+	state.sheet = "Sheet1"
+	state.selectionSet = true
+	app := &App{theme: material.NewTheme(), documentSessionState: state}
+	app.initFontPicker()
+	app.fontPicker.open = true
+	app.fontPicker.focusRequested = true
+	app.fontPicker.target = fontPickerTarget{state: state, sheet: state.sheet, selection: state.selection, revision: state.wordRevisionAtomic.Load()}
+	var router input.Router
+	var ops op.Ops
+	frame := func() {
+		ops.Reset()
+		gtx := layout.Context{Ops: &ops, Source: router.Source(), Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(800, 700)}}
+		app.processFontPickerEvents(gtx)
+		app.layoutFontPicker(gtx)
+		router.Frame(&ops)
+	}
+	frame()
+	frame()
+	if !router.Source().Focused(&app.fontPicker.search) {
+		t.Fatal("font picker search did not receive focus")
+	}
+	router.Queue(key.CompositionEvent{Start: 0, End: 1}, key.EditEvent{Text: "中"})
+	frame()
+	if !editorHasActiveComposition(&app.fontPicker.search) {
+		t.Fatal("font picker search did not retain the active IME composition")
+	}
+	router.Queue(key.Event{Name: key.NameEscape, State: key.Press})
+	frame()
+	if !app.fontPicker.open {
+		t.Fatal("Escape dismissed the font picker before the IME composition ended")
+	}
+	router.Queue(key.CompositionEvent{Start: -1, End: -1})
+	frame()
+	router.Queue(key.Event{Name: key.NameEscape, State: key.Release})
+	frame()
+	if editorHasActiveComposition(&app.fontPicker.search) || !router.Source().Focused(&app.fontPicker.search) {
+		t.Fatalf("composition end state = active %t, focused %t", editorHasActiveComposition(&app.fontPicker.search), router.Source().Focused(&app.fontPicker.search))
+	}
+	router.Queue(key.Event{Name: key.NameEscape, State: key.Press})
+	frame()
+	if app.fontPicker.open {
+		t.Fatalf("Escape did not dismiss the font picker after the composition ended (composition active=%t, search focused=%t)", editorHasActiveComposition(&app.fontPicker.search), router.Source().Focused(&app.fontPicker.search))
 	}
 }
 

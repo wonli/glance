@@ -5,7 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"gioui.org/io/clipboard"
+	"gioui.org/io/event"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -29,13 +30,15 @@ const (
 )
 
 type officeRibbonDropdownState struct {
-	kind       officeRibbonMenuKind
-	wordAction string
-	sheetSlot  int
-	bounds     image.Rectangle
-	anchor     image.Rectangle
-	dismiss    widget.Clickable
-	buttons    [officeRibbonMenuButtonCount]widget.Clickable
+	kind           officeRibbonMenuKind
+	wordAction     string
+	sheetSlot      int
+	activeIndex    int
+	focusRequested bool
+	bounds         image.Rectangle
+	anchor         image.Rectangle
+	dismiss        widget.Clickable
+	buttons        [officeRibbonMenuButtonCount]widget.Clickable
 }
 
 type officeRibbonMenuOption struct {
@@ -59,10 +62,73 @@ func (a *App) officeRibbonMenuDefinition() officeRibbonMenuDefinition {
 	case officeRibbonMenuWord:
 		return wordOfficeRibbonMenu(state.officeRibbonMenu.wordAction)
 	case officeRibbonMenuSpreadsheet:
-		return spreadsheetOfficeRibbonMenu(state.officeRibbonMenu.sheetSlot)
+		definition := spreadsheetOfficeRibbonMenu(state.officeRibbonMenu.sheetSlot)
+		if state.officeRibbonMenu.sheetSlot == toolbarActionFreezePanes {
+			return a.spreadsheetFreezePanesMenuState(definition)
+		}
+		if state.officeRibbonMenu.sheetSlot == toolbarActionFontFamily || state.officeRibbonMenu.sheetSlot == toolbarActionFontSize {
+			return a.spreadsheetFontRibbonMenuState(definition)
+		}
+		return definition
 	default:
 		return officeRibbonMenuDefinition{}
 	}
+}
+
+func (a *App) spreadsheetFreezePanesMenuState(definition officeRibbonMenuDefinition) officeRibbonMenuDefinition {
+	state := a.documentSessionState
+	if state == nil || state.virtualGrid == nil || !state.virtualGrid.PanesLoaded || state.virtualGrid.WindowSheet != state.sheet {
+		return definition
+	}
+	panes := state.virtualGrid.Panes
+	firstRow := panes.Frozen && panes.XSplit == 0 && panes.YSplit == 1
+	firstColumn := panes.Frozen && panes.XSplit == 1 && panes.YSplit == 0
+	customFreeze := panes.Frozen && (panes.XSplit > 0 || panes.YSplit > 0) && !firstRow && !firstColumn
+	for index := range definition.options {
+		option := &definition.options[index]
+		switch option.command {
+		case "excel-freeze-selection":
+			option.checked = customFreeze
+		case "excel-freeze-first-row":
+			option.checked = firstRow
+		case "excel-freeze-first-column":
+			option.checked = firstColumn
+		}
+	}
+	return definition
+}
+
+func (a *App) spreadsheetFontRibbonMenuState(definition officeRibbonMenuDefinition) officeRibbonMenuDefinition {
+	state := a.documentSessionState
+	if state == nil || !state.selectionSet {
+		return definition
+	}
+	slot := state.officeRibbonMenu.sheetSlot
+	if a.selectionFormatMixed(slot) {
+		return definition
+	}
+	style := a.selectedCellStyle()
+	for index := range definition.options {
+		option := &definition.options[index]
+		switch slot {
+		case toolbarActionFontFamily:
+			family := map[string]string{
+				"excel-font-aptos-narrow": "Aptos Narrow",
+				"excel-font-dengxian":     "等线",
+				"excel-font-simsun":       "宋体",
+				"excel-font-yahei":        "Microsoft YaHei",
+				"excel-font-arial":        "Arial",
+			}[option.command]
+			option.checked = family != "" && spreadsheetToolbarFontFamilyKey(family) == spreadsheetToolbarFontFamilyKey(spreadsheetToolbarFontFamily(style))
+		case toolbarActionFontSize:
+			if strings.HasPrefix(option.command, "excel-size-") && option.command != "excel-size-custom" {
+				if size, err := strconv.ParseFloat(strings.TrimPrefix(option.command, "excel-size-"), 64); err == nil {
+					option.checked = size == spreadsheetToolbarFontSize(style)
+				}
+			}
+		}
+	}
+	return definition
 }
 
 func (a *App) officeRibbonMenuOptionEnabled(option officeRibbonMenuOption) bool {
@@ -84,13 +150,35 @@ func (a *App) officeRibbonMenuOptionEnabled(option officeRibbonMenuOption) bool 
 		return a.wordToolbarActionEnabled(ribbonAction{id: option.command})
 	case officeRibbonMenuSpreadsheet:
 		switch option.command {
+		case "excel-format-cells":
+			return a.toolbarActionEnabled(4)
+		case "excel-row-height", "excel-column-width", "excel-autofit-row", "excel-autofit-column":
+			_, grid := state.book.(document.GridReader)
+			if option.command == "excel-autofit-row" || option.command == "excel-autofit-column" {
+				_, dimensionReader := state.book.(document.SpreadsheetDimensionCellReader)
+				return grid && dimensionReader && state.selectionSet && !state.formatRunning.Load() && !a.isSaving()
+			}
+			return grid && state.selectionSet && !state.formatRunning.Load() && !a.isSaving()
+		case "excel-freeze-selection", "excel-freeze-first-row", "excel-freeze-first-column", "excel-unfreeze-panes":
+			if !a.toolbarActionEnabled(toolbarActionFreezePanes) {
+				return false
+			}
+			switch option.command {
+			case "excel-freeze-selection":
+				return state.selectionSet && (state.selection.Active.Row > 0 || state.selection.Active.Column > 0)
+			case "excel-unfreeze-panes":
+				grid := state.virtualGrid
+				return grid == nil || !grid.PanesLoaded || grid.WindowSheet != state.sheet || grid.Panes.Frozen
+			default:
+				return true
+			}
 		case "excel-open":
 			return a.toolbarActionEnabled(toolbarActionOpenFile)
 		case "excel-recent":
 			return state.book != nil && !state.formatRunning.Load()
 		case "excel-paste-text":
 			return a.toolbarActionEnabled(21)
-		case "excel-font-dengxian", "excel-font-simsun", "excel-font-yahei", "excel-font-arial", "excel-font-custom":
+		case "excel-font-aptos-narrow", "excel-font-dengxian", "excel-font-simsun", "excel-font-yahei", "excel-font-arial", "excel-font-custom":
 			return a.toolbarActionEnabled(toolbarActionFontFamily)
 		case "excel-size-10", "excel-size-11", "excel-size-12", "excel-size-14", "excel-size-16", "excel-size-custom":
 			return a.toolbarActionEnabled(toolbarActionFontSize)
@@ -101,7 +189,7 @@ func (a *App) officeRibbonMenuOptionEnabled(option officeRibbonMenuOption) bool 
 		case "excel-delete-sheet":
 			_, editable := state.book.(document.SpreadsheetStructureEditor)
 			return editable && len(state.sheets) > 1 && !state.formatRunning.Load() && !a.isSaving()
-		case "excel-sum":
+		case "excel-sum", "excel-average", "excel-count", "excel-max", "excel-min":
 			return a.toolbarActionEnabled(toolbarActionSum)
 		case "excel-sort-asc":
 			return a.toolbarActionEnabled(18)
@@ -143,13 +231,14 @@ func (a *App) toggleWordOfficeRibbonMenu(actionID string) bool {
 	}
 	menu := &state.officeRibbonMenu
 	if menu.kind == officeRibbonMenuWord && menu.wordAction == actionID {
-		menu.kind = officeRibbonMenuClosed
-		menu.wordAction = ""
+		a.closeOfficeRibbonMenu()
 		return true
 	}
 	menu.kind = officeRibbonMenuWord
 	menu.wordAction = actionID
 	menu.sheetSlot = 0
+	menu.activeIndex = -1
+	menu.focusRequested = true
 	return true
 }
 
@@ -168,13 +257,14 @@ func (a *App) toggleSpreadsheetOfficeRibbonMenu(slot int) bool {
 	}
 	menu := &state.officeRibbonMenu
 	if menu.kind == officeRibbonMenuSpreadsheet && menu.sheetSlot == slot {
-		menu.kind = officeRibbonMenuClosed
-		menu.wordAction = ""
+		a.closeOfficeRibbonMenu()
 		return true
 	}
 	menu.kind = officeRibbonMenuSpreadsheet
 	menu.sheetSlot = slot
 	menu.wordAction = ""
+	menu.activeIndex = -1
+	menu.focusRequested = true
 	return true
 }
 
@@ -182,15 +272,98 @@ func (a *App) closeOfficeRibbonMenu() {
 	if state := a.documentSessionState; state != nil {
 		state.officeRibbonMenu.kind = officeRibbonMenuClosed
 		state.officeRibbonMenu.wordAction = ""
+		state.officeRibbonMenu.activeIndex = -1
+		state.officeRibbonMenu.focusRequested = false
 		state.officeRibbonMenu.bounds = image.Rectangle{}
 		state.officeRibbonMenu.anchor = image.Rectangle{}
 	}
+}
+
+func (a *App) officeRibbonMenuAnchorButton(state *documentSessionState) *widget.Clickable {
+	if state == nil {
+		return nil
+	}
+	menu := &state.officeRibbonMenu
+	switch menu.kind {
+	case officeRibbonMenuWord:
+		return state.wordToolbarActionButtons[menu.wordAction]
+	case officeRibbonMenuSpreadsheet:
+		if menu.sheetSlot >= 0 && menu.sheetSlot < len(state.toolbarActionButtons) {
+			return &state.toolbarActionButtons[menu.sheetSlot]
+		}
+	}
+	return nil
+}
+
+func (a *App) officeRibbonMenuNextEnabledOption(definition officeRibbonMenuDefinition, current, step int) int {
+	if len(definition.options) == 0 {
+		return -1
+	}
+	if current < 0 {
+		if step < 0 {
+			current = 0
+		} else {
+			current = len(definition.options) - 1
+		}
+	}
+	for scanned := 0; scanned < len(definition.options); scanned++ {
+		current = (current + step + len(definition.options)) % len(definition.options)
+		if a.officeRibbonMenuOptionEnabled(definition.options[current]) {
+			return current
+		}
+	}
+	return -1
+}
+
+func (a *App) handleOfficeRibbonMenuKeyboard(gtx layout.Context, state *documentSessionState, definition officeRibbonMenuDefinition) bool {
+	menu := &state.officeRibbonMenu
+	filters := []event.Filter{
+		key.Filter{Focus: &menu.dismiss, Name: key.NameUpArrow},
+		key.Filter{Focus: &menu.dismiss, Name: key.NameDownArrow},
+		key.Filter{Focus: &menu.dismiss, Name: key.NameEnter},
+		key.Filter{Focus: &menu.dismiss, Name: key.NameReturn},
+		key.Filter{Focus: &menu.dismiss, Name: key.NameSpace},
+	}
+	handled := false
+	for event, ok := gtx.Event(filters...); ok; event, ok = gtx.Event(filters...) {
+		pressed, ok := event.(key.Event)
+		if !ok || pressed.State != key.Press {
+			continue
+		}
+		handled = true
+		switch pressed.Name {
+		case key.NameUpArrow:
+			menu.activeIndex = a.officeRibbonMenuNextEnabledOption(definition, menu.activeIndex, -1)
+		case key.NameDownArrow:
+			menu.activeIndex = a.officeRibbonMenuNextEnabledOption(definition, menu.activeIndex, 1)
+		case key.NameEnter, key.NameReturn, key.NameSpace:
+			index := menu.activeIndex
+			if index < 0 || index >= len(definition.options) || !a.officeRibbonMenuOptionEnabled(definition.options[index]) {
+				index = a.officeRibbonMenuNextEnabledOption(definition, -1, 1)
+			}
+			if index < 0 {
+				continue
+			}
+			kind, command := menu.kind, definition.options[index].command
+			a.closeOfficeRibbonMenu()
+			a.executeOfficeRibbonMenuCommand(gtx, kind, command)
+			return true
+		}
+	}
+	if handled && a.window != nil {
+		a.window.Invalidate()
+	}
+	return handled
 }
 
 func (a *App) handleOfficeRibbonMenuEvents(gtx layout.Context) bool {
 	state := a.documentSessionState
 	if state == nil || state.officeRibbonMenu.kind == officeRibbonMenuClosed {
 		return false
+	}
+	definition := a.officeRibbonMenuDefinition()
+	if a.handleOfficeRibbonMenuKeyboard(gtx, state, definition) {
+		return true
 	}
 	if state.officeRibbonMenu.dismiss.Clicked(gtx) {
 		history := state.officeRibbonMenu.dismiss.History()
@@ -201,7 +374,6 @@ func (a *App) handleOfficeRibbonMenuEvents(gtx layout.Context) bool {
 			}
 		}
 	}
-	definition := a.officeRibbonMenuDefinition()
 	for index, option := range definition.options {
 		if index >= len(state.officeRibbonMenu.buttons) {
 			break
@@ -225,13 +397,7 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 	if kind == officeRibbonMenuWord {
 		switch command {
 		case "paste-text":
-			state.wordClipboardRunID = state.selectedWordRunID
-			if wordHasPendingTextDrafts(state) {
-				state.wordForceDraftFlush.Store(true)
-				state.wordFlushRequested.Store(true)
-				state.wordFlushAllDrafts.Store(true)
-			}
-			gtx.Execute(clipboard.ReadCmd{Tag: &state.wordClipboardTarget})
+			a.requestWordClipboardRead(gtx, state)
 		case "select-all":
 		default:
 		}
@@ -258,14 +424,34 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 		return
 	}
 	switch command {
+	case "excel-format-cells":
+		a.showSpreadsheetFormatCellsDialog()
+	case "excel-row-height":
+		if a.commitSpreadsheetEditorBeforeCommand(gtx, state) {
+			a.showSpreadsheetRowHeightDialog()
+		}
+	case "excel-column-width":
+		if a.commitSpreadsheetEditorBeforeCommand(gtx, state) {
+			a.showSpreadsheetColumnWidthDialog()
+		}
+	case "excel-autofit-row":
+		if a.commitSpreadsheetEditorBeforeCommand(gtx, state) {
+			a.startSpreadsheetAutoFitDimension(gtx, true)
+		}
+	case "excel-autofit-column":
+		if a.commitSpreadsheetEditorBeforeCommand(gtx, state) {
+			a.startSpreadsheetAutoFitDimension(gtx, false)
+		}
+	case "excel-freeze-selection", "excel-freeze-first-row", "excel-freeze-first-column", "excel-unfreeze-panes":
+		a.applySpreadsheetPanesMenuCommand(gtx, command)
 	case "excel-open":
 		a.startOpenFilePicker()
 	case "excel-recent":
 		a.activateRecent()
 	case "excel-paste-text":
-		gtx.Execute(clipboard.ReadCmd{Tag: &state.clipboardTarget})
-	case "excel-font-dengxian", "excel-font-simsun", "excel-font-yahei", "excel-font-arial":
-		family := map[string]string{"excel-font-dengxian": "等线", "excel-font-simsun": "宋体", "excel-font-yahei": "Microsoft YaHei", "excel-font-arial": "Arial"}[command]
+		a.requestSpreadsheetClipboardPaste(gtx, state)
+	case "excel-font-aptos-narrow", "excel-font-dengxian", "excel-font-simsun", "excel-font-yahei", "excel-font-arial":
+		family := map[string]string{"excel-font-aptos-narrow": "Aptos Narrow", "excel-font-dengxian": "等线", "excel-font-simsun": "宋体", "excel-font-yahei": "Microsoft YaHei", "excel-font-arial": "Arial"}[command]
 		a.applyCellFormat(document.CellFormatPatch{FontFamily: &family})
 	case "excel-font-custom":
 		a.showSpreadsheetFontFamilyDialog()
@@ -303,8 +489,8 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 		a.applyStructure(document.StructureEdit{Kind: document.StructureDeleteColumns, Sheet: state.sheet, Index: state.selection.Active.Column + 1, Count: 1})
 	case "excel-delete-sheet":
 		a.applyStructure(document.StructureEdit{Kind: document.StructureDeleteSheet, Sheet: state.sheet})
-	case "excel-sum":
-		a.applySpreadsheetAutoSum()
+	case "excel-sum", "excel-average", "excel-count", "excel-max", "excel-min":
+		a.applySpreadsheetAggregate(strings.TrimPrefix(command, "excel-"))
 	case "excel-sort-asc", "excel-sort-desc":
 		bounds := state.selection.Bounds()
 		a.applySort(document.SortRequest{Sheet: state.sheet, Bounds: bounds, KeyColumn: state.selection.Active.Column + 1, Descending: command == "excel-sort-desc"})
@@ -358,6 +544,11 @@ func (a *App) layoutOfficeRibbonDropdown(gtx layout.Context) layout.Dimensions {
 	definition := a.officeRibbonMenuDefinition()
 	if definition.title == "" {
 		return layout.Dimensions{}
+	}
+	if state.officeRibbonMenu.focusRequested {
+		state.officeRibbonMenu.focusRequested = false
+		state.officeRibbonMenu.activeIndex = a.officeRibbonMenuNextEnabledOption(definition, -1, 1)
+		gtx.Execute(key.FocusCmd{Tag: &state.officeRibbonMenu.dismiss})
 	}
 	panelWidth := min(gtx.Dp(unit.Dp(272)), gtx.Constraints.Max.X)
 	x := gtx.Dp(12)
@@ -446,7 +637,7 @@ func (a *App) layoutOfficeRibbonDropdownPanel(gtx layout.Context, definition off
 							textColor := colors.Text.PureBlack
 							if enabled && option.checked {
 								background = colors.Menu.Selected
-							} else if enabled && button.Hovered() {
+							} else if enabled && (button.Hovered() || index == a.documentSessionState.officeRibbonMenu.activeIndex) {
 								background = colors.Menu.Hover
 							}
 							return layout.Background{}.Layout(gtx,

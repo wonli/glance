@@ -22,22 +22,26 @@ import (
 // format-backed data shared by the application Runtime adapter and every
 // desktop view. It deliberately contains no Gio widgets or window state.
 type liveDocumentState struct {
-	adapterMu          sync.RWMutex
-	documentID         string
-	wordRevision       uint64
-	path               string
-	sourceFormat       application.Format
-	saveAsRequired     bool
-	book               document.Spreadsheet
-	word               *docx.Document
-	wordBlocks         []document.WordBlock
-	jsonDoc            *jsondoc.Document
-	markdownDoc        *markdowndoc.Document
-	pdfDoc             *pdfdoc.Document
-	pptxDoc            *pptx.Document
-	sheets             []string
-	wordRevisionAtomic atomic.Uint64
-	publishedRevision  atomic.Uint64
+	adapterMu                    sync.RWMutex
+	spreadsheetZoomMu            sync.RWMutex
+	spreadsheetZooms             map[string]int
+	spreadsheetZoomRevision      atomic.Uint64
+	spreadsheetZoomSavedRevision atomic.Uint64
+	documentID                   string
+	wordRevision                 uint64
+	path                         string
+	sourceFormat                 application.Format
+	saveAsRequired               bool
+	book                         document.Spreadsheet
+	word                         *docx.Document
+	wordBlocks                   []document.WordBlock
+	jsonDoc                      *jsondoc.Document
+	markdownDoc                  *markdowndoc.Document
+	pdfDoc                       *pdfdoc.Document
+	pptxDoc                      *pptx.Document
+	sheets                       []string
+	wordRevisionAtomic           atomic.Uint64
+	publishedRevision            atomic.Uint64
 }
 
 // sharedDocumentSession owns lifecycle, draft synchronization, and work that
@@ -117,8 +121,9 @@ func newSharedDocumentSession(path string) *sharedDocumentSession {
 	close(idle)
 	session := &sharedDocumentSession{
 		liveDocumentState: liveDocumentState{
-			path:         path,
-			wordRevision: 1,
+			path:             path,
+			wordRevision:     1,
+			spreadsheetZooms: make(map[string]int),
 		},
 		operationChanged:       idle,
 		wordRunCommitted:       make(map[string]string),
@@ -144,6 +149,7 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 		wordListState:            widget.List{List: layout.List{Axis: layout.Vertical}},
 		wordPageListState:        widget.List{List: layout.List{Axis: layout.Vertical}},
 		wordNavigationList:       widget.List{List: layout.List{Axis: layout.Vertical}},
+		sheetTabList:             widget.List{List: layout.List{Axis: layout.Horizontal}},
 		toolbarTab:               toolbarTabHome,
 		wordToolbarTab:           wordTabHome,
 		toolbarActionList:        widget.List{List: layout.List{Axis: layout.Horizontal}},

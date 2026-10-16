@@ -29,7 +29,11 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			break
 		}
 	}
-	for _, action := range wordToolbarActions(state.wordToolbarTab) {
+	actions := wordToolbarActions(state.wordToolbarTab)
+	if state.wordToolbarTab == wordTabHome {
+		actions = append(actions, wordStyleGalleryActions()...)
+	}
+	for _, action := range actions {
 		button := state.wordToolbarActionButtons[action.id]
 		if button == nil || !button.Clicked(gtx) {
 			continue
@@ -46,15 +50,10 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.executeWordToolbarAction(action.id)
 			continue
 		}
-		if wordHasPendingTextDrafts(state) && action.id == "paste" {
-			state.wordClipboardRunID = state.selectedWordRunID
-			state.wordForceDraftFlush.Store(true)
-			state.wordFlushRequested.Store(true)
-			state.wordFlushAllDrafts.Store(true)
-			gtx.Execute(clipboard.ReadCmd{Tag: &state.wordClipboardTarget})
-			continue
-		}
 		if wordHasPendingTextDrafts(state) && action.id == "cut" {
+			if a.cutSelectedWordText(gtx, state) {
+				continue
+			}
 			if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
 				value := editor.Text()
 				if selected := editor.SelectedText(); selected != "" {
@@ -85,6 +84,8 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			continue
 		}
 		switch action.id {
+		case "style-body", "style-heading", "style-heading-2":
+			a.applyWordParagraphStyleAction(action.id)
 		case "format-painter":
 			a.toggleWordFormatPainter()
 		case "undo":
@@ -92,6 +93,9 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 		case "redo":
 			a.applyWordHistory(false)
 		case "cut", "copy":
+			if action.id == "cut" && a.cutSelectedWordText(gtx, state) {
+				continue
+			}
 			if action.id == "copy" {
 				if selected, ok := wordPageSelectedText(state); ok {
 					gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(selected))})
@@ -113,8 +117,7 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 				}
 			}
 		case "paste":
-			state.wordClipboardRunID = state.selectedWordRunID
-			gtx.Execute(clipboard.ReadCmd{Tag: &state.wordClipboardTarget})
+			a.requestWordClipboardRead(gtx, state)
 		case "bold", "italic", "underline":
 			a.toggleWordTextStyle(action.id)
 		case "font-size-decrease":

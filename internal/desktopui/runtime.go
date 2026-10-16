@@ -46,6 +46,8 @@ type desktopRuntime struct {
 	mcpIPCOptions           mcpserver.DesktopIPCOptions
 	shuttingDown            bool
 	mu                      sync.Mutex
+	spreadsheetClipboardMu  sync.RWMutex
+	spreadsheetClipboard    *spreadsheetClipboardData
 	workspaceQueueMu        sync.Mutex
 	workspacePreferences    map[string]string
 	workspacePreferenceMu   sync.Mutex
@@ -787,6 +789,7 @@ func sharedSessionFromLoadedDocument(loaded loadedDocument) *sharedDocumentSessi
 	session.markdownDoc = loaded.markdownDoc
 	session.jsonDoc = loaded.jsonDoc
 	session.sheets = append([]string(nil), loaded.sheets...)
+	initializeSpreadsheetSheetZooms(session, session.book, session.sheets)
 	return session
 }
 

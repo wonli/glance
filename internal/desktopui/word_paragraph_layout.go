@@ -132,21 +132,40 @@ func wordListMarkerWidthDP(paragraph document.WordParagraph) int {
 func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParagraph, run document.WordTextRun) layout.Dimensions {
 	state := a.documentSessionState
 	editor := wordRunEditor(state, run)
+	selectionStart, selectionEnd, selectedText := wordPageTextSelectionRange(state.wordPageTextSelection, wordlayout.TextFragment{RunID: run.ID, RuneEnd: editor.Len()})
+	if selectedText {
+		// The document selection spans independently edited runs. Mirror this
+		// run's slice into its Editor so Web Layout can paint the same selection
+		// as the page-scene renderer does in print and continuous layouts.
+		editor.SetCaret(selectionStart, selectionEnd)
+	}
 	label := wordRunLabel(a.theme, paragraph, run)
 	focusTargetPending := state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != run.ID
 	paragraphSplitPending := state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID
 	paragraphJoinPending := state.wordParagraphJoinIntent != nil
-	editor.ReadOnly = state.wordReadingMode || !run.Editable || wordEditorOperationPending(state) || paragraphSplitPending || paragraphJoinPending || focusTargetPending || state.wordSelectionDeleteIntent != nil
+	editor.ReadOnly = state.wordReadingMode || !run.Editable || wordEditorOperationPending(state) || paragraphSplitPending || paragraphJoinPending || focusTargetPending || state.wordSelectionEditIntent != nil
 	selectionStartBeforeUpdate, selectionEndBeforeUpdate := editor.Selection()
+	documentSelectionHandled := false
+	selectionInputPending := false
 	if !editor.ReadOnly {
 		if a.handleWordSelectionDeleteKey(gtx, state, editor) {
+			editor.ReadOnly = true
+		} else if a.handleWordSelectAllShortcut(gtx, state, run.ID, editor) {
+			documentSelectionHandled = true
 			editor.ReadOnly = true
 		} else if a.handleWordHistoryShortcut(gtx, run.ID, editor) {
 			editor.ReadOnly = true
 		} else if a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {
 			editor.ReadOnly = true
 		} else {
-			a.handleWordArrowNavigation(gtx, paragraph, run, editor)
+			if a.handleWordArrowNavigation(gtx, paragraph, run, editor) {
+				// Navigation can set a different pending focus target after this
+				// run's initial layout checks. Refresh the snapshot before the
+				// focused-run bookkeeping below, or the source run overwrites the
+				// destination in the same frame.
+				focusTargetPending = state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != run.ID
+			}
+			selectionInputPending = beginWordSelectionInputDraft(state, run.ID, editor, gtx.Focused(editor))
 			for event, ok := editor.Update(gtx); ok; event, ok = editor.Update(gtx) {
 				switch event.(type) {
 				case widget.SelectEvent:
@@ -157,14 +176,20 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 					selectionStart, selectionEnd := editor.Selection()
 					logWordDebug("flow_submit_event revision=%d run=%q selection=%d:%d length=%d",
 						state.wordRevisionAtomic.Load(), run.ID, selectionStart, selectionEnd, editor.Len())
+					state.wordPageTextSelection = nil
+					state.wordPageSelectionDrag = nil
+					state.wordSelectionInputDraft = nil
 					a.queueWordParagraphSplit(run.ID, editor.Text(), selectionStart, selectionEnd)
 					if state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID {
 						editor.ReadOnly = true
 					}
 				}
 			}
+			if a.finishWordSelectionInput(state, run.ID, editor) {
+				selectionInputPending = true
+			}
 			selectionStart, selectionEnd := editor.Selection()
-			if gtx.Focused(editor) && state.wordFocusedRunID == run.ID && (selectionStart != selectionStartBeforeUpdate || selectionEnd != selectionEndBeforeUpdate) && state.wordNavigationVerticalHandledRunID != run.ID {
+			if gtx.Focused(editor) && !selectionInputPending && state.wordFocusedRunID == run.ID && (selectionStart != selectionStartBeforeUpdate || selectionEnd != selectionEndBeforeUpdate) && state.wordNavigationVerticalHandledRunID != run.ID {
 				state.wordPreferredVerticalXSet = false
 			}
 		}
@@ -174,7 +199,6 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	style.Font, style.TextSize, style.Color = label.Font, label.TextSize, label.Color
 	background := contentSurface
 	paragraphSelected := false
-	_, _, selectedText := wordPageTextSelectionRange(state.wordPageTextSelection, wordlayout.TextFragment{RunID: run.ID, RuneEnd: editor.Len()})
 	editor.PaintSelectionWhenUnfocused = selectedText
 	dimensions := wordMeasuredBackground(gtx, background, func(gtx layout.Context) layout.Dimensions {
 		if highlightColor, ok := wordHighlightDisplayColor(run.Style.Highlight); ok {
@@ -186,10 +210,10 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 		if state.wordParagraphSelections == nil {
 			state.wordParagraphSelections = make(map[string]*textEditorParagraphSelection)
 		}
-		selection := state.wordParagraphSelections[run.ID]
+		selection := state.wordParagraphSelections[paragraph.ID]
 		if selection == nil {
 			selection = new(textEditorParagraphSelection)
-			state.wordParagraphSelections[run.ID] = selection
+			state.wordParagraphSelections[paragraph.ID] = selection
 		}
 		dims := selection.layout(gtx, editor, func(gtx layout.Context) layout.Dimensions { return layoutWordRunEditor(gtx, style, run.ID) })
 		if selection.paragraphSelected {
@@ -203,14 +227,14 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 		}
 		return dims
 	})
-	if !paragraphSelected && gtx.Focused(editor) {
+	if !paragraphSelected && !documentSelectionHandled && gtx.Focused(editor) {
 		start, end := editor.Selection()
 		if start != selectionStartBeforeUpdate || end != selectionEndBeforeUpdate {
 			state.wordPageTextSelection = nil
 		}
 	}
 	pendingImageFocus := state.selectedWordImageID != "" && state.wordImageFocusRequestID == state.selectedWordImageID
-	if gtx.Focused(editor) && run.Editable && !focusTargetPending && !pendingImageFocus {
+	if gtx.Focused(editor) && run.Editable && !focusTargetPending && !pendingImageFocus && !documentSelectionHandled && !wordPageTextSelectionActive(state.wordPageTextSelection) {
 		state.wordCanvasContentClickHandled = true
 		if state.selectedWordRunID != "" && state.selectedWordRunID != run.ID && state.wordPendingFocusRunID != run.ID {
 			state.wordPreferredVerticalXSet = false
@@ -229,9 +253,11 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	}
 	if run.Editable {
 		current := editor.Text()
-		captureWordTextDraft(state, run.ID, current)
+		if !selectionInputPending {
+			captureWordTextDraft(state, run.ID, current)
+		}
 		committed, _ := state.committedWordText(run.ID)
-		if current != committed && state.selectedWordImageID == "" {
+		if current != committed && state.selectedWordImageID == "" && !wordPageTextSelectionActive(state.wordPageTextSelection) {
 			state.selectedWordRunID = run.ID
 			state.selectedWordParagraphID = paragraph.ID
 		}

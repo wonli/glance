@@ -13,23 +13,37 @@ import (
 
 // Workbook keeps Excelize behind the format adapter boundary.
 type Workbook struct {
-	mu                sync.Mutex
-	path              string
-	file              *excelize.File
-	dirty             bool
-	closed            bool
-	pictureIndexes    map[string]spreadsheetPictureIndex
-	undo              []workbookHistoryEntry
-	redo              []workbookHistoryEntry
-	historyState      uint64
-	savedHistoryState uint64
-	nextHistoryState  uint64
+	mu                   sync.Mutex
+	path                 string
+	file                 *excelize.File
+	dataRegionCacheKey   dataRegionCacheKey
+	dataRegionCacheState uint64
+	dataRegionPositions  []int
+	dataRegionCacheValid bool
+	conditionalFormats   conditionalFormatDisplayCache
+	dirty                bool
+	closed               bool
+	pictureIndexes       map[string]spreadsheetPictureIndex
+	undo                 []workbookHistoryEntry
+	redo                 []workbookHistoryEntry
+	historyState         uint64
+	savedHistoryState    uint64
+	nextHistoryState     uint64
 }
 
 var _ document.Spreadsheet = (*Workbook)(nil)
 var _ document.GridReader = (*Workbook)(nil)
+var _ document.SpreadsheetDataRegionReader = (*Workbook)(nil)
+var _ document.SpreadsheetCurrentDataRegionReader = (*Workbook)(nil)
+var _ document.SpreadsheetNextNonEmptyCellReader = (*Workbook)(nil)
+var _ document.SpreadsheetDimensionReader = (*Workbook)(nil)
+var _ document.SpreadsheetDimensionCellReader = (*Workbook)(nil)
+var _ document.SpreadsheetDimensionRangeCellReader = (*Workbook)(nil)
+var _ document.SpreadsheetDimensionBatchEditor = (*Workbook)(nil)
+var _ document.SpreadsheetDimensionEditGrouper = (*Workbook)(nil)
 var _ document.SpreadsheetHistory = (*Workbook)(nil)
 var _ document.SpreadsheetImageReader = (*Workbook)(nil)
+var _ document.SpreadsheetFormulaBatchEditor = (*Workbook)(nil)
 
 const (
 	maxXLSXRows    = 1_048_576
@@ -57,7 +71,15 @@ func OpenSnapshot(payload []byte) (*Workbook, error) {
 
 // NewBlank creates an unsaved workbook draft.
 func NewBlank() *Workbook {
-	return &Workbook{file: excelize.NewFile(), dirty: true, historyState: 1, nextHistoryState: 2}
+	file := excelize.NewFile()
+	// New Excel workbooks use Aptos Narrow 11 pt. Excelize's base template
+	// still uses Calibri, so align new Glance workbooks with current Excel.
+	_ = file.SetDefaultFont("Aptos Narrow")
+	// Excel's default worksheet column width is 8.43 characters. Excelize's
+	// fallback (9.140625) is wider and would make new Glance sheets diverge.
+	defaultColumnWidth := 8.43
+	_ = file.SetSheetProps(file.GetSheetName(0), &excelize.SheetPropsOptions{DefaultColWidth: &defaultColumnWidth})
+	return &Workbook{file: file, dirty: true, historyState: 1, nextHistoryState: 2}
 }
 
 // Snapshot serializes the current in-memory workbook without changing dirty state.

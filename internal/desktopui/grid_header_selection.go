@@ -13,10 +13,12 @@ func gridHeaderAtPoint(v *gridViewport, point image.Point, rowHeader, columnHead
 		return selectionSheet, CellPosition{}, true
 	}
 	if point.X < rowHeader {
-		return selectionRows, clampCellPosition(CellPosition{Row: v.Rows.IndexAt(float64(point.Y-columnHeader) + v.Y)}), true
+		row := v.headerRowAt(point.Y - columnHeader)
+		return selectionRows, clampCellPosition(CellPosition{Row: row}), true
 	}
 	if point.Y < columnHeader {
-		return selectionColumns, clampCellPosition(CellPosition{Column: v.Columns.IndexAt(float64(point.X-rowHeader) + v.X)}), true
+		column := v.headerColumnAt(point.X - rowHeader)
+		return selectionColumns, clampCellPosition(CellPosition{Column: column}), true
 	}
 	return selectionCells, CellPosition{}, false
 }
@@ -34,9 +36,9 @@ func (a *App) extendGridHeaderSelection(v *gridViewport, point f32.Point, rowHea
 	position := a.selection.Active
 	switch a.selection.Scope {
 	case selectionRows:
-		position.Row = v.Rows.IndexAt(float64(point.Y) - float64(columnHeader) + v.Y)
+		position.Row = v.headerRowAt(int(point.Y) - columnHeader)
 	case selectionColumns:
-		position.Column = v.Columns.IndexAt(float64(point.X) - float64(rowHeader) + v.X)
+		position.Column = v.headerColumnAt(int(point.X) - rowHeader)
 	default:
 		return
 	}

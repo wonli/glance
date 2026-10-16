@@ -54,6 +54,14 @@ func (a *App) layoutSpreadsheetStatusBar(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if state := a.documentSessionState; state == nil || !state.gridEndMode {
+							return layout.Dimensions{}
+						}
+						return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return spreadsheetStatusText(gtx, a.theme, "END", mutedText)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return spreadsheetStatusText(gtx, a.theme, status, a.tokens().Colors.Text.PureBlack)
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {

@@ -66,6 +66,11 @@ func (r *styleResolver) paragraphStyle(paragraph document.WordParagraph, sourceI
 			seen[current] = true
 			style, ok := r.styles[current]
 			if !ok {
+				if builtin, supported := latentBuiltinHeadingStyle(current, r.defaultParagraphStyleID); supported {
+					chain = append(chain, builtin)
+					current = builtin.BasedOn
+					continue
+				}
 				r.cursor.diagnostic(DiagnosticError, sourceID, "missing-style", "The paragraph references a missing style: "+current)
 				break
 			}
@@ -104,6 +109,39 @@ func (r *styleResolver) paragraphStyle(paragraph document.WordParagraph, sourceI
 		r.cursor.diagnostic(DiagnosticError, sourceID, "paragraph-border-style", "The paragraph uses an unsupported bottom border style: "+borderStyle)
 	}
 	return out
+}
+
+// latentBuiltinHeadingStyle supplies the small subset of Word's built-in
+// heading definitions needed to render styles that are listed as latent in
+// styles.xml but have no explicit w:style definition. The paragraph style
+// editor can still assign these built-in IDs, and Word itself recognizes
+// them without an explicit definition in the document.
+func latentBuiltinHeadingStyle(id, basedOn string) (document.WordStyle, bool) {
+	fontSizePT, beforePT := 0.0, 0.0
+	switch id {
+	case "Heading1":
+		fontSizePT, beforePT = 15, 12
+	case "Heading2":
+		fontSizePT, beforePT = 13.5, 10
+	case "Heading3":
+		fontSizePT, beforePT = 12, 6
+	case "Heading4", "Heading5", "Heading6", "Heading7", "Heading8", "Heading9":
+		fontSizePT, beforePT = 11, 6
+	default:
+		return document.WordStyle{}, false
+	}
+	return document.WordStyle{
+		ID:      id,
+		BasedOn: basedOn,
+		Text:    document.WordTextStyle{Bold: true, FontSize: fontSizePT},
+		TextSet: document.WordTextBoldSet | document.WordTextFontSizeSet,
+		Paragraph: document.WordParagraphLayout{
+			BeforePT:     beforePT,
+			KeepWithNext: true,
+			KeepTogether: true,
+			Set:          document.WordParagraphBeforeSet | document.WordParagraphAfterSet | document.WordParagraphKeepWithNextSet | document.WordParagraphKeepTogetherSet,
+		},
+	}, true
 }
 
 func (r *styleResolver) applyCharacterStyle(target *document.WordTextStyle, styleID, sourceID string) {

@@ -129,7 +129,7 @@ func (a *App) applyDesktopViewIntent(intent application.ViewIntent) (json.RawMes
 	default:
 		return nil, application.ErrInvalidCommandArguments
 	}
-	changed := current != target
+	changed := current != target || state.spreadsheetSheetZoomPercent(state.sheet) != int(math.Round(target*100))
 	if changed {
 		a.setSpreadsheetZoom(target)
 	}

@@ -83,6 +83,25 @@ func (s *sharedDocumentSession) setCommittedWordTextAndClearDraft(runID, value s
 	s.wordDraftMu.Unlock()
 }
 
+func (s *sharedDocumentSession) setCommittedWordTextAndClearExpectedDraft(runID, value, expectedDraft string) {
+	if s == nil || runID == "" {
+		return
+	}
+	s.wordDraftMu.Lock()
+	if s.wordRunCommitted == nil {
+		s.wordRunCommitted = make(map[string]string)
+	}
+	if s.wordRunDrafts == nil {
+		s.wordRunDrafts = make(map[string]string)
+	}
+	s.wordRunCommitted[runID] = value
+	if draft, exists := s.wordRunDrafts[runID]; exists && draft == expectedDraft {
+		delete(s.wordRunDrafts, runID)
+		s.bumpWordDraftEpoch()
+	}
+	s.wordDraftMu.Unlock()
+}
+
 func (s *sharedDocumentSession) discardWordDraftIfCommitted(runID, value string) bool {
 	if s == nil {
 		return false

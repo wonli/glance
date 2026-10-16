@@ -80,7 +80,12 @@ const (
 	toolbarActionFontSize = toolbarActionShare + 1 + iota
 	toolbarActionCellStyles
 	toolbarActionFormat
-	toolbarActionLast = toolbarActionFormat
+	toolbarActionCurrencyFormat
+	toolbarActionIncreaseDecimal
+	toolbarActionDecreaseDecimal
+	toolbarActionDecreaseFontSize
+	toolbarActionIncreaseFontSize
+	toolbarActionLast = toolbarActionIncreaseFontSize
 )
 
 var baseToolbarCategoryLabels = []string{"文件", "开始", "插入", "页面布局", "公式", "数据", "审阅", "视图"}
@@ -101,14 +106,22 @@ var homeRibbonActions = []spreadsheetToolbarAction{
 	{slot: toolbarActionFormatPainter, label: "格式刷", group: "剪贴板", icon: "paintbrush"},
 	{slot: toolbarActionFontFamily, label: "字体", group: "字体", icon: "type"},
 	{slot: toolbarActionFontSize, label: "字号", group: "字体", icon: "type"},
+	{slot: toolbarActionDecreaseFontSize, label: "减小字号", group: "字体", icon: "a-arrow-down"},
+	{slot: toolbarActionIncreaseFontSize, label: "增大字号", group: "字体", icon: "a-arrow-up"},
 	{slot: 4, label: "加粗", group: "字体", icon: "bold"},
 	{slot: 5, label: "斜体", group: "字体", icon: "italic"},
 	{slot: 6, label: "下划线", group: "字体", icon: "underline"},
+	{slot: 11, label: "边框", group: "字体", icon: "grid-3x3"},
+	{slot: 8, label: "填充颜色", group: "字体", icon: "paint-bucket"},
+	{slot: 7, label: "字体颜色", group: "字体", icon: "baseline"},
 	{slot: toolbarActionAlignLeft, label: "左对齐", group: "对齐", icon: "format_align_left"},
 	{slot: 9, label: "居中", group: "对齐", icon: "format_align_center"},
 	{slot: toolbarActionAlignRight, label: "右对齐", group: "对齐", icon: "format_align_right"},
 	{slot: toolbarActionWrapText, label: "自动换行", group: "对齐", icon: "text-wrap"},
 	{slot: toolbarActionPercentFormat, label: "百分比", displayLabel: "%", group: "格式", icon: "percent"},
+	{slot: toolbarActionCurrencyFormat, label: "货币格式", group: "格式", icon: "banknote"},
+	{slot: toolbarActionIncreaseDecimal, label: "增加小数位数", group: "格式", symbol: ".0←"},
+	{slot: toolbarActionDecreaseDecimal, label: "减少小数位数", group: "格式", symbol: ".0→"},
 	{slot: 10, label: "数字格式", displayLabel: "常规", group: "格式", icon: "hash"},
 	{slot: 12, label: "插入", group: "单元格", icon: "square-plus"},
 	{slot: 13, label: "删除", group: "单元格", icon: "trash-2"},
@@ -237,7 +250,7 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 	switch slot {
 	case toolbarActionOpenFile, toolbarActionSaveAs, toolbarActionPrint, toolbarActionExport, toolbarActionShare,
 		toolbarActionFormatPainter, toolbarActionFontFamily, toolbarActionFontSize, toolbarActionCellStyles, toolbarActionFormat,
-		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat,
+		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat, toolbarActionCurrencyFormat, toolbarActionIncreaseDecimal, toolbarActionDecreaseDecimal, toolbarActionDecreaseFontSize, toolbarActionIncreaseFontSize,
 		toolbarActionSum, toolbarActionFind,
 		toolbarActionZoomIn, toolbarActionZoom100,
 		toolbarActionLayoutMargins, toolbarActionLayoutOrientation, toolbarActionLayoutSize,

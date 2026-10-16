@@ -88,23 +88,25 @@ func (a *App) layoutWordBodyArea(gtx layout.Context, state *documentSessionState
 			return a.layoutWordNavigationPane(gtx, state, blocks)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if state.wordRulerHidden || state.wordReadingMode || state.wordViewMode == wordViewWebLayout {
-						return layout.Dimensions{}
-					}
-					return a.layoutWordHorizontalRuler(gtx, state)
-				}),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					if state.wordViewMode == wordViewWebLayout {
-						return a.layoutWordCanvas(gtx, state, blocks)
-					}
-					if state.wordLayoutResult == nil && state.wordLayoutError == "" && len(blocks) > 0 {
-						return a.layoutWordCanvas(gtx, state, blocks)
-					}
-					return a.layoutWordPageView(gtx, state)
-				}),
-			)
+			return a.layoutWordZoomableBody(gtx, state, blocks, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if state.wordRulerHidden || state.wordReadingMode || state.wordViewMode == wordViewWebLayout {
+							return layout.Dimensions{}
+						}
+						return a.layoutWordHorizontalRuler(gtx, state)
+					}),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						if state.wordViewMode == wordViewWebLayout {
+							return a.layoutWordCanvas(gtx, state, blocks)
+						}
+						if state.wordLayoutResult == nil && state.wordLayoutError == "" && len(blocks) > 0 {
+							return a.layoutWordCanvas(gtx, state, blocks)
+						}
+						return a.layoutWordPageView(gtx, state)
+					}),
+				)
+			})
 		}),
 	)
 }

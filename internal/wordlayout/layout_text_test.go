@@ -38,6 +38,59 @@ func TestExplicitTextNewlinesCreateLinesWithoutControlGlyphs(t *testing.T) {
 	}
 }
 
+func TestLatentBuiltInHeadingStylesRemainPreviewable(t *testing.T) {
+	for _, test := range []struct {
+		styleID string
+		fontPT  float64
+	}{
+		{styleID: "Heading1", fontPT: 15},
+		{styleID: "Heading2", fontPT: 13.5},
+	} {
+		t.Run(test.styleID, func(t *testing.T) {
+			paragraph := document.WordParagraph{
+				ID: "p0", Style: test.styleID,
+				Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "r0", Text: "Heading text", Editable: true}}},
+			}
+			input := layoutTestInput(180, 120, 10, document.WordBlock{ID: "p0", Kind: document.WordParagraphBlock, Paragraph: &paragraph})
+			input.Layout = document.WordLayoutData{Styles: []document.WordStyle{{ID: "Normal", DefaultParagraph: true}}}
+
+			result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !result.CanPreview || len(result.Pages) == 0 {
+				t.Fatalf("latent built-in style blocked layout: diagnostics=%+v", result.Diagnostics)
+			}
+			for _, diagnostic := range result.Diagnostics {
+				if diagnostic.Code == "missing-style" {
+					t.Fatalf("latent built-in style reported as missing: %+v", diagnostic)
+				}
+			}
+			if len(result.Pages[0].Text) == 0 || !result.Pages[0].Text[0].Style.Bold || result.Pages[0].Text[0].Style.FontSize != test.fontPT {
+				t.Fatalf("resolved %s text style = %+v; want bold at %.1fpt", test.styleID, result.Pages[0].Text, test.fontPT)
+			}
+		})
+	}
+}
+
+func TestUnknownMissingParagraphStyleStillBlocksPreview(t *testing.T) {
+	paragraph := document.WordParagraph{ID: "p0", Style: "ProjectCustomHeading", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "r0", Text: "Text", Editable: true}}}}
+	input := layoutTestInput(180, 120, 10, document.WordBlock{ID: "p0", Kind: document.WordParagraphBlock, Paragraph: &paragraph})
+	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CanPreview {
+		t.Fatal("unknown missing paragraph style must continue to block preview")
+	}
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.SourceID == "p0" && diagnostic.Code == "missing-style" {
+			return
+		}
+	}
+	t.Fatalf("diagnostics = %+v; want a located missing-style error", result.Diagnostics)
+}
+
 func TestLayoutPageSetupAndMargins(t *testing.T) {
 	input := layoutTestInput(160, 120, 10, paragraphBlock("p0", "A", document.WordTextStyle{FontSize: 10}))
 	result, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), input)

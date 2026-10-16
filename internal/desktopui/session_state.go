@@ -77,6 +77,9 @@ type documentSessionState struct {
 	sheet                               string
 	wordListState                       widget.List
 	wordBodyScroll                      gesture.Scroll
+	wordZoomScroll                      gesture.Scroll
+	zoomScrollRemainder                 float64
+	wordScrollRemainder                 float64
 	wordCanvasBlankClick                gesture.Click
 	wordCanvasContentClickHandled       bool
 	wordCanvasResizeDrag                gesture.Drag
@@ -94,6 +97,7 @@ type documentSessionState struct {
 	cellEditor                          widget.Editor
 	formulaEditor                       widget.Editor
 	cellParagraphSelection              textEditorParagraphSelection
+	spreadsheetFormatCells              spreadsheetFormatCellsDialogState
 	formulaParagraphSelection           textEditorParagraphSelection
 	formulaReference                    formulaReferenceState
 	nameBox                             widget.Editor
@@ -101,6 +105,11 @@ type documentSessionState struct {
 	sheetCreateButton                   widget.Clickable
 	sheetRenameButton                   widget.Clickable
 	sheetDeleteButton                   widget.Clickable
+	sheetTabList                        widget.List
+	sheetTabLastRevealed                string
+	sheetTabLastRevealedIndex           int
+	sheetTabScrollTag                   int
+	sheetTabScrollRemainder             float32
 	wordEditor                          widget.Editor
 	wordRunEditors                      map[string]*widget.Editor
 	wordFocusedRunID                    string
@@ -115,7 +124,8 @@ type documentSessionState struct {
 	wordPreferredVerticalX              int
 	wordPreferredVerticalXSet           bool
 	wordNavigationVerticalHandledRunID  string
-	wordSelectionDeleteIntent           *wordSelectionDeleteIntent
+	wordSelectionEditIntent             *wordSelectionEditIntent
+	wordSelectionInputDraft             *wordSelectionInputDraft
 	wordParagraphSelections             map[string]*textEditorParagraphSelection
 	wordParagraphSplitIntent            *wordParagraphSplitIntent
 	wordParagraphJoinIntent             *wordParagraphJoinIntent
@@ -132,8 +142,7 @@ type documentSessionState struct {
 	wordFormatPainterTargetParagraphID  string
 	wordInsertAfterDraftFlush           bool
 	wordInsertAfterParagraphID          string
-	wordPendingPasteRunID               string
-	wordPendingPasteText                string
+	wordPendingPasteSelection           *wordPendingSelectionPaste
 	markdownView                        *markdownViewState
 	jsonEditor                          widget.Editor
 	jsonView                            *jsonWorkspaceView
@@ -161,7 +170,7 @@ type documentSessionState struct {
 	toolbarActionList                   widget.List
 	toolbarGroupList                    widget.List
 	toolbarActionButtons                [toolbarActionLast + 1]widget.Clickable
-	toolbarPickerButtons                [9]widget.Clickable
+	toolbarPickerButtons                [11]widget.Clickable
 	toolbarPicker                       spreadsheetToolbarPicker
 	toolbarPickerSlot                   int
 	officeRibbonMenu                    officeRibbonDropdownState
@@ -187,8 +196,10 @@ type documentSessionState struct {
 	wordImageDropParagraphID            string
 	wordClipboardTarget                 struct{}
 	wordClipboardRunID                  string
+	wordClipboardSelection              *wordClipboardSelectionTarget
 	valueFilter                         *ValueFilter
 	clipboardTarget                     struct{}
+	clipboardPasteTarget                *spreadsheetClipboardPasteTarget
 	selectedBlock                       int
 	selectedBlockEditable               bool
 	selectedWordRunID                   string
@@ -208,7 +219,13 @@ type documentSessionState struct {
 	gridPicturePending                  map[string]uint64
 	gridPictureVersions                 map[string]uint64
 	gridPictureErrors                   map[string]string
+	gridNavigationSequence              uint64
+	gridSelectAllPendingSequence        uint64
+	gridEndMode                         bool
+	gridInputComposing                  bool
+	sheetActiveCells                    map[string]string
 	cellEdit                            cellEditState
+	spreadsheetAutoFitRowBasePoints     map[gridAutoFitRow]float64
 	lastGridWidth, lastGridHeight       float64
 	virtualGrid                         *gridViewport
 }

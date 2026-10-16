@@ -22,6 +22,7 @@ type ribbonAction struct {
 	displayLabel string
 	group        string
 	icon         string
+	symbol       string
 }
 
 type spreadsheetToolbarAction = ribbonAction

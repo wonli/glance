@@ -75,6 +75,9 @@ func TestWorkspaceTabsUseHorizontalGioList(t *testing.T) {
 	if a.workspaceTabsList.Axis != layout.Horizontal {
 		t.Fatalf("document tab list axis=%v, want horizontal", a.workspaceTabsList.Axis)
 	}
+	if a.workspaceTabsList.ScrollAnyAxis {
+		t.Fatal("document tab list should keep horizontal scrolling separate from the vertical-wheel adapter")
+	}
 	if a.recentList.Axis != layout.Vertical {
 		t.Fatalf("recent list axis=%v, want vertical", a.recentList.Axis)
 	}

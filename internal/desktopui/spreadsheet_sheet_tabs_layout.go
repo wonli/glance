@@ -5,7 +5,8 @@ import (
 	"image"
 
 	"gioui.org/font"
-	"gioui.org/io/key"
+	"gioui.org/io/event"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -15,7 +16,15 @@ import (
 )
 
 func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
+	state := a.documentSessionState
+	if state != nil {
+		state.sheetTabList.Axis = layout.Horizontal
+		state.sheetTabList.ScrollAnyAxis = false
+		a.handleSpreadsheetSheetTabScroll(gtx, state)
+		revealActiveSpreadsheetSheetTab(state)
+	}
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(32)), gtx.Dp(unit.Dp(32))
+	gtx.Constraints.Min.X = gtx.Constraints.Max.X
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, chromeSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
@@ -23,75 +32,90 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			children := make([]layout.FlexChild, 0, len(a.sheets)+1)
-			for _, name := range a.sheets {
-				sheetName := name
-				button := a.sheetButton(sheetName)
-				if button.Clicked(gtx) {
-					if a.documentSessionState.valueFilter != nil {
-						a.clearValueFilter(a.documentSessionState)
-					}
-					formulaReferenceActive := a.documentSessionState.formulaReference.Active
-					if a.cellEdit.Editing && !formulaReferenceActive {
-						if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-							a.setStatus("修改失败：" + err.Error())
-							a.window.Invalidate()
-							continue
+			if state == nil {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				dims := state.sheetTabList.Layout(gtx, len(a.sheets)+1, func(gtx layout.Context, index int) layout.Dimensions {
+					if index == len(a.sheets) {
+						if state.sheetCreateButton.Clicked(gtx) {
+							a.applyStructure(document.StructureEdit{Kind: document.StructureCreateSheet})
 						}
+						return layoutSheetPlusTab(gtx, a.theme, &state.sheetCreateButton, a.tokens().Colors)
 					}
-					a.sheet = sheetName
-					if _, virtual := a.book.(document.GridReader); virtual {
-						if a.virtualGrid != nil {
-							a.virtualGrid.invalidateWindow()
-							a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn = 1, 1
-							a.virtualGrid.PendingSelectionLoad = true
-						}
-						a.documentSessionState.selection = CellSelection{}
-						if formulaReferenceActive {
-							a.documentSessionState.selection = CellSelection{Anchor: CellPosition{}, Active: CellPosition{}}
-						} else {
-							a.selectedCell = "A1"
-							a.documentSessionState.selection = CellSelection{}
-						}
-						a.documentSessionState.selectionSet = true
-						a.documentSessionState.selectionDragging = false
-						if !formulaReferenceActive {
-							a.documentSessionState.cellEdit.selectCell("A1", "")
-							a.nameBox.SetText("A1")
-							a.formulaEditor.SetText("")
-						} else if editor := a.formulaReferenceEditor(); editor != nil {
-							gtx.Execute(key.FocusCmd{Tag: editor})
-						}
+					sheetName := a.sheets[index]
+					button := a.sheetButton(sheetName)
+					if button.Clicked(gtx) {
+						a.activateSpreadsheetSheet(gtx, sheetName)
 					}
-					if !formulaReferenceActive {
-						a.persistViewState()
-					}
-				}
-				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layoutSheetTab(gtx, a.theme, a.tokens().Colors, button, sheetName, sheetName == a.sheet)
 					})
-				}))
-			}
-			if a.documentSessionState.sheetCreateButton.Clicked(gtx) {
-				a.applyStructure(document.StructureEdit{Kind: document.StructureCreateSheet})
-			}
-			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layoutSheetPlusTab(gtx, a.theme, &a.documentSessionState.sheetCreateButton, a.tokens().Colors)
-			}))
-			return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layoutSheetTabRow(gtx, children...)
+				})
+				pass := pointer.PassOp{}.Push(gtx.Ops)
+				area := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
+				event.Op(gtx.Ops, &state.sheetTabScrollTag)
+				area.Pop()
+				pass.Pop()
+				return dims
 			})
 		},
 	)
 }
 
-func layoutSheetTabRow(gtx layout.Context, children ...layout.FlexChild) layout.Dimensions {
-	// The document body is laid out as an Expanded child of a Stack, which
-	// gives it a zero minimum width. Fill the strip so Background doesn't
-	// center this intrinsic-width row of sheet tabs.
-	gtx.Constraints.Min.X = gtx.Constraints.Max.X
-	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceEnd}.Layout(gtx, children...)
+func (a *App) handleSpreadsheetSheetTabScroll(gtx layout.Context, state *documentSessionState) {
+	if state == nil {
+		return
+	}
+	const scrollLimit = 1 << 30
+	filter := pointer.Filter{
+		Target:  &state.sheetTabScrollTag,
+		Kinds:   pointer.Scroll,
+		ScrollX: pointer.ScrollRange{Min: -scrollLimit, Max: scrollLimit},
+		ScrollY: pointer.ScrollRange{Min: -scrollLimit, Max: scrollLimit},
+	}
+	for eventValue, ok := gtx.Event(filter); ok; eventValue, ok = gtx.Event(filter) {
+		pe, ok := eventValue.(pointer.Event)
+		if !ok || pe.Kind != pointer.Scroll || pe.Scroll.X == 0 && pe.Scroll.Y == 0 {
+			continue
+		}
+		delta := pe.Scroll.X
+		if absFloat32(pe.Scroll.Y) >= absFloat32(pe.Scroll.X) {
+			delta = pe.Scroll.Y
+		}
+		state.sheetTabScrollRemainder += delta
+		pixels := int(state.sheetTabScrollRemainder)
+		state.sheetTabScrollRemainder -= float32(pixels)
+		if pixels == 0 {
+			continue
+		}
+		state.sheetTabList.Position.Offset += pixels
+		state.sheetTabList.Position.BeforeEnd = true
+	}
+}
+
+func revealActiveSpreadsheetSheetTab(state *documentSessionState) {
+	if state == nil || state.sheetTabList.Position.Count <= 0 {
+		return
+	}
+	index := -1
+	for i, name := range state.sheets {
+		if name == state.sheet {
+			index = i
+			break
+		}
+	}
+	if index < 0 || (state.sheetTabLastRevealed == state.sheet && state.sheetTabLastRevealedIndex == index) {
+		return
+	}
+	position := state.sheetTabList.Position
+	if index < position.First {
+		state.sheetTabList.ScrollTo(index)
+	} else if index >= position.First+position.Count {
+		state.sheetTabList.ScrollTo(max(0, index-position.Count+1))
+	}
+	state.sheetTabLastRevealed = state.sheet
+	state.sheetTabLastRevealedIndex = index
 }
 
 func layoutSheetTab(gtx layout.Context, theme *material.Theme, colors ColorTokens, button *widget.Clickable, name string, selected bool) layout.Dimensions {

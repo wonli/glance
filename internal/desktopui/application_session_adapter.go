@@ -268,6 +268,52 @@ func (a *desktopSessionAdapter) SetSpreadsheetCellFormula(ctx context.Context, s
 	return true, nil
 }
 
+func (a *desktopSessionAdapter) SetSpreadsheetFormulas(ctx context.Context, sheet string, edits []document.CellFormulaEdit) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s := a.session
+	if s == nil || s.finalized.Load() {
+		return false, application.ErrDocumentNotFound
+	}
+	s.adapterMu.Lock()
+	defer s.adapterMu.Unlock()
+	if s.book == nil || !s.book.Editable() {
+		return false, application.ErrReadOnlyDocument
+	}
+	editor, ok := any(s.book).(document.SpreadsheetFormulaBatchEditor)
+	if !ok {
+		return false, application.ErrCapabilityUnsupported
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return editor.SetCellFormulasChanged(sheet, edits)
+}
+
+func (a *desktopSessionAdapter) SetSpreadsheetFormulaRange(ctx context.Context, sheet string, active document.CellCoordinate, bounds document.CellRange, formula string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s := a.session
+	if s == nil || s.finalized.Load() {
+		return false, application.ErrDocumentNotFound
+	}
+	s.adapterMu.Lock()
+	defer s.adapterMu.Unlock()
+	if s.book == nil || !s.book.Editable() {
+		return false, application.ErrReadOnlyDocument
+	}
+	editor, ok := any(s.book).(document.SpreadsheetFormulaRangeEntryEditor)
+	if !ok {
+		return false, application.ErrCapabilityUnsupported
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return editor.SetCellFormulaRangeChanged(sheet, active, bounds, formula)
+}
+
 func (a *desktopSessionAdapter) RecalculateSpreadsheet(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -311,6 +357,29 @@ func (a *desktopSessionAdapter) SetSpreadsheetCells(ctx context.Context, sheet s
 	return editor.SetCellsChanged(sheet, edits)
 }
 
+func (a *desktopSessionAdapter) TransferSpreadsheetCellRange(ctx context.Context, sheet string, source document.CellRange, targetRow, targetColumn int, cells [][]document.Cell) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s := a.session
+	if s == nil || s.finalized.Load() {
+		return false, application.ErrDocumentNotFound
+	}
+	s.adapterMu.Lock()
+	defer s.adapterMu.Unlock()
+	if s.book == nil || !s.book.Editable() {
+		return false, application.ErrReadOnlyDocument
+	}
+	editor, ok := any(s.book).(document.SpreadsheetCellTransferEditor)
+	if !ok {
+		return false, application.ErrCapabilityUnsupported
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return editor.TransferCellRangeChanged(sheet, source, targetRow, targetColumn, cells)
+}
+
 func (a *desktopSessionAdapter) SetSpreadsheetCellFormats(ctx context.Context, sheet string, bounds document.CellRange, patch document.CellFormatPatch) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -329,6 +398,26 @@ func (a *desktopSessionAdapter) SetSpreadsheetCellFormats(ctx context.Context, s
 		return false, application.ErrCapabilityUnsupported
 	}
 	return editor.SetCellFormatsChanged(sheet, bounds, patch)
+}
+
+func (a *desktopSessionAdapter) PaintSpreadsheetCellFormat(ctx context.Context, sheet, sourceCell string, targetBounds document.CellRange) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s := a.session
+	if s == nil || s.finalized.Load() {
+		return false, application.ErrDocumentNotFound
+	}
+	s.adapterMu.Lock()
+	defer s.adapterMu.Unlock()
+	if s.book == nil || !s.book.Editable() {
+		return false, application.ErrReadOnlyDocument
+	}
+	painter, ok := any(s.book).(document.SpreadsheetCellFormatPainter)
+	if !ok {
+		return false, application.ErrCapabilityUnsupported
+	}
+	return painter.PaintCellFormat(sheet, sourceCell, targetBounds)
 }
 
 func (a *desktopSessionAdapter) SortSpreadsheetRange(ctx context.Context, request document.SortRequest) (bool, error) {
@@ -447,6 +536,9 @@ func (a *desktopSessionAdapter) ReadSpreadsheetRange(ctx context.Context, sheet 
 	reader, ok := any(s.book).(document.SpreadsheetRangeReader)
 	if !ok {
 		return nil, application.ErrCapabilityUnsupported
+	}
+	if clipboardReader, ok := any(s.book).(document.SpreadsheetClipboardRangeReader); ok {
+		return clipboardReader.ReadClipboardRange(sheet, bounds)
 	}
 	return reader.ReadRange(sheet, bounds)
 }
@@ -2143,7 +2235,15 @@ func (a *desktopSessionAdapter) SaveWithSnapshot(ctx context.Context) ([]byte, e
 	defer s.adapterMu.Unlock()
 	switch {
 	case s.book != nil:
-		return nil, s.book.Save()
+		zoomRevision := s.spreadsheetZoomRevision.Load()
+		if err := applySpreadsheetSheetZooms(&documentSessionState{sharedDocumentSession: s}); err != nil {
+			return nil, err
+		}
+		err := s.book.Save()
+		if err == nil {
+			(&documentSessionState{sharedDocumentSession: s}).markSpreadsheetZoomSaved(zoomRevision)
+		}
+		return nil, err
 	case s.word != nil:
 		if saver, ok := any(s.word).(interface{ SaveWithSnapshot() ([]byte, error) }); ok {
 			return saver.SaveWithSnapshot()
@@ -2170,8 +2270,8 @@ func (a *desktopSessionAdapter) Snapshot(ctx context.Context) ([]byte, error) {
 	if s == nil || s.finalized.Load() {
 		return nil, application.ErrDocumentNotFound
 	}
-	s.adapterMu.RLock()
-	defer s.adapterMu.RUnlock()
+	s.adapterMu.Lock()
+	defer s.adapterMu.Unlock()
 	if s.spreadsheetDraftViews.Load() > 0 {
 		return nil, application.ErrPendingEditorDraft
 	}
@@ -2190,6 +2290,9 @@ func (a *desktopSessionAdapter) Snapshot(ctx context.Context) ([]byte, error) {
 	case s.word != nil:
 		return s.word.Snapshot()
 	case s.book != nil:
+		if err := applySpreadsheetSheetZooms(&documentSessionState{sharedDocumentSession: s}); err != nil {
+			return nil, err
+		}
 		snapshooter, ok := s.book.(interface{ Snapshot() ([]byte, error) })
 		if !ok {
 			return nil, application.ErrCapabilityUnsupported
@@ -2257,12 +2360,19 @@ func (a *desktopSessionAdapter) SaveAsWithSnapshot(ctx context.Context, path str
 	var err error
 	switch {
 	case s.book != nil:
+		zoomRevision := s.spreadsheetZoomRevision.Load()
+		if err = applySpreadsheetSheetZooms(&documentSessionState{sharedDocumentSession: s}); err != nil {
+			break
+		}
 		if saver, ok := s.book.(interface{ SaveAsDocument(string) error }); ok {
 			if snapshoter, ok := s.book.(interface{ Snapshot() ([]byte, error) }); ok {
 				snapshot, err = snapshoter.Snapshot()
 			}
 			if err == nil {
 				err = saver.SaveAsDocument(path)
+			}
+			if err == nil {
+				(&documentSessionState{sharedDocumentSession: s}).markSpreadsheetZoomSaved(zoomRevision)
 			}
 		} else {
 			err = application.ErrReadOnlyDocument

@@ -7,6 +7,8 @@ import (
 	"sort"
 
 	"gioui.org/app"
+	"gioui.org/io/event"
+	"gioui.org/io/pointer"
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -69,11 +71,21 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Dimensions {
+	a.workspaceTabsList.Axis = layout.Horizontal
+	a.workspaceTabsList.ScrollAnyAxis = false
 	return layout.Inset{Top: workspaceTabTopGap, Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		list := func(gtx layout.Context) layout.Dimensions {
-			return a.workspaceTabsList.Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
+			a.handleWorkspaceTabScroll(gtx)
+			a.revealActiveWorkspaceTab(gtx, ids)
+			dims := a.workspaceTabsList.Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
 				return a.layoutWorkspaceTabListItem(gtx, ids, index)
 			})
+			pass := pointer.PassOp{}.Push(gtx.Ops)
+			area := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
+			event.Op(gtx.Ops, &a.workspaceTabScrollTag)
+			area.Pop()
+			pass.Pop()
+			return dims
 		}
 		if !a.clientTitlebar {
 			// Keep the viewport as wide as the tab strip so Background doesn't
@@ -82,9 +94,9 @@ func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Di
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, list), layout.Rigid(a.layoutJSONSaveIndicator))
 		}
 
-		contentWidth := gtx.Dp(unit.Dp(112)) +
-			len(ids)*gtx.Dp(workspaceDocumentTabWidth+workspaceDocumentTabGap) +
-			gtx.Dp(workspaceDocumentTabGap+workspacePlusTabWidth)
+		documentItemWidth := gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
+		plusItemWidth := gtx.Dp(workspaceDocumentTabGap) + gtx.Dp(workspacePlusTabWidth)
+		contentWidth := gtx.Dp(unit.Dp(112)) + len(ids)*documentItemWidth + plusItemWidth
 		listWidth := min(contentWidth, gtx.Constraints.Max.X)
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -95,6 +107,100 @@ func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Di
 			layout.Rigid(a.layoutJSONSaveIndicator),
 		)
 	})
+}
+
+func (a *App) revealActiveWorkspaceTab(gtx layout.Context, ids []string) {
+	index := -1
+	if a.activeTabID == workspace.RecentTabID {
+		index = 0
+	} else {
+		for i, id := range ids {
+			if id == a.activeTabID {
+				index = i + 1 // Recent occupies the first list item.
+				break
+			}
+		}
+	}
+	if index < 0 {
+		return
+	}
+	if a.workspaceTabsRevealedActiveID == a.activeTabID && a.workspaceTabsRevealedIndex == index {
+		return
+	}
+	viewportWidth := gtx.Constraints.Max.X
+	if viewportWidth <= 0 {
+		return
+	}
+	widths := make([]int, len(ids)+2)
+	widths[0] = gtx.Dp(unit.Dp(112))
+	for i := range ids {
+		widths[i+1] = gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
+	}
+	widths[len(widths)-1] = gtx.Dp(workspaceDocumentTabGap) + gtx.Dp(workspacePlusTabWidth)
+	prefix := make([]int, len(widths)+1)
+	for i, width := range widths {
+		prefix[i+1] = prefix[i] + width
+	}
+	activeStart, activeEnd := prefix[index], prefix[index+1]
+	position := a.workspaceTabsList.Position
+	first := max(0, min(position.First, len(widths)-1))
+	currentScroll := prefix[first] + max(0, position.Offset)
+	// Leave a small trailing margin for the close affordance. If the active
+	// tab is clipped at either edge, put it at the start of the viewport; this
+	// avoids estimating a fractional offset from stale visible-item counts.
+	visibleEnd := currentScroll + viewportWidth - gtx.Dp(unit.Dp(24))
+	if activeStart < currentScroll || activeEnd > visibleEnd {
+		position.First = index
+		position.Offset = 0
+		position.BeforeEnd = true
+		a.workspaceTabsList.Position = position
+	}
+	a.workspaceTabsRevealedActiveID = a.activeTabID
+	a.workspaceTabsRevealedIndex = index
+}
+
+// Normalize wheel and trackpad axes into one horizontal list offset. A single
+// trackpad gesture can report both axes; choosing the dominant axis prevents
+// its cross-axis component from canceling or reversing the movement.
+func (a *App) handleWorkspaceTabScroll(gtx layout.Context) {
+	const scrollLimit = 1 << 30
+	filter := pointer.Filter{
+		Target: &a.workspaceTabScrollTag,
+		Kinds:  pointer.Scroll,
+		// Consume both axes here. Splitting a diagonal trackpad gesture between
+		// this adapter and the horizontal List can apply opposing deltas and
+		// cancel the movement entirely.
+		ScrollX: pointer.ScrollRange{Min: -scrollLimit, Max: scrollLimit},
+		ScrollY: pointer.ScrollRange{Min: -scrollLimit, Max: scrollLimit},
+	}
+	for eventValue, ok := gtx.Event(filter); ok; eventValue, ok = gtx.Event(filter) {
+		pe, ok := eventValue.(pointer.Event)
+		if !ok || pe.Kind != pointer.Scroll || pe.Scroll.X == 0 && pe.Scroll.Y == 0 {
+			continue
+		}
+		// Treat a diagonal gesture as movement on its dominant axis, so its
+		// smaller cross-axis component cannot cancel or reverse the scroll.
+		delta := pe.Scroll.X
+		if absFloat32(pe.Scroll.Y) >= absFloat32(pe.Scroll.X) {
+			// A downward wheel/trackpad gesture should reveal later tabs.
+			delta = pe.Scroll.Y
+		}
+		a.workspaceTabScrollRemainder += delta
+		pixels := int(a.workspaceTabScrollRemainder)
+		a.workspaceTabScrollRemainder -= float32(pixels)
+		if pixels == 0 {
+			continue
+		}
+		a.workspaceTabsList.Position.Offset += pixels
+		a.workspaceTabsList.Position.BeforeEnd = true
+	}
+}
+
+func absFloat32(value float32) float32 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func (a *App) layoutWorkspaceTabListItem(gtx layout.Context, ids []string, index int) layout.Dimensions {
@@ -112,9 +218,6 @@ func (a *App) layoutWorkspaceTabListItem(gtx layout.Context, ids []string, index
 	}
 	if item == nil {
 		return layout.Dimensions{}
-	}
-	if a.clientTitlebar {
-		return layoutWindowMoveArea(gtx, item)
 	}
 	return item(gtx)
 }

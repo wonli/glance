@@ -60,12 +60,28 @@ type SpreadsheetCellFormulaSetter interface {
 	SetSpreadsheetCellFormula(context.Context, string, string, string) (bool, error)
 }
 
+type SpreadsheetFormulaBatchSetter interface {
+	SetSpreadsheetFormulas(context.Context, string, []document.CellFormulaEdit) (bool, error)
+}
+
+type SpreadsheetFormulaRangeSetter interface {
+	SetSpreadsheetFormulaRange(context.Context, string, document.CellCoordinate, document.CellRange, string) (bool, error)
+}
+
 type SpreadsheetCellsSetter interface {
 	SetSpreadsheetCells(context.Context, string, []document.CellEdit) (bool, error)
 }
 
+type SpreadsheetCellTransferSetter interface {
+	TransferSpreadsheetCellRange(context.Context, string, document.CellRange, int, int, [][]document.Cell) (bool, error)
+}
+
 type SpreadsheetRangeFormatter interface {
 	SetSpreadsheetCellFormats(context.Context, string, document.CellRange, document.CellFormatPatch) (bool, error)
+}
+
+type SpreadsheetFormatPainterController interface {
+	PaintSpreadsheetCellFormat(context.Context, string, string, document.CellRange) (bool, error)
 }
 
 type SpreadsheetRangeSorter interface {

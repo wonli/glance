@@ -10,10 +10,20 @@ import (
 // DeleteTextSelection preserves run containers and their properties. Paragraph
 // seams are removed only after validating the complete selected XML span.
 func (d *Document) DeleteTextSelection(startRunID string, startOffset int, endRunID string, endOffset int) (document.WordTextSelectionDeleteResult, error) {
+	return d.editWordTextSelection(startRunID, startOffset, endRunID, endOffset, "")
+}
+
+// ReplaceTextSelection inserts replacement text with the formatting of the
+// selection's first run and preserves all unselected run content.
+func (d *Document) ReplaceTextSelection(startRunID string, startOffset int, endRunID string, endOffset int, replacement string) (document.WordTextSelectionEditResult, error) {
+	return d.editWordTextSelection(startRunID, startOffset, endRunID, endOffset, replacement)
+}
+
+func (d *Document) editWordTextSelection(startRunID string, startOffset int, endRunID string, endOffset int, replacement string) (document.WordTextSelectionEditResult, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	fail := func(err error) (document.WordTextSelectionDeleteResult, error) {
-		return document.WordTextSelectionDeleteResult{}, err
+	fail := func(err error) (document.WordTextSelectionEditResult, error) {
+		return document.WordTextSelectionEditResult{}, err
 	}
 	if err := d.checkOpen(); err != nil {
 		return fail(err)
@@ -29,8 +39,8 @@ func (d *Document) DeleteTextSelection(startRunID string, startOffset int, endRu
 	if startOffset < 0 || startOffset > len([]rune(start.text.text)) || endOffset < 0 || endOffset > len([]rune(end.text.text)) || start.text.start > end.text.start || (start.text == end.text && startOffset > endOffset) {
 		return fail(errors.New("Word selection endpoints are outside their runs or not ordered"))
 	}
-	result := document.WordTextSelectionDeleteResult{ParagraphID: start.paragraphID, RunID: startRunID, Caret: startOffset}
-	if start.text == end.text && startOffset == endOffset {
+	result := document.WordTextSelectionEditResult{ParagraphID: start.paragraphID, RunID: startRunID, Caret: startOffset}
+	if start.text == end.text && startOffset == endOffset && replacement == "" {
 		return result, nil
 	}
 	// Nested content such as fields and hyperlinks requires a separate structural
@@ -81,6 +91,7 @@ func (d *Document) DeleteTextSelection(startRunID string, startOffset int, endRu
 		}
 	}
 	changes := make([]xmlReplacement, 0)
+	replacementRunes := []rune(replacement)
 	for _, target := range d.wordTextTargets {
 		if target.text == nil || target.text.start < start.text.start || target.text.start > end.text.start {
 			continue
@@ -88,9 +99,9 @@ func (d *Document) DeleteTextSelection(startRunID string, startOffset int, endRu
 		value := ""
 		if target.text == start.text && target.text == end.text {
 			runes := []rune(target.text.text)
-			value = string(runes[:startOffset]) + string(runes[endOffset:])
+			value = string(runes[:startOffset]) + replacement + string(runes[endOffset:])
 		} else if target.text == start.text {
-			value = string([]rune(target.text.text)[:startOffset])
+			value = string([]rune(target.text.text)[:startOffset]) + replacement
 		} else if target.text == end.text {
 			value = string([]rune(target.text.text)[endOffset:])
 		}
@@ -153,12 +164,14 @@ func (d *Document) DeleteTextSelection(startRunID string, startOffset int, endRu
 		return fail(err)
 	}
 	caret, ok := projection.textTargets[startRunID]
-	if !ok || caret.paragraphID != start.paragraphID || startOffset > len([]rune(caret.text.text)) {
-		return fail(errors.New("Word selection deletion has no editable caret target"))
+	caretOffset := startOffset + len(replacementRunes)
+	if !ok || caret.paragraphID != start.paragraphID || caretOffset > len([]rune(caret.text.text)) {
+		return fail(errors.New("Word selection edit has no editable caret target"))
 	}
 	if err := d.applyWordDocumentXMLLocked(patched); err != nil {
 		return fail(err)
 	}
+	result.Caret = caretOffset
 	return result, nil
 }
 
@@ -208,6 +221,7 @@ func validateWordSelectionTextOnly(data []byte, node *wordXMLNode, start, end in
 }
 
 var _ document.WordTextSelectionEditor = (*Document)(nil)
+var _ document.WordTextSelectionReplacer = (*Document)(nil)
 
 // Each retained empty run still carries its original properties, including
 // extension XML. Preserve declarations from every merged paragraph and reject

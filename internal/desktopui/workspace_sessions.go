@@ -13,6 +13,7 @@ import (
 	"glance/internal/format/pdfdoc"
 	"glance/internal/format/xlsx"
 	"glance/internal/workspace"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,8 @@ type sessionViewSnapshot struct {
 	GridY                      float64        `json:"grid_y"`
 	GridScale                  float64        `json:"grid_scale"`
 	SpreadsheetZoom            float64        `json:"spreadsheet_zoom,omitempty"`
+	SpreadsheetZooms           map[string]int `json:"spreadsheet_zooms,omitempty"`
+	SpreadsheetZoomPending     bool           `json:"spreadsheet_zoom_pending,omitempty"`
 	SelectedRow                int            `json:"selected_row"`
 	SelectedColumn             int            `json:"selected_column"`
 	WordViewMode               wordViewMode   `json:"word_view_mode"`
@@ -221,6 +224,7 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		book.SetSourcePath(record.Tab.SourcePath)
 		book.SetDirty(record.Dirty)
 		state.sheets = book.SheetNames()
+		initializeSpreadsheetSheetZooms(state.sharedDocumentSession, book, state.sheets)
 		if len(state.sheets) > 0 {
 			state.sheet = state.sheets[0]
 		}
@@ -335,9 +339,14 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 	}
 	if state.virtualGrid != nil {
 		state.virtualGrid.X, state.virtualGrid.Y = view.GridX, view.GridY
-		if view.SpreadsheetZoom > 0 {
-			state.spreadsheetZoom = spreadsheetZoomClamp(view.SpreadsheetZoom)
+		state.restoreSpreadsheetSheetZooms(view.SpreadsheetZooms)
+		if len(view.SpreadsheetZooms) == 0 && view.SpreadsheetZoom > 0 && state.sheet != "" {
+			state.setSpreadsheetSheetZoom(state.sheet, int(math.Round(spreadsheetZoomClamp(view.SpreadsheetZoom)*100)))
 		}
+		if view.SpreadsheetZoomPending {
+			state.restoreSpreadsheetZoomPending()
+		}
+		state.spreadsheetZoom = state.spreadsheetSheetZoom(state.sheet)
 		if view.GridScale > 0 {
 			state.virtualGrid.setScale(view.GridScale)
 		}
@@ -444,6 +453,14 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 	}
 	if state.word != nil {
 		a.startWordPagination(state)
+	}
+	if state.book != nil {
+		if state.sheet == "" && len(state.sheets) > 0 {
+			state.sheet = state.sheets[0]
+		}
+		if state.sheet != "" {
+			setSpreadsheetZoomView(state, state.spreadsheetSheetZoom(state.sheet))
+		}
 	}
 	a.maybeAutoSaveWord(state)
 	a.surfacePendingWordRestoreError(state)

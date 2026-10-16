@@ -7,6 +7,7 @@ import (
 
 	"gioui.org/io/key"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/widget"
@@ -199,6 +200,16 @@ func (d *modalDialog) ShowDualInput(title, message, initial, hint, secondInitial
 
 func (d *modalDialog) Hide() { d.Visible = false }
 
+func (d *modalDialog) submitAction(replacementField bool) string {
+	if !d.SearchReplace {
+		return "confirm"
+	}
+	if replacementField && d.SearchReplaceHasReplace && d.SearchReplaceReplaceTab {
+		return "replace"
+	}
+	return "find-next"
+}
+
 func (d *modalDialog) cancelFromEscape() {
 	actionID := ""
 	if d.SearchReplace {
@@ -253,10 +264,16 @@ func (a *App) handleOverlayEscape(gtx layout.Context) bool {
 	confirmation := a.activeAgentConfirmation()
 	state := a.documentSessionState
 	hasRibbonPopup := state != nil && (state.officeRibbonMenu.kind != officeRibbonMenuClosed || state.toolbarPicker != pickerNone)
-	if confirmation == nil && !a.modal.Visible && !a.wordSymbolPickerVisible && !a.wordVersionHistoryVisible && !a.showNewMenu && !a.fontPicker.open && !hasRibbonPopup {
+	hasWordColorPicker := state != nil && (state.wordToolbarColorPicker || state.wordToolbarHighlightPicker)
+	hasAgentHistorySurface := a.aiHistoryDrawerOpen || a.agentUI.conversationHistoryVisible
+	hasPresentationStylePopover := state != nil && state.pptxView != nil && state.pptxView.stylePopover != ""
+	if confirmation == nil && !a.modal.Visible && !a.wordSymbolPickerVisible && !a.wordVersionHistoryVisible && !a.showNewMenu && !a.fontPicker.open && !hasRibbonPopup && !hasWordColorPicker && !hasAgentHistorySurface && !hasPresentationStylePopover {
 		return false
 	}
 	if confirmation == nil && a.modal.Visible && a.modal.hasActiveComposition() {
+		return false
+	}
+	if confirmation == nil && !a.modal.Visible && hasAgentHistorySurface && editorHasActiveComposition(&a.agentUI.historySearch) {
 		return false
 	}
 	if confirmation == nil && !a.modal.Visible && !a.wordSymbolPickerVisible && !a.wordVersionHistoryVisible && !a.showNewMenu && a.fontPicker.open {
@@ -281,10 +298,27 @@ func (a *App) handleOverlayEscape(gtx layout.Context) bool {
 		a.closeWordVersionHistory()
 	case a.showNewMenu:
 		a.showNewMenu = false
+	case a.aiHistoryDrawerOpen:
+		a.aiHistoryDrawerOpen = false
+		gtx.Execute(key.FocusCmd{Tag: &a.aiDrawerOpenBtn})
+	case a.agentUI.conversationHistoryVisible:
+		a.agentUI.conversationHistoryVisible = false
+		gtx.Execute(key.FocusCmd{Tag: &a.agentUI.conversationTitleButton})
 	case state != nil && state.officeRibbonMenu.kind != officeRibbonMenuClosed:
+		anchor := a.officeRibbonMenuAnchorButton(state)
 		a.closeOfficeRibbonMenu()
+		if anchor != nil {
+			gtx.Execute(key.FocusCmd{Tag: anchor})
+		}
 	case state != nil && state.toolbarPicker != pickerNone:
 		state.toolbarPicker = pickerNone
+	case hasPresentationStylePopover:
+		state.pptxView.stylePopover = ""
+		state.pptxView.stylePopoverShapeID = 0
+		gtx.Execute(key.FocusCmd{Tag: &state.pptxView.canvasBlankClick})
+	case hasWordColorPicker:
+		state.wordToolbarColorPicker = false
+		state.wordToolbarHighlightPicker = false
 	}
 	return true
 }
@@ -311,21 +345,33 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 					a.modal.OnAction(action.ID)
 				}
 				if !a.modal.Visible {
+					gtx.Execute(op.InvalidateCmd{})
 					return layout.Dimensions{}
 				}
 				break
 			}
 		}
 	}
+	if a.modal.SearchReplace && a.modal.HasInput && gtx.Source.Focused(&a.modal.Input) {
+		if event, ok := gtx.Event(
+			key.Filter{Focus: &a.modal.Input, Name: key.NameReturn, Required: key.ModShift},
+			key.Filter{Focus: &a.modal.Input, Name: key.NameEnter, Required: key.ModShift},
+		); ok {
+			if pressed, ok := event.(key.Event); ok && pressed.State == key.Press && a.modal.OnAction != nil {
+				a.modal.OnAction("find-previous")
+				if !a.modal.Visible {
+					gtx.Execute(op.InvalidateCmd{})
+					return layout.Dimensions{}
+				}
+			}
+		}
+	}
 	if a.modal.HasInput {
 		for ev, ok := a.modal.Input.Update(gtx); ok; ev, ok = a.modal.Input.Update(gtx) {
 			if _, submit := ev.(widget.SubmitEvent); submit && a.modal.OnAction != nil {
-				if a.modal.SearchReplace {
-					a.modal.OnAction("find-next")
-				} else {
-					a.modal.OnAction("confirm")
-				}
+				a.modal.OnAction(a.modal.submitAction(false))
 				if !a.modal.Visible {
+					gtx.Execute(op.InvalidateCmd{})
 					return layout.Dimensions{}
 				}
 			}
@@ -334,12 +380,9 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 	if a.modal.HasSecondInput {
 		for ev, ok := a.modal.SecondInput.Update(gtx); ok; ev, ok = a.modal.SecondInput.Update(gtx) {
 			if _, submit := ev.(widget.SubmitEvent); submit && a.modal.OnAction != nil {
-				if a.modal.SearchReplace {
-					a.modal.OnAction("find-next")
-				} else {
-					a.modal.OnAction("confirm")
-				}
+				a.modal.OnAction(a.modal.submitAction(true))
 				if !a.modal.Visible {
+					gtx.Execute(op.InvalidateCmd{})
 					return layout.Dimensions{}
 				}
 			}
@@ -351,6 +394,7 @@ func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {
 				if _, submit := ev.(widget.SubmitEvent); submit && a.modal.OnAction != nil {
 					a.modal.OnAction("confirm")
 					if !a.modal.Visible {
+						gtx.Execute(op.InvalidateCmd{})
 						return layout.Dimensions{}
 					}
 				}

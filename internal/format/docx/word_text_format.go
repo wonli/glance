@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"glance/internal/document"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -173,35 +174,72 @@ func (d *Document) SetTextRunFontFamily(runID, family string) error {
 }
 
 func (d *Document) SetParagraphAlignment(paragraphID string, alignment document.WordAlignment) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if err := d.checkOpen(); err != nil {
-		return err
-	}
-	paragraph, ok := d.wordParagraphTargets[paragraphID]
-	if !ok || paragraph == nil {
-		return fmt.Errorf("Word paragraph %q is not editable", paragraphID)
+	return d.SetParagraphAlignments([]string{paragraphID}, alignment)
+}
+
+func (d *Document) SetParagraphAlignments(paragraphIDs []string, alignment document.WordAlignment) error {
+	if len(paragraphIDs) == 0 {
+		return fmt.Errorf("at least one Word paragraph must be selected")
 	}
 	value, err := wordAlignmentValue(alignment)
 	if err != nil {
 		return err
 	}
-	data := d.parts[d.documentIdx].data
-	pPr := firstChild(paragraph, "pPr")
-	var patched []byte
-	if pPr == nil {
-		prefix := elementPrefix(paragraph.rawName)
-		markup := wrapWordElement(prefix, "pPr", makeWordPropertyMarkup(prefix, "jc", "val", value))
-		patched, err = insertElementContentAtStart(data, paragraph, markup)
-	} else if jc := firstChild(pPr, "jc"); jc != nil {
-		patched, err = patchElementAttribute(data, jc, "val", value)
-	} else {
-		prefix := elementPrefix(pPr.rawName)
-		markup := makeWordPropertyMarkup(prefix, "jc", "val", value)
-		patched, err = insertElementContent(data, pPr, markup)
+	type target struct {
+		id        string
+		paragraph *wordXMLNode
 	}
-	if err != nil {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
 		return err
+	}
+	seen := make(map[string]struct{}, len(paragraphIDs))
+	targets := make([]target, 0, len(paragraphIDs))
+	for _, id := range paragraphIDs {
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		paragraph := d.wordParagraphTargets[id]
+		if paragraph == nil {
+			return fmt.Errorf("Word paragraph %q is not editable", id)
+		}
+		targets = append(targets, target{id: id, paragraph: paragraph})
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		return targets[i].paragraph.start > targets[j].paragraph.start
+	})
+	data := d.parts[d.documentIdx].data
+	patched := data
+	for _, target := range targets {
+		paragraph := target.paragraph
+		pPr := firstChild(paragraph, "pPr")
+		jc := firstChild(pPr, "jc")
+		if jc != nil && attrValue(jc, "val") == value {
+			continue
+		}
+		switch {
+		case jc != nil:
+			opening := patched[jc.start:jc.openEnd]
+			opening, err = setRawXMLAttribute(opening, elementPrefix(jc.rawName), "val", value)
+			if err == nil {
+				patched, err = applyXMLReplacements(patched, []xmlReplacement{{start: jc.start, end: jc.openEnd, value: opening}})
+			}
+		case pPr != nil:
+			markup := makeWordPropertyMarkup(rawWordPrefix(pPr.rawName), "jc", "val", value)
+			patched, err = insertElementContent(patched, pPr, markup)
+		default:
+			prefix := rawWordPrefix(paragraph.rawName)
+			markup := wrapWordElement(prefix, "pPr", makeWordPropertyMarkup(prefix, "jc", "val", value))
+			patched, err = insertElementContentAtStart(patched, paragraph, markup)
+		}
+		if err != nil {
+			return fmt.Errorf("set Word paragraph %q alignment: %w", target.id, err)
+		}
+	}
+	if bytes.Equal(data, patched) {
+		return nil
 	}
 	return d.applyWordDocumentXMLLocked(patched)
 }

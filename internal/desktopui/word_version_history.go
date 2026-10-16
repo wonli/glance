@@ -356,7 +356,8 @@ func (a *App) startRestoreWordVersionInternal(state *documentSessionState, versi
 	}
 	if state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil || state.wordPageBreakIntent != nil ||
 		state.wordSaveAfterDrafts || state.wordPDFExportAfterDrafts || state.wordPrintAfterDrafts ||
-		state.wordInsertAfterDraftFlush || state.wordPendingPasteRunID != "" || state.wordDeferredToolbarAction != "" {
+		state.wordInsertAfterDraftFlush || state.wordPendingPasteSelection != nil ||
+		state.wordClipboardSelection != nil || state.wordClipboardRunID != "" || state.wordDeferredToolbarAction != "" {
 		if state == a.documentSessionState {
 			a.setStatus("请先完成当前 Word 操作，再恢复历史版本")
 		}

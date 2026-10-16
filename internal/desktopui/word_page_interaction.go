@@ -41,10 +41,10 @@ type wordVisiblePageInteraction struct {
 }
 
 type wordPageInteractionTag struct {
-	identity              byte
-	lastTextPressTime     time.Duration
-	lastTextPressPosition f32.Point
-	lastTextPressRunID    string
+	identity                 byte
+	lastTextPressTime        time.Duration
+	lastTextPressPosition    f32.Point
+	lastTextPressParagraphID string
 }
 
 type wordPageCaretPosition struct {
@@ -190,6 +190,7 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 				float64(viewportPoint.X), float64(viewportPoint.Y), float64(pagePoint.X), float64(pagePoint.Y), hit.found, hit.runID, hit.runeOffset, hit.imageID,
 				state.selectedWordRunID, currentStart, currentEnd, currentLength)
 			if hit.imageID != "" {
+				tag.lastTextPressParagraphID = ""
 				clearWordImageSelection(state)
 				selectWordImage(state, hit.imageID)
 				state.wordImageFocusRequestID = ""
@@ -200,6 +201,7 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 				continue
 			}
 			if hit.runID == "" {
+				tag.lastTextPressParagraphID = ""
 				if state.selectedWordImageID != "" {
 					clearWordImageSelection(state)
 					state.selectedWordRunID = ""
@@ -235,10 +237,15 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 
 			distance := viewportPoint.Sub(tag.lastTextPressPosition)
 			tolerance := float32(gtx.Dp(unit.Dp(4)))
-			doubleClick := tag.lastTextPressRunID == hit.runID && event.Time > tag.lastTextPressTime && event.Time-tag.lastTextPressTime <= 500*time.Millisecond && distance.X*distance.X+distance.Y*distance.Y <= tolerance*tolerance
-			tag.lastTextPressTime, tag.lastTextPressPosition, tag.lastTextPressRunID = event.Time, viewportPoint, hit.runID
+			paragraphID := wordParagraphIDForRun(wordBlocksForState(state), hit.runID)
+			doubleClick := event.Source == pointer.Mouse && paragraphID != "" && tag.lastTextPressParagraphID == paragraphID && event.Time > tag.lastTextPressTime && event.Time-tag.lastTextPressTime <= 500*time.Millisecond && distance.X*distance.X+distance.Y*distance.Y <= tolerance*tolerance
+			if event.Source == pointer.Mouse {
+				tag.lastTextPressTime, tag.lastTextPressPosition, tag.lastTextPressParagraphID = event.Time, viewportPoint, paragraphID
+			} else {
+				tag.lastTextPressParagraphID = ""
+			}
 			if doubleClick && a.selectWordPageParagraph(gtx, state, hit.runID) {
-				tag.lastTextPressRunID = ""
+				tag.lastTextPressParagraphID = ""
 				continue
 			}
 			a.focusWordPageRun(gtx, state, hit.runID, hit.runeOffset, hit.runeOffset)
@@ -251,6 +258,9 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 			drag := state.wordPageSelectionDrag
 			if drag == nil || drag.pointerID != event.PointerID {
 				continue
+			}
+			if !drag.panning && drag.tag != nil {
+				drag.tag.lastTextPressParagraphID = ""
 			}
 			if drag.panning {
 				state.wordPageScrollX = math.Max(0, math.Min(float64(drag.scrollLimit), drag.startScroll-float64(viewportPoint.X-drag.startX)))
@@ -277,6 +287,9 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 				}
 			}
 		case pointer.Release, pointer.Cancel:
+			if event.Kind == pointer.Cancel {
+				tag.lastTextPressParagraphID = ""
+			}
 			if drag := state.wordPageSelectionDrag; drag != nil && drag.pointerID == event.PointerID {
 				state.wordPageSelectionDrag = nil
 				if !wordPageTextSelectionActive(state.wordPageTextSelection) {

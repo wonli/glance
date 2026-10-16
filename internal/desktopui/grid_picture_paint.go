@@ -25,8 +25,9 @@ func paintGridPictures(gtx layout.Context, a *App, v *gridViewport) {
 	viewport := image.Rect(rowHeader, columnHeader, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)
 	for _, picture := range state.gridPictures {
 		geometry := gridPictureGeometryForState(state, v, picture)
-		bounds := gridPictureScreenRect(v, geometry, rowHeader, columnHeader)
-		visible := gridPictureClipRect(bounds, viewport)
+		paneClip := gridPicturePaneClip(v, picture.Row, picture.Column, gtx.Constraints.Max, rowHeader, columnHeader)
+		bounds := gridPictureScreenRectForCell(v, geometry, picture.Row, picture.Column, rowHeader, columnHeader)
+		visible := gridPictureClipRect(bounds, paneClip.Intersect(viewport))
 		if visible.Empty() {
 			continue
 		}
@@ -98,7 +99,8 @@ func paintGridPictureSelection(gtx layout.Context, a *App, v *gridViewport) {
 	columnHeader := gtx.Dp(unit.Dp(gridColumnHeader))
 	viewport := image.Rect(rowHeader, columnHeader, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)
 	geometry := gridPictureGeometryForState(state, v, *selected)
-	bounds := gridPictureClipRect(gridPictureScreenRect(v, geometry, rowHeader, columnHeader), viewport)
+	paneClip := gridPicturePaneClip(v, selected.Row, selected.Column, gtx.Constraints.Max, rowHeader, columnHeader)
+	bounds := gridPictureClipRect(gridPictureScreenRectForCell(v, geometry, selected.Row, selected.Column, rowHeader, columnHeader), paneClip.Intersect(viewport))
 	if bounds.Empty() {
 		return
 	}
@@ -112,7 +114,7 @@ func paintGridPictureSelection(gtx layout.Context, a *App, v *gridViewport) {
 	}
 	if selected.Editable {
 		handleSize := max(6, gtx.Dp(unit.Dp(8)))
-		handle := gridPictureClipRect(gridPictureHandleRect(bounds, handleSize), viewport)
+		handle := gridPictureClipRect(gridPictureHandleRect(bounds, handleSize), paneClip.Intersect(viewport))
 		if !handle.Empty() {
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect(handle).Op())
 			inner := handle.Inset(max(1, line))

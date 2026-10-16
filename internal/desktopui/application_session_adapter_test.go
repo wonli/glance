@@ -113,6 +113,50 @@ func TestRibbonAndAgentCommandsShareDesktopDocumentSession(t *testing.T) {
 	if len(content.Rows) != 2 || content.Rows[0][0].Value != "手工编辑" || content.Rows[1][0].Value != "Agent 写入" {
 		t.Fatalf("Ribbon and Agent did not update one live session: %s", query.Content)
 	}
+
+	info, err = desktop.applicationRuntime.GetDocument(ctx, app.documentID)
+	if err != nil {
+		t.Fatalf("get document before formula batch: %v", err)
+	}
+	formulaArguments, err := json.Marshal(struct {
+		Sheet string                     `json:"sheet"`
+		Edits []document.CellFormulaEdit `json:"edits"`
+	}{"Sheet1", []document.CellFormulaEdit{
+		{Row: 1, Column: 3, Formula: "=SUM(1,2)"},
+		{Row: 2, Column: 3, Formula: "=AVERAGE(2,4)"},
+	}})
+	if err != nil {
+		t.Fatalf("encode formula batch: %v", err)
+	}
+	formulaResult, err := desktop.applicationRuntime.InvokeCapability(ctx, application.CapabilityRequest{
+		RequestID: "agent-formula-batch", DocumentID: app.documentID,
+		CapabilityID: "spreadsheet.formulas.set", ExpectedRevision: info.Revision,
+		Operator:  application.Operator{ID: "agent", Kind: application.OperatorExternalAgent},
+		Arguments: formulaArguments,
+	})
+	if err != nil {
+		t.Fatalf("execute formula batch: %v", err)
+	}
+	if formulaResult.Revision != info.Revision+1 || app.wordRevisionAtomic.Load() != formulaResult.Revision {
+		t.Fatalf("formula batch revisions = app %d / desktop %d; want one advance from %d", formulaResult.Revision, app.wordRevisionAtomic.Load(), info.Revision)
+	}
+	formulaQuery, err := desktop.applicationRuntime.Queries().InspectDocument(ctx, application.InspectRequest{
+		DocumentID: app.documentID, Sheet: "Sheet1", Range: &document.CellRange{StartRow: 1, StartColumn: 3, EndRow: 2, EndColumn: 3},
+	})
+	if err != nil {
+		t.Fatalf("inspect formula batch: %v", err)
+	}
+	var formulaContent struct {
+		Rows [][]struct {
+			Formula string `json:"formula"`
+		} `json:"rows"`
+	}
+	if err := json.Unmarshal(formulaQuery.Content, &formulaContent); err != nil {
+		t.Fatalf("decode formula batch query: %v", err)
+	}
+	if len(formulaContent.Rows) != 2 || formulaContent.Rows[0][0].Formula != "SUM(1,2)" || formulaContent.Rows[1][0].Formula != "AVERAGE(2,4)" {
+		t.Fatalf("formula batch did not update the registered desktop session: %s", formulaQuery.Content)
+	}
 }
 
 func TestWordPDFExportRejectsUncommittedDesktopDraft(t *testing.T) {

@@ -28,28 +28,40 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		a.virtualGrid = newGridViewport()
 	}
 	v := a.virtualGrid
+	if v.WindowSheet != "" && v.WindowSheet != a.sheet {
+		v.resetSheetWindow()
+	}
+	if v.KeyboardFocusRequested {
+		gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
+		v.KeyboardFocusRequested = false
+	}
+	if state := a.documentSessionState; state != nil && state.gridEndMode && !gtx.Focused(&v.PointerTag) {
+		state.gridEndMode = false
+		state.gridNavigationSequence++
+	}
 	v.setScale(float64(gtx.Metric.PxPerDp) * a.spreadsheetZoom())
+	a.pollSpreadsheetGridNavigation(gtx, v)
 	width, height := float64(gtx.Constraints.Max.X), float64(gtx.Constraints.Max.Y)
 	rowHeaderPx := gtx.Dp(unit.Dp(gridRowHeader))
 	columnHeaderPx := gtx.Dp(unit.Dp(gridColumnHeader))
 	contentW, contentH := width-float64(rowHeaderPx), height-float64(columnHeaderPx)
 	a.lastGridWidth, a.lastGridHeight = contentW, contentH
-	visible := visibleCellWindow(v.Rows, v.Columns, v.X, v.Y, contentW, contentH)
 	a.pollGridLoad(v)
+	visible := v.visiblePaneRanges(contentW, contentH)
 	if imageReader, ok := any(a.book).(document.SpreadsheetImageReader); ok {
 		a.requestGridPictureMetadata(a.documentSessionState, imageReader, a.sheet)
 	} else if a.documentSessionState.gridPicturesSheet != "" {
 		a.invalidateGridPictures(a.documentSessionState)
 	}
-	if !v.Loading && !(v.WindowSheet == a.sheet && containsRange(v.WindowRange, visible)) && !(v.FailedSheet == a.sheet && v.FailedRange == visible) {
+	if !v.Loading && !v.windowSetLoaded(a.sheet, visible) && !(v.FailedSheet == a.sheet && v.FailedWindows == visible) {
 		a.requestGridWindow(v, reader, a.sheet, visible)
 	}
 	if v.GeometryChanged {
 		v.GeometryChanged = false
 		a.window.Invalidate()
 	}
-	if v.PendingSelectionLoad && v.SelectedRow >= v.WindowRange.StartRow && v.SelectedRow <= v.WindowRange.EndRow && v.SelectedColumn >= v.WindowRange.StartColumn && v.SelectedColumn <= v.WindowRange.EndColumn {
-		cell := windowCell(v.Window, v.SelectedRow, v.SelectedColumn)
+	if v.PendingSelectionLoad && v.cellLoaded(v.SelectedRow, v.SelectedColumn) {
+		cell := v.cell(v.SelectedRow, v.SelectedColumn)
 		if !a.documentSessionState.formulaReference.Active {
 			value := cellEditorText(cell)
 			a.cellEdit.selectCell(a.selectedCell, value)
@@ -62,72 +74,127 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		if !ok {
 			break
 		}
-		if data, yes := ev.(transfer.DataEvent); yes {
-			reader := data.Open()
-			raw, err := io.ReadAll(reader)
-			_ = reader.Close()
-			if err != nil {
-				a.setStatus("读取剪贴板失败：" + err.Error())
-			} else if err := a.pasteClipboard(string(raw)); err != nil {
-				a.setStatus("粘贴失败：" + err.Error())
-			}
+		state := a.documentSessionState
+		target := state.clipboardPasteTarget
+		state.clipboardPasteTarget = nil
+		if _, cancelled := ev.(transfer.CancelEvent); cancelled {
+			a.setStatus("已取消读取剪贴板")
+			continue
+		}
+		data, yes := ev.(transfer.DataEvent)
+		if !yes {
+			continue
+		}
+		if target == nil {
+			a.setStatus("粘贴位置已失效，请重新粘贴")
+			continue
+		}
+		reader := data.Open()
+		raw, err := io.ReadAll(reader)
+		_ = reader.Close()
+		if err != nil {
+			a.setStatus("读取剪贴板失败：" + err.Error())
+		} else if err := a.pasteClipboardAt(target.sheet, target.bounds, string(raw)); err != nil {
+			a.setStatus("粘贴失败：" + err.Error())
 		}
 	}
 	for {
-		if _, ok := gtx.Event(key.FocusFilter{Target: &v.PointerTag}); !ok {
+		ev, ok := gtx.Event(key.FocusFilter{Target: &v.PointerTag})
+		if !ok {
 			break
 		}
+		a.handleSpreadsheetGridFocusEvent(gtx, v, ev)
 	}
 	for {
-		if a.cellEdit.Editing {
+		if a.cellEdit.Editing && !a.documentSessionState.formatRunning.Load() {
 			if ev, ok := gtx.Event(key.Filter{Focus: &a.cellEditor, Name: key.NameEscape}); ok {
 				if ke, yes := ev.(key.Event); yes && ke.State == key.Press {
 					if a.documentSessionState.formulaReference.Active {
 						a.restoreFormulaReferenceTarget()
 					} else {
 						a.cellEdit.cancel()
+						v.cancelCellEditRowPreview()
 						a.cellEditor.SetText(a.cellEdit.Original)
 						a.formulaEditor.SetText(a.cellEdit.Original)
+					}
+					if a.documentSessionState != nil {
+						a.documentSessionState.gridInputComposing = false
 					}
 					gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
 					a.window.Invalidate()
 				}
 			}
-			for ev, ok := a.cellEditor.Update(gtx); ok; ev, ok = a.cellEditor.Update(gtx) {
-				if _, changed := ev.(widget.ChangeEvent); changed {
-					a.cellEdit.setDraft(a.cellEditor.Text())
-					start, end := a.cellEditor.Selection()
-					a.formulaEditor.SetText(a.cellEditor.Text())
-					a.formulaEditor.SetCaret(start, end)
-				}
-				if _, submit := ev.(widget.SubmitEvent); submit {
-					if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-						a.setStatus("修改失败：" + err.Error())
-						a.window.Invalidate()
-						gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
-					} else {
-						gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
+			if !a.documentSessionState.formatRunning.Load() && !a.handleSpreadsheetEditorNavigation(gtx, v, &a.cellEditor) {
+				for ev, ok := a.cellEditor.Update(gtx); ok; ev, ok = a.cellEditor.Update(gtx) {
+					if _, changed := ev.(widget.ChangeEvent); changed {
+						a.cellEdit.setDraft(a.cellEditor.Text())
+						start, end := a.cellEditor.Selection()
+						a.formulaEditor.SetText(a.cellEditor.Text())
+						a.formulaEditor.SetCaret(start, end)
+					}
+					if _, submit := ev.(widget.SubmitEvent); submit {
+						if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
+							a.setStatus("修改失败：" + err.Error())
+							a.window.Invalidate()
+							gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
+						} else {
+							a.moveSpreadsheetSelectionAfterEntry(v, key.NameDownArrow)
+							gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
+						}
 					}
 				}
 			}
 		}
 		a.syncFormulaReferenceInput(gtx)
-		ev, ok := gtx.Event(key.Filter{Focus: &v.PointerTag})
+		ev, ok := gtx.Event(key.Filter{Focus: &v.PointerTag, Optional: key.ModShift | key.ModShortcut | key.ModCtrl | key.ModAlt})
 		if !ok {
 			break
 		}
 		if ke, yes := ev.(key.Event); yes && ke.State == key.Press {
-			if !a.cellEdit.Editing && (ke.Name == key.NameDeleteBackward || ke.Name == key.NameDeleteForward) {
-				a.clearSpreadsheetSelectionContents("清除内容")
-			} else if ke.Name == key.NameEscape && a.documentSessionState != nil && a.documentSessionState.excelFormatPainterActive {
-				a.cancelSpreadsheetFormatPainter()
-				a.window.Invalidate()
-			} else if ke.Name == key.NameF2 && a.selectedCell != "" {
-				if a.cellEdit.begin() {
-					a.cellEditor.SetText(a.cellEdit.Original)
-					gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
+			if a.modal.Visible {
+				continue
+			}
+			if a.cellEdit.Editing && ke.Modifiers == 0 && (ke.Name == key.NameDeleteBackward || ke.Name == key.NameDeleteForward) {
+				direction := -1
+				if ke.Name == key.NameDeleteForward {
+					direction = 1
+				}
+				if a.cellEditor.Delete(direction) != 0 {
+					a.syncSpreadsheetGridTextDraft()
+					a.updateSpreadsheetGridInputSnippet(gtx, v)
 					a.window.Invalidate()
 				}
+			} else if a.cellEdit.Editing && ke.Modifiers == 0 && ke.Name == key.NameEscape {
+				a.cellEdit.cancel()
+				v.cancelCellEditRowPreview()
+				a.cellEditor.SetText(a.cellEdit.Original)
+				a.formulaEditor.SetText(a.cellEdit.Original)
+				a.documentSessionState.gridInputComposing = false
+				gtx.Execute(key.FocusCmd{Tag: &v.PointerTag})
+				a.window.Invalidate()
+			} else if a.cellEdit.Editing && !a.documentSessionState.gridInputComposing && ke.Modifiers == 0 && (ke.Name == key.NameReturn || ke.Name == key.NameEnter) {
+				a.commitSpreadsheetGridTextEntry(gtx, v, key.NameDownArrow)
+			} else if a.cellEdit.Editing && !a.documentSessionState.gridInputComposing && (ke.Name == key.NameTab && (ke.Modifiers == 0 || ke.Modifiers == key.ModShift)) {
+				direction := key.NameRightArrow
+				if ke.Modifiers == key.ModShift {
+					direction = key.NameLeftArrow
+				}
+				a.commitSpreadsheetGridTextEntry(gtx, v, direction)
+			} else if a.handleSpreadsheetGridNavigationKey(gtx, v, ke) {
+				continue
+			} else if ke.Modifiers == 0 && !a.cellEdit.Editing && ke.Name == key.NameDeleteBackward && a.beginSpreadsheetCellBackspaceEdit(gtx, v) {
+				continue
+			} else if ke.Modifiers == 0 && !a.cellEdit.Editing && (ke.Name == key.NameDeleteBackward || ke.Name == key.NameDeleteForward) {
+				a.clearSpreadsheetSelectionContents("清除内容")
+			} else if ke.Modifiers == 0 && ke.Name == key.NameEscape && a.documentSessionState != nil && a.documentSessionState.gridEndMode {
+				a.documentSessionState.gridEndMode = false
+				a.documentSessionState.gridNavigationSequence++
+				a.window.Invalidate()
+			} else if ke.Modifiers == 0 && ke.Name == key.NameEscape && a.documentSessionState != nil && a.documentSessionState.excelFormatPainterActive {
+				a.cancelSpreadsheetFormatPainter()
+				a.window.Invalidate()
+			} else if ke.Modifiers == 0 && ke.Name == key.NameF2 && a.selectedCell != "" {
+				a.beginSpreadsheetCellEditFromF2(gtx, v)
 			}
 		}
 	}
@@ -150,10 +217,23 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				v.PictureMoveCursor = false
 			}
 		case pointer.Scroll:
+			if zoomScrollModifier(pe.Modifiers) {
+				state := a.documentSessionState
+				scrollDelta := zoomScrollAxisDelta(pe.Scroll)
+				zoom, remainder, changed := zoomFromScroll(a.spreadsheetZoom(), scrollDelta, zoomScrollScale(), state.zoomScrollRemainder, spreadsheetZoomMinimum, spreadsheetZoomMaximum)
+				state.zoomScrollRemainder = remainder
+				if changed {
+					a.setSpreadsheetZoom(zoom)
+				}
+				if a.window != nil {
+					a.window.Invalidate()
+				}
+				break
+			}
 			dx, dy := gridScrollDelta(float64(pe.Scroll.X), float64(pe.Scroll.Y), pe.Modifiers.Contain(key.ModShift))
 			v.scroll(dx, dy, contentW, contentH)
 			if a.documentSessionState.gridPictureGesture.Mode != gridPictureGestureNone {
-				point := gridPictureContentPointer(v, pe.Position, rowHeaderPx, columnHeaderPx)
+				point := gridPictureContentPointer(v, pe.Position, rowHeaderPx, columnHeaderPx, gtx.Constraints.Max)
 				a.documentSessionState.gridPictureGesture.rebase(point)
 			}
 			if v.Resize != nil {
@@ -163,7 +243,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				rs.rebase(point, edge)
 				v.updateResize(point)
 			}
-			a.window.Invalidate()
+			if a.window != nil {
+				a.window.Invalidate()
+			}
 		case pointer.Move:
 			axis, _, _, _, hit := gridResizeHandleAt(v, int(pe.Position.X), int(pe.Position.Y), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
 			v.ResizeCursor = 0
@@ -185,6 +267,10 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				v.PictureMoveCursor = true
 			}
 		case pointer.Press:
+			if state := a.documentSessionState; state != nil && state.gridEndMode {
+				state.gridEndMode = false
+				state.gridNavigationSequence++
+			}
 			if a.cellEdit.Editing {
 				editRect := editingCellRect(v, a.cellEdit.Address, rowHeaderPx, columnHeaderPx)
 				point := image.Pt(int(pe.Position.X), int(pe.Position.Y))
@@ -242,7 +328,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 						mode = gridPictureGestureResize
 					}
 					geometry := gridPictureContentGeometry(v, picture)
-					point := gridPictureContentPointer(v, pe.Position, rowHeaderPx, columnHeaderPx)
+					point := gridPictureContentPointer(v, pe.Position, rowHeaderPx, columnHeaderPx, gtx.Constraints.Max)
 					state.gridPictureGesture.begin(picture.ID, mode, geometry, point)
 					gtx.Execute(pointer.GrabCmd{Tag: &v.PointerTag, ID: pe.PointerID})
 				}
@@ -253,9 +339,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				break
 			}
 			setSelectedGridPicture(state, "")
-			row, col, hit := cellAtPoint(v.Rows, v.Columns, v.X, v.Y, image.Pt(int(pe.Position.X), int(pe.Position.Y)), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
+			row, col, hit := v.cellPoint(image.Pt(int(pe.Position.X), int(pe.Position.Y)), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
 			if hit {
-				position := selectionAnchor(v.Window.Merges, CellPosition{Row: row - 1, Column: col - 1})
+				position := selectionAnchor(v.merges(), CellPosition{Row: row - 1, Column: col - 1})
 				extend := pe.Modifiers.Contain(key.ModShift)
 				if a.beginFormulaReferenceDrag(position, extend) {
 					a.selectionDragging = false
@@ -274,7 +360,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				a.selectionDragging = true
 				gtx.Execute(pointer.GrabCmd{Tag: &v.PointerTag, ID: pe.PointerID})
 				if !extend && pe.Time-v.LastClickTime <= 500*time.Millisecond && v.LastClickAddress == address && previousAddress == address && (state == nil || !state.excelFormatPainterActive) {
-					cell := windowCell(v.Window, row, col)
+					cell := v.cell(row, col)
 					a.cellEdit.begin()
 					a.cellEditor.SetText(cellEditorText(cell))
 					gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
@@ -294,7 +380,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				v.ResizeCursor = v.Resize.State.Axis
 				a.window.Invalidate()
 			} else if a.documentSessionState.gridPictureGesture.Mode != gridPictureGestureNone {
-				point := gridPictureContentPointer(v, pe.Position, rowHeaderPx, columnHeaderPx)
+				point := gridPictureContentPointer(v, pe.Position, rowHeaderPx, columnHeaderPx, gtx.Constraints.Max)
 				a.documentSessionState.gridPictureGesture.update(point)
 				if a.documentSessionState.gridPictureGesture.Mode == gridPictureGestureResize {
 					v.PictureResizeCursor = true
@@ -304,7 +390,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				a.window.Invalidate()
 			} else if a.documentSessionState.formulaReference.Active && a.documentSessionState.formulaReference.Dragging {
 				if position, hit := selectionAtPointWithHeaders(v, image.Pt(int(pe.Position.X), int(pe.Position.Y)), rowHeaderPx, columnHeaderPx); hit {
-					position = selectionAnchor(v.Window.Merges, position)
+					position = selectionAnchor(v.merges(), position)
 					a.extendFormulaReferenceDrag(position)
 					a.window.Invalidate()
 				}
@@ -315,7 +401,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					break
 				}
 				if position, hit := selectionAtPointWithHeaders(v, image.Pt(int(pe.Position.X), int(pe.Position.Y)), rowHeaderPx, columnHeaderPx); hit {
-					position = selectionAnchor(v.Window.Merges, position)
+					position = selectionAnchor(v.merges(), position)
 					a.updateGridSelection(v, position, true, false)
 					a.window.Invalidate()
 				}
@@ -334,6 +420,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					pos = float64(pe.Position.Y)
 				}
 				v.updateResize(pos)
+				resizedAxis, resizedIndex := v.Resize.State.Axis, v.Resize.State.Index
 				state := a.documentSessionState
 				token, ok := state.beginOperation(sessionOperationMutation)
 				if !ok {
@@ -350,6 +437,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				if err != nil {
 					a.setStatus("尺寸调整失败：" + err.Error())
 				} else {
+					if resizedAxis == resizeRows {
+						state.markGridRowHeightManual(a.sheet, resizedIndex)
+					}
 					a.setStatus("行列尺寸已调整；点击保存写入原文件")
 					a.persistActiveSession()
 				}
@@ -432,17 +522,20 @@ func (a *App) updateGridSelection(v *gridViewport, position CellPosition, extend
 	if state == nil || v == nil {
 		return
 	}
+	state.gridNavigationSequence++
+	state.gridEndMode = false
 	setSelectedGridPicture(state, "")
 	state.gridPictureGesture.cancel()
 	state.selection = updatedSelection(state.selection, state.selectionSet, position, extend)
 	state.selectionSet = true
+	state.gridInputComposing = false
 	position = state.selection.Active
 	row, column := position.Row+1, position.Column+1
 	v.SelectedRow, v.SelectedColumn = row, column
 	a.selectedCell = xlsx.CellName(column, row)
 	cell := document.Cell{}
-	if v.WindowSheet == a.sheet && row >= v.WindowRange.StartRow && row <= v.WindowRange.EndRow && column >= v.WindowRange.StartColumn && column <= v.WindowRange.EndColumn {
-		cell = windowCell(v.Window, row, column)
+	if v.WindowSheet == a.sheet && v.cellLoaded(row, column) {
+		cell = v.cell(row, column)
 	} else {
 		v.PendingSelectionLoad = true
 	}

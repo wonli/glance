@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"fmt"
+	"strings"
 	"unicode"
 
 	"glance/internal/document"
@@ -12,67 +13,127 @@ type wordTextMatch struct {
 	RunID       string
 	Start       int
 	End         int
+	EndRunID    string
+	EndOffset   int
 }
 
 func findWordTextMatch(blocks []document.WordBlock, query, currentRunID string, currentEnd int, drafts map[string]string) (wordTextMatch, bool) {
-	needle := []rune(query)
-	if len(needle) == 0 {
+	matches := findAllWordTextMatches(blocks, query, drafts)
+	if len(matches) == 0 {
 		return wordTextMatch{}, false
 	}
-	needle = lowerWordRunes(needle)
-	type candidate struct {
-		paragraphID string
-		run         document.WordTextRun
+	if currentRunID == "" {
+		return matches[0], true
 	}
-	var candidates []candidate
-	currentIndex := -1
+	runOrder := make(map[string]int)
 	for _, paragraph := range allWordParagraphs(blocks) {
 		for _, inline := range paragraph.Inlines {
 			if inline.Text == nil || !inline.Text.Editable {
 				continue
 			}
-			if inline.Text.ID == currentRunID {
-				currentIndex = len(candidates)
-			}
-			candidates = append(candidates, candidate{paragraphID: paragraph.ID, run: *inline.Text})
-		}
-	}
-	if len(candidates) == 0 {
-		return wordTextMatch{}, false
-	}
-	search := func(index, from int) (wordTextMatch, bool) {
-		item := candidates[index]
-		value := item.run.Text
-		if draft, ok := drafts[item.run.ID]; ok {
-			value = draft
-		}
-		start := findWordRunes(lowerWordRunes([]rune(value)), needle, from)
-		if start < 0 {
-			return wordTextMatch{}, false
-		}
-		return wordTextMatch{ParagraphID: item.paragraphID, RunID: item.run.ID, Start: start, End: start + len(needle)}, true
-	}
-	if currentIndex < 0 {
-		for index := range candidates {
-			if match, ok := search(index, 0); ok {
-				return match, true
+			if _, exists := runOrder[inline.Text.ID]; !exists {
+				runOrder[inline.Text.ID] = len(runOrder)
 			}
 		}
-		return wordTextMatch{}, false
 	}
-	if currentEnd < 0 {
-		currentEnd = 0
+	currentOrder, exists := runOrder[currentRunID]
+	if !exists {
+		return matches[0], true
 	}
-	if match, ok := search(currentIndex, currentEnd); ok {
-		return match, true
-	}
-	for offset := 1; offset < len(candidates); offset++ {
-		index := (currentIndex + offset) % len(candidates)
-		if match, ok := search(index, 0); ok {
+	currentEnd = max(0, currentEnd)
+	for _, match := range matches {
+		matchOrder, exists := runOrder[match.RunID]
+		if exists && (matchOrder > currentOrder || (matchOrder == currentOrder && match.Start >= currentEnd)) {
 			return match, true
 		}
 	}
-	return search(currentIndex, 0)
+	return matches[0], true
+}
+
+func wordTextMatchEndRunID(match wordTextMatch) string {
+	if match.EndRunID != "" {
+		return match.EndRunID
+	}
+	return match.RunID
+}
+
+func wordTextMatchEndOffset(match wordTextMatch) int {
+	if match.EndRunID != "" {
+		return match.EndOffset
+	}
+	return match.End
+}
+
+type wordSearchSegment struct {
+	run   document.WordTextRun
+	text  []rune
+	start int
+}
+
+type wordSearchChunk struct {
+	paragraphID string
+	segments    []wordSearchSegment
+	text        []rune
+}
+
+func wordSearchChunks(blocks []document.WordBlock, drafts map[string]string) []wordSearchChunk {
+	var chunks []wordSearchChunk
+	var chunk wordSearchChunk
+	flush := func() {
+		if len(chunk.segments) > 0 {
+			chunks = append(chunks, chunk)
+		}
+		chunk = wordSearchChunk{}
+	}
+	for _, paragraph := range allWordParagraphs(blocks) {
+		flush()
+		for _, inline := range paragraph.Inlines {
+			run := inline.Text
+			if inline.Kind != document.WordTextInline || run == nil || !run.Editable {
+				flush()
+				continue
+			}
+			if len(chunk.segments) == 0 {
+				chunk.paragraphID = paragraph.ID
+			}
+			value := run.Text
+			if draft, ok := drafts[run.ID]; ok {
+				value = draft
+			}
+			runes := []rune(value)
+			chunk.segments = append(chunk.segments, wordSearchSegment{run: *run, text: runes, start: len(chunk.text)})
+			chunk.text = append(chunk.text, runes...)
+		}
+		flush()
+	}
+	return chunks
+}
+
+func wordSearchMatchAt(chunk wordSearchChunk, start, end int) (wordTextMatch, bool) {
+	var startSegment, endSegment *wordSearchSegment
+	for index := range chunk.segments {
+		segment := &chunk.segments[index]
+		segmentEnd := segment.start + len(segment.text)
+		if start >= segment.start && start < segmentEnd {
+			startSegment = segment
+		}
+		if end > segment.start && end <= segmentEnd {
+			endSegment = segment
+		}
+	}
+	if startSegment == nil || endSegment == nil {
+		return wordTextMatch{}, false
+	}
+	startOffset := start - startSegment.start
+	endOffset := end - endSegment.start
+	return wordTextMatch{
+		ParagraphID: chunk.paragraphID,
+		RunID:       startSegment.run.ID,
+		Start:       startOffset,
+		End:         endOffset,
+		EndRunID:    endSegment.run.ID,
+		EndOffset:   endOffset,
+	}, true
 }
 
 func lowerWordRunes(value []rune) []rune {
@@ -143,16 +204,20 @@ func (a *App) showWordSearchReplaceDialog(replaceTab bool) {
 		a.setStatus("当前 DOCX 暂不支持文字替换")
 		return
 	}
+	query := wordFindInitialQuery(state)
 	actions := []modalDialogActionSpec{{ID: "find-next", Label: "查找下一个", Style: modalDialogActionPrimary}}
 	if canReplace {
 		actions = []modalDialogActionSpec{
 			{ID: "replace", Label: "替换", Style: modalDialogActionSecondary, WidthDp: 76, TextSizeSp: 12},
-			{ID: "find-next", Label: "查找下一个", Style: modalDialogActionPrimary, WidthDp: 130, TextSizeSp: 12},
 		}
+		if _, canReplaceAll := any(state.word).(document.WordTextBatchEditor); canReplaceAll {
+			actions = append(actions, modalDialogActionSpec{ID: "replace-all", Label: "全部替换", Style: modalDialogActionSecondary, WidthDp: 92, TextSizeSp: 11})
+		}
+		actions = append(actions, modalDialogActionSpec{ID: "find-next", Label: "查找下一个", Style: modalDialogActionPrimary, WidthDp: 130, TextSizeSp: 12})
 	}
 	onAction := func(action string) {
 		if action == "close" {
-			a.modal.Hide()
+			a.hideWordSearchReplaceDialog(state)
 			return
 		}
 		query := a.modal.Input.Text()
@@ -167,6 +232,11 @@ func (a *App) showWordSearchReplaceDialog(replaceTab bool) {
 		if canReplace {
 			state.wordReplaceText = replacement
 		}
+		if action == "replace-all" {
+			a.replaceAllWordText(query, replacement)
+			a.modal.FocusInputRequested = true
+			return
+		}
 		if action == "replace" {
 			match, found := selectedWordTextQueryMatch(state, query)
 			if !found {
@@ -180,31 +250,66 @@ func (a *App) showWordSearchReplaceDialog(replaceTab bool) {
 				a.modal.FocusInputRequested = true
 				return
 			}
-			a.modal.SearchReplaceSummary = "正在替换当前匹配项…"
 			a.modal.FocusInputRequested = true
 			return
 		}
 		if action == "confirm" {
 			a.findNextWordText(query)
-			a.modal.Hide()
+			a.hideWordSearchReplaceDialog(state)
 			return
 		}
 		if action == "find-next" {
 			a.findNextWordText(query)
 			a.modal.FocusInputRequested = true
+			return
+		}
+		if action == "find-previous" {
+			a.findPreviousWordText(query)
+			a.modal.FocusInputRequested = true
 		}
 	}
 	if canReplace {
-		a.modal.ShowDualInput("查找和替换", "", state.wordFindQuery, "查找内容", state.wordReplaceText, "替换为", onAction, actions...)
+		a.modal.ShowDualInput("查找和替换", "", query, "查找内容", state.wordReplaceText, "替换为", onAction, actions...)
 	} else {
-		a.modal.ShowInput("查找和替换", "", state.wordFindQuery, "查找内容", onAction, actions...)
+		a.modal.ShowInput("查找和替换", "", query, "查找内容", onAction, actions...)
 	}
+	a.modal.Input.SetCaret(0, len([]rune(query)))
 	a.modal.SearchReplace = true
 	a.modal.SearchReplaceHasReplace = canReplace
 	a.modal.SearchReplaceReplaceTab = replaceTab
 	a.modal.SearchReplaceSummary = "输入查找内容后，点击“查找下一个”"
 	a.modal.CardWidthDp = 560
 	a.modal.FocusInputRequested = true
+}
+
+func (a *App) hideWordSearchReplaceDialog(state *documentSessionState) {
+	a.modal.Hide()
+	if state == nil || state.word == nil || state.selectedWordRunID == "" {
+		return
+	}
+	run, _, ok := findEditableWordRunInState(state, state.selectedWordRunID)
+	if !ok || !run.Editable {
+		return
+	}
+	wordRunEditor(state, run)
+	state.wordPendingFocusRunID = run.ID
+	state.wordPendingCaretRunID = ""
+	state.wordPendingCaretByX = false
+}
+
+func wordFindInitialQuery(state *documentSessionState) string {
+	if state == nil {
+		return ""
+	}
+	if selected, ok := wordPageSelectedText(state); ok && !strings.ContainsAny(selected, "\r\n") {
+		return selected
+	}
+	if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
+		if selected := editor.SelectedText(); selected != "" && !strings.ContainsAny(selected, "\r\n") {
+			return selected
+		}
+	}
+	return state.wordFindQuery
 }
 
 func (a *App) findNextWordText(query string) {
@@ -232,30 +337,84 @@ func (a *App) findNextWordText(query string) {
 	a.setStatus("已定位：" + query)
 }
 
+func (a *App) findPreviousWordText(query string) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil || query == "" {
+		return
+	}
+	blocks := wordBlocksForState(state)
+	drafts := state.wordDraftSnapshot()
+	for runID, editor := range state.wordRunEditors {
+		drafts[runID] = editor.Text()
+	}
+	currentRunID, currentStart := state.selectedWordRunID, 0
+	if start, _, active := wordPageOrderedSelection(state.wordPageTextSelection); active {
+		currentRunID, currentStart = start.runID, start.runeOffset
+	} else if editor := state.wordRunEditors[currentRunID]; editor != nil {
+		currentStart, _ = editor.Selection()
+	}
+	match, found := findPreviousWordTextMatch(blocks, query, currentRunID, currentStart, drafts)
+	if !found {
+		a.setStatus("未找到：" + query)
+		a.modal.SearchReplaceSummary = "未找到匹配项"
+		return
+	}
+	a.focusWordTextMatch(state, blocks, match)
+	a.updateWordSearchSummary(state, query, blocks, drafts, match)
+	a.setStatus("已定位：" + query)
+}
+
+func findPreviousWordTextMatch(blocks []document.WordBlock, query, currentRunID string, currentStart int, drafts map[string]string) (wordTextMatch, bool) {
+	matches := findAllWordTextMatches(blocks, query, drafts)
+	if len(matches) == 0 {
+		return wordTextMatch{}, false
+	}
+	if currentRunID == "" {
+		return matches[len(matches)-1], true
+	}
+	runOrder := make(map[string]int)
+	for _, paragraph := range allWordParagraphs(blocks) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text == nil || !inline.Text.Editable {
+				continue
+			}
+			if _, exists := runOrder[inline.Text.ID]; !exists {
+				runOrder[inline.Text.ID] = len(runOrder)
+			}
+		}
+	}
+	currentOrder, exists := runOrder[currentRunID]
+	if !exists {
+		return matches[len(matches)-1], true
+	}
+	currentStart = max(0, currentStart)
+	for index := len(matches) - 1; index >= 0; index-- {
+		match := matches[index]
+		matchOrder, exists := runOrder[match.RunID]
+		if exists && (matchOrder < currentOrder || (matchOrder == currentOrder && match.Start < currentStart)) {
+			return match, true
+		}
+	}
+	return matches[len(matches)-1], true
+}
+
 func findAllWordTextMatches(blocks []document.WordBlock, query string, drafts map[string]string) []wordTextMatch {
 	needle := lowerWordRunes([]rune(query))
 	if len(needle) == 0 {
 		return nil
 	}
 	var matches []wordTextMatch
-	for _, paragraph := range allWordParagraphs(blocks) {
-		for _, inline := range paragraph.Inlines {
-			if inline.Text == nil || !inline.Text.Editable {
-				continue
+	for _, chunk := range wordSearchChunks(blocks, drafts) {
+		lowered := lowerWordRunes(chunk.text)
+		for from := 0; from < len(lowered); {
+			start := findWordRunes(lowered, needle, from)
+			if start < 0 {
+				break
 			}
-			value := inline.Text.Text
-			if draft, ok := drafts[inline.Text.ID]; ok {
-				value = draft
+			if match, ok := wordSearchMatchAt(chunk, start, start+len(needle)); ok {
+				matches = append(matches, match)
 			}
-			runes := lowerWordRunes([]rune(value))
-			for from := 0; from < len(runes); {
-				start := findWordRunes(runes, needle, from)
-				if start < 0 {
-					break
-				}
-				matches = append(matches, wordTextMatch{ParagraphID: paragraph.ID, RunID: inline.Text.ID, Start: start, End: start + len(needle)})
-				from = start + len(needle)
-			}
+			from = start + len(needle)
 		}
 	}
 	return matches
@@ -296,6 +455,25 @@ func selectedWordTextQueryMatch(state *documentSessionState, query string) (word
 		return wordTextMatch{}, false
 	}
 	blocks := wordBlocksForState(state)
+	if selected, ok := wordPageSelectedText(state); ok {
+		needle := lowerWordRunes([]rune(query))
+		if equalWordRunes(lowerWordRunes([]rune(selected)), needle) {
+			start, end, active := wordPageOrderedSelection(state.wordPageTextSelection)
+			if active {
+				paragraphID := wordParagraphIDForRun(blocks, start.runID)
+				if paragraphID != "" && paragraphID == wordParagraphIDForRun(blocks, end.runID) {
+					return wordTextMatch{
+						ParagraphID: paragraphID,
+						RunID:       start.runID,
+						Start:       start.runeOffset,
+						End:         end.runeOffset,
+						EndRunID:    end.runID,
+						EndOffset:   end.runeOffset,
+					}, true
+				}
+			}
+		}
+	}
 	run, ok := selectedWordRun(blocks, state.selectedWordRunID)
 	if !ok || !run.Editable {
 		return wordTextMatch{}, false
@@ -317,7 +495,7 @@ func selectedWordTextQueryMatch(state *documentSessionState, query string) (word
 	if !ok {
 		return wordTextMatch{}, false
 	}
-	return wordTextMatch{ParagraphID: paragraph.ID, RunID: run.ID, Start: start, End: end}, true
+	return wordTextMatch{ParagraphID: paragraph.ID, RunID: run.ID, Start: start, End: end, EndRunID: run.ID, EndOffset: end}, true
 }
 
 func equalWordRunes(left, right []rune) bool {
@@ -337,22 +515,80 @@ func (a *App) runWordRangeReplacement(match wordTextMatch, query, replacement st
 	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
 		return false
 	}
-	editor, ok := any(state.word).(document.WordTextRangeEditor)
+	blocks := wordBlocksForState(state)
+	drafts := state.wordDraftSnapshot()
+	for runID, editor := range state.wordRunEditors {
+		drafts[runID] = editor.Text()
+	}
+	plan := planWordTextMatchReplacement(blocks, drafts, match, query, replacement)
+	if plan.matches == 0 || plan.truncated || len(plan.replacements) == 0 {
+		return false
+	}
+	unchanged := true
+	for _, run := range plan.replacements {
+		if run.Replacement != plan.inputTexts[run.RunID] {
+			unchanged = false
+			break
+		}
+	}
+	if unchanged {
+		a.setStatus("替换内容与当前文字相同")
+		a.modal.SearchReplaceSummary = "替换结果与当前文字相同"
+		return true
+	}
+	batchEditor, canBatch := any(state.word).(document.WordTextBatchEditor)
+	rangeEditor, canRange := any(state.word).(document.WordTextRangeEditor)
+	selectionEditor, canSelect := any(state.word).(document.WordTextSelectionReplacer)
+	endRunID, endOffset := wordTextMatchEndRunID(match), wordTextMatchEndOffset(match)
+	if !canBatch {
+		for runID, text := range plan.inputTexts {
+			run, ok := selectedWordRun(blocks, runID)
+			if !ok || run.Text != text {
+				a.setStatus("当前文档暂不支持替换未提交的文字草稿")
+				a.modal.SearchReplaceSummary = "请先完成当前文字输入，再重试替换"
+				return true
+			}
+		}
+		if (match.RunID == endRunID && !canRange) || (match.RunID != endRunID && !canSelect) {
+			return false
+		}
+	}
+	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
 		return false
 	}
-	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
-		return false
-	}
 	generation := a.documentGeneration
-	a.launchManagedBackground(func() {
-		blocks, err := runWordMutation(state, func() error { return editor.ReplaceTextRange(match.RunID, match.Start, match.End, replacement) })
+	a.modal.SearchReplaceSummary = "正在替换当前匹配项…"
+	started := a.launchManagedBackground(func() {
+		var changed bool
+		updatedBlocks, err := runWordMutation(state, func() error {
+			if canBatch {
+				var replaceErr error
+				changed, replaceErr = batchEditor.ReplaceTextRuns(plan.replacements)
+				return replaceErr
+			}
+			if match.RunID == endRunID {
+				changed = true
+				return rangeEditor.ReplaceTextRange(match.RunID, match.Start, endOffset, replacement)
+			}
+			changed = true
+			_, replaceErr := selectionEditor.ReplaceTextSelection(match.RunID, match.Start, endRunID, endOffset, replacement)
+			return replaceErr
+		})
 		a.publishWordCommand(wordCommandResult{
-			state: state, generation: generation, operation: "替换文字", err: err, blocks: blocks,
-			wordRangeReplacement: true, replaceRunID: match.RunID, replaceParagraphID: match.ParagraphID, replaceStart: match.Start,
-			replaceText: replacement, replaceQuery: query,
+			state: state, operationToken: token, generation: generation, operation: "替换文字", err: err, blocks: updatedBlocks, applied: changed,
+			wordRangeReplacement: true, wordRangeRunIDs: plan.runIDs, wordRangeInputTexts: plan.inputTexts,
+			replaceRunID: match.RunID, replaceParagraphID: match.ParagraphID, replaceStart: match.Start,
+			replaceCaret: match.Start + len([]rune(replacement)),
+			replaceText:  replacement, replaceQuery: query,
 		})
 	})
+	if !started {
+		state.finishOperation(token)
+		a.setStatus("替换任务无法启动")
+		a.modal.SearchReplaceSummary = "替换任务无法启动"
+		return false
+	}
 	return true
 }
 
@@ -365,9 +601,31 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 		a.setStatus(wordCommandError(result.operation, result.err))
 		return
 	}
+	if !result.applied {
+		a.setStatus("替换结果与当前文字相同")
+		if a.modal.Visible && a.modal.SearchReplace {
+			a.modal.SearchReplaceSummary = "替换结果与当前文字相同"
+		}
+		return
+	}
 	if result.blocks != nil {
 		state.setWordBlocks(result.blocks)
 		a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
+	}
+	for _, runID := range result.wordRangeRunIDs {
+		run, ok := selectedWordRun(wordBlocksForState(state), runID)
+		if !ok || !run.Editable {
+			continue
+		}
+		expected := result.wordRangeInputTexts[runID]
+		state.setCommittedWordTextAndClearExpectedDraft(runID, run.Text, expected)
+		if newer, exists := state.wordDraft(runID); exists && newer != expected {
+			continue
+		}
+		runEditor := wordRunEditor(state, run)
+		if runEditor.Text() == expected {
+			runEditor.SetText(run.Text)
+		}
 	}
 	blocks := wordBlocksForState(state)
 	run, ok := selectedWordRun(blocks, result.replaceRunID)
@@ -375,9 +633,13 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 		a.setStatus("文字已替换，但无法定位编辑位置")
 		return
 	}
-	state.setCommittedWordTextAndClearDraft(run.ID, run.Text)
 	editor := wordRunEditor(state, run)
-	editor.SetText(run.Text)
+	if len(result.wordRangeRunIDs) == 0 {
+		state.setCommittedWordTextAndClearDraft(run.ID, run.Text)
+		editor.SetText(run.Text)
+	}
+	state.wordPageTextSelection = nil
+	state.wordPageSelectionDrag = nil
 	state.selectedWordRunID = run.ID
 	state.selectedWordParagraphID = result.replaceParagraphID
 	if state.selectedWordParagraphID == "" {
@@ -393,7 +655,10 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 	state.selectedWordImageID = ""
 	state.selectedBlock = -1
 	state.selectedBlockEditable = true
-	startAfter := result.replaceStart + len([]rune(result.replaceText))
+	startAfter := result.replaceCaret
+	if startAfter == 0 {
+		startAfter = result.replaceStart + len([]rune(result.replaceText))
+	}
 	match, found := findWordTextMatch(blocks, result.replaceQuery, run.ID, startAfter, nil)
 	if found {
 		a.focusWordTextMatch(state, blocks, match)
@@ -429,9 +694,24 @@ func (a *App) focusWordTextMatch(state *documentSessionState, blocks []document.
 	if !ok || !paragraphOK || !run.Editable {
 		return
 	}
-	editor := wordRunEditor(state, run)
-	editor.SetCaret(match.Start, match.End)
-	state.selectedWordRunID = run.ID
+	endRunID := wordTextMatchEndRunID(match)
+	endOffset := wordTextMatchEndOffset(match)
+	focusRunID := run.ID
+	if endRunID != run.ID {
+		startRunID, start := run.ID, match.Start
+		end := endOffset
+		if _, err := a.setWordTextSelection(state, wordTextSelectionRequest{
+			Scope: "range", StartRunID: &startRunID, StartOffset: &start, EndRunID: &endRunID, EndOffset: &end,
+		}); err != nil {
+			return
+		}
+		focusRunID = endRunID
+	} else {
+		state.wordPageTextSelection = nil
+		editor := wordRunEditor(state, run)
+		editor.SetCaret(match.Start, endOffset)
+	}
+	state.selectedWordRunID = focusRunID
 	state.selectedWordParagraphID = paragraph.ID
 	state.selectedWordImageID = ""
 	state.wordImageFocusRequestID = ""
@@ -440,7 +720,7 @@ func (a *App) focusWordTextMatch(state *documentSessionState, blocks []document.
 	if state.wordToolbarTab == wordTabPicture {
 		state.wordToolbarTab = wordTabHome
 	}
-	state.wordPendingFocusRunID = run.ID
+	state.wordPendingFocusRunID = focusRunID
 	state.wordPendingCaretRunID = ""
 	state.wordPendingCaretByX = false
 	for index, block := range blocks {

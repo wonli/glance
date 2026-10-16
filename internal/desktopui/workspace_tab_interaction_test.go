@@ -220,3 +220,75 @@ func TestCreateMenuDismissOnTabClick(t *testing.T) {
 		t.Fatal("clicking recent tab did not dismiss the create menu")
 	}
 }
+
+func TestWorkspaceTabsFullStripClickableWithClientTitlebar(t *testing.T) {
+	app := New(nil, "")
+	defer close(app.shutdown)
+	app.clientTitlebar = true
+	app.desktopRuntime = newDesktopRuntime()
+	app.windowID = 1
+	app.sessions = map[string]*documentSessionState{
+		"first":  newDocumentSessionView(newSharedDocumentSession("first"), app.windowID),
+		"second": newDocumentSessionView(newSharedDocumentSession("second"), app.windowID),
+	}
+	app.documentSessionState = app.sessions["first"]
+	app.activeTabID = "first"
+	app.tabMeta = map[string]workspace.Tab{
+		"first":  {ID: "first", DocumentID: "first", Kind: "docx", Title: "First", Position: 0},
+		"second": {ID: "second", DocumentID: "second", Kind: "docx", Title: "Second", Position: 1},
+	}
+
+	var router input.Router
+	var ops op.Ops
+	draw := func() {
+		ops.Reset()
+		gtx := layout.Context{
+			Ops:         &ops,
+			Source:      router.Source(),
+			Now:         time.Now(),
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Constraints{Min: image.Pt(900, 42), Max: image.Pt(900, 42)},
+		}
+		app.layoutWorkspaceTabs(gtx)
+		router.Frame(&ops)
+	}
+
+	clickAt := func(pt f32.Point) {
+		draw()
+		router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Position: pt, Buttons: pointer.ButtonPrimary})
+		draw()
+		router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: pt})
+		draw()
+	}
+
+	draw()
+
+	base := float32(16)
+	if isDarwin() {
+		base = 100
+	}
+	// Click second doc tab (inactive)
+	secondDocPt := f32.Pt(base+112+196+95, 20)
+	clickAt(secondDocPt)
+	if app.activeTabID != "second" {
+		t.Fatalf("clicking inactive tab in layoutWorkspaceTabs selected %q; want second", app.activeTabID)
+	}
+
+	// Click Recent tab
+	recentPt := f32.Pt(base+56, 20)
+	clickAt(recentPt)
+	if app.activeTabID != workspace.RecentTabID {
+		t.Fatalf("clicking recent tab in layoutWorkspaceTabs selected %q; want %q", app.activeTabID, workspace.RecentTabID)
+	}
+
+	// Click plus tab
+	plusPt := f32.Pt(base+112+196+196+16, 20)
+	clickAt(plusPt)
+	if !app.showNewMenu {
+		t.Fatal("clicking plus button in layoutWorkspaceTabs did not toggle showNewMenu")
+	}
+}
+
+func isDarwin() bool {
+	return filepath.Separator == '/' && len(filepath.VolumeName("/")) == 0 && os.Getenv("GOOS") != "linux" && os.Getenv("GOOS") != "windows"
+}

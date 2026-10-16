@@ -3,9 +3,11 @@ package desktopui
 import (
 	"glance/internal/document"
 	"image"
+	"image/color"
 
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -27,7 +29,7 @@ func (a *App) selectedCellStyle() document.CellStyle {
 		return document.CellStyle{}
 	}
 	pos := state.selection.Active
-	return windowCell(state.virtualGrid.Window, pos.Row+1, pos.Column+1).Style
+	return state.virtualGrid.cell(pos.Row+1, pos.Column+1).Style
 }
 
 func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
@@ -280,13 +282,14 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 			inner := image.Rectangle{Max: image.Pt(width, height)}.Inset(gtx.Dp(unit.Dp(1)))
 			paint.FillShape(gtx.Ops, colors.Surface.Surface, clip.UniformRRect(inner, gtx.Dp(unit.Dp(2))).Op(gtx.Ops))
 			value := spreadsheetRibbonActionDisplayLabel(action)
-			if action.slot == toolbarActionFontFamily {
-				value = a.fontPickerDisplayFamilyName(style.FontFamily)
-				if value == "" {
-					value = "字体"
-				}
+			if mixed {
+				value = "混合"
+			} else if action.slot == toolbarActionFontFamily {
+				value = a.fontPickerDisplayFamilyName(spreadsheetToolbarFontFamily(style))
 			} else if action.slot == toolbarActionFontSize {
-				value = "11"
+				value = formatSpreadsheetFontSize(spreadsheetToolbarFontSize(style))
+			} else if action.slot == 10 {
+				value = spreadsheetToolbarNumberFormatLabel(style.NumberFormat)
 			}
 			return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				label := material.Caption(a.theme, value)
@@ -323,14 +326,34 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 		}
 		icon, _ := svgIconTintAtSize("ribbon", iconName, gtx.Dp(unit.Dp(20)), iconColor)
 		if mode == spreadsheetRibbonActionIconOnly {
+			if action.symbol != "" {
+				label := material.Caption(a.theme, action.symbol)
+				label.TextSize = unit.Sp(10)
+				label.Color = iconColor
+				gtx.Constraints.Min.Y = 0
+				return layout.Center.Layout(gtx, label.Layout)
+			}
 			if icon == nil {
 				return layout.Dimensions{Size: image.Pt(width, height)}
 			}
 			iconSize := gtx.Dp(unit.Dp(20))
-			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			dimensions := layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints = layout.Exact(image.Pt(iconSize, iconSize))
 				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 20.0 / float32(iconSize)}.Layout(gtx)
 			})
+			if action.slot == 7 || action.slot == 8 {
+				drawSpreadsheetRibbonColorIndicator(gtx, action.slot, style, colors.Surface.Surface, colors.Surface.Border, width, height)
+			}
+			if pickerForToolbarAction(action.slot) != pickerNone {
+				arrowSize := gtx.Dp(unit.Dp(8))
+				arrowInset := gtx.Dp(unit.Dp(2))
+				arrowGtx := gtx
+				arrowGtx.Constraints = layout.Exact(image.Pt(arrowSize, arrowSize))
+				offset := op.Offset(image.Pt(width-arrowSize-arrowInset, height-arrowSize-arrowInset)).Push(gtx.Ops)
+				layoutPenRibbonGlyph(arrowGtx, "chevron-down", 8, iconColor)
+				offset.Pop()
+			}
+			return dimensions
 		}
 		if mode == spreadsheetRibbonActionVertical {
 			return layoutOfficeRibbonCommandContents(gtx, a.theme, icon, spreadsheetRibbonActionDisplayLabel(action))
@@ -361,6 +384,32 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 		return button.Layout(gtx, draw)
 	}
 	return draw(gtx)
+}
+
+func drawSpreadsheetRibbonColorIndicator(gtx layout.Context, slot int, style document.CellStyle, surface, border color.NRGBA, width, height int) {
+	indicatorWidth := gtx.Dp(unit.Dp(14))
+	indicatorHeight := max(2, gtx.Dp(unit.Dp(3)))
+	left := (width - indicatorWidth) / 2
+	top := height - gtx.Dp(unit.Dp(4))
+	bounds := image.Rect(left, top, left+indicatorWidth, top+indicatorHeight)
+	var value string
+	switch slot {
+	case 7:
+		value = style.FontColor
+		if value == "" {
+			value = "000000"
+		}
+	case 8:
+		value = style.FillColor
+	default:
+		return
+	}
+	if value == "" {
+		paint.FillShape(gtx.Ops, border, clip.Rect(bounds).Op())
+		paint.FillShape(gtx.Ops, surface, clip.Rect(bounds.Inset(1)).Op())
+		return
+	}
+	paint.FillShape(gtx.Ops, parseGridColor(value, color.NRGBA{R: 0, G: 0, B: 0, A: 255}), clip.Rect(bounds).Op())
 }
 
 const spreadsheetFontFieldTextOpticalTopInset unit.Dp = 5
@@ -422,7 +471,14 @@ func (a *App) layoutSpreadsheetToolbarPickerOverlay(gtx layout.Context) layout.D
 func (a *App) layoutToolbarPickerPanel(gtx layout.Context, options []string) layout.Dimensions {
 	colors := a.tokens().Colors
 	rows := (len(options) + 1) / 2
-	height := gtx.Dp(unit.Dp(32 + rows*24))
+	colorPalette := a.documentSessionState.toolbarPicker == pickerFontColor || a.documentSessionState.toolbarPicker == pickerFillColor
+	buttonHeightDP := 22
+	rowHeightDP := 24
+	if colorPalette {
+		buttonHeightDP = 26
+		rowHeightDP = 28
+	}
+	height := gtx.Dp(unit.Dp(36 + rows*rowHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
@@ -455,7 +511,7 @@ func (a *App) layoutToolbarPickerPanel(gtx layout.Context, options []string) lay
 							children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								button := &a.documentSessionState.toolbarPickerButtons[index]
 								return layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									height := gtx.Dp(unit.Dp(22))
+									height := gtx.Dp(unit.Dp(buttonHeightDP))
 									width := gtx.Constraints.Max.X
 									gtx.Constraints = layout.Exact(image.Pt(width, height))
 									selected := toolbarPickerOptionSelected(a.documentSessionState.toolbarPicker, index, a.selectedCellStyle())
@@ -477,6 +533,32 @@ func (a *App) layoutToolbarPickerPanel(gtx layout.Context, options []string) lay
 												style.Color = colors.Text.PureBlack
 												gtx.Constraints.Min = image.Point{}
 												gtx.Constraints.Min.Y = 0
+												if swatchColor, ok, noFill := toolbarPickerSwatch(a.documentSessionState.toolbarPicker, index); ok {
+													return layout.Inset{Left: unit.Dp(7), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+														return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+															layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+																size := gtx.Dp(unit.Dp(14))
+																bounds := image.Rectangle{Max: image.Pt(size, size)}
+																paint.FillShape(gtx.Ops, colors.Surface.Border, clip.Rect{Max: image.Pt(size, size)}.Op())
+																paint.FillShape(gtx.Ops, swatchColor, clip.Rect{Min: image.Pt(1, 1), Max: image.Pt(size-1, size-1)}.Op())
+																if noFill {
+																	cross := material.Caption(a.theme, "×")
+																	cross.TextSize = unit.Sp(12)
+																	cross.Color = color.NRGBA{R: 196, G: 52, B: 52, A: 255}
+																	child := gtx
+																	child.Constraints = layout.Exact(bounds.Size())
+																	layout.Center.Layout(child, cross.Layout)
+																}
+																return layout.Dimensions{Size: bounds.Size()}
+															}),
+															layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+															layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+																style.MaxLines = 1
+																return style.Layout(gtx)
+															}),
+														)
+													})
+												}
 												return layout.Center.Layout(gtx, style.Layout)
 											},
 										)

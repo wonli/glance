@@ -34,27 +34,14 @@ func spreadsheetFormatPainterRegistration() CapabilityRegistration {
 			if input.Sheet == "" || !validSpreadsheetCellReference(input.SourceCell) || !validCellRange(input.TargetBounds, 10_000) {
 				return CapabilityResult{}, ErrInvalidCommandArguments
 			}
-			reader, ok := capability.Adapter.(SpreadsheetGridWindowController)
+			painter, ok := capability.Adapter.(SpreadsheetFormatPainterController)
 			if !ok {
 				return CapabilityResult{}, ErrCapabilityUnsupported
 			}
-			sourceRange, ok := spreadsheetCellReferenceRange(input.SourceCell)
-			if !ok {
+			if _, ok := spreadsheetCellReferenceRange(input.SourceCell); !ok {
 				return CapabilityResult{}, ErrInvalidCommandArguments
 			}
-			source, err := reader.ReadSpreadsheetGridWindow(ctx, input.Sheet, sourceRange)
-			if err != nil {
-				return CapabilityResult{}, err
-			}
-			if len(source.Cells) == 0 || len(source.Cells[0]) == 0 {
-				return CapabilityResult{}, ErrInvalidCommandArguments
-			}
-			formatter, ok := capability.Adapter.(SpreadsheetRangeFormatter)
-			if !ok {
-				return CapabilityResult{}, ErrCapabilityUnsupported
-			}
-			patch := spreadsheetFormatPatchFromStyle(source.Cells[0][0].Style)
-			changed, err := formatter.SetSpreadsheetCellFormats(ctx, input.Sheet, input.TargetBounds, patch)
+			changed, err := painter.PaintSpreadsheetCellFormat(ctx, input.Sheet, input.SourceCell, input.TargetBounds)
 			if err != nil {
 				return CapabilityResult{}, err
 			}
@@ -82,41 +69,4 @@ func spreadsheetCellReferenceRange(cell string) (document.CellRange, bool) {
 		return document.CellRange{}, false
 	}
 	return document.CellRange{StartRow: row, StartColumn: column, EndRow: row, EndColumn: column}, true
-}
-
-func spreadsheetFormatPatchFromStyle(style document.CellStyle) document.CellFormatPatch {
-	bold, italic, underline, wrap := style.Bold, style.Italic, style.Underline, style.WrapText
-	patch := document.CellFormatPatch{Bold: &bold, Italic: &italic, Underline: &underline, WrapText: &wrap}
-	if style.FontColor != "" {
-		color := style.FontColor
-		patch.FontColor = &color
-	}
-	if style.FillColor != "" {
-		fill := style.FillColor
-		patch.FillColor = &fill
-	}
-	if style.HorizontalAlignment != "" {
-		alignment := style.HorizontalAlignment
-		patch.HorizontalAlignment = &alignment
-	}
-	if style.NumberFormat != "" {
-		numberFormat := style.NumberFormat
-		patch.NumberFormat = &numberFormat
-	}
-	if style.FontSize > 0 {
-		fontSize := style.FontSize
-		patch.FontSize = &fontSize
-	}
-	if style.FontFamily != "" {
-		fontFamily := style.FontFamily
-		patch.FontFamily = &fontFamily
-	}
-	for _, border := range style.Borders {
-		if border.Style != 0 {
-			preset := "all"
-			patch.BorderPreset = &preset
-			break
-		}
-	}
-	return patch
 }

@@ -25,11 +25,11 @@ func spreadsheetHomeRibbonGroups(actions []spreadsheetToolbarAction) []spreadshe
 		}
 		group := action.group
 		switch action.slot {
-		case toolbarActionFontFamily, toolbarActionFontSize, 4, 5, 6:
+		case toolbarActionFontFamily, toolbarActionFontSize, toolbarActionDecreaseFontSize, toolbarActionIncreaseFontSize, 4, 5, 6, 7, 8, 11:
 			group = "字体"
 		case toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, 9:
 			group = "对齐"
-		case toolbarActionPercentFormat, 10:
+		case toolbarActionPercentFormat, toolbarActionCurrencyFormat, toolbarActionIncreaseDecimal, toolbarActionDecreaseDecimal, 10:
 			group = "数字"
 		case toolbarActionConditionalFormat, toolbarActionTableFormat, toolbarActionCellStyles:
 			group = "样式"
@@ -160,13 +160,17 @@ func (a *App) layoutSpreadsheetClipboardGroup(gtx layout.Context, state *documen
 }
 
 func (a *App) layoutSpreadsheetFontGroup(gtx layout.Context, state *documentSessionState, actions []spreadsheetToolbarAction) layout.Dimensions {
-	var family, size *spreadsheetToolbarAction
+	var family, size, decreaseSize, increaseSize *spreadsheetToolbarAction
 	for i := range actions {
 		switch actions[i].slot {
 		case toolbarActionFontFamily:
 			family = &actions[i]
 		case toolbarActionFontSize:
 			size = &actions[i]
+		case toolbarActionDecreaseFontSize:
+			decreaseSize = &actions[i]
+		case toolbarActionIncreaseFontSize:
+			increaseSize = &actions[i]
 		}
 	}
 	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
@@ -185,10 +189,16 @@ func (a *App) layoutSpreadsheetFontGroup(gtx layout.Context, state *documentSess
 					return a.layoutSpreadsheetRibbonAction(gtx, state, *size, 54, 34, spreadsheetRibbonActionField)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return a.layoutSpreadsheetRibbonPlaceholder(gtx, spreadsheetRibbonCell{label: "减小字号", icon: "a-arrow-up"}, 28, 34, spreadsheetRibbonActionIconOnly)
+					if decreaseSize == nil {
+						return layout.Dimensions{}
+					}
+					return a.layoutSpreadsheetRibbonAction(gtx, state, *decreaseSize, 28, 34, spreadsheetRibbonActionIconOnly)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return a.layoutSpreadsheetRibbonPlaceholder(gtx, spreadsheetRibbonCell{label: "增大字号", icon: "a-arrow-down"}, 28, 34, spreadsheetRibbonActionIconOnly)
+					if increaseSize == nil {
+						return layout.Dimensions{}
+					}
+					return a.layoutSpreadsheetRibbonAction(gtx, state, *increaseSize, 28, 34, spreadsheetRibbonActionIconOnly)
 				}),
 			)
 		}),
@@ -197,9 +207,9 @@ func (a *App) layoutSpreadsheetFontGroup(gtx layout.Context, state *documentSess
 				{slot: 4, hasAction: true, label: "加粗"},
 				{slot: 5, hasAction: true, label: "斜体"},
 				{slot: 6, hasAction: true, label: "下划线"},
-				{label: "删除线", icon: "strikethrough"},
-				{label: "文本高亮", icon: "highlighter"},
-				{label: "字体颜色", icon: "baseline"},
+				{slot: 11, hasAction: true, label: "边框"},
+				{slot: 8, hasAction: true, label: "填充颜色"},
+				{slot: 7, hasAction: true, label: "字体颜色"},
 			}
 			return a.layoutSpreadsheetRibbonRow(gtx, state, actions, items, pxToRibbonDP(gtx, gtx.Constraints.Max.X), 34, spreadsheetRibbonActionIconOnly)
 		}),
@@ -270,9 +280,10 @@ func (a *App) layoutSpreadsheetNumberGroup(gtx layout.Context, state *documentSe
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			items := []spreadsheetRibbonCell{
-				{label: "货币格式", icon: "banknote"},
+				{slot: toolbarActionCurrencyFormat, hasAction: true},
 				{slot: toolbarActionPercentFormat, hasAction: true},
-				{label: "小数位数", icon: "hash"},
+				{slot: toolbarActionIncreaseDecimal, hasAction: true},
+				{slot: toolbarActionDecreaseDecimal, hasAction: true},
 			}
 			return a.layoutSpreadsheetRibbonRow(gtx, state, actions, items, widthDP, 34, spreadsheetRibbonActionIconOnly)
 		}),
@@ -318,13 +329,29 @@ func spreadsheetHomeActionAnchorOffset(groups []spreadsheetRibbonGroup, slot int
 				}
 				return groupStart + 68
 			case "字体":
-				if slot == toolbarActionFontFamily {
+				switch slot {
+				case toolbarActionFontFamily:
 					return groupStart
-				}
-				if slot == toolbarActionFontSize {
+				case toolbarActionFontSize:
 					return groupStart + 108
+				case toolbarActionDecreaseFontSize:
+					return groupStart + 162
+				case toolbarActionIncreaseFontSize:
+					return groupStart + 190
+				case 4:
+					return groupStart
+				case 5:
+					return groupStart + 38
+				case 6:
+					return groupStart + 76
+				case 11:
+					return groupStart + 114
+				case 8:
+					return groupStart + 152
+				case 7:
+					return groupStart + 190
 				}
-				return groupStart + 162 + (index-2)*30
+				return groupStart + index*30
 			case "对齐":
 				return groupStart + index*48
 			case "数字":

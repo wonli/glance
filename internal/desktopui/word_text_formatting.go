@@ -11,6 +11,36 @@ func (a *App) toggleWordTextStyle(property string) {
 	if state == nil || state.word == nil {
 		return
 	}
+	if wordPageTextSelectionActive(state.wordPageTextSelection) {
+		if _, ok := any(state.word).(document.WordTextSelectionFormatter); !ok {
+			a.setStatus("当前 DOCX 适配器不支持选中文字格式")
+			return
+		}
+		start, end, ok := wordPageOrderedSelection(state.wordPageTextSelection)
+		if !ok {
+			return
+		}
+		run, ok := firstSelectedWordTextRun(state, start, end)
+		if !ok || !run.Editable {
+			return
+		}
+		patch := document.WordTextFormatPatch{}
+		switch property {
+		case "bold":
+			value := !run.Style.Bold
+			patch.Bold = &value
+		case "italic":
+			value := !run.Style.Italic
+			patch.Italic = &value
+		case "underline":
+			value := !run.Style.Underline
+			patch.Underline = &value
+		default:
+			return
+		}
+		a.queueWordSelectionStyle(state, start, end, patch)
+		return
+	}
 	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
 	if !ok {
 		return
@@ -31,6 +61,79 @@ func (a *App) toggleWordTextStyle(property string) {
 		return
 	}
 	a.runWordCommand("文字格式", func(editor document.WordTextEditor) error { return editor.SetTextRunStyle(runID, patch) })
+}
+
+func (a *App) queueWordSelectionStyle(state *documentSessionState, start, end wordPageCaretPosition, patch document.WordTextFormatPatch) bool {
+	if state == nil || state.word == nil || state.wordSelectionEditIntent != nil || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil {
+		return false
+	}
+	if _, ok := any(state.word).(document.WordTextSelectionFormatter); !ok {
+		return false
+	}
+	if draft := state.wordSelectionInputDraft; draft != nil {
+		if editor := state.wordRunEditors[draft.runID]; editor != nil {
+			if editorHasActiveComposition(editor) {
+				a.setStatus("请先完成中文输入，再设置文字格式")
+				return false
+			}
+			if editor.Text() != draft.text {
+				a.finishWordSelectionInput(state, draft.runID, editor)
+				return false
+			}
+		}
+		state.wordSelectionInputDraft = nil
+	}
+	patchCopy := patch
+	state.wordSelectionEditIntent = &wordSelectionEditIntent{start: start, end: end, formatPatch: &patchCopy}
+	for id, editor := range state.wordRunEditors {
+		if editorHasActiveComposition(editor) {
+			state.wordSelectionEditIntent = nil
+			a.setStatus("请先完成中文输入，再设置文字格式")
+			return false
+		}
+		captureWordTextDraft(state, id, editor.Text())
+	}
+	state.wordForceDraftFlush.Store(true)
+	state.wordFlushRequested.Store(true)
+	state.wordFlushAllDrafts.Store(true)
+	if !state.formatRunning.Load() {
+		a.startNextWordTextCommitFor(state)
+	}
+	return true
+}
+
+func firstSelectedWordTextRun(state *documentSessionState, start, end wordPageCaretPosition) (document.WordTextRun, bool) {
+	if state == nil || state.wordPageTextSelection == nil {
+		return document.WordTextRun{}, false
+	}
+	startOrder, startOK := state.wordPageTextSelection.runOrder[start.runID]
+	endOrder, endOK := state.wordPageTextSelection.runOrder[end.runID]
+	if !startOK || !endOK {
+		return document.WordTextRun{}, false
+	}
+	for _, paragraph := range allWordParagraphs(wordBlocksForState(state)) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text == nil || !inline.Text.Editable {
+				continue
+			}
+			runOrder, exists := state.wordPageTextSelection.runOrder[inline.Text.ID]
+			if !exists || runOrder < startOrder || runOrder > endOrder {
+				continue
+			}
+			from, to := 0, len([]rune(inline.Text.Text))
+			if inline.Text.ID == start.runID {
+				from = start.runeOffset
+			}
+			if inline.Text.ID == end.runID {
+				to = end.runeOffset
+			}
+			if from >= to {
+				continue
+			}
+			return *inline.Text, true
+		}
+	}
+	return document.WordTextRun{}, false
 }
 
 func (a *App) setWordFontColor(runID, value string) {
@@ -212,13 +315,37 @@ func (a *App) startWordFormatPainter() {
 
 func (a *App) setWordAlignment(actionID string) {
 	state := a.documentSessionState
-	if state == nil {
+	if state == nil || state.word == nil {
 		return
 	}
-	paragraphID := state.selectedWordParagraphID
+	paragraphIDs := wordParagraphIDsForSelection(state)
+	if len(paragraphIDs) == 0 {
+		a.setStatus("请先将光标放在可编辑的 Word 段落中")
+		return
+	}
 	alignment := map[string]document.WordAlignment{"align-left": document.WordAlignLeft, "align-center": document.WordAlignCenter, "align-right": document.WordAlignRight, "align-justify": document.WordAlignJustified}[actionID]
+	if alignment == "" {
+		return
+	}
+	if wordHasPendingTextDrafts(state) {
+		if state.wordDeferredToolbarAction == "" {
+			state.wordDeferredToolbarAction = actionID
+		}
+		state.wordForceDraftFlush.Store(true)
+		state.wordFlushRequested.Store(true)
+		state.wordFlushAllDrafts.Store(true)
+		a.startNextWordTextCommitFor(state)
+		return
+	}
+	paragraphIDs = append([]string(nil), paragraphIDs...)
 	a.runWordCommand("段落对齐", func(editor document.WordTextEditor) error {
-		return editor.SetParagraphAlignment(paragraphID, alignment)
+		if bulk, ok := any(editor).(document.WordParagraphAlignmentEditor); ok {
+			return bulk.SetParagraphAlignments(paragraphIDs, alignment)
+		}
+		if len(paragraphIDs) != 1 {
+			return fmt.Errorf("当前 DOCX 适配器不支持批量段落对齐")
+		}
+		return editor.SetParagraphAlignment(paragraphIDs[0], alignment)
 	})
 }
 

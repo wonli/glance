@@ -3,6 +3,7 @@ package desktopui
 import (
 	"container/list"
 	"fmt"
+	"glance/internal/document"
 	"glance/internal/fontcatalog"
 	"io"
 	"sort"
@@ -31,7 +32,8 @@ func (a *App) prepareFontRendering() {
 	if a.documentSessionState != nil {
 		inputKey += fmt.Sprintf(":%d:%s:%d", a.wordRevisionAtomic.Load(), a.selectedWordRunID, a.documentGeneration)
 		if a.virtualGrid != nil {
-			inputKey += fmt.Sprintf("%v:%p", a.virtualGrid.WindowRange, a.virtualGrid.Window.Cells)
+			v := a.virtualGrid
+			inputKey += fmt.Sprintf("%v:%p:%p:%p:%p", v.LoadedWindows, v.Window.Cells, v.TopWindow.Cells, v.LeftWindow.Cells, v.CornerWindow.Cells)
 		}
 	}
 	if inputKey == p.renderInputKey {
@@ -46,10 +48,12 @@ func (a *App) prepareFontRendering() {
 		}
 		a.wordBlocksMu.RUnlock()
 		if a.virtualGrid != nil {
-			for _, row := range a.virtualGrid.Window.Cells {
-				for _, cell := range row {
-					if cell.Style.FontFamily != "" {
-						names[cell.Style.FontFamily] = true
+			for _, window := range []document.SheetWindow{a.virtualGrid.Window, a.virtualGrid.TopWindow, a.virtualGrid.LeftWindow, a.virtualGrid.CornerWindow} {
+				for _, row := range window.Cells {
+					for _, cell := range row {
+						if cell.Style.FontFamily != "" {
+							names[cell.Style.FontFamily] = true
+						}
 					}
 				}
 			}

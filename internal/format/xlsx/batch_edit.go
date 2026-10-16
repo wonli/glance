@@ -18,6 +18,14 @@ var _ document.SpreadsheetBatchEditor = (*Workbook)(nil)
 var _ document.SpreadsheetRangeReader = (*Workbook)(nil)
 
 func (w *Workbook) ReadRange(sheet string, bounds document.CellRange) ([][]document.Cell, error) {
+	return w.readRange(sheet, bounds, false)
+}
+
+func (w *Workbook) ReadClipboardRange(sheet string, bounds document.CellRange) ([][]document.Cell, error) {
+	return w.readRange(sheet, bounds, true)
+}
+
+func (w *Workbook) readRange(sheet string, bounds document.CellRange, includeClipboardMetadata bool) ([][]document.Cell, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if err := w.checkOpen(); err != nil {
@@ -30,6 +38,14 @@ func (w *Workbook) ReadRange(sheet string, bounds document.CellRange) ([][]docum
 	if rows*cols > maxClipboardCells {
 		return nil, fmt.Errorf("clipboard selection exceeds %d cells", maxClipboardCells)
 	}
+	formulaTypes := map[string]string(nil)
+	if includeClipboardMetadata {
+		var err error
+		formulaTypes, err = w.clipboardFormulaTypesLocked(sheet)
+		if err != nil {
+			return nil, fmt.Errorf("read copied formula types: %w", err)
+		}
+	}
 	out := make([][]document.Cell, rows)
 	for r := 0; r < rows; r++ {
 		out[r] = make([]document.Cell, cols)
@@ -39,10 +55,71 @@ func (w *Workbook) ReadRange(sheet string, bounds document.CellRange) ([][]docum
 			if err != nil {
 				return nil, err
 			}
-			out[r][c] = document.Cell{Value: value}
+			formula, err := w.file.GetCellFormula(sheet, ref)
+			if err != nil {
+				return nil, fmt.Errorf("read cell %s formula: %w", ref, err)
+			}
+			styleID, err := w.file.GetCellStyle(sheet, ref)
+			if err != nil {
+				return nil, fmt.Errorf("read cell %s style: %w", ref, err)
+			}
+			style, err := readCellStyle(w.file, styleID)
+			if err != nil {
+				return nil, fmt.Errorf("read cell %s style details: %w", ref, err)
+			}
+			cell := document.Cell{Value: value, Formula: formula, FormulaType: formulaTypes[ref], StyleID: styleID, Style: style}
+			if formula == "" {
+				cell.TypedValue, err = readClipboardTypedValue(w.file, sheet, ref)
+				if err != nil {
+					return nil, fmt.Errorf("read cell %s typed value: %w", ref, err)
+				}
+			}
+			out[r][c] = cell
 		}
 	}
 	return out, nil
+}
+
+func readClipboardTypedValue(file *excelize.File, sheet, cell string) (*document.CellValue, error) {
+	cellType, err := file.GetCellType(sheet, cell)
+	if err != nil {
+		return nil, err
+	}
+	if cellType == excelize.CellTypeDate {
+		// ISO date cells are stored as strings, while the neutral value model
+		// does not yet carry an ISO date kind. Same-workbook paste uses the
+		// displayed TSV value until that typed value is modeled explicitly.
+		return nil, nil
+	}
+	kind := documentCellValueKind(cellType)
+	raw, err := file.GetCellValue(sheet, cell, excelize.Options{RawCellValue: true})
+	if err != nil {
+		return nil, err
+	}
+	if kind == "" {
+		if raw == "" && cellType == excelize.CellTypeUnset {
+			return nil, nil
+		}
+		if cellType == excelize.CellTypeUnset {
+			if number, parseErr := strconv.ParseFloat(raw, 64); parseErr == nil && finiteNumber(number) {
+				return &document.CellValue{Kind: document.CellValueNumber, Number: number}, nil
+			}
+		}
+		return nil, nil
+	}
+	value := &document.CellValue{Kind: kind}
+	switch kind {
+	case document.CellValueText:
+		value.Text = raw
+	case document.CellValueNumber:
+		value.Number, err = strconv.ParseFloat(raw, 64)
+		if err != nil || !finiteNumber(value.Number) {
+			return nil, fmt.Errorf("invalid stored numeric value %q", raw)
+		}
+	case document.CellValueBoolean:
+		value.Boolean = strings.EqualFold(raw, "true") || raw == "1"
+	}
+	return value, nil
 }
 
 func (w *Workbook) SetCells(sheet string, edits []document.CellEdit) error {

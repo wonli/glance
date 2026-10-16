@@ -33,7 +33,7 @@ func registerViewCapabilities(catalog *Catalog) error {
 	}, {
 		Descriptor: CapabilityDescriptor{
 			ID: "spreadsheet.zoom.apply", Name: "调整工作表缩放",
-			Description: "在指定的已附着桌面窗口中放大、恢复 100% 或设置工作表缩放比例。set 使用 50 到 200 的百分比。该操作只改变窗口视图；没有匹配窗口时返回 no_attached_view。",
+			Description: "在指定的已附着桌面窗口中放大、恢复 100% 或设置工作表缩放比例。set 使用 50 到 200 的百分比。该操作改变窗口视图，不修改单元格内容；工作区快照与后续 XLSX 保存会保留每张表的比例。没有匹配窗口时返回 no_attached_view。",
 			Category:    CapabilityWorkflow, Formats: []Format{FormatXLSX}, Risk: RiskLow,
 			RequiresDocument: true, RequiresRevision: true, RequiresView: true,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"operation":{"type":"string","enum":["zoom_in","reset","set"]},"zoom_percent":{"type":"integer","minimum":50,"maximum":200}},"required":["operation"],"additionalProperties":false}`),

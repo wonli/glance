@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/layout"
 	"glance/internal/document"
@@ -155,8 +156,21 @@ func (a *App) processFontPickerEvents(gtx layout.Context) {
 			}
 		}
 	}
+	filters := []event.Filter{
+		key.Filter{Focus: &p.search, Name: key.NameUpArrow, Required: key.ModAlt},
+		key.Filter{Focus: &p.search, Name: key.NameDownArrow, Required: key.ModAlt},
+		key.Filter{Focus: &p.search, Name: key.NameTab},
+		key.Filter{Focus: &p.keyTag, Name: key.NameReturn},
+		key.Filter{Focus: &p.keyTag, Name: key.NameEnter},
+		key.Filter{Focus: &p.keyTag, Name: key.NameEscape},
+		key.Filter{Focus: &p.keyTag, Name: key.NameUpArrow},
+		key.Filter{Focus: &p.keyTag, Name: key.NameDownArrow},
+	}
+	if !editorHasActiveComposition(&p.search) {
+		filters = append(filters, key.Filter{Focus: &p.search, Name: key.NameEscape})
+	}
 	for {
-		event, ok := gtx.Event(key.Filter{Focus: &p.search, Name: key.NameEscape}, key.Filter{Focus: &p.search, Name: key.NameUpArrow, Required: key.ModAlt}, key.Filter{Focus: &p.search, Name: key.NameDownArrow, Required: key.ModAlt}, key.Filter{Focus: &p.search, Name: key.NameTab}, key.Filter{Focus: &p.keyTag, Name: key.NameReturn}, key.Filter{Focus: &p.keyTag, Name: key.NameEnter}, key.Filter{Focus: &p.keyTag, Name: key.NameEscape}, key.Filter{Focus: &p.keyTag, Name: key.NameUpArrow}, key.Filter{Focus: &p.keyTag, Name: key.NameDownArrow})
+		event, ok := gtx.Event(filters...)
 		if !ok {
 			break
 		}

@@ -64,6 +64,7 @@ func (a *App) layoutConfirmDialogCard(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.X = maxWidth
 	gtx.Constraints.Max.X = maxWidth
 	gtx.Constraints.Min.Y = 0
+	actionContentWidth := max(0, maxWidth-gtx.Dp(unit.Dp(48)))
 
 	child := op.Record(gtx.Ops)
 	dims := layout.Inset{Top: unit.Dp(24), Bottom: unit.Dp(24), Left: unit.Dp(24), Right: unit.Dp(24)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -87,13 +88,27 @@ func (a *App) layoutConfirmDialogCard(gtx layout.Context) layout.Dimensions {
 			children = append(children,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(20), Bottom: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						if gtx.Constraints.Max.X > actionContentWidth {
+							gtx.Constraints.Max.X = actionContentWidth
+						}
+						if gtx.Constraints.Min.X > gtx.Constraints.Max.X {
+							gtx.Constraints.Min.X = gtx.Constraints.Max.X
+						}
 						height := gtx.Dp(unit.Dp(1))
 						gtx.Constraints.Min.Y = height
 						gtx.Constraints.Max.Y = height
 						return fill(gtx, color.NRGBA{R: 232, G: 235, B: 239, A: 255})
 					})
 				}),
-				layout.Rigid(a.layoutConfirmDialogActions),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if gtx.Constraints.Max.X > actionContentWidth {
+						gtx.Constraints.Max.X = actionContentWidth
+					}
+					if gtx.Constraints.Min.X > gtx.Constraints.Max.X {
+						gtx.Constraints.Min.X = gtx.Constraints.Max.X
+					}
+					return a.layoutConfirmDialogActions(gtx)
+				}),
 			)
 		}
 
@@ -114,7 +129,9 @@ func (a *App) layoutConfirmDialogCard(gtx layout.Context) layout.Dimensions {
 	card := clip.RRect{Rect: bounds, NW: radius, NE: radius, SW: radius, SE: radius}
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, card.Op(gtx.Ops))
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 216, G: 222, B: 230, A: 255}, clip.Stroke{Path: card.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+	contentClip := card.Push(gtx.Ops)
 	call.Add(gtx.Ops)
+	contentClip.Pop()
 	return dims
 }
 
@@ -269,21 +286,159 @@ func (a *App) layoutConfirmDialogIcon(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutConfirmDialogActions(gtx layout.Context) layout.Dimensions {
-	buttons := make([]layout.FlexChild, 0, len(a.modal.Actions))
+	actions := make([]*modalDialogAction, 0, len(a.modal.Actions))
 	for i := range a.modal.Actions {
-		action := &a.modal.Actions[i]
-		buttons = append(buttons, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layoutConfirmDialogAction(gtx, a.theme, action, func() {
-				if a.modal.OnAction != nil {
-					a.modal.OnAction(action.ID)
-				}
-			})
-		}))
+		actions = append(actions, &a.modal.Actions[i])
 	}
-	return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceStart, Gap: gtx.Dp(unit.Dp(10))}.Layout(gtx, buttons...)
+	return a.layoutModalActionButtons(gtx, actions, 10)
 }
 
 func layoutConfirmDialogAction(gtx layout.Context, theme *material.Theme, action *modalDialogAction, onClick func()) layout.Dimensions {
+	width := measureConfirmDialogActionWidth(gtx, theme, action)
+	if available := gtx.Constraints.Max.X; available > 0 && width > available {
+		width = available
+	}
+	return layoutConfirmDialogActionAtWidth(gtx, theme, action, width, onClick)
+}
+
+func (a *App) layoutModalActionButtons(gtx layout.Context, actions []*modalDialogAction, gapDp int) layout.Dimensions {
+	if len(actions) == 0 || gtx.Constraints.Max.X <= 0 {
+		return layout.Dimensions{}
+	}
+	gap := gtx.Dp(unit.Dp(gapDp))
+	availableWidth := gtx.Constraints.Max.X
+	widths := make([]int, len(actions))
+	for index, action := range actions {
+		widths[index] = measureConfirmDialogActionWidth(gtx, a.theme, action)
+		if widths[index] > availableWidth {
+			widths[index] = availableWidth
+		}
+	}
+	rows := planDialogActionRows(widths, availableWidth, gap)
+	rowChildren := make([]layout.FlexChild, 0, len(rows))
+	for _, row := range rows {
+		rowIndexes := row
+		buttons := make([]layout.FlexChild, 0, len(rowIndexes))
+		for _, actionIndex := range rowIndexes {
+			index := actionIndex
+			action := actions[index]
+			width := widths[index]
+			buttons = append(buttons, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layoutConfirmDialogActionAtWidth(gtx, a.theme, action, width, func() {
+					if a.modal.OnAction != nil {
+						a.modal.OnAction(action.ID)
+					}
+				})
+			}))
+		}
+		rowChildren = append(rowChildren, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceStart, Gap: gap}.Layout(gtx, buttons...)
+		}))
+	}
+	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceStart, Gap: gtx.Dp(unit.Dp(8))}.Layout(gtx, rowChildren...)
+}
+
+func planDialogActionRows(widths []int, availableWidth, gap int) [][]int {
+	if availableWidth <= 0 || len(widths) == 0 {
+		return nil
+	}
+	if gap < 0 {
+		gap = 0
+	}
+	var rows [][]int
+	var row []int
+	rowWidth := 0
+	for index, width := range widths {
+		if width < 0 {
+			width = 0
+		}
+		if width > availableWidth {
+			width = availableWidth
+		}
+		withGap := 0
+		if len(row) > 0 {
+			withGap = gap
+		}
+		if len(row) > 0 && rowWidth+withGap+width > availableWidth {
+			rows = append(rows, row)
+			row = nil
+			rowWidth = 0
+			withGap = 0
+		}
+		row = append(row, index)
+		rowWidth += withGap + width
+	}
+	if len(row) > 0 {
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func measureConfirmDialogActionWidth(gtx layout.Context, theme *material.Theme, action *modalDialogAction) int {
+	availableWidth := gtx.Constraints.Max.X
+	if availableWidth <= 0 {
+		return 0
+	}
+	measureGtx := gtx
+	measureGtx.Ops = new(op.Ops)
+	measureGtx.Constraints.Min.X = 0
+	measureGtx.Constraints.Max.X = availableWidth
+	labelDims := layout.Inset{Left: unit.Dp(14), Right: unit.Dp(14)}.Layout(measureGtx, dialogActionLabelStyle(theme, action, dialogActionForeground(action)).Layout)
+	width := labelDims.Size.X
+	minWidth := gtx.Dp(unit.Dp(88))
+	if dialogActionStyle(action) == modalDialogActionSecondary {
+		minWidth = gtx.Dp(unit.Dp(80))
+	}
+	if width < minWidth {
+		width = minWidth
+	}
+	if action.WidthDp > 0 {
+		requested := gtx.Dp(unit.Dp(action.WidthDp))
+		if requested > width {
+			width = requested
+		}
+	}
+	if width > availableWidth {
+		width = availableWidth
+	}
+	return width
+}
+
+func dialogActionStyle(action *modalDialogAction) modalDialogActionStyle {
+	style := action.Style
+	if style == modalDialogActionDefault {
+		style = resolveDialogActionStyle(modalDialogActionSpec{ID: action.ID, Label: action.Label})
+	}
+	return style
+}
+
+func dialogActionForeground(action *modalDialogAction) color.NRGBA {
+	if dialogActionStyle(action) == modalDialogActionSecondary {
+		return color.NRGBA{R: 78, G: 87, B: 98, A: 255}
+	}
+	return color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+}
+
+func dialogActionLabelStyle(theme *material.Theme, action *modalDialogAction, foreground color.NRGBA) material.LabelStyle {
+	weight := font.SemiBold
+	if dialogActionStyle(action) == modalDialogActionSecondary {
+		weight = font.Medium
+	}
+	textSize := unit.Sp(13)
+	if action.TextSizeSp > 0 {
+		textSize = unit.Sp(action.TextSizeSp)
+	}
+	style := homeLabelStyle(theme, action.Label, textSize, foreground, weight)
+	style.MaxLines = 2
+	return style
+}
+
+func layoutConfirmDialogActionAtWidth(gtx layout.Context, theme *material.Theme, action *modalDialogAction, width int, onClick func()) layout.Dimensions {
+	if width < 0 {
+		width = 0
+	}
+	gtx.Constraints.Min.X = width
+	gtx.Constraints.Max.X = width
 	semantic.Button.Add(gtx.Ops)
 	semantic.DescriptionOp(action.Label).Add(gtx.Ops)
 	if action.button.Clicked(gtx) {
@@ -293,10 +448,7 @@ func layoutConfirmDialogAction(gtx layout.Context, theme *material.Theme, action
 		background := color.NRGBA{R: 52, G: 120, B: 209, A: 255}
 		foreground := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 		border := background
-		style := action.Style
-		if style == modalDialogActionDefault {
-			style = resolveDialogActionStyle(modalDialogActionSpec{ID: action.ID, Label: action.Label})
-		}
+		style := dialogActionStyle(action)
 		switch style {
 		case modalDialogActionSecondary:
 			background = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
@@ -307,32 +459,11 @@ func layoutConfirmDialogAction(gtx layout.Context, theme *material.Theme, action
 			foreground = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 			border = background
 		}
-		weight := font.SemiBold
-		if style == modalDialogActionSecondary {
-			weight = font.Medium
-		}
-		textSize := unit.Sp(13)
-		if action.TextSizeSp > 0 {
-			textSize = unit.Sp(action.TextSizeSp)
-		}
-		labelStyle := homeLabelStyle(theme, action.Label, textSize, foreground, weight)
+		labelStyle := dialogActionLabelStyle(theme, action, foreground)
 		labelOps := op.Record(gtx.Ops)
 		labelDims := layout.Inset{Left: unit.Dp(14), Right: unit.Dp(14)}.Layout(gtx, labelStyle.Layout)
 		labelCall := labelOps.Stop()
-		size := labelDims.Size
-		minWidth := gtx.Dp(unit.Dp(88))
-		if style == modalDialogActionSecondary {
-			minWidth = gtx.Dp(unit.Dp(80))
-		}
-		if size.X < minWidth {
-			size.X = minWidth
-		}
-		if action.WidthDp > 0 {
-			width := gtx.Dp(unit.Dp(action.WidthDp))
-			if width > labelDims.Size.X {
-				size.X = width
-			}
-		}
+		size := image.Pt(gtx.Constraints.Max.X, labelDims.Size.Y)
 		if minHeight := gtx.Dp(unit.Dp(36)); size.Y < minHeight {
 			size.Y = minHeight
 		}

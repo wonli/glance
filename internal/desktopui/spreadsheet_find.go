@@ -14,6 +14,16 @@ type spreadsheetRangeSearchArguments struct {
 	MaxResults int    `json:"max_results"`
 }
 
+const spreadsheetReplaceAllMaxMatches = 10000
+
+type spreadsheetReplaceAllPlan struct {
+	edits          []document.CellEdit
+	foundCells     int
+	changedCells   int
+	skippedMatches int
+	truncated      bool
+}
+
 func (a *App) showSpreadsheetFindDialog() {
 	a.showSpreadsheetSearchReplaceDialog(false)
 }
@@ -40,16 +50,18 @@ func (a *App) showSpreadsheetSearchReplaceDialog(replaceTab bool) {
 		a.setStatus("当前表格不支持安全替换")
 		return
 	}
+	query := spreadsheetFindInitialQuery(state)
 	actions := []modalDialogActionSpec{{ID: "find-next", Label: "查找下一个", Style: modalDialogActionPrimary}}
 	if canReplace {
 		actions = []modalDialogActionSpec{
 			{ID: "find-next", Label: "查找下一个", Style: modalDialogActionSecondary, WidthDp: 96, TextSizeSp: 11},
 			{ID: "replace", Label: "替换", Style: modalDialogActionPrimary, WidthDp: 76, TextSizeSp: 12},
+			{ID: "replace-all", Label: "全部替换", Style: modalDialogActionSecondary, WidthDp: 92, TextSizeSp: 11},
 		}
 	}
 	onAction := func(action string) {
 		if action == "close" {
-			a.modal.Hide()
+			a.hideSpreadsheetSearchReplaceDialog(state)
 			return
 		}
 		query := strings.TrimSpace(a.modal.Input.Text())
@@ -64,6 +76,16 @@ func (a *App) showSpreadsheetSearchReplaceDialog(replaceTab bool) {
 		if canReplace {
 			state.excelReplaceText = replacement
 		}
+		if action == "replace-all" {
+			a.replaceAllSpreadsheetText(searcher, query, replacement)
+			a.modal.FocusInputRequested = true
+			return
+		}
+		if action == "find-previous" {
+			a.findPreviousSpreadsheetText(searcher, query)
+			a.modal.FocusInputRequested = true
+			return
+		}
 		if action != "replace" {
 			a.findNextSpreadsheetText(searcher, query)
 			a.modal.FocusInputRequested = true
@@ -73,10 +95,11 @@ func (a *App) showSpreadsheetSearchReplaceDialog(replaceTab bool) {
 		a.modal.FocusInputRequested = true
 	}
 	if canReplace {
-		a.modal.ShowDualInput("查找和替换", "", state.excelFindQuery, "查找内容", state.excelReplaceText, "替换为", onAction, actions...)
+		a.modal.ShowDualInput("查找和替换", "", query, "查找内容", state.excelReplaceText, "替换为", onAction, actions...)
 	} else {
-		a.modal.ShowInput("查找和替换", "", state.excelFindQuery, "查找内容", onAction, actions...)
+		a.modal.ShowInput("查找和替换", "", query, "查找内容", onAction, actions...)
 	}
+	a.modal.Input.SetCaret(0, len([]rune(query)))
 	a.modal.SearchReplace = true
 	a.modal.SearchReplaceHasReplace = canReplace
 	a.modal.SearchReplaceReplaceTab = replaceTab
@@ -86,7 +109,51 @@ func (a *App) showSpreadsheetSearchReplaceDialog(replaceTab bool) {
 	a.modal.FocusInputRequested = true
 }
 
+func (a *App) hideSpreadsheetSearchReplaceDialog(state *documentSessionState) {
+	a.modal.Hide()
+	if state != nil && state.virtualGrid != nil {
+		state.virtualGrid.KeyboardFocusRequested = true
+	}
+}
+
+func spreadsheetFindInitialQuery(state *documentSessionState) string {
+	if state == nil {
+		return ""
+	}
+	if state.selectionSet {
+		row, column := state.selection.Active.Row+1, state.selection.Active.Column+1
+		address := xlsx.CellName(column, row)
+		if state.cellEdit.Editing && state.cellEdit.Address == address {
+			if value := state.cellEdit.Draft; value != "" && !strings.ContainsAny(value, "\r\n") {
+				return value
+			}
+			return state.excelFindQuery
+		}
+		if viewport := state.virtualGrid; viewport != nil && viewport.WindowSheet == state.sheet {
+			if viewport.cellLoaded(row, column) {
+				if value := viewport.cell(row, column).Value; value != "" && !strings.ContainsAny(value, "\r\n") {
+					return value
+				}
+			}
+		}
+		if state.cellEdit.Address == address && state.cellEdit.Original != "" && !strings.HasPrefix(state.cellEdit.Original, "=") {
+			if value := state.cellEdit.Original; !strings.ContainsAny(value, "\r\n") {
+				return value
+			}
+		}
+	}
+	return state.excelFindQuery
+}
+
 func (a *App) findNextSpreadsheetText(searcher document.SpreadsheetSearcher, query string) {
+	a.findSpreadsheetText(searcher, query, false)
+}
+
+func (a *App) findPreviousSpreadsheetText(searcher document.SpreadsheetSearcher, query string) {
+	a.findSpreadsheetText(searcher, query, true)
+}
+
+func (a *App) findSpreadsheetText(searcher document.SpreadsheetSearcher, query string, previous bool) {
 	state := a.documentSessionState
 	if state == nil || searcher == nil || query == "" {
 		return
@@ -128,10 +195,21 @@ func (a *App) findNextSpreadsheetText(searcher document.SpreadsheetSearcher, que
 	currentPos := state.selection.Active
 	curRow, curCol := currentPos.Row+1, currentPos.Column+1
 	target := matches[0]
-	for _, match := range matches {
-		if match.Row > curRow || (match.Row == curRow && match.Column > curCol) {
-			target = match
-			break
+	if previous {
+		target = matches[len(matches)-1]
+		for index := len(matches) - 1; index >= 0; index-- {
+			match := matches[index]
+			if match.Row < curRow || (match.Row == curRow && match.Column < curCol) {
+				target = match
+				break
+			}
+		}
+	} else {
+		for _, match := range matches {
+			if match.Row > curRow || (match.Row == curRow && match.Column > curCol) {
+				target = match
+				break
+			}
 		}
 	}
 	a.navigateToCell(target.Row, target.Column)
@@ -217,5 +295,203 @@ func (a *App) replaceSelectedSpreadsheetText(searcher document.SpreadsheetSearch
 	a.modal.SearchReplaceSummary = "正在替换当前单元格…"
 	if a.window != nil {
 		a.window.Invalidate()
+	}
+}
+
+func (a *App) replaceAllSpreadsheetText(searcher document.SpreadsheetSearcher, query, replacement string) {
+	state := a.documentSessionState
+	if state == nil || state.book == nil || searcher == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
+	grid, hasGrid := state.book.(document.GridReader)
+	typeReader, hasValueKind := state.book.(document.SpreadsheetCellValueKindReader)
+	if !hasGrid || !hasValueKind {
+		a.setStatus("当前工作簿不支持安全替换")
+		a.modal.SearchReplaceSummary = "当前工作簿不支持安全替换"
+		return
+	}
+	if a.formatResults == nil {
+		a.setStatus("替换服务不可用")
+		a.modal.SearchReplaceSummary = "替换服务不可用"
+		return
+	}
+	token, ok := state.beginOperation(sessionOperationRead)
+	if !ok {
+		a.setStatus("表格正在处理其他操作")
+		a.modal.SearchReplaceSummary = "表格正在处理其他操作"
+		return
+	}
+	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
+	results, shutdown, appWindow := a.formatResults, a.shutdown, a.window
+	a.modal.SearchReplaceSummary = "正在扫描当前工作表…"
+	if !a.launchManagedBackground(func() {
+		plan := &spreadsheetReplaceAllPlan{}
+		matches, truncated, err := a.findSpreadsheetMatchesForReplace(token, searcher, sheet, query)
+		plan.truncated = truncated
+		plan.foundCells = len(matches)
+		if err == nil && !truncated {
+			needle := lowerWordRunes([]rune(query))
+			for _, match := range matches {
+				unlock := lockSessionAdapterRead(state)
+				cellWindow, readErr := grid.Window(sheet, match.Row, match.Column, 1, 1)
+				if readErr == nil && len(cellWindow.Cells) > 0 && len(cellWindow.Cells[0]) > 0 {
+					cell := cellWindow.Cells[0][0]
+					if cell.Formula != "" {
+						plan.skippedMatches++
+						unlock()
+						continue
+					}
+					kind, kindErr := typeReader.StoredCellValueKind(sheet, xlsx.CellName(match.Column, match.Row))
+					unlock()
+					if kindErr != nil {
+						err = kindErr
+						break
+					}
+					if kind != document.CellValueText {
+						plan.skippedMatches++
+						continue
+					}
+					updated, occurrences := replaceSpreadsheetTextOccurrences(cell.Value, needle, replacement)
+					if occurrences == 0 || updated == cell.Value {
+						continue
+					}
+					if strings.HasPrefix(strings.TrimSpace(updated), "=") {
+						plan.skippedMatches++
+						continue
+					}
+					typedValue := document.CellValue{Kind: document.CellValueText, Text: updated}
+					plan.edits = append(plan.edits, document.CellEdit{
+						Row: match.Row, Column: match.Column, Value: updated, TypedValue: &typedValue,
+					})
+					plan.changedCells++
+					continue
+				}
+				unlock()
+				if readErr != nil {
+					err = readErr
+					break
+				}
+				err = fmt.Errorf("无法读取 %s", xlsx.CellName(match.Column, match.Row))
+				break
+			}
+		}
+		a.completeSessionOperation(state, token, err, false)
+		result := spreadsheetFormatResult{
+			state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation,
+			sheet: sheet, window: window, err: err, replaceAll: plan,
+		}
+		select {
+		case results <- result:
+			if appWindow != nil {
+				appWindow.Invalidate()
+			}
+		case <-shutdown:
+		}
+	}) {
+		state.finishOperation(token)
+		a.setStatus("替换任务无法启动")
+		a.modal.SearchReplaceSummary = "替换任务无法启动"
+	}
+}
+
+func (a *App) findSpreadsheetMatchesForReplace(token sessionOperationToken, searcher document.SpreadsheetSearcher, sheet, query string) ([]document.CellMatch, bool, error) {
+	if a.applicationSessionRegistered(token.documentID) {
+		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.range.search", "spreadsheet_sheet", sheet, sheet, spreadsheetRangeSearchArguments{
+			Sheet: sheet, Query: query, MaxResults: spreadsheetReplaceAllMaxMatches,
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		var outcome struct {
+			Matches   []document.CellMatch `json:"matches"`
+			Truncated bool                 `json:"truncated"`
+		}
+		if err := json.Unmarshal(result.Data, &outcome); err != nil {
+			return nil, false, err
+		}
+		return outcome.Matches, outcome.Truncated, nil
+	}
+	matches, err := searcher.SearchSheet(sheet, query)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(matches) > spreadsheetReplaceAllMaxMatches {
+		return nil, true, nil
+	}
+	return matches, false, nil
+}
+
+func replaceSpreadsheetTextOccurrences(value string, needle []rune, replacement string) (string, int) {
+	if len(needle) == 0 {
+		return value, 0
+	}
+	runes := []rune(value)
+	lowered := lowerWordRunes(runes)
+	var result strings.Builder
+	result.Grow(len(value))
+	replacementCount := 0
+	for index := 0; index < len(runes); {
+		if index+len(needle) <= len(runes) && equalWordRuneSlice(lowered[index:index+len(needle)], needle) {
+			result.WriteString(replacement)
+			index += len(needle)
+			replacementCount++
+			continue
+		}
+		result.WriteRune(runes[index])
+		index++
+	}
+	return result.String(), replacementCount
+}
+
+func equalWordRuneSlice(left, right []rune) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *App) applySpreadsheetReplaceAllPlan(result spreadsheetFormatResult) {
+	state, plan := result.state, result.replaceAll
+	if state == nil || plan == nil || state != a.documentSessionState || result.generation != a.documentGeneration || result.sheet != a.sheet {
+		return
+	}
+	if result.err != nil {
+		a.setStatus("替换全部失败：" + result.err.Error())
+		a.modal.SearchReplaceSummary = "替换失败"
+		return
+	}
+	if plan.truncated {
+		const message = "匹配超过 10,000 个单元格，未修改；请缩小查找内容后重试"
+		a.setStatus(message)
+		a.modal.SearchReplaceSummary = message
+		return
+	}
+	if len(plan.edits) == 0 {
+		message := "未找到匹配项"
+		if plan.foundCells > 0 && plan.skippedMatches > 0 {
+			message = "找到匹配项，但没有可替换的文本单元格"
+		} else if plan.foundCells > 0 {
+			message = "匹配内容已是替换结果"
+		}
+		a.setStatus(message)
+		a.modal.SearchReplaceSummary = message
+		a.modal.FocusInputRequested = true
+		return
+	}
+	details := fmt.Sprintf("已替换 %d 个单元格", plan.changedCells)
+	if plan.skippedMatches > 0 {
+		details += fmt.Sprintf("；跳过 %d 个公式或非文本单元格", plan.skippedMatches)
+	}
+	progress := fmt.Sprintf("正在替换 %d 个单元格…", plan.changedCells)
+	a.modal.SearchReplaceSummary = progress
+	a.setStatus(progress)
+	if err := a.applyBatchEditsWithDetails(plan.edits, "替换全部", details); err != nil {
+		a.setStatus("替换全部失败：" + err.Error())
+		a.modal.SearchReplaceSummary = "替换失败"
 	}
 }

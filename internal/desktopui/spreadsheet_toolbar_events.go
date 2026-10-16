@@ -2,13 +2,12 @@ package desktopui
 
 import (
 	"fmt"
-	"glance/internal/document"
-	"io"
 	"strconv"
 	"strings"
 
-	"gioui.org/io/clipboard"
 	"gioui.org/layout"
+
+	"glance/internal/document"
 )
 
 func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
@@ -61,19 +60,11 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			continue
 		}
 		if action.slot == 2 || action.slot == 3 {
-			text, err := a.copySelection()
-			if err == nil {
-				gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})
-				if action.slot == 3 {
-					a.clearSelectionAsync()
-				}
-			} else {
-				a.setStatus("剪贴板操作失败：" + err.Error())
-			}
+			a.writeSpreadsheetSelectionToClipboard(gtx, action.slot == 3)
 			continue
 		}
 		if action.slot == 21 {
-			gtx.Execute(clipboard.ReadCmd{Tag: &state.clipboardTarget})
+			a.requestSpreadsheetClipboardPaste(gtx, state)
 			continue
 		}
 		if action.slot == 18 || action.slot == 19 {
@@ -282,10 +273,6 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetPrintTitlesDialog()
 			continue
 		}
-		if action.slot == toolbarActionFreezePanes {
-			a.showSpreadsheetFreezePanesDialog()
-			continue
-		}
 		if action.slot == toolbarActionTextToColumns {
 			a.showSpreadsheetTextToColumnsDialog()
 			continue
@@ -366,11 +353,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			a.showSpreadsheetTranslateDialog()
 			continue
 		}
-		style := a.selectedCellStyle()
-		if patch, ok := formatPatchForToolbarAction(action.slot, style); ok {
-			a.applyCellFormat(patch)
-			continue
-		}
+		a.applySpreadsheetFormatAction(action.slot)
 	}
 	if state.toolbarPicker != pickerNone {
 		for index := range state.toolbarPickerButtons {
@@ -383,4 +366,12 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			}
 		}
 	}
+}
+
+func (a *App) applySpreadsheetFormatAction(slot int) {
+	patch, ok := formatPatchForToolbarAction(slot, a.selectedCellStyle())
+	if !ok || !a.toolbarActionEnabled(slot) {
+		return
+	}
+	a.applyCellFormat(patch)
 }

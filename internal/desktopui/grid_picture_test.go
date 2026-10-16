@@ -22,8 +22,10 @@ func TestGridPictureGeometryUsesAnchorsScrollScaleAndViewportClip(t *testing.T) 
 	v := newGridViewport()
 	_ = v.Rows.SetSize(0, 40)
 	_ = v.Rows.SetSize(1, 30)
+	_ = v.Rows.SetSize(2, 32)
 	_ = v.Columns.SetSize(0, 100)
 	_ = v.Columns.SetSize(1, 120)
+	_ = v.Columns.SetSize(2, 90)
 	v.Scale = 2
 	v.X, v.Y = 30, 20
 	picture := document.SpreadsheetImage{ID: "p1", Row: 2, Column: 2, OffsetX: 5, OffsetY: 7, WidthPx: 50, HeightPx: 25}
@@ -130,6 +132,9 @@ func TestGridPictureLayerRendersAndClipsInsideScrollableGridViewport(t *testing.
 	state.gridPictureCache.Put("magenta", solidGridPicture(color.NRGBA{R: 200, G: 40, B: 170, A: 255}, 50, 20))
 	app := &App{documentSessionState: state, theme: material.NewTheme()}
 	v := newGridViewport()
+	_ = v.Rows.SetSize(0, 32)
+	_ = v.Columns.SetSize(0, 90)
+	_ = v.Columns.SetSize(1, 90)
 	v.X, v.Y = 20, 10
 	var ops op.Ops
 	gtx := layout.Context{Ops: &ops, Constraints: layout.Constraints{Max: image.Pt(220, 160)}, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}

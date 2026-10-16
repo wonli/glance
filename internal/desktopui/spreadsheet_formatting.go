@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"encoding/json"
+	"errors"
 
 	"glance/internal/document"
 )
@@ -107,7 +108,8 @@ func (a *App) applySpreadsheetFormatPainter() {
 	state.excelFormatPainterActive = false
 	state.excelFormatPainterPatch = nil
 	state.excelFormatPainterSourceCell = ""
-	if sourceCell != "" && a.applicationSessionRegistered(state.documentID) {
+	_, hasExactPainter := state.book.(document.SpreadsheetCellFormatPainter)
+	if sourceCell != "" && (hasExactPainter || a.applicationSessionRegistered(state.documentID)) {
 		a.runSpreadsheetFormatPaintIntent(sourceCell, targetBounds)
 		return
 	}
@@ -135,16 +137,27 @@ func (a *App) runSpreadsheetFormatPaintIntent(sourceCell string, targetBounds do
 	}
 	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
 	a.launchManagedBackground(func() {
-		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.format.paint", "spreadsheet_range", "selection", sheet, spreadsheetFormatPaintArguments{Sheet: sheet, SourceCell: sourceCell, TargetBounds: targetBounds})
 		var changed bool
-		if err == nil {
-			var outcome struct {
-				Changed bool `json:"changed"`
+		var err error
+		commandRouted := a.applicationSessionRegistered(token.documentID)
+		if commandRouted {
+			result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.format.paint", "spreadsheet_range", "selection", sheet, spreadsheetFormatPaintArguments{Sheet: sheet, SourceCell: sourceCell, TargetBounds: targetBounds})
+			err = commandErr
+			if err == nil {
+				var outcome struct {
+					Changed bool `json:"changed"`
+				}
+				err = json.Unmarshal(result.Data, &outcome)
+				changed = outcome.Changed
 			}
-			err = json.Unmarshal(result.Data, &outcome)
-			changed = outcome.Changed
+		} else if painter, ok := state.book.(document.SpreadsheetCellFormatPainter); ok {
+			unlock := lockSessionAdapterWrite(state)
+			changed, err = painter.PaintCellFormat(sheet, sourceCell, targetBounds)
+			unlock()
+		} else {
+			err = errors.New("当前表格不支持完整格式刷")
 		}
-		a.completeSessionOperation(state, token, err, false)
+		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "格式刷", applied: changed}:
 		case <-a.shutdown:

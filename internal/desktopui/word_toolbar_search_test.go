@@ -61,6 +61,97 @@ func TestWordFindCyclesCaseInsensitivelyAcrossEditableRunsAndDrafts(t *testing.T
 	}
 }
 
+func TestWordFindMatchesAcrossAdjacentFormattedRuns(t *testing.T) {
+	paragraph := document.WordParagraph{ID: "paragraph", Inlines: []document.WordInline{
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "bold", Text: "Be", Editable: true, Style: document.WordTextStyle{Bold: true}}},
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "italic", Text: "Ta", Editable: true, Style: document.WordTextStyle{Italic: true}}},
+	}}
+	match, found := findWordTextMatch([]document.WordBlock{{Kind: document.WordParagraphBlock, Paragraph: &paragraph}}, "beta", "", 0, nil)
+	if !found {
+		t.Fatal("find next did not match text split across adjacent formatted runs")
+	}
+	if match.RunID != "bold" || match.Start != 0 || match.EndRunID != "italic" || match.EndOffset != 2 {
+		t.Fatalf("cross-run match = %#v; want bold[0] through italic[2]", match)
+	}
+}
+
+func TestWordFindPreviousCyclesBackwardAcrossEditableRuns(t *testing.T) {
+	paragraph := document.WordParagraph{ID: "paragraph", Inlines: []document.WordInline{
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "first", Text: "a x a", Editable: true}},
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "second", Text: "a", Editable: true}},
+	}}
+	blocks := []document.WordBlock{{Kind: document.WordParagraphBlock, Paragraph: &paragraph}}
+	for _, test := range []struct {
+		name         string
+		currentRun   string
+		currentStart int
+		wantRun      string
+		wantStart    int
+	}{
+		{name: "wrap from first match", currentRun: "first", currentStart: 0, wantRun: "second", wantStart: 0},
+		{name: "previous run match", currentRun: "second", currentStart: 0, wantRun: "first", wantStart: 4},
+		{name: "previous match in same run", currentRun: "first", currentStart: 4, wantRun: "first", wantStart: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, found := findPreviousWordTextMatch(blocks, "a", test.currentRun, test.currentStart, nil)
+			if !found || got.RunID != test.wantRun || got.Start != test.wantStart {
+				t.Fatalf("previous match = %#v found=%v; want %s[%d]", got, found, test.wantRun, test.wantStart)
+			}
+		})
+	}
+}
+
+func TestWordFindPreviousSelectsEarlierMatchAndWraps(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	paragraph := word.WordBlocks()[0].Paragraph
+	run := *paragraph.Inlines[0].Text
+	const text = "needle middle needle"
+	if err := any(word).(document.WordTextEditor).ReplaceTextRun(run.ID, text); err != nil {
+		t.Fatal(err)
+	}
+	state := newDocumentSessionState("word-find-previous.docx")
+	state.word = word
+	state.setWordBlocks(cloneWordBlockSnapshot(word.WordBlocks()))
+	state.selectedWordRunID = run.ID
+	editor := wordRunEditor(state, document.WordTextRun{ID: run.ID, Text: text, Editable: true})
+	lastStart := len([]rune(text)) - len([]rune("needle"))
+	editor.SetCaret(lastStart, len([]rune(text)))
+	app := &App{documentSessionState: state}
+
+	app.findPreviousWordText("needle")
+	if start, end := editor.Selection(); start != 0 || end != len([]rune("needle")) {
+		t.Fatalf("previous Find selected [%d,%d); want [0,6)", start, end)
+	}
+	app.findPreviousWordText("needle")
+	if start, end := editor.Selection(); start != lastStart || end != len([]rune(text)) {
+		t.Fatalf("wrapped previous Find selected [%d,%d); want [%d,%d)", start, end, lastStart, len([]rune(text)))
+	}
+}
+
+func TestWordFindDoesNotCrossReadOnlyOrInlineBoundaries(t *testing.T) {
+	paragraph := document.WordParagraph{ID: "paragraph", Inlines: []document.WordInline{
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "first", Text: "be", Editable: true}},
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "readonly", Text: "x", Editable: false}},
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "last", Text: "ta", Editable: true}},
+	}}
+	blocks := []document.WordBlock{{Kind: document.WordParagraphBlock, Paragraph: &paragraph}}
+	if _, found := findWordTextMatch(blocks, "beta", "", 0, nil); found {
+		t.Fatal("find next crossed a read-only text run")
+	}
+	paragraph.Inlines = []document.WordInline{
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "first", Text: "be", Editable: true}},
+		{Kind: document.WordTabInline, Tab: &document.WordTab{ID: "tab"}},
+		{Kind: document.WordTextInline, Text: &document.WordTextRun{ID: "last", Text: "ta", Editable: true}},
+	}
+	if _, found := findWordTextMatch(blocks, "beta", "", 0, nil); found {
+		t.Fatal("find next crossed a tab inline")
+	}
+}
+
 func TestWordFindToolbarOpensAndNavigatesToSelectedMatch(t *testing.T) {
 	word, err := docx.NewBlank()
 	if err != nil {
@@ -102,6 +193,89 @@ func TestWordFindToolbarOpensAndNavigatesToSelectedMatch(t *testing.T) {
 	}
 	if state.wordPendingFocusRunID != runID {
 		t.Fatalf("pending focus run = %q; want %q", state.wordPendingFocusRunID, runID)
+	}
+}
+
+func TestWordFindPrefillsSelectedTextAndSelectsQuery(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	paragraph := word.WordBlocks()[0].Paragraph
+	run := *paragraph.Inlines[0].Text
+	if err := any(word).(document.WordTextEditor).ReplaceTextRun(run.ID, "请找豆豆再继续"); err != nil {
+		t.Fatal(err)
+	}
+	state := newDocumentSessionState("word-find-selected.docx")
+	state.word = word
+	state.wordFindQuery = "上次查询"
+	state.selectedWordRunID = run.ID
+	editor := wordRunEditor(state, document.WordTextRun{ID: run.ID, Text: "请找豆豆再继续", Editable: true})
+	editor.SetCaret(2, 4)
+	app := &App{documentSessionState: state}
+
+	app.showWordFindDialog()
+	if got := app.modal.Input.Text(); got != "豆豆" {
+		t.Fatalf("query=%q; want selected text", got)
+	}
+	if start, end := app.modal.Input.Selection(); start != 0 || end != 2 {
+		t.Fatalf("query selection=[%d,%d); want [0,2)", start, end)
+	}
+	if state.wordFindQuery != "上次查询" {
+		t.Fatalf("opening Find changed the remembered query to %q", state.wordFindQuery)
+	}
+}
+
+func TestWordFindPrefillsPageSelection(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	paragraph := word.WordBlocks()[0].Paragraph
+	runID := paragraph.Inlines[0].Text.ID
+	if err := any(word).(document.WordTextEditor).ReplaceTextRun(runID, "甲乙丙丁"); err != nil {
+		t.Fatal(err)
+	}
+	state := newDocumentSessionState("word-find-page-selection.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	state.wordFindQuery = "上次查询"
+	state.wordPageTextSelection = &wordPageTextSelection{
+		scope:    "range",
+		anchor:   wordPageCaretPosition{runID: runID, runeOffset: 1},
+		focus:    wordPageCaretPosition{runID: runID, runeOffset: 3},
+		runOrder: map[string]int{runID: 0},
+	}
+	app := &App{documentSessionState: state}
+
+	app.showWordFindDialog()
+	if got := app.modal.Input.Text(); got != "乙丙" {
+		t.Fatalf("query=%q; want page-selected text", got)
+	}
+	if start, end := app.modal.Input.Selection(); start != 0 || end != 2 {
+		t.Fatalf("query selection=[%d,%d); want [0,2)", start, end)
+	}
+}
+
+func TestWordFindSelectsRememberedQueryWhenNoTextIsSelected(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	state := newDocumentSessionState("word-find-remembered.docx")
+	state.word = word
+	state.wordFindQuery = "上次查询"
+	app := &App{documentSessionState: state}
+
+	app.showWordFindDialog()
+	if got := app.modal.Input.Text(); got != "上次查询" {
+		t.Fatalf("query=%q; want remembered query", got)
+	}
+	if start, end := app.modal.Input.Selection(); start != 0 || end != len([]rune("上次查询")) {
+		t.Fatalf("query selection=[%d,%d); want whole query selected", start, end)
 	}
 }
 

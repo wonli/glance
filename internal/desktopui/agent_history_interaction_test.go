@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"context"
+	gioapp "gioui.org/app"
 	"gioui.org/f32"
 	"gioui.org/io/input"
 	"gioui.org/io/pointer"
@@ -196,6 +197,7 @@ func TestAgentHistoryAndDeleteDialogVisual(t *testing.T) {
 
 func TestAgentDeleteDialogButtonsClickableOverSpreadsheetWorkspace(t *testing.T) {
 	a := New(nil, "")
+	a.window = new(gioapp.Window)
 	t.Cleanup(func() {
 		a.shutdownOnce.Do(func() { close(a.shutdown) })
 		a.stopAndWaitManagedBackground()

@@ -55,7 +55,7 @@ func TestSpreadsheetToolbarActionsCoverHomeAndDataGroups(t *testing.T) {
 	}
 	wantActions := map[spreadsheetToolbarTab][]string{
 		toolbarTabFile:       {"打开", "保存", "另存为", "导出", "打印", "共享"},
-		toolbarTabHome:       {"剪切", "复制", "粘贴", "格式刷", "字体", "字号", "加粗", "斜体", "下划线", "左对齐", "居中", "右对齐", "自动换行", "百分比", "数字格式", "插入", "删除", "条件格式", "单元格样式", "格式", "表格格式", "求和", "排序和筛选", "筛选", "查找", "撤销", "重做"},
+		toolbarTabHome:       {"剪切", "复制", "粘贴", "格式刷", "字体", "字号", "减小字号", "增大字号", "加粗", "斜体", "下划线", "边框", "填充颜色", "字体颜色", "左对齐", "居中", "右对齐", "自动换行", "百分比", "货币格式", "增加小数位数", "减少小数位数", "数字格式", "插入", "删除", "条件格式", "单元格样式", "格式", "表格格式", "求和", "排序和筛选", "筛选", "查找", "撤销", "重做"},
 		toolbarTabInsert:     {"表格", "数据透视表", "图片", "形状", "柱状图", "折线图", "饼图", "链接", "文本框"},
 		toolbarTabPageLayout: {"页边距", "纸张方向", "纸张大小", "打印区域", "打印标题", "打印网格线"},
 		toolbarTabFormula:    {"插入函数", "自动求和", "最近使用", "逻辑函数", "文本函数", "日期时间", "名称管理器", "重新计算"},
@@ -94,14 +94,18 @@ func TestSpreadsheetToolbarActionsHaveIconGlyphsAndAccessibleLabels(t *testing.T
 	}
 	actions = append(actions, pictureToolbarActions...)
 	for _, action := range actions {
-		if action.icon == "" {
-			t.Errorf("toolbar action %q has no icon", action.label)
+		if action.icon == "" && action.symbol == "" {
+			t.Errorf("toolbar action %q has neither an icon nor a symbol", action.label)
 		}
 		if action.label == "" {
 			t.Errorf("toolbar action slot %d has no accessible label", action.slot)
 		}
-		if _, ok := toolbarIconData(action.icon); !ok {
-			t.Errorf("toolbar action %q references missing icon %q", action.label, action.icon)
+		if action.icon != "" {
+			if _, ok := toolbarIconData(action.icon); !ok {
+				if _, ok := svgIconOriginal("ribbon", action.icon); !ok {
+					t.Errorf("toolbar action %q references missing icon %q", action.label, action.icon)
+				}
+			}
 		}
 	}
 }
@@ -114,15 +118,17 @@ func TestPenExcelScreenIconsAreBundled(t *testing.T) {
 	}
 }
 
-func TestExcelRibbonActionsUseExcelIconAssets(t *testing.T) {
+func TestExcelRibbonActionsUseBundledIconAssets(t *testing.T) {
 	for tab := toolbarTabFile; tab <= toolbarTabView; tab++ {
 		for _, action := range toolbarActionsForTab(tab) {
 			if action.icon == "" {
-				t.Errorf("tab %d action %q has no Excel icon", tab, action.label)
+				t.Errorf("tab %d action %q has no icon", tab, action.label)
 				continue
 			}
 			if _, ok := toolbarIconData(action.icon); !ok {
-				t.Errorf("tab %d action %q does not resolve through Excel icon assets: %q", tab, action.label, action.icon)
+				if _, ok := svgIconOriginal("ribbon", action.icon); !ok {
+					t.Errorf("tab %d action %q does not resolve through bundled icon assets: %q", tab, action.label, action.icon)
+				}
 			}
 		}
 	}
@@ -330,6 +336,7 @@ func TestSpreadsheetFormatPainterTogglesAndCancels(t *testing.T) {
 	state.selectionSet = true
 	state.selection = CellSelection{Active: CellPosition{Row: 0, Column: 0}, Anchor: CellPosition{Row: 0, Column: 0}}
 	state.virtualGrid = &gridViewport{
+		WindowRange: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1},
 		Window: document.SheetWindow{
 			StartRow:    1,
 			StartColumn: 1,
@@ -375,6 +382,7 @@ func TestSpreadsheetFormatPainterAppliesToTargetSelection(t *testing.T) {
 	state.selectionSet = true
 	state.selection = CellSelection{Active: CellPosition{Row: 0, Column: 0}, Anchor: CellPosition{Row: 0, Column: 0}}
 	state.virtualGrid = &gridViewport{
+		WindowRange: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 2},
 		Window: document.SheetWindow{
 			StartRow:    1,
 			StartColumn: 1,

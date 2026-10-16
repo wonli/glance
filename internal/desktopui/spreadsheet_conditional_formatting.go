@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/document"
-	"strings"
 )
 
 type spreadsheetConditionalFormatArguments struct {
@@ -27,25 +26,11 @@ func (a *App) showSpreadsheetConditionalFormatDialog() {
 	bounds := state.selection.Bounds()
 	prompt := fmt.Sprintf("为选区 %s%d:%s%d 选择条件格式规则：",
 		columnName(bounds.StartColumn), bounds.StartRow, columnName(bounds.EndColumn), bounds.EndRow)
-	a.modal.ShowInput("条件格式", prompt, "data_bar", "规则: data_bar(数据条), 3_color(色阶), duplicate(重复值), above_avg(高于平均值), clear(清除)", func(action string) {
+	a.modal.Show("条件格式", prompt, func(action string) {
 		a.modal.Hide()
 		var ruleType document.SpreadsheetConditionalFormatType
 		clear := false
 		switch action {
-		case "confirm":
-			val := strings.TrimSpace(a.modal.Input.Text())
-			switch val {
-			case "3_color", "color", "scale":
-				ruleType = document.ConditionalFormat3ColorScale
-			case "duplicate", "dup":
-				ruleType = document.ConditionalFormatDuplicate
-			case "above_avg", "avg":
-				ruleType = document.ConditionalFormatAboveAvg
-			case "clear", "none", "":
-				clear = true
-			default:
-				ruleType = document.ConditionalFormatDataBar
-			}
 		case "data_bar":
 			ruleType = document.ConditionalFormatDataBar
 		case "3_color":

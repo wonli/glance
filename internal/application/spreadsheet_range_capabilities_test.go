@@ -33,9 +33,10 @@ type testSpreadsheetrangeSheetBoundsArguments struct {
 }
 
 type testSpreadsheetrangeBoldFillColorArguments struct {
-	Bold      bool   `json:"bold"`
-	FillColor string `json:"fill_color"`
-	FontColor string `json:"font_color"`
+	Bold              bool   `json:"bold"`
+	FillColor         string `json:"fill_color"`
+	FontColor         string `json:"font_color"`
+	VerticalAlignment string `json:"vertical_alignment"`
 }
 
 type testSpreadsheetrangeSheetQueryArguments struct {
@@ -117,16 +118,35 @@ func TestSpreadsheetRangeQueryAndFormattingCapabilitiesUseExplicitTargets(t *tes
 	}
 	seed := []spreadsheetCellEditFixture{
 		{Row: 1, Column: 1, Value: "Item"}, {Row: 1, Column: 2, Value: "Value"},
-		{Row: 2, Column: 1, Value: "apple"}, {Row: 2, Column: 2, Value: "120"},
-		{Row: 3, Column: 1, Value: "apple pie"}, {Row: 3, Column: 2, Value: "150"},
+		{Row: 2, Column: 1, Value: "apple"}, {Row: 2, Column: 2, Value: 120},
+		{Row: 3, Column: 1, Value: "apple pie"}, {Row: 3, Column: 2, Value: 150},
 	}
 	if _, err := invoke("spreadsheet.cells.set", spreadsheetCellsSetPayload{Sheet: "Sheet1", Edits: seed}); err != nil {
 		t.Fatalf("seed range: %v", err)
 	}
-	beforeQuery := mustGetDocumentInfo(t, runtime, documentID)
+	bulkEdits := make([]spreadsheetCellEditFixture, 1001)
+	for index := range bulkEdits {
+		bulkEdits[index] = spreadsheetCellEditFixture{Row: index + 1, Column: 4, Value: fmt.Sprintf("bulk-%d", index)}
+	}
+	bulkSet := assertChanged("spreadsheet.cells.set", spreadsheetCellsSetPayload{Sheet: "Sheet1", Edits: bulkEdits}, true)
+	var bulkOutcome struct {
+		RequestedCount int `json:"requested_count"`
+	}
+	if err := json.Unmarshal(bulkSet.Data, &bulkOutcome); err != nil || bulkOutcome.RequestedCount != len(bulkEdits) {
+		t.Fatalf("bulk cell set result=%s error=%v; want %d requested edits", bulkSet.Data, err, len(bulkEdits))
+	}
+	if _, err := invoke("spreadsheet.formula.set", spreadsheetFormulaSetPayload{Sheet: "Sheet1", Cell: "C1", Formula: "=SUM(B2:B3)"}); err != nil {
+		t.Fatalf("seed copied formula: %v", err)
+	}
+	bold := true
+	assertChanged("spreadsheet.range.format.set", spreadsheetRangeFormatSetPayload{
+		Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 3, EndRow: 1, EndColumn: 3},
+		Patch: document.CellFormatPatch{Bold: &bold},
+	}, true)
 	copyResult := assertChanged("spreadsheet.range.copy", spreadsheetRangeCopyPayload{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}}, false)
 	var copied struct {
-		Rows [][]string `json:"rows"`
+		Rows  [][]string        `json:"rows"`
+		Cells [][]document.Cell `json:"cells"`
 	}
 	if err := json.Unmarshal(copyResult.Data, &copied); err != nil {
 		t.Fatalf("decode range copy result: %v; data=%s", err, copyResult.Data)
@@ -134,6 +154,53 @@ func TestSpreadsheetRangeQueryAndFormattingCapabilitiesUseExplicitTargets(t *tes
 	if len(copied.Rows) != 3 || strings.Join(copied.Rows[1], ",") != "apple,120" || strings.Join(copied.Rows[2], ",") != "apple pie,150" {
 		t.Fatalf("range copy rows=%v; want the explicit A1:B3 values", copied.Rows)
 	}
+	if len(copied.Cells) != 3 || len(copied.Cells[1]) != 2 || copied.Cells[1][1].TypedValue == nil || copied.Cells[1][1].TypedValue.Kind != document.CellValueNumber {
+		t.Fatalf("range copy did not preserve typed numeric cell data: %+v", copied.Cells)
+	}
+	formulaCopy := assertChanged("spreadsheet.range.copy", spreadsheetRangeCopyPayload{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 3, EndRow: 1, EndColumn: 3}}, false)
+	var copiedFormula struct {
+		Cells [][]document.Cell `json:"cells"`
+	}
+	if err := json.Unmarshal(formulaCopy.Data, &copiedFormula); err != nil {
+		t.Fatalf("decode formula clipboard result: %v; data=%s", err, formulaCopy.Data)
+	}
+	if len(copiedFormula.Cells) != 1 || len(copiedFormula.Cells[0]) != 1 || copiedFormula.Cells[0][0].Formula != "SUM(B2:B3)" || !copiedFormula.Cells[0][0].Style.Bold {
+		t.Fatalf("formula clipboard cell=%+v; want formula and bold style", copiedFormula.Cells)
+	}
+	transfer := assertChanged("spreadsheet.cells.transfer", struct {
+		Sheet        string             `json:"sheet"`
+		Source       document.CellRange `json:"source"`
+		TargetRow    int                `json:"target_row"`
+		TargetColumn int                `json:"target_column"`
+		Cells        [][]document.Cell  `json:"cells"`
+	}{
+		Sheet: "Sheet1", Source: document.CellRange{StartRow: 1, StartColumn: 3, EndRow: 1, EndColumn: 3},
+		TargetRow: 2, TargetColumn: 5, Cells: copiedFormula.Cells,
+	}, true)
+	var transferOutcome struct {
+		Changed      bool `json:"changed"`
+		CellCount    int  `json:"cell_count"`
+		TargetRow    int  `json:"target_row"`
+		TargetColumn int  `json:"target_column"`
+	}
+	if err := json.Unmarshal(transfer.Data, &transferOutcome); err != nil || !transferOutcome.Changed || transferOutcome.CellCount != 1 || transferOutcome.TargetRow != 2 || transferOutcome.TargetColumn != 5 {
+		t.Fatalf("range transfer outcome=%+v error=%v data=%s", transferOutcome, err, transfer.Data)
+	}
+	pasted := assertChanged("spreadsheet.range.copy", spreadsheetRangeCopyPayload{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 2, StartColumn: 5, EndRow: 2, EndColumn: 5}}, false)
+	var pastedFormula struct {
+		Cells [][]document.Cell `json:"cells"`
+	}
+	if err := json.Unmarshal(pasted.Data, &pastedFormula); err != nil || len(pastedFormula.Cells) != 1 || pastedFormula.Cells[0][0].Formula != "SUM(D3:D4)" || !pastedFormula.Cells[0][0].Style.Bold {
+		t.Fatalf("pasted formula/style=%+v error=%v data=%s", pastedFormula.Cells, err, pasted.Data)
+	}
+	assertChanged("spreadsheet.history.apply", struct {
+		Action string `json:"action"`
+	}{Action: "undo"}, true)
+	afterUndo := assertChanged("spreadsheet.range.copy", spreadsheetRangeCopyPayload{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 2, StartColumn: 5, EndRow: 2, EndColumn: 5}}, false)
+	if err := json.Unmarshal(afterUndo.Data, &pastedFormula); err != nil || pastedFormula.Cells[0][0].Formula != "" || pastedFormula.Cells[0][0].Value != "" {
+		t.Fatalf("one undo did not restore destination cell: %+v err=%v data=%s", pastedFormula.Cells, err, afterUndo.Data)
+	}
+	beforeQuery := mustGetDocumentInfo(t, runtime, documentID)
 	searchResult := assertChanged("spreadsheet.range.search", spreadsheetRangeSearchPayloadSheet{Sheet: "Sheet1", Query: "APPLE", MaxResults: 1}, false)
 	var found struct {
 		Matches []struct {
@@ -182,7 +249,7 @@ func TestSpreadsheetRangeQueryAndFormattingCapabilitiesUseExplicitTargets(t *tes
 		},
 		{
 			capabilityID: "spreadsheet.range.search",
-			arguments:    testSpreadsheetrangeSheetQueryArguments{Sheet: "Sheet1", Query: "apple", MaxResults: 1001},
+			arguments:    testSpreadsheetrangeSheetQueryArguments{Sheet: "Sheet1", Query: "apple", MaxResults: 10001},
 		},
 	}
 	for _, invalid := range invalidQueries {
@@ -196,7 +263,7 @@ func TestSpreadsheetRangeQueryAndFormattingCapabilitiesUseExplicitTargets(t *tes
 		}
 	}
 
-	formatPatch := testSpreadsheetrangeBoldFillColorArguments{Bold: true, FillColor: "FFFF00", FontColor: "112233"}
+	formatPatch := testSpreadsheetrangeBoldFillColorArguments{Bold: true, FillColor: "FFFF00", FontColor: "112233", VerticalAlignment: "center"}
 	formatArgs := testSpreadsheetrangeSheetBoundsArguments{Sheet: "Sheet1", Bounds: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, Patch: formatPatch}
 	assertChanged("spreadsheet.range.format.set", formatArgs, true)
 	assertChanged("spreadsheet.range.format.set", formatArgs, false)

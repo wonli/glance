@@ -168,28 +168,24 @@ func (v *gridViewport) completeResize(reader interface {
 
 func gridResizeHandleAt(v *gridViewport, x, y, rowHead, colHead int) (resizeAxis, int, float64, float64, bool) {
 	if y >= 0 && y <= colHead && x >= rowHead {
-		position := float64(x-rowHead) + v.X
-		idx := v.Columns.IndexAt(position)
+		idx := v.headerColumnAt(x - rowHead)
 		if idx < 0 {
 			return 0, 0, 0, 0, false
 		}
 		for boundary := idx + 1; boundary >= idx-1 && boundary > 0; boundary-- {
-			edge, _ := v.Columns.Boundary(boundary)
-			screen := float64(rowHead) + edge - v.X
+			screen := v.screenColumnBoundary(boundary, v.paneSplitsAtColumnBoundary(boundary), rowHead)
 			if math.Abs(float64(x)-screen) <= resizeHandleSlop*v.Scale {
 				return resizeColumns, boundary - 1, screen, v.Columns.sizeAt(boundary - 1), true
 			}
 		}
 	}
 	if x >= 0 && x <= rowHead && y >= colHead {
-		position := float64(y-colHead) + v.Y
-		idx := v.Rows.IndexAt(position)
+		idx := v.headerRowAt(y - colHead)
 		if idx < 0 {
 			return 0, 0, 0, 0, false
 		}
 		for boundary := idx + 1; boundary >= idx-1 && boundary > 0; boundary-- {
-			edge, _ := v.Rows.Boundary(boundary)
-			screen := float64(colHead) + edge - v.Y
+			screen := v.screenRowBoundary(boundary, v.paneSplitsAtRowBoundary(boundary), colHead)
 			if math.Abs(float64(y)-screen) <= resizeHandleSlop*v.Scale {
 				return resizeRows, boundary - 1, screen, v.Rows.sizeAt(boundary - 1), true
 			}
@@ -200,9 +196,7 @@ func gridResizeHandleAt(v *gridViewport, x, y, rowHead, colHead int) (resizeAxis
 
 func resizeScreenEdge(v *gridViewport, r *resizeState, rowHead, colHead int) float64 {
 	if r.Axis == resizeColumns {
-		edge, _ := v.Columns.Boundary(r.Index + 1)
-		return float64(rowHead) + edge - v.X
+		return v.screenColumnBoundary(r.Index+1, v.paneSplitsAtColumnBoundary(r.Index+1), rowHead)
 	}
-	edge, _ := v.Rows.Boundary(r.Index + 1)
-	return float64(colHead) + edge - v.Y
+	return v.screenRowBoundary(r.Index+1, v.paneSplitsAtRowBoundary(r.Index+1), colHead)
 }

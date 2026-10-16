@@ -24,7 +24,7 @@ func TestGridHeaderClicksSelectRowsColumnsAndSheet(t *testing.T) {
 		x, y float32
 		want document.CellRange
 	}{
-		{"row", 20, 108, document.CellRange{StartRow: 2, EndRow: 2, StartColumn: 1, EndColumn: xlsxColumns}},
+		{"row", 20, 102, document.CellRange{StartRow: 2, EndRow: 2, StartColumn: 1, EndColumn: xlsxColumns}},
 		{"column", 437, 15, document.CellRange{StartRow: 1, EndRow: xlsxRows, StartColumn: 2, EndColumn: 2}},
 		{"sheet", 20, 15, document.CellRange{StartRow: 1, EndRow: xlsxRows, StartColumn: 1, EndColumn: xlsxColumns}},
 	} {
@@ -45,9 +45,9 @@ func TestGridHeaderShiftAndDragExtendScope(t *testing.T) {
 	h := headerSelectionHarness(t)
 	h.point(pointer.Press, 20, 62)
 	h.point(pointer.Release, 20, 62)
-	h.router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Position: f32.Pt(20, 140), Buttons: pointer.ButtonPrimary, Modifiers: key.ModShift, Time: h.now})
+	h.router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Position: f32.Pt(20, 122), Buttons: pointer.ButtonPrimary, Modifiers: key.ModShift, Time: h.now})
 	h.frame()
-	h.point(pointer.Release, 20, 140)
+	h.point(pointer.Release, 20, 122)
 	want := document.CellRange{StartRow: 1, EndRow: 3, StartColumn: 1, EndColumn: xlsxColumns}
 	if got := h.app.selection.Bounds(); got != want {
 		t.Fatalf("Shift row header selection=%+v; want %+v", got, want)
@@ -73,7 +73,7 @@ func TestGridHeaderSelectionPaintsSelectedHeaders(t *testing.T) {
 		x, y  float32
 		pixel image.Point
 	}{
-		{"row", 20, 108, image.Pt(5, 108)},
+		{"row", 20, 102, image.Pt(5, 102)},
 		{"column", 437, 15, image.Pt(400, 5)},
 		{"sheet", 20, 15, image.Pt(5, 5)},
 	} {
@@ -94,7 +94,7 @@ func TestGridHeaderSelectionsEnableFontFormatting(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		x, y float32
-	}{{"row", 20, 108}, {"column", 437, 15}, {"sheet", 20, 15}} {
+	}{{"row", 20, 102}, {"column", 437, 15}, {"sheet", 20, 15}} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := headerSelectionHarness(t)
 			h.point(pointer.Press, tc.x, tc.y)
@@ -113,7 +113,7 @@ func TestGridHeaderDeleteClearsContentsWithoutDeletingDimensions(t *testing.T) {
 		x, y    float32
 		cleared map[string]bool
 	}{
-		{"row", 20, 108, map[string]bool{"B2": true}},
+		{"row", 20, 102, map[string]bool{"B2": true}},
 		{"column", 437, 15, map[string]bool{"B2": true}},
 		{"sheet", 20, 15, map[string]bool{"A1": true, "B2": true, "C3": true}},
 	} {

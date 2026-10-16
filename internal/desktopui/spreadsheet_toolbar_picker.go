@@ -2,8 +2,11 @@ package desktopui
 
 import (
 	"glance/internal/document"
+	"image/color"
 	"strings"
 )
+
+const spreadsheetCurrencyNumberFormat = `"¥"#,##0.00`
 
 func toolbarPickerTitle(picker spreadsheetToolbarPicker) string {
 	switch picker {
@@ -24,10 +27,77 @@ func toolbarPickerTitle(picker spreadsheetToolbarPicker) string {
 
 func formatStyleSlot(slot int) bool {
 	return (slot >= 4 && slot <= 11) ||
+		slot == toolbarActionFontFamily ||
+		slot == toolbarActionFontSize ||
 		slot == toolbarActionAlignLeft ||
 		slot == toolbarActionAlignRight ||
 		slot == toolbarActionWrapText ||
-		slot == toolbarActionPercentFormat
+		slot == toolbarActionPercentFormat ||
+		slot == toolbarActionCurrencyFormat
+}
+
+func spreadsheetToolbarFontFamily(style document.CellStyle) string {
+	if family := strings.TrimSpace(style.FontFamily); family != "" {
+		return family
+	}
+	return "Aptos Narrow"
+}
+
+func spreadsheetToolbarFontFamilyKey(family string) string {
+	family = strings.ToLower(strings.TrimSpace(family))
+	switch family {
+	case "dengxian", "等线":
+		return "dengxian"
+	case "simsun", "宋体":
+		return "simsun"
+	case "microsoft yahei", "ms yahei", "微软雅黑":
+		return "microsoft yahei"
+	default:
+		return family
+	}
+}
+
+func spreadsheetToolbarFontSize(style document.CellStyle) float64 {
+	if finite(style.FontSize) && style.FontSize > 0 {
+		return style.FontSize
+	}
+	return 11
+}
+
+func spreadsheetIsCNCurrencyNumberFormat(format string) bool {
+	format = strings.ToLower(strings.TrimSpace(format))
+	return format == strings.ToLower(spreadsheetCurrencyNumberFormat) ||
+		format == `¥#,##0.00` ||
+		format == `[$¥-804]#,##0.00` ||
+		format == `builtin:164` ||
+		format == `builtin:193`
+}
+
+func spreadsheetToolbarNumberFormatLabel(format string) string {
+	format = strings.TrimSpace(format)
+	if spreadsheetIsCNCurrencyNumberFormat(format) {
+		return "货币"
+	}
+	switch strings.ToLower(format) {
+	case "", "general":
+		return "常规"
+	case "0":
+		return "整数"
+	case "0.00":
+		return "数值"
+	case "#,##0.00":
+		return "千分位"
+	case "0%", "0.00%":
+		return "百分比"
+	case "yyyy-mm-dd", "m/d/yy", "builtin:14":
+		return "日期"
+	case "h:mm AM/PM", "builtin:18":
+		return "时间"
+	case "0.00E+00", "builtin:11":
+		return "科学计数"
+	default:
+		return "自定义"
+	}
 }
 
 func formatStyleActive(slot int, style document.CellStyle) bool {
@@ -52,6 +122,8 @@ func formatStyleActive(slot int, style document.CellStyle) bool {
 		return style.WrapText
 	case toolbarActionPercentFormat:
 		return style.NumberFormat == "0%" || style.NumberFormat == "0.00%"
+	case toolbarActionCurrencyFormat:
+		return spreadsheetIsCNCurrencyNumberFormat(style.NumberFormat)
 	case 10:
 		return style.NumberFormat != "" && style.NumberFormat != "General"
 	case 11:
@@ -71,13 +143,13 @@ func (a *App) selectionFormatMixed(slot int) bool {
 	}
 	bounds := state.selection.Bounds()
 	v := state.virtualGrid
-	if v == nil || v.WindowSheet != state.sheet || !containsRange(v.WindowRange, bounds) {
+	if v == nil || v.WindowSheet != state.sheet || !v.containsLoadedRange(bounds) {
 		return true
 	}
-	base := windowCell(v.Window, state.selection.Active.Row+1, state.selection.Active.Column+1).Style
+	base := v.cell(state.selection.Active.Row+1, state.selection.Active.Column+1).Style
 	for row := bounds.StartRow; row <= bounds.EndRow; row++ {
 		for column := bounds.StartColumn; column <= bounds.EndColumn; column++ {
-			current := windowCell(v.Window, row, column).Style
+			current := v.cell(row, column).Style
 			var equal bool
 			switch slot {
 			case 4:
@@ -94,10 +166,14 @@ func (a *App) selectionFormatMixed(slot int) bool {
 				equal = current.HorizontalAlignment == base.HorizontalAlignment
 			case toolbarActionWrapText:
 				equal = current.WrapText == base.WrapText
-			case 10, toolbarActionPercentFormat:
+			case 10, toolbarActionPercentFormat, toolbarActionCurrencyFormat:
 				equal = current.NumberFormat == base.NumberFormat
 			case 11:
 				equal = current.Borders == base.Borders
+			case toolbarActionFontFamily:
+				equal = spreadsheetToolbarFontFamilyKey(spreadsheetToolbarFontFamily(current)) == spreadsheetToolbarFontFamilyKey(spreadsheetToolbarFontFamily(base))
+			case toolbarActionFontSize:
+				equal = spreadsheetToolbarFontSize(current) == spreadsheetToolbarFontSize(base)
 			}
 			if !equal {
 				return true
@@ -168,6 +244,21 @@ func formatPatchForToolbarAction(slot int, style document.CellStyle) (document.C
 			format = "General"
 		}
 		return document.CellFormatPatch{NumberFormat: &format}, true
+	case toolbarActionCurrencyFormat:
+		format := spreadsheetCurrencyNumberFormat
+		return document.CellFormatPatch{NumberFormat: &format}, true
+	case toolbarActionIncreaseDecimal:
+		delta := 1
+		return document.CellFormatPatch{DecimalPlacesDelta: &delta}, true
+	case toolbarActionDecreaseDecimal:
+		delta := -1
+		return document.CellFormatPatch{DecimalPlacesDelta: &delta}, true
+	case toolbarActionDecreaseFontSize:
+		step := -1
+		return document.CellFormatPatch{FontSizeStep: &step}, true
+	case toolbarActionIncreaseFontSize:
+		step := 1
+		return document.CellFormatPatch{FontSizeStep: &step}, true
 	default:
 		return document.CellFormatPatch{}, false
 	}
@@ -182,12 +273,36 @@ func toolbarPickerOptions(kind spreadsheetToolbarPicker) []string {
 	case pickerAlignment:
 		return []string{"常规", "左对齐", "居中", "右对齐"}
 	case pickerNumberFormat:
-		return []string{"常规", "整数", "两位小数", "日期"}
+		return []string{"常规", "整数", "数值", "千分位", "百分比（两位）", "百分比", "日期", "日期（月/日/年）", "时间", "科学计数", "货币"}
 	case pickerBorder:
 		return []string{"所有边框", "外侧边框", "下框线", "无边框"}
 	default:
 		return nil
 	}
+}
+
+func toolbarPickerSwatch(kind spreadsheetToolbarPicker, index int) (color.NRGBA, bool, bool) {
+	var value string
+	switch kind {
+	case pickerFontColor:
+		values := [...]string{"000000", "F44336", "FF9800", "FFC107", "4CAF50", "2196F3", "9C27B0", "FFFFFF"}
+		if index < 0 || index >= len(values) {
+			return color.NRGBA{}, false, false
+		}
+		value = values[index]
+	case pickerFillColor:
+		values := [...]string{"", "F4CCCC", "FCE4D6", "FFF2CC", "E2F0D9", "DDEBF7", "E4DFEC", "D9E1F2"}
+		if index < 0 || index >= len(values) {
+			return color.NRGBA{}, false, false
+		}
+		value = values[index]
+	default:
+		return color.NRGBA{}, false, false
+	}
+	if value == "" {
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, true, true
+	}
+	return parseGridColor(value, color.NRGBA{}), true, false
 }
 
 func toolbarPickerOptionSelected(kind spreadsheetToolbarPicker, index int, style document.CellStyle) bool {
@@ -206,14 +321,9 @@ func toolbarPickerOptionSelected(kind spreadsheetToolbarPicker, index int, style
 		}
 		return current == values[index]
 	case pickerFillColor:
-		values := [...]string{"", "FCE4D6", "FCE4D6", "FFF2CC", "E2F0D9", "DDEBF7", "E4DFEC", "D9E1F2"}
+		values := [...]string{"", "F4CCCC", "FCE4D6", "FFF2CC", "E2F0D9", "DDEBF7", "E4DFEC", "D9E1F2"}
 		if index < 0 || index >= len(values) {
 			return false
-		}
-		for previous := 0; previous < index; previous++ {
-			if values[previous] == values[index] {
-				return false
-			}
 		}
 		return normalize(style.FillColor) == values[index]
 	case pickerAlignment:
@@ -227,22 +337,33 @@ func toolbarPickerOptionSelected(kind spreadsheetToolbarPicker, index int, style
 		}
 		return strings.EqualFold(current, values[index])
 	case pickerNumberFormat:
-		values := [...]string{"General", "0", "0.00", "yyyy-mm-dd"}
-		if index < 0 || index >= len(values) {
-			return false
-		}
 		current := strings.TrimSpace(style.NumberFormat)
 		if current == "" {
 			current = "General"
 		}
-		return strings.EqualFold(current, values[index])
+		switch index {
+		case 0:
+			return strings.EqualFold(current, "General")
+		case 1:
+			return current == "0"
+		case 2:
+			return current == "0.00"
+		case 3:
+			return current == "0%" || current == "0.00%"
+		case 4:
+			return strings.EqualFold(current, "yyyy-mm-dd") || strings.EqualFold(current, "m/d/yy") || strings.EqualFold(current, "builtin:14")
+		case 5:
+			return spreadsheetIsCNCurrencyNumberFormat(current)
+		default:
+			return false
+		}
 	default:
 		return false
 	}
 }
 
 func toolbarPickerPatch(kind spreadsheetToolbarPicker, index int) (document.CellFormatPatch, bool) {
-	values := map[spreadsheetToolbarPicker][]string{pickerFontColor: {"000000", "F44336", "FF9800", "FFC107", "4CAF50", "2196F3", "9C27B0", "FFFFFF"}, pickerFillColor: {"", "FCE4D6", "FCE4D6", "FFF2CC", "E2F0D9", "DDEBF7", "E4DFEC", "D9E1F2"}, pickerAlignment: {"general", "left", "center", "right"}, pickerNumberFormat: {"General", "0", "0.00", "yyyy-mm-dd"}, pickerBorder: {"all", "outside", "bottom", "none"}}
+	values := map[spreadsheetToolbarPicker][]string{pickerFontColor: {"000000", "F44336", "FF9800", "FFC107", "4CAF50", "2196F3", "9C27B0", "FFFFFF"}, pickerFillColor: {"", "F4CCCC", "FCE4D6", "FFF2CC", "E2F0D9", "DDEBF7", "E4DFEC", "D9E1F2"}, pickerAlignment: {"general", "left", "center", "right"}, pickerNumberFormat: {"General", "0", "0.00", "#,##0.00", "0.00%", "0%", "yyyy-mm-dd", "m/d/yy", "h:mm AM/PM", "0.00E+00", spreadsheetCurrencyNumberFormat}, pickerBorder: {"all", "outside", "bottom", "none"}}
 	items, ok := values[kind]
 	if !ok || index < 0 || index >= len(items) {
 		return document.CellFormatPatch{}, false

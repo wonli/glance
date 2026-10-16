@@ -28,7 +28,7 @@ func TestGridHeaderRegisteredRuntimeFormattingAndDelete(t *testing.T) {
 		futureCell              string
 		all                     bool
 	}{
-		{"row", 20, 108, 2, 26, "Z2", false},
+		{"row", 20, 102, 2, 26, "Z2", false},
 		{"column", 437, 15, 100, 2, "B100", false},
 		{"sheet", 20, 15, 100, 26, "Z100", true},
 	} {
@@ -201,7 +201,7 @@ func TestGridHeaderSelectionPaintsSelectedHeadersRetina(t *testing.T) {
 		x, y  float32
 		pixel image.Point
 	}{
-		{"row", 20, 108, image.Pt(5, 108)},
+		{"row", 20, 102, image.Pt(5, 102)},
 		{"column", 437, 15, image.Pt(400, 5)},
 		{"sheet", 20, 15, image.Pt(5, 5)},
 	} {

@@ -20,6 +20,10 @@ func (a *App) processWordCommandAsyncResult() bool {
 			}
 		}
 		activeResult := result.generation == a.documentGeneration && result.state == a.documentSessionState
+		if result.wordReplaceAll != nil {
+			a.completeWordTextReplaceAll(result, activeResult)
+			return false
+		}
 		if result.wordCommentList {
 			if activeResult {
 				if result.err != nil {
@@ -39,8 +43,8 @@ func (a *App) processWordCommandAsyncResult() bool {
 			result.state.setWordBlocks(result.blocks)
 			reconcileWordSelection(result.state, false)
 		}
-		if result.selectionDelete {
-			a.completeWordSelectionDelete(result, activeResult)
+		if result.selectionEdit {
+			a.completeWordSelectionEdit(result, activeResult)
 			if activeResult && result.err == nil && !result.state.formatRunning.Load() && !result.state.wordFlushRequested.Load() {
 				a.maybeAutoSaveWord(result.state)
 			}
@@ -60,8 +64,8 @@ func (a *App) processWordCommandAsyncResult() bool {
 			a.completeWordPageBreak(result, activeResult)
 		} else if result.paragraphJoin {
 			a.completeWordParagraphJoin(result, activeResult)
-		} else if result.textDraft && result.state.wordSelectionDeleteIntent != nil && !activeResult {
-			a.completeInactiveWordSelectionDeleteDraft(result)
+		} else if result.textDraft && result.state.wordSelectionEditIntent != nil && !activeResult {
+			a.completeInactiveWordSelectionEditDraft(result)
 		} else if result.textDraft && result.state.pendingWordRestoreAfterDrafts() != 0 {
 			if result.err != nil {
 				message := "恢复历史版本已取消，" + wordCommandError(result.operation, result.err)
@@ -95,7 +99,10 @@ func (a *App) processWordCommandAsyncResult() bool {
 					result.state.wordFlushAllDrafts.Store(false)
 					result.state.wordForceDraftFlush.Store(false)
 					result.state.clearPendingWordRestore()
-					result.state.wordSelectionDeleteIntent = nil
+					if intent := result.state.wordSelectionEditIntent; intent != nil && intent.replaces {
+						restoreWordSelectionReplacementDraft(result.state, *intent)
+					}
+					result.state.wordSelectionEditIntent = nil
 					result.state.wordParagraphSplitIntent = nil
 					result.state.wordParagraphJoinIntent = nil
 					result.state.wordPageBreakIntent = nil
@@ -104,7 +111,7 @@ func (a *App) processWordCommandAsyncResult() bool {
 					if result.state.wordDeferredToolbarAction == "ruler-indents" {
 						result.state.wordDeferredToolbarAction = ""
 						result.state.wordRulerIndentIntent = nil
-					} else if result.state.wordDeferredToolbarAction == "export-pdf" || result.state.wordDeferredToolbarAction == "share" {
+					} else if result.state.wordDeferredToolbarAction == "export-pdf" || result.state.wordDeferredToolbarAction == "share" || result.state.wordDeferredToolbarAction == "save-as" {
 						result.state.wordDeferredToolbarAction = ""
 					} else if result.state.wordDeferredToolbarAction == "insert-symbol" || result.state.wordDeferredToolbarAction == "layout-before" || result.state.wordDeferredToolbarAction == "layout-after" {
 						result.state.wordDeferredToolbarAction = ""
@@ -113,6 +120,8 @@ func (a *App) processWordCommandAsyncResult() bool {
 						result.state.wordFormatPainterSourceRunID = ""
 						result.state.wordFormatPainterTargetRunID = ""
 						result.state.wordFormatPainterTargetParagraphID = ""
+					} else if result.state.wordDeferredToolbarAction == "align-left" || result.state.wordDeferredToolbarAction == "align-center" || result.state.wordDeferredToolbarAction == "align-right" || result.state.wordDeferredToolbarAction == "align-justify" {
+						result.state.wordDeferredToolbarAction = ""
 					}
 				} else {
 					result.state.setCommittedWordTextAndClearDraft(result.runID, result.runText)
@@ -213,8 +222,8 @@ func (a *App) processWordCommandAsyncResult() bool {
 func (a *App) completeQueuedWordSplitsOnClose() {
 	for remaining := len(a.wordCommandResults); remaining > 0; remaining-- {
 		result := <-a.wordCommandResults
-		if result.selectionDelete {
-			a.completeWordSelectionDelete(result, false)
+		if result.selectionEdit {
+			a.completeWordSelectionEdit(result, false)
 		} else if result.paragraphSplit {
 			a.completeWordParagraphSplit(result, false)
 		} else {

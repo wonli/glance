@@ -138,12 +138,15 @@ func (a *App) handleWordHistoryShortcut(gtx layout.Context, runID string, editor
 	if editor == nil {
 		return false
 	}
-	event, ok := gtx.Event(key.Filter{
-		Focus:    editor,
-		Name:     key.Name("Z"),
-		Required: key.ModShortcut,
-		Optional: key.ModShift,
-	})
+	event, ok := gtx.Event(
+		key.Filter{
+			Focus:    editor,
+			Name:     key.Name("Z"),
+			Required: key.ModShortcut,
+			Optional: key.ModShift,
+		},
+		key.Filter{Focus: editor, Name: key.Name("Y"), Required: key.ModShortcut},
+	)
 	if !ok {
 		return false
 	}
@@ -169,7 +172,7 @@ func (a *App) handleWordHistoryShortcut(gtx layout.Context, runID string, editor
 		}
 	}
 	action := "undo"
-	if keyEvent.Modifiers.Contain(key.ModShift) {
+	if keyEvent.Name == key.Name("Y") || keyEvent.Modifiers.Contain(key.ModShift) {
 		action = "redo"
 	}
 
@@ -305,8 +308,8 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 		}
 		return
 	}
-	if state.wordSelectionDeleteIntent != nil {
-		a.startWordSelectionDelete(state)
+	if state.wordSelectionEditIntent != nil {
+		a.startWordSelectionEdit(state)
 		return
 	}
 	if state.wordParagraphSplitIntent != nil {
@@ -345,10 +348,8 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 		a.startWordParagraphInsertAfter(afterID)
 		return
 	}
-	if state.wordPendingPasteRunID != "" {
-		runID, value := state.wordPendingPasteRunID, state.wordPendingPasteText
-		state.wordPendingPasteRunID, state.wordPendingPasteText = "", ""
-		a.runWordCommand("粘贴文字", func(editor document.WordTextEditor) error { return editor.ReplaceTextRun(runID, value) })
+	if state.wordPendingPasteSelection != nil {
+		a.startPendingWordSelectionPaste(state)
 		return
 	}
 	if action := state.wordDeferredToolbarAction; action != "" {

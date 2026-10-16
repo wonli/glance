@@ -11,10 +11,13 @@ type CellPosition struct {
 	Row, Column int
 }
 
-// CellSelection stores a rectangular selection from its fixed anchor to its active cell.
+// CellSelection stores a rectangular selection. Most ranges use the fixed
+// anchor and active cell; current-region selection can supply exact bounds
+// while keeping the active cell inside the selected region.
 type CellSelection struct {
 	Anchor, Active CellPosition
 	Scope          cellSelectionScope
+	boundsOverride *document.CellRange
 }
 
 type cellSelectionScope uint8
@@ -33,6 +36,7 @@ func updatedSelection(current CellSelection, hasSelection bool, active CellPosit
 	}
 	current.Active = active
 	current.Scope = selectionCells
+	current.boundsOverride = nil
 	return current
 }
 
@@ -42,6 +46,9 @@ func selectionAnchor(merges []document.MergeRegion, position CellPosition) CellP
 }
 
 func (s CellSelection) Bounds() document.CellRange {
+	if s.boundsOverride != nil {
+		return *s.boundsOverride
+	}
 	anchor := clampCellPosition(s.Anchor)
 	active := clampCellPosition(s.Active)
 	startRow, endRow := min(anchor.Row, active.Row), max(anchor.Row, active.Row)
@@ -85,9 +92,7 @@ func selectionAtPointWithHeaders(v *gridViewport, point image.Point, rowHeader, 
 	if v == nil || v.Rows == nil || v.Columns == nil || !finite(v.Scale) || v.Scale <= 0 {
 		return CellPosition{}, false
 	}
-	row, column, ok := cellAtPoint(
-		v.Rows, v.Columns, v.X, v.Y, point, rowHeader, columnHeader,
-	)
+	row, column, ok := v.cellPoint(point, rowHeader, columnHeader)
 	if !ok {
 		return CellPosition{}, false
 	}
@@ -105,7 +110,7 @@ func selectionRectWithHeaders(v *gridViewport, selection CellSelection, rowHeade
 	if v == nil || v.Rows == nil || v.Columns == nil {
 		return image.Rectangle{}
 	}
-	return cellRect(v.Rows, v.Columns, selection.Bounds(), v.X, v.Y).Add(image.Pt(rowHeader, columnHeader))
+	return v.screenCellRect(selection.Bounds(), false, false, rowHeader, columnHeader)
 }
 
 func selectionBorderRects(rect image.Rectangle, width int) [4]image.Rectangle {

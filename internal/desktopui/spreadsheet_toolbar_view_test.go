@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"image"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget/material"
 
+	"glance/internal/document"
 	"glance/internal/format/xlsx"
 )
 
@@ -46,62 +48,115 @@ func TestSpreadsheetZoomInAndZoom100(t *testing.T) {
 	}
 }
 
-func TestSpreadsheetFreezePanesDialogAndCommand(t *testing.T) {
+func TestSpreadsheetFreezePanesRibbonMenuAndCommand(t *testing.T) {
 	wb := xlsx.NewBlank()
-	defer wb.Close()
 
 	state := newDocumentSessionState("")
 	state.book = wb
 	state.sheet = wb.SheetNames()[0]
+	state.sheets = wb.SheetNames()
+	state.toolbarTab = toolbarTabView
+	state.virtualGrid = newGridViewport()
+	state.virtualGrid.WindowSheet = state.sheet
 	state.selectionSet = true
 	state.selection = CellSelection{
 		Anchor: CellPosition{Row: 2, Column: 1},
 		Active: CellPosition{Row: 2, Column: 1}, // B3
 	}
-	app := &App{documentSessionState: state, theme: material.NewTheme(), formatResults: make(chan spreadsheetFormatResult, 10)}
+	app := &App{
+		documentSessionState: state,
+		theme:                material.NewTheme(),
+		formatResults:        make(chan spreadsheetFormatResult, 10),
+		shutdown:             make(chan struct{}),
+	}
+	t.Cleanup(func() {
+		app.shutdownOnce.Do(func() { close(app.shutdown) })
+		app.stopAndWaitManagedBackground()
+		_ = wb.Close()
+	})
+
+	router := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
 
 	if !app.toolbarActionEnabled(toolbarActionFreezePanes) {
 		t.Fatal("toolbarActionFreezePanes should be enabled")
 	}
 
-	// 1. Freeze top row
-	app.showSpreadsheetFreezePanesDialog()
-	if !app.modal.Visible || app.modal.Title != "冻结窗格" {
-		t.Fatalf("expected modal dialog for freeze panes, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
-	}
-	app.modal.OnAction("freeze_row")
-	select {
-	case res := <-app.formatResults:
-		if res.err != nil {
-			t.Fatalf("freeze top row failed: %v", res.err)
+	clickCommand := func(command, wantStatus string) {
+		t.Helper()
+		state.toolbarActionButtons[toolbarActionFreezePanes].Click()
+		app.handleSpreadsheetToolbarEvents(gtx)
+		if state.officeRibbonMenu.kind != officeRibbonMenuSpreadsheet || state.officeRibbonMenu.sheetSlot != toolbarActionFreezePanes {
+			t.Fatalf("freeze-pane toolbar did not open its Ribbon menu: %+v", state.officeRibbonMenu)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for freeze top row formatResult")
+		definition := app.officeRibbonMenuDefinition()
+		optionIndex := -1
+		for index, option := range definition.options {
+			if option.command == command {
+				optionIndex = index
+				break
+			}
+		}
+		if optionIndex < 0 || !app.officeRibbonMenuOptionEnabled(definition.options[optionIndex]) {
+			t.Fatalf("Ribbon menu command %q is missing or disabled in %+v", command, definition.options)
+		}
+		state.officeRibbonMenu.buttons[optionIndex].Click()
+		app.handleSpreadsheetToolbarEvents(gtx)
+		if state.officeRibbonMenu.kind != officeRibbonMenuClosed {
+			t.Fatalf("Ribbon menu command %q did not close the menu", command)
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			app.processSpreadsheetFormatResult()
+			if app.status == wantStatus {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatalf("Ribbon command %q did not complete; status=%q", command, app.status)
 	}
+
+	// Exercise the toolbar -> Ribbon menu -> async pane command -> viewport path.
+	clickCommand("excel-freeze-first-row", "已完成冻结首行")
 
 	panes, err := wb.GetSheetPanes(state.sheet)
 	if err != nil || !panes.Frozen || panes.YSplit != 1 || panes.XSplit != 0 {
 		t.Fatalf("expected frozen top row (YSplit=1, XSplit=0), got %+v (err=%v)", panes, err)
 	}
+	if !state.virtualGrid.PanesLoaded || state.virtualGrid.Panes != panes {
+		t.Fatalf("freeze-pane command did not update the visible grid: loaded=%v panes=%+v, workbook=%+v", state.virtualGrid.PanesLoaded, state.virtualGrid.Panes, panes)
+	}
 
-	// 2. Unfreeze panes
-	app.showSpreadsheetFreezePanesDialog()
-	if !app.modal.Visible {
-		t.Fatal("expected modal dialog for freeze panes")
-	}
-	app.modal.OnAction("unfreeze")
-	select {
-	case res := <-app.formatResults:
-		if res.err != nil {
-			t.Fatalf("unfreeze panes failed: %v", res.err)
+	state.toolbarActionButtons[toolbarActionFreezePanes].Click()
+	app.handleSpreadsheetToolbarEvents(gtx)
+	definition := app.officeRibbonMenuDefinition()
+	firstRowChecked := false
+	for _, option := range definition.options {
+		if option.command == "excel-freeze-first-row" {
+			firstRowChecked = option.checked
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for unfreeze formatResult")
 	}
+	if !firstRowChecked {
+		t.Fatal("Ribbon menu did not reflect the active first-row freeze")
+	}
+	app.closeOfficeRibbonMenu()
+
+	clickCommand("excel-unfreeze-panes", "已完成取消冻结窗格")
 
 	panes, err = wb.GetSheetPanes(state.sheet)
 	if err != nil || panes.Frozen {
 		t.Fatalf("expected unfrozen panes, got %+v (err=%v)", panes, err)
+	}
+	if !state.virtualGrid.PanesLoaded || state.virtualGrid.Panes != (document.SpreadsheetPaneFreeze{}) {
+		t.Fatalf("unfreeze command did not clear the visible grid panes: loaded=%v panes=%+v", state.virtualGrid.PanesLoaded, state.virtualGrid.Panes)
+	}
+	if state.virtualGrid.X != 0 || state.virtualGrid.Y != 0 {
+		t.Fatalf("unfreeze should keep zero scroll position, got (%v,%v)", state.virtualGrid.X, state.virtualGrid.Y)
+	}
+	const rowHead, colHead = 48, 28
+	if row, col, ok := state.virtualGrid.cellPoint(image.Pt(rowHead+10, colHead+10), rowHead, colHead); !ok || row != 1 || col != 1 {
+		t.Fatalf("unfrozen click on row 1 = (%d,%d), %v; want (1,1), true", row, col, ok)
 	}
 }
 

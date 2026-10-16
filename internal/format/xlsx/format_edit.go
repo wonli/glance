@@ -124,10 +124,26 @@ func (w *Workbook) SetCellFormatsChanged(sheet string, bounds document.CellRange
 
 func validateCellFormatPatch(patch document.CellFormatPatch) error {
 	if patch.ClearFormat {
-		if patch.Bold != nil || patch.Italic != nil || patch.Underline != nil || patch.FontColor != nil || patch.FillColor != nil || patch.HorizontalAlignment != nil || patch.NumberFormat != nil || patch.BorderPreset != nil || patch.WrapText != nil || patch.FontSize != nil || patch.FontFamily != nil {
+		if patch.Bold != nil || patch.Italic != nil || patch.Underline != nil || patch.FontColor != nil || patch.FillColor != nil || patch.HorizontalAlignment != nil || patch.VerticalAlignment != nil || patch.NumberFormat != nil || patch.DecimalPlacesDelta != nil || patch.FontSizeStep != nil || patch.BorderPreset != nil || patch.WrapText != nil || patch.FontSize != nil || patch.FontFamily != nil {
 			return errors.New("clear format cannot be combined with other format changes")
 		}
 		return nil
+	}
+	if patch.DecimalPlacesDelta != nil {
+		if *patch.DecimalPlacesDelta != -1 && *patch.DecimalPlacesDelta != 1 {
+			return fmt.Errorf("decimal places delta must be -1 or 1")
+		}
+		if patch.Bold != nil || patch.Italic != nil || patch.Underline != nil || patch.FontColor != nil || patch.FillColor != nil || patch.HorizontalAlignment != nil || patch.VerticalAlignment != nil || patch.NumberFormat != nil || patch.FontSizeStep != nil || patch.BorderPreset != nil || patch.WrapText != nil || patch.FontSize != nil || patch.FontFamily != nil {
+			return errors.New("decimal places change cannot be combined with other format changes")
+		}
+	}
+	if patch.FontSizeStep != nil {
+		if *patch.FontSizeStep != -1 && *patch.FontSizeStep != 1 {
+			return errors.New("font size step must be -1 or 1")
+		}
+		if patch.Bold != nil || patch.Italic != nil || patch.Underline != nil || patch.FontColor != nil || patch.FillColor != nil || patch.HorizontalAlignment != nil || patch.VerticalAlignment != nil || patch.NumberFormat != nil || patch.DecimalPlacesDelta != nil || patch.BorderPreset != nil || patch.WrapText != nil || patch.FontSize != nil || patch.FontFamily != nil {
+			return errors.New("font size step cannot be combined with other format changes")
+		}
 	}
 	if patch.FontSize != nil && (*patch.FontSize <= 0 || *patch.FontSize > 409) {
 		return fmt.Errorf("invalid font size %v (must be between 1 and 409)", *patch.FontSize)
@@ -148,9 +164,16 @@ func validateCellFormatPatch(patch document.CellFormatPatch) error {
 			return fmt.Errorf("unsupported horizontal alignment %q", *patch.HorizontalAlignment)
 		}
 	}
+	if patch.VerticalAlignment != nil {
+		switch strings.ToLower(*patch.VerticalAlignment) {
+		case "top", "center", "bottom":
+		default:
+			return fmt.Errorf("unsupported vertical alignment %q", *patch.VerticalAlignment)
+		}
+	}
 	if patch.NumberFormat != nil {
 		switch *patch.NumberFormat {
-		case "General", "0", "0.00", "0%", "0.00%", "yyyy-mm-dd":
+		case "General", "0", "0.00", "#,##0.00", "0%", "0.00%", "0.00E+00", "m/d/yy", "h:mm AM/PM", "yyyy-mm-dd", `"¥"#,##0.00`:
 		default:
 			return fmt.Errorf("unsupported number format %q", *patch.NumberFormat)
 		}
@@ -237,6 +260,12 @@ func applyCellFormatPatch(style *excelize.Style, patch document.CellFormatPatch,
 			style.Alignment.Horizontal = strings.ToLower(*patch.HorizontalAlignment)
 		}
 	}
+	if patch.VerticalAlignment != nil {
+		if style.Alignment == nil {
+			style.Alignment = &excelize.Alignment{}
+		}
+		style.Alignment.Vertical = strings.ToLower(*patch.VerticalAlignment)
+	}
 	if patch.WrapText != nil {
 		if style.Alignment == nil {
 			style.Alignment = &excelize.Alignment{}
@@ -253,15 +282,33 @@ func applyCellFormatPatch(style *excelize.Style, patch document.CellFormatPatch,
 			style.NumFmt = 1
 		case "0.00":
 			style.NumFmt = 2
+		case "#,##0.00":
+			style.NumFmt = 4
 		case "0%":
 			style.NumFmt = 9
 		case "0.00%":
 			style.NumFmt = 10
+		case "0.00E+00":
+			style.NumFmt = 11
+		case "m/d/yy":
+			style.NumFmt = 14
+		case "h:mm AM/PM":
+			style.NumFmt = 18
 		case "yyyy-mm-dd":
 			format := *patch.NumberFormat
 			style.CustomNumFmt = &format
 			style.NumFmt = 0
+		case `"¥"#,##0.00`:
+			format := *patch.NumberFormat
+			style.CustomNumFmt = &format
+			style.NumFmt = 0
 		}
+	}
+	if patch.DecimalPlacesDelta != nil {
+		adjustDecimalPlaces(style, *patch.DecimalPlacesDelta)
+	}
+	if patch.FontSizeStep != nil {
+		stepExcelFontSize(style, *patch.FontSizeStep)
 	}
 	if patch.BorderPreset != nil {
 		applyBorderPreset(style, *patch.BorderPreset, row, column, bounds)
@@ -321,12 +368,18 @@ func cellNumberFormat(style *excelize.Style) string {
 		return "0"
 	case 2:
 		return "0.00"
+	case 4:
+		return "#,##0.00"
 	case 9:
 		return "0%"
 	case 10:
 		return "0.00%"
+	case 11:
+		return "0.00E+00"
 	case 14:
 		return "m/d/yy"
+	case 18:
+		return "h:mm AM/PM"
 	default:
 		return fmt.Sprintf("builtin:%d", style.NumFmt)
 	}

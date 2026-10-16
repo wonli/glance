@@ -52,6 +52,82 @@ func TestParagraphAlignmentWritesSupportedValuesAndKeepsOtherProperties(t *testi
 	}
 }
 
+func TestParagraphAlignmentsApplyAtomicallyAndPreserveOtherProperties(t *testing.T) {
+	documentXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>first</w:t></w:r></w:p><w:p><w:pPr><w:keepLines/><w:jc w:val="right"/></w:pPr><w:r><w:t>second</w:t></w:r></w:p><w:p><w:r><w:t>untouched</w:t></w:r></w:p></w:body></w:document>`
+	doc := projectionFixture(t, documentXML, "", nil)
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	paragraphIDs := []string{blocks[0].Paragraph.ID, blocks[1].Paragraph.ID, blocks[0].Paragraph.ID}
+	editor, ok := any(doc).(document.WordParagraphAlignmentEditor)
+	if !ok {
+		t.Fatal("DOCX document does not expose atomic paragraph alignment")
+	}
+	if err := editor.SetParagraphAlignments(paragraphIDs, document.WordAlignCenter); err != nil {
+		t.Fatal(err)
+	}
+	blocks = doc.WordBlocks()
+	for i, want := range []document.WordAlignment{document.WordAlignCenter, document.WordAlignCenter, document.WordAlignDefault} {
+		if got := blocks[i].Paragraph.Alignment; got != want {
+			t.Errorf("paragraph %d alignment = %q; want %q", i, got, want)
+		}
+	}
+	snapshot, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentPart := readZipPart(t, snapshot, "word/document.xml")
+	for _, preserved := range [][]byte{[]byte("w:keepNext"), []byte("w:keepLines"), []byte(`w:jc w:val="center"`)} {
+		if !bytes.Contains(documentPart, preserved) {
+			t.Errorf("alignment patch lost %q: %s", preserved, documentPart)
+		}
+	}
+	reopened, err := OpenSnapshot(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	for i, want := range []document.WordAlignment{document.WordAlignCenter, document.WordAlignCenter, document.WordAlignDefault} {
+		if got := reopened.WordBlocks()[i].Paragraph.Alignment; got != want {
+			t.Errorf("reopened paragraph %d alignment = %q; want %q", i, got, want)
+		}
+	}
+	history := requireWordHistory(t, doc)
+	if applied, err := history.Undo(); err != nil || !applied {
+		t.Fatalf("undo multi-paragraph alignment = %v, %v; want true, nil", applied, err)
+	}
+	if got := doc.WordBlocks(); got[0].Paragraph.Alignment != document.WordAlignDefault || got[1].Paragraph.Alignment != document.WordAlignRight {
+		t.Fatalf("one undo left a partially aligned selection: %q/%q", got[0].Paragraph.Alignment, got[1].Paragraph.Alignment)
+	}
+}
+
+func TestParagraphAlignmentsRejectInvalidTargetAtomically(t *testing.T) {
+	doc := textEditingFixture(t)
+	defer doc.Close()
+	blocks := doc.WordBlocks()
+	paragraphID := blocks[0].Paragraph.ID
+	before, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	editor, ok := any(doc).(document.WordParagraphAlignmentEditor)
+	if !ok {
+		t.Fatal("DOCX document does not expose atomic paragraph alignment")
+	}
+	if err := editor.SetParagraphAlignments([]string{paragraphID, "missing-paragraph"}, document.WordAlignRight); err == nil {
+		t.Fatal("alignment accepted a mixed valid/invalid target set")
+	}
+	after, err := doc.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) || doc.Dirty() {
+		t.Fatal("invalid alignment target changed the DOCX snapshot or dirty state")
+	}
+	if applied, err := requireWordHistory(t, doc).Undo(); err != nil || applied {
+		t.Fatalf("undo after rejected alignment = %v, %v; want false, nil", applied, err)
+	}
+}
+
 func TestFailedTextEditLeavesDocumentCleanAndHistoryEmpty(t *testing.T) {
 	doc := textEditingFixture(t)
 	defer doc.Close()

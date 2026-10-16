@@ -54,11 +54,12 @@ func editingCellRect(v *gridViewport, address string, rowHeader, columnHeader in
 		return image.Rectangle{}
 	}
 	rng := document.CellRange{StartRow: row, StartColumn: column, EndRow: row, EndColumn: column}
-	for _, merge := range v.Window.Merges {
+	for _, merge := range v.merges() {
 		if row >= merge.Range.StartRow && row <= merge.Range.EndRow && column >= merge.Range.StartColumn && column <= merge.Range.EndColumn {
 			rng = merge.Range
 			break
 		}
 	}
-	return cellRect(v.Rows, v.Columns, rng, v.X, v.Y).Add(image.Pt(rowHeader, columnHeader))
+	columnSplit, rowSplit := v.paneSplits()
+	return v.screenCellRect(rng, rowSplit > 0 && row <= rowSplit, columnSplit > 0 && column <= columnSplit, rowHeader, columnHeader)
 }

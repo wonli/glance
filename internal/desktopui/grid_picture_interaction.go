@@ -46,10 +46,19 @@ func gridPictureScreenRect(v *gridViewport, geometry gridPictureGeometry, rowHea
 	if v == nil || geometry.Width <= 0 || geometry.Height <= 0 {
 		return image.Rectangle{}
 	}
-	left := int(math.Round(geometry.X - v.X + float64(rowHeader)))
-	top := int(math.Round(geometry.Y - v.Y + float64(columnHeader)))
-	right := int(math.Round(geometry.X + geometry.Width - v.X + float64(rowHeader)))
-	bottom := int(math.Round(geometry.Y + geometry.Height - v.Y + float64(columnHeader)))
+	columnSplit, rowSplit := v.paneSplits()
+	left := int(math.Round(geometry.X + float64(rowHeader)))
+	right := int(math.Round(geometry.X + geometry.Width + float64(rowHeader)))
+	top := int(math.Round(geometry.Y + float64(columnHeader)))
+	bottom := int(math.Round(geometry.Y + geometry.Height + float64(columnHeader)))
+	if columnSplit == 0 || geometry.X >= v.frozenColumnBoundary() {
+		left -= int(math.Round(v.X))
+		right -= int(math.Round(v.X))
+	}
+	if rowSplit == 0 || geometry.Y >= v.frozenRowBoundary() {
+		top -= int(math.Round(v.Y))
+		bottom -= int(math.Round(v.Y))
+	}
 	if right <= left {
 		right = left + 1
 	}
@@ -59,11 +68,79 @@ func gridPictureScreenRect(v *gridViewport, geometry gridPictureGeometry, rowHea
 	return image.Rect(left, top, right, bottom)
 }
 
-func gridPictureContentPointer(v *gridViewport, position f32.Point, rowHeader, columnHeader int) f32.Point {
+func gridPictureScreenRectForCell(v *gridViewport, geometry gridPictureGeometry, row, column, rowHeader, columnHeader int) image.Rectangle {
+	if v == nil || geometry.Width <= 0 || geometry.Height <= 0 {
+		return image.Rectangle{}
+	}
+	columnSplit, rowSplit := v.paneSplits()
+	frozenColumn := columnSplit > 0 && column <= columnSplit
+	frozenRow := rowSplit > 0 && row <= rowSplit
+	left := geometry.X + float64(rowHeader)
+	right := geometry.X + geometry.Width + float64(rowHeader)
+	top := geometry.Y + float64(columnHeader)
+	bottom := geometry.Y + geometry.Height + float64(columnHeader)
+	if !frozenColumn {
+		left -= v.X
+		right -= v.X
+	}
+	if !frozenRow {
+		top -= v.Y
+		bottom -= v.Y
+	}
+	leftPixel, topPixel := int(math.Round(left)), int(math.Round(top))
+	rightPixel, bottomPixel := int(math.Round(right)), int(math.Round(bottom))
+	if rightPixel <= leftPixel {
+		rightPixel = leftPixel + 1
+	}
+	if bottomPixel <= topPixel {
+		bottomPixel = topPixel + 1
+	}
+	return image.Rect(leftPixel, topPixel, rightPixel, bottomPixel)
+}
+
+func gridPicturePaneClip(v *gridViewport, row, column int, size image.Point, rowHeader, columnHeader int) image.Rectangle {
+	viewport := image.Rect(rowHeader, columnHeader, size.X, size.Y)
+	if v == nil {
+		return viewport
+	}
+	columnSplit, rowSplit := v.paneSplits()
+	frozenWidth, frozenHeight := v.frozenViewportExtent(float64(viewport.Dx()), float64(viewport.Dy()))
+	if columnSplit > 0 {
+		if column <= columnSplit {
+			viewport.Max.X = rowHeader + int(frozenWidth)
+		} else {
+			viewport.Min.X = rowHeader + int(frozenWidth)
+		}
+	}
+	if rowSplit > 0 {
+		if row <= rowSplit {
+			viewport.Max.Y = columnHeader + int(frozenHeight)
+		} else {
+			viewport.Min.Y = columnHeader + int(frozenHeight)
+		}
+	}
+	return viewport
+}
+
+func gridPictureContentPointer(v *gridViewport, position f32.Point, rowHeader, columnHeader int, windowSize ...image.Point) f32.Point {
 	if v == nil {
 		return f32.Point{}
 	}
-	return f32.Pt(float32(v.X)+position.X-float32(rowHeader), float32(v.Y)+position.Y-float32(columnHeader))
+	x, y := float64(position.X)-float64(rowHeader), float64(position.Y)-float64(columnHeader)
+	columnSplit, rowSplit := v.paneSplits()
+	width, height := float64(rowHeader)+float64(position.X), float64(columnHeader)+float64(position.Y)
+	if len(windowSize) > 0 {
+		width = float64(windowSize[0].X - rowHeader)
+		height = float64(windowSize[0].Y - columnHeader)
+	}
+	frozenWidth, frozenHeight := v.frozenViewportExtent(width, height)
+	if columnSplit == 0 || x >= frozenWidth {
+		x = v.frozenColumnBoundary() + v.X + x - frozenWidth
+	}
+	if rowSplit == 0 || y >= frozenHeight {
+		y = v.frozenRowBoundary() + v.Y + y - frozenHeight
+	}
+	return f32.Pt(float32(x), float32(y))
 }
 
 func gridPictureClipRect(rect, viewport image.Rectangle) image.Rectangle {
@@ -83,18 +160,20 @@ func gridPictureHitAt(v *gridViewport, pictures []document.SpreadsheetImage, sel
 		if picture.ID != selectedID || !picture.Editable {
 			continue
 		}
-		bounds := gridPictureClipRect(gridPictureScreenRect(v, gridPictureContentGeometry(v, picture), rowHeader, columnHeader), viewport)
+		paneClip := gridPicturePaneClip(v, picture.Row, picture.Column, viewport.Max, rowHeader, columnHeader)
+		bounds := gridPictureClipRect(gridPictureScreenRectForCell(v, gridPictureContentGeometry(v, picture), picture.Row, picture.Column, rowHeader, columnHeader), paneClip)
 		if bounds.Empty() {
 			continue
 		}
-		if point.In(gridPictureClipRect(gridPictureHandleRect(bounds, handleSize), viewport)) {
+		if point.In(gridPictureClipRect(gridPictureHandleRect(bounds, handleSize), paneClip)) {
 			return gridPictureHit{ImageID: picture.ID, ResizeHandle: true}
 		}
 		break
 	}
 	for index := len(pictures) - 1; index >= 0; index-- {
 		picture := pictures[index]
-		bounds := gridPictureClipRect(gridPictureScreenRect(v, gridPictureContentGeometry(v, picture), rowHeader, columnHeader), viewport)
+		paneClip := gridPicturePaneClip(v, picture.Row, picture.Column, viewport.Max, rowHeader, columnHeader)
+		bounds := gridPictureClipRect(gridPictureScreenRectForCell(v, gridPictureContentGeometry(v, picture), picture.Row, picture.Column, rowHeader, columnHeader), paneClip)
 		if !bounds.Empty() && point.In(bounds) {
 			return gridPictureHit{ImageID: picture.ID}
 		}

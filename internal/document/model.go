@@ -5,10 +5,25 @@ import "errors"
 var ErrReadOnly = errors.New("document is read-only")
 
 type Cell struct {
-	Value   string
-	Formula string
-	StyleID int
-	Style   CellStyle
+	Value              string
+	Formula            string
+	FormulaType        string `json:"formula_type,omitempty"`
+	StyleID            int
+	Style              CellStyle
+	TypedValue         *CellValue             `json:"typed_value,omitempty"`
+	ConditionalDisplay CellConditionalDisplay `json:"-"`
+}
+
+// CellConditionalDisplay carries format-neutral, computed worksheet effects.
+// It is deliberately excluded from JSON payloads because it is presentation
+// data derived from the workbook's conditional-format rules.
+type CellConditionalDisplay struct {
+	FillColor    string
+	FontColor    string
+	DataBarColor string
+	DataBarStart float64
+	DataBarEnd   float64
+	HasDataBar   bool
 }
 
 // CellStyle is a format-neutral subset that can be drawn by a lightweight
@@ -48,6 +63,9 @@ type CellValue struct {
 
 // CellFormatPatch represents changes to a subset of cell formatting. Nil
 // fields leave the existing property untouched; ClearFormat resets all style.
+// DecimalPlacesDelta is a standalone +/-1 precision command applied to each
+// cell's existing supported numeric format. FontSizeStep moves each selected
+// cell to the adjacent common spreadsheet font size.
 type CellFormatPatch struct {
 	Bold                *bool    `json:"bold,omitempty"`
 	Italic              *bool    `json:"italic,omitempty"`
@@ -55,7 +73,10 @@ type CellFormatPatch struct {
 	FontColor           *string  `json:"font_color,omitempty"`
 	FillColor           *string  `json:"fill_color,omitempty"`
 	HorizontalAlignment *string  `json:"horizontal_alignment,omitempty"`
+	VerticalAlignment   *string  `json:"vertical_alignment,omitempty"`
 	NumberFormat        *string  `json:"number_format,omitempty"`
+	DecimalPlacesDelta  *int     `json:"decimal_places_delta,omitempty"`
+	FontSizeStep        *int     `json:"font_size_step,omitempty"`
 	BorderPreset        *string  `json:"border_preset,omitempty"`
 	WrapText            *bool    `json:"wrap_text,omitempty"`
 	FontSize            *float64 `json:"font_size,omitempty"`
@@ -78,6 +99,21 @@ type CellRange struct {
 	EndColumn   int `json:"end_column"`
 }
 
+// CellCoordinate is a one-based active-cell position.
+type CellCoordinate struct {
+	Row    int
+	Column int
+}
+
+type SpreadsheetDirection uint8
+
+const (
+	SpreadsheetDirectionUp SpreadsheetDirection = iota + 1
+	SpreadsheetDirectionDown
+	SpreadsheetDirectionLeft
+	SpreadsheetDirectionRight
+)
+
 // MergeRegion includes the anchor value/style even when the anchor is outside
 // the requested visible window.
 type MergeRegion struct {
@@ -94,6 +130,7 @@ type SheetWindow struct {
 	Merges            []MergeRegion
 	RowHeightsPoints  []float64
 	ColumnWidthsChars []float64
+	Panes             SpreadsheetPaneFreeze
 }
 
 // SpreadsheetImage describes an ordinary image object anchored above cells.
@@ -128,6 +165,88 @@ type GridReader interface {
 	Window(sheet string, startRow, startColumn, rowCount, columnCount int) (SheetWindow, error)
 	SetRowHeight(sheet string, row int, heightPoints float64) error
 	SetColumnWidth(sheet string, column int, widthChars float64) error
+}
+
+type SpreadsheetDimensionAxis uint8
+
+const (
+	SpreadsheetDimensionRow SpreadsheetDimensionAxis = iota + 1
+	SpreadsheetDimensionColumn
+)
+
+type SpreadsheetDimensionCell struct {
+	// DimensionIndex is the one-based row or column being visited.
+	DimensionIndex int
+	// DimensionSize is the current row height in points or column width in
+	// character units for DimensionIndex.
+	DimensionSize float64
+	// Index is the one-based row or column coordinate perpendicular to Axis.
+	Index int
+	Cell  Cell
+	// ColumnWidthChars is populated for row visits so row AutoFit can measure
+	// against the cell's actual worksheet column width, even off viewport.
+	ColumnWidthChars float64
+}
+
+// SpreadsheetDimensionCellReader visits populated, unmerged cells in a row
+// or column. Adapters may hold their document lock while calling visit, so the
+// callback must not call back into the same adapter.
+type SpreadsheetDimensionCellReader interface {
+	VisitDimensionCells(sheet string, axis SpreadsheetDimensionAxis, index int, visit func(SpreadsheetDimensionCell) error) error
+}
+
+// SpreadsheetDimensionRangeCellReader visits populated, unmerged cells across
+// an inclusive range of rows or columns without expanding the worksheet grid.
+type SpreadsheetDimensionRangeCellReader interface {
+	VisitDimensionRangeCells(sheet string, axis SpreadsheetDimensionAxis, start, end int, visit func(SpreadsheetDimensionCell) error) error
+}
+
+// SpreadsheetDimensionSize is a requested row height in points or column
+// width in character units. Index is one-based.
+type SpreadsheetDimensionSize struct {
+	Index int
+	Value float64
+}
+
+// SpreadsheetDimensionBatchEditor applies several row heights or column
+// widths as one undoable edit.
+type SpreadsheetDimensionBatchEditor interface {
+	SetDimensionSizes(sheet string, axis SpreadsheetDimensionAxis, sizes []SpreadsheetDimensionSize) error
+}
+
+// SpreadsheetDimensionEditGrouper joins the automatic row-height adjustment
+// caused by a cell edit to that edit's latest undo/redo step.
+type SpreadsheetDimensionEditGrouper interface {
+	SetRowHeightAsPartOfLatestEdit(sheet string, row int, heightPoints float64) error
+}
+
+// SpreadsheetDataRegionReader moves from a cell to the edge of the next
+// contiguous non-empty run in one worksheet direction. If no later run exists,
+// it returns the corresponding worksheet edge.
+type SpreadsheetDataRegionReader interface {
+	DataRegionEdge(sheet string, current CellCoordinate, direction SpreadsheetDirection) (CellCoordinate, error)
+}
+
+// SpreadsheetCurrentDataRegionReader reports the blank-row/blank-column
+// bounded region around a cell. When the active cell is outside populated data,
+// implementations may anchor the region at the nearest populated cell on its
+// row or column. The bool is false when no populated region can be identified.
+type SpreadsheetCurrentDataRegionReader interface {
+	CurrentDataRegion(sheet string, current CellCoordinate) (CellRange, CellCoordinate, bool, error)
+}
+
+// SpreadsheetNextNonEmptyCellReader implements the one-shot End-key movement
+// to the next occupied cell, or to the worksheet edge when none remains.
+type SpreadsheetNextNonEmptyCellReader interface {
+	NextNonEmptyCell(sheet string, current CellCoordinate, direction SpreadsheetDirection) (CellCoordinate, error)
+}
+
+// SpreadsheetDimensionReader reports the current in-memory used range, including
+// cell formatting. Values are returned in the order (maxColumn, maxRow), both
+// one-based. Implementations may scan a package, so callers should use a worker
+// for large workbooks.
+type SpreadsheetDimensionReader interface {
+	Dimension(sheet string) (maxColumn, maxRow int, err error)
 }
 
 // SpreadsheetImageReader is an optional capability for over-cell picture
@@ -167,6 +286,12 @@ type SpreadsheetFormatChangeEditor interface {
 	SetCellFormatsChanged(sheet string, bounds CellRange, patch CellFormatPatch) (bool, error)
 }
 
+// SpreadsheetCellFormatPainter copies a source cell's complete XLSX style to
+// a target range without changing cell values.
+type SpreadsheetCellFormatPainter interface {
+	PaintCellFormat(sheet, sourceCell string, targetBounds CellRange) (bool, error)
+}
+
 type SpreadsheetHistory interface {
 	Undo() (bool, error)
 	Redo() (bool, error)
@@ -195,6 +320,31 @@ type SpreadsheetBatchChangeEditor interface {
 	SetCellsChanged(sheet string, edits []CellEdit) (bool, error)
 }
 
+// SpreadsheetCellTransferEditor applies a captured rectangular cell payload to
+// a target position as one undoable edit. Source coordinates are retained so
+// relative formula references can be adjusted like a native spreadsheet paste.
+type SpreadsheetCellTransferEditor interface {
+	TransferCellRangeChanged(sheet string, source CellRange, targetRow, targetColumn int, cells [][]Cell) (bool, error)
+}
+
+// CellFormulaEdit describes one formula written to a spreadsheet cell.
+type CellFormulaEdit struct {
+	Row     int    `json:"row"`
+	Column  int    `json:"column"`
+	Formula string `json:"formula"`
+}
+
+// SpreadsheetFormulaBatchEditor applies a formula batch as one document edit.
+type SpreadsheetFormulaBatchEditor interface {
+	SetCellFormulasChanged(sheet string, edits []CellFormulaEdit) (bool, error)
+}
+
+// SpreadsheetFormulaRangeEntryEditor writes one formula across a selected
+// rectangle, shifting relative references from the active cell to each target.
+type SpreadsheetFormulaRangeEntryEditor interface {
+	SetCellFormulaRangeChanged(sheet string, active CellCoordinate, bounds CellRange, formula string) (bool, error)
+}
+
 // SpreadsheetRangeContentEditor clears cell values and formulas while preserving formatting.
 type SpreadsheetRangeContentEditor interface {
 	ClearCellRange(sheet string, bounds CellRange) (changed bool, err error)
@@ -202,6 +352,12 @@ type SpreadsheetRangeContentEditor interface {
 
 type SpreadsheetRangeReader interface {
 	ReadRange(sheet string, bounds CellRange) ([][]Cell, error)
+}
+
+// SpreadsheetClipboardRangeReader includes transfer metadata that ordinary
+// range consumers do not need, such as formula-group type information.
+type SpreadsheetClipboardRangeReader interface {
+	ReadClipboardRange(sheet string, bounds CellRange) ([][]Cell, error)
 }
 
 // CellMatch represents a cell matched by a search query. Coordinates are 1-based.
@@ -322,17 +478,19 @@ type SpreadsheetDuplicatesEditor interface {
 	RemoveDuplicates(sheet string, bounds CellRange, keyColumn int) (SpreadsheetDuplicatesResult, error)
 }
 
-// SpreadsheetSheetView describes the view mode and element visibility for a worksheet.
+// SpreadsheetSheetView describes display settings for a worksheet.
 type SpreadsheetSheetView struct {
-	ViewMode  string `json:"view_mode"` // "normal", "pageBreakPreview", "pageLayout"
-	ShowRuler bool   `json:"show_ruler"`
+	ViewMode    string `json:"view_mode"` // "normal", "pageBreakPreview", "pageLayout"
+	ShowRuler   bool   `json:"show_ruler"`
+	ZoomPercent int    `json:"zoom_percent"`
 }
 
-// SpreadsheetViewsEditor is an optional capability for configuring worksheet views and ruler.
+// SpreadsheetViewsEditor is an optional capability for reading and configuring worksheet views.
 type SpreadsheetViewsEditor interface {
 	GetSheetView(sheet string) (SpreadsheetSheetView, error)
 	SetSheetViewMode(sheet string, mode string) error
 	SetSheetRuler(sheet string, show bool) error
+	SetSheetZoom(sheet string, percent int) error
 }
 
 // SpreadsheetProtectionEditor is an optional capability for protecting worksheets.

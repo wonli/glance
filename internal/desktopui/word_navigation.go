@@ -3,6 +3,7 @@ package desktopui
 import (
 	"math"
 
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/system"
 	"gioui.org/layout"
@@ -72,15 +73,120 @@ func wordNavigationRuns(blocks []document.WordBlock) []wordNavigationRun {
 	return runs
 }
 
+func wordNavigationRunOrder(runs []wordNavigationRun) map[string]int {
+	order := make(map[string]int, len(runs))
+	for index, run := range runs {
+		order[run.run.ID] = index
+	}
+	return order
+}
+
+func (a *App) handleWordDocumentBoundaryShortcut(gtx layout.Context, state *documentSessionState, currentRunID string, editor *widget.Editor, toEnd, extendSelection, pageLayout bool) bool {
+	if state == nil || editor == nil || !gtx.Focused(editor) || editor.ReadOnly || state.formatRunning.Load() || a.isSaving() {
+		return true
+	}
+	runs := wordNavigationRuns(wordBlocksForState(state))
+	if len(runs) == 0 {
+		return true
+	}
+	currentIndex := -1
+	for index, run := range runs {
+		if run.run.ID == currentRunID {
+			currentIndex = index
+			break
+		}
+	}
+	if currentIndex < 0 {
+		return true
+	}
+	for pending, ok := editor.Update(gtx); ok; pending, ok = editor.Update(gtx) {
+		if _, submit := pending.(widget.SubmitEvent); submit {
+			start, end := editor.Selection()
+			a.queueWordParagraphSplit(currentRunID, editor.Text(), start, end)
+			if state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == currentRunID {
+				return true
+			}
+		}
+	}
+	if a.finishWordSelectionInput(state, currentRunID, editor) {
+		return true
+	}
+	captureWordTextDraft(state, currentRunID, editor.Text())
+
+	targetIndex := 0
+	targetOffset := 0
+	if toEnd {
+		targetIndex = len(runs) - 1
+		targetOffset = wordRunEditor(state, runs[targetIndex].run).Len()
+	}
+	target := runs[targetIndex]
+	var selection *wordPageTextSelection
+	if extendSelection {
+		var anchor wordPageCaretPosition
+		if wordPageTextSelectionActive(state.wordPageTextSelection) {
+			anchor = state.wordPageTextSelection.anchor
+		} else {
+			start, end := editor.Selection()
+			offset := end
+			if start != end {
+				if toEnd {
+					offset = min(start, end)
+				} else {
+					offset = max(start, end)
+				}
+			}
+			anchor = wordPageCaretPosition{runID: currentRunID, runeOffset: offset}
+		}
+		selection = &wordPageTextSelection{
+			scope:    "range",
+			anchor:   anchor,
+			focus:    wordPageCaretPosition{runID: target.run.ID, runeOffset: targetOffset},
+			runOrder: wordNavigationRunOrder(runs),
+		}
+	}
+	state.wordPageTextSelection = nil
+	state.wordPageSelectionDrag = nil
+	state.wordPreferredVerticalXSet = false
+	state.wordPagePreferredVerticalXSet = false
+	if pageLayout {
+		a.focusWordPageRun(gtx, state, target.run.ID, targetOffset, targetOffset)
+		requestWordPageScrollForKeyboardCaret(state, target.run.ID, targetOffset)
+	} else {
+		targetEditor := wordRunEditor(state, target.run)
+		a.focusWordNavigationRun(gtx, state, target, targetEditor, targetOffset, false, 0)
+	}
+	state.wordPageTextSelection = selection
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+	return true
+}
+
 func (a *App) handleWordArrowNavigation(gtx layout.Context, paragraph document.WordParagraph, run document.WordTextRun, editor *widget.Editor) (handled bool) {
 	state := a.documentSessionState
 	if state == nil || editor == nil || !gtx.Focused(editor) || editor.ReadOnly || state.formatRunning.Load() || a.isSaving() {
 		return false
 	}
 	start, end := editor.Selection()
-	if start != end {
+	selectionActive := start != end
+	if selectionActive {
 		state.wordPreferredVerticalXSet = false
-		return false
+	}
+
+	// Document-boundary shortcuts do not depend on measured caret geometry. Check
+	// them before the flow-navigation geometry guard so they also work on the
+	// first frame after focus moves to a run that has not been measured yet.
+	if !editorHasActiveComposition(editor) {
+		if ev, ok := gtx.Event(
+			key.Filter{Focus: editor, Name: key.NameHome, Required: key.ModShortcut, Optional: key.ModShift},
+			key.Filter{Focus: editor, Name: key.NameEnd, Required: key.ModShortcut, Optional: key.ModShift},
+		); ok {
+			if keyEvent, ok := ev.(key.Event); ok && keyEvent.State == key.Press {
+				return a.handleWordDocumentBoundaryShortcut(gtx, state, run.ID, editor,
+					keyEvent.Name == key.NameEnd, keyEvent.Modifiers.Contain(key.ModShift), false)
+			}
+			return true
+		}
 	}
 
 	if state.wordNavLayouts == nil {
@@ -89,12 +195,19 @@ func (a *App) handleWordArrowNavigation(gtx layout.Context, paragraph document.W
 	if _, measured := state.wordNavLayouts[run.ID]; !measured {
 		return false
 	}
-	ev, ok := gtx.Event(
-		key.Filter{Focus: editor, Name: key.NameLeftArrow},
-		key.Filter{Focus: editor, Name: key.NameRightArrow},
-		key.Filter{Focus: editor, Name: key.NameUpArrow},
-		key.Filter{Focus: editor, Name: key.NameDownArrow},
-	)
+	filters := make([]event.Filter, 0, 6)
+	if !selectionActive {
+		filters = append(filters,
+			key.Filter{Focus: editor, Name: key.NameLeftArrow},
+			key.Filter{Focus: editor, Name: key.NameRightArrow},
+			key.Filter{Focus: editor, Name: key.NameUpArrow},
+			key.Filter{Focus: editor, Name: key.NameDownArrow},
+		)
+	}
+	if len(filters) == 0 {
+		return false
+	}
+	ev, ok := gtx.Event(filters...)
 	if !ok {
 		return false
 	}
@@ -111,7 +224,10 @@ func (a *App) handleWordArrowNavigation(gtx layout.Context, paragraph document.W
 			run.ID, beforeStart, beforeEnd, beforeLength, state.selectedWordRunID, afterStart, afterEnd, afterLength,
 			state.wordPreferredVerticalX, state.wordPreferredVerticalXSet)
 	}()
-	if keyEvent.State != key.Press || keyEvent.Modifiers != 0 {
+	if keyEvent.State != key.Press {
+		return true
+	}
+	if selectionActive || keyEvent.Modifiers != 0 {
 		return true
 	}
 

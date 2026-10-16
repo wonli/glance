@@ -166,6 +166,51 @@ func TestSpreadsheetStatusBarVerticallyCentered(t *testing.T) {
 	}
 }
 
+func TestSpreadsheetStatusBarShowsEndModeIndicator(t *testing.T) {
+	app := New(nil, "")
+	defer close(app.shutdown)
+	state := newDocumentSessionState("test.xlsx")
+	state.gridEndMode = true
+	app.documentSessionState = state
+	app.status = " "
+	size := image.Pt(800, 50)
+	var ops op.Ops
+	gtx := layout.Context{
+		Ops:         &ops,
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Exact(size),
+	}
+	app.layoutSpreadsheetStatusBar(gtx)
+
+	win, err := headless.NewWindow(size.X, size.Y)
+	if err != nil {
+		t.Skip("headless window unavailable:", err)
+	}
+	defer win.Release()
+	if err := win.Frame(&ops); err != nil {
+		t.Fatal(err)
+	}
+	shot := image.NewRGBA(image.Rectangle{Max: size})
+	if err := win.Screenshot(shot); err != nil {
+		t.Fatal(err)
+	}
+	ink := 0
+	for y := 0; y < size.Y; y++ {
+		for x := 20; x < 52; x++ {
+			pixel := shot.RGBAAt(x, y)
+			if pixel.R < 150 && pixel.G < 150 && pixel.B < 150 {
+				ink++
+			}
+		}
+	}
+	if ink == 0 {
+		t.Fatal("END mode indicator has no visible text in the status bar")
+	}
+	if app.status != " " {
+		t.Fatalf("rendering End mode changed the document status to %q", app.status)
+	}
+}
+
 func TestSpreadsheetStatusBarZoomRightAlignmentStability(t *testing.T) {
 	app := New(nil, "")
 	defer close(app.shutdown)

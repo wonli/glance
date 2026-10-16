@@ -3,9 +3,43 @@ package desktopui
 import (
 	"errors"
 
+	"gioui.org/io/key"
+	"gioui.org/layout"
+	"gioui.org/widget"
+
 	"glance/internal/application"
 	"glance/internal/document"
 )
+
+func (a *App) handleWordSelectAllShortcut(gtx layout.Context, state *documentSessionState, runID string, editor *widget.Editor) bool {
+	if state == nil || state.word == nil || editor == nil || !gtx.Focused(editor) {
+		return false
+	}
+	// Gio's Editor also registers Cmd/Ctrl+A. A focus-bound filter here can lose
+	// the event to the editor's own filter, so guard focus explicitly and then
+	// consume the shortcut from the shared key stream before Editor.Update.
+	event, ok := gtx.Event(key.Filter{Name: key.Name("A"), Required: key.ModShortcut})
+	if !ok {
+		return false
+	}
+	keyEvent, ok := event.(key.Event)
+	if !ok || keyEvent.State != key.Press {
+		return true
+	}
+	// The shortcut filter can pull Cmd/Ctrl+A ahead of text input queued for
+	// this editor. Drain it first so the document selection includes the latest
+	// draft value, including text delivered by an IME.
+	for pending, ok := editor.Update(gtx); ok; pending, ok = editor.Update(gtx) {
+		if _, submit := pending.(widget.SubmitEvent); submit {
+			start, end := editor.Selection()
+			a.queueWordParagraphSplit(runID, editor.Text(), start, end)
+			return true
+		}
+	}
+	captureWordTextDraft(state, runID, editor.Text())
+	a.selectAllWordText()
+	return true
+}
 
 type wordTextSelectionRequest struct {
 	Scope       string  `json:"scope"`

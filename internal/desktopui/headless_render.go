@@ -218,7 +218,7 @@ func awaitHeadlessGridLoad(ctx context.Context, app *App) error {
 		return errors.New("spreadsheet viewport is unavailable")
 	}
 	for {
-		if v.WindowSheet == app.sheet && v.WindowRange.StartRow > 0 {
+		if v.LoadedSheet == app.sheet && !v.LoadedWindows.empty() {
 			return nil
 		}
 		if v.WindowError != nil {
@@ -226,7 +226,7 @@ func awaitHeadlessGridLoad(ctx context.Context, app *App) error {
 		}
 		select {
 		case result := <-app.gridLoadResults:
-			if result.viewport == nil || result.viewport.RequestedSheet != result.sheet || result.viewport.RequestedRange != result.rangeOf {
+			if result.viewport == nil || result.viewport.RequestedID != result.requestID || result.viewport.RequestedSheet != result.sheet || result.viewport.RequestedWindows != result.windows {
 				continue
 			}
 			result.viewport.Loading = false
@@ -237,7 +237,7 @@ func awaitHeadlessGridLoad(ctx context.Context, app *App) error {
 				v.WindowError = result.err
 				return result.err
 			}
-			if err := v.applyWindow(result.sheet, result.rangeOf, result.window); err != nil {
+			if err := v.applyLoadResult(result); err != nil {
 				return err
 			}
 			app.applyValueFilterWindow(app.documentSessionState, v)

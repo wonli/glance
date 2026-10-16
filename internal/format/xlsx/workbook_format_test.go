@@ -269,3 +269,167 @@ func TestSetCellFormatsFontSizeAndFamily(t *testing.T) {
 		t.Fatal("expected error for empty font family")
 	}
 }
+
+func TestSetCellFormatsRoundTripsExcelKeyboardShortcutFormats(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	formats := []string{"#,##0.00", "h:mm AM/PM", "m/d/yy", `"¥"#,##0.00`, "0%", "0.00E+00", "General"}
+	for index, format := range formats {
+		cell := CellName(index+1, 1)
+		if err := wb.SetCellText("Sheet1", cell, "1234.5"); err != nil {
+			t.Fatalf("set %s value: %v", cell, err)
+		}
+		if format == "General" {
+			initial := "0.00"
+			if err := wb.SetCellFormats("Sheet1", singleCellRange(cell), document.CellFormatPatch{NumberFormat: &initial}); err != nil {
+				t.Fatalf("set initial format for %s: %v", cell, err)
+			}
+		}
+		if err := wb.SetCellFormats("Sheet1", singleCellRange(cell), document.CellFormatPatch{NumberFormat: &format}); err != nil {
+			t.Fatalf("set %s format %q: %v", cell, format, err)
+		}
+	}
+
+	path := filepath.Join(t.TempDir(), "excel-shortcut-number-formats.xlsx")
+	if err := wb.SaveAs(path); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	window, err := reopened.Window("Sheet1", 1, 1, 1, len(formats))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, want := range formats {
+		if got := window.Cells[0][index].Style.NumberFormat; got != want {
+			t.Errorf("%s number format after save/reopen = %q; want %q", CellName(index+1, 1), got, want)
+		}
+	}
+}
+
+func TestExcelHomeFormatPatchesRoundTrip(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+
+	thousandths := "#,##0.00"
+	if err := wb.SetCellFormats("Sheet1", singleCellRange("A1"), document.CellFormatPatch{NumberFormat: &thousandths}); err != nil {
+		t.Fatal(err)
+	}
+	increaseDecimal := 1
+	if err := wb.SetCellFormats("Sheet1", singleCellRange("A1"), document.CellFormatPatch{DecimalPlacesDelta: &increaseDecimal}); err != nil {
+		t.Fatal(err)
+	}
+
+	initialSize := 13.0
+	fontFamily := "Arial"
+	fontColor := "#2196F3"
+	fillColor := "#DDEBF7"
+	bold := true
+	if err := wb.SetCellFormats("Sheet1", singleCellRange("B1"), document.CellFormatPatch{
+		FontSize: &initialSize, FontFamily: &fontFamily, FontColor: &fontColor, FillColor: &fillColor, Bold: &bold,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	decreaseFontSize := -1
+	if err := wb.SetCellFormats("Sheet1", singleCellRange("B1"), document.CellFormatPatch{FontSizeStep: &decreaseFontSize}); err != nil {
+		t.Fatal(err)
+	}
+	increaseDefaultFontSize := 1
+	if err := wb.SetCellFormats("Sheet1", singleCellRange("C1"), document.CellFormatPatch{FontSizeStep: &increaseDefaultFontSize}); err != nil {
+		t.Fatal(err)
+	}
+	bottomBorder := "bottom"
+	if err := wb.SetCellFormats("Sheet1", singleCellRange("D1"), document.CellFormatPatch{BorderPreset: &bottomBorder}); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(t.TempDir(), "excel-home-format-actions.xlsx")
+	if err := wb.SaveAs(path); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	window, err := reopened.Window("Sheet1", 1, 1, 1, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := window.Cells[0][0].Style.NumberFormat; got != "#,##0.000" {
+		t.Errorf("A1 decimal-step format after save/reopen = %q; want %q", got, "#,##0.000")
+	}
+	if style := window.Cells[0][1].Style; style.FontSize != 12 || style.FontFamily != fontFamily || style.FontColor != fontColor || style.FillColor != fillColor || !style.Bold {
+		t.Errorf("B1 Home font changes after save/reopen = %+v", style)
+	}
+	if got := window.Cells[0][2].Style.FontSize; got != 12 {
+		t.Errorf("C1 stepped workbook-default font size after save/reopen = %v; want 12", got)
+	}
+	if style := window.Cells[0][3].Style; style.Borders[2].Style != 1 || style.Borders[2].Color != "#000000" {
+		t.Errorf("D1 bottom-border picker choice after save/reopen = %+v; want a black bottom border", style.Borders[2])
+	}
+}
+
+func TestSetCellFormatsVerticalAlignmentRoundTrips(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	wrap := true
+	horizontal := "center"
+	if _, err := wb.SetCellFormatsChanged("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, document.CellFormatPatch{
+		WrapText: &wrap, HorizontalAlignment: &horizontal,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	vertical := "center"
+	changed, err := wb.SetCellFormatsChanged("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, document.CellFormatPatch{VerticalAlignment: &vertical})
+	if err != nil || !changed {
+		t.Fatalf("set vertical alignment changed=%t, err=%v; want true, nil", changed, err)
+	}
+	window, err := wb.Window("Sheet1", 1, 1, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if style := window.Cells[0][0].Style; style.VerticalAlignment != vertical || style.HorizontalAlignment != horizontal || !style.WrapText {
+		t.Fatalf("style after vertical alignment = %+v; want vertical=%q, horizontal=%q, wrap=true", style, vertical, horizontal)
+	}
+	if changed, err := wb.SetCellFormatsChanged("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, document.CellFormatPatch{VerticalAlignment: &vertical}); err != nil || changed {
+		t.Fatalf("repeat vertical alignment changed=%t, err=%v; want false, nil", changed, err)
+	}
+	invalid := "middle"
+	if changed, err := wb.SetCellFormatsChanged("Sheet1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, document.CellFormatPatch{VerticalAlignment: &invalid}); err == nil || changed {
+		t.Fatalf("invalid vertical alignment changed=%t, err=%v; want false and an error", changed, err)
+	}
+	if applied, err := wb.Undo(); err != nil || !applied {
+		t.Fatalf("undo vertical alignment = %t, %v; want true, nil", applied, err)
+	}
+	window, err = wb.Window("Sheet1", 1, 1, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if style := window.Cells[0][0].Style; style.VerticalAlignment != "" || style.HorizontalAlignment != horizontal || !style.WrapText {
+		t.Fatalf("style after undo = %+v; want vertical default and existing horizontal/wrap", style)
+	}
+	if applied, err := wb.Redo(); err != nil || !applied {
+		t.Fatalf("redo vertical alignment = %t, %v; want true, nil", applied, err)
+	}
+
+	path := filepath.Join(t.TempDir(), "vertical-alignment.xlsx")
+	if err := wb.SaveAs(path); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	window, err = reopened.Window("Sheet1", 1, 1, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if style := window.Cells[0][0].Style; style.VerticalAlignment != vertical || style.HorizontalAlignment != horizontal || !style.WrapText {
+		t.Fatalf("reopened style = %+v; want vertical=%q, horizontal=%q, wrap=true", style, vertical, horizontal)
+	}
+}

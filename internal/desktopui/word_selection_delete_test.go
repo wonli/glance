@@ -171,7 +171,7 @@ func TestWordPageDeleteReverseAndCrossParagraphSelection(t *testing.T) {
 			frame()
 			router.Queue(key.Event{Name: key.NameDeleteBackward, State: key.Press})
 			frame()
-			waitWordInteraction(t, app, func() bool { return state.wordSelectionDeleteIntent == nil && !state.formatRunning.Load() })
+			waitWordInteraction(t, app, func() bool { return state.wordSelectionEditIntent == nil && !state.formatRunning.Load() })
 			blocks := state.word.WordBlocks()
 			if len(blocks) != 1 {
 				t.Fatalf("paragraph count=%d; want merged paragraph", len(blocks))
