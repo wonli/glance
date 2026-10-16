@@ -1,0 +1,49 @@
+package desktopui
+
+import (
+	"image"
+
+	"gioui.org/gesture"
+	"gioui.org/io/pointer"
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/widget"
+)
+
+// textEditorParagraphSelection observes native editor clicks without taking
+// their pointer grab. Keep one instance for each persistent editor.
+type textEditorParagraphSelection struct {
+	click             gesture.Click
+	paragraphSelected bool
+}
+
+func (s *textEditorParagraphSelection) layout(gtx layout.Context, editor *widget.Editor, content layout.Widget) layout.Dimensions {
+	s.paragraphSelected = false
+	pass := pointer.PassOp{}.Push(gtx.Ops)
+	dims := content(gtx)
+	area := clip.Rect(image.Rectangle{Max: dims.Size}).Push(gtx.Ops)
+	s.click.Add(gtx.Ops)
+	area.Pop()
+	pass.Pop()
+	for ev, ok := s.click.Update(gtx.Source); ok; ev, ok = s.click.Update(gtx.Source) {
+		if ev.Source != pointer.Mouse || ev.Kind != gesture.KindPress || ev.NumClicks != 2 {
+			continue
+		}
+		// The native editor has already resolved the click to a rune position.
+		caret, _ := editor.Selection()
+		text := []rune(editor.Text())
+		caret = max(0, min(caret, len(text)))
+		start, end := caret, caret
+		for start > 0 && text[start-1] != '\n' {
+			start--
+		}
+		for end < len(text) && text[end] != '\n' {
+			end++
+		}
+		editor.SetCaret(end, start)
+		s.paragraphSelected = true
+		gtx.Execute(op.InvalidateCmd{})
+	}
+	return dims
+}

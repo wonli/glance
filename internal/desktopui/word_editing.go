@@ -305,6 +305,10 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 		}
 		return
 	}
+	if state.wordSelectionDeleteIntent != nil {
+		a.startWordSelectionDelete(state)
+		return
+	}
 	if state.wordParagraphSplitIntent != nil {
 		a.startWordParagraphSplit(state)
 		return

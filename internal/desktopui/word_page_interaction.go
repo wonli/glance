@@ -1,8 +1,10 @@
 package desktopui
 
 import (
+	"gioui.org/unit"
 	"image"
 	"math"
+	"time"
 
 	"gioui.org/f32"
 	"gioui.org/io/event"
@@ -38,7 +40,12 @@ type wordVisiblePageInteraction struct {
 	Transform wordPageTransform
 }
 
-type wordPageInteractionTag struct{ identity byte }
+type wordPageInteractionTag struct {
+	identity              byte
+	lastTextPressTime     time.Duration
+	lastTextPressPosition f32.Point
+	lastTextPressRunID    string
+}
 
 type wordPageCaretPosition struct {
 	runID      string
@@ -223,6 +230,15 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 				state.selectedWordParagraphID = ""
 				clearWordImageSelection(state)
 				state.wordPageSelectionDrag = nil
+				continue
+			}
+
+			distance := viewportPoint.Sub(tag.lastTextPressPosition)
+			tolerance := float32(gtx.Dp(unit.Dp(4)))
+			doubleClick := tag.lastTextPressRunID == hit.runID && event.Time > tag.lastTextPressTime && event.Time-tag.lastTextPressTime <= 500*time.Millisecond && distance.X*distance.X+distance.Y*distance.Y <= tolerance*tolerance
+			tag.lastTextPressTime, tag.lastTextPressPosition, tag.lastTextPressRunID = event.Time, viewportPoint, hit.runID
+			if doubleClick && a.selectWordPageParagraph(gtx, state, hit.runID) {
+				tag.lastTextPressRunID = ""
 				continue
 			}
 			a.focusWordPageRun(gtx, state, hit.runID, hit.runeOffset, hit.runeOffset)

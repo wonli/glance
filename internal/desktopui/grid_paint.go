@@ -200,7 +200,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 			if !visibleRect.Empty() {
 				cell := windowCell(v.Window, row, col)
 				style := paintStyle(cell.Style)
-				paintCellEditor(gtx, a.theme, &a.cellEditor, fullRect, visibleRect, cell.Style, style, a.tokens().Colors.Grid.SelectionBorder, a.spreadsheetZoom())
+				paintCellEditorWithSelection(gtx, a.theme, &a.cellEditor, &a.cellParagraphSelection, fullRect, visibleRect, cell.Style, style, a.tokens().Colors.Grid.SelectionBorder, a.spreadsheetZoom())
 			}
 		}
 	}
@@ -232,6 +232,10 @@ func formulaReferenceContains(ranges []document.CellRange, row, column int) bool
 }
 
 func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.Editor, rect, visible image.Rectangle, cellStyle document.CellStyle, style gridPaintStyle, selectionBorder color.NRGBA, zoom ...float64) {
+	paintCellEditorWithSelection(gtx, theme, editor, nil, rect, visible, cellStyle, style, selectionBorder, zoom...)
+}
+
+func paintCellEditorWithSelection(gtx layout.Context, theme *material.Theme, editor *widget.Editor, selection *textEditorParagraphSelection, rect, visible image.Rectangle, cellStyle document.CellStyle, style gridPaintStyle, selectionBorder color.NRGBA, zoom ...float64) {
 	area := clip.Rect(visible).Push(gtx.Ops)
 	defer area.Pop()
 	t := op.Offset(rect.Min).Push(gtx.Ops)
@@ -246,6 +250,9 @@ func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.E
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				if selection != nil {
+					return selection.layout(gtx, editor, editorStyle.Layout)
+				}
 				return editorStyle.Layout(gtx)
 			}),
 		)

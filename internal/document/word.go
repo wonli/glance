@@ -315,6 +315,19 @@ type WordParagraphJoiner interface {
 	JoinParagraphAtBoundary(runID string, direction WordParagraphJoinDirection) (WordParagraphJoinResult, error)
 }
 
+// WordTextSelectionDeleteResult identifies the caret after deleting a text selection.
+type WordTextSelectionDeleteResult struct {
+	ParagraphID string
+	RunID       string
+	Caret       int
+}
+
+// WordTextSelectionEditor deletes an ordered selection atomically. Endpoint
+// offsets count Unicode runes in the identified editable text runs.
+type WordTextSelectionEditor interface {
+	DeleteTextSelection(startRunID string, startOffset int, endRunID string, endOffset int) (WordTextSelectionDeleteResult, error)
+}
+
 // WordImageEditor is an optional capability for inline raster image operations.
 type WordImageEditor interface {
 	InsertInlineImage(paragraphID, afterInlineID, mediaType string, data []byte) (imageID string, err error)

@@ -39,7 +39,15 @@ func (a *App) processWordCommandAsyncResult() bool {
 			result.state.setWordBlocks(result.blocks)
 			reconcileWordSelection(result.state, false)
 		}
-		if result.paragraphSplit {
+		if result.selectionDelete {
+			a.completeWordSelectionDelete(result, activeResult)
+			if activeResult && result.err == nil && !result.state.formatRunning.Load() && !result.state.wordFlushRequested.Load() {
+				a.maybeAutoSaveWord(result.state)
+			}
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		} else if result.paragraphSplit {
 			// A split owns view-local draft and focus state even after a tab switch.
 			a.completeWordParagraphSplit(result, activeResult)
 			if activeResult && result.err == nil && !result.state.formatRunning.Load() && !result.state.wordFlushRequested.Load() {
@@ -85,6 +93,7 @@ func (a *App) processWordCommandAsyncResult() bool {
 					result.state.wordFlushAllDrafts.Store(false)
 					result.state.wordForceDraftFlush.Store(false)
 					result.state.clearPendingWordRestore()
+					result.state.wordSelectionDeleteIntent = nil
 					result.state.wordParagraphSplitIntent = nil
 					result.state.wordParagraphJoinIntent = nil
 					result.state.wordPageBreakIntent = nil
@@ -202,7 +211,9 @@ func (a *App) processWordCommandAsyncResult() bool {
 func (a *App) completeQueuedWordSplitsOnClose() {
 	for remaining := len(a.wordCommandResults); remaining > 0; remaining-- {
 		result := <-a.wordCommandResults
-		if result.paragraphSplit {
+		if result.selectionDelete {
+			a.completeWordSelectionDelete(result, false)
+		} else if result.paragraphSplit {
 			a.completeWordParagraphSplit(result, false)
 		} else {
 			a.wordCommandResults <- result

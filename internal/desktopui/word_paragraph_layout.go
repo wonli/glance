@@ -135,10 +135,12 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	focusTargetPending := state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != run.ID
 	paragraphSplitPending := state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == run.ID
 	paragraphJoinPending := state.wordParagraphJoinIntent != nil
-	editor.ReadOnly = state.wordReadingMode || !run.Editable || wordEditorOperationPending(state) || paragraphSplitPending || paragraphJoinPending || focusTargetPending
+	editor.ReadOnly = state.wordReadingMode || !run.Editable || wordEditorOperationPending(state) || paragraphSplitPending || paragraphJoinPending || focusTargetPending || state.wordSelectionDeleteIntent != nil
 	selectionStartBeforeUpdate, selectionEndBeforeUpdate := editor.Selection()
 	if !editor.ReadOnly {
-		if a.handleWordHistoryShortcut(gtx, run.ID, editor) {
+		if a.handleWordSelectionDeleteKey(gtx, state, editor) {
+			editor.ReadOnly = true
+		} else if a.handleWordHistoryShortcut(gtx, run.ID, editor) {
 			editor.ReadOnly = true
 		} else if a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {
 			editor.ReadOnly = true
@@ -176,7 +178,16 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 				paint.FillShape(gtx.Ops, highlightColor, clip.Rect(rect).Op())
 			}
 		}
-		dims := layoutWordRunEditor(gtx, style, run.ID)
+
+		if state.wordParagraphSelections == nil {
+			state.wordParagraphSelections = make(map[string]*textEditorParagraphSelection)
+		}
+		selection := state.wordParagraphSelections[run.ID]
+		if selection == nil {
+			selection = new(textEditorParagraphSelection)
+			state.wordParagraphSelections[run.ID] = selection
+		}
+		dims := selection.layout(gtx, editor, func(gtx layout.Context) layout.Dimensions { return layoutWordRunEditor(gtx, style, run.ID) })
 		if run.Style.Underline && dims.Size.X > 0 && dims.Size.Y > 0 {
 			y := max(0, dims.Baseline)
 			thickness := max(1, gtx.Dp(unit.Dp(1)))

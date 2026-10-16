@@ -136,6 +136,8 @@ type wordCommandResult struct {
 	skipOperationTracking bool
 	confirmationPending   bool
 	wordTrackRevisions    *bool
+	selectionDelete       bool
+	selectionDeleteResult document.WordTextSelectionDeleteResult
 	paragraphSplit        bool
 	paragraphJoin         bool
 	runID                 string
@@ -195,12 +197,12 @@ func (a *App) publishWordCommand(result wordCommandResult) {
 			}
 		}
 		// Keep the split serialized until the UI reconciles its run IDs and drafts.
-		if !result.paragraphSplit {
+		if !result.paragraphSplit && !result.selectionDelete {
 			result.state.finishOperation(result.operationToken)
 		}
 	}
 	if a.wordCommandResults == nil {
-		if result.paragraphSplit && result.state != nil {
+		if (result.paragraphSplit || result.selectionDelete) && result.state != nil {
 			result.state.finishOperation(result.operationToken)
 		}
 		return
@@ -211,7 +213,7 @@ func (a *App) publishWordCommand(result wordCommandResult) {
 			a.window.Invalidate()
 		}
 	case <-a.shutdown:
-		if result.paragraphSplit && result.state != nil {
+		if (result.paragraphSplit || result.selectionDelete) && result.state != nil {
 			result.state.finishOperation(result.operationToken)
 		}
 	}

@@ -52,7 +52,7 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 	paragraphJoinPending := state.wordParagraphJoinIntent != nil
 	paragraphSplitPending := state.wordParagraphSplitIntent != nil && state.wordParagraphSplitIntent.runID == runID
 	focusTargetPending := state.wordPendingFocusRunID != "" && state.wordPendingFocusRunID != runID
-	editor.ReadOnly = editor.ReadOnly || paragraphJoinPending || paragraphSplitPending || focusTargetPending
+	editor.ReadOnly = editor.ReadOnly || paragraphJoinPending || paragraphSplitPending || focusTargetPending || state.wordSelectionDeleteIntent != nil
 	pageOps := op.Offset(pageRect.Min).Push(gtx.Ops)
 	pageClip := clip.Rect{Max: pageRect.Size()}.Push(gtx.Ops)
 	event.Op(gtx.Ops, editor)
@@ -65,7 +65,9 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 		state.wordPendingFocusRunID = ""
 	}
 	if !editor.ReadOnly {
-		if a.handleWordHistoryShortcut(gtx, runID, editor) {
+		if a.handleWordSelectionDeleteKey(gtx, state, editor) {
+			editor.ReadOnly = true
+		} else if a.handleWordHistoryShortcut(gtx, runID, editor) {
 			editor.ReadOnly = true
 		} else if a.handleWordParagraphJoinKey(gtx, paragraph, run, editor) {
 			editor.ReadOnly = true

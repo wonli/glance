@@ -84,7 +84,9 @@ func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(10)), 0)}
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return layoutFormulaEditorField(gtx, a.theme, &a.formulaEditor, "", 0)
+						return a.formulaParagraphSelection.layout(gtx, &a.formulaEditor, func(gtx layout.Context) layout.Dimensions {
+							return layoutFormulaEditorField(gtx, a.theme, &a.formulaEditor, "", 0)
+						})
 					}),
 				)
 			})

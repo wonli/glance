@@ -93,6 +93,8 @@ type documentSessionState struct {
 	wordRulerIndentIntent               *wordParagraphIndentIntent
 	cellEditor                          widget.Editor
 	formulaEditor                       widget.Editor
+	cellParagraphSelection              textEditorParagraphSelection
+	formulaParagraphSelection           textEditorParagraphSelection
 	formulaReference                    formulaReferenceState
 	nameBox                             widget.Editor
 	sheetNameEditor                     widget.Editor
@@ -113,6 +115,8 @@ type documentSessionState struct {
 	wordPreferredVerticalX              int
 	wordPreferredVerticalXSet           bool
 	wordNavigationVerticalHandledRunID  string
+	wordSelectionDeleteIntent           *wordSelectionDeleteIntent
+	wordParagraphSelections             map[string]*textEditorParagraphSelection
 	wordParagraphSplitIntent            *wordParagraphSplitIntent
 	wordParagraphJoinIntent             *wordParagraphJoinIntent
 	wordPageBreakIntent                 *wordPageBreakIntent
