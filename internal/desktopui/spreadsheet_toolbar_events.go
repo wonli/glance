@@ -106,13 +106,9 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			continue
 		}
 		if action.slot >= 12 && action.slot <= 15 {
-			pos := state.selection.Active
-			kind := []document.StructureEditKind{document.StructureInsertRows, document.StructureDeleteRows, document.StructureInsertColumns, document.StructureDeleteColumns}[action.slot-12]
-			index := pos.Row + 1
-			if action.slot >= 14 {
-				index = pos.Column + 1
+			if edit, ok := spreadsheetStructureEditForToolbarAction(action.slot, state.sheet, state.selection); ok {
+				a.applyStructure(edit)
 			}
-			a.applyStructure(document.StructureEdit{Kind: kind, Sheet: state.sheet, Index: index, Count: 1})
 			continue
 		}
 		if action.slot == 22 {

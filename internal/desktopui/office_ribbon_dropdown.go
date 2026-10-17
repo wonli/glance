@@ -484,9 +484,9 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 		bold, size := true, 16.0
 		a.applyCellFormat(document.CellFormatPatch{Bold: &bold, FontSize: &size})
 	case "excel-delete-row":
-		a.applyStructure(document.StructureEdit{Kind: document.StructureDeleteRows, Sheet: state.sheet, Index: state.selection.Active.Row + 1, Count: 1})
+		a.applyStructure(spreadsheetStructureEditForSelection(document.StructureDeleteRows, state.sheet, state.selection))
 	case "excel-delete-column":
-		a.applyStructure(document.StructureEdit{Kind: document.StructureDeleteColumns, Sheet: state.sheet, Index: state.selection.Active.Column + 1, Count: 1})
+		a.applyStructure(spreadsheetStructureEditForSelection(document.StructureDeleteColumns, state.sheet, state.selection))
 	case "excel-delete-sheet":
 		a.applyStructure(document.StructureEdit{Kind: document.StructureDeleteSheet, Sheet: state.sheet})
 	case "excel-sum", "excel-average", "excel-count", "excel-max", "excel-min":

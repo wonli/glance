@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"gioui.org/layout"
@@ -15,6 +16,22 @@ import (
 	"glance/internal/document"
 	"glance/internal/format/jsondoc"
 )
+
+var jsonIndexStrings [100]string
+
+func init() {
+	for i := 0; i < len(jsonIndexStrings); i++ {
+		jsonIndexStrings[i] = fmt.Sprintf("%02d", i)
+	}
+}
+
+func jsonRowIndexStr(idx int) string {
+	if idx >= 0 && idx < len(jsonIndexStrings) {
+		return jsonIndexStrings[idx]
+	}
+	return strconv.Itoa(idx)
+}
+
 
 type jsonTreeRow struct {
 	node    int
@@ -67,7 +84,7 @@ func (v *jsonWorkspaceView) accept(result jsonTreeResult) {
 		v.baselineSegments = result.baselineSegments
 	}
 	v.collapsed = make(map[int]bool)
-	v.rowButtons, v.toggleButtons, v.outlineButtons = make(map[int]*widget.Clickable), make(map[int]*widget.Clickable), make(map[int]*widget.Clickable)
+	v.rowButtons, v.toggleButtons, v.outlineButtons, v.closingButtons = make(map[int]*widget.Clickable), make(map[int]*widget.Clickable), make(map[int]*widget.Clickable), make(map[int]*widget.Clickable)
 	selected := 0
 	if v.tree != nil {
 		if pointer != "" {
@@ -108,7 +125,16 @@ func (v *jsonWorkspaceView) selectNode(id int) {
 }
 
 func (v *jsonWorkspaceView) rebuildRows() {
-	v.rows, v.outline = nil, nil
+	if v.rows == nil {
+		v.rows = make([]jsonTreeRow, 0, 128)
+	} else {
+		v.rows = v.rows[:0]
+	}
+	if v.outline == nil {
+		v.outline = make([]int, 0, 128)
+	} else {
+		v.outline = v.outline[:0]
+	}
 	if v.tree == nil {
 		return
 	}
@@ -213,14 +239,20 @@ func (a *App) layoutJSONTree(gtx layout.Context) layout.Dimensions {
 				return style.Layout(gtx)
 			})
 		}
+		v.activeRowIDs = v.activeRowIDs[:0]
+		v.activeClosingIDs = v.activeClosingIDs[:0]
+		v.activeToggleIDs = v.activeToggleIDs[:0]
 		return v.treeList.Layout(gtx, len(v.rows), func(gtx layout.Context, index int) layout.Dimensions {
 			row := v.rows[index]
 			n := v.tree.Nodes[row.node]
 			gtx = jsonFixedHeight(gtx, 38)
-			button := jsonViewButton(v.rowButtons, row.node)
 			if row.closing {
-				return a.layoutJSONTreeRow(gtx, index, row, n)
+				v.activeClosingIDs = append(v.activeClosingIDs, row.node)
+				button := jsonViewButton(v.closingButtons, row.node)
+				return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return a.layoutJSONTreeRow(gtx, index, row, n) })
 			}
+			v.activeRowIDs = append(v.activeRowIDs, row.node)
+			button := jsonViewButton(v.rowButtons, row.node)
 			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return a.layoutJSONTreeRow(gtx, index, row, n) })
 		})
 	})
@@ -243,6 +275,7 @@ func (a *App) layoutJSONTreeRow(gtx layout.Context, index int, row jsonTreeRow, 
 					if !n.Container() || row.closing || v.tree.ChildCount(row.node) == 0 {
 						return layout.Dimensions{Size: gtx.Constraints.Max}
 					}
+					v.activeToggleIDs = append(v.activeToggleIDs, row.node)
 					button := jsonViewButton(v.toggleButtons, row.node)
 					return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						icon := "chevron-down"
@@ -254,7 +287,7 @@ func (a *App) layoutJSONTreeRow(gtx layout.Context, index int, row jsonTreeRow, 
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: 6, Right: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return jsonLabel(gtx, a, fmt.Sprintf("%02d", index+1), 10, color.NRGBA{R: 176, G: 182, B: 189, A: 255}, false, true)
+						return jsonLabel(gtx, a, jsonRowIndexStr(index+1), 10, color.NRGBA{R: 176, G: 182, B: 189, A: 255}, false, true)
 					})
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -277,10 +310,11 @@ func (a *App) layoutJSONTreeRow(gtx layout.Context, index int, row jsonTreeRow, 
 							value = "["
 						}
 						if (v.isCollapsed(row.node) && v.search.Text() == "") || v.tree.ChildCount(row.node) == 0 {
+							countStr := strconv.Itoa(v.tree.ChildCount(row.node))
 							if n.Kind == "object" {
-								value = fmt.Sprintf("{ %d keys }", v.tree.ChildCount(row.node))
+								value = "{ " + countStr + " keys }"
 							} else {
-								value = fmt.Sprintf("[ %d items ]", v.tree.ChildCount(row.node))
+								value = "[ " + countStr + " items ]"
 							}
 						}
 					}

@@ -78,6 +78,7 @@ func (a *App) drawWordPageScene(gtx layout.Context, state *documentSessionState,
 	for _, cell := range page.TableCells {
 		drawWordPageCellBorder(gtx, origin, cell, pixelsPerPoint)
 	}
+	a.drawWordPageSearchHighlights(gtx, state, page, origin, pixelsPerPoint)
 	drawWordPageSelection(gtx, state, page, origin, pixelsPerPoint)
 	for _, fragment := range page.Text {
 		drawWordPageTextFragment(gtx, origin, fragment, pixelsPerPoint)

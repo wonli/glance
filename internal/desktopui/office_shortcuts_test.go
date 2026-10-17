@@ -1196,6 +1196,68 @@ func TestOfficeSaveShortcutPersistsWordAndExcelEdits(t *testing.T) {
 	})
 }
 
+func TestSpreadsheetAutoSumShortcutUsesPlatformBindingAndRibbonFlow(t *testing.T) {
+	for _, tc := range []struct {
+		goos      string
+		name      key.Name
+		modifiers key.Modifiers
+	}{
+		{goos: "windows", name: key.Name("="), modifiers: key.ModAlt},
+		{goos: "linux", name: key.Name("="), modifiers: key.ModAlt},
+		{goos: "darwin", name: key.Name("T"), modifiers: key.ModShortcut | key.ModShift},
+	} {
+		t.Run(tc.goos, func(t *testing.T) {
+			name, modifiers := spreadsheetAutoSumShortcutBinding(tc.goos)
+			if name != tc.name || modifiers != tc.modifiers {
+				t.Fatalf("AutoSum shortcut = %q/%v; want %q/%v", name, modifiers, tc.name, tc.modifiers)
+			}
+		})
+	}
+
+	name, modifiers := spreadsheetAutoSumShortcutBinding(runtime.GOOS)
+	book := &mockSearcherBook{toolbarTestBook: toolbarTestBook{editable: true}}
+	state := newDocumentSessionState("autosum-shortcut.xlsx")
+	state.book = book
+	state.sheet = "Sheet1"
+	state.selectionSet = true
+	state.selection = CellSelection{Anchor: CellPosition{Row: 2, Column: 0}, Active: CellPosition{Row: 2, Column: 0}}
+	app := &App{documentSessionState: state, formatResults: make(chan spreadsheetFormatResult, 2)}
+	h := newOfficeShortcutHarness(app)
+	pressOfficeShortcut(t, h, string(name), modifiers)
+	select {
+	case result := <-app.formatResults:
+		if result.err != nil {
+			t.Fatalf("AutoSum shortcut result: %v", result.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("AutoSum shortcut did not use the Ribbon formula insertion flow")
+	}
+	if len(book.lastFormulas) != 1 || book.lastFormulas[0] != (document.CellFormulaEdit{Row: 3, Column: 1, Formula: "=SUM(A1:A2)"}) {
+		t.Fatalf("AutoSum shortcut formulas = %+v; want A3 =SUM(A1:A2)", book.lastFormulas)
+	}
+}
+
+func TestSpreadsheetAutoSumShortcutDoesNotInterceptCellEditor(t *testing.T) {
+	name, modifiers := spreadsheetAutoSumShortcutBinding(runtime.GOOS)
+	book := &mockSearcherBook{toolbarTestBook: toolbarTestBook{editable: true}}
+	state := newDocumentSessionState("autosum-editor-shortcut.xlsx")
+	state.book = book
+	state.sheet = "Sheet1"
+	state.selectionSet = true
+	state.selection = CellSelection{Anchor: CellPosition{Row: 2, Column: 0}, Active: CellPosition{Row: 2, Column: 0}}
+	app := &App{documentSessionState: state}
+	h := newOfficeShortcutHarness(app)
+	h.draw = func(gtx layout.Context) {
+		gtx.Execute(key.FocusCmd{Tag: &app.cellEditor})
+		app.handleOfficeShortcuts(gtx)
+	}
+	h.frame()
+	pressOfficeShortcut(t, h, string(name), modifiers)
+	if len(book.lastFormulas) != 0 || state.formatRunning.Load() {
+		t.Fatal("AutoSum shortcut intercepted input while the cell editor was focused")
+	}
+}
+
 func newOfficeShortcutHarness(a *App) *gridTextHarness {
 	h := &gridTextHarness{app: a}
 	h.draw = func(gtx layout.Context) { a.handleOfficeShortcuts(gtx) }

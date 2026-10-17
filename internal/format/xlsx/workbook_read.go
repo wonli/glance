@@ -371,6 +371,7 @@ type workbookSheetsDocument struct {
 type worksheetNavigationCell struct {
 	Reference    string    `xml:"r,attr"`
 	Style        string    `xml:"s,attr"`
+	Type         string    `xml:"t,attr"`
 	Formula      *struct{} `xml:"f"`
 	Value        string    `xml:"v"`
 	InlineString *struct {

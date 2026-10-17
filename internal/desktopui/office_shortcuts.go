@@ -60,6 +60,11 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 	if spreadsheetFormatCellsShortcut {
 		filters = append(filters, key.Filter{Name: key.Name("1"), Required: key.ModShortcut})
 	}
+	spreadsheetAutoSumShortcut := spreadsheetGridShortcuts && state.selectionSet && a.toolbarActionEnabled(toolbarActionSum)
+	spreadsheetAutoSumName, spreadsheetAutoSumModifiers := spreadsheetAutoSumShortcutBinding(runtime.GOOS)
+	if spreadsheetAutoSumShortcut {
+		filters = append(filters, key.Filter{Name: spreadsheetAutoSumName, Required: spreadsheetAutoSumModifiers})
+	}
 	spreadsheetCopyShortcut := spreadsheetGridShortcuts && a.toolbarActionEnabled(2)
 	spreadsheetCutShortcut := spreadsheetGridShortcuts && a.toolbarActionEnabled(3)
 	spreadsheetPasteShortcut := spreadsheetGridShortcuts && a.toolbarActionEnabled(21)
@@ -372,6 +377,10 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 					a.applyCellFormat(document.CellFormatPatch{NumberFormat: &format})
 				}
 			}
+		case key.Name("="), key.Name("T"):
+			if spreadsheetAutoSumShortcut && pressed.Name == spreadsheetAutoSumName {
+				a.applySpreadsheetAutoSum()
+			}
 		}
 		// Opening a dialog changes the active key target. Handle at most one
 		// shortcut per frame so queued events cannot leak into the new surface.
@@ -407,6 +416,13 @@ func spreadsheetNumberFormatForShortcut(name key.Name) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func spreadsheetAutoSumShortcutBinding(goos string) (key.Name, key.Modifiers) {
+	if goos == "darwin" {
+		return key.Name("T"), key.ModShortcut | key.ModShift
+	}
+	return key.Name("="), key.ModAlt
 }
 
 func (a *App) startOfficeWordSaveAs(state *documentSessionState) {

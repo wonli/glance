@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -395,6 +396,23 @@ type SpreadsheetRangeContentEditor interface {
 
 type SpreadsheetRangeReader interface {
 	ReadRange(sheet string, bounds CellRange) ([][]Cell, error)
+}
+
+// SpreadsheetSelectionStats summarizes a selected worksheet range. Count is
+// the number of cells in the selection, including blanks. Sum and NumericCount
+// use numeric cell values; formulas with empty results count as selected cells
+// but do not affect the numeric statistics.
+type SpreadsheetSelectionStats struct {
+	Count        int64
+	NumericCount int64
+	Sum          float64
+}
+
+// SpreadsheetSelectionStatsReader provides a sparse, cancellation-aware
+// summary for the spreadsheet status bar without expanding a whole-row or
+// whole-column selection into a dense grid.
+type SpreadsheetSelectionStatsReader interface {
+	SelectionStats(ctx context.Context, sheet string, bounds CellRange) (SpreadsheetSelectionStats, error)
 }
 
 // SpreadsheetClipboardRangeReader includes transfer metadata that ordinary

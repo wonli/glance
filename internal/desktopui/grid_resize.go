@@ -32,6 +32,7 @@ type resizeState struct {
 type gridResizeSession struct {
 	State                     *resizeState
 	OriginalAxis, PreviewAxis *AxisGeometry
+	AutoFitOnDoubleClick      bool
 }
 
 func newResizeState(axis resizeAxis, index int, pointer, edge, sizePx, fileUnits float64) *resizeState {

@@ -140,7 +140,9 @@ func newTestAppWithJSON(t *testing.T, initialText string) *App {
 	doc.SetDirty(false)
 	shared.jsonDoc = doc
 	state := newDocumentSessionView(shared, 0)
-	state.jsonEditor.SetText(initialText)
+	if len(initialText) <= jsonSourceEditLimit {
+		state.jsonEditor.SetText(initialText)
+	}
 	app.documentSessionState = state
 	app.tabMeta = make(map[string]workspace.Tab)
 	return app

@@ -55,7 +55,7 @@ func sessionPath(state *documentSessionState) string {
 }
 
 func (a *App) viewStateBytes() []byte {
-	view := sessionViewSnapshot{Sheet: a.sheet, SelectedCell: a.selectedCell, SelectedBlock: a.selectedBlock, WordFirst: a.wordListState.Position.First, WordAutoSave: a.wordAutoSave, SelectionSet: a.selectionSet}
+	view := sessionViewSnapshot{Sheet: a.sheet, SelectedCell: a.selectedCell, SelectedBlock: a.selectedBlock, WordFirst: a.wordListState.Position.First, WordAutoSave: a.wordAutoSave}
 	if state := a.documentSessionState; state != nil && state.word != nil {
 		view.WordViewMode = state.wordViewMode
 		view.WordPageFitMode = state.wordPageFitMode

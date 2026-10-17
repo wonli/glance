@@ -46,6 +46,10 @@ func (a *App) focusWordPageRun(gtx layout.Context, state *documentSessionState, 
 	state.wordPendingCaretOffset = end
 	state.wordPendingCaretByX = false
 	state.wordLayoutFocusedRunID = runID
+	if state.wordFormatPainterActive && runID != state.wordFormatPainterSourceRunID {
+		state.wordFormatPainterPendingParagraphID = paragraphID
+		state.wordFormatPainterPendingRunID = runID
+	}
 	if state.wordToolbarTab == wordTabPicture {
 		state.wordToolbarTab = wordTabHome
 	}

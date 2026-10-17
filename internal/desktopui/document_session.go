@@ -209,6 +209,7 @@ func (state *documentSessionState) releaseWordViewResources() {
 		return
 	}
 	state.cancelJSONWorkers()
+	state.cancelSpreadsheetSelectionStats()
 	if state.sharedDocumentSession != nil && state.sharedDocumentSession.cancelWordLayoutForView(state) && state.ownerRuntime != nil {
 		state.ownerRuntime.invalidateSessionViews(state.documentID)
 	}

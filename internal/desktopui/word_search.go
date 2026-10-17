@@ -17,8 +17,22 @@ type wordTextMatch struct {
 	EndOffset   int
 }
 
+type wordSearchTextRange struct {
+	Start int
+	End   int
+}
+
+type wordSearchResults struct {
+	matches []wordTextMatch
+	ranges  map[string][]wordSearchTextRange
+}
+
 func findWordTextMatch(blocks []document.WordBlock, query, currentRunID string, currentEnd int, drafts map[string]string) (wordTextMatch, bool) {
-	matches := findAllWordTextMatches(blocks, query, drafts)
+	results := findWordSearchResults(blocks, query, drafts)
+	return findWordTextMatchInResults(blocks, results.matches, currentRunID, currentEnd)
+}
+
+func findWordTextMatchInResults(blocks []document.WordBlock, matches []wordTextMatch, currentRunID string, currentEnd int) (wordTextMatch, bool) {
 	if len(matches) == 0 {
 		return wordTextMatch{}, false
 	}
@@ -284,6 +298,9 @@ func (a *App) showWordSearchReplaceDialog(replaceTab bool) {
 
 func (a *App) hideWordSearchReplaceDialog(state *documentSessionState) {
 	a.modal.Hide()
+	if state != nil {
+		state.clearWordSearchHighlights()
+	}
 	if state == nil || state.word == nil || state.selectedWordRunID == "" {
 		return
 	}
@@ -326,14 +343,16 @@ func (a *App) findNextWordText(query string) {
 	if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
 		_, currentEnd = editor.Selection()
 	}
-	match, found := findWordTextMatch(blocks, query, state.selectedWordRunID, currentEnd, drafts)
+	results := findWordSearchResults(blocks, query, drafts)
+	state.setWordSearchHighlights(query, results.ranges)
+	match, found := findWordTextMatchInResults(blocks, results.matches, state.selectedWordRunID, currentEnd)
 	if !found {
 		a.setStatus("未找到：" + query)
 		a.modal.SearchReplaceSummary = "未找到匹配项"
 		return
 	}
 	a.focusWordTextMatch(state, blocks, match)
-	a.updateWordSearchSummary(state, query, blocks, drafts, match)
+	a.updateWordSearchSummary(state, results.matches, match)
 	a.setStatus("已定位：" + query)
 }
 
@@ -353,19 +372,25 @@ func (a *App) findPreviousWordText(query string) {
 	} else if editor := state.wordRunEditors[currentRunID]; editor != nil {
 		currentStart, _ = editor.Selection()
 	}
-	match, found := findPreviousWordTextMatch(blocks, query, currentRunID, currentStart, drafts)
+	results := findWordSearchResults(blocks, query, drafts)
+	state.setWordSearchHighlights(query, results.ranges)
+	match, found := findPreviousWordTextMatchInResults(blocks, results.matches, currentRunID, currentStart)
 	if !found {
 		a.setStatus("未找到：" + query)
 		a.modal.SearchReplaceSummary = "未找到匹配项"
 		return
 	}
 	a.focusWordTextMatch(state, blocks, match)
-	a.updateWordSearchSummary(state, query, blocks, drafts, match)
+	a.updateWordSearchSummary(state, results.matches, match)
 	a.setStatus("已定位：" + query)
 }
 
 func findPreviousWordTextMatch(blocks []document.WordBlock, query, currentRunID string, currentStart int, drafts map[string]string) (wordTextMatch, bool) {
-	matches := findAllWordTextMatches(blocks, query, drafts)
+	results := findWordSearchResults(blocks, query, drafts)
+	return findPreviousWordTextMatchInResults(blocks, results.matches, currentRunID, currentStart)
+}
+
+func findPreviousWordTextMatchInResults(blocks []document.WordBlock, matches []wordTextMatch, currentRunID string, currentStart int) (wordTextMatch, bool) {
 	if len(matches) == 0 {
 		return wordTextMatch{}, false
 	}
@@ -399,11 +424,50 @@ func findPreviousWordTextMatch(blocks []document.WordBlock, query, currentRunID 
 }
 
 func findAllWordTextMatches(blocks []document.WordBlock, query string, drafts map[string]string) []wordTextMatch {
-	needle := lowerWordRunes([]rune(query))
-	if len(needle) == 0 {
+	return findWordSearchResults(blocks, query, drafts).matches
+}
+
+func wordSearchHighlightRanges(blocks []document.WordBlock, query string, drafts map[string]string) map[string][]wordSearchTextRange {
+	return findWordSearchResults(blocks, query, drafts).ranges
+}
+
+func (state *documentSessionState) setWordSearchHighlights(query string, ranges map[string][]wordSearchTextRange) {
+	if state == nil {
+		return
+	}
+	state.wordSearchHighlightQuery = query
+	state.wordSearchHighlightRanges = ranges
+	state.wordSearchHighlightRevision = state.wordRevisionAtomic.Load()
+	state.wordSearchHighlightDraftEpoch = state.wordDraftEpoch.Load()
+}
+
+func (state *documentSessionState) clearWordSearchHighlights() {
+	if state == nil {
+		return
+	}
+	state.wordSearchHighlightQuery = ""
+	state.wordSearchHighlightRanges = nil
+	state.wordSearchHighlightRevision = 0
+	state.wordSearchHighlightDraftEpoch = 0
+}
+
+func (state *documentSessionState) wordSearchHighlightRangesFor(query string) map[string][]wordSearchTextRange {
+	if state == nil || query == "" || query != state.wordSearchHighlightQuery {
 		return nil
 	}
-	var matches []wordTextMatch
+	if state.wordSearchHighlightRevision != state.wordRevisionAtomic.Load() || state.wordSearchHighlightDraftEpoch != state.wordDraftEpoch.Load() {
+		state.clearWordSearchHighlights()
+		return nil
+	}
+	return state.wordSearchHighlightRanges
+}
+
+func findWordSearchResults(blocks []document.WordBlock, query string, drafts map[string]string) wordSearchResults {
+	needle := lowerWordRunes([]rune(query))
+	if len(needle) == 0 {
+		return wordSearchResults{}
+	}
+	results := wordSearchResults{ranges: make(map[string][]wordSearchTextRange)}
 	for _, chunk := range wordSearchChunks(blocks, drafts) {
 		lowered := lowerWordRunes(chunk.text)
 		for from := 0; from < len(lowered); {
@@ -412,16 +476,47 @@ func findAllWordTextMatches(blocks []document.WordBlock, query string, drafts ma
 				break
 			}
 			if match, ok := wordSearchMatchAt(chunk, start, start+len(needle)); ok {
-				matches = append(matches, match)
+				results.matches = append(results.matches, match)
+				appendWordSearchHighlightRanges(results.ranges, chunk, match)
 			}
 			from = start + len(needle)
 		}
 	}
-	return matches
+	return results
 }
 
-func (a *App) updateWordSearchSummary(state *documentSessionState, query string, blocks []document.WordBlock, drafts map[string]string, current wordTextMatch) {
-	matches := findAllWordTextMatches(blocks, query, drafts)
+func appendWordSearchHighlightRanges(ranges map[string][]wordSearchTextRange, chunk wordSearchChunk, match wordTextMatch) {
+	startIndex, endIndex := -1, -1
+	endRunID := wordTextMatchEndRunID(match)
+	for index, segment := range chunk.segments {
+		if segment.run.ID == match.RunID {
+			startIndex = index
+		}
+		if segment.run.ID == endRunID {
+			endIndex = index
+		}
+	}
+	if startIndex < 0 || endIndex < startIndex {
+		return
+	}
+	for index := startIndex; index <= endIndex; index++ {
+		segment := chunk.segments[index]
+		start, end := 0, len(segment.text)
+		if index == startIndex {
+			start = match.Start
+		}
+		if index == endIndex {
+			end = wordTextMatchEndOffset(match)
+		}
+		start = max(0, min(start, len(segment.text)))
+		end = max(start, min(end, len(segment.text)))
+		if start < end {
+			ranges[segment.run.ID] = append(ranges[segment.run.ID], wordSearchTextRange{Start: start, End: end})
+		}
+	}
+}
+
+func (a *App) updateWordSearchSummary(state *documentSessionState, matches []wordTextMatch, current wordTextMatch) {
 	if len(matches) == 0 {
 		a.modal.SearchReplaceSummary = "未找到匹配项"
 		return
@@ -659,16 +754,18 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 	if startAfter == 0 {
 		startAfter = result.replaceStart + len([]rune(result.replaceText))
 	}
-	match, found := findWordTextMatch(blocks, result.replaceQuery, run.ID, startAfter, nil)
+	drafts := state.wordDraftSnapshot()
+	for runID, runEditor := range state.wordRunEditors {
+		drafts[runID] = runEditor.Text()
+	}
+	searchResults := findWordSearchResults(blocks, result.replaceQuery, drafts)
+	state.setWordSearchHighlights(result.replaceQuery, searchResults.ranges)
+	match, found := findWordTextMatchInResults(blocks, searchResults.matches, run.ID, startAfter)
 	if found {
 		a.focusWordTextMatch(state, blocks, match)
 		a.setStatus("已替换，并已定位下一处")
 		if a.modal.Visible && a.modal.SearchReplace {
-			drafts := state.wordDraftSnapshot()
-			for runID, editor := range state.wordRunEditors {
-				drafts[runID] = editor.Text()
-			}
-			a.updateWordSearchSummary(state, result.replaceQuery, blocks, drafts, match)
+			a.updateWordSearchSummary(state, searchResults.matches, match)
 		}
 	} else {
 		startAfter = max(0, min(startAfter, len([]rune(run.Text))))

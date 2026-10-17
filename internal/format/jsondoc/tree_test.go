@@ -82,3 +82,30 @@ func TestMeasureLargeJSONMemory(t *testing.T) {
 		(m2.Sys-m1.Sys)/(1024*1024),
 		m2.NumGC-m1.NumGC)
 }
+
+func BenchmarkParseTree(b *testing.B) {
+	var sb strings.Builder
+	sb.WriteString("[\n")
+	for i := 0; sb.Len() < 5*1024*1024; i++ {
+		if i > 0 {
+			sb.WriteString(",\n")
+		}
+		sb.WriteString(`{"id": 123456, "name": "test_user_name_string", "active": true, "score": 98.5, "email": "user@example.com", "role": "developer"}`)
+	}
+	sb.WriteString("\n]")
+	jsonStr := sb.String()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.SetBytes(int64(len(jsonStr)))
+
+	for i := 0; i < b.N; i++ {
+		tree, err := ParseTree(jsonStr)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(tree.Nodes) == 0 {
+			b.Fatal("no nodes")
+		}
+	}
+}

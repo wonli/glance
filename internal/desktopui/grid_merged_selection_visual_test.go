@@ -30,7 +30,7 @@ func TestMergedCellSelectionDoesNotDrawAnchorCellDivider(t *testing.T) {
 	app.sheet = "Sheet1"
 	state := app.documentSessionState
 	state.sheet = "Sheet1"
-	state.selection = CellSelection{Anchor: CellPosition{}, Active: CellPosition{}}
+	state.selection = CellSelection{Anchor: CellPosition{Row: 0, Column: 0}, Active: CellPosition{Row: 0, Column: 1}}
 	state.selectionSet = true
 	viewport := newGridViewport()
 	viewport.WindowSheet = "Sheet1"
@@ -53,11 +53,14 @@ func TestMergedCellSelectionDoesNotDrawAnchorCellDivider(t *testing.T) {
 	if err := renderer.Screenshot(screenshot); err != nil {
 		t.Fatalf("capture merged cell selection: %v", err)
 	}
-	// Column A's right edge used to get an extra thin selection outline even
-	// though the active-cell outline already covered the full A1:B1 merge.
-	internalEdge := image.Pt(int(gridRowHeader+gridDefaultColumn)-1, int(gridColumnHeader)+10)
-	got := color.NRGBAModel.Convert(screenshot.At(internalEdge.X, internalEdge.Y)).(color.NRGBA)
-	if got != (color.NRGBA{R: 255, G: 255, B: 255, A: 255}) {
-		t.Fatalf("pixel at the merged cell's internal divider = %v; want white fill without a selection line", got)
+	// The selection covers both original cells. Its fill should stay continuous
+	// across their former boundary; only the outside of the merged range gets
+	// a selection outline.
+	internalEdge := int(gridRowHeader + gridDefaultColumn)
+	for x := internalEdge - 2; x <= internalEdge+2; x++ {
+		got := color.NRGBAModel.Convert(screenshot.At(x, int(gridColumnHeader)+10)).(color.NRGBA)
+		if got != selectedFill {
+			t.Fatalf("pixel at x=%d on the merged cell's internal divider = %v; want continuous selected fill %v", x, got, selectedFill)
+		}
 	}
 }

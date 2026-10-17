@@ -41,7 +41,6 @@ type sessionViewSnapshot struct {
 	SpreadsheetZoomPending     bool           `json:"spreadsheet_zoom_pending,omitempty"`
 	SelectedRow                int            `json:"selected_row"`
 	SelectedColumn             int            `json:"selected_column"`
-	SelectionSet               bool           `json:"selection_set"`
 	WordViewMode               wordViewMode   `json:"word_view_mode"`
 	WordPageFitMode            bool           `json:"word_page_fit_mode"`
 	WordMultiplePagesMode      bool           `json:"word_multiple_pages_mode"`
@@ -393,7 +392,11 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		}
 		position := clampCellPosition(CellPosition{Row: state.virtualGrid.SelectedRow - 1, Column: state.virtualGrid.SelectedColumn - 1})
 		state.selection = CellSelection{Anchor: position, Active: position}
-		state.selectionSet = view.SelectionSet
+		// A restored workbook keeps its navigation anchor, but opens without a
+		// visible cell selection. The first grid click or navigation command
+		// creates a selection for editing and formatting. Older snapshots may
+		// contain selection_set=true; the view decoder intentionally ignores it.
+		state.selectionSet = false
 	}
 	if state.markdownDoc != nil {
 		v := newMarkdownView(state.markdownDoc.Text())

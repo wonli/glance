@@ -231,7 +231,7 @@ func (a *App) toggleWordFormatPainter() {
 	state.wordFormatPainterSourceRunID = run.ID
 	state.wordFormatPainterActive = true
 	clearWordFormatPainterTarget(state)
-	a.setStatus("已启动格式刷；单击或拖选目标文字应用，再点格式刷取消")
+	a.setStatus("已启动格式刷；单击目标文字应用，页面视图可拖选范围应用")
 }
 
 func (a *App) queueWordFormatPainterTarget(paragraphID, runID string) {
@@ -284,9 +284,6 @@ func (a *App) processWordFormatPainterTargetIntent() {
 	}
 	paragraphID, runID := state.wordFormatPainterPendingParagraphID, state.wordFormatPainterPendingRunID
 	if state.wordPageSelectionDrag != nil {
-		return
-	}
-	if selection := state.wordParagraphSelections[paragraphID]; selection != nil && selection.pointerDragActive {
 		return
 	}
 	state.wordFormatPainterPendingParagraphID = ""
@@ -410,11 +407,26 @@ func (a *App) startWordFormatPainter() {
 }
 
 func wordFormatPainterSelectionStillMatches(state *documentSessionState, startRunID string, startOffset int, endRunID string, endOffset int, expected string) bool {
-	if selection := state.wordPageTextSelection; wordPageTextSelectionActive(selection) && wordPageSelectionContainsRun(selection, startRunID) {
+	if selection := state.wordPageTextSelection; wordPageTextSelectionActive(selection) {
+		start, end, active := wordPageOrderedSelection(selection)
+		if !active || start.runID != startRunID || start.runeOffset != startOffset || end.runID != endRunID || end.runeOffset != endOffset {
+			return false
+		}
 		selected, ok := wordPageSelectedText(state)
 		return ok && selected == expected
 	}
 	if startRunID != endRunID {
+		return false
+	}
+	editor := state.wordRunEditors[startRunID]
+	if editor == nil {
+		return false
+	}
+	selectionStart, selectionEnd := editor.Selection()
+	if selectionStart > selectionEnd {
+		selectionStart, selectionEnd = selectionEnd, selectionStart
+	}
+	if selectionStart != startOffset || selectionEnd != endOffset {
 		return false
 	}
 	blocks := wordBlocksForState(state)

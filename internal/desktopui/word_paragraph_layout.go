@@ -206,6 +206,11 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 				paint.FillShape(gtx.Ops, highlightColor, clip.Rect(rect).Op())
 			}
 		}
+		if a.modal.Visible && a.modal.SearchReplace {
+			for _, rect := range wordTextRangeHighlightRects(gtx, a.theme.Shaper, label, editor.Text(), state.wordSearchHighlightRangesFor(a.modal.Input.Text())[run.ID]) {
+				paint.FillShape(gtx.Ops, wordPageSearchHighlightColor, clip.Rect(rect).Op())
+			}
+		}
 
 		if state.wordParagraphSelections == nil {
 			state.wordParagraphSelections = make(map[string]*textEditorParagraphSelection)

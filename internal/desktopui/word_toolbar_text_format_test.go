@@ -201,7 +201,7 @@ func TestWordFormatPainterAppliesSourceFormattingToNextFocusedRun(t *testing.T) 
 		t.Fatal("format painter should be enabled for an editable source run")
 	}
 	app.executeWordToolbarAction("format-painter")
-	if app.status != "已启动格式刷；单击或拖选目标文字应用，再点格式刷取消" {
+	if app.status != "已启动格式刷；单击目标文字应用，页面视图可拖选范围应用" {
 		t.Fatalf("arming format painter status = %q", app.status)
 	}
 	targetSelector, ok := any(app).(interface {
@@ -333,39 +333,22 @@ func TestWordFormatPainterReadsFocusedEditorSelection(t *testing.T) {
 	}
 }
 
-func TestWordFormatPainterWaitsUntilFlowTextDragEnds(t *testing.T) {
-	app, state, _, release := newWordSelectionPageTest(t, `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Source</w:t></w:r></w:p><w:p><w:r><w:rPr><w:i/></w:rPr><w:t>前目标后</w:t></w:r></w:p>`)
-	defer release()
-	source := state.wordBlocks[0].Paragraph.Inlines[0].Text
-	targetParagraph := state.wordBlocks[1].Paragraph
-	target := targetParagraph.Inlines[0].Text
-	state.wordFormatPainterActive = true
-	state.wordFormatPainterSourceRunID = source.ID
-	state.wordFormatPainterPendingParagraphID = targetParagraph.ID
-	state.wordFormatPainterPendingRunID = target.ID
-	state.wordParagraphSelections = make(map[string]*textEditorParagraphSelection)
-	state.wordParagraphSelections[targetParagraph.ID] = &textEditorParagraphSelection{pointerDragActive: true}
-	wordRunEditor(state, *target).SetCaret(1, 3)
-
-	app.processWordFormatPainterTargetIntent()
-	if state.wordFormatPainterPendingRunID != target.ID || !state.wordFormatPainterActive || state.formatRunning.Load() {
-		t.Fatalf("format painter applied before drag release: pending=%q active=%v running=%v", state.wordFormatPainterPendingRunID, state.wordFormatPainterActive, state.formatRunning.Load())
+func TestWordFormatPainterSelectionStillMatchesExactRange(t *testing.T) {
+	state := newDocumentSessionState("format-painter-repeated-selection.docx")
+	run := document.WordTextRun{ID: "target", Text: "目标-目标", Editable: true}
+	paragraph := document.WordParagraph{ID: "paragraph", Inlines: []document.WordInline{{Kind: document.WordTextInline, Text: &run}}}
+	state.wordBlocks = []document.WordBlock{{ID: paragraph.ID, Kind: document.WordParagraphBlock, Paragraph: &paragraph}}
+	state.wordPageTextSelection = &wordPageTextSelection{
+		scope: "range", anchor: wordPageCaretPosition{runID: run.ID, runeOffset: 0},
+		focus: wordPageCaretPosition{runID: run.ID, runeOffset: 2}, runOrder: map[string]int{run.ID: 0},
 	}
-	state.wordParagraphSelections[targetParagraph.ID].pointerDragActive = false
-	app.processWordFormatPainterTargetIntent()
-	select {
-	case result := <-app.wordCommandResults:
-		if result.err != nil {
-			t.Fatal(result.err)
-		}
-		app.wordCommandResults <- result
-		app.processAsyncResults()
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for drag-selected format painter")
+	if !wordFormatPainterSelectionStillMatches(state, run.ID, 0, run.ID, 2, "目标") {
+		t.Fatal("the captured text range was not recognized")
 	}
-	painted, _ := selectedWordParagraph(state.wordBlocks, targetParagraph.ID)
-	if len(painted.Inlines) != 3 || painted.Inlines[0].Text.Text != "前" || painted.Inlines[1].Text.Text != "目标" || painted.Inlines[2].Text.Text != "后" || !painted.Inlines[1].Text.Style.Bold || !painted.Inlines[0].Text.Style.Italic || !painted.Inlines[2].Text.Style.Italic {
-		t.Fatalf("drag-selected format painter did not preserve the target range: %#v", painted.Inlines)
+	state.wordPageTextSelection.anchor.runeOffset = 3
+	state.wordPageTextSelection.focus.runeOffset = 5
+	if wordFormatPainterSelectionStillMatches(state, run.ID, 0, run.ID, 2, "目标") {
+		t.Fatal("a different range with identical text was treated as the captured selection")
 	}
 }
 

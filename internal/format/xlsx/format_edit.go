@@ -180,7 +180,7 @@ func validateCellFormatPatch(patch document.CellFormatPatch) error {
 	}
 	if patch.BorderPreset != nil {
 		switch *patch.BorderPreset {
-		case "all", "outside", "bottom", "none":
+		case "all", "outside", "top", "right", "bottom", "left", "inside", "none":
 		default:
 			return fmt.Errorf("unsupported border preset %q", *patch.BorderPreset)
 		}
@@ -336,8 +336,17 @@ func applyBorderPreset(style *excelize.Style, preset string, row, column int, bo
 		set["bottom"] = row == bounds.EndRow
 		set["left"] = column == bounds.StartColumn
 		set["right"] = column == bounds.EndColumn
+	case "top":
+		set["top"] = true
+	case "right":
+		set["right"] = true
 	case "bottom":
 		set["bottom"] = true
+	case "left":
+		set["left"] = true
+	case "inside":
+		set["bottom"] = row < bounds.EndRow
+		set["right"] = column < bounds.EndColumn
 	}
 	for side, enabled := range set {
 		if enabled {

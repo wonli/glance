@@ -14,6 +14,8 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+
+	"glance/internal/format/xlsx"
 )
 
 func TestSpreadsheetVerticalScrollbarSemanticsAndPosition(t *testing.T) {
@@ -229,5 +231,52 @@ func TestSpreadsheetVerticalScrollbarTracksGridScroll(t *testing.T) {
 
 	if v.Y <= initialY+1000 {
 		t.Fatalf("v.Y did not advance to row 10000: v.Y=%v", v.Y)
+	}
+}
+
+func TestSpreadsheetVerticalScrollbarUnifiedWithXLSX(t *testing.T) {
+	app := newAppWithRuntime(nil, newDesktopRuntime())
+	t.Cleanup(func() {
+		app.ensureDesktopRuntime().shutdown()
+		close(app.shutdown)
+	})
+	app.theme = material.NewTheme()
+	book := xlsx.NewBlank()
+	loaded := loadedDocument{book: book, sheets: []string{"Sheet1"}}
+	if err := app.installDocument(loaded); err != nil {
+		t.Fatalf("installDocument: %v", err)
+	}
+
+	router := new(input.Router)
+	var ops op.Ops
+	gridWidth, gridHeight := 1000, 600
+	gtx := layout.Context{
+		Source:      router.Source(),
+		Ops:         &ops,
+		Now:         time.Now(),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(gridWidth, gridHeight)},
+	}
+
+	app.layoutVirtualGrid(gtx)
+	router.Frame(&ops)
+
+	var scrollbarBounds image.Rectangle
+	var visit func([]input.SemanticNode)
+	visit = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if node.Desc.Description == "表格垂直滚动条" {
+				scrollbarBounds = node.Desc.Bounds
+			}
+			visit(node.Children)
+		}
+	}
+	visit(router.AppendSemantics(nil))
+
+	if scrollbarBounds.Empty() {
+		t.Fatal("XLSX grid vertical scrollbar has no accessible bounds")
+	}
+	if scrollbarBounds.Max.X != gridWidth {
+		t.Fatalf("scrollbarBounds.Max.X = %d; want %d", scrollbarBounds.Max.X, gridWidth)
 	}
 }

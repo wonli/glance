@@ -99,19 +99,58 @@ func (a *App) startSpreadsheetAutoFitDimension(gtx layout.Context, row bool) {
 	if state == nil || state.book == nil || v == nil || !state.selectionSet || state.formatRunning.Load() || a.isSaving() {
 		return
 	}
+	bounds := state.selection.Bounds()
+	start, end := bounds.StartColumn, bounds.EndColumn
+	if row {
+		start, end = bounds.StartRow, bounds.EndRow
+	}
+	a.startSpreadsheetAutoFitDimensionRange(gtx, row, start, end)
+}
+
+func (a *App) startSpreadsheetResizeAutoFit(gtx layout.Context, axis resizeAxis, index int) {
+	state := a.documentSessionState
+	if state == nil || index < 0 {
+		return
+	}
+	row := axis == resizeRows
+	start, end := index+1, index+1
+	if state.selectionSet {
+		selection := state.selection
+		bounds := selection.Bounds()
+		selectedDimension := selection.Scope == selectionSheet
+		if row {
+			selectedDimension = selectedDimension || selection.Scope == selectionRows
+		} else {
+			selectedDimension = selectedDimension || selection.Scope == selectionColumns
+		}
+		if selectedDimension {
+			selectionStart, selectionEnd := bounds.StartColumn, bounds.EndColumn
+			if row {
+				selectionStart, selectionEnd = bounds.StartRow, bounds.EndRow
+			}
+			if start >= selectionStart && start <= selectionEnd {
+				start, end = selectionStart, selectionEnd
+			}
+		}
+	}
+	a.startSpreadsheetAutoFitDimensionRange(gtx, row, start, end)
+}
+
+func (a *App) startSpreadsheetAutoFitDimensionRange(gtx layout.Context, row bool, start, end int) {
+	state, v := a.documentSessionState, a.virtualGrid
+	if state == nil || state.book == nil || v == nil || state.formatRunning.Load() || a.isSaving() {
+		return
+	}
 	dimensions, rangeSupported := state.book.(document.SpreadsheetDimensionRangeCellReader)
 	batch, batchSupported := state.book.(document.SpreadsheetDimensionBatchEditor)
 	if !rangeSupported || !batchSupported {
 		a.setStatus("当前工作簿不支持自动调整行列尺寸")
 		return
 	}
-	bounds := state.selection.Bounds()
-	start, end := bounds.StartColumn, bounds.EndColumn
 	axis := document.SpreadsheetDimensionColumn
 	operation := "自动调整列宽"
 	columns := (*AxisGeometry)(nil)
 	if row {
-		start, end = bounds.StartRow, bounds.EndRow
 		axis = document.SpreadsheetDimensionRow
 		operation = "自动调整行高"
 		columns = v.Columns.Clone()

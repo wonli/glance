@@ -281,6 +281,58 @@ func wordTextHighlightRects(gtx layout.Context, shaper *text.Shaper, label mater
 	return rects
 }
 
+func wordTextRangeHighlightRects(gtx layout.Context, shaper *text.Shaper, label material.LabelStyle, value string, ranges []wordSearchTextRange) []image.Rectangle {
+	width := gtx.Constraints.Max.X
+	if shaper == nil || value == "" || width <= 0 || len(ranges) == 0 {
+		return nil
+	}
+	shaper.LayoutString(text.Parameters{
+		Font:             label.Font,
+		Alignment:        label.Alignment,
+		PxPerEm:          fixed.I(gtx.Sp(label.TextSize)),
+		MaxWidth:         width,
+		MinWidth:         gtx.Constraints.Min.X,
+		WrapPolicy:       label.WrapPolicy,
+		LineHeight:       fixed.I(gtx.Sp(label.LineHeight)),
+		LineHeightScale:  label.LineHeightScale,
+		Locale:           gtx.Locale,
+		DisableSpaceTrim: true,
+	}, value)
+	var rects []image.Rectangle
+	runeOffset := 0
+	clusterBounds := image.Rectangle{}
+	for glyph, ok := shaper.NextGlyph(); ok; glyph, ok = shaper.NextGlyph() {
+		if glyph.Flags&text.FlagParagraphBreak == 0 && glyph.Flags&text.FlagTruncator == 0 {
+			bounds := image.Rect(glyph.X.Floor(), int(glyph.Y)-glyph.Ascent.Ceil(), (glyph.X + glyph.Advance).Ceil(), int(glyph.Y)+glyph.Descent.Ceil())
+			if !bounds.Empty() {
+				clusterBounds = clusterBounds.Union(bounds)
+			}
+		}
+		if glyph.Flags&text.FlagClusterBreak == 0 {
+			continue
+		}
+		clusterEnd := runeOffset + int(glyph.Runes)
+		matched := false
+		for _, match := range ranges {
+			if runeOffset < match.End && clusterEnd > match.Start {
+				matched = true
+				break
+			}
+		}
+		if matched && !clusterBounds.Empty() {
+			rect := clusterBounds
+			if last := len(rects) - 1; last >= 0 && rects[last].Min.Y == rect.Min.Y && rect.Min.X <= rects[last].Max.X+1 && rect.Max.X >= rects[last].Min.X-1 {
+				rects[last] = rects[last].Union(rect)
+			} else {
+				rects = append(rects, rect)
+			}
+		}
+		runeOffset = clusterEnd
+		clusterBounds = image.Rectangle{}
+	}
+	return rects
+}
+
 func wordHighlightDisplayColor(value string) (color.NRGBA, bool) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "black":

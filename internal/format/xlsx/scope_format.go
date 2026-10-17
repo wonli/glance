@@ -20,8 +20,8 @@ func wholeColumnRange(b document.CellRange) bool { return b.StartRow == 1 && b.E
 // worksheet's logical cell rectangle. Cells are visited only if already present
 // or needed to represent an intersection of distinct inherited defaults.
 func (w *Workbook) setScopedFormatsLocked(sheet string, b document.CellRange, patch document.CellFormatPatch) (applied bool, operationErr error) {
-	if patch.BorderPreset != nil && *patch.BorderPreset == "outside" {
-		return false, fmt.Errorf("outside borders require a bounded cell selection")
+	if patch.BorderPreset != nil && (*patch.BorderPreset == "outside" || *patch.BorderPreset == "inside") {
+		return false, fmt.Errorf("inside and outside borders require a bounded cell selection")
 	}
 	before, err := w.snapshotLocked()
 	if err != nil {

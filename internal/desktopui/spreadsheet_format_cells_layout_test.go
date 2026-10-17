@@ -30,6 +30,29 @@ func TestSpreadsheetFormatCellsCategoriesFitNarrowWidth(t *testing.T) {
 	}
 }
 
+func TestSpreadsheetFormatCellsBorderActionsIncludeCellEdgesAndInterior(t *testing.T) {
+	state := &spreadsheetFormatCellsDialogState{}
+	state.init()
+	want := map[string]bool{
+		"all": true, "outside": true, "top": true, "right": true,
+		"bottom": true, "left": true, "inside": true, "none": true,
+	}
+	for _, choice := range state.borderChoices {
+		if !want[choice.value] {
+			t.Fatalf("unexpected border action %q", choice.value)
+		}
+		delete(want, choice.value)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing border actions: %v", want)
+	}
+	state.borderPreset, state.borderTouched = "inside", true
+	patch, changed := state.patch()
+	if !changed || patch.BorderPreset == nil || *patch.BorderPreset != "inside" {
+		t.Fatalf("inside border draft patch = %+v, changed=%t", patch, changed)
+	}
+}
+
 func TestSpreadsheetFormatCellsDoesNotPaintOutsideNarrowWidth(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

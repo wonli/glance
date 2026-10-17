@@ -107,3 +107,64 @@ func TestEditStructureSaveReopenPreservesStylesFormulasAndMerges(t *testing.T) {
 		t.Fatalf("row insert changed merged range unexpectedly: %#v", window.Merges)
 	}
 }
+
+func TestEditStructureMultiRowAndColumnCountsSaveAndUndo(t *testing.T) {
+	f := excelize.NewFile()
+	for cell, value := range map[string]string{"A1": "top", "A2": "row two", "A3": "row three", "B1": "left", "C1": "right"} {
+		if err := f.SetCellValue("Sheet1", cell, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := saveTestWorkbook(t, f)
+	book, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer book.Close()
+
+	if err := book.EditStructure(document.StructureEdit{Kind: document.StructureInsertRows, Sheet: "Sheet1", Index: 2, Count: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := book.EditStructure(document.StructureEdit{Kind: document.StructureInsertColumns, Sheet: "Sheet1", Index: 2, Count: 2}); err != nil {
+		t.Fatal(err)
+	}
+	for cell, want := range map[string]string{"A1": "top", "A5": "row two", "A6": "row three", "D1": "left", "E1": "right"} {
+		if got, err := book.Value("Sheet1", cell); err != nil || got != want {
+			t.Fatalf("%s after multi-row/column inserts = %q (err=%v); want %q", cell, got, err, want)
+		}
+	}
+	if applied, err := book.Undo(); err != nil || !applied {
+		t.Fatalf("undo multi-column insert = (%t,%v)", applied, err)
+	}
+	if got, _ := book.Value("Sheet1", "B1"); got != "left" {
+		t.Fatalf("B1 after undoing two-column insert = %q; want left", got)
+	}
+	if applied, err := book.Undo(); err != nil || !applied {
+		t.Fatalf("undo multi-row insert = (%t,%v)", applied, err)
+	}
+	if got, _ := book.Value("Sheet1", "A2"); got != "row two" {
+		t.Fatalf("A2 after undoing three-row insert = %q; want row two", got)
+	}
+	if applied, err := book.Redo(); err != nil || !applied {
+		t.Fatalf("redo multi-row insert = (%t,%v)", applied, err)
+	}
+	if applied, err := book.Redo(); err != nil || !applied {
+		t.Fatalf("redo multi-column insert = (%t,%v)", applied, err)
+	}
+	if err := book.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := book.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	for cell, want := range map[string]string{"A5": "row two", "A6": "row three", "D1": "left", "E1": "right"} {
+		if got, err := reopened.Value("Sheet1", cell); err != nil || got != want {
+			t.Fatalf("%s after save/reopen = %q (err=%v); want %q", cell, got, err, want)
+		}
+	}
+}

@@ -16,8 +16,10 @@ import (
 	"gioui.org/widget/material"
 )
 
+const spreadsheetStatusBarHeightDP = 50
+
 func (a *App) layoutSpreadsheetStatusBar(gtx layout.Context) layout.Dimensions {
-	height := gtx.Dp(unit.Dp(50))
+	height := gtx.Dp(unit.Dp(spreadsheetStatusBarHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 
 	if state := a.documentSessionState; state != nil {
@@ -65,7 +67,7 @@ func (a *App) layoutSpreadsheetStatusBar(gtx layout.Context) layout.Dimensions {
 						return spreadsheetStatusText(gtx, a.theme, status, a.tokens().Colors.Text.PureBlack)
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return layout.Dimensions{Size: image.Pt(gtx.Constraints.Min.X, 0)}
+						return a.layoutSpreadsheetSelectionSummary(gtx)
 					}),
 					layout.Rigid(a.layoutSpreadsheetZoomControl),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -74,6 +76,23 @@ func (a *App) layoutSpreadsheetStatusBar(gtx layout.Context) layout.Dimensions {
 				)
 			})
 		},
+	)
+}
+
+func (a *App) layoutSpreadsheetSelectionSummary(gtx layout.Context) layout.Dimensions {
+	text := a.spreadsheetStatusSelectionStatsText()
+	if text == "" || gtx.Constraints.Max.X < gtx.Dp(unit.Dp(190)) {
+		return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
+	}
+	return layout.Stack{Alignment: layout.E}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(spreadsheetStatusBarHeightDP)))}
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return spreadsheetStatusText(gtx, a.theme, text, mutedText)
+			})
+		}),
 	)
 }
 

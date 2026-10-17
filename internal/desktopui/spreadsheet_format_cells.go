@@ -122,7 +122,11 @@ func (s *spreadsheetFormatCellsDialogState) init() {
 	s.borderChoices = []spreadsheetFormatCellChoice{
 		{label: "所有边框", value: "all"},
 		{label: "外侧边框", value: "outside"},
+		{label: "上框线", value: "top"},
+		{label: "右框线", value: "right"},
 		{label: "下框线", value: "bottom"},
+		{label: "左框线", value: "left"},
+		{label: "内侧边框", value: "inside"},
 		{label: "无边框", value: "none"},
 	}
 	s.fontColors = []spreadsheetFormatCellColorChoice{
@@ -245,6 +249,12 @@ func spreadsheetBorderPresetForStyle(style document.CellStyle) string {
 		return ""
 	case !top && !right && bottom && !left:
 		return "bottom"
+	case top && !right && !bottom && !left:
+		return "top"
+	case !top && right && !bottom && !left:
+		return "right"
+	case !top && !right && !bottom && left:
+		return "left"
 	case !top && !right && !bottom && !left:
 		return "none"
 	default:

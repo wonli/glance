@@ -7,6 +7,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+	"gioui.org/widget"
 	"glance/internal/format/jsondoc"
 )
 
@@ -116,5 +117,96 @@ func TestJSONConditionalMutationPreservesNewerSource(t *testing.T) {
 	}
 	if app.jsonDoc.Text() != `{"name":"other window"}` {
 		t.Fatal("newer cross-window text lost")
+	}
+}
+
+func TestJSONTreeDoubleClickToggle(t *testing.T) {
+	app := newTestAppWithJSON(t, `{"user":{"name":"林墨","roles":["admin"]},"ok":true}`)
+	v := app.ensureJSONView()
+	tree, err := jsondoc.ParseTree(app.jsonDoc.Text())
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.accept(jsonTreeResult{text: tree.Source, tree: tree})
+
+	var ops op.Ops
+	gtx := layout.Context{Ops: &ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(1440, 900))}
+	app.layoutJSON(gtx)
+
+	initRowCount := len(v.rows)
+	if initRowCount != 9 {
+		t.Fatalf("initial rows = %d, want 9", initRowCount)
+	}
+
+	// Single click row 1: selects node, does NOT collapse
+	rowBtn := v.rowButtons[1]
+	if rowBtn == nil {
+		t.Fatal("rowButton 1 missing")
+	}
+	rowBtn.Click()
+	app.handleJSONWorkspaceEvents(gtx)
+	if v.selected != 1 {
+		t.Fatalf("selected = %d, want 1", v.selected)
+	}
+	if v.isCollapsed(1) {
+		t.Fatal("single click collapsed node 1")
+	}
+	if len(v.rows) != initRowCount {
+		t.Fatalf("rows changed after single click: %d", len(v.rows))
+	}
+
+	// Double click row 1: toggles to collapsed!
+	rowBtn.Click()
+	rowBtn.Click()
+	app.handleJSONWorkspaceEvents(gtx)
+	if !v.isCollapsed(1) {
+		t.Fatal("double click failed to collapse node 1")
+	}
+	if len(v.rows) >= initRowCount {
+		t.Fatalf("rows after collapse = %d, want fewer than %d", len(v.rows), initRowCount)
+	}
+
+	// Double click row 1 again: toggles back to expanded!
+	rowBtn.Click()
+	rowBtn.Click()
+	app.handleJSONWorkspaceEvents(gtx)
+	if v.isCollapsed(1) {
+		t.Fatal("second double click failed to expand node 1")
+	}
+	if len(v.rows) != initRowCount {
+		t.Fatalf("rows after expand = %d, want %d", len(v.rows), initRowCount)
+	}
+
+	// Render layout again so closingButtons are populated
+	app.layoutJSON(gtx)
+	closingBtn := v.closingButtons[1]
+	if closingBtn == nil {
+		t.Fatal("closingButton 1 missing")
+	}
+
+	// Double click closing bracket row: collapses container!
+	closingBtn.Click()
+	closingBtn.Click()
+	app.handleJSONWorkspaceEvents(gtx)
+	if !v.isCollapsed(1) {
+		t.Fatal("double click on closing row failed to collapse node 1")
+	}
+}
+
+func TestJSONTreeButtonPruning(t *testing.T) {
+	buttons := make(map[int]*widget.Clickable)
+	for i := 0; i < 400; i++ {
+		buttons[i] = new(widget.Clickable)
+	}
+	// Limit is 300, keep items 10, 20, 30
+	pruneButtons(buttons, []int{10, 20, 30}, 300)
+	if len(buttons) != 3 {
+		t.Fatalf("pruned length = %d, want 3", len(buttons))
+	}
+	if buttons[10] == nil || buttons[20] == nil || buttons[30] == nil {
+		t.Fatal("kept buttons were pruned")
+	}
+	if buttons[0] != nil || buttons[100] != nil {
+		t.Fatal("unkept buttons were not pruned")
 	}
 }

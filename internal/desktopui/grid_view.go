@@ -45,6 +45,9 @@ type gridViewport struct {
 	WindowError                 error
 	LastClickAddress            string
 	LastClickTime               time.Duration
+	LastResizeClickAxis         resizeAxis
+	LastResizeClickIndex        int
+	LastResizeClickTime         time.Duration
 	PendingSelectionLoad        bool
 	KeyboardFocusRequested      bool
 	Resize                      *gridResizeSession

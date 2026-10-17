@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"context"
 	"image/color"
 	"sync"
 	"sync/atomic"
@@ -74,6 +75,14 @@ type documentSessionState struct {
 	spreadsheetStatusZoomInButton       widget.Clickable
 	spreadsheetStatusZoomResetBtn       widget.Clickable
 	spreadsheetStatusZoomDrag           gesture.Drag
+	spreadsheetSelectionStats           document.SpreadsheetSelectionStats
+	spreadsheetSelectionStatsKey        spreadsheetSelectionStatsRequestKey
+	spreadsheetSelectionStatsKeySet     bool
+	spreadsheetSelectionStatsSet        bool
+	spreadsheetSelectionStatsPending    bool
+	spreadsheetSelectionStatsCancel     context.CancelFunc
+	spreadsheetSelectionStatsResults    chan spreadsheetSelectionStatsResult
+	spreadsheetSelectionStatsSequence   uint64
 	sheet                               string
 	wordListState                       widget.List
 	wordBodyScroll                      gesture.Scroll
@@ -133,6 +142,10 @@ type documentSessionState struct {
 	wordAppendTarget                    widget.Clickable
 	wordDeferredToolbarAction           string
 	wordFindQuery                       string
+	wordSearchHighlightQuery            string
+	wordSearchHighlightRanges           map[string][]wordSearchTextRange
+	wordSearchHighlightRevision         uint64
+	wordSearchHighlightDraftEpoch       uint64
 	wordReplaceText                     string
 	wordFormatPainterActive             bool
 	wordFormatPainterSourceRunID        string

@@ -46,20 +46,21 @@ type jsonWorkspaceView struct {
 	search                                    widget.Editor
 	value                                     widget.Editor
 	original                                  widget.Editor
-	treeList, outlineList, inspectorList      widget.List
-	rowButtons, toggleButtons, outlineButtons map[int]*widget.Clickable
-	clipboardTarget                           struct{}
-	expandedLevel                             int
-	sourceLoaded                              bool
-	sourceSegments                            []jsonSourceSegment
-	baselineSegments                          []jsonSourceSegment
-	sourceList, baselineList                  widget.List
+	treeList, outlineList, inspectorList                   widget.List
+	rowButtons, toggleButtons, outlineButtons, closingButtons map[int]*widget.Clickable
+	activeRowIDs, activeClosingIDs, activeToggleIDs           []int
+	clipboardTarget                                        struct{}
+	expandedLevel                                          int
+	sourceLoaded                                           bool
+	sourceSegments                                         []jsonSourceSegment
+	baselineSegments                                       []jsonSourceSegment
+	sourceList, baselineList                               widget.List
 }
 
 func (a *App) ensureJSONView() *jsonWorkspaceView {
 	if a.jsonView == nil {
 		text := a.jsonDoc.Text()
-		v := &jsonWorkspaceView{selected: 0, collapsed: make(map[int]bool), results: make(chan jsonTreeResult, 1), baseline: text, sourceSynced: text, requested: text, expandedLevel: 3, rowButtons: make(map[int]*widget.Clickable), toggleButtons: make(map[int]*widget.Clickable), outlineButtons: make(map[int]*widget.Clickable)}
+		v := &jsonWorkspaceView{selected: 0, collapsed: make(map[int]bool), results: make(chan jsonTreeResult, 1), baseline: text, sourceSynced: text, requested: text, expandedLevel: 3, rowButtons: make(map[int]*widget.Clickable), toggleButtons: make(map[int]*widget.Clickable), outlineButtons: make(map[int]*widget.Clickable), closingButtons: make(map[int]*widget.Clickable)}
 		v.toolResults = make(chan jsonToolResult, 1)
 		v.done = a.documentSessionState.jsonWorkerSignal()
 		v.search.SingleLine = true
@@ -133,8 +134,33 @@ func (a *App) handleJSONWorkspaceEvents(gtx layout.Context) {
 		v.rebuildRows()
 	}
 	for id, b := range v.rowButtons {
-		if b.Clicked(gtx) {
+		for {
+			click, ok := b.Update(gtx)
+			if !ok {
+				break
+			}
 			v.selectNode(id)
+			if click.NumClicks >= 2 && click.NumClicks%2 == 0 {
+				if v.tree != nil && id >= 0 && id < len(v.tree.Nodes) && v.tree.Nodes[id].Container() && v.tree.ChildCount(id) > 0 {
+					v.collapsed[id] = !v.isCollapsed(id)
+					v.rebuildRows()
+				}
+			}
+		}
+	}
+	for id, b := range v.closingButtons {
+		for {
+			click, ok := b.Update(gtx)
+			if !ok {
+				break
+			}
+			v.selectNode(id)
+			if click.NumClicks >= 2 && click.NumClicks%2 == 0 {
+				if v.tree != nil && id >= 0 && id < len(v.tree.Nodes) && v.tree.Nodes[id].Container() && v.tree.ChildCount(id) > 0 {
+					v.collapsed[id] = true
+					v.rebuildRows()
+				}
+			}
 		}
 	}
 	for id, b := range v.outlineButtons {
@@ -154,10 +180,13 @@ func (a *App) handleJSONWorkspaceEvents(gtx layout.Context) {
 	}
 	for id, b := range v.toggleButtons {
 		if b.Clicked(gtx) {
-			v.collapsed[id] = !v.collapsed[id]
+			v.collapsed[id] = !v.isCollapsed(id)
 			v.rebuildRows()
 		}
 	}
+	pruneButtons(v.rowButtons, v.activeRowIDs, 300)
+	pruneButtons(v.closingButtons, v.activeClosingIDs, 300)
+	pruneButtons(v.toggleButtons, v.activeToggleIDs, 300)
 	for {
 		ev, ok := gtx.Event(transfer.TargetFilter{Target: &v.clipboardTarget, Type: "application/text"})
 		if !ok {
@@ -340,4 +369,19 @@ func jsonViewButton(buttons map[int]*widget.Clickable, id int) *widget.Clickable
 		buttons[id] = new(widget.Clickable)
 	}
 	return buttons[id]
+}
+
+func pruneButtons(buttons map[int]*widget.Clickable, keep []int, limit int) {
+	if len(buttons) <= limit {
+		return
+	}
+	keepSet := make(map[int]struct{}, len(keep))
+	for _, id := range keep {
+		keepSet[id] = struct{}{}
+	}
+	for id := range buttons {
+		if _, ok := keepSet[id]; !ok {
+			delete(buttons, id)
+		}
+	}
 }

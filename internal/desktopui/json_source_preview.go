@@ -1,7 +1,7 @@
 package desktopui
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -71,7 +71,7 @@ func (a *App) layoutJSONSourcePreview(gtx layout.Context, source string, segment
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Right: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return jsonLabel(gtx, a, fmt.Sprintf("%d", segment.line), 10, homeMuted, false, true)
+						return jsonLabel(gtx, a, strconv.Itoa(segment.line), 10, homeMuted, false, true)
 					})
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {

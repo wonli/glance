@@ -11,6 +11,18 @@ import (
 	"gioui.org/op/paint"
 )
 
+func (a *App) drawWordPageSearchHighlights(gtx layout.Context, state *documentSessionState, page wordlayout.PageScene, origin image.Point, pixelsPerPoint float64) {
+	if state == nil || !a.modal.Visible || !a.modal.SearchReplace || state.wordSearchHighlightQuery == "" || a.modal.Input.Text() != state.wordSearchHighlightQuery {
+		return
+	}
+	ranges := state.wordSearchHighlightRangesFor(a.modal.Input.Text())
+	for _, fragment := range page.Text {
+		for _, match := range ranges[fragment.RunID] {
+			drawWordPageTextRange(gtx, fragment, match.Start, match.End, origin, pixelsPerPoint, wordPageSearchHighlightColor)
+		}
+	}
+}
+
 func drawWordPageSelection(gtx layout.Context, state *documentSessionState, page wordlayout.PageScene, origin image.Point, pixelsPerPoint float64) {
 	if wordPageTextSelectionActive(state.wordPageTextSelection) {
 		for _, fragment := range page.Text {
@@ -40,10 +52,13 @@ func drawWordPageSelection(gtx layout.Context, state *documentSessionState, page
 }
 
 func drawWordPageFragmentSelection(gtx layout.Context, fragment wordlayout.TextFragment, start, end int, origin image.Point, pixelsPerPoint float64) {
+	drawWordPageTextRange(gtx, fragment, start, end, origin, pixelsPerPoint, wordPageSelectionColor)
+}
+
+func drawWordPageTextRange(gtx layout.Context, fragment wordlayout.TextFragment, start, end int, origin image.Point, pixelsPerPoint float64, ink color.NRGBA) {
 	if start >= end {
 		return
 	}
-	ink := wordPageSelectionColor
 	top := origin.Y + int(math.Round((fragment.BaselineYPT-fragment.Style.FontSize*0.88)*pixelsPerPoint))
 	height := max(1, int(math.Ceil(fragment.Style.FontSize*1.18*pixelsPerPoint)))
 	for _, glyph := range fragment.Glyphs {
@@ -92,6 +107,7 @@ func drawWordPageCaret(gtx layout.Context, state *documentSessionState, result *
 }
 
 var (
-	wordPageSelectionColor = color.NRGBA{R: 76, G: 143, B: 222, A: 96}
-	wordPageCaretColor     = color.NRGBA{R: 32, G: 104, B: 195, A: 255}
+	wordPageSearchHighlightColor = color.NRGBA{R: 255, G: 218, B: 70, A: 150}
+	wordPageSelectionColor       = color.NRGBA{R: 76, G: 143, B: 222, A: 96}
+	wordPageCaretColor           = color.NRGBA{R: 32, G: 104, B: 195, A: 255}
 )

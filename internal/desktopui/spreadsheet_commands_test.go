@@ -59,6 +59,23 @@ func TestToolbarPickerOptionsAndPatches(t *testing.T) {
 			t.Errorf("number format option %d = %+v, ok=%t; want %q", item.index, patch, ok, item.want)
 		}
 	}
+	borderOptions := []string{"所有边框", "外侧边框", "上框线", "右框线", "下框线", "左框线", "内侧边框", "无边框"}
+	if got := toolbarPickerOptions(pickerBorder); len(got) != len(borderOptions) {
+		t.Fatalf("border options=%v; want %v", got, borderOptions)
+	} else {
+		for index, want := range borderOptions {
+			if got[index] != want {
+				t.Fatalf("border option %d=%q; want %q", index, got[index], want)
+			}
+		}
+	}
+	borderPresets := []string{"all", "outside", "top", "right", "bottom", "left", "inside", "none"}
+	for index, want := range borderPresets {
+		patch, ok := toolbarPickerPatch(pickerBorder, index)
+		if !ok || patch.BorderPreset == nil || *patch.BorderPreset != want {
+			t.Errorf("border option %d = %+v, ok=%t; want %q", index, patch, ok, want)
+		}
+	}
 }
 
 func TestSpreadsheetToolbarRecognizesBuiltIn24HourTimeFormat(t *testing.T) {

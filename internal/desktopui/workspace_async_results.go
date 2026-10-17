@@ -39,6 +39,7 @@ func (a *App) processAsyncResults() {
 	default:
 	}
 	a.pollGridPictureResults()
+	a.processSpreadsheetSelectionStatsResults()
 	select {
 	case result := <-a.wordLayoutResults:
 		a.applyWordLayoutResult(result)

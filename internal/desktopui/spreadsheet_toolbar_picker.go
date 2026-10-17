@@ -275,7 +275,7 @@ func toolbarPickerOptions(kind spreadsheetToolbarPicker) []string {
 	case pickerNumberFormat:
 		return []string{"常规", "整数", "数值", "千分位", "百分比（两位）", "百分比", "日期", "日期（月/日/年）", "时间", "科学计数", "货币"}
 	case pickerBorder:
-		return []string{"所有边框", "外侧边框", "下框线", "无边框"}
+		return []string{"所有边框", "外侧边框", "上框线", "右框线", "下框线", "左框线", "内侧边框", "无边框"}
 	default:
 		return nil
 	}
@@ -357,13 +357,34 @@ func toolbarPickerOptionSelected(kind spreadsheetToolbarPicker, index int, style
 		default:
 			return false
 		}
+	case pickerBorder:
+		if index < 0 || index > 7 {
+			return false
+		}
+		top, right, bottom, left := style.Borders[0].Style != 0, style.Borders[1].Style != 0, style.Borders[2].Style != 0, style.Borders[3].Style != 0
+		switch index {
+		case 0, 1:
+			return top && right && bottom && left
+		case 2:
+			return top
+		case 3:
+			return right
+		case 4:
+			return bottom
+		case 5:
+			return left
+		case 7:
+			return !top && !right && !bottom && !left
+		default:
+			return false
+		}
 	default:
 		return false
 	}
 }
 
 func toolbarPickerPatch(kind spreadsheetToolbarPicker, index int) (document.CellFormatPatch, bool) {
-	values := map[spreadsheetToolbarPicker][]string{pickerFontColor: {"000000", "F44336", "FF9800", "FFC107", "4CAF50", "2196F3", "9C27B0", "FFFFFF"}, pickerFillColor: {"", "F4CCCC", "FCE4D6", "FFF2CC", "E2F0D9", "DDEBF7", "E4DFEC", "D9E1F2"}, pickerAlignment: {"general", "left", "center", "right"}, pickerNumberFormat: {"General", "0", "0.00", "#,##0.00", "0.00%", "0%", "yyyy-mm-dd", "m/d/yy", "h:mm AM/PM", "0.00E+00", spreadsheetCurrencyNumberFormat}, pickerBorder: {"all", "outside", "bottom", "none"}}
+	values := map[spreadsheetToolbarPicker][]string{pickerFontColor: {"000000", "F44336", "FF9800", "FFC107", "4CAF50", "2196F3", "9C27B0", "FFFFFF"}, pickerFillColor: {"", "F4CCCC", "FCE4D6", "FFF2CC", "E2F0D9", "DDEBF7", "E4DFEC", "D9E1F2"}, pickerAlignment: {"general", "left", "center", "right"}, pickerNumberFormat: {"General", "0", "0.00", "#,##0.00", "0.00%", "0%", "yyyy-mm-dd", "m/d/yy", "h:mm AM/PM", "0.00E+00", spreadsheetCurrencyNumberFormat}, pickerBorder: {"all", "outside", "top", "right", "bottom", "left", "inside", "none"}}
 	items, ok := values[kind]
 	if !ok || index < 0 || index >= len(items) {
 		return document.CellFormatPatch{}, false

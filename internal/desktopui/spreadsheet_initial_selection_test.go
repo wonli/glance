@@ -26,12 +26,12 @@ func TestOpeningSpreadsheetKeepsGridUnselectedAcrossSessionRestore(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var savedView sessionViewSnapshot
+	var savedView map[string]json.RawMessage
 	if err := json.Unmarshal(app.viewStateBytes(), &savedView); err != nil {
 		t.Fatal(err)
 	}
-	if savedView.SelectionSet {
-		t.Fatal("unselected spreadsheet view persisted an active selection")
+	if _, exists := savedView["selection_set"]; exists {
+		t.Fatal("spreadsheet view should not persist a cell selection across app restarts")
 	}
 	restored, err := app.restoreSessionState(workspace.Session{Format: "xlsx", Payload: payload, ViewState: app.viewStateBytes()})
 	if err != nil {
@@ -40,6 +40,30 @@ func TestOpeningSpreadsheetKeepsGridUnselectedAcrossSessionRestore(t *testing.T)
 	defer restored.book.Close()
 	if restored.selectionSet || restored.nameBox.Text() != "" {
 		t.Fatalf("spreadsheet restore selected a cell: selected=%t name=%q", restored.selectionSet, restored.nameBox.Text())
+	}
+}
+
+func TestRestoringSpreadsheetSessionDoesNotReapplySavedCellSelection(t *testing.T) {
+	app := New(nil, "")
+	defer close(app.shutdown)
+	book := xlsx.NewBlank()
+	payload, err := book.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Older Glance snapshots may contain the now-obsolete selection_set flag.
+	viewState := []byte(`{"selected_cell":"A1","selected_row":1,"selected_column":1,"selection_set":true}`)
+
+	restored, err := app.restoreSessionState(workspace.Session{Format: "xlsx", Payload: payload, ViewState: viewState})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.book.Close()
+	if restored.selectionSet || restored.nameBox.Text() != "" {
+		t.Fatalf("restored spreadsheet reapplied its saved cell selection: selected=%t name=%q; want no visible selection on open", restored.selectionSet, restored.nameBox.Text())
+	}
+	if restored.selectedCell != "A1" || restored.virtualGrid.SelectedRow != 1 || restored.virtualGrid.SelectedColumn != 1 {
+		t.Fatalf("restored navigation anchor changed: selectedCell=%q row=%d column=%d; want A1 without visible selection", restored.selectedCell, restored.virtualGrid.SelectedRow, restored.virtualGrid.SelectedColumn)
 	}
 }
 

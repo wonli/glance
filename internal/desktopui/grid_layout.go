@@ -230,6 +230,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				v.PictureMoveCursor = false
 			}
 		case pointer.Scroll:
+			v.LastResizeClickAxis = 0
 			if zoomScrollModifier(pe.Modifiers) {
 				state := a.documentSessionState
 				scrollDelta := zoomScrollAxisDelta(pe.Scroll)
@@ -311,6 +312,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				}
 			}
 			if v.ScrollbarWidthPx > 0 && int(pe.Position.X) >= gtx.Constraints.Max.X-v.ScrollbarWidthPx && int(pe.Position.Y) >= columnHeaderPx {
+				v.LastResizeClickAxis = 0
 				break
 			}
 			axis, index, edge, sizePx, resizeHit := gridResizeHandleAt(v, int(pe.Position.X), int(pe.Position.Y), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
@@ -319,16 +321,21 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				if axis == resizeRows {
 					pos = float64(pe.Position.Y)
 				}
+				doubleClick := v.LastResizeClickAxis == axis && v.LastResizeClickIndex == index &&
+					pe.Time >= v.LastResizeClickTime && pe.Time-v.LastResizeClickTime <= 500*time.Millisecond
+				v.LastResizeClickAxis = 0
 				fileUnits := devicePixelsToPoints(sizePx, v.Scale)
 				if axis == resizeColumns {
 					fileUnits = devicePixelsToChars(sizePx, v.Scale)
 				}
 				v.beginResize(axis, index, pos, edge)
 				v.Resize.State.OriginalFile = fileUnits
+				v.Resize.AutoFitOnDoubleClick = doubleClick
 				v.ResizeCursor = axis
 				gtx.Execute(pointer.GrabCmd{Tag: &v.PointerTag, ID: pe.PointerID})
 				break
 			}
+			v.LastResizeClickAxis = 0
 			state := a.documentSessionState
 			if scope, position, hit := gridHeaderAtPoint(v, image.Pt(int(pe.Position.X), int(pe.Position.Y)), rowHeaderPx, columnHeaderPx); hit {
 				a.updateGridHeaderSelection(v, scope, position, pe.Modifiers.Contain(key.ModShift))
@@ -431,6 +438,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			if v.Resize != nil {
 				if a.isSaving() {
 					v.cancelResize()
+					v.LastResizeClickAxis = 0
 					v.ResizeCursor = 0
 					a.setStatus("正在保存，请稍后调整行列尺寸")
 					a.window.Invalidate()
@@ -442,11 +450,29 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				}
 				v.updateResize(pos)
 				resizedAxis, resizedIndex := v.Resize.State.Axis, v.Resize.State.Index
+				moved := math.Abs(v.Resize.State.PreviewPx-v.Resize.State.OriginalPx) > 0.5
+				if !moved {
+					doubleClick := v.Resize.AutoFitOnDoubleClick
+					v.cancelResize()
+					v.ResizeCursor = 0
+					if doubleClick {
+						v.LastResizeClickAxis = 0
+						a.startSpreadsheetResizeAutoFit(gtx, resizedAxis, resizedIndex)
+					} else {
+						v.LastResizeClickAxis = resizedAxis
+						v.LastResizeClickIndex = resizedIndex
+						v.LastResizeClickTime = pe.Time
+					}
+					a.window.Invalidate()
+					break
+				}
+				v.LastResizeClickAxis = 0
 				state := a.documentSessionState
 				token, ok := state.beginOperation(sessionOperationMutation)
 				if !ok {
 					a.setStatus("正在处理其他操作，请稍后重试")
 					v.cancelResize()
+					v.LastResizeClickAxis = 0
 					v.ResizeCursor = 0
 					a.window.Invalidate()
 					break
@@ -494,6 +520,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				a.window.Invalidate()
 			}
 		case pointer.Cancel:
+			v.LastResizeClickAxis = 0
 			if v.Resize != nil {
 				v.cancelResize()
 				v.ResizeCursor = 0

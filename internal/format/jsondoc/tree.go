@@ -13,7 +13,7 @@ import (
 	"glance/internal/document"
 )
 
-var arrayIndexStrings [1000]string
+var arrayIndexStrings [65536]string
 
 func init() {
 	for i := 0; i < len(arrayIndexStrings); i++ {
@@ -44,7 +44,7 @@ func ParseTree(source string) (*document.JSONTree, error) {
 		src:    source,
 		len:    len(source),
 		nodes:  make([]document.JSONNode, 0, estNodes),
-		intern: make(map[string]string, 256),
+		intern: make(map[string]string, 1024),
 	}
 	if _, err := p.parseValue("root", -1, 0); err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func (p *fastParser) internStr(s string) string {
 	if val, ok := p.intern[s]; ok {
 		return val
 	}
-	if len(p.intern) < 1024 {
+	if len(p.intern) < 8192 {
 		p.intern[s] = s
 	}
 	return s
@@ -102,8 +102,17 @@ func (p *fastParser) parseString() (display string, rawStart, rawEnd int, err er
 	hasEscape := false
 
 	for p.pos < p.len {
-		b := p.src[p.pos]
-		if b == '"' {
+		idx := strings.IndexAny(p.src[p.pos:], "\"\\")
+		if idx < 0 {
+			return "", 0, 0, errors.New("unterminated string")
+		}
+		for j := 0; j < idx; j++ {
+			if p.src[p.pos+j] < 0x20 {
+				return "", 0, 0, errors.New("unescaped control character in string")
+			}
+		}
+		p.pos += idx
+		if p.src[p.pos] == '"' {
 			rawEnd = p.pos + 1
 			content := p.src[start:p.pos]
 			p.pos++
@@ -117,17 +126,10 @@ func (p *fastParser) parseString() (display string, rawStart, rawEnd int, err er
 			}
 			return display, rawStart, rawEnd, nil
 		}
-		if b == '\\' {
-			hasEscape = true
-			p.pos++
-			if p.pos >= p.len {
-				return "", 0, 0, errors.New("unexpected EOF in string escape")
-			}
-			p.pos++
-			continue
-		}
-		if b < 0x20 {
-			return "", 0, 0, errors.New("unescaped control character in string")
+		hasEscape = true
+		p.pos++
+		if p.pos >= p.len {
+			return "", 0, 0, errors.New("unexpected EOF in string escape")
 		}
 		p.pos++
 	}

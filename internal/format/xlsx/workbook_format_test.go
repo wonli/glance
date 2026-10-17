@@ -175,6 +175,92 @@ func TestSetCellFormatsAppliesAllSupportedPropertiesAndClears(t *testing.T) {
 	}
 }
 
+func TestSetCellFormatsAppliesInsideBordersToSelectedRange(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	inside := "inside"
+	bounds := document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 2}
+	if err := wb.SetCellFormats("Sheet1", bounds, document.CellFormatPatch{BorderPreset: &inside}); err != nil {
+		t.Fatalf("apply inside borders: %v", err)
+	}
+	window, err := wb.Window("Sheet1", 1, 1, 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [2][2][4]int{
+		{{0, 1, 1, 0}, {0, 0, 1, 0}},
+		{{0, 1, 0, 0}, {0, 0, 0, 0}},
+	}
+	for row := range want {
+		for column := range want[row] {
+			for edge, style := range window.Cells[row][column].Style.Borders {
+				if style.Style != want[row][column][edge] {
+					t.Fatalf("cell (%d,%d) edge %d style=%d; want %d", row+1, column+1, edge, style.Style, want[row][column][edge])
+				}
+			}
+		}
+	}
+	for _, item := range []struct {
+		cell   string
+		preset string
+		edge   int
+	}{
+		{cell: "A4", preset: "top", edge: 0},
+		{cell: "B4", preset: "right", edge: 1},
+		{cell: "C4", preset: "bottom", edge: 2},
+		{cell: "D4", preset: "left", edge: 3},
+	} {
+		preset := item.preset
+		if err := wb.SetCellFormats("Sheet1", singleCellRange(item.cell), document.CellFormatPatch{BorderPreset: &preset}); err != nil {
+			t.Fatalf("apply %s border to %s: %v", preset, item.cell, err)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "inside-borders.xlsx")
+	if err := wb.SaveAs(path); err != nil {
+		t.Fatalf("save border styles: %v", err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen border styles: %v", err)
+	}
+	defer reopened.Close()
+	window, err = reopened.Window("Sheet1", 1, 1, 4, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		row, column int
+		edge        int
+	}{
+		{row: 3, column: 0, edge: 0},
+		{row: 3, column: 1, edge: 1},
+		{row: 3, column: 2, edge: 2},
+		{row: 3, column: 3, edge: 3},
+	} {
+		if got := window.Cells[item.row][item.column].Style.Borders[item.edge].Style; got != 1 {
+			t.Fatalf("reopened border at row %d column %d edge %d = %d; want 1", item.row+1, item.column+1, item.edge, got)
+		}
+	}
+}
+
+func TestSetCellFormatsRejectsInsideBordersOnWholeRowsOrColumns(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	wb.SetDirty(false)
+	inside := "inside"
+	for _, bounds := range []document.CellRange{
+		{StartRow: 2, StartColumn: 1, EndRow: 3, EndColumn: maxXLSXColumns},
+		{StartRow: 1, StartColumn: 2, EndRow: maxXLSXRows, EndColumn: 3},
+	} {
+		if err := wb.SetCellFormats("Sheet1", bounds, document.CellFormatPatch{BorderPreset: &inside}); err == nil {
+			t.Fatalf("inside borders unexpectedly accepted for unbounded range %+v", bounds)
+		}
+	}
+	if wb.Dirty() {
+		t.Fatal("rejected whole-row/column border changes dirtied workbook")
+	}
+}
+
 func TestSetCellFormatsWrapTextAlignmentAndPercent(t *testing.T) {
 	wb := NewBlank()
 	defer wb.Close()
