@@ -28,6 +28,29 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 	case toolbarActionFreezePanes:
 		_, ok := state.book.(document.SpreadsheetPanesEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
+	case toolbarActionMergeCenter:
+		_, ok := state.book.(document.SpreadsheetMergeCellsEditor)
+		if !ok || !state.selectionSet || state.selection.Scope != selectionCells || state.cellEdit.Editing || state.formatRunning.Load() || a.isSaving() {
+			return false
+		}
+		bounds := state.selection.Bounds()
+		if bounds.StartRow < 1 || bounds.StartColumn < 1 || bounds.EndRow > xlsxRows || bounds.EndColumn > xlsxColumns || selectionCellCount(bounds) > maxClipboardCellsUI {
+			return false
+		}
+		canUnmerge := false
+		if state.virtualGrid != nil {
+			for _, merge := range state.virtualGrid.merges() {
+				if !spreadsheetRangesIntersect(bounds, merge.Range) {
+					continue
+				}
+				if bounds == merge.Range || (bounds.StartRow == bounds.EndRow && bounds.StartColumn == bounds.EndColumn && rangeContainsCell(merge.Range, bounds.StartRow, bounds.StartColumn)) {
+					canUnmerge = true
+					continue
+				}
+				return false
+			}
+		}
+		return canUnmerge || selectionCellCount(bounds) > 1
 	case toolbarActionTextToColumns:
 		_, ok := state.book.(document.SpreadsheetTextToColumnsEditor)
 		return ok && state.selectionSet && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
@@ -154,4 +177,8 @@ func (a *App) spreadsheetToolbarActionButtonEnabled(slot int) bool {
 
 func selectionCellCount(bounds document.CellRange) int {
 	return (bounds.EndRow - bounds.StartRow + 1) * (bounds.EndColumn - bounds.StartColumn + 1)
+}
+
+func spreadsheetRangesIntersect(left, right document.CellRange) bool {
+	return left.StartRow <= right.EndRow && left.EndRow >= right.StartRow && left.StartColumn <= right.EndColumn && left.EndColumn >= right.StartColumn
 }

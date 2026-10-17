@@ -25319,6 +25319,188 @@
       "agent_status": "implemented"
     },
     {
+      "action_id": "ribbon.spreadsheet.home.slot-91",
+      "source_key": "spreadsheet/home/slot-91",
+      "format": "spreadsheet",
+      "tab": "home",
+      "label": "合并后居中",
+      "capability_id": "spreadsheet.cells.merge",
+      "description": "合并明确选区并将左上角单元格水平居中；若其他单元格含内容，先用预检结果确认后再传入确认令牌。最多处理 10000 个单元格。",
+      "target_type": "spreadsheet_range",
+      "parameters": [
+        "document_id",
+        "expected_revision",
+        "sheet",
+        "bounds",
+        "confirm_discard_token"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Glance 实时文档会话 ID。"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "本次操作依据的文档修订版本。"
+          },
+          "view": {
+            "type": "object",
+            "properties": {
+              "window_id": {
+                "type": "integer"
+              },
+              "document_id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "selection": {
+                "type": "object",
+                "properties": {
+                  "target_type": {
+                    "type": "string"
+                  },
+                  "target_id": {
+                    "type": "string"
+                  },
+                  "sheet": {
+                    "type": "string"
+                  },
+                  "range": {
+                    "type": "object",
+                    "properties": {
+                      "start_row": {
+                        "type": "integer"
+                      },
+                      "start_column": {
+                        "type": "integer"
+                      },
+                      "end_row": {
+                        "type": "integer"
+                      },
+                      "end_column": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "target_type"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "sheet": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "bounds": {
+            "type": "object",
+            "properties": {
+              "start_row": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1048576
+              },
+              "start_column": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16384
+              },
+              "end_row": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1048576
+              },
+              "end_column": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16384
+              }
+            },
+            "required": [
+              "start_row",
+              "start_column",
+              "end_row",
+              "end_column"
+            ],
+            "additionalProperties": false
+          },
+          "confirm_discard_token": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "document_id",
+          "expected_revision",
+          "sheet",
+          "bounds"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "changed": {
+                "type": "boolean"
+              },
+              "confirmation_required": {
+                "type": "boolean"
+              },
+              "discarded_cell_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "confirm_discard_token": {
+                "type": "string"
+              },
+              "unmerged": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "changed",
+              "confirmation_required",
+              "discarded_cell_count",
+              "unmerged"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "request_id",
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "state_impact": "document_mutation",
+      "risk": "high",
+      "agent_status": "implemented"
+    },
+    {
       "action_id": "ribbon.spreadsheet.insert.slot-25",
       "source_key": "spreadsheet/insert/slot-25",
       "format": "spreadsheet",
@@ -37744,6 +37926,26 @@
       "capability_id": "spreadsheet.page_layout.get",
       "category": "query",
       "description": "读取明确工作表的打印方向、纸张、页边距、打印区域和标题行设置。"
+    },
+    {
+      "capability_id": "spreadsheet.range.fill_down",
+      "category": "command",
+      "description": "将明确区域首行的值、公式和格式填充到下方；相对公式引用按行调整，整块作为一个可撤销操作，最多处理 10000 个单元格。桌面网格支持 Ctrl/Cmd+D。"
+    },
+    {
+      "capability_id": "spreadsheet.range.fill_right",
+      "category": "command",
+      "description": "将明确区域最左列的值、公式和格式填充到右侧；相对公式引用按列调整，整块作为一个可撤销操作，最多处理 10000 个单元格。桌面网格支持 Ctrl/Cmd+R。"
+    },
+    {
+      "capability_id": "spreadsheet.cell.date.insert",
+      "category": "command",
+      "description": "将 YYYY-MM-DD 静态日期写入明确单元格；常规格式使用 Excel 内置日期格式，保留已有非常规样式。桌面网格支持 Control+;，同一天重复插入不新增历史。"
+    },
+    {
+      "capability_id": "spreadsheet.cell.time.insert",
+      "category": "command",
+      "description": "将 HH:mm 静态时间写入明确单元格；常规格式使用 Excel 内置 24 小时制格式，保留已有非常规样式。桌面网格支持 Windows/Linux Ctrl+Shift+;、macOS Command+;，同一分钟重复插入不新增历史。"
     },
     {
       "capability_id": "spreadsheet.gridlines.get",

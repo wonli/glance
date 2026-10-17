@@ -12,6 +12,12 @@ func (a *App) processSpreadsheetFormatResult() bool {
 		if result.state == nil || !result.state.acceptsResult(result.token) || result.state.wordRevisionAtomic.Load() != result.revision {
 			return true
 		}
+		if result.err == nil && result.merge != nil && result.merge.ConfirmationRequired {
+			if result.mergeBounds != nil && result.generation == a.documentGeneration && result.state == a.documentSessionState && result.sheet == a.sheet {
+				a.showSpreadsheetMergeConfirmation(result.state, result.generation, result.sheet, *result.mergeBounds, *result.merge)
+			}
+			return true
+		}
 		if result.replaceAll != nil {
 			a.applySpreadsheetReplaceAllPlan(result)
 			return true
@@ -66,6 +72,27 @@ func (a *App) processSpreadsheetFormatResult() bool {
 					a.setStatus("已完成" + result.operation)
 				}
 				switch result.operation {
+				case "向下填充":
+					if result.window != nil && result.state.virtualGrid == result.window && result.state.sheet == result.sheet {
+						result.window.PendingSelectionLoad = true
+					}
+				case "合并后居中":
+					if result.merge != nil && result.merge.Unmerged {
+						a.setStatus("已取消合并")
+					} else {
+						a.setStatus("已合并并居中")
+					}
+					if result.window != nil && result.state.virtualGrid == result.window && result.state.sheet == result.sheet {
+						result.window.PendingSelectionLoad = true
+					}
+				case "插入日期":
+					if result.window != nil && result.state.virtualGrid == result.window && result.state.sheet == result.sheet {
+						result.window.PendingSelectionLoad = true
+					}
+				case "插入时间":
+					if result.window != nil && result.state.virtualGrid == result.window && result.state.sheet == result.sheet {
+						result.window.PendingSelectionLoad = true
+					}
 				case "求和", "平均值", "计数", "最大值", "最小值":
 					a.setStatus(result.details)
 				case "调整行高", "调整列宽":

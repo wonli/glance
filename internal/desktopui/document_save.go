@@ -76,7 +76,11 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 		return
 	}
 	if state.book != nil && state.path == "" && state.spreadsheetZoomNeedsSave() {
-		a.startSaveAsPicker("xlsx")
+		ext := "xlsx"
+		if state.sourceFormat == application.FormatCSV {
+			ext = "csv"
+		}
+		a.startSaveAsPicker(ext)
 		return
 	}
 	if state.saveAsRequired {
@@ -86,6 +90,9 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 		extension := "xlsx"
 		if state.sourceFormat == application.FormatDOC {
 			extension = "docx"
+		}
+		if state.sourceFormat == application.FormatCSV {
+			extension = "csv"
 		}
 		a.startSaveAsPicker(extension)
 		return
@@ -174,6 +181,9 @@ func (a *App) startSaveAs(path string) {
 	}
 	if a.jsonDoc != nil {
 		format = "json"
+	}
+	if a.book != nil && a.documentSessionState != nil && a.documentSessionState.sourceFormat == application.FormatCSV {
+		format = "csv"
 	}
 	if err := validateSaveAsExtension(format, path); err != nil {
 		a.setStatus(err.Error())
@@ -317,6 +327,13 @@ func validateSaveAsExtension(format, path string) error {
 			return nil
 		}
 		return fmt.Errorf("另存为扩展名必须是 .md 或 .markdown")
+	}
+	if format == "csv" {
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".csv" || ext == ".xlsx" {
+			return nil
+		}
+		return fmt.Errorf("另存为扩展名必须是 .csv 或 .xlsx")
 	}
 	want := map[string]string{"xlsx": ".xlsx", "docx": ".docx", "json": ".json", "pptx": ".pptx", "pdf": ".pdf"}[format]
 	if want == "" {

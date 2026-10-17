@@ -58,6 +58,9 @@ func (s CellSelection) Bounds() document.CellRange {
 	}
 	if s.Scope == selectionColumns || s.Scope == selectionSheet {
 		startRow, endRow = 0, xlsxRows-1
+		if anchor.Row >= xlsxRows || active.Row >= xlsxRows {
+			endRow = max(anchor.Row, active.Row)
+		}
 	}
 	return document.CellRange{
 		StartRow: startRow + 1, StartColumn: startColumn + 1,
@@ -73,8 +76,12 @@ func (s CellSelection) Contains(position CellPosition) bool {
 }
 
 func clampCellPosition(position CellPosition) CellPosition {
+	maxRows := xlsxRows
+	if position.Row >= maxRows {
+		maxRows = position.Row + 1
+	}
 	return CellPosition{
-		Row:    max(0, min(position.Row, xlsxRows-1)),
+		Row:    max(0, min(position.Row, maxRows-1)),
 		Column: max(0, min(position.Column, xlsxColumns-1)),
 	}
 }
@@ -96,7 +103,12 @@ func selectionAtPointWithHeaders(v *gridViewport, point image.Point, rowHeader, 
 	if !ok {
 		return CellPosition{}, false
 	}
-	return clampCellPosition(CellPosition{Row: row - 1, Column: column - 1}), true
+	maxRow := v.Rows.Count()
+	maxCol := v.Columns.Count()
+	return CellPosition{
+		Row:    max(0, min(row-1, maxRow-1)),
+		Column: max(0, min(column-1, maxCol-1)),
+	}, true
 }
 
 func selectionRect(v *gridViewport, selection CellSelection) image.Rectangle {

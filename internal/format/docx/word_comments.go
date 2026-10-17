@@ -1,6 +1,7 @@
 package docx
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"path"
@@ -22,6 +23,7 @@ const (
 
 var _ document.WordCommentReader = (*Document)(nil)
 var _ document.WordCommentEditor = (*Document)(nil)
+var _ document.WordTextSelectionCommentEditor = (*Document)(nil)
 
 func (d *Document) WordComments() ([]document.WordComment, error) {
 	d.mu.Lock()
@@ -116,6 +118,186 @@ func (d *Document) AddWordComment(runID, author, text string) (string, bool, err
 		return "", false, fmt.Errorf("锚定 Word 批注失败: %w", err)
 	}
 
+	contentTypesPart, err := ensureWordCommentsContentType(d.parts, commentsPartName)
+	if err != nil {
+		return "", false, err
+	}
+	changes := map[string]*part{
+		"word/document.xml":            d.partWithData("word/document.xml", documentData),
+		commentsPartName:               d.partWithData(commentsPartName, updatedComments),
+		"word/_rels/document.xml.rels": relationshipPart,
+	}
+	if contentTypesPart != nil {
+		changes["[Content_Types].xml"] = contentTypesPart
+	}
+	if err := d.commitWordPackageChange(changes); err != nil {
+		return "", false, err
+	}
+	return commentID, true, nil
+}
+
+// AddWordCommentForTextSelection anchors a comment to an exact text range. The
+// selection is split into new run fragments so existing formatting and text
+// outside the range remain unchanged.
+func (d *Document) AddWordCommentForTextSelection(startRunID string, startOffset int, endRunID string, endOffset int, author, text string) (string, bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.checkOpen(); err != nil {
+		return "", false, err
+	}
+	if d.documentIdx < 0 || d.documentIdx >= len(d.parts) {
+		return "", false, errors.New("DOCX document part is unavailable")
+	}
+	start, startOK := d.wordTextTargets[startRunID]
+	end, endOK := d.wordTextTargets[endRunID]
+	if !startOK || !endOK || start.text == nil || end.text == nil || start.run == nil || end.run == nil || start.paragraph == nil || end.paragraph == nil || !wordTextRunEditable(d.wordBlocks, startRunID) || !wordTextRunEditable(d.wordBlocks, endRunID) {
+		return "", false, errors.New("Word 批注范围必须是可编辑正文文本")
+	}
+	startRunes, endRunes := []rune(start.text.text), []rune(end.text.text)
+	if startOffset < 0 || startOffset > len(startRunes) || endOffset < 0 || endOffset > len(endRunes) || start.text.start > end.text.start || start.paragraph != end.paragraph || start.run.parent != start.paragraph || end.run.parent != end.paragraph || (start.text == end.text && startOffset >= endOffset) {
+		return "", false, errors.New("Word 批注范围端点无效或跨越段落")
+	}
+	text = normalizeWordCommentText(text)
+	if length := utf8.RuneCountInString(text); length == 0 || length > 32768 {
+		return "", false, errors.New("Word 批注文本必须为 1 至 32768 个 Unicode 字符")
+	}
+	author = strings.TrimSpace(author)
+	if author == "" {
+		author = "Glance"
+	}
+	if utf8.RuneCountInString(author) > 256 {
+		return "", false, errors.New("Word 批注作者不能超过 256 个 Unicode 字符")
+	}
+
+	data := d.parts[d.documentIdx].data
+	if err := validateWordSelectionTextOnly(data, start.paragraph, start.text.start, end.text.end); err != nil {
+		return "", false, fmt.Errorf("Word 批注范围包含暂不支持的内容: %w", err)
+	}
+
+	type selectedTarget struct {
+		target wordTextTarget
+		range_ wordSelectedTextRange
+	}
+	selected := make([]selectedTarget, 0)
+	for targetID, target := range d.wordTextTargets {
+		if target.text == nil || target.run == nil || target.paragraph != start.paragraph || target.text.start < start.text.start || target.text.start > end.text.start {
+			continue
+		}
+		if target.run.parent != start.paragraph || !wordTextRunEditable(d.wordBlocks, targetID) {
+			return "", false, errors.New("Word 批注范围包含不可编辑的正文运行")
+		}
+		from, to := 0, len([]rune(target.text.text))
+		if target.text == start.text {
+			from = startOffset
+		}
+		if target.text == end.text {
+			to = endOffset
+		}
+		if from < 0 || to > len([]rune(target.text.text)) || from >= to {
+			continue
+		}
+		selected = append(selected, selectedTarget{target: target, range_: wordSelectedTextRange{start: from, end: to}})
+	}
+	if len(selected) == 0 {
+		return "", false, errors.New("Word 批注范围不包含可编辑文本")
+	}
+	sort.Slice(selected, func(i, j int) bool { return selected[i].target.text.start < selected[j].target.text.start })
+	rangesByRun := make(map[*wordXMLNode]map[*wordXMLNode]wordSelectedTextRange)
+	runsByNode := make(map[*wordXMLNode]bool)
+	for _, item := range selected {
+		if rangesByRun[item.target.run] == nil {
+			rangesByRun[item.target.run] = make(map[*wordXMLNode]wordSelectedTextRange)
+		}
+		rangesByRun[item.target.run][item.target.text] = item.range_
+		runsByNode[item.target.run] = true
+	}
+	runs := make([]*wordXMLNode, 0, len(runsByNode))
+	for run := range runsByNode {
+		runs = append(runs, run)
+	}
+	sort.Slice(runs, func(i, j int) bool { return runs[i].start < runs[j].start })
+	for i := 1; i < len(runs); i++ {
+		if !onlyXMLWhitespace(data[runs[i-1].end:runs[i].start]) {
+			return "", false, errors.New("Word 批注范围跨越暂不支持的行内内容")
+		}
+	}
+
+	comments, err := d.wordCommentsLocked()
+	if err != nil {
+		return "", false, err
+	}
+	nextID := 0
+	for _, comment := range comments {
+		id, parseErr := strconv.Atoi(comment.ID)
+		if parseErr != nil || id < 0 {
+			return "", false, fmt.Errorf("DOCX 批注 ID %q 无效", comment.ID)
+		}
+		if id >= nextID {
+			if id == int(^uint(0)>>1) {
+				return "", false, errors.New("DOCX 批注 ID 空间已耗尽")
+			}
+			nextID = id + 1
+		}
+	}
+	anchorIDs, err := wordCommentAnchorIDs(data)
+	if err != nil {
+		return "", false, err
+	}
+	for rawID := range anchorIDs {
+		id, parseErr := strconv.Atoi(rawID)
+		if parseErr != nil || id < 0 {
+			return "", false, fmt.Errorf("DOCX 正文批注锚点 ID %q 无效", rawID)
+		}
+		if id >= nextID {
+			if id == int(^uint(0)>>1) {
+				return "", false, errors.New("DOCX 批注锚点 ID 空间已耗尽")
+			}
+			nextID = id + 1
+		}
+	}
+	commentID := strconv.Itoa(nextID)
+	commentsPartName, commentsData, relationshipPart, err := d.prepareWordCommentsPart()
+	if err != nil {
+		return "", false, err
+	}
+	updatedComments, err := appendWordComment(commentsData, commentID, author, text, time.Now().UTC())
+	if err != nil {
+		return "", false, err
+	}
+
+	prefix := elementPrefix(start.run.rawName)
+	if prefix == "" {
+		prefix = "w"
+	}
+	startMarker := []byte(fmt.Sprintf(`<%s:commentRangeStart %s:id="%s"/>`, prefix, prefix, commentID))
+	endAndReference := []byte(fmt.Sprintf(`<%s:commentRangeEnd %s:id="%s"/><%s:r><%s:commentReference %s:id="%s"/></%s:r>`, prefix, prefix, commentID, prefix, prefix, prefix, commentID, prefix))
+	var before, selectedXML, after bytes.Buffer
+	for index, run := range runs {
+		fragments, err := splitWordRunForSelection(data, run, rangesByRun[run], start.text.start, end.text.end)
+		if err != nil {
+			return "", false, fmt.Errorf("拆分 Word 批注范围: %w", err)
+		}
+		if index > 0 {
+			selectedXML.Write(data[runs[index-1].end:run.start])
+		}
+		if fragments.prefix.Len() > 0 {
+			before.Write(wrapWordRunFragment(data, run, fragments.props, fragments.prefix.Bytes()))
+		}
+		selectedXML.Write(wrapWordRunFragment(data, run, fragments.props, fragments.selected.Bytes()))
+		if fragments.suffix.Len() > 0 {
+			after.Write(wrapWordRunFragment(data, run, fragments.props, fragments.suffix.Bytes()))
+		}
+	}
+	var replacement bytes.Buffer
+	replacement.Write(before.Bytes())
+	replacement.Write(startMarker)
+	replacement.Write(selectedXML.Bytes())
+	replacement.Write(endAndReference)
+	replacement.Write(after.Bytes())
+	documentData, err := applyXMLReplacements(data, []xmlReplacement{{start: runs[0].start, end: runs[len(runs)-1].end, value: replacement.Bytes()}})
+	if err != nil {
+		return "", false, fmt.Errorf("锚定 Word 批注失败: %w", err)
+	}
 	contentTypesPart, err := ensureWordCommentsContentType(d.parts, commentsPartName)
 	if err != nil {
 		return "", false, err

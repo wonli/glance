@@ -7,6 +7,7 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/layout"
 	"gioui.org/widget"
+	"glance/internal/application"
 	"glance/internal/document"
 )
 
@@ -64,6 +65,18 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 	spreadsheetPasteShortcut := spreadsheetGridShortcuts && a.toolbarActionEnabled(21)
 	spreadsheetFormatShortcuts := spreadsheetGridShortcuts && a.toolbarActionEnabled(4)
 	spreadsheetLinkShortcut := spreadsheetGridShortcuts && a.toolbarActionEnabled(toolbarActionInsertLink)
+	wordHyperlinkShortcut := false
+	if state.word != nil {
+		_, wordHyperlinkShortcut = any(state.word).(document.WordHyperlinkEditor)
+		if wordHyperlinkShortcut && wordPageTextSelectionActive(state.wordPageTextSelection) {
+			_, wordHyperlinkShortcut = any(state.word).(document.WordTextSelectionHyperlinkEditor)
+		}
+	}
+	wordCommentShortcut := false
+	if state.word != nil {
+		_, wordCommentShortcut = any(state.word).(document.WordCommentEditor)
+	}
+	wordCommentShortcutName, wordCommentShortcutModifiers := wordNewCommentShortcutBinding(runtime.GOOS)
 	wordSelectionFormatShortcuts := state.word != nil && wordPageTextSelectionActive(state.wordPageTextSelection)
 	if wordSelectionFormatShortcuts {
 		_, wordSelectionFormatShortcuts = any(state.word).(document.WordTextSelectionFormatter)
@@ -78,6 +91,15 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 		}
 		if editor := state.wordRunEditors[runID]; editor != nil && gtx.Focused(editor) && editorHasActiveComposition(editor) {
 			wordParagraphFormattingShortcuts = false
+		}
+	}
+	wordBreakRunID, _, wordBreakShortcuts := a.focusedWordBreakShortcutEditor(gtx, state)
+	if wordBreakShortcuts {
+		for _, name := range []key.Name{key.NameReturn, key.NameEnter} {
+			filters = append(filters,
+				key.Filter{Name: name, Required: key.ModShortcut},
+				key.Filter{Name: name, Required: key.ModShortcut | key.ModShift},
+			)
 		}
 	}
 	wordSelectionCutShortcut := state.word != nil && wordPageTextSelectionActive(state.wordPageTextSelection)
@@ -96,8 +118,11 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 	if spreadsheetPasteShortcut {
 		filters = append(filters, key.Filter{Name: key.Name("V"), Required: key.ModShortcut})
 	}
-	if spreadsheetLinkShortcut {
+	if spreadsheetLinkShortcut || wordHyperlinkShortcut {
 		filters = append(filters, key.Filter{Name: key.Name("K"), Required: key.ModShortcut})
+	}
+	if wordCommentShortcut {
+		filters = append(filters, key.Filter{Name: wordCommentShortcutName, Required: wordCommentShortcutModifiers})
 	}
 	if spreadsheetFormatShortcuts {
 		filters = append(filters,
@@ -130,6 +155,19 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 			continue
 		}
 		switch pressed.Name {
+		case key.NameReturn, key.NameEnter:
+			if wordBreakShortcuts {
+				a.updateFocusedWordEditorBeforeCommandWithSubmit(gtx, state, false)
+				if state.wordParagraphSplitIntent == nil {
+					breakType := document.WordBreakPage
+					if pressed.Modifiers.Contain(key.ModShift) {
+						breakType = document.WordBreakColumn
+					}
+					if wordBreakRunID != "" && state.selectedWordRunID == wordBreakRunID {
+						a.queueWordBreak(breakType)
+					}
+				}
+			}
 		case key.Name("O"):
 			a.startOpenFilePicker()
 		case key.Name("G"), key.NameF5:
@@ -147,7 +185,11 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 			} else if state.book != nil && !a.commitSpreadsheetEditorBeforeCommand(gtx, state) {
 				return
 			} else if state.book != nil && pressed.Modifiers.Contain(key.ModShift) {
-				a.startSaveAsPicker("xlsx")
+				ext := "xlsx"
+				if state.sourceFormat == application.FormatCSV {
+					ext = "csv"
+				}
+				a.startSaveAsPicker(ext)
 			} else {
 				a.startSave()
 			}
@@ -207,8 +249,60 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 				a.requestSpreadsheetClipboardPaste(gtx, state)
 			}
 		case key.Name("K"):
-			if spreadsheetLinkShortcut {
+			if wordHyperlinkShortcut {
+				a.updateFocusedWordEditorBeforeCommand(gtx, state)
+				if a.isSaving() {
+					a.setStatus("文档正在保存，请稍后插入超链接")
+					continue
+				}
+				if state.formatRunning.Load() && !state.wordFlushRequested.Load() {
+					a.setStatus("文档正在处理其他操作，请稍后插入超链接")
+					continue
+				}
+				if state.wordDeferredToolbarAction != "" && state.wordDeferredToolbarAction != "insert-link" {
+					a.setStatus("请等待当前文字修改完成后再插入超链接")
+					continue
+				}
+				if state.wordFlushRequested.Load() || wordHasPendingTextDrafts(state) {
+					state.wordForceDraftFlush.Store(true)
+					state.wordFlushRequested.Store(true)
+					state.wordFlushAllDrafts.Store(true)
+					state.wordDeferredToolbarAction = "insert-link"
+					if !state.formatRunning.Load() {
+						a.startNextWordTextCommitFor(state)
+					}
+					continue
+				}
+				a.showWordHyperlinkDialog()
+			} else if spreadsheetLinkShortcut {
 				a.showSpreadsheetLinkDialog()
+			}
+		case key.Name("A"), key.Name("M"):
+			if wordCommentShortcut && pressed.Name == wordCommentShortcutName {
+				a.updateFocusedWordEditorBeforeCommand(gtx, state)
+				if a.isSaving() {
+					a.setStatus("文档正在保存，请稍后添加批注")
+					continue
+				}
+				if state.formatRunning.Load() && !state.wordFlushRequested.Load() {
+					a.setStatus("文档正在处理其他操作，请稍后添加批注")
+					continue
+				}
+				if state.wordDeferredToolbarAction != "" && state.wordDeferredToolbarAction != "review-new-comment" {
+					a.setStatus("请等待当前文字修改完成后再添加批注")
+					continue
+				}
+				if state.wordFlushRequested.Load() || wordHasPendingTextDrafts(state) {
+					state.wordForceDraftFlush.Store(true)
+					state.wordFlushRequested.Store(true)
+					state.wordFlushAllDrafts.Store(true)
+					state.wordDeferredToolbarAction = "review-new-comment"
+					if !state.formatRunning.Load() {
+						a.startNextWordTextCommitFor(state)
+					}
+					continue
+				}
+				a.showWordNewCommentDialog()
 			}
 		case key.Name("B"):
 			if spreadsheetFormatShortcuts {
@@ -285,6 +379,13 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 			return
 		}
 	}
+}
+
+func wordNewCommentShortcutBinding(goos string) (key.Name, key.Modifiers) {
+	if goos == "darwin" {
+		return key.Name("A"), key.ModShortcut | key.ModAlt
+	}
+	return key.Name("M"), key.ModCtrl | key.ModAlt
 }
 
 func spreadsheetNumberFormatForShortcut(name key.Name) (string, bool) {
@@ -366,6 +467,10 @@ func (a *App) commitSpreadsheetEditorBeforeCommand(gtx layout.Context, state *do
 }
 
 func (a *App) updateFocusedWordEditorBeforeCommand(gtx layout.Context, state *documentSessionState) {
+	a.updateFocusedWordEditorBeforeCommandWithSubmit(gtx, state, true)
+}
+
+func (a *App) updateFocusedWordEditorBeforeCommandWithSubmit(gtx layout.Context, state *documentSessionState, handleSubmit bool) {
 	if state == nil || state.word == nil {
 		return
 	}
@@ -378,11 +483,36 @@ func (a *App) updateFocusedWordEditorBeforeCommand(gtx layout.Context, state *do
 		return
 	}
 	for event, ok := editor.Update(gtx); ok; event, ok = editor.Update(gtx) {
-		if _, submit := event.(widget.SubmitEvent); submit {
+		if _, submit := event.(widget.SubmitEvent); submit && handleSubmit {
 			start, end := editor.Selection()
 			a.queueWordParagraphSplit(runID, editor.Text(), start, end)
 			break
 		}
 	}
 	captureWordTextDraft(state, runID, editor.Text())
+}
+
+func (a *App) focusedWordBreakShortcutEditor(gtx layout.Context, state *documentSessionState) (string, *widget.Editor, bool) {
+	if state == nil || state.word == nil || a.isSaving() || state.formatRunning.Load() ||
+		state.wordFlushRequested.Load() || state.wordParagraphSplitIntent != nil ||
+		state.wordParagraphJoinIntent != nil || state.wordSelectionEditIntent != nil ||
+		state.wordPageBreakIntent != nil || wordPageTextSelectionActive(state.wordPageTextSelection) {
+		return "", nil, false
+	}
+	if _, ok := any(state.word).(document.WordPageBreakEditor); !ok {
+		return "", nil, false
+	}
+	runID := state.wordFocusedRunID
+	if runID == "" || runID != state.selectedWordRunID {
+		return "", nil, false
+	}
+	editor := state.wordRunEditors[runID]
+	if editor == nil || editor.ReadOnly || !gtx.Focused(editor) || editorHasActiveComposition(editor) {
+		return "", nil, false
+	}
+	run, ok := selectedWordRun(wordBlocksForState(state), runID)
+	if !ok || !run.Editable || !wordBodyRunEditable(wordBlocksForState(state), runID) {
+		return "", nil, false
+	}
+	return runID, editor, true
 }

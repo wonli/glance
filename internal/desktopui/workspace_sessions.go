@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"glance/internal/application"
 	"glance/internal/document"
+	csvdoc "glance/internal/format/csv"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
 	"glance/internal/format/markdowndoc"
@@ -40,6 +41,7 @@ type sessionViewSnapshot struct {
 	SpreadsheetZoomPending     bool           `json:"spreadsheet_zoom_pending,omitempty"`
 	SelectedRow                int            `json:"selected_row"`
 	SelectedColumn             int            `json:"selected_column"`
+	SelectionSet               bool           `json:"selection_set"`
 	WordViewMode               wordViewMode   `json:"word_view_mode"`
 	WordPageFitMode            bool           `json:"word_page_fit_mode"`
 	WordMultiplePagesMode      bool           `json:"word_multiple_pages_mode"`
@@ -198,7 +200,7 @@ func isEmptyDraftWithoutSnapshot(record workspace.Session) bool {
 		return false
 	}
 	switch strings.ToLower(record.Format) {
-	case "pdf", "docx", "xlsx", "json", "markdown", "md":
+	case "pdf", "docx", "xlsx", "json", "markdown", "md", "csv":
 		return true
 	default:
 		return false
@@ -230,6 +232,39 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		}
 		if len(state.sheets) > 0 {
 			state.virtualGrid = newGridViewport()
+			state.selectedCell = "A1"
+			state.virtualGrid.SelectedRow, state.virtualGrid.SelectedColumn = 1, 1
+			state.virtualGrid.PendingSelectionLoad = true
+			state.cellEdit.selectCell("A1", "")
+		}
+	case "csv":
+		var book *csvdoc.Document
+		if isEmptyDraftWithoutSnapshot(record) {
+			book = csvdoc.NewBlank()
+		} else if len(record.Payload) == 0 && record.Tab.SourcePath != "" {
+			var err error
+			book, err = csvdoc.Open(record.Tab.SourcePath)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			var err error
+			book, err = csvdoc.OpenSnapshot(record.Payload)
+			if err != nil {
+				return nil, err
+			}
+		}
+		state.book = book
+		state.sourceFormat = application.FormatCSV
+		book.SetSourcePath(record.Tab.SourcePath)
+		book.SetDirty(record.Dirty)
+		state.sheets = book.SheetNames()
+		initializeSpreadsheetSheetZooms(state.sharedDocumentSession, book, state.sheets)
+		if len(state.sheets) > 0 {
+			state.sheet = state.sheets[0]
+		}
+		if len(state.sheets) > 0 {
+			state.virtualGrid = newGridViewportForSpreadsheet(book, state.sheet)
 			state.selectedCell = "A1"
 			state.virtualGrid.SelectedRow, state.virtualGrid.SelectedColumn = 1, 1
 			state.virtualGrid.PendingSelectionLoad = true
@@ -358,7 +393,7 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		}
 		position := clampCellPosition(CellPosition{Row: state.virtualGrid.SelectedRow - 1, Column: state.virtualGrid.SelectedColumn - 1})
 		state.selection = CellSelection{Anchor: position, Active: position}
-		state.selectionSet = true
+		state.selectionSet = view.SelectionSet
 	}
 	if state.markdownDoc != nil {
 		v := newMarkdownView(state.markdownDoc.Text())
@@ -370,7 +405,11 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		v.search.SetText(view.MarkdownQuery)
 		state.markdownView = v
 	}
-	state.nameBox.SetText(state.selectedCell)
+	if state.selectionSet {
+		state.nameBox.SetText(state.selectedCell)
+	} else {
+		state.nameBox.SetText("")
+	}
 	return state, nil
 }
 

@@ -61,6 +61,14 @@ func TestToolbarPickerOptionsAndPatches(t *testing.T) {
 	}
 }
 
+func TestSpreadsheetToolbarRecognizesBuiltIn24HourTimeFormat(t *testing.T) {
+	for _, value := range []string{"h:mm", "builtin:20"} {
+		if got := spreadsheetToolbarNumberFormatLabel(value); got != "时间" {
+			t.Errorf("number format %q label=%q; want 时间", value, got)
+		}
+	}
+}
+
 func boolPointer(value bool) *bool { return &value }
 
 func TestFormatPatchForExcelP0ToolbarActions(t *testing.T) {

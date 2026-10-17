@@ -217,8 +217,7 @@ func (a *App) toggleWordFormatPainter() {
 	if state.wordFormatPainterActive {
 		state.wordFormatPainterActive = false
 		state.wordFormatPainterSourceRunID = ""
-		state.wordFormatPainterTargetRunID = ""
-		state.wordFormatPainterTargetParagraphID = ""
+		clearWordFormatPainterTarget(state)
 		a.setStatus("格式刷已取消")
 		return
 	}
@@ -231,12 +230,13 @@ func (a *App) toggleWordFormatPainter() {
 	}
 	state.wordFormatPainterSourceRunID = run.ID
 	state.wordFormatPainterActive = true
-	a.setStatus("已启动格式刷；单击目标文字应用，再点格式刷取消")
+	clearWordFormatPainterTarget(state)
+	a.setStatus("已启动格式刷；单击或拖选目标文字应用，再点格式刷取消")
 }
 
 func (a *App) queueWordFormatPainterTarget(paragraphID, runID string) {
 	state := a.documentSessionState
-	if state == nil || state.word == nil || !state.wordFormatPainterActive || runID == state.wordFormatPainterSourceRunID {
+	if state == nil || state.word == nil || !state.wordFormatPainterActive {
 		return
 	}
 	blocks := wordBlocksForState(state)
@@ -245,7 +245,15 @@ func (a *App) queueWordFormatPainterTarget(paragraphID, runID string) {
 	if !ok || !run.Editable || !paragraphOK || !wordParagraphContainsRun(paragraph, runID) {
 		return
 	}
-	if _, ok := any(state.word).(document.WordFormatPainter); !ok {
+	startRunID, startOffset, endRunID, endOffset, selectedText, hasSelection := wordFormatPainterTargetSelection(state, runID)
+	if !hasSelection && runID == state.wordFormatPainterSourceRunID {
+		return
+	}
+	if hasSelection {
+		if _, ok := any(state.word).(document.WordTextSelectionFormatPainter); !ok {
+			return
+		}
+	} else if _, ok := any(state.word).(document.WordFormatPainter); !ok {
 		return
 	}
 	state.wordFormatPainterActive = false
@@ -253,6 +261,12 @@ func (a *App) queueWordFormatPainterTarget(paragraphID, runID string) {
 	state.selectedWordRunID = runID
 	state.wordFormatPainterTargetParagraphID = paragraphID
 	state.wordFormatPainterTargetRunID = runID
+	state.wordFormatPainterTargetSelection = hasSelection
+	state.wordFormatPainterStartRunID = startRunID
+	state.wordFormatPainterStartOffset = startOffset
+	state.wordFormatPainterEndRunID = endRunID
+	state.wordFormatPainterEndOffset = endOffset
+	state.wordFormatPainterSelectionText = selectedText
 	if wordHasPendingTextDrafts(state) {
 		state.wordForceDraftFlush.Store(true)
 		state.wordFlushRequested.Store(true)
@@ -269,9 +283,72 @@ func (a *App) processWordFormatPainterTargetIntent() {
 		return
 	}
 	paragraphID, runID := state.wordFormatPainterPendingParagraphID, state.wordFormatPainterPendingRunID
+	if state.wordPageSelectionDrag != nil {
+		return
+	}
+	if selection := state.wordParagraphSelections[paragraphID]; selection != nil && selection.pointerDragActive {
+		return
+	}
 	state.wordFormatPainterPendingParagraphID = ""
 	state.wordFormatPainterPendingRunID = ""
 	a.queueWordFormatPainterTarget(paragraphID, runID)
+}
+
+func clearWordFormatPainterTarget(state *documentSessionState) {
+	if state == nil {
+		return
+	}
+	state.wordFormatPainterTargetRunID = ""
+	state.wordFormatPainterTargetParagraphID = ""
+	state.wordFormatPainterTargetSelection = false
+	state.wordFormatPainterStartRunID = ""
+	state.wordFormatPainterStartOffset = 0
+	state.wordFormatPainterEndRunID = ""
+	state.wordFormatPainterEndOffset = 0
+	state.wordFormatPainterSelectionText = ""
+}
+
+func wordFormatPainterTargetSelection(state *documentSessionState, focusedRunID string) (startRunID string, startOffset int, endRunID string, endOffset int, selectedText string, ok bool) {
+	if state == nil || focusedRunID == "" {
+		return "", 0, "", 0, "", false
+	}
+	selection := state.wordPageTextSelection
+	if start, end, active := wordPageOrderedSelection(selection); active && wordPageSelectionContainsRun(selection, focusedRunID) {
+		selectedText, ok = wordPageSelectedText(state)
+		if ok && selectedText != "" {
+			return start.runID, start.runeOffset, end.runID, end.runeOffset, selectedText, true
+		}
+	}
+	editor := state.wordRunEditors[focusedRunID]
+	if editor == nil {
+		return "", 0, "", 0, "", false
+	}
+	startOffset, endOffset = editor.Selection()
+	if endOffset < startOffset {
+		startOffset, endOffset = endOffset, startOffset
+	}
+	if startOffset < 0 || endOffset <= startOffset || endOffset > len([]rune(editor.Text())) {
+		return "", 0, "", 0, "", false
+	}
+	selectedText = string([]rune(editor.Text())[startOffset:endOffset])
+	if selectedText == "" {
+		return "", 0, "", 0, "", false
+	}
+	return focusedRunID, startOffset, focusedRunID, endOffset, selectedText, true
+}
+
+func wordPageSelectionContainsRun(selection *wordPageTextSelection, runID string) bool {
+	start, end, active := wordPageOrderedSelection(selection)
+	if !active {
+		return false
+	}
+	if start.runID == end.runID {
+		return runID == start.runID
+	}
+	runOrder, exists := selection.runOrder[runID]
+	startOrder, startExists := selection.runOrder[start.runID]
+	endOrder, endExists := selection.runOrder[end.runID]
+	return exists && startExists && endExists && runOrder >= startOrder && runOrder <= endOrder
 }
 
 func wordParagraphContainsRun(paragraph document.WordParagraph, runID string) bool {
@@ -288,29 +365,64 @@ func (a *App) startWordFormatPainter() {
 	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() || state.wordFormatPainterSourceRunID == "" || state.wordFormatPainterTargetRunID == "" {
 		return
 	}
-	painter, ok := any(state.word).(document.WordFormatPainter)
-	if !ok {
+	sourceRunID := state.wordFormatPainterSourceRunID
+	targetRunID := state.wordFormatPainterTargetRunID
+	targetRange := state.wordFormatPainterTargetSelection
+	startRunID, startOffset := state.wordFormatPainterStartRunID, state.wordFormatPainterStartOffset
+	endRunID, endOffset := state.wordFormatPainterEndRunID, state.wordFormatPainterEndOffset
+	selectionText := state.wordFormatPainterSelectionText
+	var apply func() error
+	if targetRange {
+		if !wordFormatPainterSelectionStillMatches(state, startRunID, startOffset, endRunID, endOffset, selectionText) {
+			state.wordFormatPainterSourceRunID = ""
+			clearWordFormatPainterTarget(state)
+			a.setStatus("目标文字已变化，请重新选择后使用格式刷")
+			return
+		}
+		if selectedPainter, ok := any(state.word).(document.WordTextSelectionFormatPainter); ok {
+			apply = func() error {
+				_, err := selectedPainter.ApplyWordFormattingToTextSelection(sourceRunID, startRunID, startOffset, endRunID, endOffset)
+				return err
+			}
+		}
+	} else if selectedPainter, ok := any(state.word).(document.WordFormatPainter); ok {
+		apply = func() error {
+			_, err := selectedPainter.ApplyWordFormatting(sourceRunID, targetRunID)
+			return err
+		}
+	}
+	if apply == nil {
 		state.wordFormatPainterSourceRunID = ""
-		state.wordFormatPainterTargetRunID = ""
-		state.wordFormatPainterTargetParagraphID = ""
+		clearWordFormatPainterTarget(state)
 		return
 	}
-	sourceRunID, targetRunID := state.wordFormatPainterSourceRunID, state.wordFormatPainterTargetRunID
 	state.wordFormatPainterSourceRunID = ""
-	state.wordFormatPainterTargetRunID = ""
-	state.wordFormatPainterTargetParagraphID = ""
+	clearWordFormatPainterTarget(state)
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
 		return
 	}
 	a.setStatus("正在应用格式刷")
 	generation := a.documentGeneration
 	a.launchManagedBackground(func() {
-		blocks, err := runWordMutation(state, func() error {
-			_, err := painter.ApplyWordFormatting(sourceRunID, targetRunID)
-			return err
-		})
+		blocks, err := runWordMutation(state, apply)
 		a.publishWordCommand(wordCommandResult{state: state, generation: generation, operation: "格式刷", err: err, blocks: blocks})
 	})
+}
+
+func wordFormatPainterSelectionStillMatches(state *documentSessionState, startRunID string, startOffset int, endRunID string, endOffset int, expected string) bool {
+	if selection := state.wordPageTextSelection; wordPageTextSelectionActive(selection) && wordPageSelectionContainsRun(selection, startRunID) {
+		selected, ok := wordPageSelectedText(state)
+		return ok && selected == expected
+	}
+	if startRunID != endRunID {
+		return false
+	}
+	blocks := wordBlocksForState(state)
+	run, ok := selectedWordRun(blocks, startRunID)
+	if !ok || startOffset < 0 || endOffset < startOffset || endOffset > len([]rune(run.Text)) {
+		return false
+	}
+	return string([]rune(run.Text)[startOffset:endOffset]) == expected
 }
 
 func (a *App) setWordAlignment(actionID string) {

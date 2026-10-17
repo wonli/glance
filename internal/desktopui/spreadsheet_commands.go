@@ -29,6 +29,8 @@ type spreadsheetFormatResult struct {
 	replaceAll  *spreadsheetReplaceAllPlan
 	dimensions  []spreadsheetDimensionChange
 	panes       *document.SpreadsheetPaneFreeze
+	merge       *document.SpreadsheetMergeResult
+	mergeBounds *document.CellRange
 }
 
 type spreadsheetDimensionChange struct {
@@ -216,8 +218,12 @@ func (a *App) applyBatchEditsWithDetailsForSheetAndRangeEntry(edits []document.C
 			unlock()
 		}
 		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
+		noOp, resultDetails := rangeEntry != nil && err == nil && !changed, details
+		if noOp {
+			resultDetails = "选区内容未变化"
+		}
 		select {
-		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed, details: details, rangeEntry: rangeEntry}:
+		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed, noOp: noOp, details: resultDetails, rangeEntry: rangeEntry}:
 		case <-a.shutdown:
 		}
 	})

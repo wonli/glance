@@ -91,7 +91,7 @@ func spreadsheetToolbarNumberFormatLabel(format string) string {
 		return "百分比"
 	case "yyyy-mm-dd", "m/d/yy", "builtin:14":
 		return "日期"
-	case "h:mm AM/PM", "builtin:18":
+	case "h:mm AM/PM", "h:mm", "builtin:18", "builtin:20":
 		return "时间"
 	case "0.00E+00", "builtin:11":
 		return "科学计数"

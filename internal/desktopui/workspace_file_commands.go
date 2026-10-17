@@ -165,7 +165,7 @@ func scanOfficeFolder(path string) ([]workspace.Recent, error) {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext != ".pdf" && ext != ".xlsx" && ext != ".xls" && ext != ".doc" && ext != ".docx" && ext != ".pptx" && ext != ".json" && ext != ".md" && ext != ".markdown" {
+		if ext != ".pdf" && ext != ".xlsx" && ext != ".xls" && ext != ".doc" && ext != ".docx" && ext != ".pptx" && ext != ".json" && ext != ".md" && ext != ".markdown" && ext != ".csv" {
 			continue
 		}
 		recents = append(recents, workspace.Recent{Path: filepath.Join(path, entry.Name()), Kind: strings.TrimPrefix(ext, ".")})

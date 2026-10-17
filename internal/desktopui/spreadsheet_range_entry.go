@@ -51,10 +51,15 @@ func (a *App) enterSpreadsheetValueInSelection(value string) error {
 }
 
 type spreadsheetFormulaRangeEntryArguments struct {
-	Sheet   string                  `json:"sheet"`
-	Active  document.CellCoordinate `json:"active"`
-	Bounds  document.CellRange      `json:"bounds"`
-	Formula string                  `json:"formula"`
+	Sheet   string             `json:"sheet"`
+	Active  spreadsheetCellXY  `json:"active"`
+	Bounds  document.CellRange `json:"bounds"`
+	Formula string             `json:"formula"`
+}
+
+type spreadsheetCellXY struct {
+	Row    int `json:"row"`
+	Column int `json:"column"`
 }
 
 func (a *App) applySpreadsheetFormulaRangeEntry(active document.CellCoordinate, bounds document.CellRange, formula string) error {
@@ -74,7 +79,9 @@ func (a *App) applySpreadsheetFormulaRangeEntry(active document.CellCoordinate, 
 		return fmt.Errorf("表格正在处理其他操作")
 	}
 	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
-	arguments := spreadsheetFormulaRangeEntryArguments{Sheet: sheet, Active: active, Bounds: bounds, Formula: formula}
+	arguments := spreadsheetFormulaRangeEntryArguments{
+		Sheet: sheet, Active: spreadsheetCellXY{Row: active.Row, Column: active.Column}, Bounds: bounds, Formula: formula,
+	}
 	entryValue := formula
 	if !a.launchManagedBackground(func() {
 		commandRouted := a.applicationSessionRegistered(token.documentID)

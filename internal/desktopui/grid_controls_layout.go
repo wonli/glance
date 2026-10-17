@@ -218,7 +218,11 @@ func (a *App) goToCell(gtx layout.Context) bool {
 }
 
 func (a *App) navigateToCell(row, column int) {
-	if row < 1 || column < 1 || row > xlsxRows || column > xlsxColumns {
+	maxRows := xlsxRows
+	if a.virtualGrid != nil && a.virtualGrid.Rows != nil && a.virtualGrid.Rows.Count() > maxRows {
+		maxRows = a.virtualGrid.Rows.Count()
+	}
+	if row < 1 || column < 1 || row > maxRows || column > xlsxColumns {
 		return
 	}
 	position := CellPosition{Row: row - 1, Column: column - 1}
@@ -226,8 +230,12 @@ func (a *App) navigateToCell(row, column int) {
 }
 
 func (a *App) navigateToRange(first, last CellPosition) {
+	maxRows := xlsxRows
+	if a.virtualGrid != nil && a.virtualGrid.Rows != nil && a.virtualGrid.Rows.Count() > maxRows {
+		maxRows = a.virtualGrid.Rows.Count()
+	}
 	if a.virtualGrid == nil || first.Row < 0 || first.Column < 0 || last.Row < 0 || last.Column < 0 ||
-		first.Row >= xlsxRows || first.Column >= xlsxColumns || last.Row >= xlsxRows || last.Column >= xlsxColumns {
+		first.Row >= maxRows || first.Column >= xlsxColumns || last.Row >= maxRows || last.Column >= xlsxColumns {
 		return
 	}
 	state, v := a.documentSessionState, a.virtualGrid

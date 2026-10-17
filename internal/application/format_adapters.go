@@ -9,8 +9,10 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"glance/internal/document"
+	csvdoc "glance/internal/format/csv"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
 	"glance/internal/format/markdowndoc"
@@ -71,12 +73,17 @@ type adapterFuncs struct {
 	groupPresentationElements        func(context.Context, uint32, []uint32) (uint32, bool, error)
 	setCellText                      func(context.Context, string, string, string) (bool, error)
 	setCellValue                     func(context.Context, string, string, document.CellValue) (bool, error)
+	setCellDate                      func(context.Context, string, string, time.Time) (bool, error)
+	setCellTime                      func(context.Context, string, string, time.Time) (bool, error)
 	setCellFormula                   func(context.Context, string, string, string) (bool, error)
 	setCellFormulas                  func(context.Context, string, []document.CellFormulaEdit) (bool, error)
 	setFormulaRange                  func(context.Context, string, document.CellCoordinate, document.CellRange, string) (bool, error)
 	recalculateSpreadsheet           func(context.Context) error
 	setCells                         func(context.Context, string, []document.CellEdit) (bool, error)
 	transferCellRange                func(context.Context, string, document.CellRange, int, int, [][]document.Cell) (bool, error)
+	fillDown                         func(context.Context, string, document.CellRange) (bool, error)
+	fillRight                        func(context.Context, string, document.CellRange) (bool, error)
+	mergeCells                       func(context.Context, string, document.CellRange, string) (document.SpreadsheetMergeResult, error)
 	clearCellRange                   func(context.Context, string, document.CellRange) (bool, error)
 	setCellFormats                   func(context.Context, string, document.CellRange, document.CellFormatPatch) (bool, error)
 	paintCellFormat                  func(context.Context, string, string, document.CellRange) (bool, error)
@@ -177,6 +184,7 @@ type adapterFuncs struct {
 	appendWordText                   func(context.Context, string) (string, string, error)
 	readWordComments                 func(context.Context) ([]document.WordComment, error)
 	addWordComment                   func(context.Context, string, string, string) (string, bool, error)
+	addWordSelectionComment          func(context.Context, string, int, string, int, string, string) (string, bool, error)
 	deleteWordComment                func(context.Context, string) (bool, error)
 }
 
@@ -207,6 +215,7 @@ func applyWordPageSetupSnapshot(ctx context.Context, doc *docx.Document, update 
 }
 
 var _ WordCommentAccess = (*adapterFuncs)(nil)
+var _ WordTextSelectionCommentAccess = (*adapterFuncs)(nil)
 var _ PresentationCommentAccess = (*adapterFuncs)(nil)
 
 func (a *adapterFuncs) Format() Format { return a.format }
@@ -782,6 +791,32 @@ func (a *adapterFuncs) SetSpreadsheetCellValue(ctx context.Context, sheet, cell 
 	return a.setCellValue(ctx, sheet, cell, value)
 }
 
+func (a *adapterFuncs) SetSpreadsheetCellDate(ctx context.Context, sheet, cell string, date time.Time) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if a.readOnly {
+		return false, ErrReadOnlyDocument
+	}
+	if a.setCellDate == nil {
+		return false, ErrCapabilityUnsupported
+	}
+	return a.setCellDate(ctx, sheet, cell, date)
+}
+
+func (a *adapterFuncs) SetSpreadsheetCellTime(ctx context.Context, sheet, cell string, value time.Time) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if a.readOnly {
+		return false, ErrReadOnlyDocument
+	}
+	if a.setCellTime == nil {
+		return false, ErrCapabilityUnsupported
+	}
+	return a.setCellTime(ctx, sheet, cell, value)
+}
+
 func (a *adapterFuncs) SetSpreadsheetCellFormula(ctx context.Context, sheet, cell, formula string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -858,6 +893,45 @@ func (a *adapterFuncs) TransferSpreadsheetCellRange(ctx context.Context, sheet s
 		return false, ErrCapabilityUnsupported
 	}
 	return a.transferCellRange(ctx, sheet, source, targetRow, targetColumn, cells)
+}
+
+func (a *adapterFuncs) FillDownSpreadsheet(ctx context.Context, sheet string, bounds document.CellRange) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if a.readOnly {
+		return false, ErrReadOnlyDocument
+	}
+	if a.fillDown == nil {
+		return false, ErrCapabilityUnsupported
+	}
+	return a.fillDown(ctx, sheet, bounds)
+}
+
+func (a *adapterFuncs) FillRightSpreadsheet(ctx context.Context, sheet string, bounds document.CellRange) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if a.readOnly {
+		return false, ErrReadOnlyDocument
+	}
+	if a.fillRight == nil {
+		return false, ErrCapabilityUnsupported
+	}
+	return a.fillRight(ctx, sheet, bounds)
+}
+
+func (a *adapterFuncs) MergeCellsSpreadsheet(ctx context.Context, sheet string, bounds document.CellRange, confirmationToken string) (document.SpreadsheetMergeResult, error) {
+	if err := ctx.Err(); err != nil {
+		return document.SpreadsheetMergeResult{}, err
+	}
+	if a.readOnly {
+		return document.SpreadsheetMergeResult{}, ErrReadOnlyDocument
+	}
+	if a.mergeCells == nil {
+		return document.SpreadsheetMergeResult{}, ErrCapabilityUnsupported
+	}
+	return a.mergeCells(ctx, sheet, bounds, confirmationToken)
 }
 
 func (a *adapterFuncs) SetSpreadsheetCellFormats(ctx context.Context, sheet string, bounds document.CellRange, patch document.CellFormatPatch) (bool, error) {
@@ -2082,6 +2156,19 @@ func (a *adapterFuncs) AddWordComment(ctx context.Context, runID, author, text s
 	return a.addWordComment(ctx, runID, author, text)
 }
 
+func (a *adapterFuncs) AddWordCommentForTextSelection(ctx context.Context, startRunID string, startOffset int, endRunID string, endOffset int, author, text string) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	if a.readOnly {
+		return "", false, ErrReadOnlyDocument
+	}
+	if a.addWordSelectionComment == nil {
+		return "", false, ErrCapabilityUnsupported
+	}
+	return a.addWordSelectionComment(ctx, startRunID, startOffset, endRunID, endOffset, author, text)
+}
+
 func (a *adapterFuncs) DeleteWordComment(ctx context.Context, commentID string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -2104,6 +2191,7 @@ func defaultFormatFactories() []FormatFactory {
 		builtInFormatFactory{format: FormatDocx},
 		builtInFormatFactory{format: FormatXLSX},
 		builtInFormatFactory{format: FormatXLS},
+		builtInFormatFactory{format: FormatCSV},
 		builtInFormatFactory{format: FormatPPTX},
 		builtInFormatFactory{format: FormatPDF},
 		builtInFormatFactory{format: FormatJSON},
@@ -2128,6 +2216,12 @@ func (f builtInFormatFactory) Open(ctx context.Context, path string) (DocumentAd
 			return nil, err
 		}
 		return spreadsheetAdapter(FormatXLSX, path, d, !d.Editable(), d.Save, d.SaveAsDocument, d.Close), nil
+	case FormatCSV:
+		d, err := csvdoc.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		return spreadsheetAdapter(FormatCSV, path, d, !d.Editable(), d.Save, d.SaveAsDocument, d.Close), nil
 	case FormatXLS:
 		converted, err := legacyxls.ConvertToTempXLSX(ctx, path)
 		if err != nil {
@@ -2192,6 +2286,9 @@ func (f builtInFormatFactory) Create(ctx context.Context) (DocumentAdapter, erro
 	case FormatXLSX:
 		d := xlsx.NewBlank()
 		return spreadsheetAdapter(FormatXLSX, "", d, !d.Editable(), d.Save, d.SaveAsDocument, d.Close), nil
+	case FormatCSV:
+		d := csvdoc.NewBlank()
+		return spreadsheetAdapter(FormatCSV, "", d, !d.Editable(), d.Save, d.SaveAsDocument, d.Close), nil
 	case FormatPPTX:
 		d, err := pptx.NewBlank()
 		if err != nil {
@@ -2365,6 +2462,16 @@ func wordAdapter(path string, d *docx.Document) DocumentAdapter {
 				return "", false, ErrCapabilityUnsupported
 			}
 			return editor.AddWordComment(runID, author, text)
+		},
+		addWordSelectionComment: func(ctx context.Context, startRunID string, startOffset int, endRunID string, endOffset int, author, text string) (string, bool, error) {
+			if err := ctx.Err(); err != nil {
+				return "", false, err
+			}
+			editor, ok := any(d).(document.WordTextSelectionCommentEditor)
+			if !ok {
+				return "", false, ErrCapabilityUnsupported
+			}
+			return editor.AddWordCommentForTextSelection(startRunID, startOffset, endRunID, endOffset, author, text)
 		},
 		deleteWordComment: func(ctx context.Context, commentID string) (bool, error) {
 			if err := ctx.Err(); err != nil {
@@ -3171,6 +3278,36 @@ func spreadsheetAdapter(format Format, path string, d document.Spreadsheet, read
 			}
 			return editor.TransferCellRangeChanged(sheet, source, targetRow, targetColumn, cells)
 		},
+		fillDown: func(ctx context.Context, sheet string, bounds document.CellRange) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			editor, ok := d.(document.SpreadsheetFillDownEditor)
+			if !ok {
+				return false, ErrCapabilityUnsupported
+			}
+			return editor.FillDownChanged(sheet, bounds)
+		},
+		fillRight: func(ctx context.Context, sheet string, bounds document.CellRange) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			editor, ok := d.(document.SpreadsheetFillRightEditor)
+			if !ok {
+				return false, ErrCapabilityUnsupported
+			}
+			return editor.FillRightChanged(sheet, bounds)
+		},
+		mergeCells: func(ctx context.Context, sheet string, bounds document.CellRange, confirmationToken string) (document.SpreadsheetMergeResult, error) {
+			if err := ctx.Err(); err != nil {
+				return document.SpreadsheetMergeResult{}, err
+			}
+			editor, ok := d.(document.SpreadsheetMergeCellsEditor)
+			if !ok {
+				return document.SpreadsheetMergeResult{}, ErrCapabilityUnsupported
+			}
+			return editor.MergeCellsChanged(sheet, bounds, confirmationToken)
+		},
 		clearCellRange: func(ctx context.Context, sheet string, bounds document.CellRange) (bool, error) {
 			if err := ctx.Err(); err != nil {
 				return false, err
@@ -3799,6 +3936,26 @@ func spreadsheetAdapter(format Format, path string, d document.Spreadsheet, read
 				return false, ErrCapabilityUnsupported
 			}
 			return editor.SetCellValueChanged(sheet, cell, value)
+		},
+		setCellDate: func(ctx context.Context, sheet, cell string, date time.Time) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			editor, ok := d.(document.SpreadsheetCellDateEditor)
+			if !ok {
+				return false, ErrCapabilityUnsupported
+			}
+			return editor.SetCellDateChanged(sheet, cell, date)
+		},
+		setCellTime: func(ctx context.Context, sheet, cell string, value time.Time) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			editor, ok := d.(document.SpreadsheetCellTimeEditor)
+			if !ok {
+				return false, ErrCapabilityUnsupported
+			}
+			return editor.SetCellTimeChanged(sheet, cell, value)
 		},
 		listSpreadsheetImages: func(ctx context.Context, sheet string) ([]document.SpreadsheetImage, error) {
 			if err := ctx.Err(); err != nil {

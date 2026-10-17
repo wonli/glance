@@ -5,6 +5,8 @@ import (
 	"math"
 	"time"
 
+	"gioui.org/widget"
+
 	"glance/internal/document"
 )
 
@@ -60,6 +62,8 @@ type gridViewport struct {
 	CellPaintCache              map[cellPaintKey]*cellPaintEntry
 	CellPaintFIFO               []cellPaintKey
 	CellEditRowPreview          *gridCellRowPreview
+	VerticalScrollbar           widget.Scrollbar
+	ScrollbarWidthPx            int
 }
 
 type gridLoadResult struct {
@@ -78,9 +82,35 @@ type gridLoadResult struct {
 }
 
 func newGridViewport() *gridViewport {
-	r, _ := NewAxisGeometry(xlsxRows, gridDefaultRow)
-	c, _ := NewAxisGeometry(xlsxColumns, gridDefaultColumn)
+	return newGridViewportWithCounts(xlsxRows, xlsxColumns)
+}
+
+func newGridViewportWithCounts(rowCount, colCount int) *gridViewport {
+	if rowCount < xlsxRows {
+		rowCount = xlsxRows
+	}
+	if colCount < xlsxColumns {
+		colCount = xlsxColumns
+	}
+	r, _ := NewAxisGeometry(rowCount, gridDefaultRow)
+	c, _ := NewAxisGeometry(colCount, gridDefaultColumn)
 	return &gridViewport{Rows: r, Columns: c, Scale: 1}
+}
+
+func newGridViewportForSpreadsheet(book document.Spreadsheet, sheet string) *gridViewport {
+	rowCount := xlsxRows
+	colCount := xlsxColumns
+	if dimReader, ok := book.(document.SpreadsheetDimensionReader); ok && sheet != "" {
+		if c, r, err := dimReader.Dimension(sheet); err == nil {
+			if r > rowCount {
+				rowCount = r
+			}
+			if c > colCount {
+				colCount = c
+			}
+		}
+	}
+	return newGridViewportWithCounts(rowCount, colCount)
 }
 
 func (v *gridViewport) setScale(scale float64) {

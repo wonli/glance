@@ -3,17 +3,21 @@ package desktopui
 import (
 	"image"
 	"io"
+	"math"
 	"time"
 
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
+	"gioui.org/io/semantic"
 	"gioui.org/io/transfer"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
+	"gioui.org/widget/material"
 
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
@@ -46,6 +50,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 	columnHeaderPx := gtx.Dp(unit.Dp(gridColumnHeader))
 	contentW, contentH := width-float64(rowHeaderPx), height-float64(columnHeaderPx)
 	a.lastGridWidth, a.lastGridHeight = contentW, contentH
+	if v.ScrollbarWidthPx <= 0 {
+		v.ScrollbarWidthPx = gtx.Dp(unit.Dp(10))
+	}
 	a.pollGridLoad(v)
 	visible := v.visiblePaneRanges(contentW, contentH)
 	if imageReader, ok := any(a.book).(document.SpreadsheetImageReader); ok {
@@ -58,14 +65,20 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 	}
 	if v.GeometryChanged {
 		v.GeometryChanged = false
-		a.window.Invalidate()
+		if a.window != nil {
+			a.window.Invalidate()
+		}
 	}
 	if v.PendingSelectionLoad && v.cellLoaded(v.SelectedRow, v.SelectedColumn) {
 		cell := v.cell(v.SelectedRow, v.SelectedColumn)
 		if !a.documentSessionState.formulaReference.Active {
 			value := cellEditorText(cell)
 			a.cellEdit.selectCell(a.selectedCell, value)
-			a.formulaEditor.SetText(value)
+			if a.selectionSet {
+				a.formulaEditor.SetText(value)
+			} else {
+				a.formulaEditor.SetText("")
+			}
 		}
 		v.PendingSelectionLoad = false
 	}
@@ -247,6 +260,11 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				a.window.Invalidate()
 			}
 		case pointer.Move:
+			if v.ScrollbarWidthPx > 0 && int(pe.Position.X) >= gtx.Constraints.Max.X-v.ScrollbarWidthPx && int(pe.Position.Y) >= columnHeaderPx {
+				v.ResizeCursor = 0
+				v.PictureResizeCursor, v.PictureMoveCursor = false, false
+				break
+			}
 			axis, _, _, _, hit := gridResizeHandleAt(v, int(pe.Position.X), int(pe.Position.Y), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
 			v.ResizeCursor = 0
 			if hit {
@@ -291,6 +309,9 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 						continue
 					}
 				}
+			}
+			if v.ScrollbarWidthPx > 0 && int(pe.Position.X) >= gtx.Constraints.Max.X-v.ScrollbarWidthPx && int(pe.Position.Y) >= columnHeaderPx {
+				break
 			}
 			axis, index, edge, sizePx, resizeHit := gridResizeHandleAt(v, int(pe.Position.X), int(pe.Position.Y), gtx.Dp(unit.Dp(gridRowHeader)), gtx.Dp(unit.Dp(gridColumnHeader)))
 			if resizeHit {
@@ -513,7 +534,80 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		paint.FillShape(gtx.Ops, gridLine, clip.Stroke{Path: gridShape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
 	}
 	pass.Pop()
+	a.layoutGridVerticalScrollbar(gtx, v, contentW, contentH, columnHeaderPx)
 	area.Pop()
+	return dims
+}
+
+func (a *App) layoutGridVerticalScrollbar(gtx layout.Context, v *gridViewport, contentW, contentH float64, columnHeaderPx int) layout.Dimensions {
+	if v == nil || v.Rows == nil || gtx.Constraints.Max.Y <= columnHeaderPx {
+		return layout.Dimensions{}
+	}
+	trackLen := gtx.Constraints.Max.Y - columnHeaderPx
+	if trackLen <= 1 {
+		return layout.Dimensions{}
+	}
+
+	theme := a.theme
+	if theme == nil {
+		theme = material.NewTheme()
+	}
+	style := material.Scrollbar(theme, &v.VerticalScrollbar)
+	trackWidth := gtx.Dp(style.Width())
+	if trackWidth <= 0 {
+		trackWidth = gtx.Dp(unit.Dp(10))
+	}
+	v.ScrollbarWidthPx = trackWidth
+
+	frozenWidth, frozenHeight := v.frozenViewportExtent(contentW, contentH)
+	_ = frozenWidth
+	bodyHeight := math.Max(0, contentH-frozenHeight)
+	totalHeight := v.Rows.TotalSize()
+	maxY := math.Max(0, totalHeight-v.frozenRowBoundary()-bodyHeight)
+
+	start, end := float32(0), float32(1)
+	if maxY > 0 && totalHeight > 0 {
+		minThumbPx := min(trackLen-1, max(16, gtx.Dp(style.Indicator.MajorMinLen)))
+		rawThumbPx := int(math.Round(float64(bodyHeight) * float64(trackLen) / float64(totalHeight)))
+		thumbPx := max(minThumbPx, min(trackLen-1, rawThumbPx))
+		travelPx := trackLen - thumbPx
+		startPx := int(math.Round(float64(v.Y) * float64(travelPx) / float64(maxY)))
+		startPx = max(0, min(travelPx, startPx))
+		start = float32(startPx) / float32(trackLen)
+		end = float32(startPx+thumbPx) / float32(trackLen)
+	}
+
+	trackClip := clip.Rect{
+		Min: image.Pt(max(0, gtx.Constraints.Max.X-trackWidth), columnHeaderPx),
+		Max: image.Pt(gtx.Constraints.Max.X, gtx.Constraints.Max.Y),
+	}.Push(gtx.Ops)
+	semantic.DescriptionOp("表格垂直滚动条").Add(gtx.Ops)
+	trackClip.Pop()
+
+	offset := op.Offset(image.Pt(max(0, gtx.Constraints.Max.X-trackWidth), columnHeaderPx)).Push(gtx.Ops)
+	sGTX := gtx
+	sGTX.Constraints = layout.Constraints{
+		Min: image.Pt(trackWidth, trackLen),
+		Max: image.Pt(trackWidth, trackLen),
+	}
+	dims := style.Layout(sGTX, layout.Vertical, start, end)
+	offset.Pop()
+
+	if delta := v.VerticalScrollbar.ScrollDistance(); delta != 0 && maxY > 0 {
+		travelFrac := 1 - (end - start)
+		if travelFrac > 0 {
+			progress := (start + delta) / travelFrac
+			if progress < 0 {
+				progress = 0
+			} else if progress > 1 {
+				progress = 1
+			}
+			v.Y = float64(progress) * maxY
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		}
+	}
 	return dims
 }
 

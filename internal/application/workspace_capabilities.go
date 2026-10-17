@@ -58,7 +58,7 @@ func registerWorkspaceCapabilities(catalog *Catalog) error {
 			format := strings.ToLower(strings.TrimSpace(input.Format))
 			if format != "" {
 				switch Format(format) {
-				case FormatDOC, FormatDocx, FormatXLSX, FormatXLS, FormatPPTX, FormatPDF, FormatJSON, FormatMarkdown:
+				case FormatDOC, FormatDocx, FormatXLSX, FormatXLS, FormatCSV, FormatPPTX, FormatPDF, FormatJSON, FormatMarkdown:
 				default:
 					return CapabilityResult{}, ErrInvalidCommandArguments
 				}

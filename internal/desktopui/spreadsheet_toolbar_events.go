@@ -7,6 +7,7 @@ import (
 
 	"gioui.org/layout"
 
+	"glance/internal/application"
 	"glance/internal/document"
 )
 
@@ -85,7 +86,11 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			continue
 		}
 		if action.slot == toolbarActionSaveAs {
-			a.startSaveAsPicker("xlsx")
+			ext := "xlsx"
+			if state.sourceFormat == application.FormatCSV {
+				ext = "csv"
+			}
+			a.startSaveAsPicker(ext)
 			continue
 		}
 		if action.slot == toolbarActionPrint {
@@ -169,6 +174,12 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 		}
 		if action.slot == toolbarActionSum {
 			a.applySpreadsheetAutoSum()
+			continue
+		}
+		if action.slot == toolbarActionMergeCenter {
+			if err := a.mergeSpreadsheetSelection(); err != nil {
+				a.setStatus(err.Error())
+			}
 			continue
 		}
 		if action.slot == toolbarActionFind {

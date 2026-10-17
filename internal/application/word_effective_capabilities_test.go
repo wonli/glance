@@ -190,6 +190,63 @@ func TestWordCommentCapabilitiesAddListDeleteRoundTrip(t *testing.T) {
 	}
 }
 
+func TestWordCommentCapabilityAnchorsExplicitTextSelection(t *testing.T) {
+	ctx := context.Background()
+	runtime, err := NewRuntime(ctx, RuntimeOptions{})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background()) })
+	doc, err := runtime.CreateDocument(ctx, FormatDocx)
+	if err != nil {
+		t.Fatalf("CreateDocument(DOCX): %v", err)
+	}
+	operator := Operator{ID: "word-comment-selection-test", Kind: OperatorHuman}
+	appended, err := runtime.Commands().Execute(ctx, CommandRequest{
+		RequestID: "word-comment-selection-anchor", DocumentID: doc.DocumentID, CommandID: "word.paragraph.append",
+		ExpectedRevision: doc.Revision, Operator: operator,
+		Arguments: mustJSON(t, map[string]string{"text": "甲豆豆乙"}),
+	})
+	if err != nil {
+		t.Fatalf("append text for selected comment: %v", err)
+	}
+	var target struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal(appended.Data, &target); err != nil || target.RunID == "" {
+		t.Fatalf("paragraph append result = %s, error=%v", appended.Data, err)
+	}
+	added, err := runtime.InvokeCapability(ctx, CapabilityRequest{
+		RequestID: "word-comment-selection-add", DocumentID: doc.DocumentID, CapabilityID: "word.comment.add",
+		ExpectedRevision: appended.Revision, Operator: operator,
+		Arguments: mustJSON(t, map[string]any{
+			"run_id": target.RunID, "start_run_id": target.RunID, "start_offset": 1,
+			"end_run_id": target.RunID, "end_offset": 3, "text": "请复核豆豆。",
+		}),
+	})
+	if err != nil {
+		t.Fatalf("add selected-range Word comment: %v", err)
+	}
+	var result struct {
+		Changed   bool   `json:"changed"`
+		CommentID string `json:"comment_id"`
+		RunID     string `json:"run_id"`
+	}
+	if err := json.Unmarshal(added.Data, &result); err != nil || !result.Changed || result.CommentID == "" || result.RunID != target.RunID {
+		t.Fatalf("selection comment result = %s, error=%v", added.Data, err)
+	}
+	listed, err := runtime.InvokeCapability(ctx, CapabilityRequest{
+		RequestID: "word-comment-selection-list", DocumentID: doc.DocumentID, CapabilityID: "word.comments.list",
+		ExpectedRevision: added.Revision, Operator: operator, Arguments: mustJSON(t, map[string]int{"limit": 10}),
+	})
+	if err != nil {
+		t.Fatalf("list selected-range comment: %v", err)
+	}
+	if !containsJSONText(listed.Data, result.CommentID) || !containsJSONText(listed.Data, "请复核豆豆。") {
+		t.Fatalf("selected-range comment missing from listing: %s", listed.Data)
+	}
+}
+
 func TestWordThemeEffectsAndAddinsCapabilitiesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := NewRuntime(ctx, RuntimeOptions{})

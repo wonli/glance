@@ -18,7 +18,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.flash_fill.apply", Name: "按已有模式填充空白单元格",
 				Description: "在明确范围内按现有数字序列或文本模式填充空白单元格，不覆盖非空单元格。最多处理 10000 个单元格。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false}},"required":["sheet","bounds"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"bounds":{"type":"object"},"rows_filled":{"type":"integer","minimum":0}},"required":["sheet","bounds","rows_filled"],"additionalProperties":false}`),
@@ -54,7 +54,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.formulas.fill", Name: "向选区输入公式",
 				Description: "将活动单元格输入的公式写入明确的单元格矩形，并按每个目标单元格相对于活动单元格的偏移调整相对 A1 引用；绝对引用保持固定。最多处理 10000 个单元格，整个矩形作为一个可撤销操作。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"active":{"type":"object","properties":{"row":{"type":"integer","minimum":1,"maximum":1048576},"column":{"type":"integer","minimum":1,"maximum":16384}},"required":["row","column"],"additionalProperties":false},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"formula":{"type":"string","minLength":1,"maxLength":8192}},"required":["sheet","active","bounds","formula"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"bounds":{"type":"object"}},"required":["changed","sheet","bounds"],"additionalProperties":false}`),
@@ -96,7 +96,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.comment.add", Name: "新增或更新单元格批注",
 				Description: "为明确单元格新增或更新批注；同一单元格已有批注时会替换原批注。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"cell":{"type":"string","minLength":2,"maxLength":8},"author":{"type":"string","maxLength":255,"description":"批注作者，最多 255 个 Unicode 字符。"},"text":{"type":"string","minLength":1,"maxLength":32767,"description":"批注内容，最多 32767 个 Unicode 字符。"}},"required":["sheet","cell","text"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"cell":{"type":"string"},"author":{"type":"string"},"text":{"type":"string"},"changed":{"type":"boolean"}},"required":["sheet","cell","author","text","changed"],"additionalProperties":false}`),
@@ -140,7 +140,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.comment.delete", Name: "删除单元格批注",
 				Description: "删除明确单元格中的批注。此操作会永久移除该批注；Agent 调用需人类确认。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskHigh,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskHigh,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"cell":{"type":"string","minLength":2,"maxLength":10}},"required":["sheet","cell"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"cell":{"type":"string"},"changed":{"type":"boolean"}},"required":["sheet","cell","changed"],"additionalProperties":false}`),
@@ -176,7 +176,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.comments.get", Name: "读取工作表批注",
 				Description: "读取明确工作表中所有批注的单元格、作者和文本。",
-				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityQuery, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1}},"required":["sheet"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"comments":{"type":"array","items":{"type":"object","properties":{"author":{"type":"string"},"cell":{"type":"string"},"text":{"type":"string"}},"required":["author","cell","text"],"additionalProperties":false}}},"required":["sheet","comments"],"additionalProperties":false}`),
@@ -213,7 +213,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.hyperlink.get", Name: "读取单元格超链接",
 				Description: "读取明确工作表和单元格的超链接目标及提示文本；没有链接时 exists 为 false。",
-				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityQuery, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"cell":{"type":"string","minLength":2,"maxLength":10}},"required":["sheet","cell"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"cell":{"type":"string"},"exists":{"type":"boolean"},"target":{"type":"string"},"tooltip":{"type":"string"}},"required":["sheet","cell","exists","target","tooltip"],"additionalProperties":false}`),
@@ -251,7 +251,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.hyperlink.remove", Name: "删除单元格超链接",
 				Description: "删除明确工作表和单元格中的超链接。此操作会移除现有链接，Agent 调用需人类确认。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskHigh,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskHigh,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"cell":{"type":"string","minLength":2,"maxLength":8}},"required":["sheet","cell"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"cell":{"type":"string"},"changed":{"type":"boolean"}},"required":["sheet","cell","changed"],"additionalProperties":false}`),
@@ -287,7 +287,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.hyperlink.set", Name: "设置单元格超链接",
 				Description: "为明确工作表和单元格设置外部 URL 或工作簿内位置链接，并可指定悬停提示；不会自动打开目标地址。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"cell":{"type":"string","minLength":2,"maxLength":10},"target":{"type":"string","minLength":1,"maxLength":2048},"tooltip":{"type":"string","maxLength":255}},"required":["sheet","cell","target"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"cell":{"type":"string"},"target":{"type":"string"},"tooltip":{"type":"string"},"changed":{"type":"boolean"}},"required":["sheet","cell","target","tooltip","changed"],"additionalProperties":false}`),
@@ -328,7 +328,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.duplicates.remove", Name: "删除范围内重复行",
 				Description: "按指定键列或整行内容查找重复项。此格式适配器会删除工作表整行，可能影响选择区域之外的列；Agent 调用需人类确认。范围最多 100000 个单元格。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskHigh,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskHigh,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"key_column":{"type":"integer","minimum":0,"maximum":16384}},"required":["sheet","bounds","key_column"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"bounds":{"type":"object"},"key_column":{"type":"integer"},"removed_count":{"type":"integer","minimum":0},"remaining_count":{"type":"integer","minimum":0}},"required":["sheet","bounds","key_column","removed_count","remaining_count"],"additionalProperties":false}`),
@@ -367,7 +367,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.panes.get", Name: "读取工作表冻结窗格",
 				Description: "读取明确工作表当前冻结状态、冻结行数和列数。",
-				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityQuery, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1}},"required":["sheet"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"frozen":{"type":"boolean"},"x_split":{"type":"integer","minimum":0},"y_split":{"type":"integer","minimum":0}},"required":["sheet","frozen","x_split","y_split"],"additionalProperties":false}`),
@@ -403,7 +403,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.panes.set", Name: "设置工作表冻结窗格",
 				Description: "按明确行列冻结位置调整或取消冻结窗格。freeze_rows 冻结顶端行，freeze_columns 冻结左侧列，freeze_at 按行列数冻结，unfreeze 清除冻结。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"operation":{"type":"string","enum":["freeze_rows","freeze_columns","freeze_at","unfreeze"]},"rows":{"type":"integer","minimum":0,"maximum":1048575},"columns":{"type":"integer","minimum":0,"maximum":16383}},"required":["sheet","operation"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"operation":{"type":"string"},"frozen":{"type":"boolean"},"x_split":{"type":"integer","minimum":0},"y_split":{"type":"integer","minimum":0},"changed":{"type":"boolean"}},"required":["sheet","operation","frozen","x_split","y_split","changed"],"additionalProperties":false}`),
@@ -468,7 +468,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.view.get", Name: "读取工作表视图",
 				Description: "读取明确工作表保存的显示模式、标尺和缩放比例。",
-				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityQuery, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1}},"required":["sheet"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"view_mode":{"type":"string","enum":["normal","pageBreakPreview","pageLayout"]},"show_ruler":{"type":"boolean"},"zoom_percent":{"type":"integer","minimum":10,"maximum":400}},"required":["sheet","view_mode","show_ruler","zoom_percent"],"additionalProperties":false}`),
@@ -511,7 +511,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.view.mode.set", Name: "设置工作表显示模式",
 				Description: "将明确工作表设为普通视图或分页预览，并保存该工作表的视图设置；不会修改单元格内容。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"mode":{"type":"string","enum":["normal","pageBreakPreview"]}},"required":["sheet","mode"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"mode":{"type":"string","enum":["normal","pageBreakPreview"]},"changed":{"type":"boolean"}},"required":["sheet","mode","changed"],"additionalProperties":false}`),
@@ -547,7 +547,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.view.ruler.set", Name: "设置工作表标尺",
 				Description: "显示或隐藏明确工作表的标尺，并保存该工作表的视图设置；不会修改单元格内容。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"show_ruler":{"type":"boolean"}},"required":["sheet","show_ruler"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"show_ruler":{"type":"boolean"},"changed":{"type":"boolean"}},"required":["sheet","show_ruler","changed"],"additionalProperties":false}`),
@@ -583,7 +583,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.text_to_columns.split", Name: "按分隔符拆分单元格内容",
 				Description: "按明确分隔符拆分指定列中的值，并从源列向右写入结果。相邻列内容可能被覆盖；Agent 调用需人类确认。最多处理 100000 个单元格。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskHigh,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskHigh,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"key_column":{"type":"integer","minimum":1,"maximum":16384},"delimiter":{"type":"string","minLength":1,"maxLength":256,"description":"拆分分隔符，最多 256 个 Unicode 字符。"}},"required":["sheet","bounds","key_column","delimiter"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"bounds":{"type":"object"},"key_column":{"type":"integer"},"rows_split":{"type":"integer","minimum":0},"max_columns":{"type":"integer","minimum":0}},"required":["sheet","bounds","key_column","rows_split","max_columns"],"additionalProperties":false}`),
@@ -623,7 +623,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.conditional_format.set", Name: "设置或清除区域条件格式",
 				Description: "为明确工作表范围设置数据条、三色色阶、重复值或高于平均值规则；operation=clear 时清除此范围的条件格式。范围最多 1000000 个单元格。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"operation":{"type":"string","enum":["set","clear"]},"type":{"type":"string","enum":["data_bar","3_color_scale","duplicate","above_average"]}},"required":["sheet","bounds","operation"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"bounds":{"type":"object"},"operation":{"type":"string"},"type":{"type":"string"},"changed":{"type":"boolean"}},"required":["sheet","bounds","operation","type","changed"],"additionalProperties":false}`),
@@ -674,7 +674,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.data_validation.set", Name: "设置或清除单元格数据验证",
 				Description: "为明确工作表范围添加下拉列表或数字范围验证，或清除验证。下拉列表最多 100 项；范围最多 1000000 个单元格。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"operation":{"type":"string","enum":["list","number","clear"]},"items":{"type":"array","maxItems":100,"items":{"type":"string","minLength":1,"maxLength":255}},"minimum":{"type":"number"},"maximum":{"type":"number"}},"required":["sheet","bounds","operation"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"bounds":{"type":"object"},"operation":{"type":"string"},"changed":{"type":"boolean"}},"required":["sheet","bounds","operation","changed"],"additionalProperties":false}`),
@@ -740,7 +740,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.table.create", Name: "创建结构化表格",
 				Description: "在明确工作表范围创建带筛选器和行列条纹的表格，至少包含标题行和一行数据，最多 1000000 个单元格。空白或重复的标题单元格会被自动改成唯一名称。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"name":{"type":"string","maxLength":255},"style_name":{"type":"string","enum":["TableStyleLight1","TableStyleMedium2","TableStyleDark1"]}},"required":["sheet","bounds"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"bounds":{"type":"object"},"name":{"type":"string"},"style_name":{"type":"string"},"changed":{"type":"boolean"}},"required":["sheet","bounds","name","style_name","changed"],"additionalProperties":false}`),
@@ -789,7 +789,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.defined_names.get", Name: "读取工作簿定义名称",
 				Description: "列出工作簿中的已定义名称、引用位置、作用范围和说明。",
-				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityQuery, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object"}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"names":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"ref":{"type":"string"},"scope":{"type":"string"},"comment":{"type":"string"}},"required":["name","ref","scope","comment"],"additionalProperties":false}}},"required":["names"],"additionalProperties":false}`),
@@ -815,7 +815,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.defined_names.set", Name: "新增或更新工作簿定义名称",
 				Description: "新增或更新工作簿定义名称。name、scope 和 comment 各最多 255 个 Unicode 字符，ref 最多 4096 个 Unicode 字符且必须指向明确的单元格或范围；scope 留空表示工作簿级名称。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":255,"description":"定义名称，最多 255 个 Unicode 字符。"},"ref":{"type":"string","minLength":1,"maxLength":4096,"description":"单元格或范围引用，最多 4096 个 Unicode 字符。"},"scope":{"type":"string","maxLength":255,"description":"可选工作表名称，最多 255 个 Unicode 字符；留空表示工作簿级名称。"},"comment":{"type":"string","maxLength":255,"description":"可选说明，最多 255 个 Unicode 字符。"}},"required":["name","ref"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"ref":{"type":"string"},"scope":{"type":"string"},"comment":{"type":"string"},"changed":{"type":"boolean"}},"required":["name","ref","scope","comment","changed"],"additionalProperties":false}`),
@@ -847,7 +847,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.defined_names.delete", Name: "删除工作簿定义名称",
 				Description: "删除明确名称和作用范围的定义名称。删除后，引用该名称的公式可能失效；执行前应检查其引用关系。Agent 调用需人类确认。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskHigh,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskHigh,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":255},"scope":{"type":"string","maxLength":255}},"required":["name"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"scope":{"type":"string"},"changed":{"type":"boolean"}},"required":["name","scope","changed"],"additionalProperties":false}`),
@@ -883,7 +883,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.gridlines.get", Name: "读取工作表网格线设置",
 				Description: "读取指定工作表是否显示网格线。",
-				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityQuery, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1}},"required":["sheet"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"show":{"type":"boolean"}},"required":["sheet","show"],"additionalProperties":false}`),
@@ -917,7 +917,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.page_layout.get", Name: "读取工作表页面布局",
 				Description: "读取指定工作表的打印方向、纸张、页边距、打印区域和标题行设置。",
-				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityQuery, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1}},"required":["sheet"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"layout":{"type":"object","properties":{"orientation":{"type":"string"},"paper_size":{"type":"integer"},"margin_top":{"type":"number"},"margin_right":{"type":"number"},"margin_bottom":{"type":"number"},"margin_left":{"type":"number"},"print_area":{"type":"string"},"print_titles":{"type":"string"}},"required":["orientation","paper_size","margin_top","margin_right","margin_bottom","margin_left","print_area","print_titles"],"additionalProperties":false}},"required":["sheet","layout"],"additionalProperties":false}`),
@@ -951,7 +951,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.page_layout.set", Name: "设置工作表页面布局",
 				Description: "设置一个明确的工作表打印属性。operation 支持 orientation、margins、paper_size、print_area、print_titles；清除打印区域或标题行时传入空字符串。页边距单位为英寸。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"operation":{"type":"string","enum":["orientation","margins","paper_size","print_area","print_titles"]},"orientation":{"type":"string","enum":["portrait","landscape"]},"paper_size":{"type":"integer","enum":[1,5,8,9]},"margin_top":{"type":"number","minimum":0,"maximum":20},"margin_right":{"type":"number","minimum":0,"maximum":20},"margin_bottom":{"type":"number","minimum":0,"maximum":20},"margin_left":{"type":"number","minimum":0,"maximum":20},"print_area":{"type":"string","maxLength":512},"print_titles":{"type":"string","maxLength":512}},"required":["sheet","operation"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"changed":{"type":"boolean"},"layout":{"type":"object","properties":{"orientation":{"type":"string"},"paper_size":{"type":"integer"},"margin_top":{"type":"number"},"margin_right":{"type":"number"},"margin_bottom":{"type":"number"},"margin_left":{"type":"number"},"print_area":{"type":"string"},"print_titles":{"type":"string"}},"required":["orientation","paper_size","margin_top","margin_right","margin_bottom","margin_left","print_area","print_titles"],"additionalProperties":false}},"required":["sheet","changed","layout"],"additionalProperties":false}`),
@@ -987,7 +987,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.gridlines.set", Name: "设置工作表网格线显示",
 				Description: "为明确指定的工作表显示或隐藏网格线。show 为 true 时显示，false 时隐藏。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"show":{"type":"boolean"}},"required":["sheet","show"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"show":{"type":"boolean"},"changed":{"type":"boolean"}},"required":["sheet","show","changed"],"additionalProperties":false}`),
@@ -1023,7 +1023,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.range.copy", Name: "复制单元格区域内容",
 				Description: "读取明确工作表区域中的单元格内容，矩阵最多 10000 个单元格。返回兼容 TSV 的显示值，以及供同一工作簿内复制/粘贴保留的公式、格式和类型信息。",
-				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityQuery, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false}},"required":["sheet","bounds"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"bounds":{"type":"object"},"rows":{"type":"array","items":{"type":"array","items":{"type":"string"}}},"cells":{"type":"array","items":{"type":"array","items":{"type":"object"}}}},"required":["sheet","bounds","rows","cells"],"additionalProperties":false}`),
@@ -1066,7 +1066,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.structure.edit", Name: "调整工作表结构",
 				Description: "创建、重命名或删除工作表，或在明确位置插入/删除行列。所有结构修改均需人类确认；Agent 必须提供操作类型和目标，行列操作还需提供起始索引与数量。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskHigh,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskHigh,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"operation":{"type":"string","enum":["create_sheet","rename_sheet","delete_sheet","insert_rows","delete_rows","insert_columns","delete_columns"]},"sheet":{"type":"string"},"new_name":{"type":"string","maxLength":31},"index":{"type":"integer","minimum":1,"maximum":1048576},"count":{"type":"integer","minimum":1,"maximum":1048576}},"required":["operation"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"operation":{"type":"string"},"sheet":{"type":"string"},"new_name":{"type":"string"},"index":{"type":"integer"},"count":{"type":"integer"}},"required":["changed","operation","sheet","new_name","index","count"],"additionalProperties":false}`),
@@ -1120,7 +1120,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.range.search", Name: "查找工作表内容",
 				Description: "在明确指定的工作表中查找文本，忽略大小写，最多返回 10000 个单元格匹配并标记结果是否截断。可指定 max_results 限制返回数量。",
-				Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityQuery, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"query":{"type":"string","minLength":1,"maxLength":256,"description":"要查找的文本，最多 256 个 Unicode 字符。"},"max_results":{"type":"integer","minimum":1,"maximum":10000}},"required":["sheet","query"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"matches":{"type":"array","items":{"type":"object","properties":{"row":{"type":"integer"},"column":{"type":"integer"},"value":{"type":"string"}},"required":["row","column","value"],"additionalProperties":false}},"truncated":{"type":"boolean"}},"required":["matches","truncated"],"additionalProperties":false}`),
@@ -1159,7 +1159,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.formula.set", Name: "设置单元格公式",
 				Description: "为明确指定的工作表和单元格设置公式。formula 可带或不带开头的等号，含可选等号最多 8192 个 UTF-16 单元（补充平面字符按 2 个单元计）；此操作只写入公式，不承诺公式引擎已完成重算。请先查询目标单元格并使用当前文档修订号。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"cell":{"type":"string","minLength":1},"formula":{"type":"string","minLength":1,"maxLength":8192,"description":"公式字符串含可选开头等号最多 8192 个 UTF-16 单元；补充平面字符按 2 个单元计。"}},"required":["sheet","cell","formula"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"cell":{"type":"string"},"formula":{"type":"string"}},"required":["changed","sheet","cell","formula"],"additionalProperties":false}`),
@@ -1196,7 +1196,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.formulas.set", Name: "批量设置单元格公式",
 				Description: "在同一工作表中一次写入 1 至 10000 个明确坐标的公式；每条公式含可选开头等号最多 8192 个 UTF-16 单元。整个批次是一个可撤销操作。此操作只写入公式，不承诺本地公式引擎已完成重算。请先查询目标单元格并使用当前文档修订号。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"edits":{"type":"array","minItems":1,"maxItems":10000,"items":{"type":"object","properties":{"row":{"type":"integer","minimum":1,"maximum":1048576},"column":{"type":"integer","minimum":1,"maximum":16384},"formula":{"type":"string","minLength":1,"maxLength":8192,"description":"公式字符串含可选开头等号最多 8192 个 UTF-16 单元。"}},"required":["row","column","formula"],"additionalProperties":false}}},"required":["sheet","edits"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"requested_count":{"type":"integer","minimum":0}},"required":["changed","sheet","requested_count"],"additionalProperties":false}`),
@@ -1243,7 +1243,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.cells.set", Name: "批量设置单元格内容",
 				Description: "在一个工作表中一次写入 1 至 10000 个明确坐标的单元格值，支持文本、数字和布尔值；字符串按文本原样保存，例如 \"00123\" 保持前导零。单个公式调用 spreadsheet.formula.set，公式批次调用 spreadsheet.formulas.set；不接受重复坐标。适合 Agent 批量整理数据，调用前先查询并使用当前文档修订号。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"edits":{"type":"array","minItems":1,"maxItems":10000,"items":{"type":"object","properties":{"row":{"type":"integer","minimum":1,"maximum":1048576},"column":{"type":"integer","minimum":1,"maximum":16384},"value":{"anyOf":[{"type":"string","maxLength":32767},{"type":"number"},{"type":"boolean"}]}},"required":["row","column","value"],"additionalProperties":false}}},"required":["sheet","edits"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"requested_count":{"type":"integer","minimum":0}},"required":["changed","sheet","requested_count"],"additionalProperties":false}`),
@@ -1296,7 +1296,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.range.format.set", Name: "设置单元格区域格式",
 				Description: "为明确指定的工作表区域设置受支持的字体、字号步进、颜色、水平和垂直对齐、数字格式、小数位、边框或换行属性。普通区域最多影响 10000 个单元格；另支持整行、整列和全表格式。未提供的属性保持不变。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"patch":{"type":"object","properties":{"bold":{"type":"boolean"},"italic":{"type":"boolean"},"underline":{"type":"boolean"},"font_color":{"type":"string"},"fill_color":{"type":"string"},"horizontal_alignment":{"type":"string","enum":["general","left","center","right"]},"vertical_alignment":{"type":"string","enum":["top","center","bottom"]},"number_format":{"type":"string","enum":["General","0","0.00","0%","0.00%","yyyy-mm-dd","\"¥\"#,##0.00"]},"decimal_places_delta":{"type":"integer","enum":[-1,1]},"border_preset":{"type":"string","enum":["all","outside","bottom","none"]},"wrap_text":{"type":"boolean"},"font_size":{"type":"number","exclusiveMinimum":0,"maximum":409},"font_size_step":{"type":"integer","enum":[-1,1]},"font_family":{"type":"string"},"clear_format":{"type":"boolean"}},"additionalProperties":false}},"required":["sheet","bounds","patch"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"bounds":{"type":"object"}},"required":["changed","sheet","bounds"],"additionalProperties":false}`),
@@ -1332,7 +1332,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.range.sort", Name: "排序单元格区域",
 				Description: "按指定区域内的键列稳定排序，并随行移动区域中的单元格值和格式。区域最多 10000 个单元格；当前实现拒绝包含公式或合并单元格的区域。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"key_column":{"type":"integer","minimum":1,"maximum":16384},"descending":{"type":"boolean"}},"required":["sheet","bounds","key_column","descending"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"bounds":{"type":"object"},"key_column":{"type":"integer"},"descending":{"type":"boolean"}},"required":["changed","sheet","bounds","key_column","descending"],"additionalProperties":false}`),
@@ -1366,7 +1366,7 @@ func registerSpreadsheetCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.history.apply", Name: "撤销或重做表格修改",
 				Description: "对明确文档会话执行一次撤销或重做。只恢复该工作簿历史中记录的编辑；调用前查询当前文档修订并传入 action。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 				RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"action":{"type":"string","enum":["undo","redo"]}},"required":["action"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"action":{"type":"string","enum":["undo","redo"]}},"required":["changed","action"],"additionalProperties":false}`),

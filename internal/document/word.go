@@ -286,6 +286,12 @@ type WordFormatPainter interface {
 	ApplyWordFormatting(sourceRunID, targetRunID string) (bool, error)
 }
 
+// WordTextSelectionFormatPainter applies a source run's supported formatting
+// to an exact editable text range while preserving unselected text and styles.
+type WordTextSelectionFormatPainter interface {
+	ApplyWordFormattingToTextSelection(sourceRunID, startRunID string, startOffset int, endRunID string, endOffset int) (bool, error)
+}
+
 // WordParagraphListEditor exposes safe direct paragraph bullet and numbering edits.
 type WordParagraphListEditor interface {
 	SetParagraphList(paragraphID string, kind WordListKind) error
@@ -490,6 +496,12 @@ type WordHyperlinkEditor interface {
 	InsertHyperlink(runID, text, targetURL string) error
 }
 
+// WordTextSelectionHyperlinkEditor wraps an ordered editable text selection in
+// a hyperlink while preserving unselected text and its formatting.
+type WordTextSelectionHyperlinkEditor interface {
+	InsertHyperlinkForTextSelection(startRunID string, startOffset int, endRunID string, endOffset int, displayText, targetURL string) error
+}
+
 // WordTextBoxEditor provides inserting a stylized callout text box into the Word document.
 type WordTextBoxEditor interface {
 	InsertTextBox(afterParagraphID, text string) error
@@ -513,6 +525,12 @@ type WordCommentReader interface {
 type WordCommentEditor interface {
 	AddWordComment(runID, author, text string) (commentID string, changed bool, err error)
 	DeleteWordComment(commentID string) (bool, error)
+}
+
+// WordTextSelectionCommentEditor creates a native comment anchored to an
+// ordered, editable text selection within one paragraph.
+type WordTextSelectionCommentEditor interface {
+	AddWordCommentForTextSelection(startRunID string, startOffset int, endRunID string, endOffset int, author, text string) (commentID string, changed bool, err error)
 }
 
 // WordHeaderFooterEditor provides configuring document header, footer, or page numbers.

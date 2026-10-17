@@ -15,7 +15,7 @@ func registerSpreadsheetRecalculateCapability(catalog *Catalog) error {
 		Descriptor: CapabilityDescriptor{
 			ID: "spreadsheet.workbook.recalculate", Name: "触发工作簿公式重算",
 			Description: "使 XLSX 公式缓存失效；Glance 后续读取公式单元格时会按需使用当前计算引擎支持的函数重新计算。不会遍历并预计算整个工作簿，也不会刷新外部数据连接。",
-			Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+			Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 			RequiresDocument: true, RequiresRevision: true,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 			OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"formula_cache_invalidated":{"type":"boolean"},"external_data_refreshed":{"type":"boolean"}},"required":["changed","formula_cache_invalidated","external_data_refreshed"],"additionalProperties":false}`),

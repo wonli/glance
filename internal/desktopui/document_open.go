@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"glance/internal/application"
 	"glance/internal/document"
+	csvdoc "glance/internal/format/csv"
 	legacydoc "glance/internal/format/doc"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
@@ -162,8 +163,19 @@ func loadDocument(path string) (loadedDocument, error) {
 			return loadedDocument{}, fmt.Errorf("导入后的工作簿没有可显示的工作表")
 		}
 		return loadedDocument{path: path, book: book, sheets: sheets, sourceFormat: application.FormatXLS, saveAsRequired: true}, nil
+	case ".csv":
+		book, err := csvdoc.Open(path)
+		if err != nil {
+			return loadedDocument{}, err
+		}
+		sheets := book.SheetNames()
+		if len(sheets) == 0 {
+			_ = book.Close()
+			return loadedDocument{}, fmt.Errorf("CSV 文件没有可显示的数据")
+		}
+		return loadedDocument{path: path, book: book, sheets: sheets, sourceFormat: application.FormatCSV}, nil
 	default:
-		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx、.xls、.doc、.docx、.pptx、.pdf、.json 和 Markdown", filepath.Ext(path))
+		return loadedDocument{}, fmt.Errorf("暂不支持 %s 文件，目前支持 .xlsx、.xls、.csv、.doc、.docx、.pptx、.pdf、.json 和 Markdown", filepath.Ext(path))
 	}
 }
 
@@ -333,17 +345,19 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	if loaded.book != nil {
 		a.sheet = loaded.sheets[0]
 		a.cellButtons = make(map[string]*widget.Clickable)
-		a.virtualGrid = newGridViewport()
+		a.virtualGrid = newGridViewportForSpreadsheet(loaded.book, a.sheet)
 		a.selectedCell = "A1"
 		state.selection = CellSelection{}
-		state.selectionSet = true
+		state.selectionSet = false
 		a.virtualGrid.SelectedRow, a.virtualGrid.SelectedColumn = 1, 1
 		a.virtualGrid.PendingSelectionLoad = true
 		a.cellEdit.selectCell("A1", "")
-		a.nameBox.SetText("A1")
+		a.nameBox.SetText("")
 		a.formulaEditor.SetText("")
 		if loaded.sourceFormat == application.FormatXLS {
 			a.setStatus(fmt.Sprintf("已导入旧版 .xls 工作表「%s」：可浏览和编辑；请另存为 .xlsx", a.sheet))
+		} else if loaded.sourceFormat == application.FormatCSV {
+			a.setStatus(fmt.Sprintf("工作表「%s」：CSV 虚拟网格就绪，可浏览、编辑并保存", a.sheet))
 		} else {
 			a.setStatus(fmt.Sprintf("工作表「%s」：虚拟网格就绪，可浏览并编辑完整 XLSX 地址范围", a.sheet))
 		}

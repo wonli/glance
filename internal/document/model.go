@@ -1,6 +1,9 @@
 package document
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 var ErrReadOnly = errors.New("document is read-only")
 
@@ -309,6 +312,16 @@ type SpreadsheetCellValueEditor interface {
 	SetCellValueChanged(sheet, cell string, value CellValue) (bool, error)
 }
 
+// SpreadsheetCellDateEditor inserts a static date value into one cell.
+type SpreadsheetCellDateEditor interface {
+	SetCellDateChanged(sheet, cell string, date time.Time) (bool, error)
+}
+
+// SpreadsheetCellTimeEditor inserts a static, minute-precision time value into one cell.
+type SpreadsheetCellTimeEditor interface {
+	SetCellTimeChanged(sheet, cell string, value time.Time) (bool, error)
+}
+
 type SpreadsheetBatchEditor interface {
 	SetCells(sheet string, edits []CellEdit) error
 }
@@ -325,6 +338,36 @@ type SpreadsheetBatchChangeEditor interface {
 // relative formula references can be adjusted like a native spreadsheet paste.
 type SpreadsheetCellTransferEditor interface {
 	TransferCellRangeChanged(sheet string, source CellRange, targetRow, targetColumn int, cells [][]Cell) (bool, error)
+}
+
+// SpreadsheetFillDownEditor fills a bounded selection from its top row as one
+// undoable edit, translating relative formula references for each row.
+type SpreadsheetFillDownEditor interface {
+	FillDownChanged(sheet string, bounds CellRange) (bool, error)
+}
+
+// SpreadsheetFillRightEditor fills a bounded selection from its leftmost
+// column as one undoable edit, translating relative formula references by
+// column.
+type SpreadsheetFillRightEditor interface {
+	FillRightChanged(sheet string, bounds CellRange) (bool, error)
+}
+
+// SpreadsheetMergeResult reports a merge preview or the completed merge action.
+// A non-empty confirmation token is a content-bound approval for discarding
+// non-anchor values; it must be checked again atomically with the mutation.
+type SpreadsheetMergeResult struct {
+	Changed              bool   `json:"changed"`
+	ConfirmationRequired bool   `json:"confirmation_required"`
+	DiscardedCellCount   int    `json:"discarded_cell_count"`
+	ConfirmationToken    string `json:"confirm_discard_token,omitempty"`
+	Unmerged             bool   `json:"unmerged"`
+}
+
+// SpreadsheetMergeCellsEditor merges a bounded range and centers its anchor,
+// or unmerges when the selection identifies an existing merged cell/range.
+type SpreadsheetMergeCellsEditor interface {
+	MergeCellsChanged(sheet string, bounds CellRange, confirmationToken string) (SpreadsheetMergeResult, error)
 }
 
 // CellFormulaEdit describes one formula written to a spreadsheet cell.

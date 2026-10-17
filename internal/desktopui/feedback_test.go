@@ -89,7 +89,7 @@ func TestFeedbackOnlyTriggersOnSideEffectOperations(t *testing.T) {
 		"就绪",
 		"已取消选择图片",
 		"已取消操作",
-		"已启动格式刷；单击目标文字应用，再点格式刷取消",
+		"已启动格式刷；单击或拖选目标文字应用，再点格式刷取消",
 		"字数统计：共 120 字",
 		"拼写检查完成：已校验 20 个单元格",
 	}

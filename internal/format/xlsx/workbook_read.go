@@ -19,10 +19,16 @@ import (
 
 func CellName(column, row int) string {
 	name, err := excelize.CoordinatesToCellName(column, row)
-	if err != nil {
-		return ""
+	if err == nil {
+		return name
 	}
-	return name
+	if column > 0 && row > 0 {
+		colTitle, colErr := excelize.ColumnNumberToName(column)
+		if colErr == nil {
+			return fmt.Sprintf("%s%d", colTitle, row)
+		}
+	}
+	return ""
 }
 
 func documentCellValueKind(cellType excelize.CellType) document.CellValueKind {

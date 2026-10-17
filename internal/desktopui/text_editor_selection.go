@@ -16,6 +16,8 @@ import (
 // the formatted runs in one paragraph so double-click detection spans them.
 type textEditorParagraphSelection struct {
 	click             gesture.Click
+	drag              gesture.Drag
+	pointerDragActive bool
 	paragraphSelected bool
 }
 
@@ -25,8 +27,17 @@ func (s *textEditorParagraphSelection) layout(gtx layout.Context, editor *widget
 	dims := content(gtx)
 	area := clip.Rect(image.Rectangle{Max: dims.Size}).Push(gtx.Ops)
 	s.click.Add(gtx.Ops)
+	s.drag.Add(gtx.Ops)
 	area.Pop()
 	pass.Pop()
+	for ev, ok := s.drag.Update(gtx.Metric, gtx.Source, gesture.Both); ok; ev, ok = s.drag.Update(gtx.Metric, gtx.Source, gesture.Both) {
+		switch ev.Kind {
+		case pointer.Press:
+			s.pointerDragActive = true
+		case pointer.Release, pointer.Cancel:
+			s.pointerDragActive = false
+		}
+	}
 	for ev, ok := s.click.Update(gtx.Source); ok; ev, ok = s.click.Update(gtx.Source) {
 		if ev.Source != pointer.Mouse || ev.Kind != gesture.KindPress || ev.NumClicks != 2 {
 			continue

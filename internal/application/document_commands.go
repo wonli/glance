@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"glance/internal/document"
@@ -28,6 +29,14 @@ type SpreadsheetCellSetter interface {
 
 type SpreadsheetCellValueSetter interface {
 	SetSpreadsheetCellValue(context.Context, string, string, document.CellValue) (bool, error)
+}
+
+type SpreadsheetCellDateSetter interface {
+	SetSpreadsheetCellDate(context.Context, string, string, time.Time) (bool, error)
+}
+
+type SpreadsheetCellTimeSetter interface {
+	SetSpreadsheetCellTime(context.Context, string, string, time.Time) (bool, error)
 }
 
 func decodeSpreadsheetCellValue(raw json.RawMessage) (document.CellValue, error) {
@@ -74,6 +83,18 @@ type SpreadsheetCellsSetter interface {
 
 type SpreadsheetCellTransferSetter interface {
 	TransferSpreadsheetCellRange(context.Context, string, document.CellRange, int, int, [][]document.Cell) (bool, error)
+}
+
+type SpreadsheetFillDownSetter interface {
+	FillDownSpreadsheet(context.Context, string, document.CellRange) (bool, error)
+}
+
+type SpreadsheetFillRightSetter interface {
+	FillRightSpreadsheet(context.Context, string, document.CellRange) (bool, error)
+}
+
+type SpreadsheetMergeCellsSetter interface {
+	MergeCellsSpreadsheet(context.Context, string, document.CellRange, string) (document.SpreadsheetMergeResult, error)
 }
 
 type SpreadsheetRangeFormatter interface {
@@ -293,7 +314,7 @@ func registerCoreCapabilities(catalog *Catalog) error {
 			Descriptor: CapabilityDescriptor{
 				ID: "spreadsheet.cell.set", Name: "设置单元格内容",
 				Description: "将指定工作表中的单元格设置为文本、数字或布尔值，并保留 JSON 值类型；字符串（例如 \"00123\"）按文本原样写入。公式需要使用专门的公式能力。请先通过文档查询确认工作表名、单元格地址和当前版本。",
-				Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskLow, RequiresDocument: true, RequiresRevision: true,
+				Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow, RequiresDocument: true, RequiresRevision: true,
 				InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"cell":{"type":"string"},"value":{"anyOf":[{"type":"string","maxLength":32767},{"type":"number"},{"type":"boolean"}]}},"required":["sheet","cell","value"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"cell":{"type":"string"},"value":{"anyOf":[{"type":"string"},{"type":"number"},{"type":"boolean"}]}},"required":["changed","sheet","cell","value"],"additionalProperties":false}`),
 			},

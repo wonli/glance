@@ -15,7 +15,7 @@ func registerDocumentExportCopyCapability(catalog *Catalog) error {
 			ID: "document.export_copy", Name: "导出文档副本",
 			Description: "将明确的 DOCX 或 XLSX 实时会话快照写入新的本地文件，不改变当前会话路径、修订号或脏状态。目标扩展名必须匹配，已有文件不会被覆盖；桌面 Word 文本或表格单元格存在未提交草稿时会拒绝导出。",
 			Category:    CapabilityCommand, Risk: RiskMedium, RequiresDocument: true, RequiresRevision: true,
-			Formats:      []Format{FormatDocx, FormatXLSX},
+			Formats:      []Format{FormatDocx, FormatXLSX, FormatCSV},
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","minLength":1}},"required":["path"],"additionalProperties":false}`),
 			OutputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","minLength":1},"bytes_written":{"type":"integer","minimum":1}},"required":["path","bytes_written"],"additionalProperties":false}`),
 		},

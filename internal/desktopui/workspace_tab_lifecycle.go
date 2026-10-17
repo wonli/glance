@@ -1,6 +1,9 @@
 package desktopui
 
-import "glance/internal/workspace"
+import (
+	"glance/internal/application"
+	"glance/internal/workspace"
+)
 
 func (a *App) activateRecent() {
 	a.ensureDesktopRuntime()
@@ -227,6 +230,8 @@ func (a *App) handleCloseConfirmation(action string) {
 				ext = "md"
 			} else if a.jsonDoc != nil {
 				ext = "json"
+			} else if a.book != nil && state.sourceFormat == application.FormatCSV {
+				ext = "csv"
 			}
 			a.startSaveAsPicker(ext)
 			return

@@ -114,7 +114,7 @@ func parseCellRangeAddress(reference string) (start, end CellPosition, ok bool) 
 			return CellPosition{}, false
 		}
 		row, column, valid := parseCellAddress(value[:letters] + rowPart)
-		if !valid || row > xlsxRows || column > xlsxColumns {
+		if !valid || row < 1 || column < 1 || column > xlsxColumns {
 			return CellPosition{}, false
 		}
 		return CellPosition{Row: row - 1, Column: column - 1}, true

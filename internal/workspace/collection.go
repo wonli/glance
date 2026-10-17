@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -54,10 +55,19 @@ func OpenCollection(store *Store) (*Collection, error) {
 			session.Format, session.Payload, session.ViewState, session.Dirty, session.UpdatedAt = doc.Format, doc.Payload, doc.ViewState, doc.Dirty, doc.UpdatedAt
 		} else {
 			session.Format = inferDraftFormat(tab)
+			if session.Format == "" && tab.SourcePath != "" {
+				ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(tab.SourcePath)), ".")
+				if ext == "md" {
+					ext = "markdown"
+				}
+				session.Format = ext
+			}
 		}
 		if tab.SourcePath != "" {
 			if _, err := os.Stat(tab.SourcePath); err != nil {
 				session.Available = false
+			} else {
+				session.Available = true
 			}
 		}
 		c.tabs = append(c.tabs, session)

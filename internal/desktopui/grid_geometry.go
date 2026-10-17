@@ -33,6 +33,14 @@ func NewAxisGeometry(count int, defaultSize float64) (*AxisGeometry, error) {
 	}, nil
 }
 
+// Count returns the number of dimensions in this axis.
+func (a *AxisGeometry) Count() int {
+	if a == nil {
+		return 0
+	}
+	return a.count
+}
+
 // Boundary returns the content coordinate at the start of index. The final
 // valid boundary is count and denotes the end of the axis.
 func (a *AxisGeometry) Boundary(index int) (float64, error) {

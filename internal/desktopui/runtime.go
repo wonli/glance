@@ -878,6 +878,8 @@ func (r *desktopRuntime) updateSessionPath(session *sharedDocumentSession, path 
 					session.saveAsRequired = false
 				}
 			}
+		} else if session.sourceFormat == application.FormatCSV && strings.EqualFold(filepath.Ext(path), ".xlsx") {
+			session.sourceFormat = application.FormatXLSX
 		}
 		if key := canonicalSessionPath(path); key != "" {
 			r.sessionsByCanonicalPath[key] = session.documentID
@@ -916,6 +918,8 @@ func (r *desktopRuntime) updateSessionPathFromApplication(session *sharedDocumen
 					session.saveAsRequired = false
 				}
 			}
+		} else if session.sourceFormat == application.FormatCSV && strings.EqualFold(filepath.Ext(path), ".xlsx") {
+			session.sourceFormat = application.FormatXLSX
 		}
 		if key := canonicalSessionPath(path); key != "" {
 			r.sessionsByCanonicalPath[key] = session.documentID

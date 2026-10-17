@@ -126,9 +126,56 @@ func (a *App) handleSpreadsheetGridNavigationKey(gtx layout.Context, v *gridView
 		}
 		a.startSpreadsheetSelectAll(v)
 		return true
+	case key.Name(";"), key.Name(":"):
+		if spreadsheetDateShortcut(event.Name, event.Modifiers) {
+			if err := a.insertCurrentDateIntoSpreadsheetCell(); err != nil {
+				a.setStatus("插入日期失败：" + err.Error())
+			}
+			return true
+		}
+		if spreadsheetTimeShortcut(event.Name, event.Modifiers, runtime.GOOS) {
+			if err := a.insertCurrentTimeIntoSpreadsheetCell(); err != nil {
+				a.setStatus("插入时间失败：" + err.Error())
+			}
+			return true
+		}
+		return false
+	case key.Name("D"):
+		fillDownShortcut := event.Modifiers == key.ModShortcut || runtime.GOOS == "darwin" && event.Modifiers == key.ModCtrl
+		if !fillDownShortcut {
+			return false
+		}
+		if err := a.fillDownSpreadsheetSelection(); err != nil {
+			a.setStatus("向下填充失败：" + err.Error())
+		}
+		return true
+	case key.Name("R"):
+		fillRightShortcut := event.Modifiers == key.ModShortcut || runtime.GOOS == "darwin" && event.Modifiers == key.ModCtrl
+		if !fillRightShortcut {
+			return false
+		}
+		if err := a.fillRightSpreadsheetSelection(); err != nil {
+			a.setStatus("向右填充失败：" + err.Error())
+		}
+		return true
 	default:
 		return false
 	}
+}
+
+func spreadsheetDateShortcut(name key.Name, modifiers key.Modifiers) bool {
+	// Excel uses Control+; for a static date on both Windows and macOS.
+	return name == key.Name(";") && modifiers == key.ModCtrl
+}
+
+func spreadsheetTimeShortcut(name key.Name, modifiers key.Modifiers, goos string) bool {
+	if goos == "darwin" {
+		// Excel for Mac uses Command+; for a static time.
+		return name == key.Name(";") && modifiers == key.ModCommand
+	}
+	// Excel for Windows uses Ctrl+Shift+; . Some keyboard layouts report ':'
+	// as the shifted key name, while others preserve ';' and its Shift modifier.
+	return (name == key.Name(";") || name == key.Name(":")) && modifiers == key.ModCtrl|key.ModShift
 }
 
 // handleSpreadsheetEditorNavigation commits an edit for the navigation keys

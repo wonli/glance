@@ -27,7 +27,7 @@ func spreadsheetHomeRibbonGroups(actions []spreadsheetToolbarAction) []spreadshe
 		switch action.slot {
 		case toolbarActionFontFamily, toolbarActionFontSize, toolbarActionDecreaseFontSize, toolbarActionIncreaseFontSize, 4, 5, 6, 7, 8, 11:
 			group = "字体"
-		case toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, 9:
+		case toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionMergeCenter, 9:
 			group = "对齐"
 		case toolbarActionPercentFormat, toolbarActionCurrencyFormat, toolbarActionIncreaseDecimal, toolbarActionDecreaseDecimal, 10:
 			group = "数字"
@@ -255,7 +255,7 @@ func (a *App) layoutSpreadsheetAlignmentGroup(gtx layout.Context, state *documen
 					return a.layoutSpreadsheetRibbonRow(gtx, state, actions, []spreadsheetRibbonCell{{slot: toolbarActionWrapText, hasAction: true}}, sideWidthDP, 34, spreadsheetRibbonActionCompact)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return a.layoutSpreadsheetRibbonPlaceholder(gtx, spreadsheetRibbonCell{label: "合并后居中", displayLabel: "合并后居中 ▾", icon: "merge"}, sideWidthDP, 34, spreadsheetRibbonActionCompact)
+					return a.layoutSpreadsheetRibbonRow(gtx, state, actions, []spreadsheetRibbonCell{{slot: toolbarActionMergeCenter, hasAction: true}}, sideWidthDP, 34, spreadsheetRibbonActionCompact)
 				}),
 			)
 		}),

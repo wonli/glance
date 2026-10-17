@@ -18,6 +18,10 @@ type WordCommentAccess interface {
 	DeleteWordComment(context.Context, string) (bool, error)
 }
 
+type WordTextSelectionCommentAccess interface {
+	AddWordCommentForTextSelection(context.Context, string, int, string, int, string, string) (string, bool, error)
+}
+
 func registerWordCommentCapabilities(catalog *Catalog) error {
 	registrations := []CapabilityRegistration{
 		{
@@ -74,25 +78,50 @@ func registerWordCommentCapabilities(catalog *Catalog) error {
 		{
 			Descriptor: CapabilityDescriptor{
 				ID: "word.comment.add", Name: "添加 Word 原生批注",
-				Description: "在明确的可编辑正文文本运行上添加 DOCX 原生批注。run_id 必须来自 document.inspect；不读取 UI 选区。text 最多 32768 个 Unicode 字符，author 最多 256 个 Unicode 字符；author 省略或为空时使用 Glance。相同作者、文本和目标上的重复请求返回已有 comment_id 且 changed=false。Ribbon“审阅/新建批注”也调用此能力。",
+				Description: "在明确的可编辑正文文本运行或同一段落的文本范围上添加 DOCX 原生批注。run_id、start_run_id 和 end_run_id 必须来自 document.inspect；范围使用 Unicode 字符偏移，不能跨段落或包含不支持的复杂内容。text 最多 32768 个 Unicode 字符，author 最多 256 个 Unicode 字符；author 省略或为空时使用 Glance。",
 				Category:    CapabilityCommand, Formats: []Format{FormatDocx}, Risk: RiskMedium, RequiresDocument: true, RequiresRevision: true,
-				InputSchema:  json.RawMessage(`{"type":"object","properties":{"run_id":{"type":"string","minLength":1,"maxLength":512,"description":"document.inspect 返回的可编辑正文文本运行 ID。"},"author":{"type":"string","maxLength":256,"description":"批注作者；省略或空字符串使用 Glance。"},"text":{"type":"string","minLength":1,"maxLength":32768,"description":"批注正文。"}},"required":["run_id","text"],"additionalProperties":false}`),
+				InputSchema:  json.RawMessage(`{"type":"object","properties":{"run_id":{"type":"string","maxLength":512,"description":"旧式整段文本运行目标；与范围字段二选一。"},"start_run_id":{"type":"string","minLength":1,"maxLength":512,"description":"选区起点运行 ID。"},"start_offset":{"type":"integer","minimum":0,"maximum":10000000,"description":"选区起点 Unicode 字符偏移。"},"end_run_id":{"type":"string","minLength":1,"maxLength":512,"description":"选区终点运行 ID。"},"end_offset":{"type":"integer","minimum":0,"maximum":10000000,"description":"选区终点 Unicode 字符偏移。"},"author":{"type":"string","maxLength":256,"description":"批注作者；省略或空字符串使用 Glance。"},"text":{"type":"string","minLength":1,"maxLength":32768,"description":"批注正文。"}},"required":["text"],"additionalProperties":false}`),
 				OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"comment_id":{"type":"string"},"run_id":{"type":"string"}},"required":["changed","comment_id","run_id"],"additionalProperties":false}`),
 			},
 			Handler: func(ctx context.Context, capability CapabilityContext, raw json.RawMessage) (CapabilityResult, error) {
 				var input struct {
-					RunID  string `json:"run_id"`
-					Author string `json:"author"`
-					Text   string `json:"text"`
+					RunID       string `json:"run_id"`
+					StartRunID  string `json:"start_run_id"`
+					StartOffset *int   `json:"start_offset"`
+					EndRunID    string `json:"end_run_id"`
+					EndOffset   *int   `json:"end_offset"`
+					Author      string `json:"author"`
+					Text        string `json:"text"`
 				}
-				if err := json.Unmarshal(raw, &input); err != nil || strings.TrimSpace(input.RunID) == "" || len(input.RunID) > 512 || utf8.RuneCountInString(input.Author) > 256 || utf8.RuneCountInString(input.Text) == 0 || utf8.RuneCountInString(input.Text) > 32768 || !utf8.ValidString(input.Text) {
+				if err := json.Unmarshal(raw, &input); err != nil || (input.RunID != "" && (strings.TrimSpace(input.RunID) == "" || len(input.RunID) > 512)) || utf8.RuneCountInString(input.Author) > 256 || utf8.RuneCountInString(input.Text) == 0 || utf8.RuneCountInString(input.Text) > 32768 || !utf8.ValidString(input.Text) {
+					return CapabilityResult{}, ErrInvalidCommandArguments
+				}
+				hasRange := input.StartRunID != "" || input.EndRunID != "" || input.StartOffset != nil || input.EndOffset != nil
+				if hasRange {
+					if strings.TrimSpace(input.StartRunID) == "" || len(input.StartRunID) > 512 || strings.TrimSpace(input.EndRunID) == "" || len(input.EndRunID) > 512 || input.StartOffset == nil || input.EndOffset == nil || *input.StartOffset < 0 || *input.EndOffset < 0 || *input.StartOffset > 10000000 || *input.EndOffset > 10000000 || input.RunID != "" && input.RunID != input.StartRunID {
+						return CapabilityResult{}, ErrInvalidCommandArguments
+					}
+				} else if strings.TrimSpace(input.RunID) == "" {
 					return CapabilityResult{}, ErrInvalidCommandArguments
 				}
 				access, ok := capability.Adapter.(WordCommentAccess)
 				if !ok {
 					return CapabilityResult{}, ErrCapabilityUnsupported
 				}
-				commentID, changed, err := access.AddWordComment(ctx, input.RunID, input.Author, input.Text)
+				runID := input.RunID
+				var commentID string
+				var changed bool
+				var err error
+				if hasRange {
+					selectionAccess, ok := capability.Adapter.(WordTextSelectionCommentAccess)
+					if !ok {
+						return CapabilityResult{}, ErrCapabilityUnsupported
+					}
+					runID = input.StartRunID
+					commentID, changed, err = selectionAccess.AddWordCommentForTextSelection(ctx, input.StartRunID, *input.StartOffset, input.EndRunID, *input.EndOffset, input.Author, input.Text)
+				} else {
+					commentID, changed, err = access.AddWordComment(ctx, input.RunID, input.Author, input.Text)
+				}
 				if err != nil {
 					return CapabilityResult{}, err
 				}
@@ -100,7 +129,7 @@ func registerWordCommentCapabilities(catalog *Catalog) error {
 					Changed   bool   `json:"changed"`
 					CommentID string `json:"comment_id"`
 					RunID     string `json:"run_id"`
-				}{changed, commentID, input.RunID}, changed)
+				}{changed, commentID, runID}, changed)
 			},
 		},
 		{

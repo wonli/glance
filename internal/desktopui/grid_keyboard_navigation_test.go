@@ -470,6 +470,116 @@ func TestSpreadsheetGridTypingReplacesSelectedCellAndWaitsForCommit(t *testing.T
 	}
 }
 
+func TestSpreadsheetF2StartsCellEditingAtEnd(t *testing.T) {
+	h := newFullGridTextHarness(t, false, "existing value")
+	a, state := h.app, h.app.documentSessionState
+	book := state.book.(*xlsx.Workbook)
+	if err := book.SetCellText(state.sheet, "A1", "existing value"); err != nil {
+		t.Fatalf("SetCellText(A1): %v", err)
+	}
+	state.cellEdit.cancel()
+	state.cellEditor.SetText("")
+	h.draw = func(gtx layout.Context) {
+		gtx.Execute(key.FocusCmd{Tag: &state.virtualGrid.PointerTag})
+		a.layoutVirtualGrid(gtx)
+	}
+	h.frame()
+	h.router.Queue(key.Event{Name: key.NameF2, State: key.Press})
+	h.frame()
+	start, end := state.cellEditor.Selection()
+	if !state.cellEdit.Editing || state.cellEditor.Text() != "existing value" || start != len("existing value") || end != start {
+		t.Fatalf("F2 edit state = editing %t, text %q, selection (%d,%d); want value and caret at end", state.cellEdit.Editing, state.cellEditor.Text(), start, end)
+	}
+	if !h.router.Source().Focused(&state.cellEditor) {
+		t.Fatal("F2 did not focus the in-cell editor")
+	}
+	if got, err := book.Value(state.sheet, "A1"); err != nil || got != "existing value" {
+		t.Fatalf("A1 after F2 = %q, %v; want unchanged until commit", got, err)
+	}
+}
+
+func TestSpreadsheetFormulaReferenceShortcutCyclesReferenceAtCaret(t *testing.T) {
+	h := newFullGridTextHarness(t, true, "=SUM(A1:$B$2)")
+	a, state := h.app, h.app.documentSessionState
+	state.formulaEditor.SetText("=SUM(A1:$B$2)")
+	state.formulaEditor.SetCaret(6, 6)
+	h.draw = func(gtx layout.Context) {
+		gtx.Execute(key.FocusCmd{Tag: &state.formulaEditor})
+		a.layoutGridControls(gtx)
+	}
+	h.frame()
+	cycle := key.Event{Name: key.NameF4, State: key.Press}
+	if runtime.GOOS == "darwin" {
+		cycle.Name, cycle.Modifiers = key.Name("T"), key.ModShortcut
+	}
+	h.router.Queue(cycle)
+	h.frame()
+	if got, want := state.formulaEditor.Text(), "=SUM($A$1:$B$2)"; got != want {
+		t.Fatalf("formula after reference-cycle shortcut = %q; want %q", got, want)
+	}
+	start, end := state.formulaEditor.Selection()
+	if start != end || start < 5 || start > len("=SUM($A$1") {
+		t.Fatalf("formula caret after reference cycle = (%d,%d); want an insertion point inside the cycled reference", start, end)
+	}
+	if got, err := state.book.(*xlsx.Workbook).GetCellFormula(state.sheet, "A1"); err != nil || got != "" {
+		t.Fatalf("A1 formula before commit = %q, %v; want unchanged", got, err)
+	}
+}
+
+func TestSpreadsheetFillDownShortcutCopiesTopRowAndKeepsSelection(t *testing.T) {
+	h := newFullGridTextHarness(t, false, "10")
+	a, state := h.app, h.app.documentSessionState
+	book := state.book.(*xlsx.Workbook)
+	for address, value := range map[string]string{"A1": "10", "A2": "old-a2", "A3": "old-a3", "B2": "old-b2", "B3": "old-b3"} {
+		if err := book.SetCellText(state.sheet, address, value); err != nil {
+			t.Fatalf("SetCellText(%s): %v", address, err)
+		}
+	}
+	if err := book.SetCellFormula(state.sheet, "B1", "=A1*2"); err != nil {
+		t.Fatalf("SetCellFormula(B1): %v", err)
+	}
+	state.selection = CellSelection{Anchor: CellPosition{Row: 2, Column: 1}, Active: CellPosition{Row: 0, Column: 0}}
+	state.selectionSet = true
+	state.selectedCell = "A1"
+	a.selectedCell = "A1"
+	state.cellEdit.cancel()
+	state.cellEditor.SetText("")
+	a.formatResults = make(chan spreadsheetFormatResult, 1)
+	h.draw = func(gtx layout.Context) {
+		gtx.Execute(key.FocusCmd{Tag: &state.virtualGrid.PointerTag})
+		a.layoutVirtualGrid(gtx)
+	}
+	h.frame()
+	h.router.Queue(key.Event{Name: key.Name("D"), State: key.Press, Modifiers: key.ModShortcut})
+	h.frame()
+	if !state.formatRunning.Load() {
+		t.Fatal("Ctrl/Cmd+D did not start a fill-down operation")
+	}
+	select {
+	case result := <-a.formatResults:
+		if result.err != nil || !result.applied || result.operation != "向下填充" {
+			t.Fatalf("fill-down result = %+v; want one successful fill operation", result)
+		}
+		a.formatResults <- result
+		a.processSpreadsheetFormatResult()
+	case <-time.After(5 * time.Second):
+		t.Fatal("Ctrl/Cmd+D did not finish filling down")
+	}
+	for address, want := range map[string]string{"A1": "10", "A2": "10", "A3": "10"} {
+		if got, err := book.Value(state.sheet, address); err != nil || got != want {
+			t.Errorf("%s value after fill down = %q, %v; want %q", address, got, err, want)
+		}
+	}
+	for address, want := range map[string]string{"B1": "A1*2", "B2": "A2*2", "B3": "A3*2"} {
+		if got, err := book.GetCellFormula(state.sheet, address); err != nil || got != want {
+			t.Errorf("%s formula after fill down = %q, %v; want %q", address, got, err, want)
+		}
+	}
+	if got, want := state.selection.Bounds(), (document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 3, EndColumn: 2}); got != want {
+		t.Fatalf("selection after fill down = %+v; want %+v", got, want)
+	}
+}
+
 func TestSpreadsheetGridTypingStartsEditingBlankCell(t *testing.T) {
 	h := newFullGridTextHarness(t, false, "")
 	a := h.app
@@ -503,6 +613,25 @@ func TestSpreadsheetControlEnterFillsSelectedRangeInOneUndoableEdit(t *testing.T
 			t.Fatalf("SetCellText(%s): %v", address, err)
 		}
 	}
+	bold, italic, fill, numberFormat := true, true, "#FFF2CC", "0.00"
+	for _, formatted := range []struct {
+		cell   string
+		bounds document.CellRange
+		patch  document.CellFormatPatch
+	}{
+		{"A1", document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 1, EndColumn: 1}, document.CellFormatPatch{Bold: &bold}},
+		{"B1", document.CellRange{StartRow: 1, StartColumn: 2, EndRow: 1, EndColumn: 2}, document.CellFormatPatch{Italic: &italic}},
+		{"A2", document.CellRange{StartRow: 2, StartColumn: 1, EndRow: 2, EndColumn: 1}, document.CellFormatPatch{FillColor: &fill}},
+		{"B2", document.CellRange{StartRow: 2, StartColumn: 2, EndRow: 2, EndColumn: 2}, document.CellFormatPatch{NumberFormat: &numberFormat}},
+	} {
+		if err := book.SetCellFormats(state.sheet, formatted.bounds, formatted.patch); err != nil {
+			t.Fatalf("SetCellFormats(%s): %v", formatted.cell, err)
+		}
+	}
+	stylesBefore, err := book.ReadRange(state.sheet, document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 2})
+	if err != nil {
+		t.Fatalf("ReadRange styles before Ctrl+Enter: %v", err)
+	}
 	book.RebaseHistory()
 	state.selection = CellSelection{Anchor: CellPosition{Row: 1, Column: 1}, Active: CellPosition{Row: 0, Column: 0}}
 	state.selectionSet = true
@@ -534,6 +663,17 @@ func TestSpreadsheetControlEnterFillsSelectedRangeInOneUndoableEdit(t *testing.T
 	for _, address := range []string{"A1", "B1", "A2", "B2"} {
 		if got, err := book.Value(state.sheet, address); err != nil || got != "shared" {
 			t.Errorf("%s after Ctrl+Enter = %q, %v; want shared", address, got, err)
+		}
+	}
+	stylesAfter, err := book.ReadRange(state.sheet, document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 2})
+	if err != nil {
+		t.Fatalf("ReadRange styles after Ctrl+Enter: %v", err)
+	}
+	for row := range stylesBefore {
+		for column := range stylesBefore[row] {
+			if got, want := stylesAfter[row][column].StyleID, stylesBefore[row][column].StyleID; got != want {
+				t.Errorf("cell style at row %d column %d after Ctrl+Enter = %d; want preserved style %d", row, column, got, want)
+			}
 		}
 	}
 	if got := state.selection.Bounds(); got != (document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 2}) {
@@ -613,6 +753,84 @@ func TestSpreadsheetControlEnterRejectsRangesOverCellLimit(t *testing.T) {
 	}
 	if got, err := state.book.(*xlsx.Workbook).Value(state.sheet, "A1"); err != nil || got != "original" {
 		t.Fatalf("A1 after oversized fill = %q, %v; want original", got, err)
+	}
+}
+
+func TestSpreadsheetControlEnterDoesNotCommitDuringIMEComposition(t *testing.T) {
+	h := newFullGridTextHarness(t, false, "original")
+	a, state := h.app, h.app.documentSessionState
+	book := state.book.(*xlsx.Workbook)
+	if err := book.SetCellText(state.sheet, "A1", "original"); err != nil {
+		t.Fatalf("SetCellText(A1): %v", err)
+	}
+	state.selection = CellSelection{Anchor: CellPosition{Row: 1, Column: 1}, Active: CellPosition{Row: 0, Column: 0}}
+	state.selectionSet = true
+	state.cellEdit.cancel()
+	state.cellEditor.SetText("")
+	a.formatResults = make(chan spreadsheetFormatResult, 1)
+	h.draw = func(gtx layout.Context) {
+		gtx.Execute(key.FocusCmd{Tag: &state.virtualGrid.PointerTag})
+		a.layoutVirtualGrid(gtx)
+	}
+	h.frame()
+
+	h.router.Queue(key.CompositionEvent{Start: 0, End: 2}, key.EditEvent{Text: "ni", Range: key.Range{Start: 0, End: 0}})
+	h.frame()
+	if !state.gridInputComposing || state.cellEditor.Text() != "ni" {
+		t.Fatalf("preedit state = composing %t, text %q; want composing draft ni", state.gridInputComposing, state.cellEditor.Text())
+	}
+	h.router.Queue(key.Event{Name: key.NameReturn, State: key.Press, Modifiers: key.ModCtrl})
+	h.frame()
+	if !state.cellEdit.Editing || state.cellEditor.Text() != "ni" {
+		t.Fatalf("cell edit after Ctrl+Enter during composition = editing %t, text %q; want active preedit draft ni", state.cellEdit.Editing, state.cellEditor.Text())
+	}
+	if got, err := book.Value(state.sheet, "A1"); err != nil || got != "original" {
+		t.Fatalf("A1 after Ctrl+Enter during composition = %q, %v; want original", got, err)
+	}
+	select {
+	case result := <-a.formatResults:
+		t.Fatalf("Ctrl+Enter during composition started an operation: %+v", result)
+	default:
+	}
+}
+
+func TestSpreadsheetControlEnterUnchangedRangeDoesNotCreateHistory(t *testing.T) {
+	h := newFullGridTextHarness(t, false, "same")
+	a, state := h.app, h.app.documentSessionState
+	book := state.book.(*xlsx.Workbook)
+	edits := []document.CellEdit{
+		{Row: 1, Column: 1, Value: "same"}, {Row: 1, Column: 2, Value: "same"},
+		{Row: 2, Column: 1, Value: "same"}, {Row: 2, Column: 2, Value: "same"},
+	}
+	if err := book.SetCells(state.sheet, edits); err != nil {
+		t.Fatalf("SetCells: %v", err)
+	}
+	book.RebaseHistory()
+	state.selection = CellSelection{Anchor: CellPosition{Row: 1, Column: 1}, Active: CellPosition{Row: 0, Column: 0}}
+	state.selectionSet = true
+	state.cellEdit.selectCell("A1", "same")
+	state.cellEdit.begin()
+	state.cellEditor.SetText("same")
+	state.cellEdit.setDraft("same")
+	a.formatResults = make(chan spreadsheetFormatResult, 1)
+	if err := a.enterSpreadsheetValueInSelection("same"); err != nil {
+		t.Fatalf("enterSpreadsheetValueInSelection: %v", err)
+	}
+	select {
+	case result := <-a.formatResults:
+		if result.err != nil || !result.noOp || result.applied {
+			t.Fatalf("unchanged Ctrl+Enter result = %+v; want successful no-op", result)
+		}
+		if changed, err := book.Undo(); err != nil || !changed {
+			t.Fatalf("Undo after unchanged Ctrl+Enter = changed %t, err %v; want to undo only the seed edit", changed, err)
+		}
+		for _, address := range []string{"A1", "B1", "A2", "B2"} {
+			if got, err := book.Value(state.sheet, address); err != nil || got != "" {
+				t.Errorf("%s after undo = %q, %v; want empty (no Ctrl+Enter history step)", address, got, err)
+			}
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("unchanged Ctrl+Enter did not finish")
 	}
 }
 

@@ -12,8 +12,12 @@ import (
 )
 
 type wordCommentAddArguments struct {
-	RunId string `json:"run_id"`
-	Text  string `json:"text"`
+	RunId       string `json:"run_id"`
+	StartRunId  string `json:"start_run_id,omitempty"`
+	StartOffset *int   `json:"start_offset,omitempty"`
+	EndRunId    string `json:"end_run_id,omitempty"`
+	EndOffset   *int   `json:"end_offset,omitempty"`
+	Text        string `json:"text"`
 }
 
 func (a *App) showWordNewCommentDialog() {
@@ -21,8 +25,8 @@ func (a *App) showWordNewCommentDialog() {
 	if state == nil || state.word == nil {
 		return
 	}
-	run, hasRun := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
-	if !hasRun || !run.Editable || !wordBodyRunEditable(wordBlocksForState(state), run.ID) {
+	args, selectedText, hasSelection, ok := wordCommentTargetArguments(state)
+	if !ok {
 		a.setStatus("请先选择可编辑的正文文本，再添加批注")
 		return
 	}
@@ -34,7 +38,7 @@ func (a *App) showWordNewCommentDialog() {
 
 	a.modal.ShowInput(
 		"新建批注",
-		"批注将附着到当前选中的正文文本运行。",
+		wordCommentDialogSummary(selectedText, hasSelection),
 		"请核对此处表述是否准确",
 		"输入批注内容",
 		func(action string) {
@@ -47,13 +51,69 @@ func (a *App) showWordNewCommentDialog() {
 				a.setStatus("批注内容不能为空")
 				return
 			}
-			if !a.runWordApplicationCommandExpectedRevision("添加批注", "word.comment.add", wordCommentAddArguments{RunId: run.ID, Text: commentText}, expectedRevision) {
+			args.Text = commentText
+			if !a.runWordApplicationCommandExpectedRevision("添加批注", "word.comment.add", args, expectedRevision) {
 				a.setStatus("文档已变化或应用命令运行时不可用，请重新选择文本后添加批注")
 			}
 		},
 		modalDialogActionSpec{ID: "confirm", Label: "添加批注"},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
+}
+
+func wordCommentTargetArguments(state *documentSessionState) (wordCommentAddArguments, string, bool, bool) {
+	if state == nil {
+		return wordCommentAddArguments{}, "", false, false
+	}
+	blocks := wordBlocksForState(state)
+	if start, end, active := wordPageOrderedSelection(state.wordPageTextSelection); active {
+		selectedText, hasText := wordPageSelectedText(state)
+		startRun, startOK := selectedWordRun(blocks, start.runID)
+		endRun, endOK := selectedWordRun(blocks, end.runID)
+		_, startParagraph, startParagraphOK := findEditableWordRunInState(state, start.runID)
+		_, endParagraph, endParagraphOK := findEditableWordRunInState(state, end.runID)
+		if hasText && startOK && endOK && startParagraphOK && endParagraphOK && startParagraph.ID == endParagraph.ID && startRun.Editable && endRun.Editable && wordBodyRunEditable(blocks, start.runID) && wordBodyRunEditable(blocks, end.runID) {
+			startOffset, endOffset := start.runeOffset, end.runeOffset
+			return wordCommentAddArguments{
+				RunId: start.runID, StartRunId: start.runID, StartOffset: &startOffset,
+				EndRunId: end.runID, EndOffset: &endOffset,
+			}, selectedText, true, true
+		}
+		return wordCommentAddArguments{}, "", false, false
+	}
+	if editor := state.wordRunEditors[state.selectedWordRunID]; editor != nil {
+		start, end := editor.Selection()
+		if end < start {
+			start, end = end, start
+		}
+		if end > start {
+			run, exists := selectedWordRun(blocks, state.selectedWordRunID)
+			if !exists || !run.Editable || !wordBodyRunEditable(blocks, run.ID) || start < 0 || end > len([]rune(run.Text)) {
+				return wordCommentAddArguments{}, "", false, false
+			}
+			selectedText := string([]rune(run.Text)[start:end])
+			return wordCommentAddArguments{
+				RunId: run.ID, StartRunId: run.ID, StartOffset: &start,
+				EndRunId: run.ID, EndOffset: &end,
+			}, selectedText, true, selectedText != ""
+		}
+	}
+	run, hasRun := selectedWordRun(blocks, state.selectedWordRunID)
+	if !hasRun || !run.Editable || !wordBodyRunEditable(blocks, run.ID) {
+		return wordCommentAddArguments{}, "", false, false
+	}
+	return wordCommentAddArguments{RunId: run.ID}, "", false, true
+}
+
+func wordCommentDialogSummary(selectedText string, hasSelection bool) string {
+	if !hasSelection {
+		return "批注将附着到当前选中的正文文本运行。"
+	}
+	selectedText = strings.Join(strings.Fields(selectedText), " ")
+	if len([]rune(selectedText)) > 80 {
+		selectedText = string([]rune(selectedText)[:77]) + "…"
+	}
+	return "批注范围：\u201c" + selectedText + "\u201d"
 }
 
 type wordCommentsListArguments struct {

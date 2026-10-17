@@ -14,7 +14,7 @@ func registerViewCapabilities(catalog *Catalog) error {
 		Descriptor: CapabilityDescriptor{
 			ID: "spreadsheet.zoom.get", Name: "读取工作表缩放",
 			Description: "读取指定已附着桌面窗口中工作表的当前缩放比例。没有匹配窗口时返回 no_attached_view。",
-			Category:    CapabilityQuery, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+			Category:    CapabilityQuery, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 			RequiresDocument: true, RequiresRevision: true, RequiresView: true,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 			OutputSchema: json.RawMessage(`{"type":"object","properties":{"window_id":{"type":"integer","minimum":1},"zoom_percent":{"type":"integer","minimum":50,"maximum":200},"changed":{"type":"boolean"}},"required":["window_id","zoom_percent","changed"],"additionalProperties":false}`),
@@ -34,7 +34,7 @@ func registerViewCapabilities(catalog *Catalog) error {
 		Descriptor: CapabilityDescriptor{
 			ID: "spreadsheet.zoom.apply", Name: "调整工作表缩放",
 			Description: "在指定的已附着桌面窗口中放大、恢复 100% 或设置工作表缩放比例。set 使用 50 到 200 的百分比。该操作改变窗口视图，不修改单元格内容；工作区快照与后续 XLSX 保存会保留每张表的比例。没有匹配窗口时返回 no_attached_view。",
-			Category:    CapabilityWorkflow, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+			Category:    CapabilityWorkflow, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 			RequiresDocument: true, RequiresRevision: true, RequiresView: true,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"operation":{"type":"string","enum":["zoom_in","reset","set"]},"zoom_percent":{"type":"integer","minimum":50,"maximum":200}},"required":["operation"],"additionalProperties":false}`),
 			OutputSchema: json.RawMessage(`{"type":"object","properties":{"window_id":{"type":"integer","minimum":1},"zoom_percent":{"type":"integer","minimum":50,"maximum":200},"changed":{"type":"boolean"}},"required":["window_id","zoom_percent","changed"],"additionalProperties":false}`),
@@ -73,7 +73,7 @@ func registerViewCapabilities(catalog *Catalog) error {
 		Descriptor: CapabilityDescriptor{
 			ID: "spreadsheet.filter.apply", Name: "筛选工作表行",
 			Description: "在指定的已附着桌面窗口中按单元格值隐藏不匹配的行，或清除该窗口当前筛选。范围最多 10000 个单元格；筛选只影响窗口视图，不修改工作簿数据。",
-			Category:    CapabilityWorkflow, Formats: []Format{FormatXLSX}, Risk: RiskLow,
+			Category:    CapabilityWorkflow, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow,
 			RequiresDocument: true, RequiresRevision: true, RequiresView: true,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"operation":{"type":"string","enum":["set_value","set_from_row","clear"]},"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"column":{"type":"integer","minimum":1,"maximum":16384},"value":{"type":"string","maxLength":32767},"source_row":{"type":"integer","minimum":1,"maximum":1048576}},"required":["operation","sheet"],"additionalProperties":false}`),
 			OutputSchema: json.RawMessage(`{"type":"object","properties":{"window_id":{"type":"integer","minimum":1},"operation":{"type":"string","enum":["set","clear"]},"sheet":{"type":"string"},"rows_visible":{"type":"integer","minimum":0},"changed":{"type":"boolean"}},"required":["window_id","operation","sheet","rows_visible","changed"],"additionalProperties":false}`),

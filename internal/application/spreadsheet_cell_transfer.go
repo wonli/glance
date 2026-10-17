@@ -14,7 +14,7 @@ func registerSpreadsheetCellTransferCapability(catalog *Catalog) error {
 		Descriptor: CapabilityDescriptor{
 			ID: "spreadsheet.cells.transfer", Name: "粘贴单元格区域",
 			Description: "将已捕获的单元格矩阵粘贴到明确工作表位置。保留单元格公式、原始值类型和完整 XLSX 样式，并按目标位置调整相对公式引用；整块作为一个可撤销操作。",
-			Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+			Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 			RequiresDocument: true, RequiresRevision: true,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"source":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false},"target_row":{"type":"integer","minimum":1,"maximum":1048576},"target_column":{"type":"integer","minimum":1,"maximum":16384},"cells":{"type":"array","minItems":1,"maxItems":10000,"items":{"type":"array","minItems":1,"items":{"type":"object"}}}},"required":["sheet","source","target_row","target_column","cells"],"additionalProperties":false}`),
 			OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"},"sheet":{"type":"string"},"target_row":{"type":"integer"},"target_column":{"type":"integer"},"cell_count":{"type":"integer"}},"required":["changed","sheet","target_row","target_column","cell_count"],"additionalProperties":false}`),

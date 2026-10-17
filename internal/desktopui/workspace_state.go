@@ -55,7 +55,7 @@ func sessionPath(state *documentSessionState) string {
 }
 
 func (a *App) viewStateBytes() []byte {
-	view := sessionViewSnapshot{Sheet: a.sheet, SelectedCell: a.selectedCell, SelectedBlock: a.selectedBlock, WordFirst: a.wordListState.Position.First, WordAutoSave: a.wordAutoSave}
+	view := sessionViewSnapshot{Sheet: a.sheet, SelectedCell: a.selectedCell, SelectedBlock: a.selectedBlock, WordFirst: a.wordListState.Position.First, WordAutoSave: a.wordAutoSave, SelectionSet: a.selectionSet}
 	if state := a.documentSessionState; state != nil && state.word != nil {
 		view.WordViewMode = state.wordViewMode
 		view.WordPageFitMode = state.wordPageFitMode
@@ -181,6 +181,9 @@ func sessionFormat(meta workspace.Tab, state *documentSessionState) string {
 	if state != nil && state.sourceFormat == application.FormatDOC {
 		return "docx"
 	}
+	if state != nil && state.sourceFormat == application.FormatCSV {
+		return "csv"
+	}
 	format := strings.TrimPrefix(strings.ToLower(filepath.Ext(meta.SourcePath)), ".")
 	if format == "" {
 		format = strings.TrimPrefix(strings.ToLower(filepath.Ext(meta.Title)), ".")
@@ -192,6 +195,9 @@ func sessionFormat(meta workspace.Tab, state *documentSessionState) string {
 	case state != nil && state.book != nil:
 		if meta.Kind == "document" && strings.EqualFold(filepath.Ext(meta.SourcePath), ".xls") {
 			return "xls"
+		}
+		if meta.Kind == "document" && strings.EqualFold(filepath.Ext(meta.SourcePath), ".csv") {
+			return "csv"
 		}
 		return "xlsx"
 	case state != nil && state.word != nil:

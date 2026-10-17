@@ -147,7 +147,15 @@ func (a *App) showWordHyperlinkDialog() {
 	}
 	runID := state.selectedWordRunID
 	var defaultText string
-	if run, ok := selectedWordRun(wordBlocksForState(state), runID); ok {
+	selectionStart, selectionEnd, hasSelection := wordPageOrderedSelection(state.wordPageTextSelection)
+	if hasSelection {
+		var ok bool
+		defaultText, ok = wordPageSelectedText(state)
+		if !ok {
+			a.setStatus("无法确定当前 Word 选区，请重新选择后插入超链接")
+			return
+		}
+	} else if run, ok := selectedWordRun(wordBlocksForState(state), runID); ok {
 		defaultText = run.Text
 	}
 	if defaultText == "" {
@@ -163,20 +171,31 @@ func (a *App) showWordHyperlinkDialog() {
 				return
 			}
 			urlVal := strings.TrimSpace(a.modal.Input.Text())
-			textVal := strings.TrimSpace(a.modal.SecondInput.Text())
+			textVal := a.modal.SecondInput.Text()
 			if urlVal == "" {
 				a.setStatus("超链接地址不能为空")
 				return
 			}
-			if textVal == "" {
+			if strings.TrimSpace(textVal) == "" {
 				textVal = urlVal
 			}
-			err := editor.InsertHyperlink(runID, textVal, urlVal)
+			var err error
+			if hasSelection {
+				selectionEditor, supported := any(state.word).(document.WordTextSelectionHyperlinkEditor)
+				if !supported {
+					a.setStatus("当前文档暂不支持为文字选区插入超链接")
+					return
+				}
+				err = selectionEditor.InsertHyperlinkForTextSelection(selectionStart.runID, selectionStart.runeOffset, selectionEnd.runID, selectionEnd.runeOffset, textVal, urlVal)
+			} else {
+				err = editor.InsertHyperlink(runID, textVal, urlVal)
+			}
 			if err != nil {
 				a.setStatus("插入超链接失败：" + err.Error())
 				return
 			}
 			if state.word != nil {
+				state.wordPageTextSelection = nil
 				state.setWordBlocks(state.word.WordBlocks())
 				a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 			}

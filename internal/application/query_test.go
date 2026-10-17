@@ -238,7 +238,7 @@ func TestBuiltInFormatInspectorsReturnValidBoundedContent(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 	t.Cleanup(func() { _ = runtime.Close(context.Background()) })
-	for _, format := range []Format{FormatDocx, FormatXLSX, FormatPPTX, FormatPDF, FormatJSON, FormatMarkdown} {
+	for _, format := range []Format{FormatDocx, FormatXLSX, FormatCSV, FormatPPTX, FormatPDF, FormatJSON, FormatMarkdown} {
 		t.Run(string(format), func(t *testing.T) {
 			doc, err := runtime.CreateDocument(ctx, format)
 			if err != nil {

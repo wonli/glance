@@ -140,6 +140,12 @@ type documentSessionState struct {
 	wordFormatPainterPendingParagraphID string
 	wordFormatPainterTargetRunID        string
 	wordFormatPainterTargetParagraphID  string
+	wordFormatPainterTargetSelection    bool
+	wordFormatPainterStartRunID         string
+	wordFormatPainterStartOffset        int
+	wordFormatPainterEndRunID           string
+	wordFormatPainterEndOffset          int
+	wordFormatPainterSelectionText      string
 	wordInsertAfterDraftFlush           bool
 	wordInsertAfterParagraphID          string
 	wordPendingPasteSelection           *wordPendingSelectionPaste

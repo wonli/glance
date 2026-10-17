@@ -130,13 +130,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 				}
 			}
 		}
-		for _, selectedRect := range v.selectionRects(selection.Bounds(), rowHead, colHead, selectionViewport) {
-			for _, edge := range selectionBorderRects(selectedRect, max(1, gtx.Dp(unit.Dp(1)))) {
-				if !edge.Empty() {
-					paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
-				}
-			}
-		}
+		selectionRange := selection.Bounds()
 		activeCell := selection.Active
 		activeRange := document.CellRange{
 			StartRow: activeCell.Row + 1, StartColumn: activeCell.Column + 1,
@@ -147,6 +141,17 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 				activeRange.StartColumn >= merge.Range.StartColumn && activeRange.StartColumn <= merge.Range.EndColumn {
 				activeRange = merge.Range
 				break
+			}
+		}
+		selectionIsMergedActiveCell := selectionRange.StartRow == selectionRange.EndRow &&
+			selectionRange.StartColumn == selectionRange.EndColumn && selectionRange != activeRange
+		if !selectionIsMergedActiveCell {
+			for _, selectedRect := range v.selectionRects(selectionRange, rowHead, colHead, selectionViewport) {
+				for _, edge := range selectionBorderRects(selectedRect, max(1, gtx.Dp(unit.Dp(1)))) {
+					if !edge.Empty() {
+						paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
+					}
+				}
 			}
 		}
 		for _, activeRect := range v.selectionRects(activeRange, rowHead, colHead, selectionViewport) {

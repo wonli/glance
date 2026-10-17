@@ -118,7 +118,7 @@ func registerLifecycleCapabilities(catalog *Catalog) error {
 				ID: "document.save", Name: "保存文档",
 				Description: "将明确文档保存回当前源路径，会覆盖该路径上的文件。Agent 调用需要桌面人类确认；没有源路径的新文档请使用 document.save_as。只在内容处于脏状态时写入。",
 				Category:    CapabilityWorkflow, Risk: RiskHigh, RequiresDocument: true, RequiresRevision: true,
-				Formats:     []Format{FormatDocx, FormatXLSX, FormatPPTX, FormatPDF, FormatJSON, FormatMarkdown},
+				Formats:     []Format{FormatDocx, FormatXLSX, FormatCSV, FormatPPTX, FormatPDF, FormatJSON, FormatMarkdown},
 				InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`), OutputSchema: json.RawMessage(`{"type":"object","properties":{"saved":{"type":"boolean"},"document":{"type":"object"}},"required":["saved","document"],"additionalProperties":false}`),
 			},
 			Handler: func(ctx context.Context, capability CapabilityContext, _ json.RawMessage) (CapabilityResult, error) {

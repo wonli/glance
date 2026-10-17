@@ -3,13 +3,12 @@ package csv
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -38,29 +37,106 @@ var (
 	_ document.SpreadsheetRangeContentEditor  = (*Document)(nil)
 	_ document.SpreadsheetCellTransferEditor  = (*Document)(nil)
 	_ document.SpreadsheetSorter              = (*Document)(nil)
+	_ document.SpreadsheetSortChangeEditor    = (*Document)(nil)
 	_ document.SpreadsheetSearcher            = (*Document)(nil)
 )
 
-// Document wraps a unified spreadsheet workbook with CSV persistence.
+type cellKey struct {
+	row int // 1-based
+	col int // 1-based
+}
+
+type editAction struct {
+	row    int
+	col    int
+	oldVal string
+	newVal string
+}
+
+type editBatchAction struct {
+	edits []editAction
+}
+
+// snapshotMetadata represents a compact workspace recovery record for large disk-backed CSVs.
+type snapshotMetadata struct {
+	Kind    string       `json:"kind"`
+	Source  string       `json:"source"`
+	HasBOM  bool         `json:"has_bom"`
+	UseCRLF bool         `json:"use_crlf"`
+	Comma   rune         `json:"comma"`
+	Edits   []editAction `json:"edits,omitempty"`
+}
+
+// Document provides high-performance tabular CSV storage implementing the unified spreadsheet interface.
 type Document struct {
-	*xlsx.Workbook
-	mu      sync.Mutex
+	mu sync.Mutex
+
 	path    string
 	hasBOM  bool
 	useCRLF bool
 	comma   rune
 	closed  bool
+	dirty   bool
+
+	// File-backed storage (for files opened from disk)
+	file  *os.File
+	index *fileIndex
+
+	// In-memory storage (for blank drafts or small byte snapshots)
+	records [][]string
+
+	// Active grid extents (1-based)
+	maxRow int
+	maxCol int
+
+	// Sparse cell modifications overlay: (row, col) -> value
+	edits map[cellKey]string
+
+	// Undo / Redo history
+	undoStack []editBatchAction
+	redoStack []editBatchAction
+
+	// Sizing overrides
+	rowHeights map[int]float64
+	colWidths  map[int]float64
 }
 
 // Open reads a CSV file from disk into a unified spreadsheet document.
+// Uses fast line-offset indexing so files with millions of rows open in milliseconds.
 func Open(path string) (*Document, error) {
-	data, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+	f, err := os.Open(cleanPath)
 	if err != nil {
 		return nil, fmt.Errorf("open csv %q: %w", path, err)
 	}
-	doc, err := openFromBytes(data, path)
+
+	idx, err := scanFileIndex(f)
 	if err != nil {
-		return nil, fmt.Errorf("open csv %q: %w", path, err)
+		_ = f.Close()
+		return nil, fmt.Errorf("index csv %q: %w", path, err)
+	}
+
+	maxRow := idx.totalRows
+	if maxRow < 1 {
+		maxRow = 1
+	}
+	maxCol := idx.totalCols
+	if maxCol < 1 {
+		maxCol = 1
+	}
+
+	doc := &Document{
+		path:       cleanPath,
+		hasBOM:     idx.hasBOM,
+		useCRLF:    idx.useCRLF,
+		comma:      idx.comma,
+		file:       f,
+		index:      idx,
+		maxRow:     maxRow,
+		maxCol:     maxCol,
+		edits:      make(map[cellKey]string),
+		rowHeights: make(map[int]float64),
+		colWidths:  make(map[int]float64),
 	}
 	return doc, nil
 }
@@ -68,25 +144,86 @@ func Open(path string) (*Document, error) {
 // OpenSnapshot restores a CSV document from recovery snapshot bytes.
 func OpenSnapshot(payload []byte) (*Document, error) {
 	if bytes.HasPrefix(payload, []byte("PK\x03\x04")) {
+		// Legacy snapshot stored as xlsx package
 		wb, err := xlsx.OpenSnapshot(payload)
 		if err != nil {
 			return nil, err
 		}
-		return &Document{
-			Workbook: wb,
-			comma:    ',',
-		}, nil
+		rows, err := wb.SheetRows("Sheet1")
+		if err != nil {
+			_ = wb.Close()
+			return nil, err
+		}
+		_ = wb.Close()
+		return newFromRecords(rows, "")
 	}
+
+	if bytes.HasPrefix(payload, []byte(`{"kind":"glance-csv-v1"`)) {
+		var meta snapshotMetadata
+		if err := json.Unmarshal(payload, &meta); err == nil && meta.Source != "" {
+			if _, statErr := os.Stat(meta.Source); statErr == nil {
+				doc, openErr := Open(meta.Source)
+				if openErr == nil {
+					for _, e := range meta.Edits {
+						doc.edits[cellKey{row: e.row, col: e.col}] = e.newVal
+						if e.row > doc.maxRow {
+							doc.maxRow = e.row
+						}
+						if e.col > doc.maxCol {
+							doc.maxCol = e.col
+						}
+					}
+					if len(meta.Edits) > 0 {
+						doc.dirty = true
+					}
+					return doc, nil
+				}
+			}
+		}
+	}
+
 	return openFromBytes(payload, "")
 }
 
 // NewBlank creates a clean unsaved CSV document draft.
 func NewBlank() *Document {
-	wb := xlsx.NewBlank()
+	records := make([][]string, 1)
+	records[0] = make([]string, 1)
 	return &Document{
-		Workbook: wb,
-		comma:    ',',
+		comma:      ',',
+		records:    records,
+		maxRow:     1,
+		maxCol:     1,
+		edits:      make(map[cellKey]string),
+		rowHeights: make(map[int]float64),
+		colWidths:  make(map[int]float64),
 	}
+}
+
+func newFromRecords(records [][]string, path string) (*Document, error) {
+	maxRow := len(records)
+	maxCol := 0
+	for _, r := range records {
+		if len(r) > maxCol {
+			maxCol = len(r)
+		}
+	}
+	if maxRow < 1 {
+		maxRow = 1
+	}
+	if maxCol < 1 {
+		maxCol = 1
+	}
+	return &Document{
+		path:       path,
+		comma:      ',',
+		records:    records,
+		maxRow:     maxRow,
+		maxCol:     maxCol,
+		edits:      make(map[cellKey]string),
+		rowHeights: make(map[int]float64),
+		colWidths:  make(map[int]float64),
+	}, nil
 }
 
 func openFromBytes(data []byte, path string) (*Document, error) {
@@ -108,64 +245,31 @@ func openFromBytes(data []byte, path string) (*Document, error) {
 		return nil, fmt.Errorf("parse csv: %w", err)
 	}
 
-	file := excelize.NewFile()
-	_ = file.SetDefaultFont("Aptos Narrow")
-	sheet := file.GetSheetName(0)
-	if sheet == "" {
-		sheet = "Sheet1"
-	}
-
-	type formulaRef struct {
-		col     int
-		formula string
-	}
-
-	for r, record := range records {
-		if len(record) == 0 {
-			continue
-		}
-		rowValues := make([]any, len(record))
-		var formulas []formulaRef
-
-		for c, field := range record {
-			trimmed := strings.TrimSpace(field)
-			if strings.HasPrefix(trimmed, "=") && len(trimmed) > 1 {
-				formulas = append(formulas, formulaRef{col: c + 1, formula: strings.TrimPrefix(trimmed, "=")})
-				rowValues[c] = ""
-			} else if strings.EqualFold(trimmed, "true") {
-				rowValues[c] = true
-			} else if strings.EqualFold(trimmed, "false") {
-				rowValues[c] = false
-			} else if len(trimmed) > 1 && trimmed[0] == '0' && trimmed[1] >= '0' && trimmed[1] <= '9' {
-				// Preserve string representation for numbers with leading zeros (IDs, postal codes)
-				rowValues[c] = field
-			} else if num, parseErr := strconv.ParseFloat(trimmed, 64); parseErr == nil && !math.IsNaN(num) && !math.IsInf(num, 0) {
-				rowValues[c] = num
-			} else {
-				rowValues[c] = field
-			}
-		}
-
-		cellRef, refErr := excelize.CoordinatesToCellName(1, r+1)
-		if refErr == nil {
-			_ = file.SetSheetRow(sheet, cellRef, &rowValues)
-		}
-		for _, f := range formulas {
-			fRef, fErr := excelize.CoordinatesToCellName(f.col, r+1)
-			if fErr == nil {
-				_ = file.SetCellFormula(sheet, fRef, f.formula)
-			}
+	maxRow := len(records)
+	maxCol := 0
+	for _, r := range records {
+		if len(r) > maxCol {
+			maxCol = len(r)
 		}
 	}
+	if maxRow < 1 {
+		maxRow = 1
+	}
+	if maxCol < 1 {
+		maxCol = 1
+	}
 
-	wb := xlsx.NewFromExcelize(file, path)
-	wb.SetDirty(false)
 	return &Document{
-		Workbook: wb,
-		path:     path,
-		hasBOM:   hasBOM,
-		useCRLF:  useCRLF,
-		comma:    comma,
+		path:       path,
+		hasBOM:     hasBOM,
+		useCRLF:    useCRLF,
+		comma:      comma,
+		records:    records,
+		maxRow:     maxRow,
+		maxCol:     maxCol,
+		edits:      make(map[cellKey]string),
+		rowHeights: make(map[int]float64),
+		colWidths:  make(map[int]float64),
 	}, nil
 }
 
@@ -190,6 +294,11 @@ func detectDelimiter(data []byte) rune {
 	return ','
 }
 
+// SheetNames returns the single worksheet name for CSV.
+func (d *Document) SheetNames() []string {
+	return []string{"Sheet1"}
+}
+
 // Path returns the current file path of the document.
 func (d *Document) Path() string {
 	d.mu.Lock()
@@ -202,17 +311,20 @@ func (d *Document) SetSourcePath(path string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.path = path
-	d.Workbook.SetSourcePath(path)
 }
 
 // Dirty reports whether the document has unsaved modifications.
 func (d *Document) Dirty() bool {
-	return d.Workbook.Dirty()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.dirty
 }
 
 // SetDirty sets the document's dirty flag.
 func (d *Document) SetDirty(dirty bool) {
-	d.Workbook.SetDirty(dirty)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.dirty = dirty
 }
 
 // Editable reports whether this document supports user editing.
@@ -230,8 +342,9 @@ func (d *Document) Save() error {
 	if err := d.saveToLocked(d.path); err != nil {
 		return err
 	}
-	d.Workbook.RebaseHistory()
-	d.Workbook.SetDirty(false)
+	d.dirty = false
+	d.undoStack = nil
+	d.redoStack = nil
 	return nil
 }
 
@@ -240,7 +353,7 @@ func (d *Document) SaveAs(path string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if strings.EqualFold(filepath.Ext(path), ".xlsx") {
-		return d.Workbook.SaveAs(path)
+		return d.exportToXLSXLocked(path)
 	}
 	return d.saveToLocked(path)
 }
@@ -250,7 +363,7 @@ func (d *Document) SaveAsDocument(path string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if strings.EqualFold(filepath.Ext(path), ".xlsx") {
-		if err := d.Workbook.SaveAsDocument(path); err != nil {
+		if err := d.exportToXLSXLocked(path); err != nil {
 			return err
 		}
 		d.path = path
@@ -260,36 +373,49 @@ func (d *Document) SaveAsDocument(path string) error {
 		return err
 	}
 	d.path = path
-	d.Workbook.SetSourcePath(path)
-	d.Workbook.RebaseHistory()
-	d.Workbook.SetDirty(false)
+	d.dirty = false
+	d.undoStack = nil
+	d.redoStack = nil
 	return nil
 }
 
-func (d *Document) saveToLocked(path string) error {
-	sheet := "Sheet1"
-	sheets := d.Workbook.SheetNames()
-	if len(sheets) > 0 {
-		sheet = sheets[0]
+func (d *Document) exportToXLSXLocked(path string) error {
+	const maxXLSXRows = 1048576
+	if d.maxRow > maxXLSXRows {
+		return fmt.Errorf("CSV 包含 %d 行，超过了 XLSX 格式上限（1,048,576 行），无法另存为 XLSX", d.maxRow)
 	}
-	rows, err := d.Workbook.SheetRows(sheet)
-	if err != nil {
-		return fmt.Errorf("read rows from worksheet: %w", err)
+
+	file := excelize.NewFile()
+	_ = file.SetDefaultFont("Aptos Narrow")
+	sheet := file.GetSheetName(0)
+	if sheet == "" {
+		sheet = "Sheet1"
 	}
-	maxCols := 0
-	for _, row := range rows {
-		if len(row) > maxCols {
-			maxCols = len(row)
+
+	for r := 1; r <= d.maxRow; r++ {
+		rowVals := make([]any, d.maxCol)
+		hasContent := false
+		for c := 1; c <= d.maxCol; c++ {
+			val := d.getCellValueLocked(r, c)
+			if val != "" {
+				rowVals[c-1] = val
+				hasContent = true
+			} else {
+				rowVals[c-1] = ""
+			}
 		}
-	}
-	for i := range rows {
-		if len(rows[i]) < maxCols {
-			padded := make([]string, maxCols)
-			copy(padded, rows[i])
-			rows[i] = padded
+		if hasContent {
+			cellRef, err := excelize.CoordinatesToCellName(1, r)
+			if err == nil {
+				_ = file.SetSheetRow(sheet, cellRef, &rowVals)
+			}
 		}
 	}
 
+	return file.SaveAs(path)
+}
+
+func (d *Document) saveToLocked(path string) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".glance-*.csv")
 	if err != nil {
@@ -304,15 +430,25 @@ func (d *Document) saveToLocked(path string) error {
 			return err
 		}
 	}
+
 	w := csv.NewWriter(tmp)
 	if d.comma != 0 {
 		w.Comma = d.comma
 	}
 	w.UseCRLF = d.useCRLF
-	if err := w.WriteAll(rows); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write csv data: %w", err)
+
+	// Stream write all rows
+	for r := 1; r <= d.maxRow; r++ {
+		rowFields := make([]string, d.maxCol)
+		for c := 1; c <= d.maxCol; c++ {
+			rowFields[c-1] = d.getCellValueLocked(r, c)
+		}
+		if err := w.Write(rowFields); err != nil {
+			_ = tmp.Close()
+			return fmt.Errorf("write csv row %d: %w", r, err)
+		}
 	}
+
 	w.Flush()
 	if err := w.Error(); err != nil {
 		_ = tmp.Close()
@@ -325,34 +461,52 @@ func (d *Document) saveToLocked(path string) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return fileutil.ReplaceFile(tmpPath, path)
+
+	if err := fileutil.ReplaceFile(tmpPath, path); err != nil {
+		return err
+	}
+
+	// Reopen file handle and re-scan index if path matches
+	if filepath.Clean(d.path) == filepath.Clean(path) && d.file != nil {
+		_ = d.file.Close()
+		newF, err := os.Open(d.path)
+		if err == nil {
+			newIdx, idxErr := scanFileIndex(newF)
+			if idxErr == nil {
+				d.file = newF
+				d.index = newIdx
+				d.edits = make(map[cellKey]string)
+			} else {
+				_ = newF.Close()
+			}
+		}
+	}
+
+	return nil
 }
 
-// Snapshot serializes the document to CSV bytes for session recovery.
+// Snapshot serializes the document state for workspace recovery.
+// For large files (> 2MB) on disk, writes compact recovery metadata.
+// For small files or drafts without a path, writes full CSV bytes.
 func (d *Document) Snapshot() ([]byte, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	sheet := "Sheet1"
-	sheets := d.Workbook.SheetNames()
-	if len(sheets) > 0 {
-		sheet = sheets[0]
-	}
-	rows, err := d.Workbook.SheetRows(sheet)
-	if err != nil {
-		return nil, err
-	}
-	maxCols := 0
-	for _, row := range rows {
-		if len(row) > maxCols {
-			maxCols = len(row)
+
+	// Compact snapshot for large files on disk
+	if d.file != nil && d.index != nil && d.index.fileSize > 2*1024*1024 && d.path != "" {
+		edits := make([]editAction, 0, len(d.edits))
+		for k, v := range d.edits {
+			edits = append(edits, editAction{row: k.row, col: k.col, newVal: v})
 		}
-	}
-	for i := range rows {
-		if len(rows[i]) < maxCols {
-			padded := make([]string, maxCols)
-			copy(padded, rows[i])
-			rows[i] = padded
+		meta := snapshotMetadata{
+			Kind:    "glance-csv-v1",
+			Source:  d.path,
+			HasBOM:  d.hasBOM,
+			UseCRLF: d.useCRLF,
+			Comma:   d.comma,
+			Edits:   edits,
 		}
+		return json.Marshal(meta)
 	}
 
 	var buf bytes.Buffer
@@ -364,8 +518,15 @@ func (d *Document) Snapshot() ([]byte, error) {
 		w.Comma = d.comma
 	}
 	w.UseCRLF = d.useCRLF
-	if err := w.WriteAll(rows); err != nil {
-		return nil, err
+
+	for r := 1; r <= d.maxRow; r++ {
+		rowFields := make([]string, d.maxCol)
+		for c := 1; c <= d.maxCol; c++ {
+			rowFields[c-1] = d.getCellValueLocked(r, c)
+		}
+		if err := w.Write(rowFields); err != nil {
+			return nil, err
+		}
 	}
 	w.Flush()
 	if err := w.Error(); err != nil {
@@ -374,7 +535,7 @@ func (d *Document) Snapshot() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Close closes the underlying workbook resources.
+// Close closes any open file handles.
 func (d *Document) Close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -382,5 +543,8 @@ func (d *Document) Close() error {
 		return nil
 	}
 	d.closed = true
-	return d.Workbook.Close()
+	if d.file != nil {
+		return d.file.Close()
+	}
+	return nil
 }

@@ -85,7 +85,8 @@ const (
 	toolbarActionDecreaseDecimal
 	toolbarActionDecreaseFontSize
 	toolbarActionIncreaseFontSize
-	toolbarActionLast = toolbarActionIncreaseFontSize
+	toolbarActionMergeCenter
+	toolbarActionLast = toolbarActionMergeCenter
 )
 
 var baseToolbarCategoryLabels = []string{"文件", "开始", "插入", "页面布局", "公式", "数据", "审阅", "视图"}
@@ -118,6 +119,7 @@ var homeRibbonActions = []spreadsheetToolbarAction{
 	{slot: 9, label: "居中", group: "对齐", icon: "format_align_center"},
 	{slot: toolbarActionAlignRight, label: "右对齐", group: "对齐", icon: "format_align_right"},
 	{slot: toolbarActionWrapText, label: "自动换行", group: "对齐", icon: "text-wrap"},
+	{slot: toolbarActionMergeCenter, label: "合并后居中", group: "对齐", icon: "merge"},
 	{slot: toolbarActionPercentFormat, label: "百分比", displayLabel: "%", group: "格式", icon: "percent"},
 	{slot: toolbarActionCurrencyFormat, label: "货币格式", group: "格式", icon: "banknote"},
 	{slot: toolbarActionIncreaseDecimal, label: "增加小数位数", group: "格式", symbol: ".0←"},
@@ -265,6 +267,7 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 		toolbarActionTextFunctions, toolbarActionDateTimeFunctions, toolbarActionNameManager,
 		toolbarActionFlashFill,
 		toolbarActionDataValidation,
+		toolbarActionMergeCenter,
 		toolbarActionNewComment, toolbarActionDeleteComment,
 		toolbarActionSpellCheck, toolbarActionTranslate,
 		toolbarActionNormalView, toolbarActionPageBreakPreview, toolbarActionRuler,

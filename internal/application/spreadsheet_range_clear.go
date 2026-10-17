@@ -22,7 +22,7 @@ func validSpreadsheetFormatRange(b document.CellRange) bool {
 func registerSpreadsheetRangeClearCapability(catalog *Catalog) error {
 	return catalog.Register(CapabilityRegistration{
 		Descriptor: CapabilityDescriptor{
-			ID: "spreadsheet.range.clear", Name: "清除单元格区域内容", Description: "清除指定区域已有单元格的值和公式，保留格式与行列尺寸；支持整行、整列和全表。", Category: CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskLow, RequiresDocument: true, RequiresRevision: true,
+			ID: "spreadsheet.range.clear", Name: "清除单元格区域内容", Description: "清除指定区域已有单元格的值和公式，保留格式与行列尺寸；支持整行、整列和全表。", Category: CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskLow, RequiresDocument: true, RequiresRevision: true,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","end_row","start_column","end_column"],"additionalProperties":false}},"required":["sheet","bounds"],"additionalProperties":false}`),
 			OutputSchema: json.RawMessage(`{"type":"object","properties":{"changed":{"type":"boolean"}},"required":["changed"],"additionalProperties":false}`),
 		}, Handler: func(ctx context.Context, c CapabilityContext, raw json.RawMessage) (CapabilityResult, error) {

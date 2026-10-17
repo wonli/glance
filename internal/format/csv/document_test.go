@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
@@ -50,14 +51,14 @@ func TestOpenAndReadCSV(t *testing.T) {
 
 	// Alice row
 	if window.Cells[1][0].Value != "Alice" || window.Cells[1][1].Value != "30" ||
-		window.Cells[1][2].Value != "TRUE" || window.Cells[1][3].Value != "007" {
+		!strings.EqualFold(window.Cells[1][2].Value, "true") || window.Cells[1][3].Value != "007" {
 		t.Errorf("unexpected Alice values: %v, %v, %v, %v",
 			window.Cells[1][0].Value, window.Cells[1][1].Value, window.Cells[1][2].Value, window.Cells[1][3].Value)
 	}
 
 	// Bob row (float + false + preserved leading zero)
 	if window.Cells[2][0].Value != "Bob" || window.Cells[2][1].Value != "25.5" ||
-		window.Cells[2][2].Value != "FALSE" || window.Cells[2][3].Value != "0123" {
+		!strings.EqualFold(window.Cells[2][2].Value, "false") || window.Cells[2][3].Value != "0123" {
 		t.Errorf("unexpected Bob values: %v, %v, %v, %v",
 			window.Cells[2][0].Value, window.Cells[2][1].Value, window.Cells[2][2].Value, window.Cells[2][3].Value)
 	}
@@ -374,5 +375,114 @@ func TestUndoRedo(t *testing.T) {
 	}
 	if window.Cells[1][0].Value != "999" {
 		t.Errorf("after redo got %q, want %q", window.Cells[1][0].Value, "999")
+	}
+}
+
+func TestOpenCustomerCSV2Million(t *testing.T) {
+	path := "/Users/mima1234/Downloads/customers-2000000.csv"
+	if _, err := os.Stat(path); err != nil {
+		t.Skip("customers-2000000.csv not found")
+	}
+
+	start := time.Now()
+	doc, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer doc.Close()
+	openDuration := time.Since(start)
+	t.Logf("Opened 2,000,001 rows in %v", openDuration)
+	if openDuration > 2*time.Second {
+		t.Errorf("Open took %v, expected < 2s", openDuration)
+	}
+
+	cols, rows, err := doc.Dimension("Sheet1")
+	if err != nil {
+		t.Fatalf("Dimension: %v", err)
+	}
+	t.Logf("Dimensions: cols=%d, rows=%d", cols, rows)
+	if rows != 2000001 || cols != 12 {
+		t.Errorf("got %d rows, %d cols; want 2000001 rows, 12 cols", rows, cols)
+	}
+
+	// 1. First 5 rows
+	w1, err := doc.Window("Sheet1", 1, 1, 5, 3)
+	if err != nil {
+		t.Fatalf("Window row 1-5: %v", err)
+	}
+	if w1.Cells[0][0].Value != "Index" || w1.Cells[0][1].Value != "Customer Id" {
+		t.Errorf("unexpected header: %+v", w1.Cells[0])
+	}
+	if w1.Cells[1][0].Value != "1" {
+		t.Errorf("unexpected row 1 index: %s", w1.Cells[1][0].Value)
+	}
+
+	// 2. Around 1,048,576 (the old Excel limit)
+	wMid, err := doc.Window("Sheet1", 1048575, 1, 3, 3)
+	if err != nil {
+		t.Fatalf("Window at 1048575: %v", err)
+	}
+	if wMid.Cells[0][0].Value != "1048574" {
+		t.Errorf("unexpected row 1048574 index: %s", wMid.Cells[0][0].Value)
+	}
+	if wMid.Cells[1][0].Value != "1048575" {
+		t.Errorf("unexpected row 1048575 index: %s", wMid.Cells[1][0].Value)
+	}
+	if wMid.Cells[2][0].Value != "1048576" {
+		t.Errorf("unexpected row 1048576 index: %s", wMid.Cells[2][0].Value)
+	}
+
+	// 3. Beyond 1,048,576 up to 2,000,001
+	wEnd, err := doc.Window("Sheet1", 2000000, 1, 2, 3)
+	if err != nil {
+		t.Fatalf("Window at end: %v", err)
+	}
+	if wEnd.Cells[0][0].Value != "1999999" {
+		t.Errorf("unexpected row 1999999 index: %s", wEnd.Cells[0][0].Value)
+	}
+	if wEnd.Cells[1][0].Value != "2000000" {
+		t.Errorf("unexpected row 2000000 index: %s", wEnd.Cells[1][0].Value)
+	}
+
+	// 4. Edit cell at row 2,000,001
+	origVal := wEnd.Cells[1][1].Value
+	if err := doc.SetCellText("Sheet1", "B2000001", "CUSTOM_EDITED_ID"); err != nil {
+		t.Fatalf("SetCellText: %v", err)
+	}
+	if !doc.Dirty() {
+		t.Errorf("expected dirty after edit")
+	}
+
+	wVerify, err := doc.Window("Sheet1", 2000001, 1, 1, 3)
+	if err != nil {
+		t.Fatalf("Window after edit: %v", err)
+	}
+	if wVerify.Cells[0][1].Value != "CUSTOM_EDITED_ID" {
+		t.Errorf("got %q, want CUSTOM_EDITED_ID", wVerify.Cells[0][1].Value)
+	}
+
+	// 5. Undo edit
+	undone, err := doc.Undo()
+	if err != nil || !undone {
+		t.Fatalf("Undo: %v, undone=%v", err, undone)
+	}
+	wUndo, err := doc.Window("Sheet1", 2000001, 1, 1, 3)
+	if err != nil {
+		t.Fatalf("Window after undo: %v", err)
+	}
+	if wUndo.Cells[0][1].Value != origVal {
+		t.Errorf("after undo got %q, want %q", wUndo.Cells[0][1].Value, origVal)
+	}
+
+	// 6. Snapshot performance
+	snapStart := time.Now()
+	payload, err := doc.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	snapDuration := time.Since(snapStart)
+	t.Logf("Snapshot generated in %v (size %d bytes)", snapDuration, len(payload))
+	if snapDuration > 50*time.Millisecond {
+		t.Errorf("Snapshot took %v, expected < 50ms", snapDuration)
 	}
 }

@@ -291,6 +291,14 @@ func exampleSchemaValue(schema jsonschema.Definition) (json.RawMessage, bool) {
 			encoded, err := json.Marshal("#000000")
 			return encoded, err == nil
 		}
+		if schema.Pattern != nil && *schema.Pattern == `^\d{4}-\d{2}-\d{2}$` {
+			encoded, err := json.Marshal("2000-01-01")
+			return encoded, err == nil
+		}
+		if schema.Pattern != nil && *schema.Pattern == `^([01][0-9]|2[0-3]):[0-5][0-9]$` {
+			encoded, err := json.Marshal("09:30")
+			return encoded, err == nil
+		}
 		minimum := int64(1)
 		if schema.Has("minLength") {
 			parsed, ok := schemaInteger(schema.MinLength)

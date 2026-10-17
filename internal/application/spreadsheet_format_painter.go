@@ -15,7 +15,7 @@ func spreadsheetFormatPainterRegistration() CapabilityRegistration {
 		Descriptor: CapabilityDescriptor{
 			ID: "spreadsheet.format.paint", Name: "复制单元格格式",
 			Description: "读取指定源单元格的格式，并将当前中立格式模型支持的属性应用到同一工作表的目标区域。最多处理 10000 个目标单元格；这是一次显式范围操作，不依赖当前选区。",
-			Category:    CapabilityCommand, Formats: []Format{FormatXLSX}, Risk: RiskMedium,
+			Category:    CapabilityCommand, Formats: []Format{FormatXLSX, FormatCSV}, Risk: RiskMedium,
 			RequiresDocument: true, RequiresRevision: true,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string","minLength":1},"source_cell":{"type":"string","minLength":2,"maxLength":10},"target_bounds":{"type":"object","properties":{"start_row":{"type":"integer","minimum":1,"maximum":1048576},"start_column":{"type":"integer","minimum":1,"maximum":16384},"end_row":{"type":"integer","minimum":1,"maximum":1048576},"end_column":{"type":"integer","minimum":1,"maximum":16384}},"required":["start_row","start_column","end_row","end_column"],"additionalProperties":false}},"required":["sheet","source_cell","target_bounds"],"additionalProperties":false}`),
 			OutputSchema: json.RawMessage(`{"type":"object","properties":{"sheet":{"type":"string"},"source_cell":{"type":"string"},"target_bounds":{"type":"object"},"changed":{"type":"boolean"}},"required":["sheet","source_cell","target_bounds","changed"],"additionalProperties":false}`),

@@ -22,6 +22,7 @@ const (
 	FormatDOC      Format = "doc"
 	FormatXLSX     Format = "xlsx"
 	FormatXLS      Format = "xls"
+	FormatCSV      Format = "csv"
 	FormatPPTX     Format = "pptx"
 	FormatPDF      Format = "pdf"
 	FormatJSON     Format = "json"
@@ -170,6 +171,21 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		return nil, err
 	}
 	if err := registerSpreadsheetRangeClearCapability(runtime.catalog); err != nil {
+		return nil, err
+	}
+	if err := registerSpreadsheetFillDownCapability(runtime.catalog); err != nil {
+		return nil, err
+	}
+	if err := registerSpreadsheetFillRightCapability(runtime.catalog); err != nil {
+		return nil, err
+	}
+	if err := registerSpreadsheetMergeCapability(runtime.catalog); err != nil {
+		return nil, err
+	}
+	if err := registerSpreadsheetCellDateCapability(runtime.catalog); err != nil {
+		return nil, err
+	}
+	if err := registerSpreadsheetCellTimeCapability(runtime.catalog); err != nil {
 		return nil, err
 	}
 	if err := registerSpreadsheetCellTransferCapability(runtime.catalog); err != nil {
@@ -1074,6 +1090,8 @@ func formatForPath(path string) (Format, error) {
 		return FormatXLSX, nil
 	case ".xls":
 		return FormatXLS, nil
+	case ".csv":
+		return FormatCSV, nil
 	case ".pptx":
 		return FormatPPTX, nil
 	case ".pdf":
@@ -1098,6 +1116,8 @@ func extensionMatchesFormat(extension string, format Format) bool {
 		return extension == ".xlsx"
 	case FormatXLS:
 		return extension == ".xls"
+	case FormatCSV:
+		return extension == ".csv"
 	case FormatPPTX:
 		return extension == ".pptx"
 	case FormatPDF:

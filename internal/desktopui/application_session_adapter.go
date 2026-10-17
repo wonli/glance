@@ -9,9 +9,11 @@ import (
 	"math"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"glance/internal/application"
 	"glance/internal/document"
+	csvdoc "glance/internal/format/csv"
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
 	"glance/internal/format/markdowndoc"
@@ -234,6 +236,52 @@ func (a *desktopSessionAdapter) SetSpreadsheetCellValue(ctx context.Context, she
 	return editor.SetCellValueChanged(sheet, cell, value)
 }
 
+func (a *desktopSessionAdapter) SetSpreadsheetCellDate(ctx context.Context, sheet, cell string, date time.Time) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s := a.session
+	if s == nil || s.finalized.Load() {
+		return false, application.ErrDocumentNotFound
+	}
+	s.adapterMu.Lock()
+	defer s.adapterMu.Unlock()
+	if s.book == nil || !s.book.Editable() {
+		return false, application.ErrReadOnlyDocument
+	}
+	editor, ok := any(s.book).(document.SpreadsheetCellDateEditor)
+	if !ok {
+		return false, application.ErrCapabilityUnsupported
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return editor.SetCellDateChanged(sheet, cell, date)
+}
+
+func (a *desktopSessionAdapter) SetSpreadsheetCellTime(ctx context.Context, sheet, cell string, value time.Time) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s := a.session
+	if s == nil || s.finalized.Load() {
+		return false, application.ErrDocumentNotFound
+	}
+	s.adapterMu.Lock()
+	defer s.adapterMu.Unlock()
+	if s.book == nil || !s.book.Editable() {
+		return false, application.ErrReadOnlyDocument
+	}
+	editor, ok := any(s.book).(document.SpreadsheetCellTimeEditor)
+	if !ok {
+		return false, application.ErrCapabilityUnsupported
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return editor.SetCellTimeChanged(sheet, cell, value)
+}
+
 func (a *desktopSessionAdapter) SetSpreadsheetCellFormula(ctx context.Context, sheet, cell, formula string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -378,6 +426,75 @@ func (a *desktopSessionAdapter) TransferSpreadsheetCellRange(ctx context.Context
 		return false, err
 	}
 	return editor.TransferCellRangeChanged(sheet, source, targetRow, targetColumn, cells)
+}
+
+func (a *desktopSessionAdapter) FillDownSpreadsheet(ctx context.Context, sheet string, bounds document.CellRange) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s := a.session
+	if s == nil || s.finalized.Load() {
+		return false, application.ErrDocumentNotFound
+	}
+	s.adapterMu.Lock()
+	defer s.adapterMu.Unlock()
+	if s.book == nil || !s.book.Editable() {
+		return false, application.ErrReadOnlyDocument
+	}
+	editor, ok := any(s.book).(document.SpreadsheetFillDownEditor)
+	if !ok {
+		return false, application.ErrCapabilityUnsupported
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return editor.FillDownChanged(sheet, bounds)
+}
+
+func (a *desktopSessionAdapter) FillRightSpreadsheet(ctx context.Context, sheet string, bounds document.CellRange) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s := a.session
+	if s == nil || s.finalized.Load() {
+		return false, application.ErrDocumentNotFound
+	}
+	s.adapterMu.Lock()
+	defer s.adapterMu.Unlock()
+	if s.book == nil || !s.book.Editable() {
+		return false, application.ErrReadOnlyDocument
+	}
+	editor, ok := any(s.book).(document.SpreadsheetFillRightEditor)
+	if !ok {
+		return false, application.ErrCapabilityUnsupported
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return editor.FillRightChanged(sheet, bounds)
+}
+
+func (a *desktopSessionAdapter) MergeCellsSpreadsheet(ctx context.Context, sheet string, bounds document.CellRange, confirmationToken string) (document.SpreadsheetMergeResult, error) {
+	if err := ctx.Err(); err != nil {
+		return document.SpreadsheetMergeResult{}, err
+	}
+	s := a.session
+	if s == nil || s.finalized.Load() {
+		return document.SpreadsheetMergeResult{}, application.ErrDocumentNotFound
+	}
+	s.adapterMu.Lock()
+	defer s.adapterMu.Unlock()
+	if s.book == nil || !s.book.Editable() {
+		return document.SpreadsheetMergeResult{}, application.ErrReadOnlyDocument
+	}
+	editor, ok := any(s.book).(document.SpreadsheetMergeCellsEditor)
+	if !ok {
+		return document.SpreadsheetMergeResult{}, application.ErrCapabilityUnsupported
+	}
+	if err := ctx.Err(); err != nil {
+		return document.SpreadsheetMergeResult{}, err
+	}
+	return editor.MergeCellsChanged(sheet, bounds, confirmationToken)
 }
 
 func (a *desktopSessionAdapter) SetSpreadsheetCellFormats(ctx context.Context, sheet string, bounds document.CellRange, patch document.CellFormatPatch) (bool, error) {
@@ -2750,6 +2867,8 @@ func newDesktopSessionAdapter(runtime *desktopRuntime, session *sharedDocumentSe
 	}
 	format := application.Format("")
 	switch {
+	case session.sourceFormat == application.FormatCSV:
+		format = application.FormatCSV
 	case session.book != nil:
 		format = application.FormatXLSX
 		if !session.book.Editable() {
@@ -2778,6 +2897,7 @@ func desktopApplicationFactories(runtime *desktopRuntime) []application.FormatFa
 		application.FormatDOC,
 		application.FormatXLSX,
 		application.FormatXLS,
+		application.FormatCSV,
 		application.FormatPPTX,
 		application.FormatPDF,
 		application.FormatJSON,
@@ -2798,6 +2918,9 @@ func newBlankLoadedDocument(format application.Format) (loadedDocument, error) {
 	case application.FormatXLSX:
 		d := xlsx.NewBlank()
 		return loadedDocument{book: d, sheets: d.SheetNames()}, nil
+	case application.FormatCSV:
+		d := csvdoc.NewBlank()
+		return loadedDocument{book: d, sheets: d.SheetNames(), sourceFormat: application.FormatCSV}, nil
 	case application.FormatPPTX:
 		d, err := pptx.NewBlank()
 		return loadedDocument{pptxDoc: d}, err

@@ -118,8 +118,7 @@ func (a *App) processWordCommandAsyncResult() bool {
 					} else if result.state.wordDeferredToolbarAction == "apply-format-painter" {
 						result.state.wordDeferredToolbarAction = ""
 						result.state.wordFormatPainterSourceRunID = ""
-						result.state.wordFormatPainterTargetRunID = ""
-						result.state.wordFormatPainterTargetParagraphID = ""
+						clearWordFormatPainterTarget(result.state)
 					} else if result.state.wordDeferredToolbarAction == "align-left" || result.state.wordDeferredToolbarAction == "align-center" || result.state.wordDeferredToolbarAction == "align-right" || result.state.wordDeferredToolbarAction == "align-justify" {
 						result.state.wordDeferredToolbarAction = ""
 					}
