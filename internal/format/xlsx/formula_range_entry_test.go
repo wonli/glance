@@ -1,6 +1,7 @@
 package xlsx
 
 import (
+	"path/filepath"
 	"testing"
 
 	"glance/internal/document"
@@ -54,6 +55,42 @@ func TestSetCellFormulaRangeChangedRejectsInvalidReferenceWithoutPartialEdit(t *
 		}
 		if formula, err := wb.GetCellFormula(sheet, address); err != nil || formula != "" {
 			t.Errorf("%s formula after rejected fill = %q, %v; want empty", address, formula, err)
+		}
+	}
+}
+
+func TestSetCellFormulaRangeChangedKeepsAbsoluteReferenceComponentsFixed(t *testing.T) {
+	wb := NewBlank()
+	defer wb.Close()
+	sheet := wb.SheetNames()[0]
+	bounds := document.CellRange{StartRow: 2, StartColumn: 2, EndRow: 3, EndColumn: 3}
+	changed, err := wb.SetCellFormulaRangeChanged(sheet, document.CellCoordinate{Row: 2, Column: 2}, bounds, "=SUM($A1:B$2,$C$4)")
+	if err != nil || !changed {
+		t.Fatalf("SetCellFormulaRangeChanged changed=%t, err=%v; want true, nil", changed, err)
+	}
+	for address, want := range map[string]string{
+		"B2": "SUM($A1:B$2,$C$4)", "C2": "SUM($A1:C$2,$C$4)",
+		"B3": "SUM($A2:B$2,$C$4)", "C3": "SUM($A2:C$2,$C$4)",
+	} {
+		if got, err := wb.GetCellFormula(sheet, address); err != nil || got != want {
+			t.Errorf("%s formula = %q, %v; want %s", address, got, err, want)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "formula-range.xlsx")
+	if err := wb.SaveAs(path); err != nil {
+		t.Fatalf("SaveAs: %v", err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open saved formula range: %v", err)
+	}
+	defer reopened.Close()
+	for address, want := range map[string]string{
+		"B2": "SUM($A1:B$2,$C$4)", "C2": "SUM($A1:C$2,$C$4)",
+		"B3": "SUM($A2:B$2,$C$4)", "C3": "SUM($A2:C$2,$C$4)",
+	} {
+		if got, err := reopened.GetCellFormula(sheet, address); err != nil || got != want {
+			t.Errorf("%s formula after save/reopen = %q, %v; want %s", address, got, err, want)
 		}
 	}
 }

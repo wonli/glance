@@ -82,6 +82,27 @@ func NewBlank() *Workbook {
 	return &Workbook{file: file, dirty: true, historyState: 1, nextHistoryState: 2}
 }
 
+// NewFromExcelize constructs a Workbook from an existing excelize.File.
+func NewFromExcelize(file *excelize.File, path string) *Workbook {
+	return &Workbook{
+		path:              path,
+		file:              file,
+		historyState:      1,
+		savedHistoryState: 1,
+		nextHistoryState:  2,
+	}
+}
+
+// SheetRows returns the text values of all populated rows in sheet.
+func (w *Workbook) SheetRows(sheet string) ([][]string, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.checkOpen(); err != nil {
+		return nil, err
+	}
+	return w.file.GetRows(sheet)
+}
+
 // Snapshot serializes the current in-memory workbook without changing dirty state.
 func (w *Workbook) Snapshot() ([]byte, error) {
 	w.mu.Lock()

@@ -380,6 +380,8 @@ func cellNumberFormat(style *excelize.Style) string {
 		return "m/d/yy"
 	case 18:
 		return "h:mm AM/PM"
+	case 20:
+		return "h:mm"
 	default:
 		return fmt.Sprintf("builtin:%d", style.NumFmt)
 	}
