@@ -115,7 +115,7 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 	if a.finishWordSelectionInput(state, runID, editor) {
 		selectionInputPending = true
 	}
-	label := wordRunLabel(a.theme, paragraph, run)
+	label := wordRunLabelForState(a.theme, state, paragraph, run)
 	label.TextSize = unit.Sp(float32(label.TextSize) * float32(wordPageZoomFromScale(gtx, pageScale)))
 	editor.Alignment = wordParagraphAlignment(paragraph.Alignment)
 	style := material.Editor(a.theme, editor, "")

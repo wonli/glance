@@ -8,6 +8,9 @@ import (
 func (a *App) applyWindowConfig(config app.Config) {
 	a.windowMode = config.Mode
 	a.clientTitlebar = !config.Decorated
+	if config.Mode == app.Minimized {
+		requestMemoryRelease()
+	}
 	if a.themeMode == ThemeModeSystem {
 		a.designTokens = ResolveDesignTokens(a.themeMode, a.designTokens.Typography)
 	}

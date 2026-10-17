@@ -9,9 +9,13 @@ type Input struct {
 	Layout           document.WordLayoutData
 	DefaultPageSetup document.WordPageSetup
 	Previous         *Result
+	// TargetPage directs progressive layout to prioritize delivering pages up to TargetPage in Phase 1.
+	TargetPage int
 	// EditorParagraphInsets makes page scenes reserve the same small paragraph
 	// padding used by the editable Gio canvas, so screen and print share geometry.
 	EditorParagraphInsets bool
+	// ProgressiveCallback delivers interim layout results as early pages become ready.
+	ProgressiveCallback func(partial Result)
 }
 
 // DefaultPageSetup returns Glance's product default for documents without

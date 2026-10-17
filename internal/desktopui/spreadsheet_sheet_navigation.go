@@ -5,6 +5,7 @@ import (
 
 	"gioui.org/io/key"
 	"gioui.org/layout"
+	"glance/internal/document"
 	"glance/internal/format/xlsx"
 )
 
@@ -86,6 +87,11 @@ func (a *App) activateSpreadsheetSheet(gtx layout.Context, sheetName string) boo
 		state.virtualGrid.resetSheetWindow()
 		state.virtualGrid.SelectedRow, state.virtualGrid.SelectedColumn = 1, 1
 		state.virtualGrid.PendingSelectionLoad = true
+		if dimReader, ok := a.book.(document.SpreadsheetDimensionReader); ok {
+			if _, r, err := dimReader.Dimension(sheetName); err == nil {
+				state.virtualGrid.ContentRows = r
+			}
+		}
 	}
 	state.selection = CellSelection{}
 	if formulaReferenceActive {

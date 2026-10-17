@@ -61,3 +61,12 @@
 ### 粘贴、格式刷和单元格边框补充
 
 再次核对开始页：粘贴、格式刷的默认图标为 `#000000`，已同步至 `Toolbar.AccentClipboard`（暗色主题使用与普通图标一致的浅色）。用户建议调整 Excel 选中单元格边框，本轮将活动单元格、选区和单元格编辑时的边框统一接入 `Grid.SelectionBorder = #2463EB`，保留原有线宽与选择几何。退出旧进程并重新启动后实际核对 Word/Excel 图标、单个单元格及拖选 A1:C3 的边框；相关 1x/2x Ribbon 渲染、选择与格式刷测试通过。日志：`/private/tmp/glance-clipboard-grid-tests.log`。未重跑全量测试。
+
+### Word 字号 A+ / A− 图标（2026-10-18）
+
+设计节点 `BGP7i`、`B8AxIg/XqDia` 使用 Material Symbols Outlined 的 `text_increase` / `text_decrease`。项目资源位于 `internal/desktopui/assets/icons/ribbon/text_increase.svg`、`text_decrease.svg`，Word 命令映射使用这两个资源名。原始 SVG 来自 Google 的 Material Design Icons 仓库（Apache-2.0）：
+
+- [text_increase](https://github.com/google/material-design-icons/blob/master/symbols/web/text_increase/materialsymbolsoutlined/text_increase_24px.svg)
+- [text_decrease](https://github.com/google/material-design-icons/blob/master/symbols/web/text_decrease/materialsymbolsoutlined/text_decrease_24px.svg)
+
+这两份 SVG 保留官方路径，将负起点 viewBox 等价转换为零起点 viewBox 加平移，并显式设置黑色 fill，以兼容现有栅格化和 tint 路径。

@@ -18,12 +18,23 @@ type jsonSourceSegment struct{ start, end, line int }
 // Segment in the parse worker. Even one minified line is bounded, so shaping a
 // visible row never sends a whole large file to Gio's editor or text shaper.
 func jsonSourceSegments(source string) []jsonSourceSegment {
+	return jsonSourceSegmentsWithCancel(source, nil)
+}
+
+func jsonSourceSegmentsWithCancel(source string, done <-chan struct{}) []jsonSourceSegment {
 	if len(source) <= jsonSourceEditLimit {
 		return nil
 	}
 	segments := make([]jsonSourceSegment, 0, len(source)/1024+1)
 	line := 1
 	for start := 0; start < len(source); {
+		if done != nil && len(segments)&127 == 0 {
+			select {
+			case <-done:
+				return nil
+			default:
+			}
+		}
 		end := min(start+1024, len(source))
 		for end > start && end < len(source) && !utf8.RuneStart(source[end]) {
 			end--

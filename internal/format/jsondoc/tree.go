@@ -31,6 +31,17 @@ func arrayIndexStr(i int) string {
 // ParseTree retains source order, duplicate keys and exact number spelling.
 // Callers should parse outside the window loop and publish the immutable view.
 func ParseTree(source string) (*document.JSONTree, error) {
+	return ParseTreeWithCancel(source, nil)
+}
+
+// ParseTreeWithCancel parses the JSON tree, checking done periodically.
+// If done is closed, parsing halts immediately and returns an error.
+func ParseTreeWithCancel(source string, done <-chan struct{}) (*document.JSONTree, error) {
+	select {
+	case <-done:
+		return nil, errors.New("JSON parsing cancelled")
+	default:
+	}
 	trimmed := strings.TrimSpace(source)
 	if trimmed == "" {
 		return nil, errors.New("empty JSON source")
@@ -38,13 +49,19 @@ func ParseTree(source string) (*document.JSONTree, error) {
 	large := len(source) > 512*1024
 	estNodes := 64
 	if large {
-		estNodes = countJSONNodes(source)
+		estNodes = countJSONNodesWithCancel(source, done)
+		select {
+		case <-done:
+			return nil, errors.New("JSON parsing cancelled")
+		default:
+		}
 	}
 	p := &fastParser{
 		src:    source,
 		len:    len(source),
 		nodes:  make([]document.JSONNode, 0, estNodes),
 		intern: make(map[string]string, 1024),
+		done:   done,
 	}
 	if _, err := p.parseValue("root", -1, 0); err != nil {
 		return nil, err
@@ -69,6 +86,8 @@ type fastParser struct {
 	keyCount int
 	maxDepth int
 	intern   map[string]string
+	done     <-chan struct{}
+	cancelN  int
 }
 
 func (p *fastParser) skipWhitespace() {
@@ -252,6 +271,16 @@ func (p *fastParser) parseLiteral(lit string) error {
 }
 
 func (p *fastParser) parseValue(key string, parent, depth int) (int, error) {
+	if p.done != nil {
+		p.cancelN++
+		if p.cancelN&2047 == 0 {
+			select {
+			case <-p.done:
+				return 0, errors.New("JSON parsing cancelled")
+			default:
+			}
+		}
+	}
 	p.skipWhitespace()
 	if p.pos >= p.len {
 		return 0, io.EOF

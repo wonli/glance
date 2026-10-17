@@ -356,3 +356,56 @@ func mergeParagraphLayout(target *document.WordParagraphLayout, source document.
 	}
 	target.Set |= mask
 }
+
+// MergeTextStyle overlays explicitly set direct properties on an inherited
+// style, including explicit false/auto values represented by the mask.
+func MergeTextStyle(base, direct document.WordTextStyle, mask document.WordTextStyleMask) document.WordTextStyle {
+	mergeTextStyle(&base, direct, mask)
+	return base
+}
+
+// ResolveTextRunStyle uses the same inheritance rules as page layout without
+// shaping or loading fonts. It is also used for mutation no-op checks.
+func ResolveTextRunStyle(data document.WordLayoutData, paragraph document.WordParagraph, run document.WordTextRun) document.WordTextStyle {
+	result := Result{}
+	resolver := newStyleResolver(data, &layoutCursor{result: &result})
+	style := resolver.paragraphStyle(paragraph, paragraph.ID).text
+	resolver.applyCharacterStyle(&style, run.CharacterStyle, run.ID)
+	mergeTextStyle(&style, run.Style, run.StyleSet)
+	if style.FontSize <= 0 {
+		style.FontSize = DefaultFontSizePT
+	}
+	return style
+}
+
+// ResolveDocumentRunStyle finds a run in neutral body/table content and resolves
+// the inherited style for controller-side validation and no-op checks.
+func ResolveDocumentRunStyle(data document.WordLayoutData, blocks []document.WordBlock, runID string) (document.WordTextStyle, bool) {
+	find := func(p document.WordParagraph) (document.WordTextStyle, bool) {
+		for _, inline := range p.Inlines {
+			if inline.Text != nil && inline.Text.ID == runID {
+				return ResolveTextRunStyle(data, p, *inline.Text), true
+			}
+		}
+		return document.WordTextStyle{}, false
+	}
+	for _, block := range blocks {
+		if block.Paragraph != nil {
+			if style, ok := find(*block.Paragraph); ok {
+				return style, true
+			}
+		}
+		if block.Table != nil {
+			for _, row := range block.Table.Rows {
+				for _, cell := range row.Cells {
+					for _, p := range cell.Paragraphs {
+						if style, ok := find(p); ok {
+							return style, true
+						}
+					}
+				}
+			}
+		}
+	}
+	return document.WordTextStyle{}, false
+}

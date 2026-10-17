@@ -67,6 +67,10 @@ type gridViewport struct {
 	CellEditRowPreview          *gridCellRowPreview
 	VerticalScrollbar           widget.Scrollbar
 	ScrollbarWidthPx            int
+	ScrollbarStart              float32
+	ScrollbarEnd                float32
+	ContentRows                 int
+	ContentCols                 int
 }
 
 type gridLoadResult struct {
@@ -103,8 +107,12 @@ func newGridViewportWithCounts(rowCount, colCount int) *gridViewport {
 func newGridViewportForSpreadsheet(book document.Spreadsheet, sheet string) *gridViewport {
 	rowCount := xlsxRows
 	colCount := xlsxColumns
+	contentRows := 0
+	contentCols := 0
 	if dimReader, ok := book.(document.SpreadsheetDimensionReader); ok && sheet != "" {
 		if c, r, err := dimReader.Dimension(sheet); err == nil {
+			contentRows = r
+			contentCols = c
 			if r > rowCount {
 				rowCount = r
 			}
@@ -113,7 +121,64 @@ func newGridViewportForSpreadsheet(book document.Spreadsheet, sheet string) *gri
 			}
 		}
 	}
-	return newGridViewportWithCounts(rowCount, colCount)
+	v := newGridViewportWithCounts(rowCount, colCount)
+	v.ContentRows = contentRows
+	v.ContentCols = contentCols
+	return v
+}
+
+func (v *gridViewport) effectiveContentRows(a *App) int {
+	if v == nil {
+		return 0
+	}
+	contentRows := v.ContentRows
+	if contentRows <= 0 && a != nil && a.book != nil {
+		if dimReader, ok := a.book.(document.SpreadsheetDimensionReader); ok && a.sheet != "" {
+			if _, r, err := dimReader.Dimension(a.sheet); err == nil && r > 0 {
+				v.ContentRows = r
+				contentRows = r
+			}
+		}
+	}
+	if contentRows <= 0 && len(v.Window.Cells) > 0 {
+		for r := len(v.Window.Cells) - 1; r >= 0; r-- {
+			rowHasContent := false
+			for _, c := range v.Window.Cells[r] {
+				if c.Value != "" || c.Formula != "" || c.Style != (document.CellStyle{}) {
+					rowHasContent = true
+					break
+				}
+			}
+			if rowHasContent {
+				contentRows = v.Window.StartRow + r
+				v.ContentRows = contentRows
+				break
+			}
+		}
+		if contentRows <= 0 {
+			contentRows = v.Window.StartRow - 1 + len(v.Window.Cells)
+			v.ContentRows = contentRows
+		}
+	}
+	if v.SelectedRow > contentRows {
+		contentRows = v.SelectedRow
+	}
+	return contentRows
+}
+
+func (v *gridViewport) actualContentHeight(a *App) float64 {
+	if v == nil || v.Rows == nil {
+		return 0
+	}
+	contentRows := v.effectiveContentRows(a)
+	if contentRows <= 0 {
+		return 0
+	}
+	h, err := v.Rows.Boundary(contentRows)
+	if err != nil || h <= 0 {
+		return float64(contentRows) * v.Rows.defaultSize
+	}
+	return h
 }
 
 func (v *gridViewport) setScale(scale float64) {
@@ -156,6 +221,25 @@ func (v *gridViewport) invalidateWindow() {
 
 func (v *gridViewport) applyLoadResult(result gridLoadResult) error {
 	v.setPanes(result.panes)
+	if result.window.StartRow > 0 && len(result.window.Cells) > 0 {
+		for r := len(result.window.Cells) - 1; r >= 0; r-- {
+			row := result.window.StartRow + r
+			if row <= v.ContentRows {
+				break
+			}
+			rowHasContent := false
+			for _, c := range result.window.Cells[r] {
+				if c.Value != "" || c.Formula != "" || c.Style != (document.CellStyle{}) {
+					rowHasContent = true
+					break
+				}
+			}
+			if rowHasContent {
+				v.ContentRows = row
+				break
+			}
+		}
+	}
 	return v.applyPaneWindows(result.sheet, result.windows, result.window, result.top, result.left, result.corner)
 }
 
@@ -171,6 +255,7 @@ func (v *gridViewport) resetSheetWindow() {
 	v.Panes = document.SpreadsheetPaneFreeze{}
 	v.PanesLoaded = false
 	v.WindowSheet = ""
+	v.ContentRows = 0
 	v.X, v.Y = worldX, worldY
 	v.GeometryChanged = true
 }
@@ -199,6 +284,25 @@ func (v *gridViewport) ensureWindow(reader document.GridReader, sheet string, vi
 
 func (v *gridViewport) applyWindow(sheet string, visible document.CellRange, w document.SheetWindow) error {
 	v.Window, v.WindowRange, v.WindowSheet, v.WindowError = w, visible, sheet, nil
+	if w.StartRow > 0 && len(w.Cells) > 0 {
+		for r := len(w.Cells) - 1; r >= 0; r-- {
+			row := w.StartRow + r
+			if row <= v.ContentRows {
+				break
+			}
+			rowHasContent := false
+			for _, c := range w.Cells[r] {
+				if c.Value != "" || c.Formula != "" || c.Style != (document.CellStyle{}) {
+					rowHasContent = true
+					break
+				}
+			}
+			if rowHasContent {
+				v.ContentRows = row
+				break
+			}
+		}
+	}
 	if err := v.applyWindowGeometry(w); err != nil {
 		return err
 	}

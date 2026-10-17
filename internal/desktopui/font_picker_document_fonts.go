@@ -69,10 +69,8 @@ func selectedWordFontFamilyName(state *documentSessionState) string {
 	if state == nil {
 		return "字体"
 	}
-	state.wordBlocksMu.RLock()
-	defer state.wordBlocksMu.RUnlock()
-	if run, ok := selectedWordRun(state.wordBlocks, state.selectedWordRunID); ok && run.Style.FontFamily != "" {
-		return run.Style.FontFamily
+	if run, ok := selectedWordFormattingRun(state, state.selectedWordRunID); ok && run.Style.FontFamily != "" {
+		return wordRunDisplayFamily(run)
 	}
 	return "字体"
 }

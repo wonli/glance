@@ -218,6 +218,7 @@ type WordTextFormatPatch struct {
 	Underline *bool
 	FontColor *string
 	Highlight *string
+	FontSize  *float64
 }
 
 // WordTextEditor is an optional capability for safe Word text operations.

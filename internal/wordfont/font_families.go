@@ -6,12 +6,23 @@ import (
 	"unicode"
 )
 
+var defaultEastAsianFamily = FallbackFamilies()[0]
+
+// FamilyForRune reports the preferred script-specific family, before resolving
+// installed aliases and font coverage. Generic family requests remain usable.
+func FamilyForRune(style document.WordTextStyle, r rune) string { return fontFamilyForRune(style, r) }
+
 func fontFamilyForRune(style document.WordTextStyle, r rune) string {
 	family := style.FontFamilyHighANSI
 	if r <= 0x7f {
 		family = style.FontFamilyASCII
 	} else if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hangul, r) || unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r) || r >= 0x3000 && r <= 0x303f || r >= 0xff00 && r <= 0xffef {
 		family = style.FontFamilyEastAsia
+		if family == "" && (style.FontFamilyASCII != "" || style.FontFamilyHighANSI != "" || style.FontFamilyComplexScript != "") {
+			// OOXML's missing eastAsia attribute uses an application CJK default;
+			// ascii/hAnsi/cs do not specify the font of Han text.
+			return defaultEastAsianFamily
+		}
 	} else if isComplexScriptRune(r) {
 		family = style.FontFamilyComplexScript
 	}

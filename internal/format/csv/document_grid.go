@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"glance/internal/document"
+	"glance/internal/textintern"
 )
 
 const (
@@ -78,7 +79,7 @@ func (d *Document) Window(sheet string, startRow, startColumn, rowCount, columnC
 	}
 
 	defaultStyle := document.CellStyle{
-		FontFamily: "Aptos Narrow",
+		FontFamily: textintern.String("Aptos Narrow"),
 		FontSize:   11,
 	}
 
@@ -108,7 +109,7 @@ func (d *Document) Window(sheet string, startRow, startColumn, rowCount, columnC
 			}
 
 			cells[r][c] = document.Cell{
-				Value: val,
+				Value: textintern.String(val),
 				Style: defaultStyle,
 			}
 		}

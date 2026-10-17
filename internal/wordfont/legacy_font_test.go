@@ -144,3 +144,17 @@ func TestInstalledSimHeiUsesOriginalFontAdvances(t *testing.T) {
 		}
 	}
 }
+
+func TestMissingEastAsianFamilyDoesNotReuseLatinOnlyFamily(t *testing.T) {
+	style := document.WordTextStyle{FontFamily: "仿宋", FontFamilyASCII: "仿宋", FontFamilyHighANSI: "仿宋", FontFamilyComplexScript: "仿宋"}
+	if got := fontFamilyForRune(style, '中'); got != FallbackFamilies()[0] {
+		t.Fatalf("unspecified East Asian family=%q; want platform CJK fallback %q", got, FallbackFamilies()[0])
+	}
+	if got := fontFamilyForRune(style, 'A'); got != "仿宋" {
+		t.Fatalf("Latin font changed to %q", got)
+	}
+	style.FontFamilyEastAsia = "宋体"
+	if got := fontFamilyForRune(style, '中'); got != "宋体" {
+		t.Fatalf("explicit East Asian font changed to %q", got)
+	}
+}

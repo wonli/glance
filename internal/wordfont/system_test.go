@@ -132,3 +132,21 @@ func TestWordTextShaperBoundsGlyphOutlineCacheAndRebuildsEvictedGlyph(t *testing
 		t.Fatalf("rebuilding an evicted outline changed the glyph: got %+v, want %+v", rebuilt, firstOutline)
 	}
 }
+
+// Repeated paragraphs with the same family must not sort the system catalog again.
+func TestOrderedFontsReusesCandidatesAcrossSizeAndColorChanges(t *testing.T) {
+	s := &Shaper{}
+	for i := 0; i < 200; i++ {
+		s.fonts = append(s.fonts, fontscan.Footprint{Family: "family" + strconv.Itoa(i), Location: fontscan.Location{File: "/fonts/font" + strconv.Itoa(i)}})
+	}
+	style := document.WordTextStyle{FontFamily: "family1", FontSize: 12}
+	want := s.orderedFonts(style)
+	style.FontSize = 24
+	style.FontColor = "FF0000"
+	if got := s.orderedFonts(style); !reflect.DeepEqual(got, want) {
+		t.Fatal("size or color changed font candidate order")
+	}
+	if allocs := testing.AllocsPerRun(10, func() { s.orderedFonts(style) }); allocs > 1 {
+		t.Fatalf("repeated font candidate lookup allocated %.0f objects; want at most 1", allocs)
+	}
+}

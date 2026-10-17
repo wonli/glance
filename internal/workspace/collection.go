@@ -24,6 +24,7 @@ type Session struct {
 // Collection owns the durable ordering and activation state for document sessions.
 type Collection struct {
 	mu      sync.RWMutex
+	version uint64
 	store   *Store
 	tabs    []*Session
 	active  string
@@ -38,7 +39,7 @@ func OpenCollection(store *Store) (*Collection, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Collection{store: store, active: w.ActiveTabID, recents: w.Recents}
+	c := &Collection{store: store, active: w.ActiveTabID, recents: w.Recents, version: 1}
 	if c.active == "" {
 		c.active = RecentTabID
 	}
@@ -46,13 +47,13 @@ func OpenCollection(store *Store) (*Collection, error) {
 		if tab.DocumentID == "" {
 			tab.DocumentID = tab.ID
 		}
-		doc, found, err := store.LoadDocument(tab.DocumentID)
+		doc, found, err := store.LoadDocumentMetadata(tab.DocumentID)
 		if err != nil {
 			return nil, err
 		}
 		session := &Session{Tab: tab, Available: found || tab.SourcePath == ""}
 		if found {
-			session.Format, session.Payload, session.ViewState, session.Dirty, session.UpdatedAt = doc.Format, doc.Payload, doc.ViewState, doc.Dirty, doc.UpdatedAt
+			session.Format, session.ViewState, session.Dirty, session.UpdatedAt = doc.Format, doc.ViewState, doc.Dirty, doc.UpdatedAt
 		} else {
 			session.Format = inferDraftFormat(tab)
 			if session.Format == "" && tab.SourcePath != "" {
@@ -109,30 +110,79 @@ func (c *Collection) ActiveTabID() string {
 	return c.active
 }
 
+func (c *Collection) ensurePayloadLocked(session *Session) {
+	if session != nil && session.Payload == nil && c.store != nil {
+		if payload, err := c.store.LoadDocumentPayload(session.Tab.DocumentID); err == nil && len(payload) > 0 {
+			session.Payload = payload
+		}
+	}
+}
+
 func (c *Collection) Active() *Session {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.active == RecentTabID {
 		return nil
 	}
-	return cloneSession(c.getLocked(c.active))
+	session := c.getLocked(c.active)
+	c.ensurePayloadLocked(session)
+	return cloneSession(session)
 }
 
 func (c *Collection) Get(id string) (*Session, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	session := c.getLocked(id)
+	if session == nil {
+		return nil, false
+	}
+	c.ensurePayloadLocked(session)
+	return cloneSession(session), true
+}
+
+func (c *Collection) Version() uint64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	session := c.getLocked(id)
-	return cloneSession(session), session != nil
+	return c.version
+}
+
+func (c *Collection) TabCount() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.tabs)
+}
+
+func (c *Collection) TabMetadata() []Tab {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]Tab, len(c.tabs))
+	for i, s := range c.tabs {
+		out[i] = s.Tab
+	}
+	return out
 }
 
 func (c *Collection) Tabs() []Session {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	out := make([]Session, len(c.tabs))
 	for i, s := range c.tabs {
+		c.ensurePayloadLocked(s)
 		out[i] = *cloneSession(s)
 	}
 	return out
+}
+
+// ReleaseInactivePayloads drops in-memory cached payloads for all sessions except
+// the specified active document. The payloads remain safe in SQLite.
+func (c *Collection) ReleaseInactivePayloads(activeDocumentID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, s := range c.tabs {
+		if s.Tab.DocumentID != activeDocumentID && s.Tab.ID != activeDocumentID {
+			s.Payload = nil
+		}
+	}
 }
 
 func (c *Collection) Recents() []Recent {
@@ -205,6 +255,7 @@ func (c *Collection) UpdateTabMeta(tab Tab) error {
 	for _, s := range c.tabs {
 		if s.Tab.ID == tab.ID {
 			s.Tab = tab
+			c.version++
 			return c.persist()
 		}
 	}
@@ -225,6 +276,7 @@ func (c *Collection) putLocked(session Session, activate bool) error {
 		session.UpdatedAt = time.Now().UTC()
 	}
 	session.Available = true
+	c.version++
 	if old := c.getLocked(session.Tab.ID); old != nil {
 		*old = session
 	} else {
@@ -372,6 +424,7 @@ func (c *Collection) CloseTab(id string) error {
 	for i, s := range c.tabs {
 		s.Tab.Position = i
 	}
+	c.version++
 	if err := c.persist(); err != nil {
 		c.tabs = append(c.tabs, nil)
 		copy(c.tabs[index+1:], c.tabs[index:])
@@ -407,7 +460,5 @@ func cloneSession(session *Session) *Session {
 		return nil
 	}
 	copy := *session
-	copy.Payload = append([]byte(nil), session.Payload...)
-	copy.ViewState = append([]byte(nil), session.ViewState...)
 	return &copy
 }

@@ -6,7 +6,6 @@ import (
 	"image/color"
 	"strings"
 
-	"gioui.org/font"
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
@@ -256,13 +255,7 @@ func (a *App) layoutFontPickerRow(gtx layout.Context, row fontPickerRow, index i
 					if row.missing {
 						return a.fontPickerLabel(gtx, "替代显示", 10, fontPickerMuted)
 					}
-					l := material.Label(a.theme, 12, "春日 Aa 123")
-					l.Font.Typeface = font.Typeface(row.family)
-					l.Color = fontPickerMuted
-					l.MaxLines = 1
-					gtx.Constraints.Min.Y = 0
-					gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(90))
-					return l.Layout(gtx)
+					return a.fontPickerLabel(gtx, "春日 Aa 123", 11, fontPickerMuted)
 				}), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if !selected {
 						return layout.Dimensions{}

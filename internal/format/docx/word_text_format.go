@@ -28,7 +28,7 @@ func (d *Document) SetTextRunStyle(runID string, patch document.WordTextFormatPa
 	if !ok || target.run == nil {
 		return fmt.Errorf("Word text run %q is not editable", runID)
 	}
-	currentStyle := parseWordTextStyle(firstChild(target.run, "rPr"))
+	currentStyle := d.effectiveWordTargetStyle(target)
 	if patch.Bold != nil && *patch.Bold == currentStyle.Bold {
 		patch.Bold = nil
 	}
@@ -58,6 +58,14 @@ func (d *Document) SetTextRunStyle(runID string, patch document.WordTextFormatPa
 			patch.Highlight = nil
 		} else {
 			patch.Highlight = &highlight
+		}
+	}
+	if patch.FontSize != nil {
+		if math.IsNaN(*patch.FontSize) || math.IsInf(*patch.FontSize, 0) || *patch.FontSize < 1 || *patch.FontSize > 1638 {
+			return fmt.Errorf("Word font size must be between 1 and 1638 points")
+		}
+		if *patch.FontSize == currentStyle.FontSize {
+			patch.FontSize = nil
 		}
 	}
 	updates, order, err := wordStyleUpdates(patch)
@@ -382,6 +390,13 @@ func wordStyleUpdates(patch document.WordTextFormatPatch) (map[string]wordProper
 			return nil, nil, err
 		}
 		add("highlight", wordPropertyUpdate{attribute: "val", value: highlight, remove: highlight == ""})
+	}
+	if patch.FontSize != nil {
+		halfPoints := int64(math.Round(*patch.FontSize * 2))
+		if halfPoints < 2 || halfPoints > 3276 {
+			return nil, nil, fmt.Errorf("Word font size is outside the supported half-point range")
+		}
+		add("sz", wordPropertyUpdate{attribute: "val", value: strconv.FormatInt(halfPoints, 10)})
 	}
 	return updates, order, nil
 }

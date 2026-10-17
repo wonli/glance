@@ -46,13 +46,16 @@ func (a *App) layoutWordPages(gtx layout.Context, state *documentSessionState, p
 	}
 	if result == nil {
 		message := "正在计算页面布局…"
-		if state.wordLayoutPendingKey == nil {
+		surface := wordPageWarningSurface
+		if state.wordLayoutPendingKey != nil {
+			surface = wordWorkspaceBackground
+		} else {
 			message = "页面数尚未计算"
 		}
 		if state.wordGridlinesVisible && !state.wordReadingMode {
 			drawWordGridlines(gtx, image.Rectangle{Max: gtx.Constraints.Max})
 		}
-		return layoutWordPageMessage(gtx, a.theme, message, wordPageWarningSurface)
+		return layoutWordPageMessage(gtx, a.theme, message, surface)
 	}
 	if !result.CanPreview {
 		message := "此文档包含暂不支持的版式，无法保证页面与打印结果一致。"
@@ -173,6 +176,7 @@ func (a *App) layoutWordPages(gtx layout.Context, state *documentSessionState, p
 		layout.E.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			dimensions := style.Layout(gtx, layout.Vertical, start, end)
 			if delta := state.wordPageListState.ScrollDistance(); delta != 0 {
+				state.wordTargetRestorePage = -1
 				state.wordPageListState.List.ScrollBy(delta * float32(rowCount))
 			}
 			return dimensions

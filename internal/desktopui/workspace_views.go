@@ -14,10 +14,14 @@ func (a *App) reconcileWorkspaceTabs() {
 	if a == nil || a.collection == nil {
 		return
 	}
-	records := a.collection.Tabs()
-	current := make(map[string]workspace.Tab, len(records))
-	for _, record := range records {
-		current[record.Tab.ID] = record.Tab
+	ver := a.collection.Version()
+	if ver != 0 && ver == a.lastReconciledTabVersion && a.tabMeta != nil {
+		return
+	}
+	tabs := a.collection.TabMetadata()
+	current := make(map[string]workspace.Tab, len(tabs))
+	for _, tab := range tabs {
+		current[tab.ID] = tab
 	}
 	for id, meta := range a.tabMeta {
 		if _, exists := current[id]; exists {
@@ -30,14 +34,13 @@ func (a *App) reconcileWorkspaceTabs() {
 			continue
 		}
 		if state := a.sessions[id]; state != nil {
-			state.releaseJSONViewResources()
-			state.releaseWordViewResources()
-			state.releasePDFViewResources()
+			state.releaseViewResources()
 			state.closed.Store(true)
 		}
 		delete(a.sessions, id)
 		delete(a.tabButtons, id)
 		delete(a.tabCloseButtons, id)
+		a.workspaceTabsListPendingReset = true
 	}
 	a.tabMeta = current
 	if a.activeTabID != "" && a.activeTabID != workspace.RecentTabID {
@@ -47,6 +50,8 @@ func (a *App) reconcileWorkspaceTabs() {
 			a.activateRecent()
 		}
 	}
+	a.lastReconciledTabVersion = ver
+	a.releaseIdleEngines()
 }
 
 // viewForTab attaches this window to the shared document session and creates

@@ -135,6 +135,9 @@ func (a *App) commitGridCell(value string) error {
 	changed = changed && (!commandRouted || commandChanged)
 	if changed && a.virtualGrid != nil {
 		a.virtualGrid.invalidateWindow()
+		if active := spreadsheetActiveCell(state, a.selectedCell); active.Row+1 > a.virtualGrid.ContentRows {
+			a.virtualGrid.ContentRows = active.Row + 1
+		}
 	}
 	a.cellEditor.SetText(a.cellEdit.Original)
 	a.formulaEditor.SetText(a.cellEdit.Original)

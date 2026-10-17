@@ -31,10 +31,11 @@ const (
 )
 
 func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
-	ids := a.workspaceTabIDs()
 	if a.clientTitlebar {
 		a.processWindowControlClicks(gtx)
 	}
+	a.processWorkspaceTabClicks(gtx)
+	ids := a.workspaceTabIDs()
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabStripSize), gtx.Dp(workspaceTabStripSize)
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
@@ -70,7 +71,36 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 	)
 }
 
+func (a *App) processWorkspaceTabClicks(gtx layout.Context) {
+	if a.recentTabButton.Clicked(gtx) {
+		a.showNewMenu = false
+		a.persistActiveSession()
+		a.activateRecent()
+	}
+	if a.newButton.Clicked(gtx) {
+		a.showNewMenu = !a.showNewMenu
+	}
+	for id, closeButton := range a.tabCloseButtons {
+		if closeButton != nil && closeButton.Clicked(gtx) {
+			a.showNewMenu = false
+			a.closeWorkspaceTab(id)
+			return
+		}
+	}
+	for id, tabButton := range a.tabButtons {
+		if tabButton != nil && tabButton.Clicked(gtx) {
+			a.showNewMenu = false
+			a.activateWorkspaceTab(id)
+			return
+		}
+	}
+}
+
 func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Dimensions {
+	if a.workspaceTabsListPendingReset {
+		a.workspaceTabsListPendingReset = false
+		a.workspaceTabsList = widget.List{List: layout.List{Axis: layout.Horizontal}}
+	}
 	a.workspaceTabsList.Axis = layout.Horizontal
 	a.workspaceTabsList.ScrollAnyAxis = false
 	return layout.Inset{Top: workspaceTabTopGap, Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -392,6 +422,8 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 
 func (a *App) activateWorkspaceTab(id string) {
 	a.persistActiveSession()
+	a.ensureDesktopRuntime().drainWorkspaceWriter()
+	a.evictInactiveSessionsExcept(id)
 	state, err := a.viewForTabWithError(id)
 	if err == nil {
 		a.activateSession(id, state)

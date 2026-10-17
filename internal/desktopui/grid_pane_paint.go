@@ -80,17 +80,20 @@ func paintGridPaneCells(gtx layout.Context, a *App, v *gridViewport, pane gridPa
 			if cellRange.StartRow <= 0 {
 				continue
 			}
-			renderedRange := intersectCellRanges(cellRange, pane.windowRange)
-			if renderedRange.StartRow <= 0 {
+			if intersectCellRanges(cellRange, pane.windowRange).StartRow <= 0 {
 				continue
 			}
-			fullRect := v.screenCellRect(renderedRange, pane.frozenRows, pane.frozenColumns, pane.rowHeader, pane.columnHeader)
+			fullRect := v.screenCellRect(cellRange, pane.frozenRows, pane.frozenColumns, pane.rowHeader, pane.columnHeader)
 			visibleRect := fullRect.Intersect(pane.clip)
 			if visibleRect.Empty() {
 				continue
 			}
 			style := paintCellStyle(cell)
-			if hasSelection && !a.cellEdit.Editing && selection.Contains(CellPosition{Row: rowNumber - 1, Column: columnNumber - 1}) && selection.Active != (CellPosition{Row: rowNumber - 1, Column: columnNumber - 1}) {
+			checkPos := CellPosition{Row: rowNumber - 1, Column: columnNumber - 1}
+			if merged {
+				checkPos = CellPosition{Row: cellRange.StartRow - 1, Column: cellRange.StartColumn - 1}
+			}
+			if hasSelection && !a.cellEdit.Editing && selection.Contains(checkPos) && selection.Active != checkPos {
 				style.Fill = selectedFill
 			}
 			if formulaReferenceContains(formulaReferences, rowNumber, columnNumber) || merged && formulaReferenceContains(formulaReferences, cellRange.StartRow, cellRange.StartColumn) {

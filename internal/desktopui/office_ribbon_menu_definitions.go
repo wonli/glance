@@ -16,6 +16,29 @@ func wordOfficeRibbonMenu(actionID string) officeRibbonMenuDefinition {
 		return officeRibbonMenuDefinition{"文档信息", []officeRibbonMenuOption{option("属性…", "doc-info", true), disabled("检查文档"), option("版本历史", "version-history", true), option("保护文档…", "review-restrict", true)}}
 	case "paste":
 		return officeRibbonMenuDefinition{"粘贴选项", []officeRibbonMenuOption{disabled("保留源格式"), disabled("合并格式"), option("仅保留文本", "paste-text", true), disabled("选择性粘贴…")}}
+	case "font-size":
+		return officeRibbonMenuDefinition{"字号", []officeRibbonMenuOption{
+			option("初号", "word-size-42", true),
+			option("小初", "word-size-36", true),
+			option("一号", "word-size-26", true),
+			option("小一", "word-size-24", true),
+			option("二号", "word-size-22", true),
+			option("小二", "word-size-18", true),
+			option("三号", "word-size-16", true),
+			option("小三", "word-size-15", true),
+			option("四号", "word-size-14", true),
+			option("小四", "word-size-12", true),
+			option("五号", "word-size-10.5", true),
+			option("小五", "word-size-9", true),
+			option("11", "word-size-11", true),
+			option("12", "word-size-12", true),
+			option("14", "word-size-14", true),
+			option("16", "word-size-16", true),
+			option("18", "word-size-18", true),
+			option("24", "word-size-24", true),
+			option("36", "word-size-36", true),
+			option("自定义…", "word-size-custom", true),
+		}}
 	case "find":
 		return officeRibbonMenuDefinition{"查找", []officeRibbonMenuOption{option("打开导航窗格…", "find", true), disabled("按标题浏览"), disabled("按页面浏览"), disabled("最近搜索")}}
 	case "select":

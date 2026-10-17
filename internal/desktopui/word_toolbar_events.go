@@ -31,6 +31,9 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 	}
 	actions := wordToolbarActions(state.wordToolbarTab)
 	if state.wordToolbarTab == wordTabHome {
+		// The compact font-size field is drawn separately from the command slots,
+		// just like the style gallery, but still needs its persistent click consumed.
+		actions = append(actions, ribbonAction{id: "font-size", label: "字号", group: "字体"})
 		actions = append(actions, wordStyleGalleryActions()...)
 	}
 	for _, action := range actions {
@@ -124,6 +127,8 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 			a.adjustWordFontSize(-wordFontSizeStepPt)
 		case "font-size-increase":
 			a.adjustWordFontSize(wordFontSizeStepPt)
+		case "font-size":
+			a.toggleWordOfficeRibbonMenu(action.id)
 		case "font-family":
 			a.showWordFontFamilyDialog()
 		case "font-color":

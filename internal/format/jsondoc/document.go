@@ -2,6 +2,7 @@
 package jsondoc
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,11 @@ import (
 
 	"glance/internal/fileutil"
 )
+
+type snapshotMetadata struct {
+	Kind   string `json:"kind"`
+	Source string `json:"source"`
+}
 
 type Document struct {
 	mu     sync.Mutex
@@ -32,6 +38,15 @@ func Open(path string) (*Document, error) {
 
 // OpenSnapshot restores possibly in-progress JSON editor text, including invalid intermediate text.
 func OpenSnapshot(payload []byte) (*Document, error) {
+	if bytes.HasPrefix(payload, []byte(`{"kind":"glance-json-v1"`)) {
+		var meta snapshotMetadata
+		if err := json.Unmarshal(payload, &meta); err == nil && meta.Source != "" {
+			doc, err := Open(meta.Source)
+			if err == nil {
+				return doc, nil
+			}
+		}
+	}
 	if !json.Valid(payload) {
 		// Snapshot envelopes are intentionally the exact UTF-8 editor contents, so malformed user text is recoverable.
 		if !validUTF8(payload) {
@@ -64,6 +79,13 @@ func (d *Document) Snapshot() ([]byte, error) {
 	defer d.mu.Unlock()
 	if d.closed {
 		return nil, errors.New("document is closed")
+	}
+	if d.path != "" && len(d.text) > 2*1024*1024 && !d.dirty {
+		meta := snapshotMetadata{
+			Kind:   "glance-json-v1",
+			Source: d.path,
+		}
+		return json.Marshal(meta)
 	}
 	return []byte(d.text), nil
 }
@@ -118,4 +140,10 @@ func (d *Document) saveAsLocked(path string) error {
 	return nil
 }
 
-func (d *Document) Close() error { d.mu.Lock(); defer d.mu.Unlock(); d.closed = true; return nil }
+func (d *Document) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.closed = true
+	d.text = ""
+	return nil
+}

@@ -4,7 +4,6 @@ import (
 	"image/color"
 
 	"gioui.org/layout"
-	"gioui.org/unit"
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
@@ -119,12 +118,8 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 					return a.layoutAgentSidebarWorkspace(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 							layout.Rigid(a.layoutGridControls),
-							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, a.layoutVirtualGrid)
-							}),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, a.layoutSheetTabs)
-							}),
+							layout.Flexed(1, a.layoutVirtualGrid),
+							layout.Rigid(a.layoutSheetTabs),
 						)
 					})
 				}),

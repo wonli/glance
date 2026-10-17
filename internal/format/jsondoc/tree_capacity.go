@@ -7,8 +7,21 @@ import "strings"
 // parser still validates the source. Exact capacity avoids both large unused
 // tails and transient copies of the node array while parsing large documents.
 func countJSONNodes(source string) int {
+	return countJSONNodesWithCancel(source, nil)
+}
+
+func countJSONNodesWithCancel(source string, done <-chan struct{}) int {
 	nodes := 0
+	lastCheck := 0
 	for i := 0; i < len(source); {
+		if done != nil && i-lastCheck > 65536 {
+			lastCheck = i
+			select {
+			case <-done:
+				return 0
+			default:
+			}
+		}
 		switch source[i] {
 		case ' ', '\t', '\r', '\n', ':', ',', '}', ']':
 			i++

@@ -343,9 +343,17 @@ func (a *App) processAsyncResults() {
 		a.opening = false
 		openSucceeded := false
 		if result.err != nil {
-			a.setStatus(documentOpenFailureStatus(result.err))
+			msg := documentOpenFailureStatus(result.err)
+			a.setStatus(msg)
+			a.modal.ShowConfirm("无法打开文档", msg, modalDialogWarningConfirmStyle, func(string) {
+				a.modal.Hide()
+			}, modalDialogActionSpec{ID: "close", Label: "我知道了", Style: modalDialogActionPrimary})
 		} else if err := a.installDocument(result.loaded); err != nil {
-			a.setStatus(err.Error())
+			msg := documentOpenFailureStatus(err)
+			a.setStatus(msg)
+			a.modal.ShowConfirm("无法打开文档", msg, modalDialogWarningConfirmStyle, func(string) {
+				a.modal.Hide()
+			}, modalDialogActionSpec{ID: "close", Label: "我知道了", Style: modalDialogActionPrimary})
 		} else {
 			openSucceeded = true
 			if result.historyErr != nil && result.loaded.word != nil {

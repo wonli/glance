@@ -138,51 +138,26 @@ func (a *App) initializeWorkspace() {
 	collection := runtime.collection
 	a.loadHomeFavorites()
 	a.loadAgentSidebarPreference()
-	for _, record := range collection.Tabs() {
-		a.tabMeta[record.Tab.ID] = record.Tab
-		if !hasRestorableSnapshot(record) {
-			continue
-		}
-		var state *documentSessionState
-		if shared, ok := runtime.session(record.Tab.DocumentID); ok {
-			state = newDocumentSessionView(shared, a.windowID)
-		} else {
-			var err error
-			state, err = a.restoreSessionState(record)
-			if err != nil {
-				a.setStatus("恢复 " + record.Tab.Title + " 失败：" + err.Error())
-				continue
-			}
-			state.documentID = record.Tab.DocumentID
-			shared := runtime.registerSession(state.sharedDocumentSession)
-			if state.sharedDocumentSession != shared {
-				state = newDocumentSessionView(shared, a.windowID)
-			}
-		}
-		if isEmptyDraftWithoutSnapshot(record) {
-			payload, err := snapshotState(state)
-			if err == nil {
-				err = collection.Update(record.Tab.ID, payload, record.ViewState, sessionDirty(state))
-			}
-			if err != nil {
-				a.setStatus("恢复 " + record.Tab.Title + " 后重建快照失败：" + err.Error())
-			}
-		}
-		a.sessions[record.Tab.ID] = state
+	for _, tab := range collection.TabMetadata() {
+		a.tabMeta[tab.ID] = tab
 	}
 	runtime.workspaceInitialized = true
-	// Restore all document sessions, but only resume the prior active tab when
-	// a tray-hidden window is being recreated in the same process.
 	primaryWindow := runtime.isPrimaryWindow(a.windowID)
-	resumeActiveTabID := ""
+	resumeActiveTabID := collection.ActiveTabID()
 	if primaryWindow {
-		resumeActiveTabID = runtime.takeResumeActiveTab()
+		if trayResume := runtime.takeResumeActiveTab(); trayResume != "" {
+			resumeActiveTabID = trayResume
+		}
 	}
 	a.activeTabID = workspace.RecentTabID
 	a.documentSessionState = newDocumentSessionState("")
 	if primaryWindow {
-		if resumeActiveTabID != "" && resumeActiveTabID != workspace.RecentTabID && a.sessions[resumeActiveTabID] != nil {
-			a.activateSession(resumeActiveTabID, a.sessions[resumeActiveTabID])
+		if resumeActiveTabID != "" && resumeActiveTabID != workspace.RecentTabID {
+			if state, err := a.viewForTabWithError(resumeActiveTabID); err == nil && state != nil {
+				a.activateSession(resumeActiveTabID, state)
+			} else if err := collection.Activate(workspace.RecentTabID); err != nil {
+				a.setStatus(err.Error())
+			}
 		} else if err := collection.Activate(workspace.RecentTabID); err != nil {
 			a.setStatus(err.Error())
 		}
@@ -191,7 +166,7 @@ func (a *App) initializeWorkspace() {
 }
 
 func hasRestorableSnapshot(record workspace.Session) bool {
-	return record.Format != "" && (len(record.Payload) > 0 || strings.EqualFold(record.Format, "json") || strings.EqualFold(record.Format, "markdown") || strings.EqualFold(record.Format, "md") || isEmptyDraftWithoutSnapshot(record))
+	return record.Format != "" && (len(record.Payload) > 0 || strings.EqualFold(record.Format, "json") || strings.EqualFold(record.Format, "markdown") || strings.EqualFold(record.Format, "md") || isEmptyDraftWithoutSnapshot(record) || record.Tab.SourcePath != "")
 }
 
 func isEmptyDraftWithoutSnapshot(record workspace.Session) bool {
@@ -214,6 +189,12 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		var book *xlsx.Workbook
 		if isEmptyDraftWithoutSnapshot(record) {
 			book = xlsx.NewBlank()
+		} else if len(record.Payload) == 0 && record.Tab.SourcePath != "" {
+			var err error
+			book, err = xlsx.Open(record.Tab.SourcePath)
+			if err != nil {
+				return nil, err
+			}
 		} else {
 			var err error
 			book, err = xlsx.OpenSnapshot(record.Payload)
@@ -230,7 +211,7 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 			state.sheet = state.sheets[0]
 		}
 		if len(state.sheets) > 0 {
-			state.virtualGrid = newGridViewport()
+			state.virtualGrid = newGridViewportForSpreadsheet(book, state.sheet)
 			state.selectedCell = "A1"
 			state.virtualGrid.SelectedRow, state.virtualGrid.SelectedColumn = 1, 1
 			state.virtualGrid.PendingSelectionLoad = true
@@ -277,6 +258,12 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 			if err != nil {
 				return nil, err
 			}
+		} else if len(record.Payload) == 0 && record.Tab.SourcePath != "" {
+			var err error
+			word, err = docx.Open(record.Tab.SourcePath)
+			if err != nil {
+				return nil, err
+			}
 		} else {
 			var err error
 			word, err = docx.OpenSnapshot(record.Payload)
@@ -307,6 +294,8 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		var err error
 		if isEmptyDraftWithoutSnapshot(record) {
 			d, err = pdfdoc.NewBlank()
+		} else if len(record.Payload) == 0 && record.Tab.SourcePath != "" {
+			d, err = pdfdoc.Open(record.Tab.SourcePath)
 		} else {
 			d, err = pdfdoc.OpenSnapshot(record.Payload)
 		}
@@ -317,7 +306,13 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		d.SetDirty(record.Dirty)
 		state.pdfDoc = d
 	case "md", "markdown":
-		d, err := markdowndoc.OpenSnapshot(record.Payload)
+		var d *markdowndoc.Document
+		var err error
+		if len(record.Payload) == 0 && record.Tab.SourcePath != "" {
+			d, err = markdowndoc.Open(record.Tab.SourcePath)
+		} else {
+			d, err = markdowndoc.OpenSnapshot(record.Payload)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -326,14 +321,16 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		state.markdownDoc = d
 	case "json":
 		var jsonDocument *jsondoc.Document
+		var err error
 		if isEmptyDraftWithoutSnapshot(record) {
 			jsonDocument = jsondoc.NewBlank()
+		} else if len(record.Payload) == 0 && record.Tab.SourcePath != "" {
+			jsonDocument, err = jsondoc.Open(record.Tab.SourcePath)
 		} else {
-			var err error
 			jsonDocument, err = jsondoc.OpenSnapshot(record.Payload)
-			if err != nil {
-				return nil, err
-			}
+		}
+		if err != nil {
+			return nil, err
 		}
 		state.jsonDoc = jsonDocument
 		jsonDocument.SetSourcePath(record.Tab.SourcePath)
@@ -369,6 +366,9 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 		state.wordNavigationSearchEditor.SetText(view.WordNavigationQuery)
 		state.wordToolbarTab = clampWordToolbarTab(view.WordToolbarTab)
 		state.wordPageListState.Position.First = max(0, view.WordPageFirst)
+		if view.WordPageFirst > 0 {
+			state.wordTargetRestorePage = view.WordPageFirst
+		}
 		restorePersistedWordSelection(state, view)
 	}
 	if state.virtualGrid != nil {
@@ -471,11 +471,14 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 	}
 	a.documentGeneration++
 	a.closeWordVersionHistory()
-	if a.activeTabID != "" && a.documentSessionState != nil {
+	if a.activeTabID != "" && a.documentSessionState != nil && a.documentSessionState != state {
 		if a.documentSessionState.valueFilter != nil {
 			a.clearValueFilter(a.documentSessionState)
 		}
 		a.sessions[a.activeTabID] = a.documentSessionState
+		if a.documentSessionState.jsonLarge.Load() {
+			a.documentSessionState.releaseJSONViewResources()
+		}
 	}
 	a.documentSessionState = state
 	state.windowID = a.windowID
@@ -483,6 +486,7 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 	a.activeTabID = id
 	a.setActiveSessionID(id)
 	state.documentID = id
+	a.releaseIdleEngines()
 	if a.collection != nil && runtime.isPrimaryWindow(a.windowID) {
 		if err := a.collection.Activate(id); err != nil {
 			a.setStatus(err.Error())

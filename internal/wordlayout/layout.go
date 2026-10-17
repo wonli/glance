@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"glance/internal/document"
@@ -133,6 +134,20 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 			}
 		}
 	}
+	lastReportedPages := 0
+	reportPartial := func() {
+		if input.ProgressiveCallback == nil || ctx.Err() != nil {
+			return
+		}
+		partial := cloneLayoutResult(result)
+		if len(partial.Pages) == 0 {
+			return
+		}
+		_ = appendSectionHeaders(ctx, e.shaper, input.Layout, cursor, &partial)
+		partial.SupportReport = reportWithDiagnostics(preflight, partial.Diagnostics)
+		partial.CanPreview = !partial.SupportReport.BlocksPreview()
+		input.ProgressiveCallback(partial)
+	}
 	converged := false
 	for blockIndex := startBlock; blockIndex < len(input.Blocks); blockIndex++ {
 		if err := ctx.Err(); err != nil {
@@ -259,6 +274,22 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 			cursor.diagnostic(DiagnosticError, sourceID, "unsupported-block", detail)
 		default:
 			cursor.diagnostic(DiagnosticError, block.ID, "unknown-block-kind", fmt.Sprintf("Unsupported Word body block kind %d at index %d.", block.Kind, blockIndex))
+		}
+		if input.Previous == nil && input.ProgressiveCallback != nil && blockIndex < len(input.Blocks)-1 {
+			minInitialPages := 2
+			if input.TargetPage > 0 && input.TargetPage < 10 {
+				minInitialPages = input.TargetPage + 1
+			}
+			if lastReportedPages == 0 && len(result.Pages) >= minInitialPages {
+				reportPartial()
+				lastReportedPages = len(result.Pages)
+			} else if lastReportedPages > 0 && len(result.Pages) >= lastReportedPages+10 {
+				reportPartial()
+				lastReportedPages = len(result.Pages)
+			}
+			if blockIndex%10 == 0 {
+				runtime.Gosched()
+			}
 		}
 	}
 	if !converged {

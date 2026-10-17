@@ -34,10 +34,11 @@ type wordLayoutEngine interface {
 }
 
 type wordLayoutResult struct {
-	state  *documentSessionState
-	key    wordLayoutKey
-	result wordlayout.Result
-	err    error
+	state     *documentSessionState
+	key       wordLayoutKey
+	result    wordlayout.Result
+	err       error
+	isPartial bool
 }
 
 var defaultWordPageSetup = wordlayout.DefaultPageSetup()
@@ -260,7 +261,7 @@ func wordLayoutPageSetupKey(data document.WordLayoutData, fallback document.Word
 }
 
 func (a *App) startWordPagination(state *documentSessionState) {
-	if state == nil || state.word == nil || state.closed.Load() || state.finalized.Load() || state.wordLayoutReleased.Load() {
+	if a == nil || a.wordLayoutResults == nil || state == nil || state.word == nil || state.closed.Load() || state.finalized.Load() || state.wordLayoutReleased.Load() {
 		return
 	}
 	if state.wordFlushRequested.Load() || state.formatRunning.Load() {
@@ -323,7 +324,8 @@ func (a *App) startWordPagination(state *documentSessionState) {
 	input := wordlayout.Input{
 		DocumentID: key.DocumentID, Revision: key.Revision,
 		Blocks: wordBlocksWithDrafts(blocks, drafts), Layout: data, DefaultPageSetup: defaultWordPageSetup,
-		Previous: state.wordLayoutResult,
+		Previous:   state.wordLayoutResult,
+		TargetPage: state.wordTargetRestorePage,
 	}
 	engine := a.wordLayoutEngine
 	if engine == nil {
@@ -370,13 +372,28 @@ func (a *App) startWordPagination(state *documentSessionState) {
 	state.wordLayoutWarningConfirmed = false
 	session.wordLayoutCancelMu.Unlock()
 	results, shutdown, window := a.wordLayoutResults, a.shutdown, a.window
+	if state.wordLayoutResult == nil {
+		input.ProgressiveCallback = func(partial wordlayout.Result) {
+			if ctx.Err() != nil || session.finalized.Load() || session.wordLayoutReleased.Load() {
+				return
+			}
+			select {
+			case results <- wordLayoutResult{state: state, key: key, result: partial, isPartial: true}:
+				if window != nil {
+					window.Invalidate()
+				}
+			case <-ctx.Done():
+			case <-shutdown:
+			}
+		}
+	}
 	a.launchManagedBackground(func() {
 		result, err := engine.Layout(ctx, input)
 		if ctx.Err() != nil || session.finalized.Load() || session.wordLayoutReleased.Load() {
 			return
 		}
 		select {
-		case results <- wordLayoutResult{state: state, key: key, result: result, err: err}:
+		case results <- wordLayoutResult{state: state, key: key, result: result, err: err, isPartial: false}:
 			if window != nil {
 				window.Invalidate()
 			}
@@ -404,6 +421,36 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 		state.wordLayoutCancelMu.Unlock()
 		return
 	}
+	if result.isPartial {
+		if result.err == nil {
+			if state.wordLayoutAcceptedKey != nil || (state.wordLayoutResult != nil && len(state.wordLayoutResult.Pages) >= len(result.result.Pages)) {
+				state.wordLayoutCancelMu.Unlock()
+				return
+			}
+			accepted := result.result
+			state.wordLayoutResult = &accepted
+			state.wordLayoutPageCount.Store(int64(len(accepted.Pages)))
+			pageListLast := max(0, len(accepted.Pages)-1)
+			if state.wordViewMode == wordViewPrintLayout && state.wordMultiplePagesMode {
+				pageListLast /= 2
+			}
+			if state.wordTargetRestorePage >= 0 {
+				if pageListLast >= state.wordTargetRestorePage {
+					state.wordPageListState.Position.First = state.wordTargetRestorePage
+					state.wordTargetRestorePage = -1
+				}
+			} else {
+				state.wordPageListState.Position.First = min(max(0, state.wordPageListState.Position.First), pageListLast)
+			}
+			state.wordLayoutActivePage = state.wordPageListState.Position.First
+			if state.wordViewMode == wordViewPrintLayout && state.wordMultiplePagesMode {
+				state.wordLayoutActivePage *= 2
+			}
+			state.wordLayoutActivePage = min(state.wordLayoutActivePage, max(0, len(accepted.Pages)-1))
+		}
+		state.wordLayoutCancelMu.Unlock()
+		return
+	}
 	if state.wordLayoutCancel != nil {
 		state.wordLayoutCancel()
 		state.wordLayoutCancel = nil
@@ -421,7 +468,16 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 		if state.wordViewMode == wordViewPrintLayout && state.wordMultiplePagesMode {
 			pageListLast /= 2
 		}
-		state.wordPageListState.Position.First = min(max(0, state.wordPageListState.Position.First), pageListLast)
+		if state.wordTargetRestorePage >= 0 {
+			if pageListLast >= state.wordTargetRestorePage {
+				state.wordPageListState.Position.First = state.wordTargetRestorePage
+			} else {
+				state.wordPageListState.Position.First = pageListLast
+			}
+			state.wordTargetRestorePage = -1
+		} else {
+			state.wordPageListState.Position.First = min(max(0, state.wordPageListState.Position.First), pageListLast)
+		}
 		state.wordLayoutActivePage = state.wordPageListState.Position.First
 		if state.wordViewMode == wordViewPrintLayout && state.wordMultiplePagesMode {
 			state.wordLayoutActivePage *= 2

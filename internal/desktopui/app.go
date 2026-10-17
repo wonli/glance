@@ -58,6 +58,7 @@ type App struct {
 	applicationRequestSeq         atomic.Uint64
 	sessions                      map[string]*documentSessionState
 	tabMeta                       map[string]workspace.Tab
+	lastReconciledTabVersion      uint64
 	activeTabID                   string
 	workspaceError                string
 	workspaceWriteError           string
@@ -66,6 +67,7 @@ type App struct {
 	newButton                     widget.Clickable
 	recentTabButton               widget.Clickable
 	workspaceTabsList             widget.List
+	workspaceTabsListPendingReset bool
 	workspaceTabsRevealedActiveID string
 	workspaceTabsRevealedIndex    int
 	workspaceTabScrollTag         int
@@ -420,7 +422,11 @@ func RunWithActivation(initialPath string, reportStartupError func(error), activ
 	}
 	if initialPath != "" {
 		if err := a.open(initialPath); err != nil {
-			a.setStatus(err.Error())
+			msg := documentOpenFailureStatus(err)
+			a.setStatus(msg)
+			a.modal.ShowConfirm("无法打开文档", msg, modalDialogWarningConfirmStyle, func(string) {
+				a.modal.Hide()
+			}, modalDialogActionSpec{ID: "close", Label: "我知道了", Style: modalDialogActionPrimary})
 		}
 	}
 	if err := runtime.startDesktopMCPIPC(); err != nil {

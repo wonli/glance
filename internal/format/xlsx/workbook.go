@@ -21,6 +21,7 @@ type Workbook struct {
 	dataRegionPositions  []int
 	dataRegionCacheValid bool
 	conditionalFormats   conditionalFormatDisplayCache
+	styleCache           map[int]document.CellStyle
 	dirty                bool
 	closed               bool
 	pictureIndexes       map[string]spreadsheetPictureIndex
@@ -148,6 +149,11 @@ func (w *Workbook) Close() error {
 		return nil
 	}
 	w.closed = true
+	w.styleCache = nil
+	w.undo = nil
+	w.redo = nil
+	w.dataRegionPositions = nil
+	w.pictureIndexes = nil
 	if w.file == nil {
 		return nil
 	}

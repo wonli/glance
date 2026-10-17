@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"glance/internal/wordlayout"
 	"math"
 	"path/filepath"
 	"strings"
@@ -1577,7 +1578,13 @@ func (a *desktopSessionAdapter) SetWordTextRunStyle(ctx context.Context, runID s
 		if !ok || !run.Editable {
 			return false, application.ErrWordTextRunUnavailable
 		}
-		if desktopWordTextStylePatchUnchanged(run.Style, patch) {
+		style := run.Style
+		if reader, ok := content.(document.WordLayoutReader); ok {
+			if resolved, found := wordlayout.ResolveDocumentRunStyle(reader.WordLayoutData(), content.WordBlocks(), runID); found {
+				style = resolved
+			}
+		}
+		if desktopWordTextStylePatchUnchanged(style, patch) {
 			return false, nil
 		}
 		editor, ok := content.(document.WordTextEditor)
@@ -2279,6 +2286,9 @@ func desktopWordTextStylePatchUnchanged(style document.WordTextStyle, patch docu
 		if want != got {
 			return false
 		}
+	}
+	if patch.FontSize != nil && style.FontSize != *patch.FontSize {
+		return false
 	}
 	return true
 }

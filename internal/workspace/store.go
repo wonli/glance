@@ -449,6 +449,34 @@ func (s *Store) LoadDocument(id string) (Document, bool, error) {
 	return doc, true, nil
 }
 
+func (s *Store) LoadDocumentMetadata(id string) (Document, bool, error) {
+	var doc Document
+	var dirty int
+	var updated int64
+	err := s.db.QueryRow(`SELECT id,format,dirty,updated_at,view_state FROM documents WHERE id=?`, id).Scan(&doc.ID, &doc.Format, &dirty, &updated, &doc.ViewState)
+	if errors.Is(err, sql.ErrNoRows) {
+		return doc, false, nil
+	}
+	if err != nil {
+		return doc, false, err
+	}
+	doc.Dirty = dirty != 0
+	doc.UpdatedAt = time.Unix(0, updated).UTC()
+	return doc, true, nil
+}
+
+func (s *Store) LoadDocumentPayload(id string) ([]byte, error) {
+	var payload []byte
+	err := s.db.QueryRow(`SELECT payload FROM documents WHERE id=?`, id).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
 func (s *Store) DeleteDocument(id string) error {
 	_, err := s.db.Exec(`DELETE FROM documents WHERE id=?`, id)
 	return err

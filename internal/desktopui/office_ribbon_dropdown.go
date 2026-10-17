@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"image"
+	"math"
 	"strconv"
 	"strings"
 
@@ -19,7 +20,7 @@ import (
 	"glance/internal/document"
 )
 
-const officeRibbonMenuButtonCount = 12
+const officeRibbonMenuButtonCount = 32
 
 type officeRibbonMenuKind uint8
 
@@ -60,7 +61,19 @@ func (a *App) officeRibbonMenuDefinition() officeRibbonMenuDefinition {
 	}
 	switch state.officeRibbonMenu.kind {
 	case officeRibbonMenuWord:
-		return wordOfficeRibbonMenu(state.officeRibbonMenu.wordAction)
+		definition := wordOfficeRibbonMenu(state.officeRibbonMenu.wordAction)
+		if state.officeRibbonMenu.wordAction == "font-size" {
+			currentSize := selectedWordFontSize(state)
+			for i := range definition.options {
+				option := &definition.options[i]
+				if strings.HasPrefix(option.command, "word-size-") && option.command != "word-size-custom" {
+					if size, err := strconv.ParseFloat(strings.TrimPrefix(option.command, "word-size-"), 64); err == nil {
+						option.checked = math.Abs(size-currentSize) < 0.1
+					}
+				}
+			}
+		}
+		return definition
 	case officeRibbonMenuSpreadsheet:
 		definition := spreadsheetOfficeRibbonMenu(state.officeRibbonMenu.sheetSlot)
 		if state.officeRibbonMenu.sheetSlot == toolbarActionFreezePanes {
@@ -141,6 +154,9 @@ func (a *App) officeRibbonMenuOptionEnabled(option officeRibbonMenuOption) bool 
 	}
 	switch state.officeRibbonMenu.kind {
 	case officeRibbonMenuWord:
+		if strings.HasPrefix(option.command, "word-size-") {
+			return a.wordToolbarActionEnabled(ribbonAction{id: "font-size"})
+		}
 		if option.command == "paste-text" {
 			return a.wordToolbarActionEnabled(ribbonAction{id: "paste"})
 		}
@@ -395,6 +411,32 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 		return
 	}
 	if kind == officeRibbonMenuWord {
+		if strings.HasPrefix(command, "word-size-") {
+			if command == "word-size-custom" {
+				currentStr := strconv.FormatFloat(selectedWordFontSize(state), 'f', -1, 64)
+				a.modal.ShowInput("设置字号", "输入字号（磅）", currentStr, "1–1638 之间", func(action string) {
+					value := strings.TrimSpace(a.modal.Input.Text())
+					a.modal.Hide()
+					if action != "confirm" {
+						return
+					}
+					size, err := strconv.ParseFloat(value, 64)
+					if err != nil || size < 1 || size > 1638 {
+						a.setStatus("字号必须是 1 到 1638 之间的数值")
+						if a.window != nil {
+							a.window.Invalidate()
+						}
+						return
+					}
+					a.setWordFontSize(size)
+				}, modalDialogActionSpec{ID: "confirm", Label: "应用"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+			} else {
+				if size, err := strconv.ParseFloat(strings.TrimPrefix(command, "word-size-"), 64); err == nil {
+					a.setWordFontSize(size)
+				}
+			}
+			return
+		}
 		switch command {
 		case "paste-text":
 			a.requestWordClipboardRead(gtx, state)

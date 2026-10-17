@@ -176,6 +176,10 @@ func (d *Document) editWordTextSelection(startRunID string, startOffset int, end
 }
 
 func validateWordSelectionTextOnly(data []byte, node *wordXMLNode, start, end int) error {
+	return validateWordSelectionText(data, node, start, end, false)
+}
+
+func validateWordSelectionText(data []byte, node *wordXMLNode, start, end int, preserveBookmarks bool) error {
 	if node.end <= start || node.start >= end {
 		return nil
 	}
@@ -198,6 +202,13 @@ func validateWordSelectionTextOnly(data []byte, node *wordXMLNode, start, end in
 			return errors.New("Word text contains nested XML")
 		}
 		return nil
+	case "bookmarkStart", "bookmarkEnd":
+		// Formatting replaces runs without moving paragraph-level range markers.
+		// Deletion still rejects them because it would remove bookmark endpoints.
+		if preserveBookmarks && node.parent != nil && node.parent.name.Local == "p" && len(node.children) == 0 && onlyXMLWhitespace(data[node.contentStart:node.contentEnd]) {
+			return nil
+		}
+		return fmt.Errorf("Word selection contains unsupported content %q", node.name.Local)
 	case "p", "r":
 	default:
 		return fmt.Errorf("Word selection contains unsupported content %q", node.name.Local)
@@ -208,7 +219,7 @@ func validateWordSelectionTextOnly(data []byte, node *wordXMLNode, start, end in
 		if gapStart < gapEnd && !onlyXMLWhitespace(data[gapStart:gapEnd]) {
 			return errors.New("Word selection contains unsupported content between elements")
 		}
-		if err := validateWordSelectionTextOnly(data, child, start, end); err != nil {
+		if err := validateWordSelectionText(data, child, start, end, preserveBookmarks); err != nil {
 			return err
 		}
 		cursor = child.end

@@ -197,11 +197,28 @@ func (a *App) requestJSONTree() {
 	results, window, baseline, done := v.results, a.window, v.baseline, v.done
 	a.launchManagedBackground(func() {
 		defer releaseClosedJSONWorkerMemory(done, len(text) > jsonSourceEditLimit)
-		tree, err := jsondoc.ParseTree(text)
-		segments := jsonSourceSegments(text)
+		tree, err := jsondoc.ParseTreeWithCancel(text, done)
+		if err != nil {
+			select {
+			case <-done:
+				return
+			default:
+			}
+		}
+		segments := jsonSourceSegmentsWithCancel(text, done)
+		select {
+		case <-done:
+			return
+		default:
+		}
 		baselineSegments := segments
 		if baseline != text {
-			baselineSegments = jsonSourceSegments(baseline)
+			baselineSegments = jsonSourceSegmentsWithCancel(baseline, done)
+			select {
+			case <-done:
+				return
+			default:
+			}
 		}
 		if len(text) > 512*1024 {
 			debug.FreeOSMemory()

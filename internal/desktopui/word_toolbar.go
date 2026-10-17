@@ -226,24 +226,45 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		}
 		return history.CanRedo()
 	case "cut", "copy", "paste":
-		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
 		return ok && (action.id == "copy" || run.Editable)
 	case "style-body", "style-heading", "style-heading-2":
 		_, editable := any(state.word).(document.WordParagraphStyleEditor)
 		return editable
 	case "bold", "italic", "underline", "font-color", "text-highlight":
 		_, editable := any(state.word).(document.WordTextEditor)
-		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
+		if !ok && wordPageTextSelectionActive(state.wordPageTextSelection) {
+			start, _, hasSel := wordPageOrderedSelection(state.wordPageTextSelection)
+			if hasSel {
+				run, ok = selectedWordFormattingRun(state, start.runID)
+			}
+		}
 		return editable && ok && run.Editable
 	case "font-family":
 		_, editable := any(state.word).(document.WordTextFontFamilyEditor)
-		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
+		if !ok && wordPageTextSelectionActive(state.wordPageTextSelection) {
+			start, _, hasSel := wordPageOrderedSelection(state.wordPageTextSelection)
+			if hasSel {
+				run, ok = selectedWordFormattingRun(state, start.runID)
+			}
+		}
 		return editable && ok && run.Editable
-	case "font-size-decrease", "font-size-increase":
+	case "font-size", "font-size-decrease", "font-size-increase":
 		_, editable := any(state.word).(document.WordTextFontSizeEditor)
-		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
+		if !ok && wordPageTextSelectionActive(state.wordPageTextSelection) {
+			start, _, hasSel := wordPageOrderedSelection(state.wordPageTextSelection)
+			if hasSel {
+				run, ok = selectedWordFormattingRun(state, start.runID)
+			}
+		}
 		if !editable || !ok || !run.Editable {
 			return false
+		}
+		if action.id == "font-size" {
+			return true
 		}
 		size := effectiveWordFontSize(run.Style.FontSize)
 		if size < wordMinFontSizePt || size > wordMaxFontSizePt {
@@ -303,18 +324,18 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		return content && editor
 	case "insert-symbol":
 		_, editable := any(state.word).(document.WordTextRangeEditor)
-		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
 		return editable && ok && run.Editable && wordBodyRunEditable(wordBlocksForState(state), run.ID)
 	case "page-break", "layout-breaks", "blank-page":
 		_, editor := any(state.word).(document.WordPageBreakEditor)
-		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
 		return editor && ok && run.Editable && wordBodyRunEditable(wordBlocksForState(state), run.ID)
 	case "format-painter":
 		if state.wordFormatPainterActive {
 			return true
 		}
 		_, painter := any(state.word).(document.WordFormatPainter)
-		run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
 		return painter && ok && run.Editable
 	case "review-word-count":
 		_, content := any(state.word).(document.WordContentReader)
@@ -397,7 +418,7 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case "review-new-comment":
 		_, editor := any(state.word).(document.WordCommentEditor)
-		run, selected := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+		run, selected := selectedWordFormattingRun(state, state.selectedWordRunID)
 		return editor && selected && run.Editable && wordBodyRunEditable(wordBlocksForState(state), run.ID) && a.applicationSessionRegistered(state.documentID)
 	case "review-delete-comment":
 		_, reader := any(state.word).(document.WordCommentReader)
@@ -488,6 +509,7 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 	}
 	blocks := wordBlocksForState(state)
 	if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok {
+		run, _ = wordRunWithResolvedStyle(state, run)
 		switch action.id {
 		case "bold":
 			return run.Style.Bold

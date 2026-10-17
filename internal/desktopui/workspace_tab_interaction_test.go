@@ -292,3 +292,59 @@ func TestWorkspaceTabsFullStripClickableWithClientTitlebar(t *testing.T) {
 func isDarwin() bool {
 	return filepath.Separator == '/' && len(filepath.VolumeName("/")) == 0 && os.Getenv("GOOS") != "linux" && os.Getenv("GOOS") != "windows"
 }
+
+func TestCloseDocumentTabClickDoesNotPanic(t *testing.T) {
+	app := New(nil, "")
+	defer close(app.shutdown)
+	app.ensureDesktopRuntime()
+
+	tmp := t.TempDir()
+	jsonPath := filepath.Join(tmp, "sample.json")
+	if err := os.WriteFile(jsonPath, []byte(`{"status":"ok"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.open(jsonPath); err != nil {
+		t.Fatal(err)
+	}
+	tabID := app.activeTabID
+	if tabID == "" || tabID == workspace.RecentTabID {
+		t.Fatalf("expected open tab, got %q", tabID)
+	}
+
+	var router input.Router
+	var ops op.Ops
+	draw := func() {
+		ops.Reset()
+		gtx := layout.Context{
+			Ops:         &ops,
+			Source:      router.Source(),
+			Now:         time.Now(),
+			Constraints: layout.Exact(image.Pt(800, 600)),
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		}
+		app.layout(gtx)
+		router.Frame(&ops)
+	}
+
+	// Render first frame with document open
+	draw()
+
+	_, closeBtn := app.documentTabWidgets(tabID)
+	if closeBtn == nil {
+		t.Fatal("expected closeBtn for open tab")
+	}
+
+	// Click close button on the tab
+	closePt := f32.Pt(112+190-10, 20)
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Position: closePt, Buttons: pointer.ButtonPrimary})
+	draw()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: closePt})
+	draw()
+
+	if app.activeTabID != workspace.RecentTabID {
+		t.Fatalf("after closing tab, activeTabID=%q, want recent", app.activeTabID)
+	}
+
+	// Render subsequent frame on Recent
+	draw()
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"glance/internal/document"
 	"math"
+	"strconv"
 )
 
 func (a *App) toggleWordTextStyle(property string) {
@@ -41,7 +42,7 @@ func (a *App) toggleWordTextStyle(property string) {
 		a.queueWordSelectionStyle(state, start, end, patch)
 		return
 	}
-	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+	run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
 	if !ok {
 		return
 	}
@@ -130,13 +131,23 @@ func firstSelectedWordTextRun(state *documentSessionState, start, end wordPageCa
 			if from >= to {
 				continue
 			}
-			return *inline.Text, true
+			run, _ := wordRunWithResolvedStyle(state, *inline.Text)
+			return run, true
 		}
 	}
 	return document.WordTextRun{}, false
 }
 
 func (a *App) setWordFontColor(runID, value string) {
+	state := a.documentSessionState
+	if state != nil && wordPageTextSelectionActive(state.wordPageTextSelection) {
+		start, end, ok := wordPageOrderedSelection(state.wordPageTextSelection)
+		if ok {
+			patch := document.WordTextFormatPatch{FontColor: &value}
+			a.queueWordSelectionStyle(state, start, end, patch)
+			return
+		}
+	}
 	a.runWordCommand("文字颜色", func(editor document.WordTextEditor) error {
 		return editor.SetTextRunStyle(runID, document.WordTextFormatPatch{FontColor: &value})
 	})
@@ -159,6 +170,15 @@ func (a *App) chooseWordHighlightColor(index int) {
 }
 
 func (a *App) setWordTextHighlight(runID, value string) {
+	state := a.documentSessionState
+	if state != nil && wordPageTextSelectionActive(state.wordPageTextSelection) {
+		start, end, ok := wordPageOrderedSelection(state.wordPageTextSelection)
+		if ok {
+			patch := document.WordTextFormatPatch{Highlight: &value}
+			a.queueWordSelectionStyle(state, start, end, patch)
+			return
+		}
+	}
 	a.runWordCommand("文字高亮", func(editor document.WordTextEditor) error {
 		return editor.SetTextRunStyle(runID, document.WordTextFormatPatch{Highlight: &value})
 	})
@@ -171,12 +191,123 @@ func effectiveWordFontSize(points float64) float64 {
 	return points
 }
 
+func wordFontSizeDisplayName(points float64) string {
+	switch {
+	case math.Abs(points-42) < 0.1:
+		return "初号"
+	case math.Abs(points-36) < 0.1:
+		return "小初"
+	case math.Abs(points-26) < 0.1:
+		return "一号"
+	case math.Abs(points-24) < 0.1:
+		return "小一"
+	case math.Abs(points-22) < 0.1:
+		return "二号"
+	case math.Abs(points-18) < 0.1:
+		return "小二"
+	case math.Abs(points-16) < 0.1:
+		return "三号"
+	case math.Abs(points-15) < 0.1:
+		return "小三"
+	case math.Abs(points-14) < 0.1:
+		return "四号"
+	case math.Abs(points-12) < 0.1:
+		return "小四"
+	case math.Abs(points-10.5) < 0.1:
+		return "五号"
+	case math.Abs(points-9) < 0.1:
+		return "小五"
+	case math.Abs(points-7.5) < 0.1:
+		return "六号"
+	case math.Abs(points-6.5) < 0.1:
+		return "小六"
+	case math.Abs(points-5.5) < 0.1:
+		return "七号"
+	case math.Abs(points-5) < 0.1:
+		return "八号"
+	default:
+		if points <= 0 {
+			return "五号"
+		}
+		return strconv.FormatFloat(points, 'f', -1, 64)
+	}
+}
+
+func selectedWordFontSize(state *documentSessionState) float64 {
+	if state == nil {
+		return wordDefaultFontSizePt
+	}
+	runID := state.selectedWordRunID
+	if runID == "" && wordPageTextSelectionActive(state.wordPageTextSelection) {
+		start, _, ok := wordPageOrderedSelection(state.wordPageTextSelection)
+		if ok {
+			runID = start.runID
+		}
+	}
+	if run, ok := selectedWordFormattingRun(state, runID); ok && run.Style.FontSize > 0 {
+		return run.Style.FontSize
+	}
+	return wordDefaultFontSizePt
+}
+
+func selectedWordFontSizeDisplay(state *documentSessionState) string {
+	if state == nil {
+		return "五号"
+	}
+	size := selectedWordFontSize(state)
+	return wordFontSizeDisplayName(size)
+}
+
+func (a *App) setWordFontSize(points float64) {
+	state := a.documentSessionState
+	if state == nil || state.word == nil {
+		return
+	}
+	points = math.Max(wordMinFontSizePt, math.Min(wordMaxFontSizePt, points))
+	if wordPageTextSelectionActive(state.wordPageTextSelection) {
+		start, end, ok := wordPageOrderedSelection(state.wordPageTextSelection)
+		if ok {
+			patch := document.WordTextFormatPatch{FontSize: &points}
+			a.queueWordSelectionStyle(state, start, end, patch)
+			return
+		}
+	}
+	run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
+	if !ok || !run.Editable {
+		return
+	}
+	if _, ok := any(state.word).(document.WordTextFontSizeEditor); !ok {
+		return
+	}
+	runID := run.ID
+	a.runWordCommand("字号", func(editor document.WordTextEditor) error {
+		fontSizeEditor, ok := any(editor).(document.WordTextFontSizeEditor)
+		if !ok {
+			return fmt.Errorf("DOCX adapter does not support font-size editing")
+		}
+		return fontSizeEditor.SetTextRunFontSize(runID, points)
+	})
+}
+
 func (a *App) adjustWordFontSize(delta float64) {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
 		return
 	}
-	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+	if wordPageTextSelectionActive(state.wordPageTextSelection) {
+		start, end, ok := wordPageOrderedSelection(state.wordPageTextSelection)
+		if ok {
+			current := wordDefaultFontSizePt
+			if run, found := selectedWordFormattingRun(state, start.runID); found {
+				current = effectiveWordFontSize(run.Style.FontSize)
+			}
+			next := math.Max(wordMinFontSizePt, math.Min(wordMaxFontSizePt, current+delta))
+			patch := document.WordTextFormatPatch{FontSize: &next}
+			a.queueWordSelectionStyle(state, start, end, patch)
+			return
+		}
+	}
+	run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
 	if !ok || !run.Editable {
 		return
 	}
@@ -199,7 +330,7 @@ func (a *App) showWordFontFamilyDialog() {
 	if state == nil || state.word == nil {
 		return
 	}
-	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+	run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
 	if !ok || !run.Editable {
 		return
 	}
@@ -221,7 +352,7 @@ func (a *App) toggleWordFormatPainter() {
 		a.setStatus("格式刷已取消")
 		return
 	}
-	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
+	run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
 	if !ok || !run.Editable {
 		return
 	}

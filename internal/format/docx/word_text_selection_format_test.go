@@ -171,3 +171,71 @@ func TestFormatWordTextSelectionNoOpAndRejectsUnsafeSpan(t *testing.T) {
 		t.Fatal("rejected selection formatting changed document")
 	}
 }
+
+func TestFormatWordTextSelectionFontSize(t *testing.T) {
+	d := selectionDeleteFixture(t, `<w:p><w:r><w:rPr><w:sz w:val="21"/></w:rPr><w:t>Hello World</w:t></w:r></w:p>`)
+	defer d.Close()
+	p := d.WordBlocks()[0].Paragraph
+	run := p.Inlines[0].Text
+	newSize := 16.0
+	// Format "World" (offsets 6 to 11)
+	result := formatTextSelection(t, d, run.ID, 6, run.ID, 11, document.WordTextFormatPatch{FontSize: &newSize})
+	inlines := d.WordBlocks()[0].Paragraph.Inlines
+	if len(inlines) != 2 {
+		t.Fatalf("expected 2 runs after font size selection format, got %d", len(inlines))
+	}
+	if inlines[0].Text.Text != "Hello " || inlines[0].Text.Style.FontSize != 10.5 {
+		t.Fatalf("prefix run = %q with size %g; want %q with size 10.5", inlines[0].Text.Text, inlines[0].Text.Style.FontSize, "Hello ")
+	}
+	if inlines[1].Text.Text != "World" || inlines[1].Text.Style.FontSize != 16.0 {
+		t.Fatalf("selected run = %q with size %g; want %q with size 16.0", inlines[1].Text.Text, inlines[1].Text.Style.FontSize, "World")
+	}
+	if result.StartRunID != inlines[1].Text.ID || result.StartOffset != 0 || result.EndRunID != inlines[1].Text.ID || result.EndOffset != 5 {
+		t.Fatalf("result = %#v; want [%s:0, %s:5)", result, inlines[1].Text.ID, inlines[1].Text.ID)
+	}
+}
+
+func TestFormatWordSelectionPreservesBookmarksAndUndoRoundTrip(t *testing.T) {
+	const startMarker = `<w:bookmarkStart w:id="7" w:name="section"/>`
+	const endMarker = `<w:bookmarkEnd w:id="7"/>`
+	d := selectionDeleteFixture(t, `<w:p><w:r><w:t>甲A</w:t></w:r>`+startMarker+`<w:r><w:t>B</w:t></w:r>`+endMarker+`<w:r><w:t>C乙</w:t></w:r></w:p>`)
+	defer d.Close()
+	before := append([]byte(nil), d.parts[d.documentIdx].data...)
+	p := d.WordBlocks()[0].Paragraph
+	size := 24.0
+	formatTextSelection(t, d, p.Inlines[0].Text.ID, 1, p.Inlines[2].Text.ID, 1, document.WordTextFormatPatch{FontSize: &size})
+	path := filepath.Join(t.TempDir(), "bookmarks.docx")
+	if err := d.SaveAs(path); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	xml := reopened.parts[reopened.documentIdx].data
+	for _, marker := range []string{startMarker, endMarker} {
+		if bytes.Count(xml, []byte(marker)) != 1 {
+			t.Fatalf("bookmark was changed: %s", marker)
+		}
+	}
+	runs := reopened.WordBlocks()[0].Paragraph.Inlines
+	if len(runs) != 5 {
+		t.Fatalf("got %d fragments, want 5", len(runs))
+	}
+	for i, text := range []string{"甲", "A", "B", "C", "乙"} {
+		run := runs[i].Text
+		if run == nil || run.Text != text {
+			t.Fatalf("fragment %d mismatch", i)
+		}
+		if (i >= 1 && i <= 3) != (run.Style.FontSize == 24) {
+			t.Fatalf("fragment %d has incorrect size", i)
+		}
+	}
+	if ok, err := d.Undo(); err != nil || !ok {
+		t.Fatalf("undo: %v %v", ok, err)
+	}
+	if !bytes.Equal(before, d.parts[d.documentIdx].data) {
+		t.Fatal("undo did not restore bookmark XML")
+	}
+}

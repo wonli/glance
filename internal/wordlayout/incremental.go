@@ -173,7 +173,14 @@ func incrementalLayoutSafe(input Input, previous *Result, dirtyBlock int) bool {
 
 func cloneLayoutResult(source Result) Result {
 	clone := source
-	clone.Pages = append([]PageScene(nil), source.Pages...)
+	clone.Pages = make([]PageScene, len(source.Pages))
+	for i, page := range source.Pages {
+		clone.Pages[i] = page
+		clone.Pages[i].Text = append([]TextFragment(nil), page.Text...)
+		clone.Pages[i].Images = append([]ImagePlacement(nil), page.Images...)
+		clone.Pages[i].TableCells = append([]TableCellPlacement(nil), page.TableCells...)
+		clone.Pages[i].ParagraphBorders = append([]ParagraphBorderPlacement(nil), page.ParagraphBorders...)
+	}
 	clone.Diagnostics = append([]Diagnostic(nil), source.Diagnostics...)
 	clone.SupportReport.Findings = append([]SupportFinding(nil), source.SupportReport.Findings...)
 	clone.blockFingerprints = append([][32]byte(nil), source.blockFingerprints...)

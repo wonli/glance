@@ -107,6 +107,8 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.adjustWordFontSize(-wordFontSizeStepPt)
 	case "font-size-increase":
 		a.adjustWordFontSize(wordFontSizeStepPt)
+	case "font-size":
+		a.toggleWordOfficeRibbonMenu("font-size")
 	case "font-family":
 		a.showWordFontFamilyDialog()
 	case "font-color":

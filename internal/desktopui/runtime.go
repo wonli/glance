@@ -187,6 +187,7 @@ func newDesktopRuntime() *desktopRuntime {
 }
 
 func newDesktopRuntimeWithPrinter(printer printservice.Printer) *desktopRuntime {
+	InitDesktopRuntimeMemory()
 	if printer == nil {
 		printer = printservice.New()
 	}
@@ -929,6 +930,20 @@ func (r *desktopRuntime) updateSessionPathFromApplication(session *sharedDocumen
 	r.mu.Unlock()
 }
 
+func (r *desktopRuntime) isSessionActiveInAnyWindow(documentID string) bool {
+	if r == nil || documentID == "" {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, app := range r.windows {
+		if app != nil && (app.activeSessionID() == documentID || app.activeTabID == documentID) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *desktopRuntime) removeSession(documentID string) {
 	if r == nil {
 		return
@@ -951,7 +966,7 @@ func (r *desktopRuntime) removeSession(documentID string) {
 		session.viewsMu.RUnlock()
 		for _, view := range views {
 			if view != nil {
-				view.releaseWordViewResources()
+				view.releaseViewResources()
 				view.closed.Store(true)
 			}
 		}
@@ -1025,10 +1040,11 @@ func closeSharedDocumentSession(session *sharedDocumentSession) {
 	session.viewsMu.Unlock()
 	for _, view := range views {
 		if view != nil {
-			view.releaseWordViewResources()
+			view.releaseViewResources()
 			view.closed.Store(true)
 		}
 	}
+	requestMemoryRelease()
 	session.wordBlocksMu.Lock()
 	session.wordDraftMu.Lock()
 	session.wordBlocks = nil

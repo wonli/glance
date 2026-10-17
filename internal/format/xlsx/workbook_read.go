@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"glance/internal/document"
+	"glance/internal/textintern"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -691,13 +692,12 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 		window.Panes = document.SpreadsheetPaneFreeze{Frozen: panes.Freeze, XSplit: panes.XSplit, YSplit: panes.YSplit}
 	}
 	defaultCellStyle := document.CellStyle{NumberFormat: "General"}
-	if style, err := readCellStyle(w.file, 0); err == nil {
+	if style, err := w.cellStyleLocked(0); err == nil {
 		defaultCellStyle = style
 		if defaultCellStyle.NumberFormat == "" {
 			defaultCellStyle.NumberFormat = "General"
 		}
 	}
-	styleCache := map[int]document.CellStyle{0: defaultCellStyle}
 	for r := 0; r < rowCount; r++ {
 		row := startRow + r
 		window.Cells[r] = make([]document.Cell, columnCount)
@@ -729,15 +729,20 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 			if err != nil {
 				return document.SheetWindow{}, fmt.Errorf("read cell %s style: %w", cellRef, err)
 			}
-			style, ok := styleCache[styleID]
-			if !ok && styleID != 0 {
-				style, err = readCellStyle(w.file, styleID)
-				if err != nil {
-					return document.SheetWindow{}, fmt.Errorf("read style %d: %w", styleID, err)
+			style := defaultCellStyle
+			if styleID != 0 {
+				var styleErr error
+				style, styleErr = w.cellStyleLocked(styleID)
+				if styleErr != nil {
+					return document.SheetWindow{}, fmt.Errorf("read style %d: %w", styleID, styleErr)
 				}
-				styleCache[styleID] = style
 			}
-			window.Cells[r][c] = document.Cell{Value: value, Formula: formula, StyleID: styleID, Style: style}
+			window.Cells[r][c] = document.Cell{
+				Value:   textintern.String(value),
+				Formula: textintern.String(formula),
+				StyleID: styleID,
+				Style:   style,
+			}
 		}
 	}
 	for c := 0; c < columnCount; c++ {
@@ -789,21 +794,41 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 		if err != nil {
 			return document.SheetWindow{}, fmt.Errorf("read merged anchor %s style: %w", anchorRef, err)
 		}
-		style, ok := styleCache[styleID]
-		if !ok && styleID != 0 {
-			style, err = readCellStyle(w.file, styleID)
-			if err != nil {
-				return document.SheetWindow{}, fmt.Errorf("read merged anchor style %d: %w", styleID, err)
+		style := defaultCellStyle
+		if styleID != 0 {
+			var styleErr error
+			style, styleErr = w.cellStyleLocked(styleID)
+			if styleErr != nil {
+				return document.SheetWindow{}, fmt.Errorf("read merged anchor style %d: %w", styleID, styleErr)
 			}
-			styleCache[styleID] = style
 		}
 		window.Merges = append(window.Merges, document.MergeRegion{
 			Range:  document.CellRange{StartRow: anchorRow, StartColumn: anchorColumn, EndRow: endRow, EndColumn: endColumn},
-			Anchor: document.Cell{Value: value, Formula: formula, StyleID: styleID, Style: style},
+			Anchor: document.Cell{Value: textintern.String(value), Formula: textintern.String(formula), StyleID: styleID, Style: style},
 		})
 	}
 	w.applyConditionalFormatDisplayLocked(sheet, &window)
 	return window, nil
+}
+
+func (w *Workbook) cellStyleLocked(styleID int) (document.CellStyle, error) {
+	if w.styleCache != nil {
+		if style, ok := w.styleCache[styleID]; ok {
+			return style, nil
+		}
+	} else {
+		w.styleCache = make(map[int]document.CellStyle)
+	}
+	style, err := readCellStyle(w.file, styleID)
+	if err != nil {
+		return document.CellStyle{}, err
+	}
+	w.styleCache[styleID] = style
+	return style, nil
+}
+
+func (w *Workbook) invalidateStyleCacheLocked() {
+	w.styleCache = nil
 }
 
 func readCellStyle(file *excelize.File, styleID int) (document.CellStyle, error) {
@@ -820,20 +845,20 @@ func neutralCellStyle(style *excelize.Style) document.CellStyle {
 		return result
 	}
 	if len(style.Fill.Color) > 0 {
-		result.FillColor = normalizeRGBColor(style.Fill.Color[0])
+		result.FillColor = textintern.String(normalizeRGBColor(style.Fill.Color[0]))
 	}
 	if style.Font != nil {
-		result.FontColor = normalizeRGBColor(style.Font.Color)
-		result.FontFamily = style.Font.Family
+		result.FontColor = textintern.String(normalizeRGBColor(style.Font.Color))
+		result.FontFamily = textintern.String(style.Font.Family)
 		result.Bold = style.Font.Bold
 		result.Italic = style.Font.Italic
 		result.Underline = style.Font.Underline != ""
 		result.FontSize = style.Font.Size
 	}
-	result.NumberFormat = cellNumberFormat(style)
+	result.NumberFormat = textintern.String(cellNumberFormat(style))
 	if style.Alignment != nil {
-		result.HorizontalAlignment = style.Alignment.Horizontal
-		result.VerticalAlignment = style.Alignment.Vertical
+		result.HorizontalAlignment = textintern.String(style.Alignment.Horizontal)
+		result.VerticalAlignment = textintern.String(style.Alignment.Vertical)
 		result.WrapText = style.Alignment.WrapText
 	}
 	for _, border := range style.Border {
@@ -849,7 +874,10 @@ func neutralCellStyle(style *excelize.Style) document.CellStyle {
 			index = 3
 		}
 		if index >= 0 {
-			result.Borders[index] = document.CellBorder{Color: normalizeRGBColor(border.Color), Style: border.Style}
+			result.Borders[index] = document.CellBorder{
+				Color: textintern.String(normalizeRGBColor(border.Color)),
+				Style: border.Style,
+			}
 		}
 	}
 	return result

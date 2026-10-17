@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/layout"
+
 	"glance/internal/document"
 	"glance/internal/format/docx"
 )
@@ -494,5 +496,212 @@ func TestWordEditing_SplitAfterFontColorAndHighlight(t *testing.T) {
 	}
 	if strings.Contains(app.status, "失败") {
 		t.Fatalf("status reported failure: %s", app.status)
+	}
+}
+
+func TestWordFontSizeRibbonActionAndMenu(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	paragraph := word.WordBlocks()[0].Paragraph
+	runID := paragraph.Inlines[0].Text.ID
+	state := newDocumentSessionState("font-size-ribbon.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	state.selectedWordParagraphID = paragraph.ID
+	state.selectedWordRunID = runID
+
+	app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 4)}
+
+	// 1. Font size action must be enabled for selected run
+	fontSizeAction := ribbonAction{id: "font-size", label: "字号", group: "字体"}
+	if !app.wordToolbarActionEnabled(fontSizeAction) {
+		t.Fatal("font-size ribbon action should be enabled for editable run")
+	}
+
+	// 2. Display text for default size (13 pt)
+	if disp := selectedWordFontSizeDisplay(state); disp != "13" {
+		t.Fatalf("selectedWordFontSizeDisplay = %q; want %q", disp, "13")
+	}
+
+	// Exercise the same event loop as a real ribbon click.
+	wordToolbarButton(state, "font-size").Click()
+	app.handleWordToolbarEvents(layout.Context{})
+	if state.officeRibbonMenu.kind != officeRibbonMenuWord || state.officeRibbonMenu.wordAction != "font-size" {
+		t.Fatalf("officeRibbonMenu = %+v; want kind=officeRibbonMenuWord wordAction=font-size", state.officeRibbonMenu)
+	}
+	menuDef := app.officeRibbonMenuDefinition()
+	if menuDef.title != "字号" || len(menuDef.options) == 0 {
+		t.Fatalf("menu definition = %+v; want title '字号' and non-empty options", menuDef)
+	}
+
+	// 4. Execute "word-size-12" (小四)
+	app.executeOfficeRibbonMenuCommand(layout.Context{}, officeRibbonMenuWord, "word-size-12")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("word-size-12 error: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for word-size-12")
+	}
+
+	// 5. Verify run size is 12 and display name is "小四"
+	run, ok := selectedWordRun(state.wordBlocks, runID)
+	if !ok || run.Style.FontSize != 12 {
+		t.Fatalf("run font size = %g; want 12", run.Style.FontSize)
+	}
+	if disp := selectedWordFontSizeDisplay(state); disp != "小四" {
+		t.Fatalf("selectedWordFontSizeDisplay = %q; want %q", disp, "小四")
+	}
+
+	// 6. Execute "word-size-10.5" (五号)
+	app.executeOfficeRibbonMenuCommand(layout.Context{}, officeRibbonMenuWord, "word-size-10.5")
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("word-size-10.5 error: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for word-size-10.5")
+	}
+	if disp := selectedWordFontSizeDisplay(state); disp != "五号" {
+		t.Fatalf("selectedWordFontSizeDisplay = %q; want %q", disp, "五号")
+	}
+
+	// 7. Click option index 12 ("11") through handleOfficeRibbonMenuEvents
+	app.closeOfficeRibbonMenu()
+	if !app.toggleWordOfficeRibbonMenu("font-size") {
+		t.Fatal("failed to open font-size ribbon menu")
+	}
+	state.officeRibbonMenu.buttons[12].Click()
+	if !app.handleOfficeRibbonMenuEvents(layout.Context{}) {
+		t.Fatal("handleOfficeRibbonMenuEvents should handle button click on index 12")
+	}
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("word-size-11 error: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for word-size-11")
+	}
+	if disp := selectedWordFontSizeDisplay(state); disp != "11" {
+		t.Fatalf("selectedWordFontSizeDisplay = %q; want %q", disp, "11")
+	}
+}
+
+func TestWordFontSizeAdjustSelection(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	p := word.WordBlocks()[0].Paragraph
+	run := p.Inlines[0].Text
+
+	state := newDocumentSessionState("font-size-selection.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	state.selectedWordParagraphID = p.ID
+	state.selectedWordRunID = run.ID
+
+	app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 4)}
+
+	// Set text to "Hello World" and initial font size to 11
+	if err := word.ReplaceTextRun(run.ID, "Hello World"); err != nil {
+		t.Fatal(err)
+	}
+	if fontSizeEditor, ok := any(word).(document.WordTextFontSizeEditor); ok {
+		if err := fontSizeEditor.SetTextRunFontSize(run.ID, 11); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		t.Fatal("word does not implement WordTextFontSizeEditor")
+	}
+	state.setWordBlocks(word.WordBlocks())
+
+	// Create selection for "World" (offsets 6 to 11)
+	startPos := wordPageCaretPosition{runID: run.ID, runeOffset: 6}
+	endPos := wordPageCaretPosition{runID: run.ID, runeOffset: 11}
+	state.wordPageTextSelection = &wordPageTextSelection{
+		anchor: startPos,
+		focus:  endPos,
+		scope:  "document",
+	}
+
+	// Increase font size by 2 pt on the selection
+	app.adjustWordFontSize(2)
+
+	select {
+	case result := <-app.wordCommandResults:
+		if result.err != nil {
+			t.Fatalf("adjustWordFontSize selection error: %v", result.err)
+		}
+		app.wordCommandResults <- result
+		app.processAsyncResults()
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for adjustWordFontSize on selection")
+	}
+
+	// Verify that the paragraph now has split runs with different font sizes
+	inlines := state.wordBlocks[0].Paragraph.Inlines
+	if len(inlines) != 2 {
+		t.Fatalf("expected 2 runs after selection font size adjustment, got %d", len(inlines))
+	}
+	if inlines[0].Text.Text != "Hello " || inlines[0].Text.Style.FontSize != 11 {
+		t.Fatalf("prefix run = %q with size %g; want %q with size 11", inlines[0].Text.Text, inlines[0].Text.Style.FontSize, "Hello ")
+	}
+	if inlines[1].Text.Text != "World" || inlines[1].Text.Style.FontSize != 13 {
+		t.Fatalf("selected run = %q with size %g; want %q with size 13", inlines[1].Text.Text, inlines[1].Text.Style.FontSize, "World")
+	}
+}
+
+func TestWordSelectionFormatRefusalDoesNotFormatWholeRun(t *testing.T) {
+	for _, action := range []string{"size", "increase", "color", "highlight"} {
+		t.Run(action, func(t *testing.T) {
+			word, err := docx.NewBlank()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer word.Close()
+			run := word.WordBlocks()[0].Paragraph.Inlines[0].Text
+			if err := word.ReplaceTextRun(run.ID, "Hello"); err != nil {
+				t.Fatal(err)
+			}
+			state := newDocumentSessionState("selection.docx")
+			state.word = word
+			state.setWordBlocks(word.WordBlocks())
+			state.selectedWordRunID = run.ID
+			state.wordPageTextSelection = &wordPageTextSelection{
+				anchor: wordPageCaretPosition{runID: run.ID, runeOffset: 1},
+				focus:  wordPageCaretPosition{runID: run.ID, runeOffset: 3}, scope: "document",
+			}
+			// A pending selection edit deliberately refuses a second formatting intent.
+			state.wordSelectionEditIntent = &wordSelectionEditIntent{}
+			app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 1)}
+			switch action {
+			case "size":
+				app.setWordFontSize(24)
+			case "increase":
+				app.adjustWordFontSize(1)
+			case "color":
+				app.setWordFontColor(run.ID, "FF0000")
+			case "highlight":
+				app.setWordTextHighlight(run.ID, "yellow")
+			}
+			app.managedBackgroundTasks.Wait()
+			if len(app.wordCommandResults) != 0 || state.formatRunning.Load() {
+				t.Fatal("refused selection format fell through to a whole-run mutation")
+			}
+		})
 	}
 }

@@ -62,3 +62,25 @@ func TestCatalogShapeRejectsChangedResourceRatherThanSubstituting(t *testing.T) 
 		t.Fatal("changed resource silently substituted")
 	}
 }
+
+func TestCatalogMissingGlyphDoesNotLoadWholeFont(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "font.ttf")
+	if err := os.WriteFile(path, goregular.TTF, 0600); err != nil {
+		t.Fatal(err)
+	}
+	faces, err := fontcatalog.Inspect(context.Background(), path, fontcatalog.Private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shaper, err := NewWithSnapshot(fontcatalog.NewSnapshot(1, faces))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = shaper.Shape("\U0010ffff", document.WordTextStyle{FontFamily: "Go", FontSize: 12})
+	if err == nil {
+		t.Fatal("fixture unexpectedly covers the missing rune")
+	}
+	if len(shaper.facesByID) != 0 {
+		t.Fatal("missing glyph caused complete font/glyph tables to be retained")
+	}
+}

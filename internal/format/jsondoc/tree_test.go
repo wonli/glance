@@ -4,6 +4,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTreePreservesOrderNumbersAndEscapedPaths(t *testing.T) {
@@ -107,5 +108,37 @@ func BenchmarkParseTree(b *testing.B) {
 		if len(tree.Nodes) == 0 {
 			b.Fatal("no nodes")
 		}
+	}
+}
+
+func TestParseTreeCancellation(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("[\n")
+	for i := 0; sb.Len() < 5*1024*1024; i++ {
+		if i > 0 {
+			sb.WriteString(",\n")
+		}
+		sb.WriteString(`{"id": 123456, "name": "test_user_name_string", "active": true, "score": 98.5, "email": "user@example.com", "role": "developer"}`)
+	}
+	sb.WriteString("\n]")
+	jsonStr := sb.String()
+
+	// 1. Pre-cancelled
+	done := make(chan struct{})
+	close(done)
+	_, err := ParseTreeWithCancel(jsonStr, done)
+	if err == nil {
+		t.Fatal("expected error for pre-cancelled parse, got nil")
+	}
+
+	// 2. In-flight cancellation
+	cancelDone := make(chan struct{})
+	go func() {
+		time.Sleep(2 * time.Millisecond)
+		close(cancelDone)
+	}()
+	_, err = ParseTreeWithCancel(jsonStr, cancelDone)
+	if err == nil {
+		t.Fatal("expected error for in-flight cancelled parse, got nil")
 	}
 }

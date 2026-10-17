@@ -12,6 +12,7 @@ import (
 
 // RunDesktop starts the desktop runtime and enters Gio's platform event loop.
 func RunDesktop(initialPath string) {
+	desktopui.InitDesktopRuntimeMemory()
 	if err := initializeStartupLog(); err != nil {
 		ReportStartupError(err)
 	}

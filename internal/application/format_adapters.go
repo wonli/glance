@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"glance/internal/wordlayout"
 	"math"
 	"strings"
 	"sync"
@@ -2491,7 +2492,11 @@ func wordAdapter(path string, d *docx.Document) DocumentAdapter {
 			if !ok {
 				return false, ErrWordTextRunUnavailable
 			}
-			if wordTextStylePatchUnchanged(run.Style, patch) {
+			style := run.Style
+			if resolved, found := wordlayout.ResolveDocumentRunStyle(d.WordLayoutData(), d.WordBlocks(), runID); found {
+				style = resolved
+			}
+			if wordTextStylePatchUnchanged(style, patch) {
 				return false, nil
 			}
 			if err := d.SetTextRunStyle(runID, patch); err != nil {

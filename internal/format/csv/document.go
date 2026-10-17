@@ -343,8 +343,6 @@ func (d *Document) Save() error {
 		return err
 	}
 	d.dirty = false
-	d.undoStack = nil
-	d.redoStack = nil
 	return nil
 }
 
@@ -535,7 +533,7 @@ func (d *Document) Snapshot() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Close closes any open file handles.
+// Close closes any open file handles and releases memory.
 func (d *Document) Close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -543,8 +541,24 @@ func (d *Document) Close() error {
 		return nil
 	}
 	d.closed = true
+	var err error
 	if d.file != nil {
-		return d.file.Close()
+		err = d.file.Close()
+		d.file = nil
 	}
-	return nil
+	if d.index != nil {
+		d.index.cacheMu.Lock()
+		d.index.offsets = nil
+		d.index.rowCache = nil
+		d.index.rowFIFO = nil
+		d.index.cacheMu.Unlock()
+		d.index = nil
+	}
+	d.records = nil
+	d.edits = nil
+	d.undoStack = nil
+	d.redoStack = nil
+	d.rowHeights = nil
+	d.colWidths = nil
+	return err
 }

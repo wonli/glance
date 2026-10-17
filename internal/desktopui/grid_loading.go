@@ -125,3 +125,16 @@ func (a *App) pollGridLoad(v *gridViewport) {
 		}
 	}
 }
+
+func (a *App) drainGridLoadResults() {
+	if a == nil || a.gridLoadResults == nil {
+		return
+	}
+	for {
+		select {
+		case <-a.gridLoadResults:
+		default:
+			return
+		}
+	}
+}

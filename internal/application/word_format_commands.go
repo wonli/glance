@@ -527,6 +527,9 @@ func wordTextStylePatchUnchanged(style document.WordTextStyle, patch document.Wo
 		}
 		changed = changed || want != got
 	}
+	if patch.FontSize != nil {
+		changed = changed || style.FontSize != *patch.FontSize
+	}
 	return !changed
 }
 

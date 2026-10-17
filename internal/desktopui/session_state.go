@@ -46,6 +46,7 @@ type documentSessionState struct {
 	wordProtected                       bool
 	wordTrackRevisions                  bool
 	wordLayoutActivePage                int
+	wordTargetRestorePage               int
 	wordLayoutZoom                      float64
 	wordPageListState                   widget.List
 	wordPageVisibleInteractions         []wordVisiblePageInteraction

@@ -313,13 +313,20 @@ func (v *gridViewport) cellRangeRect(r document.CellRange, rowHeader, columnHead
 }
 
 func (v *gridViewport) screenCellRect(r document.CellRange, frozenRow, frozenColumn bool, rowHeader, columnHeader int) image.Rectangle {
-	if v == nil || r.StartRow <= 0 || r.StartColumn <= 0 {
+	if v == nil || v.Columns == nil || v.Rows == nil || r.StartRow <= 0 || r.StartColumn <= 0 {
 		return image.Rectangle{}
 	}
-	x0, _ := v.Columns.Boundary(r.StartColumn - 1)
-	x1, _ := v.Columns.Boundary(r.EndColumn)
-	y0, _ := v.Rows.Boundary(r.StartRow - 1)
-	y1, _ := v.Rows.Boundary(r.EndRow)
+	if r.EndRow < r.StartRow || r.EndColumn < r.StartColumn {
+		return image.Rectangle{}
+	}
+	startCol := min(max(0, r.StartColumn-1), v.Columns.Count())
+	endCol := min(max(0, r.EndColumn), v.Columns.Count())
+	startRow := min(max(0, r.StartRow-1), v.Rows.Count())
+	endRow := min(max(0, r.EndRow), v.Rows.Count())
+	x0, _ := v.Columns.Boundary(startCol)
+	x1, _ := v.Columns.Boundary(endCol)
+	y0, _ := v.Rows.Boundary(startRow)
+	y1, _ := v.Rows.Boundary(endRow)
 	if !frozenColumn {
 		x0 -= v.X
 		x1 -= v.X

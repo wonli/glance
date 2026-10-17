@@ -91,6 +91,9 @@ func wordRibbonGroupsForTab(tab wordToolbarTab, actions []ribbonAction) []wordRi
 func wordRibbonActionAnchorOffset(groups []wordRibbonGroup, actionID string) int {
 	groupStart := 0
 	for _, group := range groups {
+		if group.label == "字体" && actionID == "font-size" {
+			return groupStart + 112
+		}
 		for index, action := range group.actions {
 			if action.id != actionID {
 				continue
@@ -105,6 +108,8 @@ func wordRibbonActionAnchorOffset(groups []wordRibbonGroup, actionID string) int
 				switch action.id {
 				case "font-family":
 					return groupStart
+				case "font-size":
+					return groupStart + 112
 				case "font-size-decrease":
 					return groupStart + 170
 				case "font-size-increase":

@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-text/typesetting/di"
 	"github.com/go-text/typesetting/font"
+	ot "github.com/go-text/typesetting/font/opentype"
 
 	"github.com/go-text/typesetting/fontscan"
 	"github.com/go-text/typesetting/language"
@@ -46,12 +47,21 @@ type Shaper struct {
 	loadErr     error
 	fonts       []fontscan.Footprint
 
-	facesByID map[fontscan.Location]*font.Face
-	idsByFace map[*font.Face]fontscan.Location
-	dataByID  map[fontscan.Location][]byte
-	paths     map[string]*list.Element
-	pathLRU   *list.List
-	pathBytes int64
+	facesByID         map[fontscan.Location]*font.Face
+	idsByFace         map[*font.Face]fontscan.Location
+	paths             map[string]*list.Element
+	pathLRU           *list.List
+	pathBytes         int64
+	fontsByFamily     map[string][]fontscan.Footprint
+	isLastResort      map[fontscan.Location]bool
+	orderedFontsCache map[orderedFontsKey][]fontscan.Footprint
+	coverage          map[fontscan.Location]font.Cmap
+}
+
+type orderedFontsKey struct {
+	family string
+	bold   bool
+	italic bool
 }
 
 func NewSystem() (*Shaper, error) {
@@ -98,7 +108,6 @@ func newWordTextShaperWithCacheDir(cacheDir string) (*Shaper, error) {
 		cacheDir:  cacheDir,
 		facesByID: make(map[fontscan.Location]*font.Face),
 		idsByFace: make(map[*font.Face]fontscan.Location),
-		dataByID:  make(map[fontscan.Location][]byte),
 		paths:     make(map[string]*list.Element),
 		pathLRU:   list.New(),
 	}, nil
@@ -200,23 +209,32 @@ func (s *Shaper) Shape(value string, style document.WordTextStyle) (wordlayout.S
 	return shaped, nil
 }
 
+func (s *Shaper) readFontBytes(location fontscan.Location) ([]byte, error) {
+	if s.snapshot != nil {
+		reader, err := s.snapshot.OpenFace(s.resourceIDs[location])
+		if err != nil {
+			return nil, err
+		}
+		defer reader.Close()
+		return io.ReadAll(reader)
+	}
+	return os.ReadFile(location.File)
+}
+
 func (s *Shaper) FontData(fontKey string) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.loadSystemFonts(); err != nil {
 		return nil, err
 	}
-	for location := range s.dataByID {
+	for location := range s.facesByID {
 		if wordFontKey(location) == fontKey {
-			return bytes.Clone(s.dataByID[location]), nil
+			return s.readFontBytes(location)
 		}
 	}
 	for _, footprint := range s.fonts {
 		if wordFontKey(footprint.Location) == fontKey {
-			if s.loadFace(footprint.Location) == nil {
-				return nil, fmt.Errorf("font source changed or unavailable: %s", footprint.Location.File)
-			}
-			return bytes.Clone(s.dataByID[footprint.Location]), nil
+			return s.readFontBytes(footprint.Location)
 		}
 	}
 	return nil, fmt.Errorf("font key %q: %w", fontKey, wordlayout.ErrUnknownFont)
@@ -264,7 +282,35 @@ func (s *Shaper) loadSystemFonts() error {
 	return s.loadErr
 }
 
+func (s *Shaper) buildFontIndex() {
+	if s.fontsByFamily != nil {
+		return
+	}
+	s.fontsByFamily = make(map[string][]fontscan.Footprint, len(s.fonts))
+	s.isLastResort = make(map[fontscan.Location]bool)
+	for _, footprint := range s.fonts {
+		s.fontsByFamily[footprint.Family] = append(s.fontsByFamily[footprint.Family], footprint)
+		lower := strings.ToLower(footprint.Location.File)
+		if strings.Contains(lower, "lastresort") {
+			s.isLastResort[footprint.Location] = true
+		}
+	}
+}
+
 func (s *Shaper) orderedFonts(style document.WordTextStyle) []fontscan.Footprint {
+	key := orderedFontsKey{
+		family: style.FontFamily,
+		bold:   style.Bold,
+		italic: style.Italic,
+	}
+	if s.orderedFontsCache == nil {
+		s.orderedFontsCache = make(map[orderedFontsKey][]fontscan.Footprint)
+	}
+	if cached, ok := s.orderedFontsCache[key]; ok {
+		return cached
+	}
+	s.buildFontIndex()
+
 	families := wordFontFamilyCandidates(style.FontFamily)
 	families = append(families, FallbackFamilies()...)
 	seen := make(map[fontscan.Location]bool)
@@ -274,9 +320,9 @@ func (s *Shaper) orderedFonts(style document.WordTextStyle) []fontscan.Footprint
 		if name == "" {
 			continue
 		}
-		matches := make([]fontscan.Footprint, 0)
-		for _, footprint := range s.fonts {
-			if footprint.Family == name && !seen[footprint.Location] {
+		var matches []fontscan.Footprint
+		for _, footprint := range s.fontsByFamily[name] {
+			if !seen[footprint.Location] {
 				matches = append(matches, footprint)
 			}
 		}
@@ -295,9 +341,8 @@ func (s *Shaper) orderedFonts(style document.WordTextStyle) []fontscan.Footprint
 		}
 	}
 	sort.SliceStable(remaining, func(i, j int) bool {
-
-		leftLast := strings.Contains(strings.ToLower(remaining[i].Location.File), "lastresort")
-		rightLast := strings.Contains(strings.ToLower(remaining[j].Location.File), "lastresort")
+		leftLast := s.isLastResort[remaining[i].Location]
+		rightLast := s.isLastResort[remaining[j].Location]
 		if leftLast != rightLast {
 			return !leftLast
 		}
@@ -313,7 +358,18 @@ func (s *Shaper) orderedFonts(style document.WordTextStyle) []fontscan.Footprint
 		}
 		return remaining[i].Location.Index < remaining[j].Location.Index
 	})
-	return append(ordered, remaining...)
+	if len(remaining) > 8 {
+		remaining = remaining[:8]
+	}
+	// Keep only the candidates, not the full-catalog backing array. Bound
+	// family/style variants so arbitrary document font names cannot grow this
+	// optimization without limit.
+	result := append([]fontscan.Footprint(nil), append(ordered, remaining...)...)
+	if len(s.orderedFontsCache) >= 64 {
+		clear(s.orderedFontsCache)
+	}
+	s.orderedFontsCache[key] = result
+	return result
 }
 
 func splitWordFontFamilies(value string) []string {
@@ -386,6 +442,16 @@ func (m *wordTextFontMap) ResolveFace(r rune) *font.Face {
 		if candidate.Runes.Len() > 0 && !candidate.Runes.Contains(r) {
 			continue
 		}
+		if candidate.Runes.Len() == 0 && m.owner.snapshot != nil {
+			covered, err := m.owner.catalogFontContains(candidate.Location, r)
+			if err != nil {
+				m.resourceErr = fmt.Errorf("font resource unavailable or changed: %s; refresh fonts: %w", candidate.Location.File, err)
+				return nil
+			}
+			if !covered {
+				continue
+			}
+		}
 		face := m.owner.loadFace(candidate.Location)
 		if face == nil && m.owner.snapshot != nil {
 			m.resourceErr = fmt.Errorf("font resource unavailable or changed: %s; refresh fonts", candidate.Location.File)
@@ -421,14 +487,17 @@ func (s *Shaper) loadFace(location fontscan.Location) *font.Face {
 	if err != nil {
 		return nil
 	}
-	faces, err := font.ParseTTC(bytes.NewReader(data))
-	if err != nil || int(location.Index) >= len(faces) {
+	loaders, err := ot.NewLoaders(bytes.NewReader(data))
+	if err != nil || int(location.Index) >= len(loaders) {
 		return nil
 	}
-	face := faces[location.Index]
+	ft, err := font.NewFont(loaders[location.Index])
+	if err != nil {
+		return nil
+	}
+	face := font.NewFace(ft)
 	s.facesByID[location] = face
 	s.idsByFace[face] = location
-	s.dataByID[location] = data
 	return face
 }
 

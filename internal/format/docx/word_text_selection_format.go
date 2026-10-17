@@ -108,7 +108,7 @@ func (d *Document) SetTextSelectionStyle(startRunID string, startOffset int, end
 	rangesByText := make(map[*wordXMLNode]wordSelectedTextRange, len(selected))
 	runsByNode := make(map[*wordXMLNode]bool)
 	for _, item := range selected {
-		if !wordTextStyleMatchesPatch(parseWordTextStyle(firstChild(item.target.run, "rPr")), patch) {
+		if !wordTextStyleMatchesPatch(d.effectiveWordTargetStyle(item.target), patch) {
 			runsByNode[item.target.run] = true
 		}
 		rangesByText[item.target.text] = item.range_
@@ -245,6 +245,9 @@ func wordTextStyleMatchesPatch(style document.WordTextStyle, patch document.Word
 			return false
 		}
 	}
+	if patch.FontSize != nil && style.FontSize != *patch.FontSize {
+		return false
+	}
 	return true
 }
 
@@ -280,7 +283,7 @@ func validateWordTextSelectionForFormatting(data []byte, root *wordXMLNode, star
 		}
 	}
 	for _, paragraph := range paragraphs {
-		if err := validateWordSelectionTextOnly(data, paragraph, start.text.start, end.text.end); err != nil {
+		if err := validateWordSelectionText(data, paragraph, start.text.start, end.text.end, true); err != nil {
 			return err
 		}
 	}

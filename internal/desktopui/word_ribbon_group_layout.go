@@ -226,7 +226,7 @@ func (a *App) layoutWordFontRibbonGroup(gtx layout.Context, state *documentSessi
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return a.layoutWordRibbonField(gtx, fontSize, 54, "五号")
+					return a.layoutWordRibbonField(gtx, fontSize, 54, selectedWordFontSizeDisplay(state))
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -283,7 +283,7 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 		if action.id == "font-family" || action.id == "font-size" {
 			value := a.fontPickerDisplayFamilyName(selectedWordFontFamilyName(state))
 			if action.id == "font-size" {
-				value = "13"
+				value = selectedWordFontSizeDisplay(state)
 			}
 			return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value, enabled, a.tokens().Colors)
 		}

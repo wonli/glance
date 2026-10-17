@@ -1,9 +1,11 @@
 package docx
 
 import (
-	"glance/internal/document"
 	"strconv"
 	"strings"
+
+	"glance/internal/document"
+	"glance/internal/textintern"
 )
 
 func parseWordTextStyle(properties *wordXMLNode) document.WordTextStyle {
@@ -16,25 +18,25 @@ func parseWordTextStyle(properties *wordXMLNode) document.WordTextStyle {
 	underline := firstChild(properties, "u")
 	style.Underline = underline != nil && !strings.EqualFold(attrValue(underline, "val"), "none")
 	if color := firstChild(properties, "color"); color != nil {
-		style.FontColor = strings.ToUpper(attrValue(color, "val"))
+		style.FontColor = textintern.String(strings.ToUpper(attrValue(color, "val")))
 		if style.FontColor == "AUTO" {
 			style.FontColor = ""
 		}
 	}
 	if highlight := firstChild(properties, "highlight"); highlight != nil {
-		style.Highlight = strings.TrimSpace(attrValue(highlight, "val"))
+		style.Highlight = textintern.String(strings.TrimSpace(attrValue(highlight, "val")))
 		if strings.EqualFold(style.Highlight, "none") {
 			style.Highlight = ""
 		}
 	}
 	if fonts := firstChild(properties, "rFonts"); fonts != nil {
-		style.FontFamilyASCII = attrValue(fonts, "ascii")
-		style.FontFamilyHighANSI = attrValue(fonts, "hAnsi")
-		style.FontFamilyEastAsia = attrValue(fonts, "eastAsia")
-		style.FontFamilyComplexScript = attrValue(fonts, "cs")
+		style.FontFamilyASCII = textintern.String(attrValue(fonts, "ascii"))
+		style.FontFamilyHighANSI = textintern.String(attrValue(fonts, "hAnsi"))
+		style.FontFamilyEastAsia = textintern.String(attrValue(fonts, "eastAsia"))
+		style.FontFamilyComplexScript = textintern.String(attrValue(fonts, "cs"))
 		for _, key := range []string{"eastAsia", "ascii", "hAnsi", "cs"} {
 			if value := attrValue(fonts, key); value != "" {
-				style.FontFamily = value
+				style.FontFamily = textintern.String(value)
 				break
 			}
 		}

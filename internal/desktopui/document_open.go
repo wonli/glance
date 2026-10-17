@@ -69,10 +69,20 @@ func documentOpenFailureStatus(err error) string {
 	if err == nil {
 		return ""
 	}
-	if strings.Contains(err.Error(), "cannot be preserved by the XLSX importer") {
+	errStr := err.Error()
+	if strings.Contains(errStr, "cannot be preserved by the XLSX importer") {
 		return "无法安全导入此 .xls：当前版本尚不能无损保留其中的内容；原文件未修改。"
 	}
-	return err.Error()
+	if strings.Contains(errStr, "zip: not a valid zip file") || strings.Contains(errStr, "zip: not a valid zip archive") {
+		return "文档格式校验失败：该文件不是有效的 Office 格式压缩包，可能已损坏、并非真实文档，或扩展名与实际格式不符。"
+	}
+	if strings.Contains(errStr, "no such file or directory") {
+		return "未找到指定文件，该文件可能已被移动、重命名或删除。"
+	}
+	if strings.Contains(errStr, "permission denied") {
+		return "无法访问该文件：没有足够的系统读取权限。"
+	}
+	return errStr
 }
 
 func cloneWordBlockSnapshot(blocks []document.WordBlock) []document.WordBlock {
@@ -231,8 +241,15 @@ func (a *App) installDocument(loaded loadedDocument) error {
 			return nil
 		}
 	}
+	previousActiveID := a.activeTabID
 	if a.activeTabID != "" && a.documentSessionState != nil {
+		if a.activeTabID != workspace.RecentTabID && a.activeTabID != shared.documentID {
+			a.persistActiveSession()
+		}
 		a.sessions[a.activeTabID] = a.documentSessionState
+		if a.documentSessionState.jsonLarge.Load() {
+			a.documentSessionState.releaseJSONViewResources()
+		}
 	}
 	state := newDocumentSessionView(shared, a.windowID)
 	a.documentSessionState = state
@@ -342,6 +359,8 @@ func (a *App) installDocument(loaded loadedDocument) error {
 			a.persistActiveSession()
 		}
 	}
+	a.evictInactiveSessionsExcept(id, previousActiveID)
+	a.releaseIdleEngines()
 	if loaded.book != nil {
 		a.sheet = loaded.sheets[0]
 		a.cellButtons = make(map[string]*widget.Clickable)

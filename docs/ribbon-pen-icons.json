@@ -156,18 +156,18 @@
           "size": 12
         },
         {
-          "command": "A↑ 命令",
+          "command": "A+ 命令",
           "category": "开始 子菜单展示",
-          "icon": "a-arrow-up",
-          "library": "lucide",
+          "icon": "text_increase",
+          "library": "Material Symbols Outlined",
           "color": "#000000",
           "size": 20
         },
         {
-          "command": "A↓ 命令",
+          "command": "A− 命令",
           "category": "开始 子菜单展示",
-          "icon": "a-arrow-down",
-          "library": "lucide",
+          "icon": "text_decrease",
+          "library": "Material Symbols Outlined",
           "color": "#000000",
           "size": 20
         },

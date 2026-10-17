@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"bytes"
 	"container/list"
 	"fmt"
 	"glance/internal/document"
@@ -13,6 +14,8 @@ import (
 	giofont "gioui.org/font"
 	"gioui.org/font/opentype"
 	"gioui.org/text"
+	fontapi "github.com/go-text/typesetting/font"
+	fontot "github.com/go-text/typesetting/font/opentype"
 )
 
 type fontRenderResult struct {
@@ -196,12 +199,16 @@ func (cache *fontCollectionCache) familiesFor(snapshot fontcatalog.Snapshot, nam
 }
 
 func fontParseCacheKey(face fontcatalog.Face) string {
-	key := face.Path + "\x00" + face.Digest
+	key := fmt.Sprintf("%s\x00%s\x00%d", face.Path, face.Digest, face.Index)
 	if face.Digest == "" {
 		key += fmt.Sprintf("\x00%d:%d", face.Size, face.ModTime)
 	}
 	return key
 }
+
+type selectedCollectionFace struct{ font *fontapi.Font }
+
+func (f selectedCollectionFace) Face() *fontapi.Face { return fontapi.NewFace(f.font) }
 
 func parseFontCollection(snapshot fontcatalog.Snapshot, face fontcatalog.Face) ([]giofont.FontFace, int64, bool) {
 	reader, err := snapshot.OpenFace(face.ID)
@@ -213,11 +220,19 @@ func parseFontCollection(snapshot fontcatalog.Snapshot, face fontcatalog.Face) (
 	if err != nil {
 		return nil, 0, false
 	}
-	fonts, err := opentype.ParseCollection(data)
+	loaders, err := fontot.NewLoaders(bytes.NewReader(data))
+	if err != nil || int(face.Index) >= len(loaders) || face.Index < 0 {
+		return nil, 0, false
+	}
+	parsed, err := fontapi.NewFont(loaders[face.Index])
 	if err != nil {
 		return nil, 0, false
 	}
-	return fonts, int64(len(data)), true
+	// Gio's ParseCollection eagerly parses every face, including large CJK
+	// tables we never use. Wrap only this immutable font; each shaper gets its
+	// own mutable Face through Face(), as in Gio's OpenType wrapper.
+	selected := giofont.FontFace{Font: opentype.DescriptionToFont(parsed.Describe()), Face: selectedCollectionFace{parsed}}
+	return []giofont.FontFace{selected}, int64(len(data)), true
 }
 
 func (cache *fontCollectionCache) parsedFaces(snapshot fontcatalog.Snapshot, face fontcatalog.Face) ([]giofont.FontFace, int64, bool) {
@@ -263,6 +278,7 @@ func fontCollection(snapshot fontcatalog.Snapshot, names []string) []giofont.Fon
 func fontCollectionWithCache(snapshot fontcatalog.Snapshot, names []string, cache *fontCollectionCache) []giofont.FontFace {
 	var collection []giofont.FontFace
 	loaded := map[string][]giofont.FontFace{}
+	loadedFiles := map[string]bool{}
 	descriptors := map[giofont.Font]bool{}
 	var loadedBytes int64
 	for _, name := range names {
@@ -271,7 +287,8 @@ func fontCollectionWithCache(snapshot fontcatalog.Snapshot, names []string, cach
 				if face.Unavailable != "" {
 					continue
 				}
-				if loadedBytes+face.Size > 128<<20 {
+				fileKey := face.Path + "\x00" + face.Digest
+				if !loadedFiles[fileKey] && loadedBytes+face.Size > fontCollectionCacheLimit {
 					continue
 				}
 				parseKey := fontParseCacheKey(face)
@@ -284,12 +301,15 @@ func fontCollectionWithCache(snapshot fontcatalog.Snapshot, names []string, cach
 						continue
 					}
 					loaded[parseKey] = fonts
-					loadedBytes += size
+					if !loadedFiles[fileKey] {
+						loadedBytes += size
+						loadedFiles[fileKey] = true
+					}
 				}
-				if int(face.Index) >= len(fonts) {
+				if len(fonts) == 0 {
 					continue
 				}
-				f := fonts[face.Index]
+				f := fonts[0]
 				for _, alias := range append([]string{family.Name}, family.Aliases...) {
 					copy := f
 					copy.Font.Typeface = giofont.Typeface(alias)

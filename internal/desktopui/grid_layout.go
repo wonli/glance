@@ -29,7 +29,11 @@ func gtxGridContentHeight(a *App) float64 { return a.lastGridHeight }
 func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 	reader := a.book.(document.GridReader)
 	if a.virtualGrid == nil {
-		a.virtualGrid = newGridViewport()
+		if a.book != nil {
+			a.virtualGrid = newGridViewportForSpreadsheet(a.book, a.sheet)
+		} else {
+			a.virtualGrid = newGridViewport()
+		}
 	}
 	v := a.virtualGrid
 	if v.WindowSheet != "" && v.WindowSheet != a.sheet {
@@ -589,7 +593,8 @@ func (a *App) layoutGridVerticalScrollbar(gtx layout.Context, v *gridViewport, c
 	frozenWidth, frozenHeight := v.frozenViewportExtent(contentW, contentH)
 	_ = frozenWidth
 	bodyHeight := math.Max(0, contentH-frozenHeight)
-	totalHeight := v.Rows.TotalSize()
+	actualHeight := v.actualContentHeight(a)
+	totalHeight := math.Max(actualHeight, v.frozenRowBoundary()+v.Y+bodyHeight)
 	maxY := math.Max(0, totalHeight-v.frozenRowBoundary()-bodyHeight)
 
 	start, end := float32(0), float32(1)
@@ -603,6 +608,7 @@ func (a *App) layoutGridVerticalScrollbar(gtx layout.Context, v *gridViewport, c
 		start = float32(startPx) / float32(trackLen)
 		end = float32(startPx+thumbPx) / float32(trackLen)
 	}
+	v.ScrollbarStart, v.ScrollbarEnd = start, end
 
 	trackClip := clip.Rect{
 		Min: image.Pt(max(0, gtx.Constraints.Max.X-trackWidth), columnHeaderPx),

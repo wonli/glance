@@ -145,6 +145,7 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 		windowID:                 windowID,
 		wordViewMode:             wordViewContinuous,
 		wordLayoutZoom:           1,
+		wordTargetRestorePage:    -1,
 		spreadsheetZoom:          1,
 		wordListState:            widget.List{List: layout.List{Axis: layout.Vertical}},
 		wordPageListState:        widget.List{List: layout.List{Axis: layout.Vertical}},
@@ -241,6 +242,63 @@ func (state *documentSessionState) releaseWordViewResources() {
 	state.gridPictureVersions = nil
 	state.gridPictureErrors = nil
 }
+
+// releaseSpreadsheetViewResources drops spreadsheet-specific view models, grid caches,
+// and pending selection computations when a window no longer displays this spreadsheet.
+func (state *documentSessionState) releaseSpreadsheetViewResources() {
+	if state == nil {
+		return
+	}
+	state.cancelSpreadsheetSelectionStats()
+	if state.virtualGrid != nil {
+		state.virtualGrid.CellPaintCache = nil
+		state.virtualGrid.CellPaintFIFO = nil
+		state.virtualGrid.Window = document.SheetWindow{}
+		state.virtualGrid.TopWindow = document.SheetWindow{}
+		state.virtualGrid.LeftWindow = document.SheetWindow{}
+		state.virtualGrid.CornerWindow = document.SheetWindow{}
+		state.virtualGrid.Rows = nil
+		state.virtualGrid.Columns = nil
+		state.virtualGrid = nil
+	}
+	state.cellEditor = widget.Editor{}
+	state.formulaEditor = widget.Editor{}
+	state.nameBox = widget.Editor{}
+	state.sheetNameEditor = widget.Editor{}
+	state.cellButtons = nil
+	state.sheetButtons = nil
+	state.blockButtons = nil
+	state.sheetActiveCells = nil
+	state.spreadsheetAutoFitRowBasePoints = nil
+	state.valueFilter = nil
+	state.clipboardPasteTarget = nil
+	state.gridPictures = nil
+	if state.gridPictureCache != nil {
+		state.gridPictureCache.Clear()
+		state.gridPictureCache = nil
+	}
+	state.gridPicturePending = nil
+	state.gridPictureVersions = nil
+	state.gridPictureErrors = nil
+	state.selection = CellSelection{}
+	state.selectionSet = false
+	state.selectedCell = ""
+	requestMemoryRelease()
+}
+
+// releaseViewResources drops view-local resources across all document types.
+func (state *documentSessionState) releaseViewResources() {
+	if state == nil {
+		return
+	}
+	state.releaseJSONViewResources()
+	state.releaseSpreadsheetViewResources()
+	state.releaseWordViewResources()
+	state.releasePDFViewResources()
+	state.pptxView = nil
+	state.markdownView = nil
+}
+
 func (state *sharedDocumentSession) cancelWordLayout() {
 	if state == nil {
 		return

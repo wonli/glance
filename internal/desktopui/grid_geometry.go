@@ -27,7 +27,6 @@ func NewAxisGeometry(count int, defaultSize float64) (*AxisGeometry, error) {
 	return &AxisGeometry{
 		count:       count,
 		defaultSize: defaultSize,
-		deltaTree:   make([]float64, count+1),
 		overrides:   make(map[int]float64),
 		maxVisible:  count - 1,
 	}, nil
@@ -65,6 +64,14 @@ func (a *AxisGeometry) IndexAt(position float64) int {
 		position = 0
 	} else if position >= total {
 		position = math.Nextafter(total, math.Inf(-1))
+	}
+
+	if len(a.overrides) == 0 || len(a.deltaTree) == 0 {
+		idx := int(position / a.defaultSize)
+		if idx >= a.count {
+			return a.lastVisibleIndex()
+		}
+		return idx
 	}
 
 	// Fenwick lower-bound search. At every step compare the candidate prefix
@@ -174,7 +181,11 @@ func (a *AxisGeometry) Clone() *AxisGeometry {
 	if a == nil {
 		return nil
 	}
-	clone := &AxisGeometry{count: a.count, defaultSize: a.defaultSize, deltaTree: append([]float64(nil), a.deltaTree...), overrides: make(map[int]float64, len(a.overrides)), maxVisible: a.maxVisible}
+	var deltaTree []float64
+	if a.deltaTree != nil {
+		deltaTree = append([]float64(nil), a.deltaTree...)
+	}
+	clone := &AxisGeometry{count: a.count, defaultSize: a.defaultSize, deltaTree: deltaTree, overrides: make(map[int]float64, len(a.overrides)), maxVisible: a.maxVisible}
 	for i, size := range a.overrides {
 		clone.overrides[i] = size
 	}
@@ -208,6 +219,9 @@ func (a *AxisGeometry) sizeAt(index int) float64 {
 }
 
 func (a *AxisGeometry) prefixDelta(index int) float64 {
+	if len(a.deltaTree) == 0 {
+		return 0
+	}
 	var delta float64
 	for i := index; i > 0; i -= i & -i {
 		delta += a.deltaTree[i]
@@ -216,6 +230,9 @@ func (a *AxisGeometry) prefixDelta(index int) float64 {
 }
 
 func (a *AxisGeometry) addDelta(index int, delta float64) {
+	if a.deltaTree == nil {
+		a.deltaTree = make([]float64, a.count+1)
+	}
 	for i := index; i <= a.count; i += i & -i {
 		a.deltaTree[i] += delta
 	}

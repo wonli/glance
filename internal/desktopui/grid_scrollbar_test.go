@@ -1,9 +1,11 @@
 package desktopui
 
 import (
+	"fmt"
 	"image"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -278,5 +280,181 @@ func TestSpreadsheetVerticalScrollbarUnifiedWithXLSX(t *testing.T) {
 	}
 	if scrollbarBounds.Max.X != gridWidth {
 		t.Fatalf("scrollbarBounds.Max.X = %d; want %d", scrollbarBounds.Max.X, gridWidth)
+	}
+}
+
+func TestSpreadsheetVerticalScrollbarHeightBasedOnActualContent(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 1. Content smaller than viewport (5 rows): thumb should be full height (start=0, end=1)
+	csv5Path := filepath.Join(tempDir, "five_rows.csv")
+	var b5 strings.Builder
+	for i := 1; i <= 5; i++ {
+		fmt.Fprintf(&b5, "row%d,data%d\n", i, i)
+	}
+	if err := os.WriteFile(csv5Path, []byte(b5.String()), 0644); err != nil {
+		t.Fatalf("WriteFile five_rows: %v", err)
+	}
+
+	app5 := newAppWithRuntime(nil, newDesktopRuntime())
+	t.Cleanup(func() {
+		app5.ensureDesktopRuntime().shutdown()
+		close(app5.shutdown)
+	})
+	app5.theme = material.NewTheme()
+	loaded5, err := loadDocument(csv5Path)
+	if err != nil {
+		t.Fatalf("loadDocument five_rows: %v", err)
+	}
+	defer closeLoadedDocument(loaded5)
+	if err := app5.installDocument(loaded5); err != nil {
+		t.Fatalf("installDocument: %v", err)
+	}
+
+	var ops op.Ops
+	gridWidth, gridHeight := 1000, 600
+	gtx5 := layout.Context{
+		Ops:         &ops,
+		Now:         time.Now(),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(gridWidth, gridHeight)},
+	}
+	app5.layoutVirtualGrid(gtx5)
+	if app5.virtualGrid.ScrollbarStart != 0 || app5.virtualGrid.ScrollbarEnd != 1 {
+		t.Fatalf("expected full scrollbar thumb for 5 rows in 600px viewport, got start=%v end=%v",
+			app5.virtualGrid.ScrollbarStart, app5.virtualGrid.ScrollbarEnd)
+	}
+
+	// 2. Content larger than viewport (100 rows): thumb height should reflect viewport / actualContentHeight
+	csv100Path := filepath.Join(tempDir, "hundred_rows.csv")
+	var b100 strings.Builder
+	for i := 1; i <= 100; i++ {
+		fmt.Fprintf(&b100, "row%d,val%d\n", i, i)
+	}
+	if err := os.WriteFile(csv100Path, []byte(b100.String()), 0644); err != nil {
+		t.Fatalf("WriteFile hundred_rows: %v", err)
+	}
+
+	app100 := newAppWithRuntime(nil, newDesktopRuntime())
+	t.Cleanup(func() {
+		app100.ensureDesktopRuntime().shutdown()
+		close(app100.shutdown)
+	})
+	app100.theme = material.NewTheme()
+	loaded100, err := loadDocument(csv100Path)
+	if err != nil {
+		t.Fatalf("loadDocument hundred_rows: %v", err)
+	}
+	defer closeLoadedDocument(loaded100)
+	if err := app100.installDocument(loaded100); err != nil {
+		t.Fatalf("installDocument: %v", err)
+	}
+
+	ops.Reset()
+	gtx100 := layout.Context{
+		Ops:         &ops,
+		Now:         time.Now(),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(gridWidth, gridHeight)},
+	}
+	app100.layoutVirtualGrid(gtx100)
+
+	thumbFraction := app100.virtualGrid.ScrollbarEnd - app100.virtualGrid.ScrollbarStart
+	// For 100 rows (~2000-2400px) in ~572px body height, thumbFraction should be around 0.20 - 0.35.
+	// Previously it was ~0.028 (16px clamped minimum out of 1 million rows).
+	if thumbFraction < 0.15 || thumbFraction > 0.40 {
+		t.Fatalf("expected thumb fraction to reflect 100 rows (~0.20-0.35), got %v (start=%v, end=%v)",
+			thumbFraction, app100.virtualGrid.ScrollbarStart, app100.virtualGrid.ScrollbarEnd)
+	}
+
+	// 3. XLSX document with 80 rows: thumb height should reflect 80 rows
+	xlsxBook := xlsx.NewBlank()
+	if err := xlsxBook.SetCellText("Sheet1", "A80", "bottom_data"); err != nil {
+		t.Fatalf("SetCellText: %v", err)
+	}
+	appXLSX := newAppWithRuntime(nil, newDesktopRuntime())
+	t.Cleanup(func() {
+		appXLSX.ensureDesktopRuntime().shutdown()
+		close(appXLSX.shutdown)
+	})
+	appXLSX.theme = material.NewTheme()
+	loadedXLSX := loadedDocument{book: xlsxBook, sheets: []string{"Sheet1"}}
+	if err := appXLSX.installDocument(loadedXLSX); err != nil {
+		t.Fatalf("installDocument: %v", err)
+	}
+	ops.Reset()
+	gtxXLSX := layout.Context{
+		Ops:         &ops,
+		Now:         time.Now(),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(gridWidth, gridHeight)},
+	}
+	appXLSX.layoutVirtualGrid(gtxXLSX)
+	xlsxThumbFraction := appXLSX.virtualGrid.ScrollbarEnd - appXLSX.virtualGrid.ScrollbarStart
+	// For 80 rows (~1600-1920px) in 572px body height, thumb fraction should be around 0.20 - 0.50
+	if xlsxThumbFraction < 0.20 || xlsxThumbFraction > 0.50 {
+		t.Fatalf("expected XLSX thumb fraction to reflect 80 rows (~0.25-0.45), got %v (start=%v, end=%v)",
+			xlsxThumbFraction, appXLSX.virtualGrid.ScrollbarStart, appXLSX.virtualGrid.ScrollbarEnd)
+	}
+}
+
+func TestSpreadsheetVerticalScrollbarFlushToWorkspaceEdge(t *testing.T) {
+	tempDir := t.TempDir()
+	csvPath := filepath.Join(tempDir, "sample.csv")
+	csvContent := "A,B,C\n1,2,3\n"
+	if err := os.WriteFile(csvPath, []byte(csvContent), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	app := newAppWithRuntime(nil, newDesktopRuntime())
+	t.Cleanup(func() {
+		app.ensureDesktopRuntime().shutdown()
+		close(app.shutdown)
+	})
+	app.theme = material.NewTheme()
+	loaded, err := loadDocument(csvPath)
+	if err != nil {
+		t.Fatalf("loadDocument: %v", err)
+	}
+	defer closeLoadedDocument(loaded)
+	if err := app.installDocument(loaded); err != nil {
+		t.Fatalf("installDocument: %v", err)
+	}
+
+	router := new(input.Router)
+	var ops op.Ops
+	workspaceWidth, workspaceHeight := 1200, 700
+	gtx := layout.Context{
+		Source:      router.Source(),
+		Ops:         &ops,
+		Now:         time.Now(),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Exact(image.Pt(workspaceWidth, workspaceHeight)),
+	}
+
+	// Layout the entire workbook (which includes toolbar, controls, virtual grid, and sheet tabs)
+	app.layoutWorkbook(gtx)
+	router.Frame(&ops)
+
+	var scrollbarBounds image.Rectangle
+	var visit func([]input.SemanticNode)
+	visit = func(nodes []input.SemanticNode) {
+		for _, node := range nodes {
+			if node.Desc.Description == "表格垂直滚动条" {
+				scrollbarBounds = node.Desc.Bounds
+			}
+			visit(node.Children)
+		}
+	}
+	visit(router.AppendSemantics(nil))
+
+	if scrollbarBounds.Empty() {
+		t.Fatal("表格垂直滚动条 has no accessible bounds in semantic tree")
+	}
+
+	// Scrollbar MUST stick to the right edge of the workspace (Max.X == workspaceWidth)
+	if scrollbarBounds.Max.X != workspaceWidth {
+		t.Fatalf("scrollbarBounds.Max.X = %d; want %d (scrollbar should stick to workspace edge)",
+			scrollbarBounds.Max.X, workspaceWidth)
 	}
 }
