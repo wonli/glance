@@ -417,6 +417,18 @@ func TestOpenCustomerCSV2Million(t *testing.T) {
 		t.Errorf("unexpected row 1 index: %s", w1.Cells[1][0].Value)
 	}
 
+	// 1.5 LRU Cache hit test
+	cacheStart := time.Now()
+	wCached, err := doc.Window("Sheet1", 1, 1, 5, 3)
+	if err != nil {
+		t.Fatalf("Window cached: %v", err)
+	}
+	cacheDuration := time.Since(cacheStart)
+	t.Logf("Cached Window read took %v", cacheDuration)
+	if wCached.Cells[0][0].Value != "Index" {
+		t.Errorf("unexpected cached value: %s", wCached.Cells[0][0].Value)
+	}
+
 	// 2. Around 1,048,576 (the old Excel limit)
 	wMid, err := doc.Window("Sheet1", 1048575, 1, 3, 3)
 	if err != nil {
