@@ -115,7 +115,7 @@ func (a *App) selectWordParagraphRange(gtx layout.Context, state *documentSessio
 		if from >= to {
 			continue
 		}
-		wordRunEditor(state, run.run).SetCaret(to-run.start, from-run.start)
+		wordRunEditor(state, run.run).SetCaret(from-run.start, to-run.start)
 	}
 	state.wordPageTextSelection = &wordPageTextSelection{
 		scope:    "range",

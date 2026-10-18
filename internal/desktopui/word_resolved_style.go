@@ -31,9 +31,8 @@ func selectedWordFormattingRun(state *documentSessionState, runID string) (docum
 	}
 	state.wordBlocksMu.RLock()
 	run, ok := selectedWordRun(state.wordBlocks, runID)
-	missingProjection := state.wordBlocks == nil
 	state.wordBlocksMu.RUnlock()
-	if missingProjection {
+	if !ok {
 		run, ok = selectedWordRun(wordBlocksForState(state), runID)
 	}
 	if ok {

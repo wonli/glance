@@ -145,7 +145,7 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 	}
 	if gtx.Focused(editor) && !documentSelectionHandled && !selectionInputPending && (selectionStart != caretStartBeforeUpdate || selectionEnd != caretEndBeforeUpdate) {
 		state.wordPagePreferredVerticalXSet = false
-		if state.wordPageSelectionDrag == nil {
+		if state.wordPageSelectionDrag == nil && !wordPageTextSelectionActive(state.wordPageTextSelection) {
 			state.wordPageTextSelection = nil
 		}
 	}
@@ -288,6 +288,7 @@ func (a *App) handleWordPageArrowNavigation(gtx layout.Context, state *documentS
 			} else {
 				editor.SetCaret(end, end)
 			}
+			state.wordPageTextSelection = nil
 			return true
 		}
 		direction := 1
@@ -323,6 +324,7 @@ func (a *App) handleWordPageArrowNavigation(gtx layout.Context, state *documentS
 		}
 		caret := max(0, min(editor.Len(), end+direction))
 		editor.SetCaret(caret, caret)
+		state.wordPageTextSelection = nil
 		return true
 	}
 	if keyEvent.Name == key.NameHome || keyEvent.Name == key.NameEnd {

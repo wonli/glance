@@ -32,6 +32,7 @@ type glyphPathCacheKey struct {
 	fontKey  string
 	glyphID  uint32
 	fontSize uint64
+	slant    uint64
 }
 
 func newLayoutCursor(result *Result, setup document.WordPageSetup, content Rect) *layoutCursor {

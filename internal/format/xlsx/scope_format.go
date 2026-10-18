@@ -40,6 +40,13 @@ func (w *Workbook) setScopedFormatsLocked(sheet string, b document.CellRange, pa
 	if err != nil {
 		return false, err
 	}
+	var rawFontStyles *rawXLSXFontStyles
+	if fontOnlyFormatPatch(patch) {
+		rawFontStyles, err = newRawXLSXFontStyles(w.file, files["xl/styles.xml"])
+		if err != nil {
+			return false, err
+		}
+	}
 	root, err := parseScopeXML(files[target])
 	if err != nil {
 		return false, err
@@ -109,6 +116,11 @@ func (w *Workbook) setScopedFormatsLocked(sheet string, b document.CellRange, pa
 			}
 			cache[id] = resetID
 			return resetID, nil
+		}
+		if rawFontStyles != nil {
+			v, e := rawFontStyles.update(id, patch)
+			cache[id] = v
+			return v, e
 		}
 		base, e := w.file.GetStyle(id)
 		if e != nil {
@@ -293,16 +305,23 @@ func (w *Workbook) setScopedFormatsLocked(sheet string, b document.CellRange, pa
 		return false, nil
 	}
 	sheetXML := root.bytes()
-	afterStyles, err := w.snapshotLocked()
-	if err != nil {
-		return false, err
+	var updated []byte
+	if rawFontStyles != nil {
+		files[target] = sheetXML
+		files["xl/styles.xml"] = rawFontStyles.bytes()
+		updated, err = replaceScopePackage(before, files)
+	} else {
+		afterStyles, snapshotErr := w.snapshotLocked()
+		if snapshotErr != nil {
+			return false, snapshotErr
+		}
+		files, _, err = scopePackage(afterStyles, sheet)
+		if err != nil {
+			return false, err
+		}
+		files[target] = sheetXML
+		updated, err = replaceScopePackage(afterStyles, files)
 	}
-	files, _, err = scopePackage(afterStyles, sheet)
-	if err != nil {
-		return false, err
-	}
-	files[target] = sheetXML
-	updated, err := replaceScopePackage(afterStyles, files)
 	if err != nil {
 		return false, err
 	}
@@ -312,7 +331,12 @@ func (w *Workbook) setScopedFormatsLocked(sheet string, b document.CellRange, pa
 	if err = w.restoreSnapshotLocked(updated); err != nil {
 		return false, err
 	}
-	if err = w.recordHistoryLocked(before); err != nil {
+	if rawFontStyles != nil {
+		err = w.recordHistoryWithAfterLocked(before, updated)
+	} else {
+		err = w.recordHistoryLocked(before)
+	}
+	if err != nil {
 		w.restoreSnapshotLocked(before)
 		return false, err
 	}

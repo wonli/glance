@@ -493,12 +493,21 @@ func textFragmentAt(atom paragraphAtom, x, baseline float64) TextFragment {
 }
 
 func scaleGlyphOutline(outline GlyphOutline, fontSize float64) []GlyphPathCommand {
+	return scaleGlyphOutlineWithSlant(outline, fontSize, 0)
+}
+
+func scaleGlyphOutlineWithSlant(outline GlyphOutline, fontSize, slant float64) []GlyphPathCommand {
 	if outline.UnitsPerEm <= 0 || fontSize <= 0 || len(outline.Commands) == 0 {
 		return nil
 	}
 	scale := fontSize / outline.UnitsPerEm
 	point := func(input GlyphOutlinePoint) GlyphPathPoint {
-		return GlyphPathPoint{XPT: input.X * scale, YPT: -input.Y * scale}
+		xPT := input.X * scale
+		yPT := -input.Y * scale
+		if slant != 0 {
+			xPT -= yPT * slant
+		}
+		return GlyphPathPoint{XPT: xPT, YPT: yPT}
 	}
 	commands := make([]GlyphPathCommand, 0, len(outline.Commands))
 	for _, command := range outline.Commands {

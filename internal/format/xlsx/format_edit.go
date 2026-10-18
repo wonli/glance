@@ -44,6 +44,9 @@ func (w *Workbook) SetCellFormatsChanged(sheet string, bounds document.CellRange
 	if (bounds.EndRow-bounds.StartRow+1)*(bounds.EndColumn-bounds.StartColumn+1) > maxClipboardCells {
 		return false, fmt.Errorf("format range exceeds %d cells", maxClipboardCells)
 	}
+	if fontOnlyFormatPatch(patch) {
+		return w.setCellFontFormatsLocked(sheet, bounds, patch)
+	}
 
 	styleCache := make(map[int]*excelize.Style)
 	styleIDs := make(map[string]int)

@@ -458,6 +458,13 @@ func restorePersistedWordSelection(state *documentSessionState, view sessionView
 	}
 	if paragraph, ok := selectedWordParagraph(blocks, view.SelectedWordParagraphID); ok {
 		state.selectedWordParagraphID = paragraph.ID
+		return
+	}
+	if run, paragraph, ok := findFirstEditableWordRun(blocks); ok {
+		state.selectedWordRunID = run.ID
+		state.selectedWordParagraphID = paragraph.ID
+		state.selectedBlock = -1
+		state.selectedBlockEditable = true
 	}
 }
 

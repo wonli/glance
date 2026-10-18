@@ -705,3 +705,223 @@ func TestWordSelectionFormatRefusalDoesNotFormatWholeRun(t *testing.T) {
 		})
 	}
 }
+
+func TestWordToolbarToggleTextStyleInMiddleOfParagraph(t *testing.T) {
+	for _, prop := range []string{"bold", "italic", "underline"} {
+		t.Run(prop, func(t *testing.T) {
+			word, err := docx.NewBlank()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer word.Close()
+			p := word.WordBlocks()[0].Paragraph
+			run := p.Inlines[0].Text
+
+			state := newDocumentSessionState("format-middle.docx")
+			state.word = word
+			state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+			state.selectedWordParagraphID = p.ID
+			state.selectedWordRunID = run.ID
+
+			app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 4)}
+
+			if err := word.ReplaceTextRun(run.ID, "你好世界，这是测试文字"); err != nil {
+				t.Fatal(err)
+			}
+			state.setWordBlocks(word.WordBlocks())
+
+			// Select "世界" (offsets 2 to 4)
+			startPos := wordPageCaretPosition{runID: run.ID, runeOffset: 2}
+			endPos := wordPageCaretPosition{runID: run.ID, runeOffset: 4}
+			state.wordPageTextSelection = &wordPageTextSelection{
+				anchor: startPos,
+				focus:  endPos,
+				scope:  "document",
+			}
+
+			// Simulate clicking the toolbar button
+			wordToolbarButton(state, prop).Click()
+			app.handleWordToolbarEvents(layout.Context{})
+
+			select {
+			case result := <-app.wordCommandResults:
+				if result.err != nil {
+					t.Fatalf("%s error: %v", prop, result.err)
+				}
+				app.wordCommandResults <- result
+				app.processAsyncResults()
+			case <-time.After(2 * time.Second):
+				t.Fatalf("timed out waiting for %s on selection", prop)
+			}
+
+			inlines := state.wordBlocks[0].Paragraph.Inlines
+			if len(inlines) != 3 {
+				t.Fatalf("expected 3 inlines after selection format, got %d: %#v", len(inlines), inlines)
+			}
+			if inlines[1].Text.Text != "世界" {
+				t.Fatalf("middle run text = %q; want %q", inlines[1].Text.Text, "世界")
+			}
+			switch prop {
+			case "bold":
+				if !inlines[1].Text.Style.Bold {
+					t.Fatal("middle run should be bold")
+				}
+			case "italic":
+				if !inlines[1].Text.Style.Italic {
+					t.Fatal("middle run should be italic")
+				}
+			case "underline":
+				if !inlines[1].Text.Style.Underline {
+					t.Fatal("middle run should be underline")
+				}
+			}
+		})
+	}
+}
+
+func TestWordToolbarToggleTextStyleCrossRunsInParagraph(t *testing.T) {
+	for _, prop := range []string{"bold", "italic", "underline"} {
+		t.Run(prop, func(t *testing.T) {
+			word, err := docx.NewBlank()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer word.Close()
+			p := word.WordBlocks()[0].Paragraph
+			run := p.Inlines[0].Text
+
+			state := newDocumentSessionState("format-cross.docx")
+			state.word = word
+			state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+			state.selectedWordParagraphID = p.ID
+			state.selectedWordRunID = run.ID
+
+			app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 4)}
+
+			// Split into two runs: "前缀文本" and "后续内容"
+			if err := word.ReplaceTextRun(run.ID, "前缀文本后续内容"); err != nil {
+				t.Fatal(err)
+			}
+			_, err = word.SetTextSelectionStyle(run.ID, 0, run.ID, 4, document.WordTextFormatPatch{FontColor: strPtr("0000FF")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			state.setWordBlocks(word.WordBlocks())
+			inlines := state.wordBlocks[0].Paragraph.Inlines
+			if len(inlines) < 2 {
+				t.Fatalf("expected at least 2 inlines, got %d", len(inlines))
+			}
+			run1ID := inlines[0].Text.ID
+			run2ID := inlines[1].Text.ID
+
+			// Select from offset 2 in run 1 ("文本") to offset 2 in run 2 ("后续")
+			// Notice: anchor and focus are NOT at the start of paragraph!
+			state.wordPageTextSelection = &wordPageTextSelection{
+				anchor:   wordPageCaretPosition{runID: run1ID, runeOffset: 2},
+				focus:    wordPageCaretPosition{runID: run2ID, runeOffset: 2},
+				scope:    "range",
+				runOrder: map[string]int{run1ID: 0, run2ID: 1},
+			}
+
+			// Verify toolbar button is enabled
+			action := ribbonAction{id: prop}
+			if !app.wordToolbarActionEnabled(action) {
+				t.Fatalf("%s action should be enabled for cross-run selection", prop)
+			}
+
+			// Simulate clicking toolbar button
+			wordToolbarButton(state, prop).Click()
+			app.handleWordToolbarEvents(layout.Context{})
+
+			select {
+			case result := <-app.wordCommandResults:
+				if result.err != nil {
+					t.Fatalf("%s error: %v", prop, result.err)
+				}
+				app.wordCommandResults <- result
+				app.processAsyncResults()
+			case <-time.After(2 * time.Second):
+				t.Fatalf("timed out waiting for %s on cross-run selection", prop)
+			}
+
+			newInlines := state.wordBlocks[0].Paragraph.Inlines
+			var formattedText strings.Builder
+			for _, inl := range newInlines {
+				if inl.Text == nil {
+					continue
+				}
+				hasStyle := false
+				switch prop {
+				case "bold":
+					hasStyle = inl.Text.Style.Bold
+				case "italic":
+					hasStyle = inl.Text.Style.Italic
+				case "underline":
+					hasStyle = inl.Text.Style.Underline
+				}
+				if hasStyle {
+					formattedText.WriteString(inl.Text.Text)
+				}
+			}
+			if formattedText.String() != "文本后续" {
+				t.Fatalf("expected formatted text %q, got %q (inlines: %#v)", "文本后续", formattedText.String(), newInlines)
+			}
+		})
+	}
+}
+
+func TestWordToolbarActionActiveReflectsSelection(t *testing.T) {
+	word, err := docx.NewBlank()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer word.Close()
+	p := word.WordBlocks()[0].Paragraph
+	run := p.Inlines[0].Text
+
+	state := newDocumentSessionState("active-test.docx")
+	state.word = word
+	state.wordBlocks = cloneWordBlockSnapshot(word.WordBlocks())
+	state.selectedWordParagraphID = p.ID
+	state.selectedWordRunID = run.ID
+
+	if err := word.ReplaceTextRun(run.ID, "第一段普通文字加粗测试"); err != nil {
+		t.Fatal(err)
+	}
+	yes := true
+	_, err = word.SetTextSelectionStyle(run.ID, 4, run.ID, 8, document.WordTextFormatPatch{Bold: &yes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.setWordBlocks(word.WordBlocks())
+
+	inlines := state.wordBlocks[0].Paragraph.Inlines
+	// inlines: [0]: "第一段普通" (not bold), [1]: "文字加粗" (bold), [2]: "测试" (not bold)
+	if len(inlines) != 3 {
+		t.Fatalf("expected 3 inlines, got %d", len(inlines))
+	}
+
+	boldAction := ribbonAction{id: "bold"}
+
+	// 1. Selection in normal run
+	state.wordPageTextSelection = &wordPageTextSelection{
+		anchor: wordPageCaretPosition{runID: inlines[0].Text.ID, runeOffset: 0},
+		focus:  wordPageCaretPosition{runID: inlines[0].Text.ID, runeOffset: 2},
+	}
+	if wordToolbarActionActive(state, boldAction) {
+		t.Fatal("bold should NOT be active for normal text selection")
+	}
+
+	// 2. Selection in bold run (in middle of paragraph)
+	state.wordPageTextSelection = &wordPageTextSelection{
+		anchor: wordPageCaretPosition{runID: inlines[1].Text.ID, runeOffset: 1},
+		focus:  wordPageCaretPosition{runID: inlines[1].Text.ID, runeOffset: 3},
+	}
+	if !wordToolbarActionActive(state, boldAction) {
+		t.Fatal("bold SHOULD be active for bold text selection in middle of paragraph")
+	}
+}
+
+func strPtr(s string) *string {
+	return &s
+}

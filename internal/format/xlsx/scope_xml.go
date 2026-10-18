@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// scopeNode retains the exact lexical XML for untouched worksheet content.
+// scopeNode retains the exact lexical XML for untouched package content.
 // Only edited start tags and explicitly edited child elements are rewritten.
 type scopeNode struct {
 	name        string
@@ -80,6 +80,10 @@ func (n *scopeNode) set(name, value string) {
 		return
 	}
 	n.attrs[name] = value
+	var escaped strings.Builder
+	if err := xml.EscapeText(&escaped, []byte(value)); err == nil {
+		value = escaped.String()
+	}
 	re := regexp.MustCompile(`\s` + regexp.QuoteMeta(name) + `\s*=\s*(?:"[^"]*"|'[^']*')`)
 	attr := " " + name + `="` + value + `"`
 	if re.MatchString(n.open) {
@@ -91,6 +95,14 @@ func (n *scopeNode) set(name, value string) {
 		}
 		n.open = n.open[:idx] + attr + n.open[idx:]
 	}
+}
+func (n *scopeNode) removeAttr(name string) {
+	if _, ok := n.attrs[name]; !ok {
+		return
+	}
+	delete(n.attrs, name)
+	re := regexp.MustCompile(`\s` + regexp.QuoteMeta(name) + `\s*=\s*(?:"[^"]*"|'[^']*')`)
+	n.open = re.ReplaceAllString(n.open, "")
 }
 func newScopeNode(name string) *scopeNode {
 	return &scopeNode{name: name, open: "<" + name + ">", close: "</" + name + ">", attrs: map[string]string{}}
@@ -132,6 +144,47 @@ func insertScopeChild(parent, child *scopeNode, key func(*scopeNode) int) {
 	parent.parts = append(parent.parts, scopePart{})
 	copy(parent.parts[index+1:], parent.parts[index:])
 	parent.parts[index] = scopePart{node: child}
+}
+
+// appendScopeChild places a new like-named element after its siblings while
+// keeping trailing extension elements and their surrounding bytes in place.
+func appendScopeChild(parent, child *scopeNode) {
+	index := -1
+	for i, part := range parent.parts {
+		if part.node != nil && part.node.name == child.name {
+			index = i
+		}
+	}
+	if index >= 0 {
+		index++
+	} else {
+		index = len(parent.parts)
+	}
+	parent.parts = append(parent.parts, scopePart{})
+	copy(parent.parts[index+1:], parent.parts[index:])
+	parent.parts[index] = scopePart{node: child}
+}
+
+func cloneScopeNode(source *scopeNode) *scopeNode {
+	if source == nil {
+		return nil
+	}
+	copyNode := &scopeNode{
+		name:   source.name,
+		open:   source.open,
+		close:  source.close,
+		attrs:  make(map[string]string, len(source.attrs)),
+		remove: source.remove,
+		parts:  make([]scopePart, len(source.parts)),
+	}
+	for key, value := range source.attrs {
+		copyNode.attrs[key] = value
+	}
+	for i, part := range source.parts {
+		copyNode.parts[i].raw = part.raw
+		copyNode.parts[i].node = cloneScopeNode(part.node)
+	}
+	return copyNode
 }
 
 func (n *scopeNode) render(b *strings.Builder) {

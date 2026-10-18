@@ -273,9 +273,7 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 			if hit.found {
 				position := wordPageCaretPosition{runID: hit.runID, runeOffset: hit.runeOffset}
 				if selection := state.wordPageTextSelection; selection != nil {
-					if position.runID != selection.anchor.runID {
-						populateWordPageRunOrder(selection, state.wordLayoutResult)
-					}
+					populateWordPageRunOrder(selection, state.wordLayoutResult)
 					selection.focus = position
 				}
 				if editor := state.wordRunEditors[drag.anchor.runID]; editor != nil {

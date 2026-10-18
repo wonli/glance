@@ -69,6 +69,7 @@ func wordTextFormattingSelection(state *documentSessionState) (wordPageCaretPosi
 		return wordPageCaretPosition{}, wordPageCaretPosition{}, false
 	}
 	if wordPageTextSelectionActive(state.wordPageTextSelection) {
+		ensureWordPageRunOrder(state, state.wordPageTextSelection)
 		return wordPageOrderedSelection(state.wordPageTextSelection)
 	}
 	runID := state.selectedWordRunID
@@ -149,11 +150,27 @@ func firstSelectedWordTextRun(state *documentSessionState, start, end wordPageCa
 		}
 		return run, true
 	}
-	if state.wordPageTextSelection == nil {
-		return document.WordTextRun{}, false
+	if state.wordPageTextSelection != nil {
+		ensureWordPageRunOrder(state, state.wordPageTextSelection)
 	}
-	startOrder, startOK := state.wordPageTextSelection.runOrder[start.runID]
-	endOrder, endOK := state.wordPageTextSelection.runOrder[end.runID]
+	runOrder := map[string]int(nil)
+	if state.wordPageTextSelection != nil {
+		runOrder = state.wordPageTextSelection.runOrder
+	}
+	if runOrder == nil {
+		runOrder = make(map[string]int)
+		for _, paragraph := range allWordParagraphs(wordBlocksForState(state)) {
+			for _, inline := range paragraph.Inlines {
+				if inline.Text != nil && inline.Text.Editable && inline.Text.ID != "" {
+					if _, exists := runOrder[inline.Text.ID]; !exists {
+						runOrder[inline.Text.ID] = len(runOrder)
+					}
+				}
+			}
+		}
+	}
+	startOrder, startOK := runOrder[start.runID]
+	endOrder, endOK := runOrder[end.runID]
 	if !startOK || !endOK {
 		return document.WordTextRun{}, false
 	}
@@ -162,8 +179,8 @@ func firstSelectedWordTextRun(state *documentSessionState, start, end wordPageCa
 			if inline.Text == nil || !inline.Text.Editable {
 				continue
 			}
-			runOrder, exists := state.wordPageTextSelection.runOrder[inline.Text.ID]
-			if !exists || runOrder < startOrder || runOrder > endOrder {
+			order, exists := runOrder[inline.Text.ID]
+			if !exists || order < startOrder || order > endOrder {
 				continue
 			}
 			from, to := 0, len([]rune(inline.Text.Text))

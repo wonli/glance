@@ -29,6 +29,10 @@ func (w *Workbook) recordHistoryLocked(before []byte) error {
 	if err != nil {
 		return err
 	}
+	return w.recordHistoryWithAfterLocked(before, after)
+}
+
+func (w *Workbook) recordHistoryWithAfterLocked(before, after []byte) error {
 	if bytes.Equal(before, after) {
 		return nil
 	}
@@ -74,6 +78,7 @@ func (w *Workbook) applyHistory(undo bool) (bool, error) {
 	previous := w.file
 	w.file = restored
 	w.pictureIndexes = nil
+	w.invalidateStyleCacheLocked()
 	if previous != nil {
 		_ = previous.Close()
 	}

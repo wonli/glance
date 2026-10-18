@@ -218,6 +218,7 @@ func (w *Workbook) restoreMergeSnapshotErrorLocked(snapshot []byte, operationErr
 	previous := w.file
 	w.file = restored
 	w.pictureIndexes = nil
+	w.invalidateStyleCacheLocked()
 	if previous != nil {
 		_ = previous.Close()
 	}

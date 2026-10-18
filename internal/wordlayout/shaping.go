@@ -27,6 +27,12 @@ type GlyphOutlineSource interface {
 	GlyphOutline(fontKey string, glyphID uint32) (GlyphOutline, error)
 }
 
+// FontAspectSource reports typographic aspect properties of a resolved font key.
+type FontAspectSource interface {
+	IsItalicFont(fontKey string) bool
+}
+
+
 type GlyphPathOp uint8
 
 const (

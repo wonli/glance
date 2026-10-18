@@ -240,6 +240,20 @@ func (s *Shaper) FontData(fontKey string) ([]byte, error) {
 	return nil, fmt.Errorf("font key %q: %w", fontKey, wordlayout.ErrUnknownFont)
 }
 
+func (s *Shaper) IsItalicFont(fontKey string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadSystemFonts(); err != nil {
+		return false
+	}
+	for _, footprint := range s.fonts {
+		if wordFontKey(footprint.Location) == fontKey {
+			return footprint.Aspect.Style == font.StyleItalic
+		}
+	}
+	return false
+}
+
 func (s *Shaper) ResolveSpreadsheetFont(style document.CellStyle, text string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

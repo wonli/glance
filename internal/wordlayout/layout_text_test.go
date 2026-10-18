@@ -409,3 +409,28 @@ func TestLayoutPlacesInheritedParagraphBottomBorder(t *testing.T) {
 		t.Fatalf("following paragraph baseline = %+v; it must follow the bottom border", followingText)
 	}
 }
+
+func TestSyntheticItalicSlantsNonItalicGlyphs(t *testing.T) {
+	inputRegular := layoutTestInput(160, 200, 10, paragraphBlock("p0", "A", document.WordTextStyle{FontSize: 10, Italic: false}))
+	resultRegular, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), inputRegular)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputItalic := layoutTestInput(160, 200, 10, paragraphBlock("p0", "A", document.WordTextStyle{FontSize: 10, Italic: true}))
+	resultItalic, err := NewEngine(layoutFakeShaper{}).Layout(context.Background(), inputItalic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	glyphReg := resultRegular.Pages[0].Text[0].Glyphs[0]
+	glyphItal := resultItalic.Pages[0].Text[0].Glyphs[0]
+	ptReg := glyphReg.Outline[2].Points[0]
+	ptItal := glyphItal.Outline[2].Points[0]
+	if ptItal.YPT != ptReg.YPT {
+		t.Fatalf("YPT changed unexpectedly: regular=%g italic=%g", ptReg.YPT, ptItal.YPT)
+	}
+	// At YPT = -7 (above baseline), the italic glyph XPT must be shifted right:
+	expectedShift := -ptReg.YPT * 0.21255656
+	if math.Abs((ptItal.XPT-ptReg.XPT)-expectedShift) > 1e-4 {
+		t.Fatalf("italic outline XPT = %g; want %g + %g = %g", ptItal.XPT, ptReg.XPT, expectedShift, ptReg.XPT+expectedShift)
+	}
+}

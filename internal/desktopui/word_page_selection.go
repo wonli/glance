@@ -132,10 +132,12 @@ func newWordPageTextSelection(result *wordlayout.Result, anchor wordPageCaretPos
 }
 
 func populateWordPageRunOrder(selection *wordPageTextSelection, result *wordlayout.Result) {
-	if selection == nil || result == nil || selection.runOrder != nil {
+	if selection == nil || result == nil {
 		return
 	}
-	selection.runOrder = make(map[string]int)
+	if selection.runOrder == nil {
+		selection.runOrder = make(map[string]int)
+	}
 	for _, page := range result.Pages {
 		for _, fragment := range page.Text {
 			if !fragment.Editable || fragment.RunID == "" {
@@ -143,6 +145,28 @@ func populateWordPageRunOrder(selection *wordPageTextSelection, result *wordlayo
 			}
 			if _, exists := selection.runOrder[fragment.RunID]; !exists {
 				selection.runOrder[fragment.RunID] = len(selection.runOrder)
+			}
+		}
+	}
+}
+
+func ensureWordPageRunOrder(state *documentSessionState, selection *wordPageTextSelection) {
+	if selection == nil || state == nil {
+		return
+	}
+	if selection.runOrder == nil {
+		selection.runOrder = make(map[string]int)
+	}
+	if state.wordLayoutResult != nil {
+		populateWordPageRunOrder(selection, state.wordLayoutResult)
+	}
+	for _, paragraph := range allWordParagraphs(wordBlocksForState(state)) {
+		for _, inline := range paragraph.Inlines {
+			if inline.Text == nil || !inline.Text.Editable || inline.Text.ID == "" {
+				continue
+			}
+			if _, exists := selection.runOrder[inline.Text.ID]; !exists {
+				selection.runOrder[inline.Text.ID] = len(selection.runOrder)
 			}
 		}
 	}
@@ -157,18 +181,21 @@ func wordPageOrderedSelection(selection *wordPageTextSelection) (wordPageCaretPo
 		return wordPageCaretPosition{}, wordPageCaretPosition{}, false
 	}
 	anchor, focus := selection.anchor, selection.focus
-	anchorOrder, anchorOK := selection.runOrder[anchor.runID]
-	focusOrder, focusOK := selection.runOrder[focus.runID]
 	if anchor.runID == focus.runID {
 		if anchor.runeOffset <= focus.runeOffset {
 			return anchor, focus, true
 		}
 		return focus, anchor, true
 	}
-	if anchorOK && focusOK && anchorOrder <= focusOrder {
-		return anchor, focus, true
+	anchorOrder, anchorOK := selection.runOrder[anchor.runID]
+	focusOrder, focusOK := selection.runOrder[focus.runID]
+	if anchorOK && focusOK {
+		if anchorOrder <= focusOrder {
+			return anchor, focus, true
+		}
+		return focus, anchor, true
 	}
-	return focus, anchor, true
+	return anchor, focus, true
 }
 
 func wordPageTextSelectionRange(selection *wordPageTextSelection, fragment wordlayout.TextFragment) (int, int, bool) {
@@ -200,6 +227,10 @@ func wordPageTextSelectionRange(selection *wordPageTextSelection, fragment wordl
 
 func wordPageSelectedText(state *documentSessionState) (string, bool) {
 	selection := state.wordPageTextSelection
+	if selection == nil {
+		return "", false
+	}
+	ensureWordPageRunOrder(state, selection)
 	start, end, active := wordPageOrderedSelection(selection)
 	if !active {
 		return "", false

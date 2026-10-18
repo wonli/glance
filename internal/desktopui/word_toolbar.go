@@ -516,22 +516,34 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 	if action.id == "style-body" || action.id == "style-heading" || action.id == "style-heading-2" {
 		return wordParagraphStyleActionActive(state, action.id)
 	}
-	blocks := wordBlocksForState(state)
-	if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok {
-		run, _ = wordRunWithResolvedStyle(state, run)
-		switch action.id {
-		case "bold":
-			return run.Style.Bold
-		case "italic":
-			return run.Style.Italic
-		case "underline":
-			return run.Style.Underline
-		case "font-color":
-			return run.Style.FontColor != ""
-		case "text-highlight":
-			return run.Style.Highlight != ""
+	if action.id == "bold" || action.id == "italic" || action.id == "underline" || action.id == "font-color" || action.id == "text-highlight" {
+		var (
+			run document.WordTextRun
+			ok  bool
+		)
+		if start, end, selected := wordTextFormattingSelection(state); selected {
+			run, ok = firstSelectedWordTextRun(state, start, end)
+		} else {
+			run, ok = selectedWordFormattingRun(state, state.selectedWordRunID)
 		}
+		if ok {
+			run, _ = wordRunWithResolvedStyle(state, run)
+			switch action.id {
+			case "bold":
+				return run.Style.Bold
+			case "italic":
+				return run.Style.Italic
+			case "underline":
+				return run.Style.Underline
+			case "font-color":
+				return run.Style.FontColor != ""
+			case "text-highlight":
+				return run.Style.Highlight != ""
+			}
+		}
+		return false
 	}
+	blocks := wordBlocksForState(state)
 	if paragraph, ok := selectedWordParagraph(blocks, state.selectedWordParagraphID); ok {
 		if action.id == "bullet-list" {
 			return paragraph.ListKind == document.WordListBullet

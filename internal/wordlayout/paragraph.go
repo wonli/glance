@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"unicode"
 
 	"glance/internal/document"
@@ -447,14 +448,32 @@ func shapeTextAtoms(ctx context.Context, shaper TextShaper, pathCache map[glyphP
 				return nil, fmt.Errorf("text shaper cannot resolve vector outlines for visible glyphs")
 			}
 			for index, glyph := range current.glyphs {
-				key := glyphPathCacheKey{fontKey: glyph.FontKey, glyphID: glyph.GlyphID, fontSize: math.Float64bits(style.FontSize)}
+				slant := 0.0
+				if style.Italic {
+					nativeItalic := false
+					if aspectSource, ok := shaper.(FontAspectSource); ok {
+						nativeItalic = aspectSource.IsItalicFont(glyph.FontKey)
+					} else {
+						lower := strings.ToLower(glyph.FontKey)
+						nativeItalic = strings.Contains(lower, "italic") || strings.Contains(lower, "oblique")
+					}
+					if !nativeItalic {
+						slant = 0.21255656 // tan(12 deg) oblique shear
+					}
+				}
+				key := glyphPathCacheKey{
+					fontKey:  glyph.FontKey,
+					glyphID:  glyph.GlyphID,
+					fontSize: math.Float64bits(style.FontSize),
+					slant:    math.Float64bits(slant),
+				}
 				path, cached := pathCache[key]
 				if !cached {
 					outline, err := outliner.GlyphOutline(glyph.FontKey, glyph.GlyphID)
 					if err != nil {
 						return nil, err
 					}
-					path = scaleGlyphOutline(outline, style.FontSize)
+					path = scaleGlyphOutlineWithSlant(outline, style.FontSize, slant)
 					pathCache[key] = path
 				}
 				outlines[index] = path
