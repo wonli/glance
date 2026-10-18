@@ -220,9 +220,11 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 			selection = new(textEditorParagraphSelection)
 			state.wordParagraphSelections[paragraph.ID] = selection
 		}
-		dims := selection.layout(gtx, editor, func(gtx layout.Context) layout.Dimensions { return layoutWordRunEditor(gtx, style, run.ID) })
+		dims := selection.layoutWithDoubleClick(gtx, editor, func(gtx layout.Context) layout.Dimensions { return layoutWordRunEditor(gtx, style, run.ID) }, func(caret int) bool {
+			return a.selectWordPageTextSegment(gtx, state, run.ID, caret)
+		})
 		if selection.paragraphSelected {
-			paragraphSelected = a.selectWordPageParagraph(gtx, state, run.ID)
+			paragraphSelected = true
 			gtx.Execute(op.InvalidateCmd{})
 		}
 		if run.Style.Underline && dims.Size.X > 0 && dims.Size.Y > 0 {

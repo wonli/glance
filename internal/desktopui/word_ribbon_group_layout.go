@@ -338,24 +338,7 @@ func (a *App) layoutWordRibbonField(gtx layout.Context, action ribbonAction, wid
 }
 
 func drawWordRibbonDropdown(gtx layout.Context, theme *material.Theme, action ribbonAction, width, height int, value string, enabled bool, colors ColorTokens) layout.Dimensions {
-	bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
-	semantic.DescriptionOp(action.label).Add(gtx.Ops)
-	semantic.EnabledOp(enabled).Add(gtx.Ops)
-	bounds.Pop()
-	paint.FillShape(gtx.Ops, colors.Surface.Border, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(3)).Op(gtx.Ops))
-	paint.FillShape(gtx.Ops, colors.Surface.Surface, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}.Inset(gtx.Dp(1)), gtx.Dp(2)).Op(gtx.Ops))
-	textColor := colors.Text.PureBlack
-	style := material.Caption(theme, value)
-	style.TextSize = unit.Sp(12)
-	style.Color = textColor
-	return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { gtx.Constraints.Min.Y = 0; return style.Layout(gtx) }),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layoutPenRibbonGlyph(gtx, "chevron-down", 12, textColor)
-			}),
-		)
-	})
+	return drawOfficeRibbonFontDropdown(gtx, theme, action.label, width, height, value, enabled, colors)
 }
 
 func (a *App) layoutWordStyleGallery(gtx layout.Context, state *documentSessionState, actions []ribbonAction) layout.Dimensions {

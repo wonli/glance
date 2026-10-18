@@ -278,9 +278,6 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 		colors := a.tokens().Colors
 		paintRibbonControlState(gtx, image.Pt(width, height), enabled && active, mixed, enabled && (button.Hovered() || gtx.Focused(button)), colors.Toolbar)
 		if mode == spreadsheetRibbonActionField {
-			paint.FillShape(gtx.Ops, colors.Surface.Border, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
-			inner := image.Rectangle{Max: image.Pt(width, height)}.Inset(gtx.Dp(unit.Dp(1)))
-			paint.FillShape(gtx.Ops, colors.Surface.Surface, clip.UniformRRect(inner, gtx.Dp(unit.Dp(2))).Op(gtx.Ops))
 			value := spreadsheetRibbonActionDisplayLabel(action)
 			if mixed {
 				value = "混合"
@@ -291,6 +288,12 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 			} else if action.slot == 10 {
 				value = spreadsheetToolbarNumberFormatLabel(style.NumberFormat)
 			}
+			if action.slot == toolbarActionFontFamily || action.slot == toolbarActionFontSize {
+				return drawOfficeRibbonFontDropdown(gtx, a.theme, action.label, width, height, value, enabled, colors)
+			}
+			paint.FillShape(gtx.Ops, colors.Surface.Border, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
+			inner := image.Rectangle{Max: image.Pt(width, height)}.Inset(gtx.Dp(unit.Dp(1)))
+			paint.FillShape(gtx.Ops, colors.Surface.Surface, clip.UniformRRect(inner, gtx.Dp(unit.Dp(2))).Op(gtx.Ops))
 			return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				label := material.Caption(a.theme, value)
 				label.TextSize = unit.Sp(11)
@@ -298,9 +301,6 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						gtx.Constraints.Min.Y = 0
-						if action.slot == toolbarActionFontFamily || action.slot == toolbarActionFontSize {
-							return layout.Inset{Top: spreadsheetFontFieldTextOpticalTopInset}.Layout(gtx, label.Layout)
-						}
 						return label.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -411,8 +411,6 @@ func drawSpreadsheetRibbonColorIndicator(gtx layout.Context, slot int, style doc
 	}
 	paint.FillShape(gtx.Ops, parseGridColor(value, color.NRGBA{R: 0, G: 0, B: 0, A: 255}), clip.Rect(bounds).Op())
 }
-
-const spreadsheetFontFieldTextOpticalTopInset unit.Dp = 5
 
 func (a *App) layoutSpreadsheetToolbarActionList(gtx layout.Context, state *documentSessionState, actions []spreadsheetToolbarAction) layout.Dimensions {
 	return a.layoutSpreadsheetPenCommandList(gtx, state, actions)

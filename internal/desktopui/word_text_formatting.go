@@ -12,13 +12,9 @@ func (a *App) toggleWordTextStyle(property string) {
 	if state == nil || state.word == nil {
 		return
 	}
-	if wordPageTextSelectionActive(state.wordPageTextSelection) {
+	if start, end, selected := wordTextFormattingSelection(state); selected {
 		if _, ok := any(state.word).(document.WordTextSelectionFormatter); !ok {
 			a.setStatus("当前 DOCX 适配器不支持选中文字格式")
-			return
-		}
-		start, end, ok := wordPageOrderedSelection(state.wordPageTextSelection)
-		if !ok {
 			return
 		}
 		run, ok := firstSelectedWordTextRun(state, start, end)
@@ -64,6 +60,35 @@ func (a *App) toggleWordTextStyle(property string) {
 	a.runWordCommand("文字格式", func(editor document.WordTextEditor) error { return editor.SetTextRunStyle(runID, patch) })
 }
 
+// wordTextFormattingSelection unifies the page-scene range with the native
+// Gio editor range used in Web Layout. The latter remains on the editor after
+// clicking a ribbon button, even though it is not represented by
+// wordPageTextSelection.
+func wordTextFormattingSelection(state *documentSessionState) (wordPageCaretPosition, wordPageCaretPosition, bool) {
+	if state == nil {
+		return wordPageCaretPosition{}, wordPageCaretPosition{}, false
+	}
+	if wordPageTextSelectionActive(state.wordPageTextSelection) {
+		return wordPageOrderedSelection(state.wordPageTextSelection)
+	}
+	runID := state.selectedWordRunID
+	if runID == "" {
+		return wordPageCaretPosition{}, wordPageCaretPosition{}, false
+	}
+	editor := state.wordRunEditors[runID]
+	if editor == nil {
+		return wordPageCaretPosition{}, wordPageCaretPosition{}, false
+	}
+	start, end := editor.Selection()
+	if start == end {
+		return wordPageCaretPosition{}, wordPageCaretPosition{}, false
+	}
+	if start > end {
+		start, end = end, start
+	}
+	return wordPageCaretPosition{runID: runID, runeOffset: start}, wordPageCaretPosition{runID: runID, runeOffset: end}, true
+}
+
 func (a *App) queueWordSelectionStyle(state *documentSessionState, start, end wordPageCaretPosition, patch document.WordTextFormatPatch) bool {
 	if state == nil || state.word == nil || state.wordSelectionEditIntent != nil || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil {
 		return false
@@ -104,7 +129,27 @@ func (a *App) queueWordSelectionStyle(state *documentSessionState, start, end wo
 }
 
 func firstSelectedWordTextRun(state *documentSessionState, start, end wordPageCaretPosition) (document.WordTextRun, bool) {
-	if state == nil || state.wordPageTextSelection == nil {
+	if state == nil {
+		return document.WordTextRun{}, false
+	}
+	if start.runID == end.runID {
+		if start.runeOffset < 0 || end.runeOffset <= start.runeOffset {
+			return document.WordTextRun{}, false
+		}
+		run, ok := selectedWordFormattingRun(state, start.runID)
+		if !ok {
+			return document.WordTextRun{}, false
+		}
+		length := len([]rune(run.Text))
+		if editor := state.wordRunEditors[run.ID]; editor != nil {
+			length = editor.Len()
+		}
+		if end.runeOffset > length {
+			return document.WordTextRun{}, false
+		}
+		return run, true
+	}
+	if state.wordPageTextSelection == nil {
 		return document.WordTextRun{}, false
 	}
 	startOrder, startOK := state.wordPageTextSelection.runOrder[start.runID]

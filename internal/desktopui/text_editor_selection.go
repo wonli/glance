@@ -20,6 +20,10 @@ type textEditorParagraphSelection struct {
 }
 
 func (s *textEditorParagraphSelection) layout(gtx layout.Context, editor *widget.Editor, content layout.Widget) layout.Dimensions {
+	return s.layoutWithDoubleClick(gtx, editor, content, nil)
+}
+
+func (s *textEditorParagraphSelection) layoutWithDoubleClick(gtx layout.Context, editor *widget.Editor, content layout.Widget, onDoubleClick func(int) bool) layout.Dimensions {
 	s.paragraphSelected = false
 	pass := pointer.PassOp{}.Push(gtx.Ops)
 	dims := content(gtx)
@@ -35,6 +39,11 @@ func (s *textEditorParagraphSelection) layout(gtx layout.Context, editor *widget
 		caret, _ := editor.Selection()
 		text := []rune(editor.Text())
 		caret = max(0, min(caret, len(text)))
+		if onDoubleClick != nil && onDoubleClick(caret) {
+			s.paragraphSelected = true
+			gtx.Execute(op.InvalidateCmd{})
+			continue
+		}
 		start, end := caret, caret
 		for start > 0 && text[start-1] != '\n' {
 			start--

@@ -244,7 +244,7 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 			} else {
 				tag.lastTextPressParagraphID = ""
 			}
-			if doubleClick && a.selectWordPageParagraph(gtx, state, hit.runID) {
+			if doubleClick && a.selectWordPageTextSegment(gtx, state, hit.runID, hit.runeOffset) {
 				tag.lastTextPressParagraphID = ""
 				continue
 			}

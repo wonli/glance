@@ -231,7 +231,16 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 	case "style-body", "style-heading", "style-heading-2":
 		_, editable := any(state.word).(document.WordParagraphStyleEditor)
 		return editable
-	case "bold", "italic", "underline", "font-color", "text-highlight":
+	case "bold", "italic", "underline":
+		if start, end, selected := wordTextFormattingSelection(state); selected {
+			_, formatter := any(state.word).(document.WordTextSelectionFormatter)
+			run, ok := firstSelectedWordTextRun(state, start, end)
+			return formatter && ok && run.Editable
+		}
+		_, editable := any(state.word).(document.WordTextEditor)
+		run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
+		return editable && ok && run.Editable
+	case "font-color", "text-highlight":
 		_, editable := any(state.word).(document.WordTextEditor)
 		run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
 		if !ok && wordPageTextSelectionActive(state.wordPageTextSelection) {
