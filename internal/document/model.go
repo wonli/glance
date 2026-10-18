@@ -16,6 +16,18 @@ type Cell struct {
 	Style              CellStyle
 	TypedValue         *CellValue             `json:"typed_value,omitempty"`
 	ConditionalDisplay CellConditionalDisplay `json:"-"`
+	RichText           []CellRichTextRun      `json:"rich_text,omitempty"`
+}
+
+// CellRichTextRun exposes one formatted run of inline text within a spreadsheet cell.
+type CellRichTextRun struct {
+	Text       string  `json:"text"`
+	Bold       bool    `json:"bold,omitempty"`
+	Italic     bool    `json:"italic,omitempty"`
+	Underline  bool    `json:"underline,omitempty"`
+	FontFamily string  `json:"font_family,omitempty"`
+	FontSize   float64 `json:"font_size,omitempty"`
+	FontColor  string  `json:"font_color,omitempty"`
 }
 
 // CellConditionalDisplay carries format-neutral, computed worksheet effects.
@@ -740,4 +752,11 @@ type SpreadsheetPivotTableSpec struct {
 // SpreadsheetPivotTableEditor provides adding pivot tables to a worksheet.
 type SpreadsheetPivotTableEditor interface {
 	AddPivotTable(spec SpreadsheetPivotTableSpec) error
+}
+
+// SpreadsheetCellRichTextEditor provides capabilities to read and format inline rich text runs of a cell.
+type SpreadsheetCellRichTextEditor interface {
+	GetCellRichText(sheet, cell string) ([]CellRichTextRun, error)
+	SetCellRichText(sheet, cell string, runs []CellRichTextRun) error
+	SetCellTextSelectionFormat(sheet, cell, text string, startRune, endRune int, patch CellFormatPatch) error
 }

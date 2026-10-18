@@ -268,6 +268,9 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 	button := &state.toolbarActionButtons[action.slot]
 	style := a.selectedCellStyle()
 	mixed := formatStyleSlot(action.slot) && a.selectionFormatMixed(action.slot)
+	if selected, _, ok := a.spreadsheetTextSelectionStyle(action.slot); ok {
+		style = selected
+	}
 	active := !mixed && formatStyleActive(action.slot, style)
 	draw := func(gtx layout.Context) layout.Dimensions {
 		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)

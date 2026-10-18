@@ -308,7 +308,7 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 	case "md", "markdown":
 		var d *markdowndoc.Document
 		var err error
-		if len(record.Payload) == 0 && record.Tab.SourcePath != "" {
+		if len(record.Payload) == 0 && record.Tab.SourcePath != "" && !record.Dirty {
 			d, err = markdowndoc.Open(record.Tab.SourcePath)
 		} else {
 			d, err = markdowndoc.OpenSnapshot(record.Payload)

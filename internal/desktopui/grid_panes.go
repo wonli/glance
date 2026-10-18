@@ -489,3 +489,35 @@ func (v *gridViewport) applyWindowGeometry(w document.SheetWindow) error {
 	}
 	return nil
 }
+
+func (v *gridViewport) updateCellRichText(row, col int, value string, richText []document.CellRichTextRun) {
+	if v == nil {
+		return
+	}
+	updateWindow := func(w *document.SheetWindow, r document.CellRange) {
+		if !rangeContainsCell(r, row, col) {
+			return
+		}
+		for i := range w.Merges {
+			if row == w.Merges[i].Range.StartRow && col == w.Merges[i].Range.StartColumn {
+				if value != "" {
+					w.Merges[i].Anchor.Value = value
+				}
+				w.Merges[i].Anchor.RichText = richText
+			}
+		}
+		rowIdx, colIdx := row-w.StartRow, col-w.StartColumn
+		if rowIdx >= 0 && rowIdx < len(w.Cells) && colIdx >= 0 && colIdx < len(w.Cells[rowIdx]) {
+			if value != "" {
+				w.Cells[rowIdx][colIdx].Value = value
+			}
+			w.Cells[rowIdx][colIdx].RichText = richText
+		}
+	}
+	updateWindow(&v.Window, v.WindowRange)
+	updateWindow(&v.TopWindow, v.TopRange)
+	updateWindow(&v.LeftWindow, v.LeftRange)
+	updateWindow(&v.CornerWindow, v.CornerRange)
+	v.CellPaintCache = nil
+	v.CellPaintFIFO = nil
+}

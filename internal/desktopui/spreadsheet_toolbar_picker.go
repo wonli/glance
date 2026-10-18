@@ -137,6 +137,9 @@ func formatStyleActive(slot int, style document.CellStyle) bool {
 }
 
 func (a *App) selectionFormatMixed(slot int) bool {
+	if _, mixed, ok := a.spreadsheetTextSelectionStyle(slot); ok {
+		return mixed
+	}
 	state := a.documentSessionState
 	if state == nil || !state.selectionSet {
 		return false

@@ -102,6 +102,12 @@ func (a *App) toolbarActionEnabled(slot int) bool {
 		toolbarActionFontFamily,
 		toolbarActionFontSize, toolbarActionCellStyles, toolbarActionDecreaseFontSize, toolbarActionIncreaseFontSize,
 		toolbarActionAlignLeft, toolbarActionAlignRight, toolbarActionWrapText, toolbarActionPercentFormat, toolbarActionCurrencyFormat, toolbarActionIncreaseDecimal, toolbarActionDecreaseDecimal:
+		if slot == 4 || slot == 5 || slot == 6 {
+			if a.spreadsheetCellTextSelectionActive() {
+				_, richOK := state.book.(document.SpreadsheetCellRichTextEditor)
+				return richOK && !state.formatRunning.Load() && !a.isSaving()
+			}
+		}
 		_, ok := state.book.(document.SpreadsheetFormatter)
 		return ok && state.selectionSet && (state.selection.Scope != selectionCells || selectionCellCount(state.selection.Bounds()) <= maxClipboardCellsUI) && !state.cellEdit.Editing && !state.formatRunning.Load() && !a.isSaving()
 	case toolbarActionFormat:

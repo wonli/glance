@@ -737,11 +737,32 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 					return document.SheetWindow{}, fmt.Errorf("read style %d: %w", styleID, styleErr)
 				}
 			}
+			var richRuns []document.CellRichTextRun
+			if value != "" {
+				if rawRuns, _ := w.file.GetCellRichText(sheet, cellRef); len(rawRuns) > 1 || (len(rawRuns) == 1 && rawRuns[0].Font != nil) {
+					richRuns = make([]document.CellRichTextRun, len(rawRuns))
+					for i, rr := range rawRuns {
+						run := document.CellRichTextRun{Text: rr.Text}
+						if rr.Font != nil {
+							run.Bold = rr.Font.Bold
+							run.Italic = rr.Font.Italic
+							run.Underline = rr.Font.Underline == "single" || (rr.Font.Underline != "" && rr.Font.Underline != "none")
+							run.FontFamily = rr.Font.Family
+							run.FontSize = rr.Font.Size
+							if rr.Font.Color != "" {
+								run.FontColor = normalizeHexColor(rr.Font.Color)
+							}
+						}
+						richRuns[i] = run
+					}
+				}
+			}
 			window.Cells[r][c] = document.Cell{
-				Value:   textintern.String(value),
-				Formula: textintern.String(formula),
-				StyleID: styleID,
-				Style:   style,
+				Value:    textintern.String(value),
+				Formula:  textintern.String(formula),
+				StyleID:  styleID,
+				Style:    style,
+				RichText: richRuns,
 			}
 		}
 	}
@@ -844,7 +865,7 @@ func neutralCellStyle(style *excelize.Style) document.CellStyle {
 	if style == nil {
 		return result
 	}
-	if len(style.Fill.Color) > 0 {
+	if len(style.Fill.Color) > 0 && !(style.Fill.Type == "pattern" && style.Fill.Pattern == 0) {
 		result.FillColor = textintern.String(normalizeRGBColor(style.Fill.Color[0]))
 	}
 	if style.Font != nil {

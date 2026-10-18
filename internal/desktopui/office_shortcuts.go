@@ -129,19 +129,22 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 	if wordCommentShortcut {
 		filters = append(filters, key.Filter{Name: wordCommentShortcutName, Required: wordCommentShortcutModifiers})
 	}
-	if spreadsheetFormatShortcuts {
-		filters = append(filters,
-			key.Filter{Name: key.Name("B"), Required: key.ModShortcut},
-			key.Filter{Name: key.Name("I"), Required: key.ModShortcut},
-			key.Filter{Name: key.Name("U"), Required: key.ModShortcut},
-		)
+	spreadsheetCellTextSelectionShortcuts := a.spreadsheetCellTextSelectionActive()
+	if spreadsheetFormatShortcuts || spreadsheetCellTextSelectionShortcuts {
+		for _, name := range []key.Name{"B", "I", "U"} {
+			filters = append(filters, key.Filter{Name: name, Required: key.ModShortcut})
+			if key.ModShortcut != key.ModCtrl {
+				filters = append(filters, key.Filter{Name: name, Required: key.ModCtrl})
+			}
+		}
 	}
 	if wordSelectionFormatShortcuts {
-		filters = append(filters,
-			key.Filter{Name: key.Name("B"), Required: key.ModShortcut},
-			key.Filter{Name: key.Name("I"), Required: key.ModShortcut},
-			key.Filter{Name: key.Name("U"), Required: key.ModShortcut},
-		)
+		for _, name := range []key.Name{"B", "I", "U"} {
+			filters = append(filters, key.Filter{Name: name, Required: key.ModShortcut})
+			if key.ModShortcut != key.ModCtrl {
+				filters = append(filters, key.Filter{Name: name, Required: key.ModCtrl})
+			}
+		}
 	}
 	if wordParagraphFormattingShortcuts {
 		filters = append(filters,
@@ -310,7 +313,9 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 				a.showWordNewCommentDialog()
 			}
 		case key.Name("B"):
-			if spreadsheetFormatShortcuts {
+			if a.spreadsheetCellTextSelectionActive() {
+				a.applySpreadsheetCellTextFormat(4)
+			} else if spreadsheetFormatShortcuts {
 				a.applySpreadsheetFormatAction(4)
 			} else if wordSelectionFormatShortcuts {
 				a.updateFocusedWordEditorBeforeCommand(gtx, state)
@@ -319,7 +324,9 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 				}
 			}
 		case key.Name("I"):
-			if spreadsheetFormatShortcuts {
+			if a.spreadsheetCellTextSelectionActive() {
+				a.applySpreadsheetCellTextFormat(5)
+			} else if spreadsheetFormatShortcuts {
 				a.applySpreadsheetFormatAction(5)
 			} else if wordSelectionFormatShortcuts {
 				a.updateFocusedWordEditorBeforeCommand(gtx, state)
@@ -328,7 +335,9 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 				}
 			}
 		case key.Name("U"):
-			if spreadsheetFormatShortcuts {
+			if a.spreadsheetCellTextSelectionActive() {
+				a.applySpreadsheetCellTextFormat(6)
+			} else if spreadsheetFormatShortcuts {
 				a.applySpreadsheetFormatAction(6)
 			} else if wordSelectionFormatShortcuts {
 				a.updateFocusedWordEditorBeforeCommand(gtx, state)

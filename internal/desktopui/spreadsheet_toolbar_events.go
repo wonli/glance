@@ -376,6 +376,10 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 }
 
 func (a *App) applySpreadsheetFormatAction(slot int) {
+	if a.spreadsheetCellTextSelectionActive() && (slot == 4 || slot == 5 || slot == 6) {
+		a.applySpreadsheetCellTextFormat(slot)
+		return
+	}
 	patch, ok := formatPatchForToolbarAction(slot, a.selectedCellStyle())
 	if !ok || !a.toolbarActionEnabled(slot) {
 		return

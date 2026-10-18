@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -44,6 +45,7 @@ type cellPaintKey struct {
 	PxPerDp   float32
 	PxPerSp   float32
 	Gridlines bool
+	RichKey   string
 }
 
 type cellPaintEntry struct {
@@ -180,7 +182,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 			if !visibleRect.Empty() {
 				cell := v.cell(row, col)
 				style := paintCellStyle(cell)
-				paintCellEditorWithSelection(gtx, a.theme, &a.cellEditor, &a.cellParagraphSelection, fullRect, visibleRect, cell.Style, style, a.tokens().Colors.Grid.SelectionBorder, a.spreadsheetZoom())
+				paintCellRichEditor(gtx, a.theme, &a.cellEditor, &a.cellParagraphSelection, fullRect, visibleRect, cell.Style, style, a.tokens().Colors.Grid.SelectionBorder, cell.RichText, a.spreadsheetZoom())
 			}
 		}
 	}
@@ -231,6 +233,10 @@ func paintCellEditor(gtx layout.Context, theme *material.Theme, editor *widget.E
 }
 
 func paintCellEditorWithSelection(gtx layout.Context, theme *material.Theme, editor *widget.Editor, selection *textEditorParagraphSelection, rect, visible image.Rectangle, cellStyle document.CellStyle, style gridPaintStyle, selectionBorder color.NRGBA, zoom ...float64) {
+	paintCellRichEditor(gtx, theme, editor, selection, rect, visible, cellStyle, style, selectionBorder, nil, zoom...)
+}
+
+func paintCellRichEditor(gtx layout.Context, theme *material.Theme, editor *widget.Editor, selection *textEditorParagraphSelection, rect, visible image.Rectangle, cellStyle document.CellStyle, style gridPaintStyle, selectionBorder color.NRGBA, runs []document.CellRichTextRun, zoom ...float64) {
 	area := clip.Rect(visible).Push(gtx.Ops)
 	defer area.Pop()
 	t := op.Offset(rect.Min).Push(gtx.Ops)
@@ -239,16 +245,31 @@ func paintCellEditorWithSelection(gtx layout.Context, theme *material.Theme, edi
 	paint.FillShape(gtx.Ops, style.Fill, clip.Rect{Max: sz}.Op())
 	gtx.Constraints = layout.Constraints{Min: sz, Max: sz}
 	editorStyle := cellEditorStyle(theme, editor, cellStyle, style, zoom...)
+	var runText strings.Builder
+	for _, run := range runs {
+		runText.WriteString(run.Text)
+	}
+	rich := len(runs) > 0 && runText.String() == editor.Text() && !editorHasActiveComposition(editor)
+	if rich {
+		editorStyle.Color = color.NRGBA{}
+	}
 	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Min.Y = 0
 		return layout.Stack{Alignment: cellLayoutAlignment(style.Align, style.Vertical)}.Layout(gtx,
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
-				if selection != nil {
-					return selection.layout(gtx, editor, editorStyle.Layout)
+				draw := func(gtx layout.Context) layout.Dimensions {
+					dims := editorStyle.Layout(gtx)
+					if rich {
+						paintEditorRichRuns(gtx, theme, editor, runs, editorStyle, style.Font)
+					}
+					return dims
 				}
-				return editorStyle.Layout(gtx)
+				if selection != nil {
+					return selection.layout(gtx, editor, draw)
+				}
+				return draw(gtx)
 			}),
 		)
 	})
@@ -302,7 +323,17 @@ func paintCachedCell(gtx layout.Context, v *gridViewport, theme *material.Theme,
 }
 
 func paintCachedCellWithGridlines(gtx layout.Context, v *gridViewport, theme *material.Theme, cell document.Cell, fullRect, visibleRect image.Rectangle, style gridPaintStyle, gridlines bool) {
-	key := cellPaintKey{Value: cell.Value, Source: cell.Style, Display: cell.ConditionalDisplay, Style: style, Size: fullRect.Size(), PxPerDp: gtx.Metric.PxPerDp, PxPerSp: gtx.Metric.PxPerSp, Gridlines: gridlines}
+	key := cellPaintKey{
+		Value:     cell.Value,
+		Source:    cell.Style,
+		Display:   cell.ConditionalDisplay,
+		Style:     style,
+		Size:      fullRect.Size(),
+		PxPerDp:   gtx.Metric.PxPerDp,
+		PxPerSp:   gtx.Metric.PxPerSp,
+		Gridlines: gridlines,
+		RichKey:   richTextCacheKey(cell.RichText),
+	}
 	zoom := 1.0
 	if v != nil && gtx.Metric.PxPerDp > 0 && v.Scale > 0 {
 		zoom = v.Scale / float64(gtx.Metric.PxPerDp)
@@ -384,36 +415,188 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	size := rect.Size()
 	paintConditionalDataBar(gtx, size, style)
 	gtx.Constraints = layout.Constraints{Min: size, Max: size}
-	label := material.Body2(theme, cell.Value)
 	z := 1.0
 	if len(zoom) > 0 && zoom[0] > 0 {
 		z = zoom[0]
 	}
-	label.TextSize = cellTextSize(cell.Style, z)
-	label.Color = style.Font
-	label.Font.Typeface = cellTypeface(style)
-	if style.Bold {
-		label.Font.Weight = cellFontWeight(true)
-	}
-	if style.Italic {
-		label.Font.Style = font.Italic
-	}
-	label.Alignment = cellTextAlignment(style.Align)
-	if style.Wrap {
-		label.WrapPolicy = text.WrapWords
-	}
-	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Min.Y = 0
-		return layout.Stack{Alignment: cellLayoutAlignment(style.Align, style.Vertical)}.Layout(gtx,
-			layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
-			layout.Stacked(label.Layout),
-		)
-	})
-	if style.Underline {
-		lineY := size.Y - gtx.Dp(unit.Dp(3))
-		paint.FillShape(gtx.Ops, style.Font, clip.Rect{Min: image.Pt(gtx.Dp(unit.Dp(5)), lineY), Max: image.Pt(size.X-gtx.Dp(unit.Dp(4)), lineY+1)}.Op())
+	if len(cell.RichText) > 0 {
+		layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.Y = 0
+			return layout.Stack{Alignment: cellLayoutAlignment(style.Align, style.Vertical)}.Layout(gtx,
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
+				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+					return paintRichTextCell(gtx, theme, cell.RichText, cell.Style, style, z)
+				}),
+			)
+		})
+	} else {
+		label := material.Body2(theme, cell.Value)
+		label.TextSize = cellTextSize(cell.Style, z)
+		label.Color = style.Font
+		label.Font.Typeface = cellTypeface(style)
+		if style.Bold {
+			label.Font.Weight = cellFontWeight(true)
+		}
+		if style.Italic {
+			label.Font.Style = font.Italic
+		}
+		label.Alignment = cellTextAlignment(style.Align)
+		if style.Wrap {
+			label.WrapPolicy = text.WrapWords
+		}
+		layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.Y = 0
+			return layout.Stack{Alignment: cellLayoutAlignment(style.Align, style.Vertical)}.Layout(gtx,
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
+				layout.Stacked(label.Layout),
+			)
+		})
+		if style.Underline {
+			lineY := size.Y - gtx.Dp(unit.Dp(3))
+			paint.FillShape(gtx.Ops, style.Font, clip.Rect{Min: image.Pt(gtx.Dp(unit.Dp(5)), lineY), Max: image.Pt(size.X-gtx.Dp(unit.Dp(4)), lineY+1)}.Op())
+		}
 	}
 	paintCellBorders(gtx, size, cell.Style.Borders)
+}
+
+func richTextCacheKey(runs []document.CellRichTextRun) string {
+	if len(runs) == 0 {
+		return ""
+	}
+	key, _ := json.Marshal(runs)
+	return string(key)
+}
+
+func paintRichTextCell(gtx layout.Context, theme *material.Theme, runs []document.CellRichTextRun, baseStyle document.CellStyle, style gridPaintStyle, zoom float64) layout.Dimensions {
+	baseSize := cellTextSize(baseStyle, zoom)
+	type richFrag struct {
+		call     op.CallOp
+		size     image.Point
+		baseline int
+	}
+	type richLine struct {
+		frags       []richFrag
+		width       int
+		height      int
+		maxBaseline int
+	}
+	var lines []richLine
+	currentLine := richLine{}
+
+	measureGtx := gtx
+	measureGtx.Constraints = layout.Constraints{Max: image.Pt(100000, 100000)}
+
+	for _, run := range runs {
+		if run.Text == "" {
+			continue
+		}
+		parts := strings.Split(run.Text, "\n")
+		// Keep run boundaries independent of line breaks. Wrapped cells split
+		// into rune fragments so CJK text can wrap within a styled run too.
+		if style.Wrap {
+			parts = nil
+			for _, r := range run.Text {
+				parts = append(parts, string(r))
+			}
+		}
+		for idx, part := range parts {
+			if (!style.Wrap && idx > 0) || (style.Wrap && part == "\n") {
+				lines = append(lines, currentLine)
+				currentLine = richLine{}
+			}
+			if style.Wrap && part == "\n" {
+				continue
+			}
+			if part == "" {
+				continue
+			}
+			lbl := material.Body2(theme, part)
+			lbl.TextSize = baseSize
+			if run.FontSize > 0 {
+				lbl.TextSize = unit.Sp(run.FontSize * (96.0 / 72.0) * zoom)
+			}
+			lbl.Color = style.Font
+			if run.FontColor != "" {
+				lbl.Color = parseGridColor(run.FontColor, style.Font)
+			}
+			lbl.Font.Typeface = cellTypeface(style)
+			if strings.TrimSpace(run.FontFamily) != "" {
+				lbl.Font.Typeface = font.Typeface(strings.TrimSpace(run.FontFamily) + ", " + string(preferredSystemTypeface))
+			}
+			if run.Bold {
+				lbl.Font.Weight = font.Bold
+			}
+			lbl.Font.Style = font.Regular
+			rec := op.Record(gtx.Ops)
+			glyphs := op.Record(gtx.Ops)
+			dims := lbl.Layout(measureGtx)
+			glyphCall := glyphs.Stop()
+			paintCellRichGlyphs(gtx, glyphCall, dims, run.Italic)
+			if run.Underline && dims.Size.X > 0 && dims.Size.Y > 0 {
+				lineY := dims.Size.Y - max(1, gtx.Dp(unit.Dp(2)))
+				paint.FillShape(gtx.Ops, lbl.Color, clip.Rect{Min: image.Pt(0, lineY), Max: image.Pt(dims.Size.X, lineY+max(1, gtx.Dp(unit.Dp(1))))}.Op())
+			}
+			call := rec.Stop()
+			if style.Wrap && currentLine.width > 0 && currentLine.width+dims.Size.X > gtx.Constraints.Max.X {
+				lines = append(lines, currentLine)
+				currentLine = richLine{}
+			}
+			currentLine.frags = append(currentLine.frags, richFrag{call: call, size: dims.Size, baseline: dims.Baseline})
+			currentLine.width += dims.Size.X
+			if dims.Baseline > currentLine.maxBaseline {
+				currentLine.maxBaseline = dims.Baseline
+			}
+		}
+	}
+	if len(currentLine.frags) > 0 || len(lines) == 0 {
+		lines = append(lines, currentLine)
+	}
+
+	totalW, totalH := 0, 0
+	for i := range lines {
+		l := &lines[i]
+		if l.width > totalW {
+			totalW = l.width
+		}
+		lineH := 0
+		for _, frag := range l.frags {
+			h := frag.size.Y
+			if l.maxBaseline > 0 && frag.baseline > 0 {
+				h += l.maxBaseline - frag.baseline
+			}
+			if h > lineH {
+				lineH = h
+			}
+		}
+		l.height = lineH
+		totalH += l.height
+	}
+	y := 0
+	for _, l := range lines {
+		x := 0
+		switch style.Align {
+		case "center":
+			if totalW > l.width {
+				x = (totalW - l.width) / 2
+			}
+		case "right":
+			if totalW > l.width {
+				x = totalW - l.width
+			}
+		}
+		for _, frag := range l.frags {
+			yOffset := 0
+			if l.maxBaseline > 0 && frag.baseline > 0 {
+				yOffset = l.maxBaseline - frag.baseline
+			}
+			off := op.Offset(image.Pt(x, y+yOffset)).Push(gtx.Ops)
+			frag.call.Add(gtx.Ops)
+			off.Pop()
+			x += frag.size.X
+		}
+		y += l.height
+	}
+	return layout.Dimensions{Size: image.Pt(totalW, totalH)}
 }
 
 func paintConditionalDataBar(gtx layout.Context, size image.Point, style gridPaintStyle) {

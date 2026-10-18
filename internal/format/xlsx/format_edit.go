@@ -198,6 +198,11 @@ func cloneExcelizeStyle(style *excelize.Style) excelize.Style {
 		result.Font = &font
 	}
 	result.Fill.Color = append([]string(nil), style.Fill.Color...)
+	// A none pattern may carry unused foreground/background metadata. Do not
+	// promote that metadata to a fill when rebuilding an unrelated cell style.
+	if result.Fill.Type == "pattern" && result.Fill.Pattern == 0 {
+		result.Fill = excelize.Fill{}
+	}
 	if style.Alignment != nil {
 		alignment := *style.Alignment
 		result.Alignment = &alignment

@@ -407,7 +407,7 @@ func TestEmployeeWorkbookResizePreservesStylesAndMerges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Cells[3][1] != untouched {
+	if !reflect.DeepEqual(after.Cells[3][1], untouched) {
 		t.Errorf("untouched B4 changed: before=%#v after=%#v", untouched, after.Cells[3][1])
 	}
 	if !reflect.DeepEqual(after.Merges, window.Merges) {

@@ -424,6 +424,18 @@ func (a *App) activateWorkspaceTab(id string) {
 	a.persistActiveSession()
 	a.ensureDesktopRuntime().drainWorkspaceWriter()
 	a.evictInactiveSessionsExcept(id)
+	// A snapshotless tab has a SourcePath but no saved Payload. Restore it
+	// asynchronously via startOpen so the UI stays responsive and the user
+	// sees a "reopening" status rather than a synchronous open that could
+	// block the frame loop.
+	if a.collection != nil {
+		if record, ok := a.collection.Get(id); ok && len(record.Payload) == 0 && record.Tab.SourcePath != "" {
+			// No snapshot available – open the source file asynchronously.
+			a.setStatus("工作区快照不可用，正在从源文件恢复：" + record.Tab.SourcePath)
+			a.startOpen(record.Tab.SourcePath)
+			return
+		}
+	}
 	state, err := a.viewForTabWithError(id)
 	if err == nil {
 		a.activateSession(id, state)
