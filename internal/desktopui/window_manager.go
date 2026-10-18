@@ -86,6 +86,7 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 	if a == nil || a.window == nil {
 		return
 	}
+	defer a.closeNativePinch()
 	var unregisterView func()
 	if applicationRuntime := a.ensureDesktopRuntime().applicationRuntime; applicationRuntime != nil {
 		unregisterView = applicationRuntime.RegisterViewIntentHandler(a.windowID, a)
@@ -136,10 +137,14 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 			default:
 			}
 			a.processViewIntentRequests()
+			a.processNativePinch(e)
 			gtx := app.NewContext(&a.ops, e)
 			a.layout(gtx)
 			e.Frame(gtx.Ops)
 			a.renderedFrame = true
+			a.pinchFrameSession = a.documentSessionState
+			a.pinchFrameSize = e.Size
+			a.pinchFrameMetric = e.Metric
 			if trayStartupDeferredUntilWindowFrame() {
 				runtime := a.ensureDesktopRuntime()
 				if !a.trayStartupScheduled && !runtime.trayStartupWasAttempted() {
@@ -159,6 +164,8 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 					}()
 				}
 			}
+		default:
+			a.handleNativePinchViewEvent(e)
 		}
 	}
 }

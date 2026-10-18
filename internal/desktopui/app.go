@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"context"
+	"gioui.org/unit"
 	"image"
 	"log"
 	"sync"
@@ -25,7 +26,14 @@ import (
 var preferredSystemTypeface = font.Typeface(fontfallback.PreferredTypeface())
 
 type App struct {
-	fontPicker fontPickerState
+	nativePinch         *nativePinchState
+	nativePinchMonitor  nativePinchMonitor
+	pinchGestureSession *documentSessionState
+	pinchFrameSession   *documentSessionState
+	pinchFrameSize      image.Point
+	pinchFrameMetric    unit.Metric
+	pinchRemainder      float64
+	fontPicker          fontPickerState
 	*documentSessionState
 	*desktopRuntime
 	windowID             uint64

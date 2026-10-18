@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"image"
 	"math"
 	"runtime"
 
@@ -9,6 +10,7 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
+	"gioui.org/unit"
 
 	"glance/internal/document"
 )
@@ -62,6 +64,7 @@ func zoomFromScroll(current, scrollDelta, scale, remainder, minimum, maximum flo
 }
 
 func (a *App) layoutWordZoomableBody(gtx layout.Context, state *documentSessionState, blocks []document.WordBlock, body layout.Widget) layout.Dimensions {
+	recordNativePinchSurface(gtx)
 	a.handleWordBodyScroll(gtx, state, blocks)
 	dimensions := body(gtx)
 	pass := pointer.PassOp{}.Push(gtx.Ops)
@@ -90,7 +93,7 @@ func (a *App) handleWordBodyScroll(gtx layout.Context, state *documentSessionSta
 			zoom, remainder, changed := zoomFromScroll(wordStatusZoomClamp(state.wordLayoutZoom), delta, zoomScrollScale(), state.zoomScrollRemainder, wordStatusZoomMinimum, wordStatusZoomMaximum)
 			state.zoomScrollRemainder = remainder
 			if changed {
-				setWordManualZoom(state, zoom)
+				setWordWheelZoom(gtx, state, zoom, pe.Position)
 				if a.window != nil {
 					a.window.Invalidate()
 				}
@@ -120,4 +123,69 @@ func (a *App) handleWordBodyScroll(gtx layout.Context, state *documentSessionSta
 func wordBodyUsesPageList(state *documentSessionState, blocks []document.WordBlock) bool {
 	return state.wordViewMode != wordViewWebLayout &&
 		!(state.wordLayoutResult == nil && state.wordLayoutError == "" && len(blocks) > 0)
+}
+
+// zoomAt keeps the grid point below the pointer fixed. Headers and frozen
+// panes have no scroll offset of their own, so those axes retain their origin.
+func (v *gridViewport) zoomAt(scale, x, y, width, height float64) {
+	ratio := scale / v.Scale
+	frozenX, frozenY := v.frozenViewportExtent(width, height)
+	v.setScale(scale)
+	dx, dy := 0.0, 0.0
+	if x >= frozenX {
+		dx = max(0, x) * (ratio - 1)
+	}
+	if y >= frozenY {
+		dy = max(0, y) * (ratio - 1)
+	}
+	v.scroll(dx, dy, width, height)
+}
+
+// Wheel zoom preserves the current page arrangement and anchors to canonical
+// page coordinates. Page layout remains unchanged; only the viewport changes.
+func setWordWheelZoom(gtx layout.Context, state *documentSessionState, zoom float64, point f32.Point) {
+	oldZoom := wordStatusZoomClamp(state.wordLayoutZoom)
+	zoom = wordStatusZoomClamp(zoom)
+	if zoom == oldZoom {
+		return
+	}
+	state.wordLayoutZoom = zoom
+	state.wordPageFitMode = false
+	result := state.wordLayoutResult
+	if state.wordViewMode == wordViewWebLayout || result == nil {
+		return
+	}
+	for _, hit := range state.wordPageVisibleInteractions {
+		if !image.Pt(int(point.X), int(point.Y)).In(hit.PageRect) || hit.PageIndex >= len(result.Pages) {
+			continue
+		}
+		columns, gap, top := 1, 0, 0
+		if state.wordViewMode == wordViewPrintLayout {
+			top = gtx.Dp(unit.Dp(wordPageTopGapDP))
+			if state.wordMultiplePagesMode {
+				columns, gap = 2, gtx.Dp(unit.Dp(wordMultiplePageGapDP))
+			}
+		}
+		row := hit.PageIndex / columns
+		first := row * columns
+		width := func(index int) int {
+			page := result.Pages[index]
+			return max(1, int(math.Ceil(page.Clip.WidthPT*wordScenePixelsPerPoint(gtx, page, zoom))))
+		}
+		total := width(first)
+		pageLeft := 0
+		if columns == 2 && first+1 < len(result.Pages) {
+			if hit.PageIndex != first {
+				pageLeft = total + gap
+			}
+			total += gap + width(first+1)
+		}
+		scale := wordScenePixelsPerPoint(gtx, result.Pages[hit.PageIndex], zoom)
+		localX := (float64(point.X) - float64(hit.PageRect.Min.X)) / hit.Transform.PixelsPerPoint
+		localY := (float64(point.Y) - float64(hit.PageRect.Min.Y)) / hit.Transform.PixelsPerPoint
+		state.wordPageListState.Position.First = row
+		state.wordPageListState.Position.Offset = int(math.Round(float64(top) + localY*scale - float64(point.Y)))
+		state.wordPageScrollX = clamp(float64(max(0, (gtx.Constraints.Max.X-total)/2)+pageLeft)+localX*scale-float64(point.X), 0, float64(max(0, total-gtx.Constraints.Max.X)))
+		return
+	}
 }

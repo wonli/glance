@@ -27,6 +27,7 @@ func gtxGridContentWidth(a *App) float64  { return a.lastGridWidth }
 func gtxGridContentHeight(a *App) float64 { return a.lastGridHeight }
 
 func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
+	recordNativePinchSurface(gtx)
 	reader := a.book.(document.GridReader)
 	if a.virtualGrid == nil {
 		if a.book != nil {
@@ -242,6 +243,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				state.zoomScrollRemainder = remainder
 				if changed {
 					a.setSpreadsheetZoom(zoom)
+					v.zoomAt(float64(gtx.Metric.PxPerDp)*zoom, float64(pe.Position.X)-float64(rowHeaderPx), float64(pe.Position.Y)-float64(columnHeaderPx), contentW, contentH)
 				}
 				if a.window != nil {
 					a.window.Invalidate()

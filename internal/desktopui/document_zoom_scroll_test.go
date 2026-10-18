@@ -15,6 +15,9 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"glance/internal/document"
+	"glance/internal/wordlayout"
 )
 
 func TestZoomFromScrollAccumulatesFineTrackpadDeltas(t *testing.T) {
@@ -40,7 +43,7 @@ func TestZoomScrollAcceptsShortcutModifierOnMacAndControlModifier(t *testing.T) 
 	}
 }
 
-func TestSpreadsheetBodyShortcutWheelZoomsWithoutScrollingGrid(t *testing.T) {
+func TestSpreadsheetBodyShortcutWheelKeepsPointerAnchor(t *testing.T) {
 	h := newFullGridTextHarness(t, false, "value")
 	a := h.app
 	a.window = nil
@@ -60,8 +63,11 @@ func TestSpreadsheetBodyShortcutWheelZoomsWithoutScrollingGrid(t *testing.T) {
 	if got := a.spreadsheetZoom(); got <= beforeZoom {
 		t.Fatalf("shortcut wheel zoom = %.2f; want greater than %.2f", got, beforeZoom)
 	}
-	if v.X != beforeX || v.Y != beforeY {
-		t.Fatalf("shortcut wheel moved grid from (%v,%v) to (%v,%v)", beforeX, beforeY, v.X, v.Y)
+	ratio := a.spreadsheetZoom() / beforeZoom
+	wantX := (beforeX+200-gridRowHeader)*ratio - (200 - gridRowHeader)
+	wantY := (beforeY+60-gridColumnHeader)*ratio - (60 - gridColumnHeader)
+	if math.Abs(v.X-wantX) > 0.01 || math.Abs(v.Y-wantY) > 0.01 {
+		t.Fatalf("zoom anchor moved: offsets (%v,%v), want (%v,%v)", v.X, v.Y, wantX, wantY)
 	}
 }
 
@@ -165,3 +171,70 @@ func TestWordBodyZoomScrollPassesClicksToChildWidgets(t *testing.T) {
 	}
 }
 
+func TestWordWheelZoomKeepsPagePointAndMultiplePageMode(t *testing.T) {
+	for _, density := range []float32{1, 2} {
+		state := newDocumentSessionState("anchor.docx")
+		state.wordViewMode = wordViewPrintLayout
+		state.wordMultiplePagesMode = true
+		state.wordLayoutZoom = 1
+		pages := make([]wordlayout.PageScene, 12)
+		for i := range pages {
+			pages[i] = wordlayout.PageScene{Index: i, Clip: wordlayout.Rect{WidthPT: 400, HeightPT: 700}}
+		}
+		state.wordLayoutResult = &wordlayout.Result{CanPreview: true, Pages: pages}
+		app := &App{documentSessionState: state, theme: material.NewTheme()}
+		var router input.Router
+		var ops op.Ops
+		frame := func() {
+			ops.Reset()
+			gtx := layout.Context{Ops: &ops, Source: router.Source(), Now: time.Now(), Metric: unit.Metric{PxPerDp: density, PxPerSp: density}, Constraints: layout.Constraints{Max: image.Pt(int(700*density), int(500*density))}}
+			app.layoutWordBodyArea(gtx, state, nil)
+			router.Frame(&ops)
+		}
+		frame()
+		state.wordPageListState.Position.First = 2
+		state.wordPageListState.Position.Offset = int(120 * density)
+		frame()
+		before := state.wordPageVisibleInteractions[0]
+		point := f32.Pt(200*density, 180*density)
+		localX := (float64(point.X) - float64(before.PageRect.Min.X)) / before.Transform.PixelsPerPoint
+		localY := (float64(point.Y) - float64(before.PageRect.Min.Y)) / before.Transform.PixelsPerPoint
+		router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: point.Add(f32.Pt(0, wordRulerHeightDP*density)), Scroll: f32.Pt(0, -10), Modifiers: key.ModCtrl})
+		frame()
+		after, ok := visibleWordPageInteraction(state.wordPageVisibleInteractions, before.PageIndex)
+		if !ok {
+			t.Fatal("anchored page left viewport")
+		}
+		if math.Abs(float64(after.PageRect.Min.X)+localX*after.Transform.PixelsPerPoint-float64(point.X)) > 2 || math.Abs(float64(after.PageRect.Min.Y)+localY*after.Transform.PixelsPerPoint-float64(point.Y)) > 2 {
+			t.Fatalf("page point moved: before %v after %v", before.PageRect, after.PageRect)
+		}
+		if !state.wordMultiplePagesMode {
+			t.Fatal("wheel zoom exited multiple-page mode")
+		}
+		beforeZoom := state.wordLayoutZoom
+		router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(200*density, 10*density), Scroll: f32.Pt(0, -10), Modifiers: key.ModCtrl})
+		frame()
+		if state.wordLayoutZoom != beforeZoom {
+			t.Fatal("wheel over ruler changed document zoom")
+		}
+	}
+}
+func TestGridWheelZoomAnchorWithFrozenPanes(t *testing.T) {
+	for _, density := range []float64{1, 2} {
+		v := newGridViewport()
+		v.setScale(density)
+		v.setPanes(document.SpreadsheetPaneFreeze{Frozen: true, XSplit: 1, YSplit: 1})
+		v.X, v.Y = 300, 400
+		x, y := 220*density, 180*density
+		worldX, worldY := (v.X+x)/v.Scale, (v.Y+y)/v.Scale
+		v.zoomAt(density*1.1, x, y, 800*density, 600*density)
+		if math.Abs((v.X+x)/v.Scale-worldX) > 1e-8 || math.Abs((v.Y+y)/v.Scale-worldY) > 1e-8 {
+			t.Fatal("body anchor moved with frozen panes")
+		}
+		beforeX, beforeY := v.X/v.Scale, v.Y/v.Scale
+		v.zoomAt(density*1.2, 1, 1, 800*density, 600*density)
+		if math.Abs(v.X/v.Scale-beforeX) > 1e-8 || math.Abs(v.Y/v.Scale-beforeY) > 1e-8 {
+			t.Fatal("zoom over frozen corner moved scrolling body")
+		}
+	}
+}
