@@ -148,6 +148,15 @@ func reconcileWordSelection(state *documentSessionState, syncDraft bool) {
 		return
 	}
 	blocks := wordBlocksForState(state)
+	if syncDraft {
+		// History restores a different run structure. Selection endpoints and
+		// input snapshots from the previous structure cannot be reused, even
+		// when a positional run ID happens to exist in both versions.
+		state.wordPageTextSelection = nil
+		state.wordPageSelectionDrag = nil
+		state.wordSelectionInputDraft = nil
+		state.wordPageFocusedMetaRunID = ""
+	}
 	if state.selectedWordRunID != "" {
 		if run, ok := selectedWordRun(blocks, state.selectedWordRunID); ok {
 			if editor := state.wordRunEditors[run.ID]; editor != nil {
@@ -164,6 +173,10 @@ func reconcileWordSelection(state *documentSessionState, syncDraft bool) {
 		} else {
 			state.selectedWordRunID = ""
 			state.selectedWordParagraphID = ""
+			state.wordFocusedRunID = ""
+			state.wordLayoutFocusedRunID = ""
+			state.wordPendingFocusRunID = ""
+			state.wordPendingCaretRunID = ""
 			state.wordEditor.SetText("")
 		}
 	}

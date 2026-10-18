@@ -111,7 +111,7 @@ func (a *App) handleWordDocumentBoundaryShortcut(gtx layout.Context, state *docu
 	if a.finishWordSelectionInput(state, currentRunID, editor) {
 		return true
 	}
-	captureWordTextDraft(state, currentRunID, editor.Text())
+	captureWordEditorDraft(state, currentRunID, editor.Text())
 
 	targetIndex := 0
 	targetOffset := 0

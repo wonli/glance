@@ -36,7 +36,7 @@ func (a *App) handleWordSelectAllShortcut(gtx layout.Context, state *documentSes
 			return true
 		}
 	}
-	captureWordTextDraft(state, runID, editor.Text())
+	captureWordEditorDraft(state, runID, editor.Text())
 	a.selectAllWordText()
 	return true
 }

@@ -259,7 +259,7 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	if run.Editable {
 		current := editor.Text()
 		if !selectionInputPending {
-			captureWordTextDraft(state, run.ID, current)
+			captureWordEditorDraft(state, run.ID, current)
 		}
 		committed, _ := state.committedWordText(run.ID)
 		if current != committed && state.selectedWordImageID == "" && !wordPageTextSelectionActive(state.wordPageTextSelection) {

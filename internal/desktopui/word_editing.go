@@ -118,6 +118,12 @@ func captureWordTextDraft(state *documentSessionState, runID, value string) {
 	state.captureWordTextDraft(runID, value)
 }
 
+func captureWordEditorDraft(state *documentSessionState, runID, value string) {
+	state.wordExportCommitMu.Lock()
+	defer state.wordExportCommitMu.Unlock()
+	state.captureWordEditorDraft(runID, value, state.appliedWordTextResetEpoch.Load())
+}
+
 func (a *App) requestWordTextFlush(all bool) {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
@@ -178,7 +184,7 @@ func (a *App) handleWordHistoryShortcut(gtx layout.Context, runID string, editor
 
 	// The editor's value may have changed in this frame. Capture it before
 	// either the flush or the document history operation begins.
-	captureWordTextDraft(state, runID, editor.Text())
+	captureWordEditorDraft(state, runID, editor.Text())
 	if wordHasPendingTextDrafts(state) {
 		if state.wordDeferredToolbarAction != "" {
 			return true

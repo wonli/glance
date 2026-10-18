@@ -124,7 +124,7 @@ func (a *App) finishWordPageInteractions(state *documentSessionState) {
 		if visible || drafted || runID == state.selectedWordRunID || runID == state.wordFocusedRunID || runID == state.wordPendingFocusRunID {
 			continue
 		}
-		captureWordTextDraft(state, runID, editor.Text())
+		captureWordEditorDraft(state, runID, editor.Text())
 		if _, remainsDrafted := state.wordDraft(runID); remainsDrafted {
 			continue
 		}

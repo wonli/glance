@@ -505,7 +505,7 @@ func (a *App) updateFocusedWordEditorBeforeCommandWithSubmit(gtx layout.Context,
 			break
 		}
 	}
-	captureWordTextDraft(state, runID, editor.Text())
+	captureWordEditorDraft(state, runID, editor.Text())
 }
 
 func (a *App) focusedWordBreakShortcutEditor(gtx layout.Context, state *documentSessionState) (string, *widget.Editor, bool) {

@@ -92,7 +92,7 @@ func (a *App) queueWordSelectionStyle(state *documentSessionState, start, end wo
 			a.setStatus("请先完成中文输入，再设置文字格式")
 			return false
 		}
-		captureWordTextDraft(state, id, editor.Text())
+		captureWordEditorDraft(state, id, editor.Text())
 	}
 	state.wordForceDraftFlush.Store(true)
 	state.wordFlushRequested.Store(true)

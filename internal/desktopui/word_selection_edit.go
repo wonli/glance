@@ -121,7 +121,7 @@ func (a *App) queueWordSelectionReplacement(state *documentSessionState, editor 
 	}
 	editor.ReadOnly = true
 	for id, current := range state.wordRunEditors {
-		captureWordTextDraft(state, id, current.Text())
+		captureWordEditorDraft(state, id, current.Text())
 	}
 	state.wordForceDraftFlush.Store(true)
 	state.wordFlushRequested.Store(true)
@@ -204,7 +204,7 @@ func (a *App) handleWordSelectionDeleteKey(gtx layout.Context, state *documentSe
 		editor.Delete(direction)
 		for id, current := range state.wordRunEditors {
 			if current == editor {
-				captureWordTextDraft(state, id, editor.Text())
+				captureWordEditorDraft(state, id, editor.Text())
 				break
 			}
 		}
@@ -246,7 +246,7 @@ func (a *App) queueWordSelectionDeletion(state *documentSessionState, start, end
 	// The selection can include drafts in several formatted runs. Commit those
 	// before the adapter resolves the rune offsets against the document.
 	for id, editor := range state.wordRunEditors {
-		captureWordTextDraft(state, id, editor.Text())
+		captureWordEditorDraft(state, id, editor.Text())
 	}
 	state.wordForceDraftFlush.Store(true)
 	state.wordFlushRequested.Store(true)
@@ -299,7 +299,7 @@ func (a *App) startPendingWordSelectionPaste(state *documentSessionState) {
 	}
 	state.wordPendingPasteSelection = nil
 	for id, editor := range state.wordRunEditors {
-		captureWordTextDraft(state, id, editor.Text())
+		captureWordEditorDraft(state, id, editor.Text())
 	}
 	state.wordForceDraftFlush.Store(true)
 	state.wordFlushRequested.Store(true)

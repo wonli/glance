@@ -194,7 +194,7 @@ func (a *App) handleWordClipboardEvents(gtx layout.Context) {
 			continue
 		}
 		for id, editor := range state.wordRunEditors {
-			captureWordTextDraft(state, id, editor.Text())
+			captureWordEditorDraft(state, id, editor.Text())
 		}
 		state.wordForceDraftFlush.Store(true)
 		state.wordFlushRequested.Store(true)

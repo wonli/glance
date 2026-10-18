@@ -190,7 +190,12 @@ func (a *App) publishWordCommand(result wordCommandResult) {
 		} else {
 			if result.err == nil && (!result.history || result.applied) {
 				if result.blocks != nil {
-					if result.history {
+					if result.selectionEdit {
+						// Formatting and replacement can renumber inline IDs. Publish
+						// their text baseline with the new blocks, so another frame or
+						// window cannot interpret old editor text as a new draft.
+						result.state.setWordBlocksAndTextState(result.blocks, true)
+					} else if result.history {
 						result.state.setWordBlocksAndTextState(result.blocks, false)
 					} else {
 						result.state.setWordBlocks(result.blocks)

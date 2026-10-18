@@ -152,7 +152,17 @@ func syncWordRunEditors(view *documentSessionState, runs map[string]document.Wor
 	}
 	for runID, editor := range view.wordRunEditors {
 		run, exists := runs[runID]
-		if !exists || editor == nil {
+		if editor == nil {
+			delete(view.wordRunEditors, runID)
+			continue
+		}
+		if !exists {
+			// A structural edit or undo can remove this run. Keeping its widget
+			// lets draft collection submit stale text to an unavailable ID.
+			// An actual unsaved draft must remain available for recovery.
+			if _, pending := drafts[runID]; !pending {
+				delete(view.wordRunEditors, runID)
+			}
 			continue
 		}
 		value := run.Text

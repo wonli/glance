@@ -130,7 +130,7 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 	style.Layout(editorGtx)
 	_ = recorder.Stop()
 	if !selectionInputPending {
-		captureWordTextDraft(state, runID, editor.Text())
+		captureWordEditorDraft(state, runID, editor.Text())
 	}
 	selectionStart, selectionEnd := editor.Selection()
 	if state.wordLayoutResult != nil {

@@ -137,6 +137,30 @@ func (s *sharedDocumentSession) captureWordTextDraft(runID, value string) bool {
 	}
 	s.wordDraftMu.Lock()
 	defer s.wordDraftMu.Unlock()
+	return s.captureWordTextDraftLocked(runID, value)
+}
+
+// Editor widgets can outlive a run removed by a concurrent history restore.
+// Check the current baseline under the same lock used to publish text resets;
+// unlike recovery/import, a stale widget must not introduce an orphan draft.
+func (s *sharedDocumentSession) captureWordEditorDraft(runID, value string, resetEpoch uint64) bool {
+	if s == nil || runID == "" {
+		return false
+	}
+	s.wordDraftMu.Lock()
+	defer s.wordDraftMu.Unlock()
+	// Positional IDs may also be reused for different text after undo. The
+	// view must reconcile its widgets before collecting from that structure.
+	if resetEpoch != s.wordTextResetEpoch.Load() {
+		return false
+	}
+	if _, exists := s.wordRunCommitted[runID]; !exists {
+		return false
+	}
+	return s.captureWordTextDraftLocked(runID, value)
+}
+
+func (s *sharedDocumentSession) captureWordTextDraftLocked(runID, value string) bool {
 	if s.wordRunDrafts == nil {
 		s.wordRunDrafts = make(map[string]string)
 	}
