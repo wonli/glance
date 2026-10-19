@@ -88,13 +88,19 @@ func parseWordParagraphLayout(properties *wordXMLNode) document.WordParagraphLay
 				layout.HangingIndentChars = amount
 				layout.Set |= document.WordParagraphHangingIndentSet | document.WordParagraphHangingIndentCharsSet
 			}
-		} else if value := wordFirstLineIndentValue(indentation); value != "" {
-			layout.FirstLineIndentEMU = parseWordIndentEMU(value)
-			layout.Set |= document.WordParagraphFirstLineIndentSet
 		} else if value := attrValue(indentation, "hanging"); value != "" {
 			layout.HangingIndentEMU = parseWordIndentEMU(value)
 			layout.Set |= document.WordParagraphHangingIndentSet
+		} else if value := wordFirstLineIndentValue(indentation); value != "" {
+			layout.FirstLineIndentEMU = parseWordIndentEMU(value)
+			layout.Set |= document.WordParagraphFirstLineIndentSet
 		}
+		// Direct first-line and hanging indents replace one another, including
+		// inherited styles. OOXML hanging takes precedence when both are present.
+		if layout.Set&(document.WordParagraphFirstLineIndentSet|document.WordParagraphHangingIndentSet) != 0 {
+			layout.Set |= document.WordParagraphFirstLineIndentSet | document.WordParagraphHangingIndentSet
+		}
+
 		left := attrValue(indentation, "left")
 		if left == "" {
 			left = attrValue(indentation, "start")

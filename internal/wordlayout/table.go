@@ -180,3 +180,10 @@ func (c *layoutCursor) layoutTable(ctx context.Context, shaper TextShaper, style
 	}
 	return nil
 }
+
+// TableCellTextArea is the same horizontal inset used by table text placement.
+func TableCellTextArea(bounds Rect) Rect {
+	bounds.XPT += tableCellPaddingPT
+	bounds.WidthPT = math.Max(1, bounds.WidthPT-2*tableCellPaddingPT)
+	return bounds
+}

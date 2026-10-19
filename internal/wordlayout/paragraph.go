@@ -123,6 +123,10 @@ func prepareParagraph(ctx context.Context, shaper TextShaper, styles *styleResol
 	if err := resolveCharacterIndentUnits(ctx, shaper, styles.cursor, sourceID, prepared.style.text, &prepared.style.paragraph); err != nil {
 		return preparedParagraph{}, err
 	}
+	if styles.cursor.result.ParagraphIndents == nil {
+		styles.cursor.result.ParagraphIndents = make(map[string]document.WordParagraphLayout)
+	}
+	styles.cursor.result.ParagraphIndents[paragraph.ID] = prepared.style.paragraph
 	if editorInsets {
 		prepared.uiBeforePT, prepared.uiAfterPT = 3.75, 4.5
 		if inCell {

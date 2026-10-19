@@ -104,6 +104,10 @@ func (e *Engine) Layout(ctx context.Context, input Input) (Result, error) {
 			checkpoint := previous.blockCheckpoints[dirtyBlock]
 			if checkpoint.PageIndex >= 0 && checkpoint.PageIndex < len(previous.Pages) {
 				startBlock = dirtyBlock
+				result.ParagraphIndents = make(map[string]document.WordParagraphLayout, len(previous.ParagraphIndents))
+				for id, metrics := range previous.ParagraphIndents {
+					result.ParagraphIndents[id] = metrics
+				}
 				incrementalStarted = true
 				result.Pages = nil
 				result.Pages = append(result.Pages, previous.Pages[:checkpoint.PageIndex]...)

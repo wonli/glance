@@ -425,6 +425,7 @@ func placeParagraphLine(cursor *layoutCursor, sourceID, borderSourceID string, p
 		switch atom.kind {
 		case atomText:
 			fragment := textFragmentAt(atom, x, baseline)
+			fragment.ParagraphArea = area
 			cursor.result.Pages[pageIndex].Text = append(cursor.result.Pages[pageIndex].Text, fragment)
 			if !atom.synthetic && atom.runID != "" {
 				for offset := atom.runeStart; offset < atom.runeEnd; offset++ {

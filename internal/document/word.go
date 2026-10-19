@@ -556,3 +556,9 @@ type WordWatermarkEditor interface {
 	SetWatermark(text string) error
 	ClearWatermark() error
 }
+
+// WordParagraphRulerEditor commits a complete ruler gesture atomically.
+// A nil firstOffsetEMU preserves first-line/hanging character units and styles.
+type WordParagraphRulerEditor interface {
+	SetParagraphRulerIndents(paragraphID string, leftEMU, rightEMU int64, firstOffsetEMU *int64) error
+}

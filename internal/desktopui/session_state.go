@@ -104,6 +104,9 @@ type documentSessionState struct {
 	wordRulerIndentDragPreviewEMU       int64
 	wordRulerIndentDragParagraphID      string
 	wordRulerIndentIntent               *wordParagraphIndentIntent
+	wordRulerDragStart                  wordRulerIndents
+	wordRulerDragPreview                wordRulerIndents
+	wordRulerDragGeometry               wordRulerGeometry
 	cellEditor                          widget.Editor
 	formulaEditor                       widget.Editor
 	cellParagraphSelection              textEditorParagraphSelection

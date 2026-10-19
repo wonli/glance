@@ -173,6 +173,10 @@ func incrementalLayoutSafe(input Input, previous *Result, dirtyBlock int) bool {
 
 func cloneLayoutResult(source Result) Result {
 	clone := source
+	clone.ParagraphIndents = make(map[string]document.WordParagraphLayout, len(source.ParagraphIndents))
+	for id, metrics := range source.ParagraphIndents {
+		clone.ParagraphIndents[id] = metrics
+	}
 	clone.Pages = make([]PageScene, len(source.Pages))
 	for i, page := range source.Pages {
 		clone.Pages[i] = page

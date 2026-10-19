@@ -90,6 +90,22 @@ func (a *App) layoutWordBodyArea(gtx layout.Context, state *documentSessionState
 			return a.layoutWordNavigationPane(gtx, state, blocks)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if state.wordViewMode != wordViewWebLayout {
+				fitGtx := gtx
+				if !state.wordRulerHidden && !state.wordReadingMode {
+					fitGtx.Constraints.Max.Y = max(0, fitGtx.Constraints.Max.Y-gtx.Dp(unit.Dp(wordRulerHeightDP)))
+				}
+				presentation := wordPageContinuous
+				columns, gap := 1, 0
+				if state.wordViewMode == wordViewPrintLayout {
+					presentation = wordPagePrint
+					if state.wordMultiplePagesMode {
+						columns = 2
+						gap = gtx.Dp(unit.Dp(wordMultiplePageGapDP))
+					}
+				}
+				a.updateWordPageFit(fitGtx, state, presentation, columns, gap, state.wordPageListState.Position.First*columns)
+			}
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if state.wordRulerHidden || state.wordReadingMode || state.wordViewMode == wordViewWebLayout {

@@ -88,28 +88,7 @@ func (a *App) layoutWordPages(gtx layout.Context, state *documentSessionState, p
 	}
 	pageIndex := state.wordPageListState.Position.First * columns
 	pageIndex = max(0, min(pageIndex, len(result.Pages)-1))
-	if state.wordPageFitMode {
-		verticalGap := wordPageTopGapDP + wordPageBottomGapDP
-		if presentation == wordPageContinuous {
-			verticalGap = 0
-		}
-		availableWidth := float64(max(1, gtx.Constraints.Max.X-gtx.Dp(unit.Dp(48))-columnGap))
-		availableHeight := float64(max(1, gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(verticalGap))))
-		fitKey := ""
-		if state.wordLayoutAcceptedKey != nil {
-			fitKey = state.wordLayoutAcceptedKey.PageSetupKey
-		}
-		page := result.Pages[pageIndex]
-		fitKey += fmt.Sprintf("|%.3f|%.3f", page.Clip.WidthPT, page.Clip.HeightPT)
-		if state.wordPageFitWidth != int(availableWidth) || state.wordPageFitHeight != int(availableHeight) || state.wordPageFitColumns != columns || state.wordPageFitPageSetupKey != fitKey {
-			state.wordLayoutZoom = wordPageFitZoomForColumns(page, availableWidth, availableHeight, float64(gtx.Metric.PxPerDp), columns)
-			state.wordPageFitWidth = int(availableWidth)
-			state.wordPageFitHeight = int(availableHeight)
-			state.wordPageFitColumns = columns
-			state.wordPageFitPageSetupKey = fitKey
-			state.wordPageScrollX = 0
-		}
-	}
+	a.updateWordPageFit(gtx, state, presentation, columns, columnGap, pageIndex)
 
 	rowCount := len(result.Pages)
 	if columns == 2 {
@@ -283,4 +262,36 @@ func (a *App) drawWordPageSurface(gtx layout.Context, state *documentSessionStat
 	semantic.DescriptionOp(a.textArgs("word.accessibility.page_number", i18n.Args{"Current": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(index+1)), "Total": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(total))})).Add(gtx.Ops)
 	a.drawWordPageScene(gtx, state, page, pageRect.Min, pageScale)
 	pageClip.Pop()
+}
+
+// updateWordPageFit is also called before laying out the ruler, so both use
+// the same zoom on the first frame and after viewport changes.
+func (a *App) updateWordPageFit(gtx layout.Context, state *documentSessionState, presentation wordPagePresentation, columns, columnGap, pageIndex int) {
+	result := state.wordLayoutResult
+	if result == nil || !result.CanPreview || len(result.Pages) == 0 {
+		return
+	}
+	pageIndex = max(0, min(pageIndex, len(result.Pages)-1))
+	if state.wordPageFitMode {
+		verticalGap := wordPageTopGapDP + wordPageBottomGapDP
+		if presentation == wordPageContinuous {
+			verticalGap = 0
+		}
+		availableWidth := float64(max(1, gtx.Constraints.Max.X-gtx.Dp(unit.Dp(48))-columnGap))
+		availableHeight := float64(max(1, gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(verticalGap))))
+		fitKey := ""
+		if state.wordLayoutAcceptedKey != nil {
+			fitKey = state.wordLayoutAcceptedKey.PageSetupKey
+		}
+		page := result.Pages[pageIndex]
+		fitKey += fmt.Sprintf("|%.3f|%.3f", page.Clip.WidthPT, page.Clip.HeightPT)
+		if state.wordPageFitWidth != int(availableWidth) || state.wordPageFitHeight != int(availableHeight) || state.wordPageFitColumns != columns || state.wordPageFitPageSetupKey != fitKey {
+			state.wordLayoutZoom = wordPageFitZoomForColumns(page, availableWidth, availableHeight, float64(gtx.Metric.PxPerDp), columns)
+			state.wordPageFitWidth = int(availableWidth)
+			state.wordPageFitHeight = int(availableHeight)
+			state.wordPageFitColumns = columns
+			state.wordPageFitPageSetupKey = fitKey
+			state.wordPageScrollX = 0
+		}
+	}
 }

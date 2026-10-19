@@ -135,16 +135,18 @@ type ParagraphBorderPlacement struct {
 }
 
 type TextFragment struct {
-	RunID       string
-	Text        string
-	RuneStart   int
-	RuneEnd     int
-	Editable    bool
-	Style       document.WordTextStyle
-	XPT         float64
-	BaselineYPT float64
-	Glyphs      []PositionedGlyph
-	Synthetic   bool
+	// ParagraphArea is the unindented cell/column text region in page points.
+	ParagraphArea Rect
+	RunID         string
+	Text          string
+	RuneStart     int
+	RuneEnd       int
+	Editable      bool
+	Style         document.WordTextStyle
+	XPT           float64
+	BaselineYPT   float64
+	Glyphs        []PositionedGlyph
+	Synthetic     bool
 }
 
 type PositionedGlyph struct {
@@ -177,6 +179,8 @@ type TableCellPlacement struct {
 }
 
 type Result struct {
+	// ParagraphIndents contains resolved style and character-unit metrics in EMU.
+	ParagraphIndents  map[string]document.WordParagraphLayout
 	DocumentID        string
 	Revision          uint64
 	Pages             []PageScene

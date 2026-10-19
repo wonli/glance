@@ -237,6 +237,9 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		}
 		paragraphID, leftEMU, rightEMU := intent.paragraphID, intent.leftEMU, intent.rightEMU
 		a.runWordCommand("调整段落缩进", func(editor document.WordTextEditor) error {
+			if ruler, ok := editor.(document.WordParagraphRulerEditor); ok {
+				return ruler.SetParagraphRulerIndents(paragraphID, leftEMU, rightEMU, intent.firstOffsetEMU)
+			}
 			return editor.SetParagraphIndents(paragraphID, leftEMU, rightEMU)
 		})
 	case "save":
