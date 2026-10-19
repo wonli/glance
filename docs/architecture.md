@@ -27,6 +27,12 @@ Office libraries and local filesystem
 - Do not hold Excelize, DOCX, OOXML, ZIP, or XML library objects in Gio widgets.
 - Keep rendering/layout helpers separate from event handling and file/session logic. Avoid growing one all-purpose `App` file; use focused view, interaction, and widget-state files as the UI grows.
 
+### Reusable Gio controls (`ui`)
+
+- `ui` is a public package in this Go module for reusable controls. It may depend on Gio and the standard library, but not on `internal/desktopui`, application/session code, document models, localization, or file-format packages.
+- Applications own widget lifetimes, translated labels, theme colors, icon resources, and business actions. Controls receive stable Gio widget pointers and explicit styles; vertical visual offsets are resolved dp values where positive moves rendered content down.
+- Keep app-specific brand art and unusual composition in the application layer. Extract a control only when its geometry and interaction behavior can be described without importing app state.
+
 ### Desktop UI localization (`internal/i18n`, `internal/systemlocale`, `internal/desktopui`)
 
 - The desktop ships embedded `en-US` and `zh-CN` JSON catalogs. UI messages use stable IDs and named arguments; the complete English catalog is the fallback for missing or unsupported text.

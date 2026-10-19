@@ -107,6 +107,7 @@ type documentSessionState struct {
 	wordRulerDragStart                  wordRulerIndents
 	wordRulerDragPreview                wordRulerIndents
 	wordRulerDragGeometry               wordRulerGeometry
+	wordRulerContext                    wordRulerContext
 	cellEditor                          widget.Editor
 	formulaEditor                       widget.Editor
 	cellParagraphSelection              textEditorParagraphSelection

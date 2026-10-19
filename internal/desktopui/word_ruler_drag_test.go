@@ -31,7 +31,7 @@ func TestWordRulerFourGesturesSaveAndCancel(t *testing.T) {
 			state := newDocumentSessionState("ruler.docx")
 			state.word = d
 			state.wordBlocks = cloneWordBlockSnapshot(d.WordBlocks())
-			state.selectedWordParagraphID = state.wordBlocks[0].Paragraph.ID
+			// Start with no text selection: ruler controls must already be usable.
 			gestureScale := float32(1)
 			if zoom > 0 {
 				gestureScale = float32(zoom)

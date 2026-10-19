@@ -17,6 +17,7 @@ import (
 
 	"glance/internal/application"
 	"glance/internal/i18n"
+	"glance/ui"
 )
 
 var (
@@ -526,64 +527,24 @@ func parseFolderScope(info application.ConfirmationInfo) (name, path string) {
 }
 
 func layoutModalActionButton(gtx layout.Context, theme *material.Theme, button *widget.Clickable, label string, width, height unit.Dp, bg, border, fg color.NRGBA, icon string) layout.Dimensions {
-	if button.Hovered() && bg.A > 0 {
-		bg.R = uint8(float32(bg.R) * 0.93)
-		bg.G = uint8(float32(bg.G) * 0.93)
-		bg.B = uint8(float32(bg.B) * 0.93)
+	hover := bg
+	if bg.A > 0 {
+		hover.R = uint8(float32(bg.R) * 0.93)
+		hover.G = uint8(float32(bg.G) * 0.93)
+		hover.B = uint8(float32(bg.B) * 0.93)
 	}
-	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		size := image.Pt(gtx.Dp(width), gtx.Dp(height))
-		if width <= 0 {
-			size.X = gtx.Constraints.Min.X
+	var iconLayout layout.Widget
+	if icon != "" {
+		iconLayout = func(gtx layout.Context) layout.Dimensions {
+			return homeIcon(gtx, icon, 14, fg)
 		}
-		if gtx.Constraints.Min.X > size.X {
-			size.X = gtx.Constraints.Min.X
-		}
-		if gtx.Constraints.Max.X > 0 && size.X > gtx.Constraints.Max.X {
-			size.X = gtx.Constraints.Max.X
-		}
-		bounds := image.Rectangle{Max: size}
-		radius := gtx.Dp(unit.Dp(7))
-		shape := clip.UniformRRect(bounds, radius)
-		paint.FillShape(gtx.Ops, bg, shape.Op(gtx.Ops))
-		if border != bg {
-			paint.FillShape(gtx.Ops, border, clip.Stroke{Path: shape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
-		}
-
-		gtx.Constraints.Min, gtx.Constraints.Max = size, size
-		btnH := size.Y
-		opticalTop := homeTextOpticalCenterTopInset
-		if icon != "" {
-			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = btnH, btnH
-						return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return homeIcon(gtx, icon, unit.Dp(14), fg)
-							})
-						})
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = btnH, btnH
-						return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Top: opticalTop}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								lbl := homeLabelStyle(theme, label, unit.Sp(13), fg, font.Medium)
-								return lbl.Layout(gtx)
-							})
-						})
-					}),
-				)
-			})
-		}
-		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = btnH, btnH
-			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: opticalTop}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := homeLabelStyle(theme, label, unit.Sp(13), fg, font.Medium)
-					return lbl.Layout(gtx)
-				})
-			})
-		})
-	})
+	}
+	return (ui.IconTextButton{
+		Button: button, Label: label, Icon: iconLayout,
+		Style: ui.IconTextButtonStyle{
+			Width: width, Height: height, IconSize: 14, Gap: 6, Radius: 7,
+			Text: ui.TextStyle{Size: 13, Weight: font.Medium}, TextOffsetY: shellOpticalTextOffset(opticalConfirmationButton),
+			Colors: ui.StateColors{Background: bg, Hover: hover, Border: border, Foreground: fg},
+		},
+	}).Layout(gtx, theme)
 }

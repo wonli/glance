@@ -23,6 +23,7 @@ import (
 	"glance/internal/format/pptx"
 	"glance/internal/format/xlsx"
 	"glance/internal/i18n"
+	"glance/ui"
 )
 
 type homeSection uint8
@@ -270,47 +271,19 @@ func (a *App) layoutSettingsSidebar(gtx layout.Context) layout.Dimensions {
 func (a *App) layoutSettingsNavItem(gtx layout.Context, id, label, icon string) layout.Dimensions {
 	button := a.settingsPageTabButton(id)
 	selected := a.agentUI.settingsPageTab == id
-	height := gtx.Dp(unit.Dp(44))
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				bg := color.NRGBA{A: 0}
-				if selected {
-					bg = homeSelectedFill
-				} else if button.Hovered() {
-					bg = homeHoverFill
-				}
-				shape := clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(7)))
-				paint.FillShape(gtx.Ops, bg, shape.Op(gtx.Ops))
-				return layout.Dimensions{Size: gtx.Constraints.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							height := gtx.Dp(unit.Dp(44))
-							gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return homeIcon(gtx, icon, 20, color.NRGBA{R: 63, G: 71, B: 82, A: 255})
-							})
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								height := gtx.Dp(unit.Dp(44))
-								gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-								return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										return homeTextLabel(gtx, a.theme, label, 15, homeText, selected)
-									})
-								})
-							})
-						}),
-					)
-				})
-			},
-		)
-	})
+	return (ui.NavItem{
+		Button: button, Label: label, Selected: selected,
+		Icon: func(gtx layout.Context) layout.Dimensions {
+			return homeIcon(gtx, icon, 20, color.NRGBA{R: 63, G: 71, B: 82, A: 255})
+		},
+		Style: ui.NavItemStyle{
+			Height: 44, IconSize: 20, LeftInset: 12, RightInset: 12, IconGap: 12, Radius: 7,
+			Text:         ui.TextStyle{Size: 15, Weight: font.Normal},
+			SelectedText: ui.TextStyle{Size: 15, Weight: font.SemiBold},
+			TextOffsetY:  shellOpticalTextOffset(opticalSettingsNav),
+			Colors:       ui.StateColors{Background: color.NRGBA{A: 0}, Hover: homeHoverFill, Selected: homeSelectedFill, Border: color.NRGBA{A: 0}, Foreground: homeText},
+		},
+	}).Layout(gtx, a.theme)
 }
 
 func (a *App) layoutSettingsMain(gtx layout.Context) layout.Dimensions {
@@ -468,49 +441,22 @@ func (a *App) resetHomeContentScroll() {
 
 func (a *App) layoutHomeNavRow(gtx layout.Context, id, glyph, label string, count int, selected bool) layout.Dimensions {
 	button := a.homeNavButton(id)
-	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		height := gtx.Dp(unit.Dp(42))
-		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				bg := color.NRGBA{A: 0}
-				if selected {
-					bg = homeSelectedFill
-				} else if button.Hovered() {
-					bg = homeHoverFill
-				}
-				shape := clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(10)))
-				paint.FillShape(gtx.Ops, bg, shape.Op(gtx.Ops))
-				return layout.Dimensions{Size: gtx.Constraints.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					children := []layout.FlexChild{
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							iconColor := color.NRGBA{R: 63, G: 71, B: 82, A: 255}
-							return homeIcon(gtx, glyph, 20, iconColor)
-						}),
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							gtx.Constraints.Min.Y = 0
-							return layout.Inset{Left: unit.Dp(12), Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return homeTextLabel(gtx, a.theme, label, 15, homeText, selected)
-							})
-						}),
-					}
-					if count >= 0 {
-						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							countText := fmt.Sprintf("%d", count)
-							gtx.Constraints.Min.Y = 0
-							return layout.Inset{Left: unit.Dp(12), Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return homeTextLabel(gtx, a.theme, countText, 13, homeMuted, false)
-							})
-						}))
-					}
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
-				})
-			},
-		)
-	})
+	countText := ""
+	if count >= 0 {
+		countText = fmt.Sprintf("%d", count)
+	}
+	return (ui.NavItem{
+		Button: button, Label: label, Trailing: countText, Selected: selected,
+		Icon: func(gtx layout.Context) layout.Dimensions {
+			return homeIcon(gtx, glyph, 20, color.NRGBA{R: 63, G: 71, B: 82, A: 255})
+		},
+		Style: ui.NavItemStyle{
+			Height: 42, IconSize: 20, LeftInset: 12, RightInset: 12, IconGap: 12, TrailingGap: 12, Radius: 10,
+			Text: ui.TextStyle{Size: 15, Weight: font.Normal}, SelectedText: ui.TextStyle{Size: 15, Weight: font.SemiBold},
+			TrailingText: ui.TextStyle{Size: 13, Weight: font.Normal}, TextOffsetY: shellOpticalTextOffset(opticalHomeNav), TrailingOffsetY: shellOpticalTextOffset(opticalHomeNav), TrailingColor: homeMuted,
+			Colors: ui.StateColors{Background: color.NRGBA{A: 0}, Hover: homeHoverFill, Selected: homeSelectedFill, Border: color.NRGBA{A: 0}, Foreground: homeText},
+		},
+	}).Layout(gtx, a.theme)
 }
 
 func (a *App) layoutHomeContent(gtx layout.Context) layout.Dimensions {

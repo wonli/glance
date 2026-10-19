@@ -15,7 +15,7 @@ import (
 	"gioui.org/unit"
 )
 
-func TestWordRulerRightHandleStaysVisibleWithAgentSidebar(t *testing.T) {
+func TestWordRulerLoadingWithAgentSidebarHidesLegacyHandle(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	for _, scale := range []float32{1, 2} {
@@ -47,8 +47,8 @@ func TestWordRulerRightHandleStaysVisibleWithAgentSidebar(t *testing.T) {
 				}
 			}
 		}
-		if pixels < int(90*scale*scale) {
-			t.Fatalf("right handle clipped at scale %v: %d visible pixels", scale, pixels)
+		if pixels != 0 {
+			t.Fatalf("loading ruler exposed legacy grip at scale %v: %d visible pixels", scale, pixels)
 		}
 		start := f32.Pt(1095*scale, 16*scale)
 		end := start.Add(f32.Pt(-40*scale, 0))
@@ -58,8 +58,8 @@ func TestWordRulerRightHandleStaysVisibleWithAgentSidebar(t *testing.T) {
 		frame()
 		router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 9, Position: end})
 		frame()
-		if state.wordCanvasWidthDP != 770 {
-			t.Fatalf("right grip drag width at scale %v = %d, want 770dp", scale, state.wordCanvasWidthDP)
+		if state.wordCanvasWidthDP != 900 {
+			t.Fatalf("hidden loading grip changed canvas width at scale %v: %d", scale, state.wordCanvasWidthDP)
 		}
 	}
 }

@@ -54,17 +54,22 @@ func (a *App) layoutWordHorizontalRuler(gtx layout.Context, state *documentSessi
 		area.Pop()
 		return layout.Dimensions{Size: gtx.Constraints.Max}
 	}
+	context, p, selected := wordRulerContextForState(state)
+	if selected {
+		state.wordRulerContext = context
+	}
 	g := wordRulerGeometryForState(gtx, state)
-	p, selected := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)
 	a.processWordRulerDrag(gtx, state, p, selected, g)
 	bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 	defer bounds.Pop()
 	semantic.DescriptionOp(a.textID("word.accessibility.ruler")).Add(gtx.Ops)
 	paint.FillShape(gtx.Ops, wordWorkspaceBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
-	bar := image.Rect(g.pageLeft, 0, g.pageRight, height)
-	barClip := clip.UniformRRect(bar, gtx.Dp(2)).Push(gtx.Ops)
+	// The surface spans the content viewport; document measurements below
+	// keep their page coordinates and scale.
+	bar := image.Rectangle{Max: gtx.Constraints.Max}
+	barClip := clip.Rect(bar).Push(gtx.Ops)
 	paint.FillShape(gtx.Ops, wordRulerBackground, clip.Rect(bar).Op())
-	for _, r := range []image.Rectangle{image.Rect(g.pageLeft, 0, g.textLeft, height), image.Rect(g.textRight, 0, g.pageRight, height)} {
+	for _, r := range []image.Rectangle{image.Rect(0, 0, g.textLeft, height), image.Rect(g.textRight, 0, bar.Max.X, height)} {
 		paint.FillShape(gtx.Ops, wordRulerMargin, clip.Rect(r).Op())
 	}
 	baseline := height - gtx.Dp(1)
@@ -86,10 +91,13 @@ func (a *App) layoutWordHorizontalRuler(gtx layout.Context, state *documentSessi
 			a.layoutWordRulerText(gtx, strconv.Itoa(quarter/4), image.Pt(x, gtx.Dp(2)), true, 10)
 		}
 	}
-	a.layoutWordRulerText(gtx, "cm", image.Pt(g.pageLeft+gtx.Dp(8), gtx.Dp(2)), false, 9)
+	a.layoutWordRulerText(gtx, "cm", image.Pt(gtx.Dp(16), gtx.Dp(2)), false, 9)
 	border := color.NRGBA{R: 204, G: 210, B: 219, A: 255}
-	for _, r := range []image.Rectangle{image.Rect(g.pageLeft, 0, g.pageRight, gtx.Dp(1)), image.Rect(g.pageLeft, baseline, g.pageRight, height), image.Rect(g.pageLeft, 0, g.pageLeft+gtx.Dp(1), height), image.Rect(g.pageRight-gtx.Dp(1), 0, g.pageRight, height)} {
+	for _, r := range []image.Rectangle{image.Rect(0, 0, bar.Max.X, gtx.Dp(1)), image.Rect(0, baseline, bar.Max.X, height)} {
 		paint.FillShape(gtx.Ops, border, clip.Rect(r).Op())
+	}
+	for _, x := range []int{g.pageLeft, g.pageRight} {
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 184, G: 193, B: 206, A: 255}, clip.Rect(image.Rect(x, 0, x+max(1, gtx.Dp(1)), height)).Op())
 	}
 	for _, x := range []int{g.textLeft, g.textRight} {
 		paint.FillShape(gtx.Ops, color.NRGBA{R: 154, G: 169, B: 189, A: 255}, clip.Rect(image.Rect(x, 0, x+max(1, gtx.Dp(1)), height)).Op())
@@ -147,6 +155,9 @@ func (a *App) layoutWordRulerText(gtx layout.Context, text string, pos image.Poi
 	label := material.Caption(a.theme, text)
 	label.TextSize = size
 	label.Color = color.NRGBA{R: 86, G: 97, B: 112, A: 255}
+	if text == "cm" {
+		label.Color = color.NRGBA{R: 104, G: 117, B: 134, A: 255}
+	}
 	rec := op.Record(gtx.Ops)
 	dims := label.Layout(gtx)
 	call := rec.Stop()
@@ -199,7 +210,7 @@ func paintWordRulerIndentMarker(gtx layout.Context, m wordRulerMarker) {
 	path.Close()
 	spec := path.End()
 	paint.FillShape(gtx.Ops, wordRulerGlyph, clip.Outline{Path: spec}.Op())
-	paint.FillShape(gtx.Ops, wordRulerBackground, clip.Stroke{Path: spec, Width: float32(gtx.Dp(1))}.Op())
+	paint.FillShape(gtx.Ops, wordPageSurface, clip.Stroke{Path: spec, Width: float32(gtx.Dp(1))}.Op())
 }
 func paintWordRulerResizeHandle(gtx layout.Context, x, height int) {
 	width := min(gtx.Dp(7), gtx.Constraints.Max.X)

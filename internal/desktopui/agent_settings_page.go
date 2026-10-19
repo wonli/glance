@@ -13,6 +13,7 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/i18n"
+	"glance/ui"
 )
 
 func (a *App) prepareAgentSettingsPage() {
@@ -534,31 +535,22 @@ func agentSettingsPageFieldHelp(gtx layout.Context, theme *material.Theme, typog
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				height := gtx.Dp(unit.Dp(44))
-				gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-				return homeRoundedPanel(gtx, homeSurface, homeBorder, unit.Dp(8), func(gtx layout.Context) layout.Dimensions {
-					settingsFieldFocus(gtx, editor)
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								gtx.Constraints.Min.Y = 0
-								style := material.Editor(theme, editor, hint)
-								style.TextSize = typography.SettingsBody
-								style.Color = settingsBlack
-								style.HintColor = settingsBlack
-								return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)
-							})
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if !showDropdown {
-								return layout.Dimensions{}
-							}
-							return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				field := ui.TextField{Editor: editor, Hint: hint, Style: ui.TextFieldStyle{
+					Height: 44, LeftInset: 12, RightInset: 12, Radius: 8, Text: ui.TextStyle{Size: typography.SettingsBody},
+					Fill: homeSurface, Border: homeBorder, Foreground: settingsBlack, Hint: settingsBlack, TextOffsetY: shellOpticalTextOffset(opticalSettingsField),
+				}}
+				if showDropdown {
+					field.Style.RightInset = 0
+					field.Style.SuffixWidth = 26
+					field.Suffix = func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return homeIcon(gtx, "chevron-down", 14, settingsBlack)
 							})
-						}),
-					)
-				})
+						})
+					}
+				}
+				return field.Layout(gtx, theme)
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -593,41 +585,28 @@ func (a *App) layoutAgentSettingsKeyField(gtx layout.Context) layout.Dimensions 
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				height := gtx.Dp(unit.Dp(44))
-				gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-				return homeRoundedPanel(gtx, homeSurface, homeBorder, unit.Dp(8), func(gtx layout.Context) layout.Dimensions {
-					editor := &a.agentUI.apiKeyInput
-					if editor.Mask == 0 && editor.Len() == 0 && a.settingsSavedKeyMatchesDraft() && a.agentUI.settingsKeyPreview.secret != "" {
-						editor = &a.agentUI.settingsKeyPreview.editor
-					}
-					settingsFieldFocus(gtx, editor)
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								gtx.Constraints.Min.Y = 0
-								hint := a.agentSettingsKeyHint()
-
-								style := material.Editor(a.theme, editor, hint)
-								style.TextSize = a.tokens().Typography.SettingsBody
-								style.Color, style.HintColor = settingsBlack, settingsBlack
-								return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)
+				editor := &a.agentUI.apiKeyInput
+				if editor.Mask == 0 && editor.Len() == 0 && a.settingsSavedKeyMatchesDraft() && a.agentUI.settingsKeyPreview.secret != "" {
+					editor = &a.agentUI.settingsKeyPreview.editor
+				}
+				field := ui.TextField{Editor: editor, Hint: a.agentSettingsKeyHint(), Style: ui.TextFieldStyle{
+					Height: 44, LeftInset: 12, SuffixWidth: 40, Radius: 8, Text: ui.TextStyle{Size: a.tokens().Typography.SettingsBody},
+					Fill: homeSurface, Border: homeBorder, Foreground: settingsBlack, Hint: settingsBlack, TextOffsetY: shellOpticalTextOffset(opticalSettingsField),
+				}}
+				field.Suffix = func(gtx layout.Context) layout.Dimensions {
+					return a.agentUI.settingsKeyToggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						icon := "eye-off"
+						if a.agentUI.apiKeyInput.Mask == 0 {
+							icon = "eye"
+						}
+						return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return homeIcon(gtx, icon, 18, settingsBlack)
 							})
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return a.agentUI.settingsKeyToggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								icon := "eye-off"
-								if a.agentUI.apiKeyInput.Mask == 0 {
-									icon = "eye"
-								}
-								return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										return homeIcon(gtx, icon, 18, settingsBlack)
-									})
-								})
-							})
-						}),
-					)
-				})
+						})
+					})
+				}
+				return field.Layout(gtx, a.theme)
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {

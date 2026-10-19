@@ -194,7 +194,8 @@ func homeFilterChip(gtx layout.Context, theme *material.Theme, button *widget.Cl
 					style.Font.Weight = font.SemiBold
 				}
 				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Top: unit.Dp(float32(homeTextOpticalCenterTopInset) * scale)}.Layout(gtx, style.Layout)
+					topInset := float32(shellOpticalTextTopInset(opticalHomeFilterText)) * scale
+					return layout.Inset{Top: unit.Dp(topInset)}.Layout(gtx, style.Layout)
 				})
 			},
 		)
@@ -279,7 +280,7 @@ func homeSearchField(gtx layout.Context, theme *material.Theme, editor *widget.E
 				style.TextSize = unit.Sp(float32(defaultShellTokens.Typography.Nav) * scale)
 				style.Color = homeText
 				style.HintColor = color.NRGBA{R: 150, G: 157, B: 166, A: 255}
-				return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)
+				return layout.Inset{Top: shellOpticalTextTopInset(opticalHomeSearchText)}.Layout(gtx, style.Layout)
 			}),
 		)
 	})

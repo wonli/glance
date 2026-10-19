@@ -19,6 +19,7 @@ import (
 
 	"glance/internal/i18n"
 	"glance/internal/workspace"
+	"glance/ui"
 )
 
 func (a *App) layoutHomeRecentTable(gtx layout.Context) layout.Dimensions {
@@ -186,7 +187,7 @@ func homeTableColumns(gtx layout.Context, app *App, theme *material.Theme, heade
 				fg = color.NRGBA{R: 45, G: 52, B: 61, A: 255}
 			}
 			label := homeLabelStyle(theme, text, unit.Sp(14*scale), fg, weight)
-			return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, label.Layout)
+			return (ui.OpticalPlacement{TopInset: shellOpticalTextTopInset(opticalHomeFileListText)}).Layout(gtx, label.Layout)
 		}
 	}
 	dataColumns := []layout.FlexChild{
@@ -201,13 +202,15 @@ func homeTableColumns(gtx layout.Context, app *App, theme *material.Theme, heade
 					return homeFileBadge(gtx, extensionForPath(row.item.Path), homeFileColor(row.item.Path), 34)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(14), Right: unit.Dp(12), Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						gtx.Constraints.Min.Y = 0
-						fg := color.NRGBA{R: 45, G: 52, B: 61, A: 255}
-						if meta.unavailable {
-							fg = homeMuted
-						}
-						return homeTextLabel(gtx, row.app.theme, filepath.Base(row.item.Path), unit.Sp(15*scale), fg, true)
+					return layout.Inset{Left: unit.Dp(14), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return (ui.OpticalPlacement{TopInset: shellOpticalTextTopInset(opticalHomeFileListText)}).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							gtx.Constraints.Min.Y = 0
+							fg := color.NRGBA{R: 45, G: 52, B: 61, A: 255}
+							if meta.unavailable {
+								fg = homeMuted
+							}
+							return homeTextLabel(gtx, row.app.theme, filepath.Base(row.item.Path), unit.Sp(15*scale), fg, true)
+						})
 					})
 				}),
 			)

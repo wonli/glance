@@ -20,6 +20,7 @@ import (
 
 	"glance/internal/i18n"
 	"glance/internal/workspace"
+	"glance/ui"
 )
 
 const (
@@ -45,6 +46,22 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: size}
 		},
 		func(gtx layout.Context) layout.Dimensions {
+			if runtime.GOOS == "windows" {
+				tabs := func(gtx layout.Context) layout.Dimensions {
+					return a.layoutWindowsPinnedWorkspaceTabs(gtx, ids)
+				}
+				if !a.clientTitlebar {
+					return tabs(gtx)
+				}
+				return layout.Stack{Alignment: layout.NW}.Layout(gtx,
+					layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+						return layoutWindowMoveArea(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layout.Dimensions{Size: gtx.Constraints.Max}
+						})
+					}),
+					layout.Stacked(tabs),
+				)
+			}
 			if !a.clientTitlebar {
 				return a.layoutWorkspaceTabList(gtx, ids)
 			}
@@ -55,20 +72,84 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 					})
 				}),
 				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+					controls := func(gtx layout.Context) layout.Dimensions {
+						if runtime.GOOS == "darwin" {
+							return a.layoutMacWindowControls(gtx)
+						}
+						return a.layoutStandardWindowControls(gtx)
+					}
+					tabs := func(gtx layout.Context) layout.Dimensions {
+						return a.layoutWorkspaceTabList(gtx, ids)
+					}
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if runtime.GOOS == "darwin" {
-								return a.layoutMacWindowControls(gtx)
-							}
-							return a.layoutStandardWindowControls(gtx)
-						}),
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return a.layoutWorkspaceTabList(gtx, ids)
-						}),
+						layout.Rigid(controls),
+						layout.Flexed(1, tabs),
 					)
 				}),
 			)
 		},
+	)
+}
+
+// Windows keeps the Glance home tab outside the horizontally scrolling
+// document-tab viewport so it remains visible at the left edge.
+func (a *App) layoutWindowsPinnedWorkspaceTabs(gtx layout.Context, ids []string) layout.Dimensions {
+	return layout.Inset{Top: workspaceTabTopGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		children := []layout.FlexChild{
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(16)}.Layout(gtx, a.layoutRecentTab)
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return a.layoutWindowsWorkspaceDocumentTabs(gtx, ids)
+			}),
+		}
+		if a.clientTitlebar {
+			children = append(children, layout.Rigid(a.layoutStandardWindowControls))
+		} else {
+			children = append(children, layout.Rigid(a.layoutJSONSaveIndicator))
+		}
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+	})
+}
+
+func (a *App) layoutWindowsWorkspaceDocumentTabs(gtx layout.Context, ids []string) layout.Dimensions {
+	if a.workspaceTabsListPendingReset {
+		a.workspaceTabsListPendingReset = false
+		a.workspaceTabsList = widget.List{List: layout.List{Axis: layout.Horizontal}}
+	}
+	a.workspaceTabsList.Axis = layout.Horizontal
+	a.workspaceTabsList.ScrollAnyAxis = false
+	list := func(gtx layout.Context) layout.Dimensions {
+		a.handleWorkspaceTabScroll(gtx)
+		a.revealActiveWindowsWorkspaceTab(gtx, ids)
+		dims := a.workspaceTabsList.Layout(gtx, len(ids)+1, func(gtx layout.Context, index int) layout.Dimensions {
+			return a.layoutWindowsWorkspaceTabListItem(gtx, ids, index)
+		})
+		pass := pointer.PassOp{}.Push(gtx.Ops)
+		area := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
+		event.Op(gtx.Ops, &a.workspaceTabScrollTag)
+		area.Pop()
+		pass.Pop()
+		return dims
+	}
+	if !a.clientTitlebar {
+		// Keep the viewport full width so the fixed home tab stays aligned with
+		// the left edge and the save indicator remains at the far right.
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, list))
+	}
+
+	documentItemWidth := gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
+	plusItemWidth := gtx.Dp(workspaceDocumentTabGap) + gtx.Dp(workspacePlusTabWidth)
+	contentWidth := len(ids)*documentItemWidth + plusItemWidth
+	listWidth := min(contentWidth, gtx.Constraints.Max.X)
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.X, gtx.Constraints.Max.X = listWidth, listWidth
+			return list(gtx)
+		}),
+		layout.Flexed(1, a.layoutWindowDragHandle),
+		layout.Rigid(a.layoutJSONSaveIndicator),
 	)
 }
 
@@ -141,13 +222,32 @@ func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Di
 }
 
 func (a *App) revealActiveWorkspaceTab(gtx layout.Context, ids []string) {
-	index := -1
+	a.revealActiveWorkspaceTabInList(gtx, ids, true)
+}
+
+func (a *App) revealActiveWindowsWorkspaceTab(gtx layout.Context, ids []string) {
 	if a.activeTabID == workspace.RecentTabID {
+		// The home tab is pinned outside the list. Clear the cached reveal so
+		// returning to a document will reveal it even if the user scrolled away.
+		a.workspaceTabsRevealedActiveID = ""
+		a.workspaceTabsRevealedIndex = -1
+		return
+	}
+	a.revealActiveWorkspaceTabInList(gtx, ids, false)
+}
+
+func (a *App) revealActiveWorkspaceTabInList(gtx layout.Context, ids []string, includeRecent bool) {
+	index := -1
+	itemOffset := 0
+	if includeRecent && a.activeTabID == workspace.RecentTabID {
 		index = 0
 	} else {
+		if includeRecent {
+			itemOffset = 1
+		}
 		for i, id := range ids {
 			if id == a.activeTabID {
-				index = i + 1 // Recent occupies the first list item.
+				index = i + itemOffset
 				break
 			}
 		}
@@ -162,10 +262,16 @@ func (a *App) revealActiveWorkspaceTab(gtx layout.Context, ids []string) {
 	if viewportWidth <= 0 {
 		return
 	}
-	widths := make([]int, len(ids)+2)
-	widths[0] = gtx.Dp(unit.Dp(112))
+	widthCount := len(ids) + 1
+	if includeRecent {
+		widthCount++
+	}
+	widths := make([]int, widthCount)
+	if includeRecent {
+		widths[0] = gtx.Dp(unit.Dp(112))
+	}
 	for i := range ids {
-		widths[i+1] = gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
+		widths[i+itemOffset] = gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
 	}
 	widths[len(widths)-1] = gtx.Dp(workspaceDocumentTabGap) + gtx.Dp(workspacePlusTabWidth)
 	prefix := make([]int, len(widths)+1)
@@ -244,6 +350,23 @@ func (a *App) layoutWorkspaceTabListItem(gtx layout.Context, ids []string, index
 		item = func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: workspaceDocumentTabGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return a.layoutDocumentTab(gtx, ids[index-1])
+			})
+		}
+	}
+	if item == nil {
+		return layout.Dimensions{}
+	}
+	return item(gtx)
+}
+
+func (a *App) layoutWindowsWorkspaceTabListItem(gtx layout.Context, ids []string, index int) layout.Dimensions {
+	var item layout.Widget
+	if index == len(ids) {
+		item = a.layoutPlusTab
+	} else if index >= 0 && index < len(ids) {
+		item = func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: workspaceDocumentTabGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return a.layoutDocumentTab(gtx, ids[index])
 			})
 		}
 	}
@@ -533,21 +656,16 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 				return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							iconColor := color.NRGBA{R: 105, G: 114, B: 125, A: 255}
-							if active {
-								iconColor = color.NRGBA{R: 52, G: 95, B: 150, A: 255}
-							}
-							icon, _ := tintedToolbarIcon("house", iconColor)
+							icon, _ := tintedToolbarIcon("house", color.NRGBA{A: 255})
 							if icon == nil {
 								return layout.Dimensions{}
 							}
 							iconSize := gtx.Dp(unit.Dp(18))
 							gtx.Constraints.Min = image.Pt(iconSize, iconSize)
 							gtx.Constraints.Max = gtx.Constraints.Min
-							shift := op.Offset(image.Pt(0, -gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
-							dims := widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
-							shift.Pop()
-							return dims
+							return (ui.OpticalPlacement{OffsetY: shellOpticalIconOffset(opticalHomeTabIcon)}).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
+							})
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(8)), 0)}

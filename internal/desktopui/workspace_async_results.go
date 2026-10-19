@@ -41,11 +41,7 @@ func (a *App) processAsyncResults() {
 	}
 	a.pollGridPictureResults()
 	a.processSpreadsheetSelectionStatsResults()
-	select {
-	case result := <-a.wordLayoutResults:
-		a.applyWordLayoutResult(result)
-	default:
-	}
+	a.processWordLayoutResults()
 	select {
 	case result := <-a.wordPDFExportResults:
 		a.applyWordPDFExportResult(result)
@@ -440,5 +436,22 @@ func (a *App) processAsyncResults() {
 			a.maybeAutoSaveWord(a.documentSessionState)
 		}
 	default:
+	}
+}
+
+// A background paginator may enqueue several partials plus completion before
+// Gio handles its coalesced invalidation. Consume a bounded batch before layout
+// so the latest ready scene never waits for another user input event.
+func (a *App) processWordLayoutResults() {
+	for range max(1, cap(a.wordLayoutResults)) {
+		select {
+		case result := <-a.wordLayoutResults:
+			a.applyWordLayoutResult(result)
+		default:
+			return
+		}
+	}
+	if len(a.wordLayoutResults) > 0 && a.window != nil {
+		a.window.Invalidate()
 	}
 }

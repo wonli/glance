@@ -40,10 +40,10 @@ func wordRulerGeometryForState(gtx layout.Context, state *documentSessionState) 
 		scroll := math.Max(0, math.Min(float64(max(0, total-width)), state.wordPageScrollX))
 		left := max(0, (width-total)/2) - int(math.Round(scroll))
 		// Follow the caret, including a run that continues onto the paired page.
-		active := wordlayout.SourcePosition{RunID: state.selectedWordRunID, RuneOffset: wordPageCaretOffset(state, state.selectedWordRunID)}
+		active := wordRulerSourcePosition(state)
 		pos, hasCaret := result.Locations[active]
 		if !hasCaret {
-			if p, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID); ok {
+			if p, ok := wordRulerParagraphForState(state); ok {
 				for _, inline := range p.Inlines {
 					if inline.Text != nil {
 						active = wordlayout.SourcePosition{RunID: inline.Text.ID}
@@ -84,7 +84,7 @@ func wordRulerGeometryForState(gtx layout.Context, state *documentSessionState) 
 				}
 			}
 			if !matched {
-				if p, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID); ok {
+				if p, ok := wordRulerParagraphForState(state); ok {
 					for _, inline := range p.Inlines {
 						if inline.Text == nil {
 							continue
@@ -144,6 +144,10 @@ func wordRulerResolvedIndents(state *documentSessionState, p document.WordParagr
 }
 
 func wordRulerSelectedCellBounds(state *documentSessionState, page wordlayout.PageScene) (wordlayout.Rect, bool) {
+	target, ok := wordRulerParagraphForState(state)
+	if !ok {
+		return wordlayout.Rect{}, false
+	}
 	for _, block := range wordBlocksForState(state) {
 		if block.Table == nil {
 			continue
@@ -151,7 +155,7 @@ func wordRulerSelectedCellBounds(state *documentSessionState, page wordlayout.Pa
 		for _, row := range block.Table.Rows {
 			for _, cell := range row.Cells {
 				for _, p := range cell.Paragraphs {
-					if p.ID != state.selectedWordParagraphID {
+					if p.ID != target.ID {
 						continue
 					}
 					for _, placed := range page.TableCells {

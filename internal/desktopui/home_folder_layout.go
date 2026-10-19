@@ -15,6 +15,7 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/i18n"
+	"glance/ui"
 )
 
 const (
@@ -260,8 +261,10 @@ func (a *App) layoutHomeFolderTreeRowContents(gtx layout.Context, row homeFolder
 							if row.depth == 0 {
 								fontSize = 15
 							}
-							return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(6), Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return homeTextLabel(gtx, a.theme, row.folder.Name, unit.Sp(fontSize), homeText, a.homeSelectedFolderID == row.folder.ID)
+							return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return (ui.OpticalPlacement{TopInset: shellOpticalTextTopInset(opticalHomeFolderText)}).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return homeTextLabel(gtx, a.theme, row.folder.Name, unit.Sp(fontSize), homeText, a.homeSelectedFolderID == row.folder.ID)
+								})
 							})
 						})
 					}),
