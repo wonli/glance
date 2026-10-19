@@ -8,6 +8,7 @@ import (
 
 	"glance/internal/desktopinstance"
 	"glance/internal/desktopui"
+	"glance/internal/diagnostics"
 )
 
 // RunDesktop starts the desktop runtime and enters Gio's platform event loop.
@@ -24,6 +25,14 @@ func RunDesktop(initialPath string) {
 	if !primary {
 		return
 	}
+	profiling, err := diagnostics.StartProfiling(os.Getenv("GLANCE_PPROF_ADDR"))
+	if err != nil {
+		log.Printf("start pprof: %v", err)
+	} else if profiling != nil {
+		log.Printf("pprof profiling available at http://%s/debug/pprof/", profiling.Addr)
+		defer profiling.Close()
+	}
+
 	done := desktopui.RunWithActivation(initialPath, ReportStartupError, lease.ActivationRequests())
 	go func() {
 		<-done
