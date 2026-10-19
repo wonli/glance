@@ -116,6 +116,9 @@ type documentSessionState struct {
 	formulaReference                    formulaReferenceState
 	nameBox                             widget.Editor
 	sheetNameEditor                     widget.Editor
+	sheetNameEditing                    bool
+	sheetNameEditTarget                 string
+	sheetNameRenamePending              bool
 	sheetCreateButton                   widget.Clickable
 	sheetRenameButton                   widget.Clickable
 	sheetDeleteButton                   widget.Clickable

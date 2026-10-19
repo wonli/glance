@@ -28,6 +28,10 @@ func (a *App) processSpreadsheetFormatResult() bool {
 		if result.err == nil && result.structure != nil {
 			a.refreshAfterStructure(result.state, *result.structure)
 		}
+		if result.err != nil && result.structure != nil && result.structure.Kind == document.StructureRenameSheet && result.state.sheetNameRenamePending {
+			result.state.sheetNameRenamePending = false
+			result.state.sheetNameEditor.ReadOnly = false
+		}
 		gridStillShowsResultSheet := result.window != nil && (result.window.WindowSheet == "" || result.window.WindowSheet == result.sheet)
 		if result.err == nil && len(result.dimensions) > 0 && result.window != nil && result.state.virtualGrid == result.window && result.state.sheet == result.sheet && gridStillShowsResultSheet {
 			for _, change := range result.dimensions {

@@ -190,6 +190,7 @@ func newDocumentSessionView(shared *sharedDocumentSession, windowID uint64) *doc
 	state.nameBox.Submit = true
 	state.sheetNameEditor.SingleLine = true
 	state.sheetNameEditor.Submit = true
+	state.sheetNameEditor.MaxLen = 31
 	state.wordNavigationSearchEditor.SingleLine = true
 	state.wordEditor.SingleLine = false
 	state.jsonEditor.SingleLine = false

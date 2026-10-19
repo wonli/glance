@@ -50,6 +50,7 @@ func paintGridPaneCells(gtx layout.Context, a *App, v *gridViewport, pane gridPa
 	}
 	area := clip.Rect(pane.clip).Push(gtx.Ops)
 	defer area.Pop()
+	var borders []gridBorderPaint
 	paintedMerges := make(map[document.CellRange]bool, len(pane.window.Merges))
 	for rowIndex, row := range pane.window.Cells {
 		rowNumber := pane.window.StartRow + rowIndex
@@ -99,9 +100,15 @@ func paintGridPaneCells(gtx layout.Context, a *App, v *gridViewport, pane gridPa
 			if formulaReferenceContains(formulaReferences, rowNumber, columnNumber) || merged && formulaReferenceContains(formulaReferences, cellRange.StartRow, cellRange.StartColumn) {
 				style.Fill = selectedFill
 			}
+			borders = appendGridBorders(borders, fullRect, pane.clip, cell.Style.Borders)
+			if merged {
+				borders = appendMergedGridBorders(borders, v, pane, cellRange)
+			}
+			cell.Style.Borders = [4]document.CellBorder{}
 			paintCachedCellWithGridlines(gtx, v, a.theme, cell, fullRect, visibleRect, style, gridlines)
 		}
 	}
+	paintGridBorders(gtx, borders)
 }
 
 func intersectCellRanges(a, b document.CellRange) document.CellRange {

@@ -296,8 +296,8 @@ type spreadsheetStructureEditArguments struct {
 	Operation string `json:"operation"`
 	Sheet     string `json:"sheet"`
 	NewName   string `json:"new_name"`
-	Index     int    `json:"index"`
-	Count     int    `json:"count"`
+	Index     int    `json:"index,omitempty"`
+	Count     int    `json:"count,omitempty"`
 }
 
 func (a *App) applyStructure(edit document.StructureEdit) {

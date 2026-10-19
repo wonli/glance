@@ -3,11 +3,14 @@ package desktopui
 import (
 	"glance/internal/document"
 	"image"
+	"image/color"
 
 	"gioui.org/font"
 	"gioui.org/io/event"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -20,6 +23,7 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 	if state != nil {
 		state.sheetTabList.Axis = layout.Horizontal
 		state.sheetTabList.ScrollAnyAxis = false
+		a.handleSpreadsheetSheetRenameEvents(gtx, state)
 		a.handleSpreadsheetSheetTabScroll(gtx, state)
 		revealActiveSpreadsheetSheetTab(state)
 	}
@@ -39,16 +43,34 @@ func (a *App) layoutSheetTabs(gtx layout.Context) layout.Dimensions {
 				dims := state.sheetTabList.Layout(gtx, len(a.sheets)+1, func(gtx layout.Context, index int) layout.Dimensions {
 					if index == len(a.sheets) {
 						if state.sheetCreateButton.Clicked(gtx) {
-							a.applyStructure(document.StructureEdit{Kind: document.StructureCreateSheet})
+							if state.sheetNameEditing {
+								gtx.Execute(key.FocusCmd{Tag: &state.sheetNameEditor})
+							} else {
+								a.applyStructure(document.StructureEdit{Kind: document.StructureCreateSheet})
+							}
 						}
 						return layoutSheetPlusTab(gtx, a.theme, &state.sheetCreateButton, a.tokens().Colors)
 					}
 					sheetName := a.sheets[index]
 					button := a.sheetButton(sheetName)
-					if button.Clicked(gtx) {
+					for click, ok := button.Update(gtx); ok; click, ok = button.Update(gtx) {
+						if state.sheetNameEditing {
+							gtx.Execute(key.FocusCmd{Tag: &state.sheetNameEditor})
+							continue
+						}
+						if click.NumClicks >= 2 {
+							if sheetName != state.sheet {
+								a.activateSpreadsheetSheet(gtx, sheetName)
+							}
+							a.beginSpreadsheetSheetRename(gtx, state, sheetName)
+							continue
+						}
 						a.activateSpreadsheetSheet(gtx, sheetName)
 					}
 					return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						if state.sheetNameEditing && state.sheetNameEditTarget == sheetName {
+							return layoutSheetTabEditor(gtx, a.theme, a.tokens().Colors, state, sheetName, sheetName == state.sheet)
+						}
 						return layoutSheetTab(gtx, a.theme, a.tokens().Colors, button, sheetName, sheetName == a.sheet)
 					})
 				})
@@ -128,10 +150,7 @@ func layoutSheetTab(gtx layout.Context, theme *material.Theme, colors ColorToken
 			bg = contentSurface
 			weight = font.SemiBold
 		}
-		label := material.Body2(theme, name)
-		label.Color = fg
-		label.TextSize = unit.Sp(12)
-		label.Font.Weight = weight
+		label := spreadsheetSheetTabLabel(theme, fg, weight, name)
 		return layout.Background{}.Layout(gtx,
 			func(gtx layout.Context) layout.Dimensions {
 				paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(unit.Dp(4))).Op(gtx.Ops))
@@ -145,6 +164,51 @@ func layoutSheetTab(gtx layout.Context, theme *material.Theme, colors ColorToken
 			},
 		)
 	})
+}
+
+func spreadsheetSheetTabLabel(theme *material.Theme, foreground color.NRGBA, weight font.Weight, name string) material.LabelStyle {
+	label := material.Body2(theme, name)
+	label.Color = foreground
+	label.TextSize = unit.Sp(12)
+	label.Font.Weight = weight
+	return label
+}
+
+func layoutSheetTabEditor(gtx layout.Context, theme *material.Theme, colors ColorTokens, state *documentSessionState, name string, selected bool) layout.Dimensions {
+	tabHeight := gtx.Dp(unit.Dp(26))
+	background := chromeSurface
+	foreground := colors.Text.PureBlack
+	weight := font.Normal
+	if selected {
+		background = contentSurface
+		weight = font.SemiBold
+	}
+
+	measureGtx := gtx
+	measureGtx.Constraints = layout.Constraints{Max: image.Pt(1<<20, tabHeight)}
+	recorder := op.Record(measureGtx.Ops)
+	labelDims := spreadsheetSheetTabLabel(theme, foreground, weight, name).Layout(measureGtx)
+	_ = recorder.Stop()
+	tabWidth := labelDims.Size.X + gtx.Dp(unit.Dp(32))
+	gtx.Constraints.Min = image.Pt(tabWidth, tabHeight)
+	gtx.Constraints.Max = gtx.Constraints.Min
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(4))).Op(gtx.Ops))
+			return layout.Dimensions{Size: gtx.Constraints.Max}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			settingsFieldFocus(gtx, &state.sheetNameEditor)
+			return layout.Inset{Top: unit.Dp(3), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.Y = 0
+				style := material.Editor(theme, &state.sheetNameEditor, "")
+				style.TextSize = unit.Sp(12)
+				style.Color = foreground
+				style.Font.Weight = weight
+				return layout.Center.Layout(gtx, style.Layout)
+			})
+		},
+	)
 }
 
 func layoutSheetPlusTab(gtx layout.Context, theme *material.Theme, button *widget.Clickable, colors ColorTokens) layout.Dimensions {

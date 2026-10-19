@@ -46,6 +46,13 @@ func (a *App) refreshAfterStructure(state *documentSessionState, edit document.S
 		a.sheet = state.sheet
 		a.sheets = state.sheets
 	}
+	if edit.Kind == document.StructureRenameSheet && a.sheetButtons != nil {
+		delete(a.sheetButtons, edit.Sheet)
+	}
+	state.sheetNameEditing = false
+	state.sheetNameEditTarget = ""
+	state.sheetNameRenamePending = false
+	state.sheetNameEditor.ReadOnly = false
 	state.sheetNameEditor.SetText("")
 }
 
