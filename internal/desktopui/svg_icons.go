@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"sync"
 
+	"gioui.org/op/paint"
+
 	"github.com/srwiley/oksvg"
 	"github.com/srwiley/rasterx"
 )
@@ -25,21 +27,36 @@ type svgIconCacheKey struct {
 	colored bool
 }
 
+// Cache the upload identity alongside immutable SVG rasters, while keeping the
+// original concrete image type for consumers that still call NewImageOp directly.
+type svgImageOp struct {
+	once sync.Once
+	op   paint.ImageOp
+}
+
 var svgIconCache = struct {
 	sync.RWMutex
-	images map[svgIconCacheKey]image.Image
-}{images: make(map[svgIconCacheKey]image.Image)}
+	images   map[svgIconCacheKey]image.Image
+	imageOps map[*image.NRGBA]*svgImageOp
+}{images: make(map[svgIconCacheKey]image.Image), imageOps: make(map[*image.NRGBA]*svgImageOp)}
+
+func iconImageOp(icon image.Image) paint.ImageOp {
+	if raster, ok := icon.(*image.NRGBA); ok {
+		svgIconCache.RLock()
+		cached := svgIconCache.imageOps[raster]
+		svgIconCache.RUnlock()
+		if cached != nil {
+			cached.once.Do(func() { cached.op = paint.NewImageOp(raster) })
+			return cached.op
+		}
+	}
+	return paint.NewImageOp(icon)
+}
 
 var svgColorToken = regexp.MustCompile(`(?i)#[0-9a-f]{3}(?:[0-9a-f]{3})?\b|currentColor|rgb\([^)]*\)`)
 var svgIconNameToken = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 func renderSVGIcon(family, name string, size int, tint *color.NRGBA) (image.Image, error) {
-	if size <= 0 {
-		return nil, fmt.Errorf("SVG icon size must be positive: %d", size)
-	}
-	if !svgIconNameToken.MatchString(family) || !svgIconNameToken.MatchString(name) || !fs.ValidPath(family) {
-		return nil, fmt.Errorf("unknown SVG icon family %q", family)
-	}
 	key := svgIconCacheKey{family: family, name: name, size: size}
 	if tint != nil {
 		key.tint, key.colored = *tint, true
@@ -49,6 +66,13 @@ func renderSVGIcon(family, name string, size int, tint *color.NRGBA) (image.Imag
 	svgIconCache.RUnlock()
 	if ok {
 		return cachedImage, nil
+	}
+
+	if size <= 0 {
+		return nil, fmt.Errorf("SVG icon size must be positive: %d", size)
+	}
+	if !svgIconNameToken.MatchString(family) || !svgIconNameToken.MatchString(name) || !fs.ValidPath(family) {
+		return nil, fmt.Errorf("unknown SVG icon family %q", family)
 	}
 
 	data, err := svgIconAssets.ReadFile("assets/icons/" + family + "/" + name + ".svg")
@@ -86,7 +110,8 @@ func renderSVGIcon(family, name string, size int, tint *color.NRGBA) (image.Imag
 	if cached, exists := svgIconCache.images[key]; exists {
 		result = cached
 	} else {
-		svgIconCache.images[key] = img
+		svgIconCache.images[key] = result
+		svgIconCache.imageOps[img] = &svgImageOp{}
 	}
 	svgIconCache.Unlock()
 	return result, nil

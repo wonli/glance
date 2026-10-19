@@ -1,12 +1,11 @@
 package desktopui
 
 import (
-	"bytes"
 	"container/list"
 	"fmt"
 	"glance/internal/document"
 	"glance/internal/fontcatalog"
-	"io"
+	"glance/internal/wordfont"
 	"sort"
 	"strings"
 	"sync"
@@ -15,7 +14,6 @@ import (
 	"gioui.org/font/opentype"
 	"gioui.org/text"
 	fontapi "github.com/go-text/typesetting/font"
-	fontot "github.com/go-text/typesetting/font/opentype"
 )
 
 type fontRenderResult struct {
@@ -28,10 +26,10 @@ func (a *App) prepareFontRendering() {
 	if p.snapshot.Version == 0 || p.renderPending != "" {
 		return
 	}
-	// Scrolling and searching the picker only change which rows are visible;
+	// Opening, closing, scrolling and searching the picker only change its UI;
 	// they do not change the document's shaping requirements. Keep them out of
 	// this key so a wheel event cannot trigger font reads and a new Shaper.
-	inputKey := fmt.Sprintf("%d:%p:%t", p.snapshot.Version, a.documentSessionState, p.open)
+	inputKey := fmt.Sprintf("%d:%p", p.snapshot.Version, a.documentSessionState)
 	if a.documentSessionState != nil {
 		inputKey += fmt.Sprintf(":%d:%s:%d", a.wordRevisionAtomic.Load(), a.selectedWordRunID, a.documentGeneration)
 		if a.virtualGrid != nil {
@@ -69,31 +67,19 @@ func (a *App) prepareFontRendering() {
 		}
 	}
 	sort.Strings(sorted)
-	key := fmt.Sprintf("%d:%t:%s", p.snapshot.Version, p.open, strings.Join(sorted, "\x00"))
+	key := fmt.Sprintf("%d:%s", p.snapshot.Version, strings.Join(sorted, "\x00"))
 	if key == p.renderAccepted {
 		return
 	}
 	p.renderPending = key
 	snapshot := p.snapshot
-	includePrivate := p.open
 	cache := p.renderCache
 	if cache == nil {
 		cache = newFontCollectionCache()
 		p.renderCache = cache
 	}
 	if !a.launchManagedBackground(func() {
-		if includePrivate {
-			sorted = append(sorted, privateFontFamilyNames(snapshot)...)
-			sort.Strings(sorted)
-			unique := sorted[:0]
-			for _, name := range sorted {
-				if len(unique) == 0 || unique[len(unique)-1] != name {
-					unique = append(unique, name)
-				}
-			}
-			sorted = unique
-		}
-		collection := fontCollectionWithCache(snapshot, sorted, cache)
+		collection := fontCollectionForRendering(snapshot, sorted, cache)
 		result := fontRenderResult{key: key, shaper: text.NewShaper(text.WithCollection(collection))}
 		select {
 		case p.renderResults <- result:
@@ -106,19 +92,6 @@ func (a *App) prepareFontRendering() {
 	}) {
 		p.renderPending = ""
 	}
-}
-
-func privateFontFamilyNames(snapshot fontcatalog.Snapshot) []string {
-	var names []string
-	for _, family := range snapshot.Families() {
-		for _, face := range family.Faces {
-			if face.Source == fontcatalog.Private && face.Unavailable == "" {
-				names = append(names, family.Name)
-				break
-			}
-		}
-	}
-	return names
 }
 
 const fontCollectionCacheLimit int64 = 128 << 20
@@ -211,23 +184,15 @@ type selectedCollectionFace struct{ font *fontapi.Font }
 func (f selectedCollectionFace) Face() *fontapi.Face { return fontapi.NewFace(f.font) }
 
 func parseFontCollection(snapshot fontcatalog.Snapshot, face fontcatalog.Face) ([]giofont.FontFace, int64, bool) {
-	reader, err := snapshot.OpenFace(face.ID)
+	data, err := snapshot.ReadFace(face.ID)
 	if err != nil {
 		return nil, 0, false
 	}
-	data, err := io.ReadAll(reader)
-	_ = reader.Close()
+	parsed, err := wordfont.ParseFont(data, face.Index)
 	if err != nil {
 		return nil, 0, false
 	}
-	loaders, err := fontot.NewLoaders(bytes.NewReader(data))
-	if err != nil || int(face.Index) >= len(loaders) || face.Index < 0 {
-		return nil, 0, false
-	}
-	parsed, err := fontapi.NewFont(loaders[face.Index])
-	if err != nil {
-		return nil, 0, false
-	}
+
 	// Gio's ParseCollection eagerly parses every face, including large CJK
 	// tables we never use. Wrap only this immutable font; each shaper gets its
 	// own mutable Face through Face(), as in Gio's OpenType wrapper.
@@ -276,50 +241,26 @@ func fontCollection(snapshot fontcatalog.Snapshot, names []string) []giofont.Fon
 }
 
 func fontCollectionWithCache(snapshot fontcatalog.Snapshot, names []string, cache *fontCollectionCache) []giofont.FontFace {
-	var collection []giofont.FontFace
-	loaded := map[string][]giofont.FontFace{}
-	loadedFiles := map[string]bool{}
-	descriptors := map[giofont.Font]bool{}
-	var loadedBytes int64
-	for _, name := range names {
-		for _, family := range cache.familiesFor(snapshot, name) {
-			for _, face := range family.Faces {
-				if face.Unavailable != "" {
-					continue
-				}
-				fileKey := face.Path + "\x00" + face.Digest
-				if !loadedFiles[fileKey] && loadedBytes+face.Size > fontCollectionCacheLimit {
-					continue
-				}
-				parseKey := fontParseCacheKey(face)
-				fonts, ok := loaded[parseKey]
-				if !ok {
-					var size int64
-					var loadedOK bool
-					fonts, size, loadedOK = cache.parsedFaces(snapshot, face)
-					if !loadedOK {
-						continue
-					}
-					loaded[parseKey] = fonts
-					if !loadedFiles[fileKey] {
-						loadedBytes += size
-						loadedFiles[fileKey] = true
-					}
-				}
-				if len(fonts) == 0 {
-					continue
-				}
-				f := fonts[0]
-				for _, alias := range append([]string{family.Name}, family.Aliases...) {
-					copy := f
-					copy.Font.Typeface = giofont.Typeface(alias)
-					if !descriptors[copy.Font] {
-						descriptors[copy.Font] = true
-						collection = append(collection, copy)
-					}
-				}
-			}
-		}
+	builder := newFontCollectionBuilder(snapshot, cache)
+	builder.addFamilies(names)
+	return builder.collection
+}
+
+// retainParsed drops strong references to fonts no longer needed by the current
+// collection. Existing Shapers own their faces independently, so an old frame
+// can finish safely even after its cache entry has been removed.
+func (cache *fontCollectionCache) retainParsed(used map[string][]giofont.FontFace) {
+	if cache == nil {
+		return
 	}
-	return collection
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	for key, item := range cache.parsedItems {
+		if _, ok := used[key]; ok {
+			continue
+		}
+		cache.parsedBytes -= item.Value.(parsedFontEntry).bytes
+		delete(cache.parsedItems, key)
+		cache.parsedLRU.Remove(item)
+	}
 }

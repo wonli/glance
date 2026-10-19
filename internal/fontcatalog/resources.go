@@ -10,6 +10,15 @@ import (
 )
 
 func (s Snapshot) OpenFace(id ResourceID) (io.ReadCloser, error) {
+	data, err := s.ReadFace(id)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+// ReadFace returns validated resource bytes without another whole-file copy.
+func (s Snapshot) ReadFace(id ResourceID) ([]byte, error) {
 	for _, f := range s.faces {
 		if f.ID != id {
 			continue
@@ -33,7 +42,7 @@ func (s Snapshot) OpenFace(id ResourceID) (io.ReadCloser, error) {
 		if f.Digest != "" && hex.EncodeToString(sum[:]) != f.Digest {
 			return nil, errors.New("font resource changed; refresh fonts")
 		}
-		return io.NopCloser(bytes.NewReader(data)), nil
+		return data, nil
 	}
 	return nil, os.ErrNotExist
 }

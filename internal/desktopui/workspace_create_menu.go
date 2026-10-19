@@ -176,7 +176,7 @@ func (a *App) layoutCreateActions(gtx layout.Context, plusRelX int) layout.Dimen
 
 			panel := clip.RRect{Rect: bounds, NW: conn.NW, NE: conn.NE, SE: radius, SW: radius}
 			paint.FillShape(gtx.Ops, contentSurface, panel.Op(gtx.Ops))
-			paint.FillShape(gtx.Ops, homeBorder, clip.Stroke{Path: panel.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+			paintRoundedBorder(gtx.Ops, panel, float32(gtx.Dp(unit.Dp(1))), homeBorder)
 
 			connector := clip.Rect{
 				Min: image.Pt(conn.MinX, -seamCover),
@@ -351,7 +351,7 @@ func (a *App) layoutCreateMenuFormatCardVisual(gtx layout.Context, item createMe
 			}
 			shape := clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(9)))
 			paint.FillShape(gtx.Ops, fill, shape.Op(gtx.Ops))
-			paint.FillShape(gtx.Ops, border, clip.Stroke{Path: shape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+			paintRoundedBorder(gtx.Ops, shape, float32(gtx.Dp(unit.Dp(1))), border)
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {

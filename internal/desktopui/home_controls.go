@@ -47,7 +47,7 @@ func homeIcon(gtx layout.Context, name string, size unit.Dp, tint color.NRGBA) l
 		return layout.Dimensions{Size: image.Pt(pixels, pixels)}
 	}
 	return widget.Image{
-		Src:      paint.NewImageOp(icon),
+		Src:      iconImageOp(icon),
 		Fit:      widget.Contain,
 		Position: layout.Center,
 		Scale:    float32(size) / float32(icon.Bounds().Dx()),
@@ -358,7 +358,7 @@ func homeRoundedPanel(gtx layout.Context, fill, border color.NRGBA, radius unit.
 			size := gtx.Constraints.Max
 			shape := clip.UniformRRect(image.Rectangle{Max: size}, gtx.Dp(radius))
 			paint.FillShape(gtx.Ops, fill, shape.Op(gtx.Ops))
-			paint.FillShape(gtx.Ops, border, clip.Stroke{Path: shape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+			paintRoundedBorder(gtx.Ops, shape, float32(gtx.Dp(unit.Dp(1))), border)
 			return layout.Dimensions{Size: size}
 		}, child,
 	)

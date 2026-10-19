@@ -169,7 +169,7 @@ func (a *App) layoutHomeDocumentDragOverlay(gtx layout.Context) {
 	shadow := clip.UniformRRect(image.Rect(0, gtx.Dp(unit.Dp(4)), state.rowSize.X, state.rowSize.Y+gtx.Dp(unit.Dp(4))), gtx.Dp(unit.Dp(8)))
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 20, G: 28, B: 38, A: 48}, shadow.Op(gtx.Ops))
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 242}, shape.Op(gtx.Ops))
-	paint.FillShape(gtx.Ops, homeBorder, clip.Stroke{Path: shape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+	paintRoundedBorder(gtx.Ops, shape, float32(gtx.Dp(unit.Dp(1))), homeBorder)
 	name := filepath.Base(a.homeActiveDragPath)
 	extension := strings.TrimPrefix(strings.ToUpper(filepath.Ext(name)), ".")
 	layout.Inset{Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

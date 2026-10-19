@@ -1,7 +1,6 @@
 package wordfont
 
 import (
-	"bytes"
 	"container/list"
 	"context"
 	"errors"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/go-text/typesetting/di"
 	"github.com/go-text/typesetting/font"
-	ot "github.com/go-text/typesetting/font/opentype"
 
 	"github.com/go-text/typesetting/fontscan"
 	"github.com/go-text/typesetting/language"
@@ -26,7 +24,6 @@ import (
 	"glance/internal/fontcatalog"
 	"glance/internal/fontfallback"
 	"glance/internal/wordlayout"
-	"io"
 )
 
 func FallbackFamilies() []string {
@@ -211,12 +208,7 @@ func (s *Shaper) Shape(value string, style document.WordTextStyle) (wordlayout.S
 
 func (s *Shaper) readFontBytes(location fontscan.Location) ([]byte, error) {
 	if s.snapshot != nil {
-		reader, err := s.snapshot.OpenFace(s.resourceIDs[location])
-		if err != nil {
-			return nil, err
-		}
-		defer reader.Close()
-		return io.ReadAll(reader)
+		return s.snapshot.ReadFace(s.resourceIDs[location])
 	}
 	return os.ReadFile(location.File)
 }
@@ -486,29 +478,15 @@ func (s *Shaper) loadFace(location fontscan.Location) *font.Face {
 	if face := s.facesByID[location]; face != nil {
 		return face
 	}
-	var data []byte
-	var err error
-	if s.snapshot != nil {
-		var reader io.ReadCloser
-		reader, err = s.snapshot.OpenFace(s.resourceIDs[location])
-		if err == nil {
-			data, err = io.ReadAll(reader)
-			reader.Close()
-		}
-	} else {
-		data, err = os.ReadFile(location.File)
-	}
+	data, err := s.readFontBytes(location)
 	if err != nil {
 		return nil
 	}
-	loaders, err := ot.NewLoaders(bytes.NewReader(data))
-	if err != nil || int(location.Index) >= len(loaders) {
-		return nil
-	}
-	ft, err := font.NewFont(loaders[location.Index])
+	ft, err := ParseFont(data, uint32(location.Index))
 	if err != nil {
 		return nil
 	}
+
 	face := font.NewFace(ft)
 	s.facesByID[location] = face
 	s.idsByFace[face] = location

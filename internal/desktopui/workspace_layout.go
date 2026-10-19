@@ -664,7 +664,7 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 							gtx.Constraints.Min = image.Pt(iconSize, iconSize)
 							gtx.Constraints.Max = gtx.Constraints.Min
 							return (ui.OpticalPlacement{OffsetY: shellOpticalIconOffset(opticalHomeTabIcon)}).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
+								return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
 							})
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -692,7 +692,7 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 		}
 		if label == "+" && active {
 			shape := clip.RRect{Rect: image.Rectangle{Max: dims.Size}, NW: gtx.Dp(unit.Dp(6)), NE: gtx.Dp(unit.Dp(6))}
-			paint.FillShape(gtx.Ops, homeBorder, clip.Stroke{Path: shape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+			paintRoundedBorder(gtx.Ops, shape, float32(gtx.Dp(unit.Dp(1))), homeBorder)
 		}
 		call.Add(gtx.Ops)
 		return dims
