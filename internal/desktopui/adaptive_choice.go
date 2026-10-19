@@ -105,7 +105,7 @@ func (c *adaptiveChoice) Layout(gtx layout.Context, theme *material.Theme, title
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							gtx.Constraints.Min.Y = 0
 							return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return homeLabelStyle(theme, label+" ▾", 11, jsonBlue, font.SemiBold).Layout(gtx)
+								return layoutDropdownLabel(gtx, homeLabelStyle(theme, label+" ▾", 11, jsonBlue, font.SemiBold))
 							})
 						}),
 					)

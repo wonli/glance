@@ -170,3 +170,141 @@ fontscan 先筛选宽度，再处理用户字体优先级，因此同名系统�
 一致的根入口、netgo 和 GUI 链接参数编译通过，输出仍覆盖
 `/tmp/glance-memory-optimized-windows.exe`。全程复用全局 Go 缓存，未再运行
 前述有已知失败的全量套件；尚未测量本轮 Windows 运行后的实际降幅。
+
+本机进程分类、字体弱引用清单和显式归还接口见 [本机内存诊断](memory-diagnostics.md)。macOS 原生计数已实现，Windows 当前仍使用 pprof/Go 分类。
+
+## 窗口拖动与绘制耗时
+
+启用同一个 `GLANCE_PPROF_ADDR` 后，CPU profile 带有 `window_phase`
+标签（`config`、`event`、`layout`、`frame-submit`）。例如采集 20 秒，
+期间反复拖动窗口：
+
+```powershell
+go tool pprof -http=127.0.0.1:8080 "http://127.0.0.1:6060/debug/pprof/profile?seconds=20"
+```
+
+CPU 样本不代表等待耗时。`window-latency` 是可直接读取的 pprof 格式，
+提供 `calls/count` 和 `wall/nanoseconds` 两种 sample type；默认显示累计
+实际耗时。采集前后两个快照，再求差值可隔离一次操作：
+
+```powershell
+curl.exe -o before.pb.gz http://127.0.0.1:6060/debug/pprof/window-latency
+# 拖动窗口，然后立即采集第二份
+curl.exe -o after.pb.gz http://127.0.0.1:6060/debug/pprof/window-latency
+go tool pprof -base before.pb.gz -sample_index=wall -top after.pb.gz
+go tool pprof -base before.pb.gz -sample_index=calls -top after.pb.gz
+```
+
+数据从本次进程开启诊断起累计，所有窗口合并，只统计已完成的阶段。
+profile 中的 `window.*` 节点是阶段汇总，不是采样调用栈；它不提供
+P95/最大值，也不自动识别原生窗口拖动。`event` 是帧前应用事件处理，
+不包含 `Window.Event()` 等待；`config` 是应用配置事件处理；
+`layout` 包含页面布局内部的输入处理；`frame-submit` 是 `e.Frame()`
+调用耗时，不能解释成 GPU 执行或 `Present` 的精确耗时。
+
+需要时间线时，另行采集 trace，查看 `window.*` region 与 goroutine 调度：
+
+```powershell
+curl.exe -o window.trace "http://127.0.0.1:6060/debug/pprof/trace?seconds=10"
+go tool trace window.trace
+```
+
+建议分别采集主页、Word 和 Excel，每次只操作一个窗口。阶段标签不包含
+文件名、路径或文档内容；默认未开启诊断时不执行计时与标签操作。
+
+## Word 鼠标选区错位诊断
+
+启用同一个 pprof 服务后，会在内存中循环保留最近 512 条 Word 页面选区事件。
+复现“拖动时高亮错位、松开后正常”后立即获取：
+
+```powershell
+curl.exe -o word-selection.json "http://127.0.0.1:6060/debug/pprof/word-selection"
+```
+
+这是 JSON 事件快照，和 heap、CPU、window-latency 文件一起提供即可，
+不使用 `go tool pprof` 打开。也可通过 `/debug/word-selection` 获取同一快照。
+GET 不会清空记录；继续操作时旧记录会被覆盖。
+
+`input-Press/Drag/Release/Cancel` 记录收到事件时的局部、视口和页面坐标；
+`hit-Drag/Release` 记录命中的文字 run 与字符偏移；`paint` 记录绘制高亮时
+实际使用的选区起止、编辑器选区、页面原点、缩放、视图及阅读模式。
+按时间对照这些阶段可以判断输入坐标、命中结果与绘制范围是否一致。
+只记录几何数据、内部 ID 和字符偏移，不记录正文、文件名或路径。
+未开启 pprof 时不采集。当前覆盖连续/打印页面视图，Web 编辑器不在此轨迹内。
+
+## Windows 原生拖动消息桥接
+
+Windows 默认启用应用层 `internal/windowmove` 桥接，Gio 仍是官方
+`gioui.org v0.10.3`，没有本地替换或源码补丁。通过公开的
+`app.Win32ViewEvent` 获取 HWND，再用 `Window.Run` 在该窗口所属线程
+安装 `SetWindowSubclass`。安装失败记录错误并保留 Gio 原有行为。
+
+桥接只在 `WM_ENTERSIZEMOVE` 到 `WM_EXITSIZEMOVE` 之间，且消息明确没有
+尺寸、层叠顺序、边框或显示/隐藏变化时，才考虑拦截
+`WM_WINDOWPOSCHANGED`。同时核对前后客户区尺寸、DPI、普通窗口状态。
+查询失败、跨 DPI、最大化/最小化都转交原有消息链。
+连续采样还捕获到移动手势内部的 `WM_PAINT -> draw(true) -> D3D11
+CreateBuffer`，因此只拦截位置消息不足以消除停顿后的卡顿。纯移动且
+几何、DPI、窗口状态保持不变时，桥接用 `ValidateRect` 消耗绘制区域，
+延后该次绘制；退出拖动时重新失效整个窗口，展示期间累积的内容更新。
+收到 `WM_SIZING` 或观察到尺寸、DPI、状态变化后，本次手势恢复正常绘制。
+纯移动期间内容可能暂时保持旧画面；后台任务和输入不被暂停。
+回调不调用 Gio，不解析文档，也不读写应用状态；原生销毁时移除桥接。
+
+重启程序后生效。关闭桥接进行对照：
+
+```powershell
+$env:GLANCE_WINDOWS_MOVE_REDRAW = "0"
+# 启动程序，采集相同页面、相近时长的拖动快照差值
+```
+
+恢复默认开启：
+
+```powershell
+Remove-Item Env:GLANCE_WINDOWS_MOVE_REDRAW -ErrorAction SilentlyContinue
+```
+
+`false`、`off` 同样关闭，值不区分大小写。此开关独立于 pprof 开关。
+检查退出旧进程、重新构建和启动后，再比较 `config`、`frame-submit`
+次数与耗时。仍可能有 hover、动画等正常帧，不能要求完全零帧。
+还须实际检查缩放、贴靠、最大化/还原、最小化/还原、多窗口、关闭窗口、
+跨不同 DPI 显示器拖动和拖动期间后台更新。
+
+测试：`go test ./internal/windowmove`。Windows 上还会运行真实 HWND 的
+消息路由、线程限制和销毁清理测试，无需 GPU。其他平台只运行可移植
+判断逻辑与开关测试；交叉编译不等于 Windows 实机性能或交互验证通过。
+
+### Word 拖动坐标应用层修正
+
+Windows 轨迹曾显示 Press/Release 命中当前段落，而 Drag 坐标突然向左上跳、
+命中更早段落，导致拖动时出现大片反向高亮。应用层对捕获中的鼠标 Drag 使用
+`GetCursorPos` + `ScreenToClient`，结合上一完整帧的 Gio 公共语义树正文视口
+边界计算视口坐标；不修改或替换 Gio。只读取每帧最新光标位置，合并到一帧
+的多个 Drag 使用同一位置；Press/Release 保留事件时间对应的位置。
+触屏和其他平台沿用原事件路径。原生查询失败或窗口尺寸、DPI、会话变化时
+回退到原路径。`native_normalized=true` 标记实际使用修正的输入记录，
+可对照原始 `local_x/local_y` 与修正后的 `viewport_x/viewport_y`。
+
+本机使用录到的左上偏移回放已验证修正前 GPU 高亮错误、修正后双向拖动
+逐帧正确；Windows 交叉构建通过。真实 Windows 更新进程后的选区、跨行/页、
+窗口移动/缩放和触屏仍需验证，不能以回放代替实机结论。
+
+实机复测发现上一版 `native_normalized=true` 时仍然错位。坐标查询原先在普通
+Go 线程执行，但上游 Gio 只在 HWND 原生事件线程设置 per-monitor DPI 感知；
+普通 Go 线程的 Win32 光标 API 可能返回虚拟化坐标。查询现改为通过公开的
+`Window.Run` 在窗口线程执行，并核对当前线程与 HWND 所属线程一致。
+新的轨迹含 `native_thread/window_thread`、`native_client_x/y` 和
+`viewport_origin_x/y`，用于实机确认查询上下文及坐标转换；不能仅凭
+`native_normalized=true` 判定问题已修复。
+
+2026-10-19 用户确认窗口线程查询版 Word 选取恢复正常，同时报告 Excel 网格
+和单元格内文字拖选有相同现象。网格输入现复用同一窗口线程快照；原生
+`widget.Editor` 无法在应用层替换其内部 Drag，因此另在 HWND 线程通过公共
+Win32 `SetWindowSubclass` 接入：仅对 `WM_POINTERUPDATE` 中按住主键的鼠标，
+用同线程 `GetCursorPos` 的屏幕坐标重新编码 lParam，再交给原 Gio 窗口过程。
+按下、释放、触屏、笔及普通悬停不改写；销毁时移除 subclass。此桥与窗口移动
+subclass 使用不同 ID，继续使用上游 `gioui.org v0.10.3`，没有本地替换。
+
+Excel 回归模拟错误拖动坐标并核对实时正反向单元格选择、固定锚点与释放状态；
+Word GPU 高亮及滚动条回归继续通过。Windows 原生编辑器路径已交叉构建，
+单元格内中文/英文、多行、横向滚动文字拖选仍待真实 Windows 验证。

@@ -180,7 +180,7 @@ func (a *App) drawWordStatusIcon(gtx layout.Context, xDP, yDP, widthDP, heightDP
 	semantic.DescriptionOp(description).Add(gtx.Ops)
 	if icon := wordPenAsset(asset); icon != nil {
 		maxEdge := max(icon.Bounds().Dx(), icon.Bounds().Dy())
-		widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(width) / float32(maxEdge)}.Layout(iconGtx)
+		widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(width) / float32(maxEdge)}.Layout(iconGtx)
 	}
 	bounds.Pop()
 	transform.Pop()
@@ -206,7 +206,7 @@ func (a *App) drawWordStatusClickableIcon(gtx layout.Context, xDP, yDP int, asse
 				semantic.DescriptionOp(description).Add(gtx.Ops)
 				bounds.Pop()
 				maxEdge := max(icon.Bounds().Dx(), icon.Bounds().Dy())
-				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(size) / float32(max(1, maxEdge))}.Layout(gtx)
+				return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(size) / float32(max(1, maxEdge))}.Layout(gtx)
 			})
 		}
 		return layout.Dimensions{Size: gtx.Constraints.Max}

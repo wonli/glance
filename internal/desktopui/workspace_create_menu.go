@@ -426,7 +426,7 @@ func createMenuIcon(gtx layout.Context, name string, size unit.Dp, tint color.NR
 		return layout.Dimensions{Size: image.Pt(pixels, pixels)}
 	}
 	return widget.Image{
-		Src:      paint.NewImageOp(icon),
+		Src:      iconImageOp(icon),
 		Fit:      widget.Contain,
 		Position: layout.Center,
 		Scale:    float32(size) / 96,

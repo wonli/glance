@@ -449,7 +449,7 @@ func (r *desktopRuntime) installAgentHost(ctx context.Context, saved agentsettin
 			return fmt.Errorf("连接 Glance 能力目录: %w", err)
 		}
 		newHost, err = agent.NewHost(ctx, modelProvider, newClient.Session, agent.HostOptions{
-			Model: saved.Model, ConversationStore: workspaceAgentConversationStore{runtime: r},
+			Model: saved.Model, ConversationStore: workspaceAgentConversationStore{runtime: r}, LazyTools: true,
 		})
 		if err != nil {
 			_ = newClient.Close()

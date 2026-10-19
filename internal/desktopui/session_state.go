@@ -192,7 +192,9 @@ type documentSessionState struct {
 	toolbarTab                          spreadsheetToolbarTab
 	toolbarTabs                         [9]widget.Clickable
 	toolbarActionList                   widget.List
+	toolbarActionScroll                 horizontalRibbonScrollState
 	toolbarGroupList                    widget.List
+	toolbarGroupScroll                  horizontalRibbonScrollState
 	toolbarActionButtons                [toolbarActionLast + 1]widget.Clickable
 	toolbarPickerButtons                [11]widget.Clickable
 	toolbarPicker                       spreadsheetToolbarPicker
@@ -202,7 +204,9 @@ type documentSessionState struct {
 	wordToolbarTabs                     [9]widget.Clickable
 	wordToolbarTabList                  widget.List
 	wordToolbarActionList               widget.List
+	wordToolbarActionScroll             horizontalRibbonScrollState
 	wordToolbarGroupList                widget.List
+	wordToolbarGroupScroll              horizontalRibbonScrollState
 	wordToolbarActionButtons            map[string]*widget.Clickable
 	wordToolbarColorButtons             [8]widget.Clickable
 	wordToolbarColorPicker              bool

@@ -226,6 +226,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		if !ok {
 			continue
 		}
+		pe.Position = wordPointerViewportPoint(pe, wordVisiblePageInteraction{}, a.wordPointer.sample)
 		switch pe.Kind {
 		case pointer.Leave:
 			if v.Resize == nil {
@@ -656,7 +657,7 @@ func (a *App) updateGridSelection(v *gridViewport, position CellPosition, extend
 	state.gridEndMode = false
 	setSelectedGridPicture(state, "")
 	state.gridPictureGesture.cancel()
-	state.selection = updatedSelection(state.selection, state.selectionSet, position, extend)
+	state.selection = selectionIncludingMerges(updatedSelection(state.selection, state.selectionSet, position, extend), v.merges())
 	state.selectionSet = true
 	state.gridInputComposing = false
 	position = state.selection.Active

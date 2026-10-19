@@ -5,7 +5,6 @@ import (
 	"image/color"
 
 	"gioui.org/layout"
-	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -18,7 +17,7 @@ func layoutPenRibbonGlyph(gtx layout.Context, name string, size unit.Dp, tint co
 	if !ok {
 		return layout.Dimensions{Size: gtx.Constraints.Max}
 	}
-	return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
+	return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
 }
 
 // The overview boards use 80×68 commands, 4dp gaps and 8dp strip padding.
@@ -33,14 +32,14 @@ func layoutOfficeRibbonCommandContents(gtx layout.Context, theme *material.Theme
 				if icon == nil {
 					return layout.Dimensions{Size: gtx.Constraints.Max}
 				}
-				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
+				return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				style := material.Caption(theme, label)
 				style.TextSize = unit.Sp(12)
 				style.Color = color.NRGBA{R: 0x35, G: 0x41, B: 0x4f, A: 255}
-				return style.Layout(gtx)
+				return layoutDropdownLabel(gtx, style)
 			}),
 		)
 	})
@@ -54,7 +53,7 @@ func (a *App) layoutWordPenCommandList(gtx layout.Context, state *documentSessio
 	gtx.Constraints.Min.X = gtx.Constraints.Max.X
 	state.wordToolbarActionList.List.Axis = layout.Horizontal
 	return layout.Inset{Left: left, Right: unit.Dp(6), Top: unit.Dp(10), Bottom: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return state.wordToolbarActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
+		return layoutHorizontalRibbonList(gtx, &state.wordToolbarActionScroll, &state.wordToolbarActionList, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
 			return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return a.layoutWordRibbonAction(gtx, state, actions[index], 80, 68, true)
 			})
@@ -73,7 +72,7 @@ func (a *App) layoutSpreadsheetPenCommandList(gtx layout.Context, state *documen
 		visible = append(visible, action)
 	}
 	return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12), Top: unit.Dp(10), Bottom: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return state.toolbarActionList.Layout(gtx, len(visible), func(gtx layout.Context, index int) layout.Dimensions {
+		return layoutHorizontalRibbonList(gtx, &state.toolbarActionScroll, &state.toolbarActionList, len(visible), func(gtx layout.Context, index int) layout.Dimensions {
 			return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				action := visible[index]
 

@@ -22,6 +22,7 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/fontcatalog"
+	"glance/internal/fontdiag"
 	"glance/internal/fontfallback"
 	"glance/internal/wordlayout"
 )
@@ -487,6 +488,7 @@ func (s *Shaper) loadFace(location fontscan.Location) *font.Face {
 		return nil
 	}
 
+	fontdiag.RecordUse(ft, "word", location.File, uint32(location.Index))
 	face := font.NewFace(ft)
 	s.facesByID[location] = face
 	s.idsByFace[face] = location

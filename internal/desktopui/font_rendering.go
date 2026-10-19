@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"glance/internal/document"
 	"glance/internal/fontcatalog"
+	"glance/internal/fontdiag"
 	"glance/internal/wordfont"
 	"sort"
 	"strings"
@@ -192,6 +193,8 @@ func parseFontCollection(snapshot fontcatalog.Snapshot, face fontcatalog.Face) (
 	if err != nil {
 		return nil, 0, false
 	}
+
+	fontdiag.RecordUse(parsed, "ui", face.Path, face.Index)
 
 	// Gio's ParseCollection eagerly parses every face, including large CJK
 	// tables we never use. Wrap only this immutable font; each shaper gets its

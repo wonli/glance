@@ -49,6 +49,7 @@ type presentationViewState struct {
 	activeRibbonTab     string // "home", "insert", "design", "slideshow", "view"
 	ribbonButtons       map[string]*widget.Clickable
 	ribbonActionList    widget.List
+	ribbonActionScroll  horizontalRibbonScrollState
 	layoutList          widget.List
 	layoutOptionButtons map[int]*widget.Clickable
 	layoutOptions       []document.PresentationLayoutOption

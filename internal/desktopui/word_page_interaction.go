@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"gioui.org/unit"
+	"glance/internal/diagnostics"
 	"image"
 	"math"
 	"time"
@@ -167,14 +168,23 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 		if !ok {
 			continue
 		}
-		// Gio pointer positions are pixels local to the page tag. Convert them
-		// to viewport pixels first, then invert the exact paint transform to
-		// obtain page points for hit testing.
-		viewportPoint := f32.Pt(
-			float32(interaction.PageRect.Min.X)+event.Position.X,
-			float32(interaction.PageRect.Min.Y)+event.Position.Y,
-		)
+		// Convert tag-local pixels (or the Windows native drag snapshot) to
+		// viewport pixels before inverting the page paint transform.
+		viewportPoint := wordPointerViewportPoint(event, interaction, a.wordPointer.sample)
 		pagePoint := interaction.Transform.ScreenToPage(viewportPoint)
+		recordWordSelectionDiagnostic(state, diagnostics.WordSelectionEvent{
+			NativeThread:  a.wordPointer.sample.nativeThread,
+			WindowThread:  a.wordPointer.sample.windowThread,
+			NativeClientX: a.wordPointer.sample.client.X, NativeClientY: a.wordPointer.sample.client.Y,
+			ViewportOriginX: a.wordPointer.sample.origin.X, ViewportOriginY: a.wordPointer.sample.origin.Y,
+			NativeNormalized: a.wordPointer.sample.valid && event.Kind == pointer.Drag && event.Source == pointer.Mouse,
+			Phase:            "input-" + event.Kind.String(), Page: pageIndex, PointerID: uint16(event.PointerID),
+			LocalX: event.Position.X, LocalY: event.Position.Y,
+			ViewportX: viewportPoint.X, ViewportY: viewportPoint.Y,
+			PageX: pagePoint.X, PageY: pagePoint.Y,
+			OriginX: interaction.PageRect.Min.X, OriginY: interaction.PageRect.Min.Y,
+			PixelsPerPoint: interaction.Transform.PixelsPerPoint,
+		})
 		switch event.Kind {
 		case pointer.Press:
 			if event.Buttons&pointer.ButtonPrimary == 0 {
@@ -254,22 +264,36 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 			state.wordPageSelectionDrag = &wordPageSelectionDrag{pageIndex: pageIndex, anchor: position, pointerID: event.PointerID, tag: tag}
 			state.wordPagePreferredVerticalXSet = false
 			gtx.Execute(pointer.GrabCmd{Tag: tag, ID: event.PointerID})
-		case pointer.Drag:
+		case pointer.Drag, pointer.Release:
 			drag := state.wordPageSelectionDrag
 			if drag == nil || drag.pointerID != event.PointerID {
 				continue
 			}
-			if !drag.panning && drag.tag != nil {
+			if event.Kind == pointer.Release {
+				state.wordPageSelectionDrag = nil
+			}
+			if event.Kind == pointer.Drag && !drag.panning && drag.tag != nil {
 				drag.tag.lastTextPressParagraphID = ""
 			}
 			if drag.panning {
 				state.wordPageScrollX = math.Max(0, math.Min(float64(drag.scrollLimit), drag.startScroll-float64(viewportPoint.X-drag.startX)))
 				continue
 			}
+			// The release can carry a newer position than the last move (or
+			// arrive without a move when events are coalesced). Hit-test both.
 			hit, hitPage := hitVisibleWordPage(state, viewportPoint)
 			if !hit.found && (hitPage == pageIndex || hitPage < 0) {
 				hit = wordPageHitTestNearestWithTolerance(page, pagePoint, wordPageDevicePixelTolerance(interaction.Transform.PixelsPerPoint))
 			}
+			recordWordSelectionDiagnostic(state, diagnostics.WordSelectionEvent{
+				Phase: "hit-" + event.Kind.String(), Page: pageIndex,
+				PageX: pagePoint.X, PageY: pagePoint.Y, HitRun: hit.runID, HitOffset: hit.runeOffset,
+				PixelsPerPoint: interaction.Transform.PixelsPerPoint,
+			})
+			logWordDebug("page_pointer_selection kind=%v pointer=%d page=%d scale=%.4f local=(%.1f,%.1f) viewport=(%.1f,%.1f) page_point=(%.2f,%.2f) anchor_run=%q anchor_offset=%d hit=%v hit_page=%d hit_run=%q hit_offset=%d",
+				event.Kind, event.PointerID, pageIndex, interaction.Transform.PixelsPerPoint,
+				event.Position.X, event.Position.Y, viewportPoint.X, viewportPoint.Y, pagePoint.X, pagePoint.Y,
+				drag.anchor.runID, drag.anchor.runeOffset, hit.found, hitPage, hit.runID, hit.runeOffset)
 			if hit.found {
 				position := wordPageCaretPosition{runID: hit.runID, runeOffset: hit.runeOffset}
 				if selection := state.wordPageTextSelection; selection != nil {
@@ -284,10 +308,11 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 					}
 				}
 			}
-		case pointer.Release, pointer.Cancel:
-			if event.Kind == pointer.Cancel {
-				tag.lastTextPressParagraphID = ""
+			if event.Kind == pointer.Release && !wordPageTextSelectionActive(state.wordPageTextSelection) {
+				state.wordPageTextSelection = nil
 			}
+		case pointer.Cancel:
+			tag.lastTextPressParagraphID = ""
 			if drag := state.wordPageSelectionDrag; drag != nil && drag.pointerID == event.PointerID {
 				state.wordPageSelectionDrag = nil
 				if !wordPageTextSelectionActive(state.wordPageTextSelection) {

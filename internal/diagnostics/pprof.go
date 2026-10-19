@@ -3,6 +3,7 @@ package diagnostics
 
 import (
 	"fmt"
+	"glance/internal/fontdiag"
 	"log"
 	"net"
 	"net/http"
@@ -20,7 +21,13 @@ func StartProfiling(addr string) (*http.Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pprof listen: %w", err)
 	}
+	fontdiag.Enable()
+	wordSelectionTrace.enabled.Store(true)
+	windowProfiling.Store(true)
 	mux := http.NewServeMux()
+	registerMemoryHandlers(mux)
+	registerWordSelectionHandlers(mux)
+	mux.HandleFunc("/debug/pprof/window-latency", serveWindowLatency)
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)

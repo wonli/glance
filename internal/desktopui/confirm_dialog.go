@@ -281,7 +281,7 @@ func (a *App) layoutConfirmDialogIcon(gtx layout.Context) layout.Dimensions {
 			if !ok {
 				return layout.Dimensions{}
 			}
-			return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(gtx.Dp(unit.Dp(20))) / float32(pixels)}.Layout(gtx)
+			return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(gtx.Dp(unit.Dp(20))) / float32(pixels)}.Layout(gtx)
 		}),
 	)
 }

@@ -23,7 +23,7 @@ func layoutBrandAssistantIcon(gtx layout.Context, size unit.Dp, colors ToolbarCo
 			tint = colors.AccentAIStar
 		}
 		if icon, ok := svgIconTintAtSize("brand", name, pixels, tint); ok {
-			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(size) / float32(pixels)}.Layout(gtx)
+			widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: float32(size) / float32(pixels)}.Layout(gtx)
 		}
 	}
 	return layout.Dimensions{Size: gtx.Constraints.Max}

@@ -14,8 +14,13 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 	if state == nil || state.word == nil || a.modal.Visible || a.wordVersionHistoryVisible || a.wordSymbolPickerVisible {
 		return
 	}
+	menuWasOpen := state.officeRibbonMenu.kind != officeRibbonMenuClosed
 	if a.handleOfficeRibbonMenuEvents(gtx) {
 		return
+	}
+	if !menuWasOpen {
+		handleHorizontalRibbonDrag(gtx, &state.wordToolbarGroupScroll, &state.wordToolbarGroupList)
+		handleHorizontalRibbonDrag(gtx, &state.wordToolbarActionScroll, &state.wordToolbarActionList)
 	}
 	tabs := wordToolbarTabs(state)
 	for index, tab := range tabs {

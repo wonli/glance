@@ -19,7 +19,20 @@ var localeFiles embed.FS
 var messageIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$`)
 
 type compiledEntry struct {
-	forms map[string]*template.Template
+	forms map[string]compiledForm
+}
+
+// Literal forms need neither a template tree nor an execution buffer.
+type compiledForm struct {
+	literal  string
+	template *template.Template
+}
+
+func (f compiledForm) arguments() (map[string]struct{}, error) {
+	if f.template == nil {
+		return nil, nil
+	}
+	return templateArguments(f.template)
 }
 
 type Catalog struct {
@@ -182,8 +195,12 @@ func compileEntries(entries map[string]any) (map[string]compiledEntry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("message %q: %w", id, err)
 		}
-		compiledForms := make(map[string]*template.Template, len(forms))
+		compiledForms := make(map[string]compiledForm, len(forms))
 		for category, source := range forms {
+			if !strings.Contains(source, "{{") {
+				compiledForms[category] = compiledForm{literal: source}
+				continue
+			}
 			t, err := template.New(id + "." + category).Option("missingkey=error").Parse(source)
 			if err != nil {
 				return nil, fmt.Errorf("message %q has invalid template: %w", id, err)
@@ -191,7 +208,7 @@ func compileEntries(entries map[string]any) (map[string]compiledEntry, error) {
 			if _, err := templateArguments(t); err != nil {
 				return nil, fmt.Errorf("message %q has unsupported template fields: %w", id, err)
 			}
-			compiledForms[category] = t
+			compiledForms[category] = compiledForm{template: t}
 		}
 		compiled[id] = compiledEntry{forms: compiledForms}
 	}
@@ -317,11 +334,11 @@ func validateCompiledPair(english, localized map[string]compiledEntry) error {
 			if !exists {
 				return fmt.Errorf("message %q has mismatched plural form %q", id, category)
 			}
-			translatedArgs, err := templateArguments(translatedTemplate)
+			translatedArgs, err := translatedTemplate.arguments()
 			if err != nil {
 				return fmt.Errorf("message %q: %w", id, err)
 			}
-			englishArgs, err := templateArguments(englishTemplate)
+			englishArgs, err := englishTemplate.arguments()
 			if err != nil {
 				return fmt.Errorf("message %q: %w", id, err)
 			}
@@ -415,16 +432,19 @@ func (c *Catalog) Plural(message Message, count int64) string {
 func (c *Catalog) render(entry compiledEntry, category string, args Args, id string) string {
 	t, ok := entry.forms[category]
 	if !ok {
-		t = entry.forms["other"]
+		t, ok = entry.forms["other"]
 	}
-	if t == nil {
+	if !ok {
 		if c.onMissing != nil {
 			c.onMissing(id)
 		}
 		return ""
 	}
+	if t.template == nil {
+		return t.literal
+	}
 	var output bytes.Buffer
-	if err := t.Execute(&output, args); err != nil {
+	if err := t.template.Execute(&output, args); err != nil {
 		if c.onMissing != nil {
 			c.onMissing(id)
 		}

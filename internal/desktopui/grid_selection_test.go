@@ -128,3 +128,25 @@ func TestSelectionPositionMapsMergedCellToAnchor(t *testing.T) {
 		t.Fatalf("selectionAnchor()=%+v, want merge anchor %+v", got, want)
 	}
 }
+
+func TestGridSelectionExpandsIntersectingMergesAndCanShrink(t *testing.T) {
+	a := &App{documentSessionState: newDocumentSessionState("")}
+	v := newGridViewport()
+	// Expansion into C3 meets a second merge, which must also be included.
+	v.Window.Merges = []document.MergeRegion{
+		{Range: document.CellRange{StartRow: 3, StartColumn: 3, EndRow: 3, EndColumn: 4}},
+		{Range: document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 2, EndColumn: 3}},
+	}
+	a.updateGridSelection(v, CellPosition{Row: 0, Column: 0}, false, false)
+	a.updateGridSelection(v, CellPosition{Row: 3, Column: 0}, true, false)
+	want := document.CellRange{StartRow: 1, StartColumn: 1, EndRow: 4, EndColumn: 4}
+	if got := a.selection.Bounds(); got != want {
+		t.Fatalf("merged selection=%+v want %+v", got, want)
+	}
+	// The original anchor stays fixed; a new gesture must not retain expansion.
+	a.updateGridSelection(v, CellPosition{Row: 5, Column: 5}, false, false)
+	want = document.CellRange{StartRow: 6, StartColumn: 6, EndRow: 6, EndColumn: 6}
+	if got := a.selection.Bounds(); got != want {
+		t.Fatalf("new selection=%+v want %+v", got, want)
+	}
+}

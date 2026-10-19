@@ -180,7 +180,7 @@ func (a *App) layoutWordRibbonCompactAction(gtx layout.Context, state *documentS
 			iconGtx := gtx
 			iconGtx.Constraints = layout.Exact(image.Pt(iconSize, iconSize))
 			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(20)}.Layout(iconGtx)
+				return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(20)}.Layout(iconGtx)
 			})
 		}
 		return layout.Inset{Left: unit.Dp(4), Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -190,7 +190,7 @@ func (a *App) layoutWordRibbonCompactAction(gtx layout.Context, state *documentS
 					if icon == nil {
 						return layout.Dimensions{Size: image.Pt(iconSize, iconSize)}
 					}
-					return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(20)}.Layout(gtx)
+					return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(20)}.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -313,7 +313,7 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 		iconGtx.Constraints.Min = image.Pt(iconSize, iconSize)
 		iconGtx.Constraints.Max = iconGtx.Constraints.Min
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(iconSize)}.Layout(iconGtx)
+			return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(iconSize)}.Layout(iconGtx)
 		})
 	}
 	if enabled {

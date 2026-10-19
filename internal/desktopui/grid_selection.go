@@ -137,3 +137,33 @@ func selectionBorderRects(rect image.Rectangle, width int) [4]image.Rectangle {
 		image.Rect(rect.Max.X-width, rect.Min.Y+width, rect.Max.X, rect.Max.Y-width),
 	}
 }
+
+// Expand until every intersecting merge is wholly inside the rectangle. One
+// expansion may meet another merge, so a single pass is insufficient.
+func selectionIncludingMerges(selection CellSelection, merges []document.MergeRegion) CellSelection {
+	bounds := selection.Bounds()
+	original := bounds
+	for {
+		previous := bounds
+		for _, merge := range merges {
+			r := merge.Range
+			if r.StartRow < 1 || r.StartColumn < 1 || r.EndRow < r.StartRow || r.EndColumn < r.StartColumn {
+				continue
+			}
+			if r.StartRow > bounds.EndRow || r.EndRow < bounds.StartRow || r.StartColumn > bounds.EndColumn || r.EndColumn < bounds.StartColumn {
+				continue
+			}
+			bounds.StartRow = min(bounds.StartRow, r.StartRow)
+			bounds.StartColumn = min(bounds.StartColumn, r.StartColumn)
+			bounds.EndRow = max(bounds.EndRow, r.EndRow)
+			bounds.EndColumn = max(bounds.EndColumn, r.EndColumn)
+		}
+		if bounds == previous {
+			break
+		}
+	}
+	if bounds != original {
+		selection.boundsOverride = &bounds
+	}
+	return selection
+}

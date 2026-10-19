@@ -100,7 +100,7 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 	paint.FillShape(gtx.Ops, gridHeaderFill, clip.Rect{Max: image.Pt(rowHead, size.Y)}.Op())
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(rowHead, 0), Max: image.Pt(rowHead+1, size.Y)}.Op())
 	paint.FillShape(gtx.Ops, gridLine, clip.Rect{Min: image.Pt(0, colHead), Max: image.Pt(size.X, colHead+1)}.Op())
-	selection, hasSelection := a.selection, a.selectionSet
+	selection, hasSelection := selectionIncludingMerges(a.selection, v.merges()), a.selectionSet
 	if hasSelection && !a.cellEdit.Editing && (selection.Scope != selectionCells || selection.Anchor != selection.Active) {
 		selectionViewport := image.Rect(rowHead, colHead, size.X, size.Y)
 		for _, selectedRect := range v.selectionRects(selection.Bounds(), rowHead, colHead, selectionViewport) {
@@ -145,19 +145,18 @@ func paintVirtualGrid(gtx layout.Context, a *App, v *gridViewport) layout.Dimens
 				break
 			}
 		}
-		selectionIsMergedActiveCell := selectionRange.StartRow == selectionRange.EndRow &&
-			selectionRange.StartColumn == selectionRange.EndColumn && selectionRange != activeRange
-		if !selectionIsMergedActiveCell {
-			for _, selectedRect := range v.selectionRects(selectionRange, rowHead, colHead, selectionViewport) {
-				for _, edge := range selectionBorderRects(selectedRect, max(1, gtx.Dp(unit.Dp(1)))) {
-					if !edge.Empty() {
-						paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
-					}
+		// A range has one outside outline. The active endpoint must not add
+		// a second four-sided box inside it. Single cells keep a 2dp outline.
+		width := max(1, gtx.Dp(unit.Dp(1)))
+		if selectionRange == activeRange {
+			width = max(1, gtx.Dp(unit.Dp(2)))
+		}
+		for _, selectedRect := range v.selectionRects(selectionRange, rowHead, colHead, selectionViewport) {
+			for _, edge := range selectionBorderRects(selectedRect, width) {
+				if !edge.Empty() {
+					paint.FillShape(gtx.Ops, outline, clip.Rect(edge).Op())
 				}
 			}
-		}
-		for _, activeRect := range v.selectionRects(activeRange, rowHead, colHead, selectionViewport) {
-			paintActiveCellBorder(gtx, activeRect, a.tokens().Colors.Grid.SelectionBorder)
 		}
 	}
 	paintGridHeaders(gtx, a, v)

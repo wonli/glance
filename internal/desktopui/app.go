@@ -27,6 +27,7 @@ import (
 var preferredSystemTypeface = font.Typeface(fontfallback.PreferredTypeface())
 
 type App struct {
+	wordPointer         wordPointerState
 	nativePinch         *nativePinchState
 	nativePinchMonitor  nativePinchMonitor
 	pinchGestureSession *documentSessionState

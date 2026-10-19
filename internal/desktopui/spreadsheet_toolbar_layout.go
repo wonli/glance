@@ -131,7 +131,7 @@ func (a *App) layoutSpreadsheetRibbonPlaceholder(gtx layout.Context, item spread
 		size = min(size, min(width, height))
 		if icon != nil {
 			gtx.Constraints = layout.Exact(image.Pt(size, size))
-			return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
+			return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
 		}
 		if item.symbol != "" {
 			style := material.Body2(a.theme, item.symbol)
@@ -345,7 +345,7 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 			iconSize := gtx.Dp(unit.Dp(20))
 			dimensions := layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints = layout.Exact(image.Pt(iconSize, iconSize))
-				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 20.0 / float32(iconSize)}.Layout(gtx)
+				return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 20.0 / float32(iconSize)}.Layout(gtx)
 			})
 			if action.slot == 7 || action.slot == 8 {
 				drawSpreadsheetRibbonColorIndicator(gtx, action.slot, style, colors.Surface.Surface, colors.Surface.Border, width, height)
@@ -372,7 +372,7 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 					if icon == nil {
 						return layout.Dimensions{Size: image.Pt(iconSize, iconSize)}
 					}
-					return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
+					return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -381,7 +381,7 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 					label.TextSize = unit.Sp(10)
 					label.Color = colors.Text.PureBlack
 					gtx.Constraints.Min.Y = 0
-					return label.Layout(gtx)
+					return layoutDropdownLabel(gtx, label)
 				}),
 			)
 		})

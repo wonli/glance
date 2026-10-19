@@ -57,7 +57,7 @@ func jsonIcon(gtx layout.Context, name string, size unit.Dp, fg color.NRGBA) lay
 	if !ok {
 		return layout.Dimensions{Size: image.Pt(pixels, pixels)}
 	}
-	return widget.Image{Src: paint.NewImageOp(img), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
+	return widget.Image{Src: iconImageOp(img), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
 }
 
 func jsonPanel(gtx layout.Context, fillColor color.NRGBA, leftBorder, bottomBorder bool, child layout.Widget) layout.Dimensions {

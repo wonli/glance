@@ -20,7 +20,7 @@ func TestProfilingEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Close()
-	for _, path := range []string{"/debug/pprof/", "/debug/pprof/heap", "/debug/pprof/allocs", "/debug/pprof/goroutine?debug=1"} {
+	for _, path := range []string{"/debug/pprof/", "/debug/pprof/heap", "/debug/pprof/window-latency", "/debug/pprof/word-selection", "/debug/word-selection", "/debug/pprof/allocs", "/debug/pprof/goroutine?debug=1"} {
 		response, err := http.Get("http://" + server.Addr + path)
 		if err != nil {
 			t.Fatal(err)

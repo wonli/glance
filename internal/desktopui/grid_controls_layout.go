@@ -146,7 +146,7 @@ func (a *App) layoutFormulaFunctionIcon(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min = image.Pt(size, size)
 	gtx.Constraints.Max = image.Pt(size, size)
 	icon, _ := tintedToolbarIcon("sigma", color.NRGBA{R: 104, G: 113, B: 125, A: 255})
-	return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 20.0 / 96.0}.Layout(gtx)
+	return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 20.0 / 96.0}.Layout(gtx)
 }
 
 func (a *App) focusSpreadsheetNameBox(gtx layout.Context) {

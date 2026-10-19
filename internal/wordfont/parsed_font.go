@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"crypto/sha256"
 	"fmt"
+	"glance/internal/fontdiag"
 	"sync"
 	"weak"
 
@@ -42,6 +43,7 @@ func ParseFont(data []byte, index uint32) (*font.Font, error) {
 	if item != nil {
 		sharedParsedFonts.lru.MoveToFront(item)
 		if parsed := item.Value.(parsedFontValue).font.Value(); parsed != nil {
+			fontdiag.RecordHit(parsed)
 			return parsed, nil
 		}
 	}
@@ -56,6 +58,7 @@ func ParseFont(data []byte, index uint32) (*font.Font, error) {
 	if err != nil {
 		return nil, err
 	}
+	fontdiag.RecordParse(parsed, int64(len(data)))
 	value := parsedFontValue{key: key, font: weak.Make(parsed)}
 	if item != nil {
 		item.Value = value

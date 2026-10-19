@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"fmt"
+	"glance/internal/diagnostics"
 	"glance/internal/i18n"
 	"log"
 	"runtime"
@@ -127,22 +128,28 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 			a.closeWorkspace()
 			return
 		case app.ConfigEvent:
-			a.applyWindowConfig(e.Config)
-			a.window.Invalidate()
+			diagnostics.WindowPhase("config", func() {
+				a.applyWindowConfig(e.Config)
+				a.window.Invalidate()
+			})
 		case app.FrameEvent:
-			select {
-			case err := <-a.trayStartupResults:
-				if err != nil {
-					a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
+			diagnostics.WindowPhase("event", func() {
+				select {
+				case err := <-a.trayStartupResults:
+					if err != nil {
+						a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
+					}
+				default:
 				}
-			default:
-			}
-			a.processViewIntentRequests()
-			a.processNativePinch(e)
+				a.processViewIntentRequests()
+				a.processNativePinch(e)
+			})
+			a.prepareWordPointerFrame(e)
 			gtx := app.NewContext(&a.ops, e)
-			a.layout(gtx)
-			e.Frame(gtx.Ops)
+			diagnostics.WindowPhase("layout", func() { a.layout(gtx) })
+			diagnostics.WindowPhase("frame-submit", func() { e.Frame(gtx.Ops) })
 			a.renderedFrame = true
+			a.finishWordPointerFrame(e)
 			a.pinchFrameSession = a.documentSessionState
 			a.pinchFrameSize = e.Size
 			a.pinchFrameMetric = e.Metric
@@ -166,7 +173,9 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 				}
 			}
 		default:
+			handleWindowMoveViewEvent(a.window, e)
 			a.handleNativePinchViewEvent(e)
+			a.handleWordPointerViewEvent(e)
 		}
 	}
 }

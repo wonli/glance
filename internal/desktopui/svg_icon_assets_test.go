@@ -102,7 +102,7 @@ func TestHomeFolderPlusGlyphMatchesPenVerticalCenterline(t *testing.T) {
 	}
 }
 
-func TestSVGIconTintKeepsEveryVisiblePixelOneSolidColor(t *testing.T) {
+func TestSVGIconTintKeepsPremultipliedGPUColor(t *testing.T) {
 	want := color.NRGBA{R: 13, G: 104, B: 204, A: 255}
 	icon, err := renderSVGIcon("excel", "scissors", 32, &want)
 	if err != nil {
@@ -111,13 +111,16 @@ func TestSVGIconTintKeepsEveryVisiblePixelOneSolidColor(t *testing.T) {
 	visible := 0
 	for y := 0; y < icon.Bounds().Dy(); y++ {
 		for x := 0; x < icon.Bounds().Dx(); x++ {
-			got := color.NRGBAModel.Convert(icon.At(x, y)).(color.NRGBA)
+			got := color.RGBAModel.Convert(icon.At(x, y)).(color.RGBA)
 			if got.A == 0 {
 				continue
 			}
 			visible++
-			if !nearByte(got.R, want.R) || !nearByte(got.G, want.G) || !nearByte(got.B, want.B) {
-				t.Fatalf("tinted pixel at (%d,%d) = %v, want pure RGB %v", x, y, got, want)
+			// Compare the GPU representation directly: unpremultiplying
+			// low-alpha pixels magnifies 8-bit quantization error.
+			expected := color.RGBAModel.Convert(color.NRGBA{R: want.R, G: want.G, B: want.B, A: got.A}).(color.RGBA)
+			if !nearByte(got.R, expected.R) || !nearByte(got.G, expected.G) || !nearByte(got.B, expected.B) {
+				t.Fatalf("tinted pixel at (%d,%d) = %v, want premultiplied %v", x, y, got, expected)
 			}
 		}
 	}

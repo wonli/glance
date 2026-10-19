@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/diagnostics"
 	"glance/internal/wordlayout"
 	"image"
 	"image/color"
@@ -24,6 +25,11 @@ func (a *App) drawWordPageSearchHighlights(gtx layout.Context, state *documentSe
 }
 
 func drawWordPageSelection(gtx layout.Context, state *documentSessionState, page wordlayout.PageScene, origin image.Point, pixelsPerPoint float64) {
+	if state.wordPageSelectionDrag != nil || wordPageTextSelectionActive(state.wordPageTextSelection) {
+		recordWordSelectionDiagnostic(state, diagnostics.WordSelectionEvent{
+			Phase: "paint", Page: page.Index, OriginX: origin.X, OriginY: origin.Y, PixelsPerPoint: pixelsPerPoint,
+		})
+	}
 	if wordPageTextSelectionActive(state.wordPageTextSelection) {
 		for _, fragment := range page.Text {
 			start, end, selected := wordPageTextSelectionRange(state.wordPageTextSelection, fragment)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"io/fs"
 	"regexp"
 	"sync"
@@ -27,8 +28,8 @@ type svgIconCacheKey struct {
 	colored bool
 }
 
-// Cache the upload identity alongside immutable SVG rasters, while keeping the
-// original concrete image type for consumers that still call NewImageOp directly.
+// Keep one premultiplied pixel buffer and one stable upload identity per
+// immutable SVG raster. This avoids a second cached pixel buffer.
 type svgImageOp struct {
 	once sync.Once
 	op   paint.ImageOp
@@ -37,11 +38,11 @@ type svgImageOp struct {
 var svgIconCache = struct {
 	sync.RWMutex
 	images   map[svgIconCacheKey]image.Image
-	imageOps map[*image.NRGBA]*svgImageOp
-}{images: make(map[svgIconCacheKey]image.Image), imageOps: make(map[*image.NRGBA]*svgImageOp)}
+	imageOps map[*image.RGBA]*svgImageOp
+}{images: make(map[svgIconCacheKey]image.Image), imageOps: make(map[*image.RGBA]*svgImageOp)}
 
 func iconImageOp(icon image.Image) paint.ImageOp {
-	if raster, ok := icon.(*image.NRGBA); ok {
+	if raster, ok := icon.(*image.RGBA); ok {
 		svgIconCache.RLock()
 		cached := svgIconCache.imageOps[raster]
 		svgIconCache.RUnlock()
@@ -105,13 +106,18 @@ func renderSVGIcon(family, name string, size int, tint *color.NRGBA) (image.Imag
 	scanner := rasterx.NewScannerGV(size, size, img, img.Bounds())
 	icon.Draw(rasterx.NewDasher(size, size, scanner), 1)
 
+	// Convert exactly as paint.NewImageOp did at every draw. Cache that result
+	// instead of the NRGBA source, so visible GPU pixels stay unchanged and the
+	// source buffer can be collected once this rasterization returns.
+	gpuImage := image.NewRGBA(img.Bounds())
+	draw.Draw(gpuImage, gpuImage.Bounds(), img, img.Bounds().Min, draw.Src)
 	svgIconCache.Lock()
-	var result image.Image = img
+	var result image.Image = gpuImage
 	if cached, exists := svgIconCache.images[key]; exists {
 		result = cached
 	} else {
 		svgIconCache.images[key] = result
-		svgIconCache.imageOps[img] = &svgImageOp{}
+		svgIconCache.imageOps[gpuImage] = &svgImageOp{}
 	}
 	svgIconCache.Unlock()
 	return result, nil

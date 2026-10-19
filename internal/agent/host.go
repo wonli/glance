@@ -39,6 +39,9 @@ var (
 const maxListedTools = 1024
 
 type HostOptions struct {
+	// LazyTools defers the MCP tool listing until the first turn. Default callers
+	// keep eager validation; desktop startup opts in to avoid an unused catalog.
+	LazyTools         bool
 	Model             string
 	ConversationStore ConversationStore
 	ModelTimeout      time.Duration
@@ -89,12 +92,14 @@ type toolSpec struct {
 }
 
 type AgentHost struct {
-	provider provider.ModelProvider
-	client   *mcp.ClientSession
-	model    string
-	options  HostOptions
-	store    ConversationStore
-	tools    map[string]toolSpec
+	provider     provider.ModelProvider
+	client       *mcp.ClientSession
+	model        string
+	options      HostOptions
+	store        ConversationStore
+	tools        map[string]toolSpec
+	toolsMu      sync.Mutex
+	toolsLoading chan struct{}
 
 	mu                   sync.Mutex
 	closed               bool
@@ -116,9 +121,13 @@ func NewHost(ctx context.Context, modelProvider provider.ModelProvider, client *
 		ctx = context.Background()
 	}
 	options = normalizeHostOptions(options)
-	tools, err := loadTools(ctx, client)
-	if err != nil {
-		return nil, fmt.Errorf("load MCP tools for Agent Host: %w", err)
+	var tools map[string]toolSpec
+	if !options.LazyTools {
+		var err error
+		tools, err = loadTools(ctx, client)
+		if err != nil {
+			return nil, fmt.Errorf("load MCP tools for Agent Host: %w", err)
+		}
 	}
 	return &AgentHost{
 		provider: modelProvider, client: client, model: strings.TrimSpace(options.Model), options: options,
@@ -151,6 +160,45 @@ func normalizeHostOptions(options HostOptions) HostOptions {
 		options.MaxToolResultBytes = 1 << 20
 	}
 	return options
+}
+
+// Publish a successful immutable catalog once. Failed/canceled loads can retry;
+// waiters can cancel independently without waiting for another turn's request.
+func (h *AgentHost) ensureTools(ctx context.Context) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		h.toolsMu.Lock()
+		if h.tools != nil {
+			h.toolsMu.Unlock()
+			return nil
+		}
+		if pending := h.toolsLoading; pending != nil {
+			h.toolsMu.Unlock()
+			select {
+			case <-pending:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		pending := make(chan struct{})
+		h.toolsLoading = pending
+		h.toolsMu.Unlock()
+		tools, err := loadTools(ctx, h.client)
+		h.toolsMu.Lock()
+		if err == nil {
+			h.tools = tools
+		}
+		h.toolsLoading = nil
+		close(pending)
+		h.toolsMu.Unlock()
+		if err != nil {
+			return fmt.Errorf("load MCP tools for Agent Host: %w", err)
+		}
+		return nil
+	}
 }
 
 func loadTools(ctx context.Context, client *mcp.ClientSession) (map[string]toolSpec, error) {
@@ -388,6 +436,9 @@ func (h *AgentHost) completeTurn(ctx context.Context, cancel context.CancelFunc,
 }
 
 func (h *AgentHost) runTurn(ctx context.Context, conversationID ConversationID, state *conversationState, view application.ViewContext, requestID string) error {
+	if err := h.ensureTools(ctx); err != nil {
+		return err
+	}
 	totalCalls := 0
 	for round := 0; round <= h.options.MaxToolRounds; round++ {
 		messages, reasoningByMessage, err := h.requestMessages(state, view)

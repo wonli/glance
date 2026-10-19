@@ -93,7 +93,7 @@ func paintGridPaneCells(gtx layout.Context, a *App, v *gridViewport, pane gridPa
 			if merged {
 				checkPos = CellPosition{Row: cellRange.StartRow - 1, Column: cellRange.StartColumn - 1}
 			}
-			if hasSelection && !a.cellEdit.Editing && selection.Contains(checkPos) && selection.Active != checkPos {
+			if hasSelection && !a.cellEdit.Editing && selection.Contains(checkPos) && (selection.Anchor != selection.Active || selection.Active != checkPos) {
 				style.Fill = selectedFill
 			}
 			if formulaReferenceContains(formulaReferences, rowNumber, columnNumber) || merged && formulaReferenceContains(formulaReferences, cellRange.StartRow, cellRange.StartColumn) {

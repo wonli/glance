@@ -31,7 +31,7 @@ func (a *App) layoutWordRibbonActions(gtx layout.Context, state *documentSession
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints.Min.X = gtx.Constraints.Max.X
-					return state.wordToolbarGroupList.Layout(gtx, len(groups), func(gtx layout.Context, index int) layout.Dimensions {
+					return layoutHorizontalRibbonList(gtx, &state.wordToolbarGroupScroll, &state.wordToolbarGroupList, len(groups), func(gtx layout.Context, index int) layout.Dimensions {
 						return a.layoutWordRibbonGroupItem(gtx, state, groups[index], index == len(groups)-1)
 					})
 				})
@@ -113,7 +113,7 @@ func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentS
 		iconGtx := gtx
 		iconGtx.Constraints = layout.Constraints{Min: image.Pt(iconSize, iconSize), Max: image.Pt(iconSize, iconSize)}
 		if icon != nil {
-			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(16)}.Layout(iconGtx)
+			widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(16)}.Layout(iconGtx)
 		}
 		iconOffset.Pop()
 		label := material.Caption(a.theme, action.label)
@@ -164,7 +164,7 @@ func (a *App) layoutWordRibbonIconLabelActionAt(gtx layout.Context, state *docum
 		iconGtx := gtx
 		iconGtx.Constraints = layout.Constraints{Min: image.Pt(iconSize, iconSize), Max: image.Pt(iconSize, iconSize)}
 		if icon != nil {
-			widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(22)}.Layout(iconGtx)
+			widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(22)}.Layout(iconGtx)
 		}
 		iconOffset.Pop()
 		label := material.Caption(a.theme, action.label)
@@ -229,7 +229,7 @@ func (a *App) layoutWordRibbonInlineAction(gtx layout.Context, state *documentSe
 				if icon == nil {
 					return layout.Dimensions{Size: gtx.Constraints.Min}
 				}
-				return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(iconDP)}.Layout(gtx)
+				return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: wordToolbarIconScale(iconDP)}.Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(7)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {

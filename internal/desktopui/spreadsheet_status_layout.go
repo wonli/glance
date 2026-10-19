@@ -190,5 +190,5 @@ func spreadsheetStatusIcon(gtx layout.Context, name string) layout.Dimensions {
 	iconSize := gtx.Dp(unit.Dp(18))
 	gtx.Constraints.Min = image.Pt(iconSize, iconSize)
 	gtx.Constraints.Max = gtx.Constraints.Min
-	return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
+	return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center, Scale: 18.0 / 96.0}.Layout(gtx)
 }

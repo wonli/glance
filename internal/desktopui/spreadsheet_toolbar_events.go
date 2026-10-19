@@ -17,8 +17,13 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 	if state == nil || a.modal.Visible {
 		return
 	}
+	menuWasOpen := state.officeRibbonMenu.kind != officeRibbonMenuClosed
 	if a.handleOfficeRibbonMenuEvents(gtx) {
 		return
+	}
+	if !menuWasOpen {
+		handleHorizontalRibbonDrag(gtx, &state.toolbarGroupScroll, &state.toolbarGroupList)
+		handleHorizontalRibbonDrag(gtx, &state.toolbarActionScroll, &state.toolbarActionList)
 	}
 	labels := toolbarCategoryLabelsForState(state)
 	for index := 0; index < len(labels) && index < len(state.toolbarTabs); index++ {

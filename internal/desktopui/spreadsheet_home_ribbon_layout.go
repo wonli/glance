@@ -79,7 +79,7 @@ func (a *App) layoutSpreadsheetHomeRibbon(gtx layout.Context, state *documentSes
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						gtx.Constraints.Min.X = gtx.Constraints.Max.X
-						return state.toolbarGroupList.Layout(gtx, len(groups), func(gtx layout.Context, index int) layout.Dimensions {
+						return layoutHorizontalRibbonList(gtx, &state.toolbarGroupScroll, &state.toolbarGroupList, len(groups), func(gtx layout.Context, index int) layout.Dimensions {
 							return a.layoutSpreadsheetHomeRibbonGroupItem(gtx, state, groups[index], index == len(groups)-1)
 						})
 					}),

@@ -140,7 +140,7 @@ func (a *App) layoutFeedbackCard(gtx layout.Context) layout.Dimensions {
 						return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							icon, _ := svgIconTint("feedback", style.icon, style.ink)
 							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(18), gtx.Dp(18)))
-							return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
+							return widget.Image{Src: iconImageOp(icon), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
 						})
 					})
 				}),

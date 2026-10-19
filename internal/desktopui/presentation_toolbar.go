@@ -129,6 +129,7 @@ func (a *App) layoutPresentationCategoryBar(gtx layout.Context, v *presentationV
 
 // layoutPresentationRibbon renders the 68dp command bar referencing Excel's ribbon icon implementation.
 func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewState) layout.Dimensions {
+	handleHorizontalRibbonDrag(gtx, &v.ribbonActionScroll, &v.ribbonActionList)
 	a.handlePresentationClipboardEvents(gtx, v)
 	height := gtx.Dp(unit.Dp(pptxRibbonHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
@@ -143,7 +144,7 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(a.layoutAgentRibbonEntry),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return v.ribbonActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
+				return layoutHorizontalRibbonList(gtx, &v.ribbonActionScroll, &v.ribbonActionList, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
 					action := actions[index]
 					localizedAction := a.localizedPresentationAction(action)
 					button := v.ribbonBtn(action.id)

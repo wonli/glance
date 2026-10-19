@@ -373,7 +373,7 @@ func toolbarIconButtonWithColors(gtx layout.Context, theme *material.Theme, butt
 					}
 					return layout.Center.Layout(iconGtx, func(gtx layout.Context) layout.Dimensions {
 						return widget.Image{
-							Src:      paint.NewImageOp(icon),
+							Src:      iconImageOp(icon),
 							Fit:      widget.Contain,
 							Position: layout.Center,
 							Scale:    scale,
