@@ -52,6 +52,10 @@ type desktopRuntime struct {
 	workspacePreferences    map[string]string
 	workspacePreferenceMu   sync.Mutex
 	workspaceInitMu         sync.Mutex
+	localePreferenceMu      sync.Mutex
+	localePreferenceLoaded  bool
+	localeStateOnce         sync.Once
+	localeState             localeState
 	workspaceInitialized    bool
 	workspaceDBMu           sync.Mutex
 	workspaceStore          *workspace.Store

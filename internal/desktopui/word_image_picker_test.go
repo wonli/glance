@@ -18,6 +18,7 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 )
 
 func TestLoadWordImageFileRejectsUnsupportedCorruptAndOversizedImages(t *testing.T) {
@@ -60,16 +61,17 @@ func TestWordImagePickerCancellationAndStaleGenerationDoNotMutateDocument(t *tes
 	app := &App{documentSessionState: state, documentGeneration: 4, wordCommandResults: make(chan wordCommandResult, 1)}
 	app.wordImagePickerRunning = true
 	app.handleWordImagePickerResult(wordImagePickerResult{state: state, generation: 4, operation: wordImageInsert})
-	if app.wordImagePickerRunning || app.status != "已取消选择图片" || word.Dirty() {
-		t.Fatalf("picker cancellation state: running=%v status=%q dirty=%v", app.wordImagePickerRunning, app.status, word.Dirty())
+	if app.wordImagePickerRunning || app.statusText() != "已取消选择图片" || word.Dirty() {
+		t.Fatalf("picker cancellation state: running=%v status=%q dirty=%v", app.wordImagePickerRunning, app.statusText(), word.Dirty())
 	}
 
 	before := len(word.WordBlocks())
-	app.status = "保持当前状态"
+	unchangedStatus := i18n.Message{ID: "desktop.status.inline.ready_b796f2"}
+	app.statusRef = unchangedStatus
 	app.wordImagePickerRunning = true
 	app.documentGeneration++
 	app.handleWordImagePickerResult(wordImagePickerResult{state: state, generation: 4, operation: wordImageInsert, path: "stale.png", data: pngImageBytes(t, image.NewNRGBA(image.Rect(0, 0, 1, 1))), mediaType: "image/png"})
-	if app.wordImagePickerRunning || app.status != "保持当前状态" || word.Dirty() || len(word.WordBlocks()) != before {
+	if app.wordImagePickerRunning || app.statusRef.ID != unchangedStatus.ID || word.Dirty() || len(word.WordBlocks()) != before {
 		t.Fatal("stale image picker result changed the active document")
 	}
 }
@@ -115,8 +117,8 @@ func TestWordImagePickerRunsOutsideLayoutAndCanCancel(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for canceled asynchronous image picker")
 	}
-	if app.wordImagePickerRunning || app.status != "已取消选择图片" {
-		t.Fatalf("canceled asynchronous picker state: running=%v status=%q", app.wordImagePickerRunning, app.status)
+	if app.wordImagePickerRunning || app.statusText() != "已取消选择图片" {
+		t.Fatalf("canceled asynchronous picker state: running=%v status=%q", app.wordImagePickerRunning, app.statusText())
 	}
 }
 

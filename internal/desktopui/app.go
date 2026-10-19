@@ -19,6 +19,7 @@ import (
 
 	"glance/internal/fontfallback"
 	wordpdf "glance/internal/format/pdf"
+	"glance/internal/i18n"
 	"glance/internal/printservice"
 	"glance/internal/workspace"
 )
@@ -61,7 +62,8 @@ type App struct {
 	goToCellButton        widget.Clickable
 
 	feedback                      feedbackState
-	status                        string
+	statusRef                     i18n.Message
+	initialStatus                 i18n.Message
 	activeSessionDocumentID       atomic.Value
 	applicationRequestSeq         atomic.Uint64
 	sessions                      map[string]*documentSessionState
@@ -69,7 +71,7 @@ type App struct {
 	lastReconciledTabVersion      uint64
 	activeTabID                   string
 	workspaceError                string
-	workspaceWriteError           string
+	workspaceWriteErrorRef        i18n.Message
 	tabButtons                    map[string]*widget.Clickable
 	tabCloseButtons               map[string]*widget.Clickable
 	newButton                     widget.Clickable
@@ -253,6 +255,7 @@ type App struct {
 	wordVersionHistoryVisible     bool
 	wordVersionHistoryLoading     bool
 	wordVersionHistoryError       string
+	wordVersionHistoryErrorRef    i18n.Message
 	wordVersionHistoryPathKey     string
 	wordVersionHistoryVersions    []workspace.WordVersion
 	wordVersionHistorySelectedID  int64
@@ -288,7 +291,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		theme:                         material.NewTheme(),
 		documentSessionState:          newDocumentSessionState(initialPath),
 		activeTabID:                   workspace.RecentTabID,
-		status:                        "打开一个 .xlsx 或 .docx 文件开始预览",
+		initialStatus:                 i18n.Message{ID: "status.initial.open_document"},
 		gridLoadResults:               make(chan gridLoadResult, 8),
 		gridNavigationResults:         make(chan spreadsheetGridNavigationResult, 16),
 		gridPictureMetaResults:        make(chan gridPictureMetadataResult, 8),
@@ -333,7 +336,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		tabButtons:                    make(map[string]*widget.Clickable),
 		tabCloseButtons:               make(map[string]*widget.Clickable),
 		homeSection:                   homeSectionRecent,
-		homeTypeFilter:                "全部",
+		homeTypeFilter:                homeFilterAll,
 		homeSortOpenedDesc:            true,
 		homeActionButtons:             make(map[string]*widget.Clickable),
 		homeNavButtons:                make(map[string]*widget.Clickable),
@@ -383,8 +386,6 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		a.startFontService()
 	}
 	a.theme.Face = preferredSystemTypeface
-	a.feedback.initialized = true
-	a.feedback.lastStatus = a.status
 	a.themeMode = ThemeModeSystem
 	a.designTokens = ResolveDesignTokens(a.themeMode, DefaultTypography)
 	return a
@@ -430,16 +431,12 @@ func RunWithActivation(initialPath string, reportStartupError func(error), activ
 	}
 	if initialPath != "" {
 		if err := a.open(initialPath); err != nil {
-			msg := documentOpenFailureStatus(err)
-			a.setStatus(msg)
-			a.modal.ShowConfirm("无法打开文档", msg, modalDialogWarningConfirmStyle, func(string) {
-				a.modal.Hide()
-			}, modalDialogActionSpec{ID: "close", Label: "我知道了", Style: modalDialogActionPrimary})
+			a.showDocumentOpenFailure(err)
 		}
 	}
 	if err := runtime.startDesktopMCPIPC(); err != nil {
 		log.Printf("start desktop MCP IPC endpoint: %v", err)
-		a.setStatus("MCP 服务启动失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 	}
 	if !trayStartupDeferredUntilWindowFrame() {
 		if err := runtime.startSystemTray(); err != nil {

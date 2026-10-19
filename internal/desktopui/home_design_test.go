@@ -17,6 +17,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"glance/internal/i18n"
 )
 
 func TestHomeActionCardsMatchPenDimensions(t *testing.T) {
@@ -120,6 +122,7 @@ func TestHomeGreetingMatchesTimeOfDay(t *testing.T) {
 	defer window.Release()
 
 	app := New(nil, "")
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	ops := new(op.Ops)
 	render := func(now time.Time, widget layout.Widget) ([]byte, error) {
 		ops.Reset()
@@ -193,7 +196,7 @@ func TestHomeFilterBarMatchesPenDimensions(t *testing.T) {
 	app := &App{
 		theme:             material.NewTheme(),
 		homeFilterButtons: make(map[string]*widget.Clickable),
-		homeTypeFilter:    "全部",
+		homeTypeFilter:    homeFilterAll,
 	}
 	gtx := layout.Context{
 		Ops:         &ops,
@@ -211,7 +214,7 @@ func TestHomeFilterBarReflowsAtMinimumWindowWidth(t *testing.T) {
 	app := &App{
 		theme:             material.NewTheme(),
 		homeFilterButtons: make(map[string]*widget.Clickable),
-		homeTypeFilter:    "全部",
+		homeTypeFilter:    homeFilterAll,
 	}
 	gtx := layout.Context{Ops: &ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(550, 120)}}
 	dims := app.layoutHomeFilters(gtx)
@@ -247,7 +250,7 @@ func TestHomeMainContentMatchesPenVerticalLayout(t *testing.T) {
 		homeOpenButtons:     make(map[string]*widget.Clickable),
 		homeFavoriteButtons: make(map[string]*widget.Clickable),
 		homeMoreButtons:     make(map[string]*widget.Clickable),
-		homeTypeFilter:      "全部",
+		homeTypeFilter:      homeFilterAll,
 		recentList:          widget.List{List: layout.List{Axis: layout.Vertical}},
 	}
 	gtx := layout.Context{
@@ -270,7 +273,7 @@ func TestHomeContentScrollsWithinShortWindow(t *testing.T) {
 		homeOpenButtons:     make(map[string]*widget.Clickable),
 		homeFavoriteButtons: make(map[string]*widget.Clickable),
 		homeMoreButtons:     make(map[string]*widget.Clickable),
-		homeTypeFilter:      "全部",
+		homeTypeFilter:      homeFilterAll,
 		recentList:          widget.List{List: layout.List{Axis: layout.Vertical}},
 	}
 	var ops op.Ops
@@ -311,7 +314,9 @@ func TestHomeRecentTableColumnsFitMinimumWindowWidth(t *testing.T) {
 	if metrics.nameWidth < 350 {
 		t.Fatalf("minimum-width name column=%dpx; want readable width of at least 350px", metrics.nameWidth)
 	}
-	dims := homeTableColumns(gtx, material.NewTheme(), true, nil, "打开时间 ↓")
+	app := New(nil, "")
+	app.applyLocaleSelection(i18n.SelectionChinese)
+	dims := homeTableColumns(gtx, app, material.NewTheme(), true, nil, app.homeSortLabel())
 	if dims.Size.X > 506 {
 		t.Fatalf("minimum-width home table header=%dpx; want it to fit inside the 506px inner width", dims.Size.X)
 	}

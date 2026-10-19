@@ -41,7 +41,7 @@ func (a *App) layoutSpreadsheetStatusBar(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			status := a.status
+			status := a.statusText()
 			if status == "" {
 				status = "就绪"
 			}

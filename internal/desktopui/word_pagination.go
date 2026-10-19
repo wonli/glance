@@ -5,11 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"reflect"
 
 	"glance/internal/document"
 	"glance/internal/fontcatalog"
+	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 )
 
@@ -493,7 +493,7 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 		state.wordPDFExportAfterLayout = false
 		if result.err != nil {
 			state.wordPDFExportAfterLayout = false
-			a.setStatus("PDF 导出前分页失败：" + result.err.Error())
+			a.setWordCommandStatus(result.err)
 		} else {
 			a.beginWordPDFExport(state)
 		}
@@ -501,7 +501,7 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 	if state.wordPrintAfterLayout {
 		state.wordPrintAfterLayout = false
 		if result.err != nil {
-			a.setStatus("打印前分页失败：" + result.err.Error())
+			a.setWordCommandStatus(result.err)
 		} else {
 			a.beginWordPrint(state)
 		}
@@ -515,7 +515,7 @@ func (a *App) applyWordLayoutResult(result wordLayoutResult) {
 			}
 		}
 		if count > 0 {
-			a.setStatus(fmt.Sprintf("版式检查发现 %d 项已知差异，打印或导出 PDF 前需确认具体位置与回退方式。", count))
+			a.setStatusMessage(i18n.Message{ID: "word.layout.warning.approximations", Args: i18n.Args{"Count": count}}, feedbackWarning, notificationToast)
 			state.wordSupportNoticeShown = true
 		}
 	}

@@ -15,6 +15,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 	"glance/internal/format/jsondoc"
+	"glance/internal/i18n"
 )
 
 func TestJSONSourceSegmentsBoundShapingAndKeepUTF8(t *testing.T) {
@@ -76,7 +77,7 @@ func TestJSONSourcePreviewKeepsSnapshotAfterShorterReplacement(t *testing.T) {
 	v.accept(jsonTreeResult{text: old, tree: tree, segments: jsonSourceSegments(old)})
 	v.mode = jsonModeSource
 	v.sourceList.List.ScrollTo(len(v.sourceSegments) - 1)
-	app.applyJSONTextMutation(`"`+strings.Repeat("y", jsonSourceEditLimit+1)+`"`, "changed")
+	app.applyJSONTextMutation(`"`+strings.Repeat("y", jsonSourceEditLimit+1)+`"`, i18n.Message{ID: "json.status.formatted"})
 	var ops op.Ops
 	gtx := layout.Context{Ops: &ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(800, 600))}
 	app.layoutJSONEditor(gtx) // Must never slice the shorter source with the old offsets.

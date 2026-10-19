@@ -229,8 +229,8 @@ func TestWordToolbarParagraphSpacingBeforeAndAfter(t *testing.T) {
 
 	// Test layout-before
 	app.executeWordToolbarAction("layout-before")
-	if !app.modal.Visible || app.modal.Title != "段前间距" {
-		t.Fatalf("expected modal dialog for layout-before, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "段前间距" {
+		t.Fatalf("expected modal dialog for layout-before, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("12")
 	app.modal.OnAction("confirm")
@@ -255,8 +255,8 @@ func TestWordToolbarParagraphSpacingBeforeAndAfter(t *testing.T) {
 
 	// Test layout-after
 	app.executeWordToolbarAction("layout-after")
-	if !app.modal.Visible || app.modal.Title != "段后间距" {
-		t.Fatalf("expected modal dialog for layout-after, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "段后间距" {
+		t.Fatalf("expected modal dialog for layout-after, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("18")
 	app.modal.OnAction("confirm")
@@ -297,8 +297,8 @@ func TestWordToolbarParagraphSpacingBeforeAndAfter(t *testing.T) {
 	app.executeWordToolbarAction("layout-before")
 	app.modal.Input.SetText("2000")
 	app.modal.OnAction("confirm")
-	if !strings.Contains(app.status, "必须在 0 到 1584 磅之间") {
-		t.Fatalf("expected out-of-range status error, got %q", app.status)
+	if !strings.Contains(app.statusText(), "请输入 0 到 1584 磅之间的数值") {
+		t.Fatalf("expected out-of-range status error, got %q", app.statusText())
 	}
 }
 
@@ -330,8 +330,8 @@ func TestWordParagraphIndentDialogAndCommand(t *testing.T) {
 
 	// 1. Open dialog and set custom indent
 	app.executeWordToolbarAction("layout-indent")
-	if !app.modal.Visible || app.modal.Title != "段落缩进" {
-		t.Fatalf("expected modal dialog for layout-indent, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "段落缩进" {
+		t.Fatalf("expected modal dialog for layout-indent, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	if len(app.modal.FormInputs) < 2 {
 		t.Fatalf("expected at least 2 form inputs, got %d", len(app.modal.FormInputs))

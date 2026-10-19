@@ -14,6 +14,7 @@ import (
 	"gioui.org/widget/material"
 
 	sheetpdf "glance/internal/format/pdf"
+	"glance/internal/i18n"
 )
 
 func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
@@ -36,7 +37,7 @@ func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
 			a.updateMarkdownPDFOrientation("portrait")
 		} else if prev.Format == "word" {
 			if err := a.updateWordPreviewOrientation("portrait"); err != nil {
-				a.setStatus("切换 PDF 方向失败：" + err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "pdf.preview.error.orientation"}, err, notificationToast)
 				return layout.Dimensions{}
 			}
 		}
@@ -59,7 +60,7 @@ func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
 			a.updateMarkdownPDFOrientation("landscape")
 		} else if prev.Format == "word" {
 			if err := a.updateWordPreviewOrientation("landscape"); err != nil {
-				a.setStatus("切换 PDF 方向失败：" + err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "pdf.preview.error.orientation"}, err, notificationToast)
 				return layout.Dimensions{}
 			}
 		}
@@ -111,9 +112,11 @@ func (a *App) layoutPDFExportPreview(gtx layout.Context) layout.Dimensions {
 
 func (a *App) layoutPDFExportOrientationSelector(gtx layout.Context) layout.Dimensions {
 	prev := &a.pdfExportPreview
-	portraitSubtitle, landscapeSubtitle := "适合高表格与标准文本", "适合宽表格"
+	portraitSubtitle := a.text(i18n.Message{ID: "pdf.preview.orientation.portrait.subtitle"})
+	landscapeSubtitle := a.text(i18n.Message{ID: "pdf.preview.orientation.landscape.subtitle"})
 	if prev.Format == "presentation" {
-		portraitSubtitle, landscapeSubtitle = "幻灯片完整适配到 A4 纵向页面", "幻灯片完整适配到 A4 横向页面"
+		portraitSubtitle = a.text(i18n.Message{ID: "pdf.preview.orientation.portrait.subtitle.presentation"})
+		landscapeSubtitle = a.text(i18n.Message{ID: "pdf.preview.orientation.landscape.subtitle.presentation"})
 	}
 	card := func(gtx layout.Context, title, subtitle string, landscape, active bool, btn *widget.Clickable) layout.Dimensions {
 		height := gtx.Dp(unit.Dp(64))
@@ -122,11 +125,11 @@ func (a *App) layoutPDFExportOrientationSelector(gtx layout.Context) layout.Dime
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return card(gtx, "纵向 (Portrait)", portraitSubtitle, false, prev.Orientation == "portrait", &prev.portraitBtn)
+			return card(gtx, a.text(i18n.Message{ID: "pdf.preview.orientation.portrait"}), portraitSubtitle, false, prev.Orientation == "portrait", &prev.portraitBtn)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return card(gtx, "横向 (Landscape)", landscapeSubtitle, true, prev.Orientation == "landscape", &prev.landscapeBtn)
+			return card(gtx, a.text(i18n.Message{ID: "pdf.preview.orientation.landscape"}), landscapeSubtitle, true, prev.Orientation == "landscape", &prev.landscapeBtn)
 		}),
 	)
 }
@@ -196,33 +199,33 @@ func (a *App) layoutOrientationCard(gtx layout.Context, title, subtitle string, 
 func (a *App) layoutPDFExportSummaryRow(gtx layout.Context) layout.Dimensions {
 	prev := &a.pdfExportPreview
 
-	paperLabel := "A4 纵向 (210 × 297 mm)"
+	paperLabel := a.text(i18n.Message{ID: "pdf.preview.paper.portrait"})
 	if prev.Orientation == "landscape" {
-		paperLabel = "A4 横向 (297 × 210 mm)"
+		paperLabel = a.text(i18n.Message{ID: "pdf.preview.paper.landscape"})
 	}
 
-	hintText := "正文根据所选方向流式重排"
+	hintText := a.text(i18n.Message{ID: "pdf.preview.hint.reflow"})
 	hintColor := color.NRGBA{R: 71, G: 85, B: 105, A: 255}
 	if (prev.Format == "word" || prev.Format == "markdown") && prev.wordPreviewPending {
-		hintText = "正在按所选方向重新排版…"
+		hintText = a.text(i18n.Message{ID: "pdf.preview.hint.reflowing"})
 	}
 	if prev.Format == "presentation" {
-		hintText = "幻灯片按原宽高比缩放并居中放入 A4 页面"
+		hintText = a.text(i18n.Message{ID: "pdf.preview.hint.presentation"})
 		if prev.presentationPreviewPending {
-			hintText = "正在生成当前幻灯片预览…"
+			hintText = a.text(i18n.Message{ID: "pdf.preview.hint.presentation_loading"})
 		} else if prev.presentationPreviewError != "" {
-			hintText = "预览失败：" + prev.presentationPreviewError
+			hintText = a.text(i18n.Message{ID: "pdf.preview.hint.presentation_error", Args: i18n.Args{"Details": prev.presentationPreviewError}})
 		}
 	}
 	if prev.Format == "spreadsheet" {
 		if prev.Orientation == "landscape" && prev.TotalPages == 1 {
-			hintText = "✓ 已裁剪多余空白，横向单页完整容纳全部列"
+			hintText = a.text(i18n.Message{ID: "pdf.preview.hint.spreadsheet.fit_all"})
 			hintColor = color.NRGBA{R: 22, G: 101, B: 52, A: 255}
 		} else if prev.Orientation == "portrait" && prev.TotalPages > 1 {
-			hintText = "⚠ 纵向宽度超出，将被水平切分成多页；推荐使用横向"
+			hintText = a.text(i18n.Message{ID: "pdf.preview.hint.spreadsheet.split"})
 			hintColor = color.NRGBA{R: 194, G: 65, B: 12, A: 255}
 		} else {
-			hintText = "✓ 已裁剪末尾空白行列，仅导出有效数据区域"
+			hintText = a.text(i18n.Message{ID: "pdf.preview.hint.spreadsheet.trimmed"})
 		}
 	}
 
@@ -238,7 +241,7 @@ func (a *App) layoutPDFExportSummaryRow(gtx layout.Context) layout.Dimensions {
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							pageBadgeColor := color.NRGBA{R: 234, G: 242, B: 252, A: 255}
 							pageTextColor := color.NRGBA{R: 52, G: 120, B: 209, A: 255}
-							return a.layoutBadge(gtx, fmt.Sprintf("共 %d 页", prev.TotalPages), pageBadgeColor, pageTextColor)
+							return a.layoutBadge(gtx, a.text(i18n.Message{ID: "pdf.preview.page_count", Args: i18n.Args{"Count": prev.TotalPages}}), pageBadgeColor, pageTextColor)
 						}),
 					)
 				}),

@@ -13,6 +13,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -40,6 +41,7 @@ func TestHomeRecentsSortMatchesOpenedTimeHeader(t *testing.T) {
 		},
 		homeSortOpenedDesc: true,
 	}
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	if got := app.homeSortLabel(); got != "打开时间 ↓" {
 		t.Fatalf("descending sort header=%q; want 打开时间 ↓", got)
 	}
@@ -111,7 +113,7 @@ func TestHomeFiltersCompactSearchFieldDoesNotDistort(t *testing.T) {
 			}
 
 			// Directly verify search field height matches rowHeightPx, not rowHeightPx * pxPerDp
-			searchDims := homeSearchField(gtx, app.theme, &app.homeSearch, 240*scale, rowHeightDp)
+			searchDims := homeSearchField(gtx, app.theme, &app.homeSearch, app.homeSearchPlaceholder(), 240*scale, rowHeightDp)
 			if searchDims.Size.Y != rowHeightPx {
 				t.Fatalf("homeSearchField height=%dpx; want rowHeightPx=%dpx (PxPerDp=%v)", searchDims.Size.Y, rowHeightPx, pxPerDp)
 			}
@@ -139,7 +141,7 @@ func TestHomeFiltersCompactLayoutPositions(t *testing.T) {
 		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
 		Constraints: layout.Exact(image.Pt(450, 44)),
 	}
-	searchDims := homeSearchField(searchGtx, app.theme, &app.homeSearch, 0, 44)
+	searchDims := homeSearchField(searchGtx, app.theme, &app.homeSearch, app.homeSearchPlaceholder(), 0, 44)
 	if searchDims.Size.X != 450 {
 		t.Fatalf("fill-width search box width=%d; want 450", searchDims.Size.X)
 	}
@@ -149,9 +151,6 @@ func TestHomeFiltersCompactLayoutPositions(t *testing.T) {
 }
 
 func TestHomeSearchCopyAndOpenCardOnlyAdvertiseImplementedActions(t *testing.T) {
-	if homeSearchPlaceholder != "搜索文件名..." {
-		t.Fatalf("home search placeholder=%q; want filename-only copy", homeSearchPlaceholder)
-	}
 	if homeActions[len(homeActions)-1].extension != ".docx / .xlsx" {
 		t.Fatalf("open card extensions=%q; want supported Office examples only", homeActions[len(homeActions)-1].extension)
 	}

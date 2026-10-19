@@ -7,6 +7,7 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 )
 
 func TestWordDocumentInfoRibbonOpensAndCommitsCoreProperties(t *testing.T) {
@@ -23,6 +24,7 @@ func TestWordDocumentInfoRibbonOpensAndCommitsCoreProperties(t *testing.T) {
 		wordCommandResults:      make(chan wordCommandResult, 1),
 		wordDocumentInfoResults: make(chan wordDocumentInfoResult, 1),
 	}
+	app.applyLocaleSelection(i18n.SelectionChinese)
 
 	action := findWordFileTestAction(t, "doc-info")
 	if !app.wordToolbarActionEnabled(action) {
@@ -34,8 +36,8 @@ func TestWordDocumentInfoRibbonOpensAndCommitsCoreProperties(t *testing.T) {
 		app.processAsyncResults()
 		time.Sleep(5 * time.Millisecond)
 	}
-	if !app.modal.Visible || app.modal.Title != "文档信息" {
-		t.Fatalf("Document Info opened modal=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.text(app.modal.TitleRef) != "文档信息" {
+		t.Fatalf("Document Info opened modal=%v title=%q", app.modal.Visible, app.text(app.modal.TitleRef))
 	}
 
 	inputs := reflect.ValueOf(&app.modal).Elem().FieldByName("FormInputs")

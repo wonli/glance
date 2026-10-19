@@ -3,6 +3,7 @@ package desktopui
 import (
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"math"
@@ -244,9 +245,9 @@ func (a *App) layoutWordImage(gtx layout.Context, paragraph document.WordParagra
 					}
 					message := state.wordImageErrors[item.ID]
 					if message == "" {
-						message = "正在载入图片…"
+						message = a.textID("word.image.preview.loading")
 					} else {
-						message = "图片无法预览：" + message
+						message = a.textArgs("word.image.preview.failed", i18n.Args{"Error": message})
 					}
 					return wordReadOnlyPlaceholder(gtx, a.theme, message)
 				})
@@ -268,7 +269,7 @@ func (a *App) layoutWordImage(gtx layout.Context, paragraph document.WordParagra
 					layoutWordImageMoveDragArea(gtx, interaction, imageRect, selected)
 				}
 				imageBounds := clip.Rect{Max: containerSize}.Push(gtx.Ops)
-				semantic.DescriptionOp("内嵌图片 " + item.ID).Add(gtx.Ops)
+				semantic.DescriptionOp(a.textArgs("word.accessibility.inline_image", i18n.Args{"ID": item.ID})).Add(gtx.Ops)
 				imageBounds.Pop()
 				a.drawWordImage(gtx, decoded, sourceSize, visualSize, imageRect, rotationDegrees)
 				if selected {
@@ -367,7 +368,7 @@ func (a *App) layoutWordImageResizeHandles(gtx layout.Context, interaction *word
 		area := clip.Rect{Min: hitRect.Min, Max: hitRect.Max}.Push(gtx.Ops)
 		drag.Add(gtx.Ops)
 		semantic.Button.Add(gtx.Ops)
-		semantic.DescriptionOp("拖动调整图片大小：" + handle.name).Add(gtx.Ops)
+		semantic.DescriptionOp(a.textArgs("word.accessibility.resize_image", i18n.Args{"Handle": a.textID(wordImageResizeHandleMessageID(index))})).Add(gtx.Ops)
 		area.Pop()
 		for event, ok := drag.Update(gtx.Metric, gtx.Source, gesture.Both); ok; event, ok = drag.Update(gtx.Metric, gtx.Source, gesture.Both) {
 			a.documentSessionState.wordCanvasContentClickHandled = true
@@ -411,7 +412,7 @@ func (a *App) layoutWordImageRotationHandle(gtx layout.Context, interaction *wor
 	area := clip.Rect{Min: hitRect.Min, Max: hitRect.Max}.Push(gtx.Ops)
 	interaction.rotationDrag.Add(gtx.Ops)
 	semantic.Button.Add(gtx.Ops)
-	semantic.DescriptionOp("拖动旋转图片").Add(gtx.Ops)
+	semantic.DescriptionOp(a.textID("word.accessibility.rotate_image")).Add(gtx.Ops)
 	area.Pop()
 	for event, ok := interaction.rotationDrag.Update(gtx.Metric, gtx.Source, gesture.Both); ok; event, ok = interaction.rotationDrag.Update(gtx.Metric, gtx.Source, gesture.Both) {
 		a.documentSessionState.wordCanvasContentClickHandled = true

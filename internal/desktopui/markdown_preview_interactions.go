@@ -10,6 +10,7 @@ import (
 	"gioui.org/op/paint"
 	"glance/internal/document"
 	"glance/internal/format/markdowndoc"
+	"glance/internal/i18n"
 	"image"
 	"strings"
 )
@@ -104,11 +105,11 @@ func (a *App) showMarkdownFormulaEdit(formula document.MarkdownSpan) {
 	source := v.text()
 	r := []rune(source)
 	if markdownEditorComposing(&v.editor) {
-		a.setStatus("请先完成输入法选字")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.finish_chinese_input_composition_first_b4284e"}, feedbackWarning, notificationSuppressed)
 		return
 	}
 	if source != v.snapshot.Source || formula.SourceStart < 0 || formula.SourceEnd > len(r) || formula.SourceEnd <= formula.SourceStart {
-		a.setStatus("预览正在更新，请稍后编辑公式")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_preview_is_updating_try_editing_the_fo_2d56d6"}, feedbackInfo, notificationToast)
 		return
 	}
 	original := string(r[formula.SourceStart:formula.SourceEnd])
@@ -117,17 +118,17 @@ func (a *App) showMarkdownFormulaEdit(formula document.MarkdownSpan) {
 		delim = "$$"
 	}
 	if !strings.HasPrefix(original, delim) || !strings.HasSuffix(original, delim) {
-		a.setStatus("公式位置已改变")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_formula_position_changed_2ed4c5"}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	inner := original[len(delim) : len(original)-len(delim)]
 	if strings.TrimSpace(inner) != formula.Text {
-		a.setStatus("公式内容已改变")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_formula_content_changed_997f14"}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	state := a.documentSessionState
 	start, end := v.editor.Selection()
-	a.modal.ShowForm("编辑公式", "", []string{"公式"}, []string{`例如 \frac{a}{b} 或 x^2`}, []string{formula.Text}, func(id string) {
+	a.modal.ShowFormMessage("markdown.edit.math", i18n.Message{ID: "markdown.edit.math.title"}, i18n.Message{}, []i18n.Message{{ID: "markdown.insert.math.label"}}, []i18n.Message{{ID: "markdown.insert.math.hint"}}, []string{formula.Text}, func(id string) {
 		if id == "cancel" {
 			a.modal.Hide()
 			return
@@ -137,16 +138,16 @@ func (a *App) showMarkdownFormulaEdit(formula document.MarkdownSpan) {
 		}
 		if a.documentSessionState != state || v.text() != source {
 			a.modal.Hide()
-			a.setStatus("文档内容已改变，修改已取消")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_document_content_changed_the_edit_was_f32be1"}, feedbackInfo, notificationSuppressed)
 			return
 		}
 		if markdownEditorComposing(&v.editor) {
-			a.setStatus("请先完成输入法选字")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.finish_chinese_input_composition_first_b4284e"}, feedbackWarning, notificationSuppressed)
 			return
 		}
 		expr := a.modal.FormInputs[0].Text()
 		if _, err := markdowndoc.RenderMath(expr, formula.DisplayMath); err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, err, notificationToast)
 			return
 		}
 		leading := inner[:len(inner)-len(strings.TrimLeft(inner, " \t\r\n"))]

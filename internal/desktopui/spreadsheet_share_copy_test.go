@@ -56,8 +56,8 @@ func TestSpreadsheetShareActionOpensXLSXCopyPickerAndCancelPreservesSession(t *t
 		t.Fatal("share picker cancellation was not delivered")
 	}
 
-	if app.status != "已取消共享副本导出" {
-		t.Fatalf("share cancellation status = %q", app.status)
+	if app.statusText() != "已取消共享副本导出" {
+		t.Fatalf("share cancellation status = %q", app.statusText())
 	}
 	if app.book != book || app.path != "source.xlsx" || state.path != "source.xlsx" || !book.Dirty() {
 		t.Fatalf("cancel changed source session: active=%p path=%q statePath=%q dirty=%v", app.book, app.path, state.path, book.Dirty())
@@ -138,14 +138,14 @@ func TestSpreadsheetShareRejectsSourceOverwriteAndStalePickerChoice(t *testing.T
 
 	// Reject overwriting source
 	app.startSpreadsheetShareCopyFile(&spreadsheetShareCopyPickerRequest{state: state, historyState: book.HistoryState()}, sourcePath)
-	if app.status != "共享副本不能覆盖当前 XLSX" {
-		t.Fatalf("source overwrite status = %q", app.status)
+	if app.statusText() != "共享 XLSX 副本不能覆盖源文档。" {
+		t.Fatalf("source overwrite status = %q", app.statusText())
 	}
 
 	// Reject stale history state
 	stalePath := filepath.Join(t.TempDir(), "stale.xlsx")
 	app.startSpreadsheetShareCopyFile(&spreadsheetShareCopyPickerRequest{state: state, historyState: book.HistoryState() + 99}, stalePath)
-	if app.status != "工作簿在选择位置期间已更改，未导出共享副本；请重试" {
-		t.Fatalf("stale history state status = %q", app.status)
+	if app.statusText() != "选择位置期间工作簿已更改，未导出共享副本，请重试。" {
+		t.Fatalf("stale history state status = %q", app.statusText())
 	}
 }

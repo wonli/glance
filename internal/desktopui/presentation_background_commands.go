@@ -3,16 +3,17 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/application"
 )
 
 func (a *App) showPresentationBackgroundOptions(view *presentationViewState) {
 	if view == nil || view.currentSlide() == nil {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.Show("幻灯片背景", "为当前幻灯片设置纯色背景。", func(action string) {
+	a.modal.ShowMessage("presentation.background", i18n.Message{ID: "presentation.background.title"}, i18n.Message{ID: "presentation.background.body"}, func(action string) {
 		a.modal.Hide()
 		colorHex := map[string]string{
 			"white":      "#FFFFFF",
@@ -25,11 +26,11 @@ func (a *App) showPresentationBackgroundOptions(view *presentationViewState) {
 		}
 		a.startPresentationBackgroundSet(view, colorHex)
 	},
-		modalDialogActionSpec{ID: "white", Label: "白色"},
-		modalDialogActionSpec{ID: "light-gray", Label: "浅灰"},
-		modalDialogActionSpec{ID: "light-blue", Label: "浅蓝"},
-		modalDialogActionSpec{ID: "navy", Label: "深蓝"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "white", LabelRef: i18n.Message{ID: "presentation.background.white"}},
+		modalDialogActionSpec{ID: "light-gray", LabelRef: i18n.Message{ID: "presentation.background.light_gray"}},
+		modalDialogActionSpec{ID: "light-blue", LabelRef: i18n.Message{ID: "presentation.background.light_blue"}},
+		modalDialogActionSpec{ID: "navy", LabelRef: i18n.Message{ID: "presentation.background.navy"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -41,11 +42,11 @@ type presentationSlideBackgroundSetArguments struct {
 func (a *App) startPresentationBackgroundSet(view *presentationViewState, colorHex string) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("演示文稿能力尚未连接")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_capabilities_are_not_connecte_811cbe"}, feedbackInfo, notificationToast)
 		return true
 	}
 	if view.commandPending {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
@@ -56,12 +57,12 @@ func (a *App) startPresentationBackgroundSet(view *presentationViewState, colorH
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return true
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true

@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/document"
 )
@@ -62,13 +63,13 @@ func (a *App) requestGridWindow(v *gridViewport, reader document.GridReader, she
 		v.WindowError = fmt.Errorf("worksheet window load was cancelled")
 		v.FailedWindows = windows
 		v.FailedSheet = sheet
-		a.setStatus(gridWindowError(sheet, v.WindowError))
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.grid.window.load_failed", Args: i18n.Args{"Sheet": sheet}}, v.WindowError, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
-	a.setStatus(fmt.Sprintf("正在读取工作表「%s」的可见单元格…", sheet))
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.grid.window.loading", Args: i18n.Args{"Sheet": sheet}}, feedbackInfo, notificationSuppressed)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -99,7 +100,7 @@ func (a *App) pollGridLoad(v *gridViewport) {
 				v.FailedRange = result.rangeOf
 				v.FailedSheet = result.sheet
 				v.FailedWindows = result.windows
-				a.setStatus(gridWindowError(result.sheet, result.err))
+				a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.grid.window.load_failed", Args: i18n.Args{"Sheet": result.sheet}}, result.err, notificationToast)
 				if a.window != nil {
 					a.window.Invalidate()
 				}
@@ -109,14 +110,14 @@ func (a *App) pollGridLoad(v *gridViewport) {
 				v.WindowError = err
 				v.FailedWindows = result.windows
 				v.FailedSheet = result.sheet
-				a.setStatus(gridWindowError(result.sheet, err))
+				a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.grid.window.load_failed", Args: i18n.Args{"Sheet": result.sheet}}, err, notificationToast)
 				if a.window != nil {
 					a.window.Invalidate()
 				}
 				continue
 			}
 			a.applyValueFilterWindow(a.documentSessionState, v)
-			a.setStatus("就绪")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.ready_b796f2"}, feedbackInfo, notificationSuppressed)
 			if a.window != nil {
 				a.window.Invalidate()
 			}

@@ -72,8 +72,8 @@ func TestSpreadsheetHyperlinkShortcutUsesToolbarFlow(t *testing.T) {
 		h = newOfficeShortcutHarness(app)
 
 		pressOfficeShortcut(t, h, "K", key.ModShortcut)
-		if !app.modal.Visible || app.modal.Title != "插入链接" {
-			t.Fatalf("Ctrl/Cmd+K dialog visible=%v title=%q; want Insert Link", app.modal.Visible, app.modal.Title)
+		if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入链接" {
+			t.Fatalf("Ctrl/Cmd+K dialog visible=%v title=%q; want Insert Link", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 		}
 	})
 
@@ -593,7 +593,7 @@ func TestWordRibbonPasteReplacesSelectedRangeAcrossRuns(t *testing.T) {
 	waitForWordSelectionFormatting(t, app, state)
 	p = state.word.WordBlocks()[0].Paragraph
 	if len(p.Inlines) != 2 || p.Inlines[0].Text.Text != "甲新🌱" || p.Inlines[1].Text.Text != "乙" {
-		t.Fatalf("Ribbon Paste replaced more than the selected AB: %q/%q status=%q pending=%+v intent=%+v", p.Inlines[0].Text.Text, p.Inlines[1].Text.Text, app.status, state.wordPendingPasteSelection, state.wordSelectionEditIntent)
+		t.Fatalf("Ribbon Paste replaced more than the selected AB: %q/%q status=%q pending=%+v intent=%+v", p.Inlines[0].Text.Text, p.Inlines[1].Text.Text, app.statusText(), state.wordPendingPasteSelection, state.wordSelectionEditIntent)
 	}
 	if !p.Inlines[0].Text.Style.Bold || !p.Inlines[1].Text.Style.Italic {
 		t.Fatalf("Ribbon Paste lost surrounding run properties: %#v", p.Inlines)
@@ -826,7 +826,7 @@ func TestWordRibbonPasteRebasesRequestedSelectionAfterPendingReplacementInput(t 
 	waitForWordSelectionFormatting(t, app, state)
 	p = state.word.WordBlocks()[0].Paragraph
 	if p.Inlines[0].Text.Text != "甲新文" || p.Inlines[1].Text.Text != "乙" {
-		t.Fatalf("Ribbon Paste did not follow the caret after pending selected-text input: %q/%q status=%q", p.Inlines[0].Text.Text, p.Inlines[1].Text.Text, app.status)
+		t.Fatalf("Ribbon Paste did not follow the caret after pending selected-text input: %q/%q status=%q", p.Inlines[0].Text.Text, p.Inlines[1].Text.Text, app.statusText())
 	}
 }
 
@@ -898,7 +898,7 @@ func waitForWordSelectionFormatting(t *testing.T, app *App, state *documentSessi
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("Word selection formatting did not complete: intent=%+v running=%v status=%q", state.wordSelectionEditIntent, state.formatRunning.Load(), app.status)
+	t.Fatalf("Word selection formatting did not complete: intent=%+v running=%v status=%q", state.wordSelectionEditIntent, state.formatRunning.Load(), app.statusText())
 }
 
 func TestSpreadsheetFormatShortcutDoesNotFormatWhileEditingCellText(t *testing.T) {
@@ -971,8 +971,8 @@ func TestOfficePrintShortcutOpensExistingPrintFlows(t *testing.T) {
 		a := &App{documentSessionState: state, nativePrinter: &testWordPrinter{available: false}}
 		h := newOfficeShortcutHarness(a)
 		pressOfficeShortcut(t, h, "P", key.ModShortcut)
-		if a.status != "当前平台不支持原生打印" {
-			t.Fatalf("Word Ctrl/Cmd+P status = %q; want the existing native-print availability response", a.status)
+		if a.statusText() != "当前平台不支持原生打印" {
+			t.Fatalf("Word Ctrl/Cmd+P status = %q; want the existing native-print availability response", a.statusText())
 		}
 	})
 
@@ -994,8 +994,8 @@ func TestOfficePrintShortcutOpensExistingPrintFlows(t *testing.T) {
 		a.book = book
 		h := newOfficeShortcutHarness(a)
 		pressOfficeShortcut(t, h, "P", key.ModShortcut)
-		if !a.modal.Visible || a.modal.Title != "打印工作表" {
-			t.Fatalf("Excel Ctrl/Cmd+P dialog = visible %v, title %q; want print confirmation", a.modal.Visible, a.modal.Title)
+		if !a.modal.Visible || a.messageText(a.modal.TitleRef, a.modal.Title) != "打印工作表" {
+			t.Fatalf("Excel Ctrl/Cmd+P dialog = visible %v, title %q; want print confirmation", a.modal.Visible, a.messageText(a.modal.TitleRef, a.modal.Title))
 		}
 		window, err := book.Window(sheet, 1, 1, 1, 1)
 		if err != nil {

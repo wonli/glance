@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"time"
@@ -52,22 +53,22 @@ func (a *App) layoutPresentationStatusBar(gtx layout.Context, v *presentationVie
 			gtx.Constraints.Min.X = gtx.Constraints.Max.X
 			return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
-					// Left status items: "幻灯片 X / Y", "中文（中国）", "辅助功能：正常"
+					// Left status items: "幻灯片 X / Y", a.textID("word.status.language.chinese"), a.textID("presentation.status.accessibility.normal")
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(unit.Dp(16))}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								txt := fmt.Sprintf("幻灯片 %d / %d", v.activeSlide+1, totalSlides)
+								txt := a.textArgs("presentation.status.slide_count", i18n.Args{"Current": v.activeSlide + 1, "Total": totalSlides})
 								lbl := material.Label(a.theme, unit.Sp(11), txt)
 								lbl.Color = pptxTextMuted
 								return lbl.Layout(gtx)
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Label(a.theme, unit.Sp(11), "中文（中国）")
+								lbl := material.Label(a.theme, unit.Sp(11), a.textID("word.status.language.chinese"))
 								lbl.Color = pptxTextMuted
 								return lbl.Layout(gtx)
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Label(a.theme, unit.Sp(11), "辅助功能：正常")
+								lbl := material.Label(a.theme, unit.Sp(11), a.textID("presentation.status.accessibility.normal"))
 								lbl.Color = pptxTextMuted
 								return lbl.Layout(gtx)
 							}),
@@ -97,7 +98,7 @@ func (a *App) layoutPresentationStatusBar(gtx layout.Context, v *presentationVie
 							// 放映按钮
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return v.slideshowBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Label(a.theme, unit.Sp(11), "幻灯片放映")
+									lbl := material.Label(a.theme, unit.Sp(11), a.textID("presentation.ribbon.tab.slideshow"))
 									lbl.Color = pptxAccentColor
 									lbl.Font.Weight = font.Medium
 									return lbl.Layout(gtx)
@@ -129,7 +130,7 @@ func (a *App) layoutPresentationStatusBar(gtx layout.Context, v *presentationVie
 							// 适应窗口
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return v.zoomFitBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Label(a.theme, unit.Sp(11), "适应")
+									lbl := material.Label(a.theme, unit.Sp(11), a.textID("presentation.zoom.fit"))
 									if v.fitMode {
 										lbl.Color = pptxAccentColor
 									} else {
@@ -157,7 +158,7 @@ func (a *App) layoutPresentationSlideshow(gtx layout.Context, v *presentationVie
 	// Handle controls
 	if v.exitShowBtn.Clicked(gtx) {
 		if _, err := a.applyPresentationViewIntent("presentation.view.set", json.RawMessage(`{"operation":"set_mode","mode":"normal"}`)); err != nil {
-			a.setStatus("退出放映失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		}
 	}
 	if v.prevSlideBtn.Clicked(gtx) {
@@ -189,13 +190,13 @@ func (a *App) layoutPresentationSlideshow(gtx layout.Context, v *presentationVie
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(unit.Dp(16))}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return v.prevSlideBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Label(a.theme, unit.Sp(12), "◀ 上一页")
+							lbl := material.Label(a.theme, unit.Sp(12), a.textID("presentation.presenter.previous"))
 							lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 							return lbl.Layout(gtx)
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						txt := fmt.Sprintf("%d / %d", v.activeSlide+1, v.snapshot.SlideCount)
+						txt := a.textArgs("presentation.status.slide_count", i18n.Args{"Current": v.activeSlide + 1, "Total": max(1, v.snapshot.SlideCount)})
 						lbl := material.Label(a.theme, unit.Sp(12), txt)
 						lbl.Color = color.NRGBA{R: 200, G: 205, B: 215, A: 255}
 						return lbl.Layout(gtx)
@@ -204,9 +205,10 @@ func (a *App) layoutPresentationSlideshow(gtx layout.Context, v *presentationVie
 						if v.rehearsalElapsed == 0 && !v.rehearsalRunning() {
 							return layout.Dimensions{}
 						}
-						label := "计时 " + formatPresentationRehearsalDuration(v.rehearsalDuration(time.Now()))
+						duration := formatPresentationRehearsalDuration(v.rehearsalDuration(time.Now()))
+						label := a.textArgs("presentation.status.timer_elapsed", i18n.Args{"Duration": duration})
 						if !v.rehearsalRunning() {
-							label += " 已停止"
+							label = a.textArgs("presentation.status.timer_stopped", i18n.Args{"Duration": duration})
 						}
 						lbl := material.Label(a.theme, unit.Sp(12), label)
 						lbl.Color = color.NRGBA{R: 255, G: 211, B: 125, A: 255}
@@ -214,14 +216,14 @@ func (a *App) layoutPresentationSlideshow(gtx layout.Context, v *presentationVie
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return v.nextSlideBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Label(a.theme, unit.Sp(12), "下一页 ▶")
+							lbl := material.Label(a.theme, unit.Sp(12), a.textID("presentation.presenter.next"))
 							lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 							return lbl.Layout(gtx)
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return v.exitShowBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Label(a.theme, unit.Sp(12), "退出 (Esc)")
+							lbl := material.Label(a.theme, unit.Sp(12), a.textID("presentation.presenter.exit"))
 							lbl.Color = color.NRGBA{R: 255, G: 120, B: 120, A: 255}
 							return lbl.Layout(gtx)
 						})

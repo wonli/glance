@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	systemThemeMu       sync.Mutex
+	systemThemeMu        sync.Mutex
 	systemThemeLastCheck time.Time
-	systemThemeCached   bool
+	systemThemeCached    bool
 )
 
 func detectSystemDarkMode() bool {

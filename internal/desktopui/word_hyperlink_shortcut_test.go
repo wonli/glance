@@ -19,8 +19,8 @@ func TestWordHyperlinkShortcutLinksSelectedTextOnly(t *testing.T) {
 	h := newOfficeShortcutHarness(app)
 
 	pressOfficeShortcut(t, h, "K", key.ModShortcut)
-	if !app.modal.Visible || app.modal.Title != "插入超链接" {
-		t.Fatalf("Word Ctrl/Cmd+K modal visible=%v title=%q; want Insert Hyperlink", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入超链接" {
+		t.Fatalf("Word Ctrl/Cmd+K modal visible=%v title=%q; want Insert Hyperlink", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	if got := app.modal.SecondInput.Text(); got != "ABC" {
 		t.Fatalf("hyperlink display text = %q; want selected text ABC", got)
@@ -28,8 +28,8 @@ func TestWordHyperlinkShortcutLinksSelectedTextOnly(t *testing.T) {
 	app.modal.Input.SetText("https://example.com")
 	app.modal.SecondInput.SetText("链接")
 	app.modal.OnAction("confirm")
-	if !strings.Contains(app.status, "已成功插入超链接") {
-		t.Fatalf("hyperlink action status = %q", app.status)
+	if !strings.Contains(app.statusText(), "已成功插入超链接") {
+		t.Fatalf("hyperlink action status = %q", app.statusText())
 	}
 	var text strings.Builder
 	for _, block := range state.word.WordBlocks() {
@@ -71,8 +71,8 @@ func TestWordHyperlinkShortcutWaitsForFocusedDraftCommit(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if !app.modal.Visible || app.modal.Title != "插入超链接" {
-		t.Fatalf("deferred hyperlink dialog visible=%v title=%q status=%q", app.modal.Visible, app.modal.Title, app.status)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入超链接" {
+		t.Fatalf("deferred hyperlink dialog visible=%v title=%q status=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title), app.statusText())
 	}
 	if got := app.modal.SecondInput.Text(); got != "AXZ" {
 		t.Fatalf("hyperlink display text after draft commit = %q; want AXZ", got)

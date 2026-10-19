@@ -183,6 +183,13 @@ func (d *Document) Path() string {
 	return d.path
 }
 
+// SetSourcePath restores the canonical save destination without changing content.
+func (d *Document) SetSourcePath(path string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.path = path
+}
+
 // IsDirty returns whether the document has unsaved changes.
 func (d *Document) IsDirty() bool {
 	d.mu.RLock()

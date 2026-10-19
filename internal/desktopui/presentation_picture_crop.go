@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"image"
 	"math"
 
@@ -72,7 +73,7 @@ func (a *App) beginPresentationPictureCrop(v *presentationViewState) bool {
 	}
 	a.markPresentationCropDraft(v, true)
 	v.activeRibbonTab = "picture"
-	a.setStatus("拖动图片边缘调整裁剪，拖动画面平移图片")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.drag_a_picture_edge_to_crop_it_or_drag_the_0ea7df"}, feedbackInfo, notificationToast)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -85,7 +86,7 @@ func (a *App) cancelPresentationPictureCrop(v *presentationViewState) {
 	}
 	v.pictureCrop = presentationPictureCropState{}
 	a.markPresentationCropDraft(v, false)
-	a.setStatus("已取消图片裁剪")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.picture_cropping_canceled_4ccc77"}, feedbackSuccess, notificationSuppressed)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -98,7 +99,7 @@ func (a *App) resetPresentationPictureCrop(v *presentationViewState) {
 	v.pictureCrop.preview = document.PresentationCrop{}
 	v.pictureCrop.gesture = presentationPictureCropGesture{}
 	a.markPresentationCropDraft(v, true)
-	a.setStatus("已预览原始图片范围；完成裁剪后写入")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.original_picture_bounds_previewed_finish_c_8bb660"}, feedbackSuccess, notificationToast)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -132,12 +133,12 @@ func (a *App) commitPresentationPictureCrop(v *presentationViewState) {
 	if cropState.baseRevisionSet && state.wordRevisionAtomic.Load() != cropState.baseRevision {
 		v.pictureCrop = presentationPictureCropState{}
 		a.markPresentationCropDraft(v, false)
-		a.setStatus("图片裁剪期间文档已被其他操作修改；请重新进入裁剪")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_document_changed_while_the_picture_was_0ea260"}, feedbackInfo, notificationToast)
 		return
 	}
 	if cropState.preview == cropState.original {
 		a.cancelPresentationPictureCrop(v)
-		a.setStatus("图片裁剪没有变化")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_picture_crop_has_not_changed_6db3f6"}, feedbackInfo, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
@@ -148,14 +149,14 @@ func (a *App) commitPresentationPictureCrop(v *presentationViewState) {
 		state.finishOperation(token)
 		v.pictureCrop = presentationPictureCropState{}
 		a.markPresentationCropDraft(v, false)
-		a.setStatus("图片裁剪期间文档已被其他操作修改；请重新进入裁剪")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_document_changed_while_the_picture_was_0ea260"}, feedbackInfo, notificationToast)
 		return
 	}
 	if cropState.slideIndex < 0 || cropState.slideIndex >= len(v.snapshot.Slides) {
 		state.finishOperation(token)
 		v.pictureCrop = presentationPictureCropState{}
 		a.markPresentationCropDraft(v, false)
-		a.setStatus("图片裁剪目标已不存在")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_picture_crop_target_no_longer_exists_b524e9"}, feedbackInfo, notificationToast)
 		return
 	}
 	slideID := v.snapshot.Slides[cropState.slideIndex].ID
@@ -170,7 +171,7 @@ func (a *App) commitPresentationPictureCrop(v *presentationViewState) {
 		shapeID: cropState.shapeID, crop: cropState.preview,
 	}
 	results, shutdown, window := a.pptxPicCommandResults, a.shutdown, a.window
-	a.setStatus("正在完成图片裁剪…")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.finishing_the_picture_crop_9bd9d9"}, feedbackInfo, notificationSuppressed)
 	a.launchManagedBackground(func() {
 		beforeRevision := doc.Revision()
 		if a.applicationSessionRegistered(token.documentID) {
@@ -333,7 +334,7 @@ func drawPresentationCropSelection(gtx layout.Context, rect image.Rectangle) {
 	}
 }
 
-func registerPresentationCropInputs(gtx layout.Context, v *presentationViewState, elem document.PresentationElement, interaction *presentationShapeInteraction, rect image.Rectangle) {
+func registerPresentationCropInputs(gtx layout.Context, app *App, v *presentationViewState, elem document.PresentationElement, interaction *presentationShapeInteraction, rect image.Rectangle) {
 	if interaction == nil || v == nil || !v.pictureCrop.active || v.pictureCrop.committing {
 		return
 	}
@@ -341,7 +342,7 @@ func registerPresentationCropInputs(gtx layout.Context, v *presentationViewState
 	center := image.Pt(rect.Min.X+rect.Dx()/2, rect.Min.Y+rect.Dy()/2)
 	panArea := presentationRotatedRectArea(gtx, rect, rect.Inset(presentationHandleHitSize(gtx)/2), elem.RotationDeg)
 	interaction.cropPanDrag.Add(gtx.Ops)
-	semantic.DescriptionOp("拖动平移裁剪图片").Add(gtx.Ops)
+	semantic.DescriptionOp(app.textID("presentation.accessibility.pan_crop")).Add(gtx.Ops)
 	panArea.Pop()
 	hitSize := presentationHandleHitSize(gtx)
 	for index, handle := range presentationResizeHandles {
@@ -351,7 +352,7 @@ func registerPresentationCropInputs(gtx layout.Context, v *presentationViewState
 		area := clip.Rect{Min: hitRect.Min, Max: hitRect.Max}.Push(gtx.Ops)
 		interaction.cropDrags[index].Add(gtx.Ops)
 		semantic.Button.Add(gtx.Ops)
-		semantic.DescriptionOp("拖动裁剪手柄").Add(gtx.Ops)
+		semantic.DescriptionOp(app.textID("presentation.accessibility.crop_handle")).Add(gtx.Ops)
 		area.Pop()
 	}
 	pass.Pop()

@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"encoding/json"
+	"glance/internal/i18n"
 	"image"
 	"math"
 	"time"
@@ -285,7 +286,7 @@ func (a *App) runPresentationViewRibbonAction(view *presentationViewState, actio
 	case "picture_crop":
 		slideIndex, picture, ok := presentationSelectedEditablePicture(view)
 		if !ok || slideIndex < 0 || slideIndex >= len(view.snapshot.Slides) {
-			a.setStatus("请先选择可编辑的图片")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.select_an_editable_picture_first_ce5030"}, feedbackWarning, notificationSuppressed)
 			return true
 		}
 		arguments = presentationViewArguments{Operation: "picture_crop_mode", CropAction: "begin", SlideID: view.snapshot.Slides[slideIndex].ID, ElementID: picture.ID}
@@ -324,9 +325,9 @@ func (a *App) runPresentationViewRibbonAction(view *presentationViewState, actio
 		_, err = a.applyPresentationViewIntent("presentation.view.set", raw)
 	}
 	if err != nil {
-		a.setStatus("设置演示文稿视图失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 	} else if actionID == "show_rehearse" {
-		a.setStatus("排练放映已开始；计时可通过演示文稿视图查询")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.rehearsal_has_started_check_the_presentati_b54233"}, feedbackInfo, notificationSuppressed)
 	}
 	return true
 }

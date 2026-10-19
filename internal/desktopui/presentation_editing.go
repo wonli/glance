@@ -3,6 +3,7 @@ package desktopui
 import (
 	"errors"
 	"fmt"
+	"glance/internal/i18n"
 	"strconv"
 
 	"glance/internal/application"
@@ -64,12 +65,12 @@ func (a *App) flushPresentationTextDraft() error {
 		_, err := a.executeRibbonApplicationCommand(token, "presentation.element.text.set", "presentation_element", strconv.FormatInt(v.editingShape, 10), "", presentationElementTextSetArguments{SlideId: slideID, ElementId: v.editingShape, Text: text})
 		state.finishOperation(token)
 		if err != nil {
-			a.setStatus("幻灯片文字更新失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 			return err
 		}
 	} else if state == nil || state.pptxDoc != a.pptxDoc {
 		if err := a.pptxDoc.UpdateSlideTextByID(slideID, v.editingShape, text); err != nil {
-			a.setStatus("幻灯片文字更新失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 			return err
 		}
 	} else {
@@ -82,7 +83,7 @@ func (a *App) flushPresentationTextDraft() error {
 		unlock()
 		if err != nil {
 			state.finishOperation(token)
-			a.setStatus("幻灯片文字更新失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 			return err
 		}
 		a.completeSessionOperation(state, token, nil, true)
@@ -92,7 +93,7 @@ func (a *App) flushPresentationTextDraft() error {
 	if state != nil {
 		state.setPresentationDraftDirty(a.windowID, presentationTextDraft, false)
 	}
-	a.setStatus("幻灯片文字已修改；点击保存写入文件")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.slide_text_changed_save_to_write_the_chang_94f5b5"}, feedbackSuccess, notificationToast)
 	return nil
 }
 
@@ -114,7 +115,7 @@ func (a *App) flushPresentationNotesDraft(v *presentationViewState) error {
 	err := a.commitPresentationNotesDraft(v, slide.ID, v.notesEditorBase, notes)
 	if errors.Is(err, application.ErrPresentationNotesConflict) {
 		v.notesDraftConflict = true
-		a.setStatus("演讲者备注已被其他操作修改；请重新加载或明确保留本地草稿")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.speaker_notes_changed_in_another_operation_9711a6"}, feedbackInfo, notificationToast)
 	}
 	return err
 }

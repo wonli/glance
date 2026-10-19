@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"image"
 	"io"
 	"math"
@@ -96,7 +97,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 		target := state.clipboardPasteTarget
 		state.clipboardPasteTarget = nil
 		if _, cancelled := ev.(transfer.CancelEvent); cancelled {
-			a.setStatus("已取消读取剪贴板")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.clipboard_read_canceled_7cb21f"}, feedbackSuccess, notificationSuppressed)
 			continue
 		}
 		data, yes := ev.(transfer.DataEvent)
@@ -104,16 +105,16 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 			continue
 		}
 		if target == nil {
-			a.setStatus("粘贴位置已失效，请重新粘贴")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_paste_target_expired_paste_again_a7b7b9"}, feedbackWarning, notificationSuppressed)
 			continue
 		}
 		reader := data.Open()
 		raw, err := io.ReadAll(reader)
 		_ = reader.Close()
 		if err != nil {
-			a.setStatus("读取剪贴板失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		} else if err := a.pasteClipboardAt(target.sheet, target.bounds, string(raw)); err != nil {
-			a.setStatus("粘贴失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		}
 	}
 	for {
@@ -152,7 +153,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					}
 					if _, submit := ev.(widget.SubmitEvent); submit {
 						if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-							a.setStatus("修改失败：" + err.Error())
+							a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 							a.window.Invalidate()
 							gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
 						} else {
@@ -310,7 +311,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				}
 				if !a.documentSessionState.formulaReference.Active {
 					if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-						a.setStatus("修改失败：" + err.Error())
+						a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 						gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
 						a.window.Invalidate()
 						continue
@@ -446,7 +447,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					v.cancelResize()
 					v.LastResizeClickAxis = 0
 					v.ResizeCursor = 0
-					a.setStatus("正在保存，请稍后调整行列尺寸")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.saving_is_in_progress_try_resizing_rows_or_b4e00d"}, feedbackInfo, notificationSuppressed)
 					a.window.Invalidate()
 					break
 				}
@@ -476,7 +477,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				state := a.documentSessionState
 				token, ok := state.beginOperation(sessionOperationMutation)
 				if !ok {
-					a.setStatus("正在处理其他操作，请稍后重试")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.another_operation_is_in_progress_try_again_17714f"}, feedbackInfo, notificationSuppressed)
 					v.cancelResize()
 					v.LastResizeClickAxis = 0
 					v.ResizeCursor = 0
@@ -488,12 +489,12 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 				unlock()
 				a.completeSessionOperation(state, token, err, err == nil)
 				if err != nil {
-					a.setStatus("尺寸调整失败：" + err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 				} else {
 					if resizedAxis == resizeRows {
 						state.markGridRowHeightManual(a.sheet, resizedIndex)
 					}
-					a.setStatus("行列尺寸已调整；点击保存写入原文件")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.row_or_column_size_changed_save_to_write_i_0bcdc4"}, feedbackInfo, notificationSuppressed)
 					a.persistActiveSession()
 				}
 				v.ResizeCursor = 0
@@ -507,7 +508,7 @@ func (a *App) layoutVirtualGrid(gtx layout.Context) layout.Dimensions {
 					if picture, found := gridPictureByID(state.gridPictures, id); found {
 						target, err := gridPicturePlacementAt(v, picture, preview)
 						if err != nil {
-							a.setStatus("图片位置无效：" + err.Error())
+							a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 						} else {
 							a.startGridPictureMoveResize(state, picture, mode, target, preview)
 						}
@@ -616,7 +617,7 @@ func (a *App) layoutGridVerticalScrollbar(gtx layout.Context, v *gridViewport, c
 		Min: image.Pt(max(0, gtx.Constraints.Max.X-trackWidth), columnHeaderPx),
 		Max: image.Pt(gtx.Constraints.Max.X, gtx.Constraints.Max.Y),
 	}.Push(gtx.Ops)
-	semantic.DescriptionOp("表格垂直滚动条").Add(gtx.Ops)
+	semantic.DescriptionOp(a.textID("grid.accessibility.vertical_scrollbar")).Add(gtx.Ops)
 	trackClip.Pop()
 
 	offset := op.Offset(image.Pt(max(0, gtx.Constraints.Max.X-trackWidth), columnHeaderPx)).Push(gtx.Ops)

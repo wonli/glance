@@ -13,6 +13,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"glance/internal/i18n"
 )
 
 const (
@@ -348,15 +350,15 @@ func (a *App) layoutHomeFolderMenu(gtx layout.Context, widgets *homeFolderRowWid
 	return homeRoundedPanel(gtx, homeSurface, homeBorder, unit.Dp(8), func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				a.homeFolderMenuItemLayout(gtx, widgets, "create-child", "新建子文件夹"),
+				a.homeFolderMenuItemLayout(gtx, widgets, "create-child", a.text(i18n.Message{ID: "home.folder.action.create_child"})),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return a.layoutHomeFolderMenuItem(gtx, widgets, "rename", "重命名")
+						return a.layoutHomeFolderMenuItem(gtx, widgets, "rename", a.text(i18n.Message{ID: "home.folder.action.rename"}))
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return a.layoutHomeFolderMenuItem(gtx, widgets, "remove", "从列表移除")
+						return a.layoutHomeFolderMenuItem(gtx, widgets, "remove", a.text(i18n.Message{ID: "home.folder.action.remove"}))
 					})
 				}),
 			)
@@ -493,7 +495,7 @@ func (a *App) layoutHomeFolderContentPage(gtx layout.Context) layout.Dimensions 
 		}))
 	}
 	if visibleCount == 0 {
-		message := homeFolderEmptyStateMessage(len(allItems) > 0)
+		message := a.text(homeFolderEmptyStateMessage(len(allItems) > 0))
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(24), Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = 0

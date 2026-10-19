@@ -55,7 +55,7 @@ func TestSpreadsheetGoToSelectsRectangularRangeWithFirstCellActive(t *testing.T)
 	a.nameBox.SetText("B2:D4")
 
 	if !a.goToCell(layout.Context{}) {
-		t.Fatalf("Go To rejected rectangular range: status=%q", a.status)
+		t.Fatalf("Go To rejected rectangular range: status=%q", a.statusText())
 	}
 	wantBounds := document.CellRange{StartRow: 2, StartColumn: 2, EndRow: 4, EndColumn: 4}
 	if got := state.selection.Bounds(); got != wantBounds {
@@ -90,7 +90,7 @@ func TestSpreadsheetGoToDefinedNameActivatesItsWorksheet(t *testing.T) {
 	a.nameBox.SetText("SalesData")
 
 	if !a.goToCell(layout.Context{}) {
-		t.Fatalf("Go To rejected a defined name: status=%q", a.status)
+		t.Fatalf("Go To rejected a defined name: status=%q", a.statusText())
 	}
 	want := document.CellRange{StartRow: 2, StartColumn: 2, EndRow: 4, EndColumn: 4}
 	if a.sheet != "Data Sheet" || state.sheet != "Data Sheet" {
@@ -147,7 +147,7 @@ func TestSpreadsheetNameBoxEnterSelectsRectangularRange(t *testing.T) {
 
 	want := document.CellRange{StartRow: 2, StartColumn: 2, EndRow: 4, EndColumn: 4}
 	if got := state.selection.Bounds(); got != want {
-		t.Fatalf("Name Box Enter selection = %+v; want %+v (status=%q)", got, want, a.status)
+		t.Fatalf("Name Box Enter selection = %+v; want %+v (status=%q)", got, want, a.statusText())
 	}
 	if a.selectedCell != "B2" {
 		t.Fatalf("Name Box Enter active cell = %q; want B2", a.selectedCell)
@@ -720,7 +720,7 @@ func TestSpreadsheetControlEnterFillsSelectedRangeFormulas(t *testing.T) {
 		a.formatResults <- result
 		a.processSpreadsheetFormatResult()
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Ctrl+Enter did not fill the selected range with formulas: focus=%t running=%t status=%q", h.router.Source().Focused(&state.formulaEditor), state.formatRunning.Load(), a.status)
+		t.Fatalf("Ctrl+Enter did not fill the selected range with formulas: focus=%t running=%t status=%q", h.router.Source().Focused(&state.formulaEditor), state.formatRunning.Load(), a.statusText())
 	}
 	for address, want := range map[string]string{
 		"A1": "SUM(A1:A2)", "B1": "SUM(B1:B2)",
@@ -1109,7 +1109,7 @@ func TestSpreadsheetGridControlEndMovesToUsedRangeAndExtendsSelection(t *testing
 			}
 			time.Sleep(time.Millisecond)
 		}
-		t.Fatalf("Ctrl/Cmd+End with modifiers %v did not produce the expected selection; active=%q bounds=%+v status=%q", modifiers, a.selectedCell, state.selection.Bounds(), a.status)
+		t.Fatalf("Ctrl/Cmd+End with modifiers %v did not produce the expected selection; active=%q bounds=%+v status=%q", modifiers, a.selectedCell, state.selection.Bounds(), a.statusText())
 	}
 	pressUntil(homeEndModifier, func() bool { return a.selectedCell == "F7" })
 	setActive(CellPosition{})

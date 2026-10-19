@@ -12,18 +12,34 @@ import (
 
 	"glance/internal/agent"
 	"glance/internal/agentsettings"
+	"glance/internal/i18n"
 )
 
 func (a *App) showAgentSettings(returnToChat bool) {
 	a.prepareAgentSettings(returnToChat)
-	a.modal.ShowCustom("模型设置", "配置模型服务后，可以在 Glance 中直接让 Agent 查询和编辑文档。聊天内容及 Agent 通过工具明确读取的文档片段会发送到该模型服务；不会自动上传整份文档。", 620,
+	a.modal.ShowCustomMessage(dialogIDAgentModelSettings, i18n.Message{ID: "settings.provider.dialog.title"}, i18n.Message{ID: "settings.provider.dialog.body"}, 620,
 		a.layoutAgentSettings,
 		a.handleAgentSettingsAction,
-		modalDialogActionSpec{ID: "test", Label: "测试连接"},
-		modalDialogActionSpec{ID: "save", Label: "保存"},
-		modalDialogActionSpec{ID: "clear-key", Label: "删除 API Key"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "test", LabelRef: i18n.Message{ID: "settings.provider.test"}},
+		modalDialogActionSpec{ID: "save", LabelRef: i18n.Message{ID: "settings.provider.save"}},
+		modalDialogActionSpec{ID: "clear-key", LabelRef: i18n.Message{ID: "settings.provider.delete_key"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "settings.provider.cancel"}},
 	)
+}
+
+func (a *App) setAgentSettingsInfo(message i18n.Message) {
+	a.agentUI.settingsInfoRef = message
+	a.agentUI.settingsInfo = a.text(message)
+}
+
+func (a *App) setAgentSettingsError(message i18n.Message) {
+	a.agentUI.settingsErrorRef = message
+	a.agentUI.settingsError = a.text(message)
+}
+
+func (a *App) clearAgentSettingsMessages() {
+	a.agentUI.settingsInfo, a.agentUI.settingsError = "", ""
+	a.agentUI.settingsInfoRef, a.agentUI.settingsErrorRef = i18n.Message{}, i18n.Message{}
 }
 
 func (a *App) prepareAgentSettings(returnToChat bool) {
@@ -33,13 +49,14 @@ func (a *App) prepareAgentSettings(returnToChat bool) {
 	settings, err := a.ensureDesktopRuntime().loadAgentSettings(context.Background())
 	a.agentUI.settings = settings
 	a.agentUI.returnToChat = returnToChat
-	a.agentUI.settingsError = ""
-	a.agentUI.settingsInfo = "API Key 只保存到系统凭据库，不写入普通配置或聊天记录。"
+	a.clearAgentSettingsMessages()
+	a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.credential_not_saved"})
 	if settings.CredentialRef != "" {
-		a.agentUI.settingsInfo = "API Key 已配置；留空可保留，输入新 Key 会轮换旧 Key。"
+		a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.credential_saved"})
 	}
 	if err != nil {
 		a.agentUI.settingsError = err.Error()
+		a.agentUI.settingsErrorRef = i18n.Message{}
 	}
 	if settings.ProviderID == "" {
 		settings.ProviderID = "minimax"
@@ -72,18 +89,18 @@ func (a *App) handleAgentSettingsAction(action string) {
 		}
 		apiKey := a.agentUI.apiKeyInput.Text()
 		if settings.ProviderID == "openai-compatible" && strings.TrimSpace(settings.BaseURL) == "" {
-			a.agentUI.settingsError = "兼容服务需要填写 API 地址。"
-			a.agentUI.settingsInfo = ""
+			a.setAgentSettingsError(i18n.Message{ID: "settings.provider.api_url_required"})
+			a.agentUI.settingsInfo, a.agentUI.settingsInfoRef = "", i18n.Message{}
 			return
 		}
 		if a.settingsEndpointChanged(settings, apiKey) {
-			a.agentUI.settingsError = "API 地址已更改，请重新输入该服务的 API Key 后再测试。"
-			a.agentUI.settingsInfo = ""
+			a.setAgentSettingsError(i18n.Message{ID: "settings.provider.api_key_changed_test"})
+			a.agentUI.settingsInfo, a.agentUI.settingsInfoRef = "", i18n.Message{}
 			return
 		}
 		a.agentUI.saving = true
-		a.agentUI.settingsError = ""
-		a.agentUI.settingsInfo = "正在发送不含文档内容的探测消息…"
+		a.agentUI.settingsError, a.agentUI.settingsErrorRef = "", i18n.Message{}
+		a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.probe_sending"})
 		a.runAgentSettingsOperation("test", func(ctx context.Context) (agentsettings.ModelSettings, error) {
 			return settings, a.ensureDesktopRuntime().testAgentSettings(ctx, settings, apiKey)
 		})
@@ -107,18 +124,18 @@ func (a *App) handleAgentSettingsAction(action string) {
 		}
 		apiKey := a.agentUI.apiKeyInput.Text()
 		if settings.ProviderID == "openai-compatible" && strings.TrimSpace(settings.BaseURL) == "" {
-			a.agentUI.settingsError = "兼容服务需要填写 API 地址。"
-			a.agentUI.settingsInfo = ""
+			a.setAgentSettingsError(i18n.Message{ID: "settings.provider.api_url_required"})
+			a.agentUI.settingsInfo, a.agentUI.settingsInfoRef = "", i18n.Message{}
 			return
 		}
 		if a.settingsEndpointChanged(settings, apiKey) {
-			a.agentUI.settingsError = "API 地址已更改，请重新输入该服务的 API Key 后再保存。"
-			a.agentUI.settingsInfo = ""
+			a.setAgentSettingsError(i18n.Message{ID: "settings.provider.api_key_changed_save"})
+			a.agentUI.settingsInfo, a.agentUI.settingsInfoRef = "", i18n.Message{}
 			return
 		}
 		a.agentUI.saving = true
-		a.agentUI.settingsError = ""
-		a.agentUI.settingsInfo = "正在保存设置并连接能力目录…"
+		a.agentUI.settingsError, a.agentUI.settingsErrorRef = "", i18n.Message{}
+		a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.saving_connecting"})
 		a.runAgentSettingsOperation("save", func(ctx context.Context) (agentsettings.ModelSettings, error) {
 			if err := a.ensureDesktopRuntime().saveAgentSettings(ctx, settings, apiKey); err != nil {
 				return settings, err
@@ -129,8 +146,8 @@ func (a *App) handleAgentSettingsAction(action string) {
 	case "clear-key":
 		a.cancelAgentModelLookup(true)
 		a.agentUI.saving = true
-		a.agentUI.settingsError = ""
-		a.agentUI.settingsInfo = "正在从系统凭据库删除 API Key…"
+		a.agentUI.settingsError, a.agentUI.settingsErrorRef = "", i18n.Message{}
+		a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.deleting_key"})
 		a.runAgentSettingsOperation("clear", func(ctx context.Context) (agentsettings.ModelSettings, error) {
 			if err := a.ensureDesktopRuntime().clearAgentAPIKey(ctx); err != nil {
 				return agentsettings.ModelSettings{}, err
@@ -187,24 +204,24 @@ func (a *App) layoutAgentSettings(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return agentSettingsField(gtx, a.theme, "服务地址（留空使用内置默认地址）", &a.agentUI.baseURLInput, "https://api.example.com/v1")
+				return agentSettingsField(gtx, a.theme, a.text(i18n.Message{ID: "settings.provider.api_url"}), &a.agentUI.baseURLInput, a.text(i18n.Message{ID: "settings.provider.api_url_hint"}))
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return agentSettingsField(gtx, a.theme, "模型名", &a.agentUI.modelInput, "填写服务商提供的模型名")
+				return agentSettingsField(gtx, a.theme, a.text(i18n.Message{ID: "settings.provider.default_model"}), &a.agentUI.modelInput, a.text(i18n.Message{ID: "settings.provider.model_hint"}))
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			var dims layout.Dimensions
 			if a.agentUI.providerInput.Text() == "ollama" {
-				style := material.Caption(a.theme, "Ollama 在本机运行，不需要 API Key。默认地址为 http://127.0.0.1:11434。")
+				style := material.Caption(a.theme, a.text(i18n.Message{ID: "settings.provider.ollama_default_url"}))
 				style.Color = homeMuted
 				style.MaxLines = 2
 				dims = layout.Inset{Top: unit.Dp(12)}.Layout(gtx, style.Layout)
 			} else {
 				dims = layout.Inset{Top: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return agentSettingsField(gtx, a.theme, "API Key（留空保留已保存的 Key）", &a.agentUI.apiKeyInput, "输入后会安全保存")
+					return agentSettingsField(gtx, a.theme, a.text(i18n.Message{ID: "settings.provider.api_key_label"}), &a.agentUI.apiKeyInput, a.text(i18n.Message{ID: "settings.provider.api_key_hint"}))
 				})
 			}
 			a.observeAgentModelLookup()
@@ -214,10 +231,10 @@ func (a *App) layoutAgentSettings(gtx layout.Context) layout.Dimensions {
 			return a.layoutAgentModelOptions(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			message := a.agentUI.settingsInfo
+			message := a.messageText(a.agentUI.settingsInfoRef, a.agentUI.settingsInfo)
 			textColor := homeMuted
 			if a.agentUI.settingsError != "" {
-				message, textColor = a.agentUI.settingsError, color.NRGBA{R: 178, G: 54, B: 54, A: 255}
+				message, textColor = a.messageText(a.agentUI.settingsErrorRef, a.agentUI.settingsError), color.NRGBA{R: 178, G: 54, B: 54, A: 255}
 			}
 			style := material.Caption(a.theme, message)
 			style.Color = textColor
@@ -269,32 +286,34 @@ func (a *App) processAgentSettingsResult() {
 		a.agentUI.saving = false
 		if result.err != nil {
 			a.agentUI.settingsError = result.err.Error()
+			a.agentUI.settingsErrorRef = i18n.Message{}
 			if result.operation == "test" {
 				_, a.agentUI.settingsError = agent.DescribeTurnError(result.err)
+				a.agentUI.settingsErrorRef = i18n.Message{}
 			}
-			a.agentUI.settingsInfo = ""
+			a.agentUI.settingsInfo, a.agentUI.settingsInfoRef = "", i18n.Message{}
 			return
 		}
 		a.clearAgentSettingsKeyPreview()
 		a.agentUI.apiKeyInput.Mask = '•'
 		a.agentUI.settings = result.settings
-		a.agentUI.settingsError = ""
+		a.agentUI.settingsError, a.agentUI.settingsErrorRef = "", i18n.Message{}
 		a.agentUI.apiKeyInput.SetText("")
 		switch result.operation {
 		case "test":
-			a.agentUI.settingsInfo = "模型连接成功；探测消息未包含文档内容。"
+			a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.probe_success"})
 		case "clear":
-			a.agentUI.settingsInfo = "API Key 已从系统凭据库删除。"
+			a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.key_deleted"})
 			if a.agentUI.returnToChat {
 				a.modal.Hide()
 				a.showAgentChat()
 			}
 		case "save":
-			a.agentUI.settingsInfo = "设置已保存。"
+			a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.saved"})
 			returnToChat := a.agentUI.returnToChat
 			a.agentUI.returnToChat = false
 			a.modal.Hide()
-			a.setStatus("模型设置已保存")
+			a.setStatusMessage(i18n.Message{ID: "settings.provider.saved_status"}, feedbackSuccess, notificationToast)
 			if returnToChat {
 				a.showAgentChat()
 			}

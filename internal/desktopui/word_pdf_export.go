@@ -12,6 +12,7 @@ import (
 	"glance/internal/fontcatalog"
 	"glance/internal/format/docx"
 	"glance/internal/format/wordpdf"
+	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 )
 
@@ -44,7 +45,7 @@ func (a *App) requestWordPDFExport() {
 		state.wordForceDraftFlush.Store(true)
 		state.wordFlushRequested.Store(true)
 		state.wordFlushAllDrafts.Store(true)
-		a.setStatus("正在提交正文编辑，然后准备 PDF…")
+		a.setStatusMessage(i18n.Message{ID: "word.export.status.commit_before_export"}, feedbackInfo, notificationSuppressed)
 		a.startNextWordTextCommit()
 		return
 	}
@@ -65,50 +66,50 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 	}
 	key, _, ok := currentWordLayoutKey(state)
 	if !ok {
-		a.setStatus("当前 DOCX 适配器未提供分页信息，无法导出 PDF")
+		a.setStatusMessage(i18n.Message{ID: "word.export.error.pagination_unavailable"}, feedbackWarning, notificationToast)
 		return
 	}
 	if state.wordLayoutAcceptedKey == nil || *state.wordLayoutAcceptedKey != key || state.wordLayoutResult == nil {
 		if state.wordLayoutErrorKey != nil && *state.wordLayoutErrorKey == key {
-			a.setStatus("PDF 导出前分页失败：" + state.wordLayoutError)
+			a.setStatusDetailMessage(i18n.Message{ID: "word.export.error.pagination_failed"}, feedbackError, notificationToast, state.wordLayoutError)
 			return
 		}
 		state.wordPDFExportAfterLayout = true
-		a.setStatus("正在为 PDF 导出计算页面…")
+		a.setStatusMessage(i18n.Message{ID: "word.export.status.calculate_pages"}, feedbackInfo, notificationSuppressed)
 		a.startWordPagination(state)
 		if state.wordPDFExportAfterLayout && state.wordLayoutPendingKey == nil && state.wordLayoutErrorKey != nil && *state.wordLayoutErrorKey == key {
 			state.wordPDFExportAfterLayout = false
-			a.setStatus("PDF 导出前分页失败：" + state.wordLayoutError)
+			a.setStatusDetailMessage(i18n.Message{ID: "word.export.error.pagination_failed"}, feedbackError, notificationToast, state.wordLayoutError)
 		}
 		return
 	}
 	if wordLayoutBlocksPageExport(*state.wordLayoutResult) {
-		a.setStatus(blockingWordLayoutMessage(*state.wordLayoutResult))
+		a.setStatusMessage(a.wordBlockingLayoutMessage(*state.wordLayoutResult), feedbackError, notificationToast)
 		return
 	}
 	if a.documentSessionState != state {
-		a.setStatus("Word 文档已切换，PDF 导出已取消")
+		a.setStatusMessage(i18n.Message{ID: "word.export.error.document_switched"}, feedbackWarning, notificationToast)
 		return
 	}
-	warnings := wordLayoutWarnings(*state.wordLayoutResult)
+	warnings := localizedWordLayoutWarnings(a, *state.wordLayoutResult)
 	if len(warnings) == 0 {
 		a.openWordPDFExportPreview(state, key)
 		return
 	}
-	message := fmt.Sprintf("当前分页有 %d 项提示：\n%s\n\n确认后将进入 PDF 导出预览。", len(warnings), strings.Join(warnings, "\n"))
-	a.showConfirmDialog("导出 PDF 前确认版式提示", message, modalDialogWarningConfirmStyle, func(action string) {
+	message := i18n.Message{ID: "word.export.confirm.layout_warnings", Args: i18n.Args{"Count": len(warnings), "Warnings": strings.Join(warnings, "\n")}}
+	a.modal.ShowConfirmMessage(dialogIDWordPDFWarning, i18n.Message{ID: "word.export.confirm.layout_title"}, message, modalDialogWarningConfirmStyle, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
-			a.setStatus("已取消导出 PDF")
+			a.setStatusMessage(i18n.Message{ID: "word.export.status.cancelled"}, feedbackInfo, notificationSuppressed)
 			return
 		}
 		if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) {
-			a.setStatus("文档在确认期间已更改，请重新导出 PDF")
+			a.setStatusMessage(i18n.Message{ID: "word.export.error.changed_during_confirmation"}, feedbackWarning, notificationToast)
 			return
 		}
 		a.openWordPDFExportPreview(state, key)
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", Label: "继续", Style: modalDialogActionPrimary})
-	a.setStatus("等待确认分页提示")
+	}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}, Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.continue"}, Style: modalDialogActionPrimary})
+	a.setStatusMessage(i18n.Message{ID: "word.export.status.waiting_confirmation"}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) layoutWordForExport(state *documentSessionState, key wordLayoutKey, blocks []document.WordBlock, layoutData document.WordLayoutData, orientation string) (wordlayout.Result, error) {
@@ -176,7 +177,7 @@ func (a *App) layoutWordForExport(state *documentSessionState, key wordLayoutKey
 			return wordlayout.Result{}, err
 		}
 		if wordLayoutBlocksPageExport(res) {
-			return wordlayout.Result{}, errors.New(blockingWordLayoutMessage(res))
+			return wordlayout.Result{}, errors.New(a.text(a.wordBlockingLayoutMessage(res)))
 		}
 		return res, nil
 	}
@@ -185,40 +186,40 @@ func (a *App) layoutWordForExport(state *documentSessionState, key wordLayoutKey
 
 func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayoutKey, path string, orientation string) {
 	if state == nil || state.word == nil || state.closed.Load() {
-		a.setStatus("PDF 导出状态已过期，请重新导出")
+		a.setStatusMessage(i18n.Message{ID: "word.export.error.expired"}, feedbackWarning, notificationToast)
 		return
 	}
 	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
-		a.setStatus("文档在选择保存位置期间已更改，未导出 PDF；请重新导出")
+		a.setStatusMessage(i18n.Message{ID: "word.export.error.changed_before_save"}, feedbackWarning, notificationToast)
 		return
 	}
 	if pathsReferToSameFile(path, state.path) {
-		a.setStatus("PDF 保存路径不能覆盖源 DOCX")
+		a.setStatusMessage(i18n.Message{ID: "word.export.error.overwrite_source"}, feedbackError, notificationToast)
 		return
 	}
 	if strings.ToLower(filepath.Ext(path)) != ".pdf" {
 		path += ".pdf"
 	}
 	if a.documentSessionState != state {
-		a.setStatus("Word 文档已切换，PDF 导出已取消")
+		a.setStatusMessage(i18n.Message{ID: "word.export.error.document_switched"}, feedbackWarning, notificationToast)
 		return
 	}
 	if a.wordPDFFontSource == nil {
 		shaper, err := newWordTextShaper()
 		if err != nil {
-			a.setStatus("初始化 PDF 字体服务失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "word.export.error.font_service"}, err, notificationToast)
 			return
 		}
 		a.wordPDFFontSource = shaper
 	}
 	reader, ok := any(state.word).(document.WordLayoutReader)
 	if !ok {
-		a.setStatus("DOCX 适配器未提供分页信息，无法导出 PDF")
+		a.setStatusMessage(i18n.Message{ID: "word.export.error.pagination_unavailable"}, feedbackWarning, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
-		a.setStatus("文档正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "word.status.operation_busy"}, feedbackWarning, notificationToast)
 		return
 	}
 	blocks := cloneWordBlockSnapshot(wordBlocksForState(state))
@@ -229,7 +230,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 	pageResult, layoutErr := a.layoutWordForExport(state, key, blocks, layoutData, orientation)
 	if layoutErr != nil {
 		state.finishOperation(token)
-		a.setStatus("PDF 导出前重新排版失败：" + layoutErr.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "word.export.error.reflow"}, layoutErr, notificationToast)
 		return
 	}
 	doc := state.word
@@ -244,7 +245,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		cancel()
 		state.wordPDFExportCancel = nil
 		state.wordPDFExportRunning = false
-		a.setStatus("PDF 导出不可用")
+		a.setStatusMessage(i18n.Message{ID: "word.export.error.unavailable"}, feedbackError, notificationToast)
 		return
 	}
 	stateCopy := state
@@ -292,7 +293,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在生成 PDF…")
+	a.setStatusMessage(i18n.Message{ID: "word.export.status.generating"}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) applyWordPDFExportResult(result wordPDFExportResult) {
@@ -307,16 +308,16 @@ func (a *App) applyWordPDFExportResult(result wordPDFExportResult) {
 	}
 	if state.wordRevisionAtomic.Load() != result.key.Revision {
 		if state == a.documentSessionState {
-			a.setStatus("文档已更改，旧分页结果未用于当前文档")
+			a.setStatusMessage(i18n.Message{ID: "word.export.error.layout_stale"}, feedbackWarning, notificationToast)
 		}
 		return
 	}
 	if result.err != nil {
 		if state == a.documentSessionState {
-			a.setStatus("导出 PDF 失败：" + result.err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "word.export.error.failed"}, result.err, notificationToast)
 		}
 	} else if state == a.documentSessionState {
-		a.setStatus("PDF 已导出：" + filepath.Base(result.path))
+		a.setStatusMessage(i18n.Message{ID: "word.export.status.exported", Args: i18n.Args{"File": filepath.Base(result.path)}}, feedbackSuccess, notificationToast)
 	}
 }
 
@@ -380,6 +381,79 @@ func wordLayoutWarnings(result wordlayout.Result) []string {
 		}
 	}
 	return warnings
+}
+
+func localizedWordLayoutWarnings(a *App, result wordlayout.Result) []string {
+	warnings := make([]string, 0)
+	if len(result.SupportReport.Findings) > 0 {
+		for _, finding := range result.SupportReport.Findings {
+			if finding.Impact != wordlayout.SupportImpactApproximation {
+				continue
+			}
+			detail := a.wordLayoutFindingDescription(finding)
+			fallback := a.wordLayoutFindingFallback(finding)
+			location := strings.TrimSpace(finding.Location)
+			if location == "" {
+				location = strings.TrimSpace(finding.SourceID)
+			}
+			warnings = append(warnings, a.text(i18n.Message{ID: "word.export.warning", Args: i18n.Args{"Detail": detail, "Fallback": fallback, "Location": location}}))
+		}
+		return warnings
+	}
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Severity == wordlayout.DiagnosticWarning {
+			warnings = append(warnings, a.text(i18n.Message{ID: "word.export.warning", Args: i18n.Args{"Detail": strings.TrimSpace(diagnostic.Detail), "Fallback": "", "Location": ""}}))
+		}
+	}
+	return warnings
+}
+
+func (a *App) wordLayoutFindingDescription(finding wordlayout.SupportFinding) string {
+	id := map[string]string{
+		"unsupported-list":     "word.export.finding.unsupported_list",
+		"invalid-image-size":   "word.export.finding.invalid_image_size",
+		"unresolved-image":     "word.export.finding.unresolved_image",
+		"invalid-image-inline": "word.export.finding.invalid_image_inline",
+	}[finding.Code]
+	if id != "" {
+		return a.text(i18n.Message{ID: id})
+	}
+	if detail := strings.TrimSpace(finding.Detail); detail != "" {
+		return detail
+	}
+	return finding.Code
+}
+
+func (a *App) wordLayoutFindingFallback(finding wordlayout.SupportFinding) string {
+	id := map[string]string{
+		"unsupported-list":     "word.export.fallback.list_markers",
+		"invalid-image-size":   "word.export.fallback.image_placeholder",
+		"unresolved-image":     "word.export.fallback.image_placeholder",
+		"invalid-image-inline": "word.export.fallback.image_placeholder",
+	}[finding.Code]
+	if id != "" {
+		return a.text(i18n.Message{ID: id})
+	}
+	return strings.TrimSpace(finding.Fallback)
+}
+
+func (a *App) wordBlockingLayoutMessage(result wordlayout.Result) i18n.Message {
+	for _, finding := range result.SupportReport.Findings {
+		if finding.Impact != wordlayout.SupportImpactBlocksPreview && finding.Impact != wordlayout.SupportImpactBlocksExport {
+			continue
+		}
+		location := strings.TrimSpace(finding.Location)
+		if location == "" {
+			location = strings.TrimSpace(finding.SourceID)
+		}
+		return i18n.Message{ID: "word.export.error.blocked", Args: i18n.Args{"Details": strings.TrimSpace(finding.Detail), "Location": location, "Fallback": strings.TrimSpace(finding.Fallback)}}
+	}
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Severity == wordlayout.DiagnosticError {
+			return i18n.Message{ID: "word.export.error.blocked", Args: i18n.Args{"Details": diagnostic.Detail, "Location": "", "Fallback": ""}}
+		}
+	}
+	return i18n.Message{ID: "word.export.error.blocked_generic"}
 }
 
 func wordSupportFindingDetail(finding wordlayout.SupportFinding) string {

@@ -1,6 +1,9 @@
 package desktopui
 
-import "glance/internal/document"
+import (
+	"glance/internal/document"
+	"glance/internal/i18n"
+)
 
 type wordPageBreakIntent struct {
 	runID          string
@@ -44,7 +47,7 @@ func (a *App) queueWordBreakInternal(breakType document.WordBreakType, blankPage
 	}
 	_, ok := any(state.word).(document.WordPageBreakEditor)
 	if !ok {
-		a.setStatus("当前 DOCX 适配器不支持插入分隔符")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserting_separators_is_not_supported_66112c"}, feedbackWarning, notificationToast)
 		return
 	}
 	run, ok := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
@@ -58,7 +61,7 @@ func (a *App) queueWordBreakInternal(breakType document.WordBreakType, blankPage
 		start, end = end, start
 	}
 	if _, _, valid := wordTextAroundSelection(value, start, end); !valid {
-		a.setStatus("无法按当前光标位置插入分隔符，请重试")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_insert_a_separator_9ef226"}, feedbackWarning, notificationToast)
 		return
 	}
 	state.wordPageBreakIntent = &wordPageBreakIntent{runID: run.ID, value: value, selectionStart: start, selectionEnd: end, breakType: breakType, blankPage: blankPage}
@@ -80,7 +83,7 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 		state.wordPageBreakIntent = nil
 		state.wordFlushRequested.Store(false)
 		state.wordFlushAllDrafts.Store(false)
-		a.setStatus("当前 DOCX 适配器不支持插入分隔符")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserting_separators_is_not_supported_66112c"}, feedbackWarning, notificationToast)
 		return
 	}
 	intent := *state.wordPageBreakIntent
@@ -89,7 +92,7 @@ func (a *App) startWordPageBreak(state *documentSessionState) {
 		state.wordPageBreakIntent = nil
 		state.wordFlushRequested.Store(false)
 		state.wordFlushAllDrafts.Store(false)
-		a.setStatus("无法按当前光标位置插入分隔符，请重试")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_insert_a_separator_9ef226"}, feedbackWarning, notificationToast)
 		return
 	}
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
@@ -147,7 +150,7 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 			}
 		}
 		if active {
-			a.setStatus(wordCommandError(result.operation, result.err))
+			a.setWordCommandStatus(result.err)
 		}
 		return
 	}
@@ -171,7 +174,7 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	}
 	newRun, ok := selectedWordRun(wordBlocksForState(state), result.pageBreakCaretRunID)
 	if !ok || result.pageBreakParagraphID == "" {
-		a.setStatus("分隔符已插入，但无法定位插入点")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_separator_was_inserted_but_3275d1"}, feedbackWarning, notificationToast)
 		a.persistActiveSession()
 		return
 	}
@@ -187,12 +190,12 @@ func (a *App) completeWordPageBreak(result wordCommandResult, active bool) {
 	caretEditor.SetText(newRun.Text)
 	caretEditor.SetCaret(0, 0)
 	reconcileWordSelection(state, false)
-	msg := "已插入分页符"
+	messageID := "word.page_break.status.page"
 	if intent != nil && intent.blankPage {
-		msg = "已插入空白页"
+		messageID = "word.page_break.status.blank_page"
 	} else if intent != nil && intent.breakType == document.WordBreakColumn {
-		msg = "已插入分栏符"
+		messageID = "word.page_break.status.column"
 	}
-	a.setStatus(msg)
+	a.setStatusMessage(i18n.Message{ID: messageID}, feedbackSuccess, notificationToast)
 	a.persistActiveSession()
 }

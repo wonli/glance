@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"image/color"
 	"strconv"
 	"strings"
@@ -198,8 +199,7 @@ func (a *App) showSpreadsheetFormatCellsDialog() {
 	draft.bold, draft.italic, draft.underline = style.Bold, style.Italic, style.Underline
 	draft.resetTouched()
 
-	selectionMessage := "仅修改下方选项；未改动的格式会保留。"
-	a.modal.ShowCustom("设置单元格格式", selectionMessage, 720, a.layoutSpreadsheetFormatCellsDialog, func(action string) {
+	a.modal.ShowCustomMessage("spreadsheet.format_cells", i18n.Message{ID: "spreadsheet.format_cells.dialog.title"}, i18n.Message{ID: "spreadsheet.format_cells.dialog.body"}, 720, a.layoutSpreadsheetFormatCellsDialog, func(action string) {
 		a.modal.Hide()
 		if state.virtualGrid != nil {
 			state.virtualGrid.KeyboardFocusRequested = true
@@ -212,7 +212,7 @@ func (a *App) showSpreadsheetFormatCellsDialog() {
 		}
 		patch, changed := draft.patch()
 		if !changed {
-			a.setStatus("格式未更改")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.formatting_was_not_changed_5581ec"}, feedbackInfo, notificationSuppressed)
 			if a.window != nil {
 				a.window.Invalidate()
 			}

@@ -153,8 +153,8 @@ func TestWordPaginationSurfacesKnownApproximationAfterOpening(t *testing.T) {
 			}}},
 		},
 	})
-	if !strings.Contains(app.status, "版式检查发现") || !strings.Contains(app.status, "需确认") {
-		t.Fatalf("opening status = %q; want a visible notice that known layout gaps need confirmation", app.status)
+	if !strings.Contains(app.statusText(), "版式检查发现") || !strings.Contains(app.statusText(), "回退方式") {
+		t.Fatalf("opening status = %q; want a visible notice that known layout gaps need confirmation", app.statusText())
 	}
 }
 

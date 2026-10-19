@@ -68,6 +68,7 @@ func layoutWordToolbarActionItem(gtx layout.Context, action ribbonAction, index 
 }
 
 func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP int) {
+	action = a.localizedWordAction(action)
 	width, height := gtx.Dp(toolbarButtonWidth), gtx.Dp(toolbarButtonHeight)
 	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(10))
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
@@ -77,11 +78,6 @@ func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSe
 	enabled := a.wordToolbarActionButtonEnabled(action)
 	button := wordToolbarButton(state, action.id)
 	description := a.wordToolbarActionDescription(action)
-	if action.id == "view-new-window" && !enabled {
-		if _, reason := wordNewWindowAvailability(state, a.desktopRuntime); reason != "" {
-			description += "，不可用：" + reason
-		}
-	}
 	active := enabled && wordToolbarActionActive(state, action)
 	background := a.tokens().Colors.Surface.Surface
 	if active {
@@ -92,6 +88,7 @@ func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSe
 }
 
 func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP, yDP int) {
+	action = a.localizedWordAction(action)
 	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(yDP))
 	width, height := gtx.Dp(unit.Dp(70)), gtx.Dp(unit.Dp(62))
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
@@ -142,6 +139,7 @@ func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentS
 }
 
 func (a *App) layoutWordRibbonIconLabelActionAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP, yDP int) {
+	action = a.localizedWordAction(action)
 	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(yDP))
 	width, height := gtx.Dp(unit.Dp(52)), gtx.Dp(unit.Dp(62))
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
@@ -206,6 +204,7 @@ func (a *App) layoutWordRibbonInlineActionAt(gtx layout.Context, state *document
 }
 
 func (a *App) layoutWordRibbonInlineAction(gtx layout.Context, state *documentSessionState, action ribbonAction, widthDP, heightDP, iconDP int) layout.Dimensions {
+	action = a.localizedWordAction(action)
 	width, height := gtx.Dp(unit.Dp(widthDP)), gtx.Dp(unit.Dp(heightDP))
 	gtx.Constraints = layout.Constraints{Min: image.Pt(width, height), Max: image.Pt(width, height)}
 	enabled := a.wordToolbarActionButtonEnabled(action)

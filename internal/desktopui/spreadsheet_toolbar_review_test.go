@@ -42,15 +42,15 @@ func TestSpreadsheetToolbar_SpellCheckAndTranslate(t *testing.T) {
 		app.processSpreadsheetFormatResult()
 		time.Sleep(time.Millisecond)
 	}
-	if !app.modal.Visible || app.modal.Title != "拼写检查" {
-		t.Fatalf("expected 拼写检查 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "拼写检查" {
+		t.Fatalf("expected 拼写检查 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
-	if !strings.Contains(app.modal.Message, "连续 ASCII 空格") || !strings.Contains(app.modal.Message, "未提供词典") {
-		t.Fatalf("spell-check dialog overstates results or omits the bounded findings: %q", app.modal.Message)
+	if !strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "连续 ASCII 空格") || !strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "未提供词典") {
+		t.Fatalf("spell-check dialog overstates results or omits the bounded findings: %q", app.messageText(app.modal.MessageRef, app.modal.Message))
 	}
 	app.modal.OnAction("confirm")
-	if !strings.Contains(app.status, "文本检查完成") {
-		t.Fatalf("unexpected status after spell check: %q", app.status)
+	if !strings.Contains(app.statusText(), "文本检查完成") {
+		t.Fatalf("unexpected status after spell check: %q", app.statusText())
 	}
 
 	// 2. Translate
@@ -61,8 +61,8 @@ func TestSpreadsheetToolbar_SpellCheckAndTranslate(t *testing.T) {
 		t.Fatal("toolbarActionTranslate should be enabled")
 	}
 	app.showSpreadsheetTranslateDialog()
-	if !app.modal.Visible || app.modal.Title != "智能翻译" {
-		t.Fatalf("expected 智能翻译 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "智能翻译" {
+		t.Fatalf("expected 智能翻译 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.SecondInput.SetText("你好世界")
 	app.modal.OnAction("confirm")

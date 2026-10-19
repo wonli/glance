@@ -12,7 +12,9 @@ import (
 	"glance/internal/format/jsondoc"
 	"glance/internal/format/markdowndoc"
 	"glance/internal/format/pdfdoc"
+	"glance/internal/format/pptx"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 	"math"
 	"os"
@@ -107,7 +109,7 @@ func (a *App) initializeWorkspace() {
 		path, err := workspace.DefaultDatabasePath()
 		if err != nil {
 			a.workspaceError = err.Error()
-			a.setStatus("工作区数据库不可用：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.database_unavailable"}, err, notificationToast)
 			return
 		}
 		var store *workspace.Store
@@ -118,22 +120,23 @@ func (a *App) initializeWorkspace() {
 		}
 		if err != nil {
 			a.workspaceError = err.Error()
-			a.setStatus("工作区数据库不可用：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.database_unavailable"}, err, notificationToast)
 			return
 		}
 		runtime.workspaceStore = store
 	}
+	a.loadLocalePreference()
 	if runtime.collection == nil {
 		collection, err := workspace.OpenCollection(runtime.workspaceStore)
 		if err != nil {
 			a.workspaceError = err.Error()
-			a.setStatus("恢复工作区失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.restore"}, err, notificationToast)
 			return
 		}
 		runtime.collection = collection
 	}
 	if err := runtime.loadHomeFolderState(); err != nil {
-		a.setStatus("文件夹数据不可用：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.folder_data"}, err, notificationToast)
 	}
 	collection := runtime.collection
 	a.loadHomeFavorites()
@@ -156,10 +159,10 @@ func (a *App) initializeWorkspace() {
 			if state, err := a.viewForTabWithError(resumeActiveTabID); err == nil && state != nil {
 				a.activateSession(resumeActiveTabID, state)
 			} else if err := collection.Activate(workspace.RecentTabID); err != nil {
-				a.setStatus(err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.activate_document"}, err, notificationToast)
 			}
 		} else if err := collection.Activate(workspace.RecentTabID); err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.activate_document"}, err, notificationToast)
 		}
 	}
 	a.refreshHomeMetadata()
@@ -174,7 +177,7 @@ func isEmptyDraftWithoutSnapshot(record workspace.Session) bool {
 		return false
 	}
 	switch strings.ToLower(record.Format) {
-	case "pdf", "docx", "xlsx", "json", "markdown", "md", "csv":
+	case "pdf", "docx", "xlsx", "json", "markdown", "md", "csv", "pptx":
 		return true
 	default:
 		return false
@@ -289,6 +292,22 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 			word.SetSourcePath(record.Tab.SourcePath)
 		}
 		word.SetDirty(record.Dirty)
+	case "pptx":
+		var d *pptx.Document
+		var err error
+		if isEmptyDraftWithoutSnapshot(record) {
+			d, err = pptx.NewBlank()
+		} else if len(record.Payload) == 0 && record.Tab.SourcePath != "" {
+			d, err = pptx.Open(record.Tab.SourcePath)
+		} else {
+			d, err = pptx.OpenBytes(record.Payload)
+		}
+		if err != nil {
+			return nil, err
+		}
+		d.SetSourcePath(record.Tab.SourcePath)
+		d.SetDirty(record.Dirty)
+		state.pptxDoc = d
 	case "pdf":
 		var d *pdfdoc.Document
 		var err error
@@ -496,12 +515,12 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 	a.releaseIdleEngines()
 	if a.collection != nil && runtime.isPrimaryWindow(a.windowID) {
 		if err := a.collection.Activate(id); err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.activate_document"}, err, notificationToast)
 		}
 	}
 	if meta, ok := a.tabMeta[id]; ok && meta.SourcePath != "" {
 		if _, err := os.Stat(meta.SourcePath); err != nil {
-			a.setStatus("源文件不可用，正在显示本地恢复快照：" + meta.SourcePath)
+			a.setStatusMessage(i18n.Message{ID: "workspace.status.source_missing_snapshot", Args: i18n.Args{"Path": meta.SourcePath}}, feedbackWarning, notificationToast)
 		}
 	}
 	if state.word != nil {
@@ -560,6 +579,6 @@ func (a *App) persistActiveSession() {
 		err = a.collection.Update(a.activeTabID, payload, job.viewState, sessionDirty(state))
 	}
 	if err != nil {
-		a.setStatus("工作区保存失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.save_state"}, err, notificationToast)
 	}
 }

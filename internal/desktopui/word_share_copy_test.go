@@ -63,8 +63,8 @@ func TestWordShareActionOpensDOCXCopyPickerAndCancelPreservesSession(t *testing.
 		t.Fatal("share picker cancellation was not delivered")
 	}
 
-	if app.status != "已取消共享副本导出" {
-		t.Fatalf("share cancellation status = %q", app.status)
+	if app.statusText() != "已取消共享副本导出" {
+		t.Fatalf("share cancellation status = %q", app.statusText())
 	}
 	if app.word != word || app.path != "source.docx" || state.path != "source.docx" || !word.Dirty() || !state.wordAutoSave {
 		t.Fatalf("cancel changed source session: active=%p path=%q statePath=%q dirty=%v autosave=%v", app.word, app.path, state.path, word.Dirty(), state.wordAutoSave)
@@ -133,8 +133,8 @@ func TestWordShareRejectsSourceOverwriteAndStalePickerChoice(t *testing.T) {
 	app := newWordShareTestApp(state)
 
 	app.startWordShareCopyFile(&wordShareCopyPickerRequest{state: state, revision: 4}, sourcePath)
-	if app.status != "共享副本不能覆盖当前 DOCX" {
-		t.Fatalf("same-source protection status = %q", app.status)
+	if app.statusText() != "共享 DOCX 副本不能覆盖源文档。" {
+		t.Fatalf("same-source protection status = %q", app.statusText())
 	}
 	if state.formatRunning.Load() {
 		t.Fatal("same-source selection started an export")
@@ -172,8 +172,8 @@ func TestWordShareWriteFailureKeepsSourceDirtyAndClearsBusyState(t *testing.T) {
 	if !word.Dirty() || state.path != sourcePath || !state.wordAutoSave || state.formatRunning.Load() {
 		t.Fatalf("failed export changed source state: path=%q dirty=%v autosave=%v busy=%v", state.path, word.Dirty(), state.wordAutoSave, state.formatRunning.Load())
 	}
-	if !strings.Contains(app.status, "导出共享副本失败：") {
-		t.Fatalf("write failure status = %q", app.status)
+	if app.statusText() != "导出共享副本失败。" || app.feedback.detail == "" {
+		t.Fatalf("write failure status = %q", app.statusText())
 	}
 }
 
@@ -232,8 +232,8 @@ func TestWordShareFlushesPendingTextDraftBeforeOpeningPicker(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("share picker result was not delivered")
 	}
-	if app.status != "已取消共享副本导出" || word.Dirty() == false {
-		t.Fatalf("share cancel status=%q dirty=%v", app.status, word.Dirty())
+	if app.statusText() != "已取消共享副本导出" || word.Dirty() == false {
+		t.Fatalf("share cancel status=%q dirty=%v", app.statusText(), word.Dirty())
 	}
 }
 

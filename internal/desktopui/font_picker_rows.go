@@ -15,6 +15,7 @@ import (
 type fontPickerRow struct {
 	faceID                                           fontcatalog.ResourceID
 	title, family, displayFamily, source, substitute string
+	titleMessageID, sourceMessageID                  string
 	aliases                                          []string
 	missing                                          bool
 	online                                           *fontdownload.Entry
@@ -81,27 +82,30 @@ func fontPickerRows(snapshot fontcatalog.Snapshot, documentNames []string, onlin
 		}
 		seen[key] = true
 		if len(rows) == 0 {
-			rows = append(rows, fontPickerRow{title: "当前文档使用"})
+			rows = append(rows, fontPickerRow{title: "当前文档使用", titleMessageID: "font.picker.section.document"})
 		}
 		f, ok := available[key]
 		usable := false
 		source := "本机"
+		sourceID := "font.picker.source.local"
 		for _, face := range f.Faces {
 			if face.Unavailable == "" {
 				usable = true
 				if face.Source == fontcatalog.Private {
 					source = "已下载"
+					sourceID = "font.picker.source.downloaded"
 				}
 				break
 			}
 		}
-		row := fontPickerRow{family: name, source: source, missing: !ok || !usable}
+		row := fontPickerRow{family: name, source: source, sourceMessageID: sourceID, missing: !ok || !usable}
 		if ok {
 			row.displayFamily = fontPickerLocalizedFamilyName(f)
 			row.aliases = f.Aliases
 		}
 		if row.missing {
 			row.source = "缺失"
+			row.sourceMessageID = "font.picker.source.missing"
 			if len(all) > 0 {
 				row.substitute = all[0].Name
 			}
@@ -109,15 +113,17 @@ func fontPickerRows(snapshot fontcatalog.Snapshot, documentNames []string, onlin
 		rows = append(rows, row)
 	}
 	if len(families) > 0 {
-		rows = append(rows, fontPickerRow{title: "全部本机字体"})
+		rows = append(rows, fontPickerRow{title: "全部本机字体", titleMessageID: "font.picker.section.local"})
 		for _, f := range families {
 			source := "本机"
+			sourceID := "font.picker.source.local"
 			usable := false
 			for _, face := range f.Faces {
 				if face.Unavailable == "" {
 					usable = true
 					if face.Source == fontcatalog.Private {
 						source = "已下载"
+						sourceID = "font.picker.source.downloaded"
 					}
 					break
 				}
@@ -139,12 +145,19 @@ func fontPickerRows(snapshot fontcatalog.Snapshot, documentNames []string, onlin
 					}
 				}
 				label := source
+				labelID := sourceID
 				if best.Source == fontcatalog.Private {
 					label = "已下载"
+					labelID = "font.picker.source.downloaded"
 				} else {
 					label = "本机"
+					labelID = "font.picker.source.local"
 				}
-				rows = append(rows, fontPickerRow{family: f.Name, displayFamily: fontPickerLocalizedFamilyName(f), source: label, aliases: f.Aliases, missing: best.Unavailable != "", faceID: best.ID})
+				missing := best.Unavailable != ""
+				if missing {
+					label, labelID = "缺失", "font.picker.source.missing"
+				}
+				rows = append(rows, fontPickerRow{family: f.Name, displayFamily: fontPickerLocalizedFamilyName(f), source: label, sourceMessageID: labelID, aliases: f.Aliases, missing: missing, faceID: best.ID})
 			}
 			_ = usable
 		}
@@ -158,11 +171,11 @@ func fontPickerRows(snapshot fontcatalog.Snapshot, documentNames []string, onlin
 			continue
 		}
 		if first {
-			rows = append(rows, fontPickerRow{title: "更多字体"})
+			rows = append(rows, fontPickerRow{title: "更多字体", titleMessageID: "font.picker.section.online"})
 			first = false
 		}
 		e := entry
-		rows = append(rows, fontPickerRow{family: e.Family, source: "在线", online: &e})
+		rows = append(rows, fontPickerRow{family: e.Family, source: "在线", sourceMessageID: "font.picker.source.online", online: &e})
 	}
 	return rows
 }

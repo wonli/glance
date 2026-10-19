@@ -15,12 +15,12 @@ var wordGridlineColor = color.NRGBA{R: 145, G: 166, B: 190, A: 42}
 
 const wordGridlineSpacingDP = 24
 
-func drawWordGridlines(gtx layout.Context, bounds image.Rectangle) {
+func drawWordGridlines(gtx layout.Context, app *App, bounds image.Rectangle) {
 	if bounds.Empty() {
 		return
 	}
 	pageClip := clip.Rect{Min: bounds.Min, Max: bounds.Max}.Push(gtx.Ops)
-	semantic.DescriptionOp("Word 网格线").Add(gtx.Ops)
+	semantic.DescriptionOp(app.textID("word.accessibility.gridlines")).Add(gtx.Ops)
 
 	spacing := max(1, gtx.Dp(unit.Dp(wordGridlineSpacingDP)))
 	lineWidth := max(1, gtx.Dp(unit.Dp(1)))

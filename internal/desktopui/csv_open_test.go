@@ -93,8 +93,8 @@ func TestInstallCSVSharesSpreadsheetVirtualGrid(t *testing.T) {
 	if app.documentSessionState.saveAsRequired {
 		t.Fatal("CSV session should not require SaveAs")
 	}
-	if !strings.Contains(app.status, "CSV 虚拟网格就绪") {
-		t.Fatalf("unexpected app.status: %q", app.status)
+	if !strings.Contains(app.statusText(), "CSV 虚拟网格就绪") {
+		t.Fatalf("unexpected app.statusText(): %q", app.statusText())
 	}
 }
 
@@ -358,7 +358,7 @@ func TestOpenRealCustomerCSVInApp(t *testing.T) {
 		if strings.Contains(tab.Tab.Title, "customers") {
 			t.Logf("Found tab: %+v", tab)
 			app.activateWorkspaceTab(tab.Tab.ID)
-			t.Logf("Status after activate: %q, activeTabID: %q, book: %v", app.status, app.activeTabID, app.book != nil)
+			t.Logf("Status after activate: %q, activeTabID: %q, book: %v", app.statusText(), app.activeTabID, app.book != nil)
 			if app.book == nil {
 				select {
 				case res := <-app.openResults:
@@ -473,4 +473,3 @@ func TestCSV2MillionVirtualGridNavigationAndEditing(t *testing.T) {
 	}
 	t.Logf("Snapshot active size: %d bytes", len(snap))
 }
-

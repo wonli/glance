@@ -6,6 +6,7 @@ import (
 
 	"glance/internal/application"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 const maxSpreadsheetFillDownCells = 10_000
@@ -72,7 +73,7 @@ func (a *App) fillDownSpreadsheetSelection() error {
 		case a.formatResults <- spreadsheetFormatResult{
 			state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation,
 			sheet: sheet, window: window, err: err, operation: "向下填充", applied: changed,
-			noOp: err == nil && !changed, details: "选区内容已与首行一致",
+			noOp: err == nil && !changed, details: i18n.Message{ID: "spreadsheet.status.noop.same_as_first_row"},
 		}:
 		case <-a.shutdown:
 		}

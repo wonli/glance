@@ -2,7 +2,7 @@ package desktopui
 
 import (
 	"context"
-	"fmt"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"io"
@@ -26,22 +26,22 @@ import (
 const GlobalAIAssistantDocumentID = "workspace-global-assistant"
 
 var (
-	aiEmptyTitleColor   = color.NRGBA{R: 35, G: 40, B: 48, A: 255}
-	aiEmptyDescColor    = color.NRGBA{R: 146, G: 156, B: 170, A: 255}
-	aiChipBorderColor   = color.NRGBA{R: 225, G: 230, B: 236, A: 255}
-	aiChipTextColor     = color.NRGBA{R: 122, G: 135, B: 151, A: 255}
-	aiInputCardBorder   = color.NRGBA{R: 215, G: 222, B: 231, A: 255}
-	aiSendButtonFill    = color.NRGBA{R: 52, G: 59, B: 69, A: 255}
-	aiDrawerBorderColor = color.NRGBA{R: 221, G: 227, B: 234, A: 255}
-	aiDrawerBackdrop    = color.NRGBA{R: 37, G: 50, B: 70, A: 36}
-	aiDrawerSearchFill  = color.NRGBA{R: 243, G: 245, B: 247, A: 255}
-	aiDrawerItemTitle   = color.NRGBA{R: 52, G: 63, B: 77, A: 255}
-	aiDrawerItemSub     = color.NRGBA{R: 146, G: 156, B: 170, A: 255}
+	aiEmptyTitleColor    = color.NRGBA{R: 35, G: 40, B: 48, A: 255}
+	aiEmptyDescColor     = color.NRGBA{R: 146, G: 156, B: 170, A: 255}
+	aiChipBorderColor    = color.NRGBA{R: 225, G: 230, B: 236, A: 255}
+	aiChipTextColor      = color.NRGBA{R: 122, G: 135, B: 151, A: 255}
+	aiInputCardBorder    = color.NRGBA{R: 215, G: 222, B: 231, A: 255}
+	aiSendButtonFill     = color.NRGBA{R: 52, G: 59, B: 69, A: 255}
+	aiDrawerBorderColor  = color.NRGBA{R: 221, G: 227, B: 234, A: 255}
+	aiDrawerBackdrop     = color.NRGBA{R: 37, G: 50, B: 70, A: 36}
+	aiDrawerSearchFill   = color.NRGBA{R: 243, G: 245, B: 247, A: 255}
+	aiDrawerItemTitle    = color.NRGBA{R: 52, G: 63, B: 77, A: 255}
+	aiDrawerItemSub      = color.NRGBA{R: 146, G: 156, B: 170, A: 255}
 	aiDrawerSelectedFill = color.NRGBA{R: 242, G: 244, B: 247, A: 255}
-	aiAssistantText     = color.NRGBA{R: 69, G: 81, B: 95, A: 255}
-	aiAssistantBorder   = color.NRGBA{R: 229, G: 233, B: 238, A: 255}
-	aiUserBubbleBg      = color.NRGBA{R: 222, G: 230, B: 239, A: 255}
-	aiUserText          = color.NRGBA{R: 63, G: 80, B: 100, A: 255}
+	aiAssistantText      = color.NRGBA{R: 69, G: 81, B: 95, A: 255}
+	aiAssistantBorder    = color.NRGBA{R: 229, G: 233, B: 238, A: 255}
+	aiUserBubbleBg       = color.NRGBA{R: 222, G: 230, B: 239, A: 255}
+	aiUserText           = color.NRGBA{R: 63, G: 80, B: 100, A: 255}
 )
 
 var aiSuggestionTexts = [3]string{
@@ -120,8 +120,8 @@ func (a *App) agentModelDisplayLabel() string {
 	}
 
 	tab := settingsTabFor(providerID, baseURL)
-	providerName := settingsTabLabel(tab)
-	if providerName == "当前服务" && providerID != "" {
+	providerName := a.localizedSettingsTabLabel(tab)
+	if !knownSettingsProviderTab(tab) && providerID != "" {
 		providerName = strings.ToUpper(providerID[:1]) + providerID[1:]
 	}
 	if model == "" {
@@ -196,9 +196,10 @@ func (a *App) processAIAssistantEvents(gtx layout.Context) {
 	}
 	if a.aiModelSelectButton.Clicked(gtx) {
 		a.openAgentSettingsPage()
+		a.selectSettingsPageTab("providers")
 	}
 	if a.aiAttachButton.Clicked(gtx) {
-		a.setStatus("附加文档：请选择或拖入本地文件。")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.attach_a_document_choose_a_local_file_or_d_539737"}, feedbackInfo, notificationSuppressed)
 	}
 	if a.aiClearHistoryButton.Clicked(gtx) {
 		a.confirmClearAllAIConversations()
@@ -209,9 +210,10 @@ func (a *App) confirmClearAllAIConversations() {
 	if len(a.agentUI.conversationHistory) == 0 {
 		return
 	}
-	a.showConfirmDialog(
-		"清空全部历史会话？",
-		"所有历史会话将被永久删除，无法恢复。本地文档内容不受影响。",
+	a.showConfirmMessage(
+		"agent.history.clear_all",
+		i18n.Message{ID: "agent.history.clear_all.dialog.title"},
+		i18n.Message{ID: "agent.history.clear_all.dialog.body"},
 		modalDialogDangerConfirmStyle,
 		func(action string) {
 			a.modal.Hide()
@@ -224,8 +226,8 @@ func (a *App) confirmClearAllAIConversations() {
 			}
 			a.createAgentConversation()
 		},
-		modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary},
-		modalDialogActionSpec{ID: "delete", Label: "清空", Style: modalDialogActionDanger},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}, Style: modalDialogActionSecondary},
+		modalDialogActionSpec{ID: "delete", LabelRef: i18n.Message{ID: "agent.history.clear_all.action"}, Style: modalDialogActionDanger},
 	)
 }
 
@@ -255,7 +257,7 @@ func (a *App) layoutAIAssistantTopBar(gtx layout.Context) layout.Dimensions {
 								layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									gtx.Constraints.Min.Y = 0
-									label := material.Label(a.theme, unit.Sp(12), "AI 助手")
+									label := material.Label(a.theme, unit.Sp(12), a.textID("home.nav.assistant"))
 									label.Color = color.NRGBA{R: 146, G: 156, B: 170, A: 255}
 									return label.Layout(gtx)
 								}),
@@ -297,7 +299,7 @@ func (a *App) layoutAIAssistantEmptyState(gtx layout.Context) layout.Dimensions 
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = 0
-				title := material.Label(a.theme, unit.Sp(28), "今天想一起完成什么？")
+				title := material.Label(a.theme, unit.Sp(28), a.textID("agent.home.title"))
 				title.Font.Weight = font.SemiBold
 				title.Color = aiEmptyTitleColor
 				return title.Layout(gtx)
@@ -305,7 +307,7 @@ func (a *App) layoutAIAssistantEmptyState(gtx layout.Context) layout.Dimensions 
 			layout.Rigid(layout.Spacer{Height: unit.Dp(14)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = 0
-				desc := material.Label(a.theme, unit.Sp(14), "提问、整理思路，或添加文件开始工作。")
+				desc := material.Label(a.theme, unit.Sp(14), a.textID("agent.home.description"))
 				desc.Color = aiEmptyDescColor
 				return desc.Layout(gtx)
 			}),
@@ -424,7 +426,7 @@ func (a *App) layoutAIAssistantAssistantRow(gtx layout.Context, group [2]int, la
 
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = 0
-			label := material.Label(a.theme, unit.Sp(12), "AI 助手")
+			label := material.Label(a.theme, unit.Sp(12), a.textID("home.nav.assistant"))
 			label.Color = color.NRGBA{R: 122, G: 135, B: 151, A: 255}
 			label.Font.Weight = font.SemiBold
 			return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, label.Layout)
@@ -504,7 +506,7 @@ func (a *App) layoutAIAssistantResponseActions(gtx layout.Context) layout.Dimens
 		if index := lastAgentAssistantLine(a.agentUI.chatLines); index >= 0 {
 			text := strings.TrimSpace(a.agentUI.chatLines[index].text)
 			gtx.Execute(clipboard.WriteCmd{Type: "text/plain", Data: io.NopCloser(strings.NewReader(text))})
-			a.setStatus("已复制回答。")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.answer_copied_7ce192"}, feedbackSuccess, notificationSuppressed)
 		}
 	}
 	if regenerateClicked {
@@ -682,7 +684,7 @@ func (a *App) layoutAIDrawerTitleBar(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = 0
-			title := material.Label(a.theme, unit.Sp(17), "历史会话")
+			title := material.Label(a.theme, unit.Sp(17), a.textID("agent.history.title"))
 			title.Font.Weight = font.SemiBold
 			title.Color = aiDrawerItemTitle
 			return title.Layout(gtx)
@@ -720,7 +722,7 @@ func (a *App) layoutAIDrawerSearchBox(gtx layout.Context) layout.Dimensions {
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8), Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						gtx.Constraints.Min.Y = 0
-						e := material.Editor(a.theme, &a.agentUI.historySearch, "搜索会话")
+						e := material.Editor(a.theme, &a.agentUI.historySearch, a.textID("agent.history.search.placeholder"))
 						e.TextSize = unit.Sp(12)
 						e.Color = aiDrawerItemTitle
 						e.HintColor = aiDrawerItemSub
@@ -740,7 +742,7 @@ func (a *App) layoutAIDrawerList(gtx layout.Context) layout.Dimensions {
 	rows := a.agentHistoryRows(now)
 	if len(rows) == 0 {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			label := material.Label(a.theme, unit.Sp(13), "暂无历史会话")
+			label := material.Label(a.theme, unit.Sp(13), a.textID("agent.history.empty"))
 			label.Color = aiDrawerItemSub
 			return label.Layout(gtx)
 		})
@@ -849,7 +851,7 @@ func (a *App) layoutAIDrawerList(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutAIDrawerBottomBar(gtx layout.Context) layout.Dimensions {
-	countText := fmt.Sprintf("%d 个会话", len(a.agentUI.conversationHistory))
+	countText := a.textArgs("agent.history.count", i18n.Args{"Count": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(len(a.agentUI.conversationHistory)))})
 
 	return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx,
@@ -875,7 +877,7 @@ func (a *App) layoutAIDrawerBottomBar(gtx layout.Context) layout.Dimensions {
 								if btn.Hovered() {
 									col = color.NRGBA{R: 208, G: 69, B: 61, A: 255}
 								}
-								label := material.Label(a.theme, unit.Sp(11), "清空历史")
+								label := material.Label(a.theme, unit.Sp(11), a.textID("agent.history.clear"))
 								label.Color = col
 								return label.Layout(gtx)
 							})

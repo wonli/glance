@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"gioui.org/widget"
+
 	"glance/internal/agentsettings"
+	"glance/internal/i18n"
 )
 
 type agentSettingsKeyPreviewResult struct {
@@ -150,11 +152,11 @@ func (a *App) processAgentSettingsKeyPreviewResult() {
 
 func (a *App) agentSettingsKeyHint() string {
 	if !a.settingsSavedKeyMatchesDraft() {
-		return "输入 API Key"
+		return a.text(i18n.Message{ID: "settings.provider.api_key_hint"})
 	}
 	if a.agentUI.apiKeyInput.Mask == 0 {
 		if a.agentUI.settingsKeyPreview.loading {
-			return "正在读取 API Key…"
+			return a.text(i18n.Message{ID: "settings.provider.loading_key"})
 		}
 	}
 	return "••••••••••••••••••••••••"

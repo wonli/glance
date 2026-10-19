@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"fmt"
+	"glance/internal/i18n"
 	"strconv"
 	"strings"
 
@@ -116,19 +117,19 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			continue
 		}
 		if action.slot == 23 {
-			a.modal.ShowInput("重命名工作表", "输入新的工作表名称", state.sheet, "工作表名称", func(action string) {
+			a.modal.ShowInputMessage("spreadsheet.sheet.rename", i18n.Message{ID: "spreadsheet.sheet.rename.dialog.title"}, i18n.Message{ID: "spreadsheet.sheet.rename.dialog.body"}, state.sheet, i18n.Message{ID: "spreadsheet.sheet.rename.dialog.hint"}, func(action string) {
 				a.modal.Hide()
 				if action != "confirm" {
 					return
 				}
 				name := strings.TrimSpace(a.modal.Input.Text())
 				if name == "" {
-					a.setStatus("工作表名称不能为空")
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_worksheet_name_cannot_be_612a6a"}, feedbackError, notificationToast)
 					a.window.Invalidate()
 					return
 				}
 				a.applyStructure(document.StructureEdit{Kind: document.StructureRenameSheet, Sheet: state.sheet, NewName: name})
-			}, modalDialogActionSpec{ID: "confirm", Label: "重命名"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+			}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "spreadsheet.sheet.rename.action"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 			continue
 		}
 		if action.slot == 24 {
@@ -149,7 +150,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 			continue
 		case 28:
 			if picture, ok := gridPictureByID(activeGridPictures(state, state.sheet), state.selectedGridPictureID); ok {
-				a.modal.ShowInput("设置图片宽度", "输入图片宽度（像素）", fmt.Sprint(picture.WidthPx), "1–10000", func(action string) {
+				a.modal.ShowInputMessage("spreadsheet.picture.resize", i18n.Message{ID: "spreadsheet.picture.resize.dialog.title"}, i18n.Message{ID: "spreadsheet.picture.resize.dialog.body"}, fmt.Sprint(picture.WidthPx), i18n.Message{ID: "spreadsheet.picture.resize.dialog.hint"}, func(action string) {
 					draft := strings.TrimSpace(a.modal.Input.Text())
 					a.modal.Hide()
 					if action != "confirm" {
@@ -157,14 +158,14 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 					}
 					width, err := strconv.Atoi(draft)
 					if err != nil || width < 1 || width > 10000 {
-						a.setStatus("图片宽度必须是 1 到 10000 之间的整数")
+						a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.image_width_must_be_a_f05b29"}, feedbackError, notificationToast)
 						if a.window != nil {
 							a.window.Invalidate()
 						}
 						return
 					}
 					a.startGridPictureCommand(state, gridPictureCommandRequest{operation: "调整图片尺寸", kind: gridPictureCommandResize, imageID: picture.ID, widthPx: width})
-				}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+				}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.confirm"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 			}
 			continue
 		}
@@ -174,7 +175,7 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 		}
 		if action.slot == toolbarActionMergeCenter {
 			if err := a.mergeSpreadsheetSelection(); err != nil {
-				a.setStatus(err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 			}
 			continue
 		}
@@ -222,9 +223,9 @@ func (a *App) handleSpreadsheetToolbarEvents(gtx layout.Context) {
 				state.virtualGrid.CellPaintFIFO = nil
 			}
 			if state.spreadsheetGridlinesHidden {
-				a.setStatus("已隐藏网格线")
+				a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.gridlines_hidden_1d300b"}, feedbackSuccess, notificationSuppressed)
 			} else {
-				a.setStatus("已显示网格线")
+				a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.gridlines_shown_0ad14e"}, feedbackSuccess, notificationSuppressed)
 			}
 			operation := "隐藏网格线"
 			if show {

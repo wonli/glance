@@ -175,12 +175,12 @@ func TestImportedXLSCellSelectionDoesNotReportMissingWorkspaceTab(t *testing.T) 
 	if err := app.installDocument(loaded); err != nil {
 		t.Fatalf("install imported workbook: %v", err)
 	}
-	statusBeforeSelection := app.status
+	statusBeforeSelection := app.statusText()
 
 	app.updateGridSelection(app.virtualGrid, CellPosition{Row: 1, Column: 1}, false, true)
 
-	if app.status != statusBeforeSelection {
-		t.Fatalf("selecting a cell changed status from %q to %q", statusBeforeSelection, app.status)
+	if app.statusText() != statusBeforeSelection {
+		t.Fatalf("selecting a cell changed status from %q to %q", statusBeforeSelection, app.statusText())
 	}
 }
 
@@ -267,12 +267,12 @@ func TestUnsupportedXLSOpenShowsActionableFeedback(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("opening an unsupported XLS did not finish in the background")
 	}
-	app.feedback.observe(app.status, time.Now())
 	if !app.feedback.visible(time.Now()) {
-		t.Fatalf("XLS import failure was not surfaced as visible feedback: %q", app.status)
+		t.Fatalf("XLS import failure was not surfaced as visible feedback: %q", app.statusText())
 	}
-	if !strings.Contains(app.feedback.message, "无法安全导入") || strings.Contains(app.feedback.message, "WPS") {
-		t.Fatalf("XLS import feedback should explain the safe-import limitation without redirecting to WPS: %q", app.feedback.message)
+	message := app.text(app.feedback.messageRef)
+	if !strings.Contains(message, "无法安全导入") || strings.Contains(message, "WPS") {
+		t.Fatalf("XLS import feedback should explain the safe-import limitation without redirecting to WPS: %q", message)
 	}
 }
 

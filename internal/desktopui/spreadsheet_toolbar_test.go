@@ -137,8 +137,8 @@ func TestExcelRibbonActionsUseBundledIconAssets(t *testing.T) {
 func TestExcelMissingNoticeFallback(t *testing.T) {
 	app := &App{theme: material.NewTheme()}
 	app.showSpreadsheetFeatureMissing("自定义扩展")
-	if want := "“自定义扩展”功能暂未实现"; app.status != want {
-		t.Fatalf("status after showSpreadsheetFeatureMissing = %q, want %q", app.status, want)
+	if want := "“自定义扩展”功能暂未实现"; app.statusText() != want {
+		t.Fatalf("status after showSpreadsheetFeatureMissing = %q, want %q", app.statusText(), want)
 	}
 }
 

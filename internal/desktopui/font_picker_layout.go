@@ -115,7 +115,9 @@ func (a *App) layoutFontPickerHeader(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.Y = gtx.Dp(38)
 	gtx.Constraints.Max.Y = gtx.Dp(38)
 	return layout.Inset{Left: 16, Right: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return a.fontPickerLabel(gtx, "字体", 15, fontPickerInk) }), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return a.fontPickerLabel(gtx, a.textID("font.picker.title"), 15, fontPickerInk)
+		}), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return p.close.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(28), gtx.Dp(28)))
 				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return homeIcon(gtx, "x", 14, fontPickerMuted) })
@@ -135,7 +137,7 @@ func (a *App) layoutFontPickerSearch(gtx layout.Context) layout.Dimensions {
 				return homeIcon(gtx, "search", 14, fontPickerMuted)
 			}), layout.Rigid(layout.Spacer{Width: 8}.Layout), layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = 0
-				e := material.Editor(a.theme, &a.fontPicker.search, "搜索字体中文名或英文名")
+				e := material.Editor(a.theme, &a.fontPicker.search, a.textID("font.search.placeholder"))
 				e.TextSize = unit.Sp(12)
 				e.Color = fontPickerInk
 				return layout.Inset{Top: fontPickerSearchTextOpticalTopInset}.Layout(gtx, e.Layout)
@@ -150,17 +152,17 @@ func (a *App) layoutFontPickerFooter(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 231, G: 234, B: 240, A: 255}, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, 1)}.Op())
 	return layout.Inset{Left: 14, Right: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			hint := "字体扫描结果已缓存"
+			hintID := "font.picker.status.cached"
 			if p.snapshot.Version == 0 {
-				hint = "正在读取字体"
+				hintID = "font.picker.status.loading"
 			}
 			if p.event.CacheErr != nil {
-				hint = "字体可用，缓存写入失败"
+				hintID = "font.picker.status.cache_write_failed"
 			}
 			if p.event.Err != nil {
-				hint = "刷新失败，保留上次结果"
+				hintID = "font.picker.status.refresh_failed"
 			}
-			return a.fontPickerLabel(gtx, hint, 10, fontPickerMuted)
+			return a.fontPickerLabel(gtx, a.textID(hintID), 10, fontPickerMuted)
 		}), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if p.event.Refreshing {
 				gtx = gtx.Disabled()
@@ -170,14 +172,14 @@ func (a *App) layoutFontPickerFooter(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints.Min = image.Point{}
 					return homeIcon(gtx, "refresh-cw", 14, fontPickerMuted)
 				}), layout.Rigid(layout.Spacer{Width: 5}.Layout), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					label := "刷新字体"
+					labelID := "font.picker.action.refresh"
 					if p.event.Refreshing {
-						label = "刷新中…"
+						labelID = "font.picker.action.refreshing"
 					} else if p.event.Err != nil {
-						label = "重试刷新"
+						labelID = "font.picker.action.retry_refresh"
 					}
 					return layout.Inset{Top: fontPickerRefreshTextOpticalTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return a.fontPickerLabel(gtx, label, 11, fontPickerInk)
+						return a.fontPickerLabel(gtx, a.textID(labelID), 11, fontPickerInk)
 					})
 				}))
 			})
@@ -187,14 +189,14 @@ func (a *App) layoutFontPickerFooter(gtx layout.Context) layout.Dimensions {
 func (a *App) layoutFontPickerEmpty(gtx layout.Context) layout.Dimensions {
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			text := "没有找到匹配的字体"
+			textID := "font.picker.empty.no_match"
 			if a.fontPicker.snapshot.Version == 0 {
-				text = "正在读取字体"
+				textID = "font.picker.status.loading"
 			}
-			return a.fontPickerLabel(gtx, text, 14, fontPickerInk)
+			return a.fontPickerLabel(gtx, a.textID(textID), 14, fontPickerInk)
 		}), layout.Rigid(layout.Spacer{Height: 12}.Layout), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return a.fontPicker.clear.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return a.fontPickerLabel(gtx, "清空搜索", 12, fontPickerMuted)
+				return a.fontPickerLabel(gtx, a.textID("font.picker.action.clear_search"), 12, fontPickerMuted)
 			})
 		}))
 	})
@@ -204,7 +206,11 @@ func (a *App) layoutFontPickerRow(gtx layout.Context, row fontPickerRow, index i
 	if row.title != "" {
 		gtx.Constraints.Min.Y = gtx.Dp(24)
 		return layout.Inset{Left: 8, Top: 5}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return a.fontPickerLabel(gtx, row.title, 10, fontPickerMuted)
+			label := row.title
+			if row.titleMessageID != "" {
+				label = a.textID(row.titleMessageID)
+			}
+			return a.fontPickerLabel(gtx, label, 10, fontPickerMuted)
 		})
 	}
 	gtx.Constraints.Min.Y = gtx.Dp(44)
@@ -247,15 +253,19 @@ func (a *App) layoutFontPickerRow(gtx layout.Context, row fontPickerRow, index i
 					if row.missing {
 						fg = color.NRGBA{R: 165, G: 103, B: 34, A: 255}
 					}
-					return layout.Inset{Left: 6, Right: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return a.fontPickerLabel(gtx, row.source, 10, fg) })
+					source := row.source
+					if row.sourceMessageID != "" {
+						source = a.textID(row.sourceMessageID)
+					}
+					return layout.Inset{Left: 6, Right: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return a.fontPickerLabel(gtx, source, 10, fg) })
 				}), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if row.online != nil {
 						return layout.Dimensions{}
 					}
 					if row.missing {
-						return a.fontPickerLabel(gtx, "替代显示", 10, fontPickerMuted)
+						return a.fontPickerLabel(gtx, a.textID("font.picker.preview.substitute"), 10, fontPickerMuted)
 					}
-					return a.fontPickerLabel(gtx, "春日 Aa 123", 11, fontPickerMuted)
+					return a.fontPickerLabel(gtx, a.textID("font.picker.preview.sample"), 11, fontPickerMuted)
 				}), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if !selected {
 						return layout.Dimensions{}
@@ -274,14 +284,14 @@ func (a *App) layoutFontPickerRow(gtx layout.Context, row fontPickerRow, index i
 			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				status := p.downloads[row.online.ID]
 				if status.running {
-					value := "取消"
+					value := a.textID("common.action.cancel")
 					if status.total > 0 {
 						value = fmt.Sprintf("%d%%", status.received*100/status.total)
 					}
 					return a.fontPickerLabel(gtx, value, 11, fontPickerMuted)
 				}
 				if status.err != "" {
-					return a.fontPickerLabel(gtx, "重试", 11, fontPickerInk)
+					return a.fontPickerLabel(gtx, a.textID("common.action.retry"), 11, fontPickerInk)
 				}
 				return homeIcon(gtx, "download", 16, color.NRGBA{R: 37, G: 99, B: 169, A: 255})
 			})

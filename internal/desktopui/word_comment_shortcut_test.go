@@ -7,6 +7,7 @@ import (
 
 	"gioui.org/io/key"
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 )
 
 func TestWordNewCommentShortcutBindingMatchesOfficePlatforms(t *testing.T) {
@@ -37,16 +38,18 @@ func TestWordNewCommentShortcutOpensExistingRibbonFlow(t *testing.T) {
 	state.setWordBlocks(cloneWordBlockSnapshot(word.WordBlocks()))
 	state.selectedWordRunID = state.wordBlocks[0].Paragraph.Inlines[0].Text.ID
 	app := &App{documentSessionState: state, wordCommandResults: make(chan wordCommandResult, 1)}
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	h := newOfficeShortcutHarness(app)
 	name, modifiers := wordNewCommentShortcutBinding(runtime.GOOS)
 	pressOfficeShortcut(t, h, string(name), modifiers)
-	if !app.modal.Visible || app.modal.Title != "新建批注" {
-		t.Fatalf("Word comment shortcut opened visible=%v title=%q; want 新建批注", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.text(app.modal.TitleRef) != "新建批注" {
+		t.Fatalf("Word comment shortcut opened visible=%v title=%q; want 新建批注", app.modal.Visible, app.text(app.modal.TitleRef))
 	}
 }
 
 func TestWordNewCommentShortcutWaitsForFocusedDraftCommit(t *testing.T) {
 	app, state, _, _ := newWordSelectionPageTest(t, `<w:p><w:r><w:t>批注前</w:t></w:r></w:p>`)
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	run := state.wordBlocks[0].Paragraph.Inlines[0].Text
 	state.selectedWordRunID = run.ID
 	state.wordFocusedRunID = run.ID
@@ -65,8 +68,8 @@ func TestWordNewCommentShortcutWaitsForFocusedDraftCommit(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if !app.modal.Visible || app.modal.Title != "新建批注" {
-		t.Fatalf("deferred comment dialog visible=%v title=%q status=%q", app.modal.Visible, app.modal.Title, app.status)
+	if !app.modal.Visible || app.text(app.modal.TitleRef) != "新建批注" {
+		t.Fatalf("deferred comment dialog visible=%v title=%q status=%q", app.modal.Visible, app.text(app.modal.TitleRef), app.statusText())
 	}
 	if got := state.word.WordBlocks()[0].Paragraph.Inlines[0].Text.Text; got != "已修改的批注正文" {
 		t.Fatalf("body text after deferred comment shortcut = %q", got)

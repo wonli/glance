@@ -7,6 +7,7 @@ import (
 	"gioui.org/widget"
 
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 )
 
@@ -189,6 +190,33 @@ func wordToolbarActions(tab wordToolbarTab) []ribbonAction {
 	default:
 		return nil
 	}
+}
+
+func wordToolbarTabMessage(tab wordToolbarTab) i18n.Message {
+	return i18n.Message{ID: []string{
+		"word.ribbon.tab.file", "word.ribbon.tab.home", "word.ribbon.tab.insert",
+		"word.ribbon.tab.design", "word.ribbon.tab.layout", "word.ribbon.tab.references",
+		"word.ribbon.tab.review", "word.ribbon.tab.view", "word.ribbon.tab.picture",
+	}[tab]}
+}
+
+func (a *App) localizedWordAction(action ribbonAction) ribbonAction {
+	if action.id == "" {
+		return action
+	}
+	label := a.text(i18n.Message{ID: "word.ribbon.action." + strings.ReplaceAll(action.id, "-", "_")})
+	if !strings.HasPrefix(label, "Missing translation:") && !strings.HasPrefix(label, "缺少翻译：") {
+		action.label = label
+	}
+	return action
+}
+
+func (a *App) localizedWordActions(actions []ribbonAction) []ribbonAction {
+	localized := append([]ribbonAction(nil), actions...)
+	for index := range localized {
+		localized[index] = a.localizedWordAction(localized[index])
+	}
+	return localized
 }
 
 func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
@@ -558,8 +586,14 @@ func wordToolbarActionActive(state *documentSessionState, action ribbonAction) b
 }
 
 func (a *App) wordToolbarActionDescription(action ribbonAction) string {
+	action = a.localizedWordAction(action)
 	if action.id == "version-history" && canonicalSessionPath(sessionPath(a.documentSessionState)) == "" {
-		return action.label + "，不可用：请先保存文档"
+		return a.text(i18n.Message{ID: "word.ribbon.action.unavailable_save_first", Args: i18n.Args{"Action": action.label}})
+	}
+	if action.id == "view-new-window" {
+		if _, reason := wordNewWindowAvailability(a.documentSessionState, a.desktopRuntime); reason.ID != "" {
+			return a.text(i18n.Message{ID: "word.new_window.unavailable", Args: i18n.Args{"Action": action.label, "Reason": a.text(reason)}})
+		}
 	}
 	return action.label
 }

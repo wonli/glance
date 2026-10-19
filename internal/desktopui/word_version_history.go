@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"path/filepath"
@@ -53,7 +54,9 @@ func (a *App) openWordVersionHistory() {
 	if pathKey == "" {
 		a.wordVersionHistoryVisible = true
 		a.wordVersionHistoryLoading = false
-		a.wordVersionHistoryError = "请先保存文档，再查看版本历史"
+		a.wordVersionHistoryError = "pending"
+		a.wordVersionHistoryErrorRef = i18n.Message{ID: "word.history.error.save_before_view"}
+		a.setStatusMessage(a.wordVersionHistoryErrorRef, feedbackWarning, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
@@ -64,6 +67,7 @@ func (a *App) openWordVersionHistory() {
 	a.wordVersionHistoryVisible = true
 	a.wordVersionHistoryLoading = true
 	a.wordVersionHistoryError = ""
+	a.wordVersionHistoryErrorRef = i18n.Message{}
 	a.wordVersionHistoryPathKey = pathKey
 	a.wordVersionHistoryVersions = nil
 	a.wordVersionHistorySelectedID = 0
@@ -103,10 +107,12 @@ func (a *App) applyWordVersionHistoryResult(result wordVersionHistoryResult) {
 	}
 	a.wordVersionHistoryLoading = false
 	if result.err != nil {
-		a.wordVersionHistoryError = "读取版本历史失败：" + result.err.Error()
-		a.setStatus(a.wordVersionHistoryError)
+		a.wordVersionHistoryError = "unavailable"
+		a.wordVersionHistoryErrorRef = i18n.Message{ID: "word.history.error.read"}
+		a.setStatusDetailMessage(a.wordVersionHistoryErrorRef, feedbackWarning, notificationToast, result.err.Error())
 	} else {
 		a.wordVersionHistoryError = ""
+		a.wordVersionHistoryErrorRef = i18n.Message{}
 		a.wordVersionHistoryVersions = append([]workspace.WordVersion(nil), result.versions...)
 		a.wordVersionHistoryRowButtons = make(map[int64]*widget.Clickable, len(result.versions))
 	}
@@ -119,6 +125,7 @@ func (a *App) closeWordVersionHistory() {
 	a.wordVersionHistoryVisible = false
 	a.wordVersionHistoryLoading = false
 	a.wordVersionHistoryError = ""
+	a.wordVersionHistoryErrorRef = i18n.Message{}
 	a.wordVersionHistorySelectedID = 0
 }
 
@@ -135,8 +142,8 @@ func (a *App) requestWordVersionRestore() {
 		return
 	}
 	version := *selected
-	label := wordVersionHistoryRowText(version)
-	a.modal.Show("恢复历史版本？", "将文档恢复到“"+label+"”。恢复前会保留当前完整 DOCX；恢复后可使用撤销回到当前内容。", func(action string) {
+	label := a.wordVersionHistoryRowText(version)
+	a.modal.ShowMessage("word.version_history.restore", i18n.Message{ID: "word.version_history.restore.dialog.title"}, i18n.Message{ID: "word.version_history.restore.dialog.body", Args: i18n.Args{"Version": label}}, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
@@ -144,26 +151,31 @@ func (a *App) requestWordVersionRestore() {
 		if a.startRestoreWordVersion(a.documentSessionState, version.ID) {
 			a.closeWordVersionHistory()
 		}
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消"}, modalDialogActionSpec{ID: "confirm", Label: "恢复"})
+	}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.version_history.restore.action"}})
 }
 
-func wordVersionSourceLabel(source workspace.WordVersionSource) string {
+func (a *App) wordVersionSourceLabel(source workspace.WordVersionSource) string {
 	switch source {
 	case workspace.WordVersionOpened:
-		return "打开文档"
+		return a.text(i18n.Message{ID: "word.version_history.source.opened"})
 	case workspace.WordVersionManualSave:
-		return "手动保存"
+		return a.text(i18n.Message{ID: "word.version_history.source.manual_save"})
 	case workspace.WordVersionAutoSave:
-		return "自动保存"
+		return a.text(i18n.Message{ID: "word.version_history.source.auto_save"})
 	case workspace.WordVersionRestoreBefore:
-		return "恢复前保护"
+		return a.text(i18n.Message{ID: "word.version_history.source.restore_protection"})
 	default:
-		return "版本快照"
+		return a.text(i18n.Message{ID: "word.version_history.source.snapshot"})
 	}
 }
 
-func wordVersionHistoryRowText(version workspace.WordVersion) string {
-	return fmt.Sprintf("%s · %s · %d 字节", wordVersionSourceLabel(version.Source), version.CreatedAt.Local().Format("2006-01-02 15:04:05"), version.SizeBytes)
+func (a *App) wordVersionHistoryRowText(version workspace.WordVersion) string {
+	locale := a.localeSnapshot().Resolved
+	return a.text(i18n.Message{ID: "word.version_history.row", Args: i18n.Args{
+		"Source": a.wordVersionSourceLabel(version.Source),
+		"Date":   i18n.FormatDateTime(locale, version.CreatedAt.Local()),
+		"Size":   i18n.FormatNumber(locale, float64(version.SizeBytes)),
+	}})
 }
 
 func (a *App) layoutWordVersionHistory(gtx layout.Context) layout.Dimensions {
@@ -185,7 +197,7 @@ func (a *App) layoutWordVersionHistory(gtx layout.Context) layout.Dimensions {
 				bounds := image.Rectangle{Max: gtx.Constraints.Max}
 				paint.FillShape(gtx.Ops, color.NRGBA{R: 0, G: 0, B: 0, A: 52}, clip.Rect{Max: bounds.Max}.Op())
 				semantic.Button.Add(gtx.Ops)
-				semantic.DescriptionOp("关闭版本历史").Add(gtx.Ops)
+				semantic.DescriptionOp(a.textID("word.accessibility.close_history")).Add(gtx.Ops)
 				return layout.Dimensions{Size: bounds.Max}
 			})
 		}),
@@ -236,7 +248,7 @@ func layoutWordVersionHistoryPanel(gtx layout.Context, a *App) layout.Dimensions
 func (a *App) layoutWordVersionHistoryHeader(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			label := material.H6(a.theme, "版本历史")
+			label := material.H6(a.theme, a.textID("word.ribbon.action.version_history"))
 			label.Color = color.NRGBA{R: 39, G: 45, B: 54, A: 255}
 			return label.Layout(gtx)
 		}),
@@ -245,7 +257,7 @@ func (a *App) layoutWordVersionHistoryHeader(gtx layout.Context) layout.Dimensio
 			gtx.Constraints.Min = image.Pt(size, size)
 			gtx.Constraints.Max = gtx.Constraints.Min
 			semantic.Button.Add(gtx.Ops)
-			semantic.DescriptionOp("关闭版本历史").Add(gtx.Ops)
+			semantic.DescriptionOp(a.textID("word.accessibility.close_history")).Add(gtx.Ops)
 			return a.wordVersionHistoryCloseButton.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				label := material.Body1(a.theme, "×")
 				label.Color = wordStatusText
@@ -257,17 +269,17 @@ func (a *App) layoutWordVersionHistoryHeader(gtx layout.Context) layout.Dimensio
 
 func (a *App) layoutWordVersionHistoryContents(gtx layout.Context) layout.Dimensions {
 	if a.wordVersionHistoryLoading {
-		label := material.Body1(a.theme, "正在读取版本历史…")
+		label := material.Body1(a.theme, a.textID("word.version_history.loading"))
 		label.Color = mutedText
 		return layout.Center.Layout(gtx, label.Layout)
 	}
 	if a.wordVersionHistoryError != "" {
-		label := material.Body1(a.theme, a.wordVersionHistoryError)
+		label := material.Body1(a.theme, a.messageText(a.wordVersionHistoryErrorRef, a.wordVersionHistoryError))
 		label.Color = color.NRGBA{R: 171, G: 56, B: 50, A: 255}
 		return layout.Center.Layout(gtx, label.Layout)
 	}
 	if len(a.wordVersionHistoryVersions) == 0 {
-		label := material.Body1(a.theme, "当前文档还没有历史版本")
+		label := material.Body1(a.theme, a.textID("word.version_history.empty"))
 		label.Color = mutedText
 		return layout.Center.Layout(gtx, label.Layout)
 	}
@@ -282,6 +294,7 @@ func (a *App) layoutWordVersionHistoryContents(gtx layout.Context) layout.Dimens
 		if button.Clicked(gtx) {
 			a.wordVersionHistorySelectedID = version.ID
 		}
+		locale := a.localeSnapshot().Resolved
 		height := gtx.Dp(unit.Dp(62))
 		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 		return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -302,12 +315,12 @@ func (a *App) layoutWordVersionHistoryContents(gtx layout.Context) layout.Dimens
 					return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10), Top: unit.Dp(7), Bottom: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								label := material.Body1(a.theme, wordVersionSourceLabel(version.Source)+" · "+version.CreatedAt.Local().Format("2006-01-02 15:04:05"))
+								label := material.Body1(a.theme, a.text(i18n.Message{ID: "word.version_history.row.source_date", Args: i18n.Args{"Source": a.wordVersionSourceLabel(version.Source), "Date": i18n.FormatDateTime(locale, version.CreatedAt.Local())}}))
 								label.Color = wordStatusText
 								return label.Layout(gtx)
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								label := material.Caption(a.theme, fmt.Sprintf("完整 DOCX 快照 · %d 字节", version.SizeBytes))
+								label := material.Caption(a.theme, a.text(i18n.Message{ID: "word.version_history.row.size", Args: i18n.Args{"Size": i18n.FormatNumber(locale, float64(version.SizeBytes))}}))
 								label.Color = mutedText
 								return label.Layout(gtx)
 							}),
@@ -324,12 +337,12 @@ func (a *App) layoutWordVersionHistoryFooter(gtx layout.Context) layout.Dimensio
 	return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				label := material.Caption(a.theme, "恢复前会先保存当前版本；恢复后可撤销。")
+				label := material.Caption(a.theme, a.textID("word.version_history.restore_hint"))
 				label.Color = mutedText
 				return label.Layout(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				button := material.Button(a.theme, &a.wordVersionHistoryRestore, "恢复此版本")
+				button := material.Button(a.theme, &a.wordVersionHistoryRestore, a.textID("word.version_history.restore.action"))
 				if !selected || a.documentSessionState == nil || a.documentSessionState.formatRunning.Load() || a.isSaving() {
 					button.Background = color.NRGBA{R: 180, G: 185, B: 192, A: 255}
 				}
@@ -359,7 +372,7 @@ func (a *App) startRestoreWordVersionInternal(state *documentSessionState, versi
 		state.wordInsertAfterDraftFlush || state.wordPendingPasteSelection != nil ||
 		state.wordClipboardSelection != nil || state.wordClipboardRunID != "" || state.wordDeferredToolbarAction != "" {
 		if state == a.documentSessionState {
-			a.setStatus("请先完成当前 Word 操作，再恢复历史版本")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.finish_the_current_word_operation_a24d6f"}, feedbackWarning, notificationToast)
 		}
 		return false
 	}
@@ -373,7 +386,7 @@ func (a *App) startRestoreWordVersionInternal(state *documentSessionState, versi
 		state.wordFlushRequested.Store(true)
 		state.wordFlushAllDrafts.Store(true)
 		if state == a.documentSessionState {
-			a.setStatus("正在提交正文修改并恢复历史版本")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.committing_text_edits_and_restoring_f4bd88"}, feedbackInfo, notificationToast)
 		}
 		a.startNextWordTextCommit()
 		return true
@@ -387,7 +400,7 @@ func (a *App) startRestoreWordVersionInternal(state *documentSessionState, versi
 	pathKey := canonicalSessionPath(path)
 	runtime := a.ensureDesktopRuntime()
 	if state == a.documentSessionState {
-		a.setStatus("正在恢复历史版本")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.restoring_a_previous_version_68fe33"}, feedbackInfo, notificationToast)
 	}
 	if !a.launchManagedBackground(func() {
 		result := wordVersionRestoreResult{
@@ -410,7 +423,7 @@ func (a *App) startRestoreWordVersionInternal(state *documentSessionState, versi
 		}
 		fail := func(err error) {
 			result.err = err
-			recordWordRestoreNotice(runtime, state, "恢复历史版本失败："+err.Error())
+			recordWordRestoreMessage(runtime, state, i18n.Message{ID: "word.history.error.restore"})
 			finish()
 		}
 		if pathKey == "" {

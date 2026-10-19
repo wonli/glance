@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"image"
 
 	"gioui.org/io/semantic"
@@ -22,9 +23,9 @@ func (a *App) toggleWordReadingMode() {
 	state.wordToolbarColorPicker = false
 	state.wordToolbarHighlightPicker = false
 	if state.wordReadingMode {
-		a.setStatus("已进入阅读模式")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.reading_mode_is_on_978599"}, feedbackSuccess, notificationSuppressed)
 	} else {
-		a.setStatus("已退出阅读模式")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.reading_mode_is_off_7dee19"}, feedbackSuccess, notificationSuppressed)
 	}
 	if a.window != nil {
 		a.window.Invalidate()
@@ -47,15 +48,15 @@ func (a *App) layoutWordReadingBar(gtx layout.Context, state *documentSessionSta
 			return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						label := material.Caption(a.theme, "阅读模式")
+						label := material.Caption(a.theme, a.textID("word.ribbon.action.view_reading"))
 						label.Color = wordStatusText
-						semantic.DescriptionOp("Word 阅读模式").Add(gtx.Ops)
+						semantic.DescriptionOp(a.textID("word.accessibility.reading_mode")).Add(gtx.Ops)
 						return label.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						semantic.Button.Add(gtx.Ops)
-						semantic.DescriptionOp("退出阅读模式").Add(gtx.Ops)
-						return material.Button(a.theme, &state.wordReadingExitButton, "退出阅读模式").Layout(gtx)
+						semantic.DescriptionOp(a.textID("word.accessibility.exit_reading_mode")).Add(gtx.Ops)
+						return material.Button(a.theme, &state.wordReadingExitButton, a.textID("word.accessibility.exit_reading_mode")).Layout(gtx)
 					}),
 					layout.Rigid(a.layoutAgentRibbonEntry),
 				)

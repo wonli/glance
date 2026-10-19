@@ -8,13 +8,15 @@ func (a *App) openAgentSettingsPage() {
 	}
 	a.resetHomeContentScroll()
 	a.prepareAgentSettingsPage()
+	a.agentUI.settingsPageTab = "basic"
+	a.agentUI.languageMenuOpen = false
 	a.homeSection = homeSectionSettings
 }
 
 // Resolve navigation before choosing the page layout, so a back click cannot
 // leave the settings page drawn with the application already on the home page.
 func (a *App) processSettingsNavClicks(gtx layout.Context) {
-	for _, id := range []string{"providers", "mcp"} {
+	for _, id := range []string{"basic", "providers", "mcp"} {
 		if a.settingsPageTabButton(id).Clicked(gtx) {
 			a.selectSettingsPageTab(id)
 		}

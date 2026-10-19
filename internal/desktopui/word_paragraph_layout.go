@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 	"image"
 	"image/color"
@@ -58,7 +59,7 @@ func (a *App) layoutWordParagraphWithBottomBorder(gtx layout.Context, paragraph 
 		case inline.PageBreak != nil:
 			pageBreak := *inline.PageBreak
 			children = append(children, wordInlineLayoutChild{width: gtx.Dp(unit.Dp(68)), layout: func(gtx layout.Context) layout.Dimensions {
-				return layoutWordPageBreak(gtx, a.theme, pageBreak)
+				return layoutWordPageBreak(gtx, a, pageBreak)
 			}})
 		case inline.Unsupported != nil:
 			children = append(children, wordInlineLayoutChild{width: min(maxWidth, gtx.Dp(unit.Dp(240))), layout: func(gtx layout.Context) layout.Dimensions {
@@ -110,14 +111,14 @@ func (a *App) layoutWordParagraphWithBottomBorder(gtx layout.Context, paragraph 
 	return dimensions
 }
 
-func layoutWordPageBreak(gtx layout.Context, theme *material.Theme, pageBreak document.WordPageBreak) layout.Dimensions {
-	semantic.DescriptionOp("分页符 " + pageBreak.ID).Add(gtx.Ops)
+func layoutWordPageBreak(gtx layout.Context, app *App, pageBreak document.WordPageBreak) layout.Dimensions {
+	semantic.DescriptionOp(app.text(i18n.Message{ID: "word.accessibility.paging_break", Args: i18n.Args{"ID": pageBreak.ID}})).Add(gtx.Ops)
 	bounds := image.Rectangle{Max: gtx.Constraints.Max}
 	shape := clip.UniformRRect(bounds, gtx.Dp(unit.Dp(3)))
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 246, G: 248, B: 250, A: 255}, shape.Op(gtx.Ops))
 	paint.FillShape(gtx.Ops, gridLine, clip.Stroke{Path: shape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
 	return layout.Inset{Left: unit.Dp(5), Right: unit.Dp(5), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		label := material.Caption(theme, "分页符")
+		label := material.Caption(app.theme, app.textID("word.paragraph.page_break"))
 		label.Color = color.NRGBA{R: 89, G: 99, B: 111, A: 255}
 		label.TextSize = unit.Sp(11)
 		return label.Layout(gtx)
@@ -220,7 +221,7 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 			selection = new(textEditorParagraphSelection)
 			state.wordParagraphSelections[paragraph.ID] = selection
 		}
-		dims := selection.layoutWithDoubleClick(gtx, editor, func(gtx layout.Context) layout.Dimensions { return layoutWordRunEditor(gtx, style, run.ID) }, func(caret int) bool {
+		dims := selection.layoutWithDoubleClick(gtx, editor, func(gtx layout.Context) layout.Dimensions { return layoutWordRunEditor(gtx, a, style, run.ID) }, func(caret int) bool {
 			return a.selectWordPageTextSegment(gtx, state, run.ID, caret)
 		})
 		if selection.paragraphSelected {
@@ -408,12 +409,12 @@ func wordHasAdjacentParagraph(blocks []document.WordBlock, paragraphID string, d
 	return false
 }
 
-func layoutWordRunEditor(gtx layout.Context, style material.EditorStyle, runID string) layout.Dimensions {
+func layoutWordRunEditor(gtx layout.Context, a *App, style material.EditorStyle, runID string) layout.Dimensions {
 	recorder := op.Record(gtx.Ops)
 	dimensions := style.Layout(gtx)
 	call := recorder.Stop()
 	clip := clip.Rect{Max: dimensions.Size}.Push(gtx.Ops)
-	semantic.DescriptionOp("正文文字 " + runID).Add(gtx.Ops)
+	semantic.DescriptionOp(a.textArgs("word.accessibility.body_text_run", i18n.Args{"ID": runID})).Add(gtx.Ops)
 	call.Add(gtx.Ops)
 	clip.Pop()
 	return dimensions

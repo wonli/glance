@@ -15,6 +15,7 @@ import (
 	"glance/internal/format/pptx"
 	legacyxls "glance/internal/format/xls"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 	"path/filepath"
 	"strings"
@@ -39,7 +40,7 @@ func (a *App) open(path string) error {
 		return err
 	}
 	if historyErr != nil && shared.word != nil {
-		a.setStatus("文档已打开，但历史版本暂不可用：" + historyErr.Error())
+		a.setStatusDetailMessage(i18n.Message{ID: "word.history.warning.unavailable"}, feedbackWarning, notificationToast, historyErr.Error())
 	}
 	return nil
 }
@@ -83,6 +84,33 @@ func documentOpenFailureStatus(err error) string {
 		return "无法访问该文件：没有足够的系统读取权限。"
 	}
 	return errStr
+}
+
+func documentOpenFailureMessage(err error) i18n.Message {
+	if err == nil {
+		return i18n.Message{ID: "common.feedback.operation_failed"}
+	}
+	errStr := err.Error()
+	switch {
+	case strings.Contains(errStr, "cannot be preserved by the XLSX importer"):
+		return i18n.Message{ID: "document.open.failure.unsupported_xls"}
+	case strings.Contains(errStr, "zip: not a valid zip file"), strings.Contains(errStr, "zip: not a valid zip archive"):
+		return i18n.Message{ID: "document.open.failure.invalid_office"}
+	case strings.Contains(errStr, "no such file or directory"):
+		return i18n.Message{ID: "document.open.failure.missing"}
+	case strings.Contains(errStr, "permission denied"):
+		return i18n.Message{ID: "document.open.failure.permission"}
+	default:
+		return i18n.Message{ID: "common.feedback.operation_failed"}
+	}
+}
+
+func (a *App) showDocumentOpenFailure(err error) {
+	message := documentOpenFailureMessage(err)
+	a.setStatusErrorMessage(message, err, notificationToast)
+	a.modal.ShowConfirmMessage("document.open.failure", i18n.Message{ID: "document.open.failure.title"}, message, modalDialogWarningConfirmStyle, func(string) {
+		a.modal.Hide()
+	}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}, Style: modalDialogActionPrimary})
 }
 
 func cloneWordBlockSnapshot(blocks []document.WordBlock) []document.WordBlock {
@@ -313,10 +341,9 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	}
 	title := filepath.Base(loaded.path)
 	if loaded.path == "" {
+		title = a.textID("workspace.document.untitled")
 		if loaded.pptxDoc != nil {
-			title = "新建演示文稿.pptx"
-		} else {
-			title = "新建文档"
+			title = a.textID("workspace.document.untitled_presentation")
 		}
 	}
 	meta := workspace.Tab{ID: id, Kind: kind, Title: title, DocumentID: id, SourcePath: loaded.path, Position: len(a.tabMeta)}
@@ -346,7 +373,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 					}
 				}
 				if err != nil {
-					a.setStatus("新建文档的恢复快照保存失败：" + err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 					return err
 				}
 			}
@@ -374,11 +401,11 @@ func (a *App) installDocument(loaded loadedDocument) error {
 		a.nameBox.SetText("")
 		a.formulaEditor.SetText("")
 		if loaded.sourceFormat == application.FormatXLS {
-			a.setStatus(fmt.Sprintf("已导入旧版 .xls 工作表「%s」：可浏览和编辑；请另存为 .xlsx", a.sheet))
+			a.setStatusMessage(i18n.Message{ID: "document.open.legacy_xls", Args: i18n.Args{"Sheet": a.sheet}}, feedbackInfo, notificationSuppressed)
 		} else if loaded.sourceFormat == application.FormatCSV {
-			a.setStatus(fmt.Sprintf("工作表「%s」：CSV 虚拟网格就绪，可浏览、编辑并保存", a.sheet))
+			a.setStatusMessage(i18n.Message{ID: "document.open.csv_grid", Args: i18n.Args{"Sheet": a.sheet}}, feedbackInfo, notificationSuppressed)
 		} else {
-			a.setStatus(fmt.Sprintf("工作表「%s」：虚拟网格就绪，可浏览并编辑完整 XLSX 地址范围", a.sheet))
+			a.setStatusMessage(i18n.Message{ID: "document.open.xlsx_grid", Args: i18n.Args{"Sheet": a.sheet}}, feedbackInfo, notificationSuppressed)
 		}
 		return nil
 	}
@@ -386,16 +413,16 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	a.selectedBlock = -1
 	if loaded.word != nil {
 		if loaded.sourceFormat == application.FormatDOC {
-			a.setStatus(fmt.Sprintf("已导入旧版 .doc；读取 %d 个内容块，编辑后请另存为 .docx", len(a.word.Blocks())))
+			a.setStatusMessage(i18n.Message{ID: "document.open.legacy_doc", Args: i18n.Args{"Count": len(a.word.Blocks())}}, feedbackInfo, notificationSuppressed)
 		} else {
-			a.setStatus(fmt.Sprintf("已打开 %s；读取 %d 个内容块", loaded.path, len(a.word.Blocks())))
+			a.setStatusMessage(i18n.Message{ID: "document.open.word", Args: i18n.Args{"Path": loaded.path, "Count": len(a.word.Blocks())}}, feedbackInfo, notificationSuppressed)
 		}
 		a.startWordPagination(state)
 	} else if loaded.pptxDoc != nil {
 		snap := loaded.pptxDoc.Snapshot()
-		a.setStatus(fmt.Sprintf("已打开演示文稿；包含 %d 页幻灯片", snap.SlideCount))
+		a.setStatusMessage(i18n.Message{ID: "document.open.presentation", Args: i18n.Args{"Count": snap.SlideCount}}, feedbackInfo, notificationSuppressed)
 	} else if loaded.jsonDoc != nil {
-		a.setStatus("已打开 JSON 文本")
+		a.setStatusMessage(i18n.Message{ID: "document.open.json"}, feedbackInfo, notificationSuppressed)
 	}
 	return nil
 }
@@ -429,7 +456,7 @@ func (a *App) startOpen(path string) {
 		return
 	}
 	a.opening = true
-	a.setStatus("正在打开 " + strings.TrimSpace(path))
+	a.setStatusMessage(i18n.Message{ID: "document.opening", Args: i18n.Args{"Path": strings.TrimSpace(path)}}, feedbackInfo, notificationSuppressed)
 	a.launchManagedBackground(func() {
 		runtime := a.ensureDesktopRuntime()
 		shared, openedFromDisk, err := runtime.openLiveDocument(path)

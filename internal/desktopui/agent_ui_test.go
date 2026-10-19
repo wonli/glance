@@ -4,16 +4,18 @@ import (
 	"testing"
 
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 func TestAgentSettingsDialogMasksAPIKeyAndDoesNotPrefillIt(t *testing.T) {
 	runtime := newDesktopRuntime()
 	t.Cleanup(runtime.shutdown)
 	app := newAppWithRuntime(nil, runtime)
+	app.applyLocaleSelection(i18n.SelectionChinese)
 
 	app.showAgentSettings(false)
-	if !app.modal.Visible || app.modal.Title != "模型设置" {
-		t.Fatalf("settings dialog visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != dialogIDAgentModelSettings || app.text(app.modal.TitleRef) != "模型设置" {
+		t.Fatalf("settings dialog visible=%v id=%q title=%q", app.modal.Visible, app.modal.DialogID, app.text(app.modal.TitleRef))
 	}
 	if app.agentUI.apiKeyInput.Mask == 0 {
 		t.Fatal("API key editor is not masked")

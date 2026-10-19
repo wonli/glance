@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/application"
 	"glance/internal/document"
@@ -32,7 +33,7 @@ func (a *App) showPresentationTableInsertOptions(view *presentationViewState) {
 	if view == nil {
 		return
 	}
-	a.modal.Show("插入表格", "选择空白表格尺寸。单元格数据可由 Agent 通过 MCP 填入。", func(action string) {
+	a.modal.ShowMessage("presentation.table.insert", i18n.Message{ID: "presentation.table.insert.title"}, i18n.Message{ID: "presentation.table.insert.body"}, func(action string) {
 		a.modal.Hide()
 		rows, columns := 0, 0
 		switch action {
@@ -52,13 +53,13 @@ func (a *App) showPresentationTableInsertOptions(view *presentationViewState) {
 		if !a.startPresentationDataObject(view, "presentation.element.table.create", presentationDataObjectArguments{
 			Rows: grid, FirstRow: true, BandRows: true,
 		}, false) {
-			a.setStatus("无法启动表格插入")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_table_insertion_fe1577"}, feedbackWarning, notificationToast)
 		}
 	},
 		modalDialogActionSpec{ID: "2x2", Label: "2 × 2"},
 		modalDialogActionSpec{ID: "3x3", Label: "3 × 3"},
 		modalDialogActionSpec{ID: "4x4", Label: "4 × 4"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -66,7 +67,7 @@ func (a *App) showPresentationChartInsertOptions(view *presentationViewState) {
 	if view == nil {
 		return
 	}
-	a.modal.Show("插入图表", "选择图表类型。模板含三个示例类别和数值 1、2、3；Agent 可按实际数据创建正式图表。", func(action string) {
+	a.modal.ShowMessage("presentation.chart.insert", i18n.Message{ID: "presentation.chart.insert.title"}, i18n.Message{ID: "presentation.chart.insert.body"}, func(action string) {
 		a.modal.Hide()
 		if action != "bar" && action != "line" && action != "pie" {
 			return
@@ -76,13 +77,13 @@ func (a *App) showPresentationChartInsertOptions(view *presentationViewState) {
 			Categories: []string{"类别 1", "类别 2", "类别 3"},
 			Series:     []presentationChartSeries{{Name: "系列 1", Values: []float64{1, 2, 3}}},
 		}, true) {
-			a.setStatus("无法启动图表插入")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_chart_insertion_3d7870"}, feedbackWarning, notificationToast)
 		}
 	},
-		modalDialogActionSpec{ID: "bar", Label: "柱状图"},
-		modalDialogActionSpec{ID: "line", Label: "折线图"},
-		modalDialogActionSpec{ID: "pie", Label: "饼图"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "bar", LabelRef: i18n.Message{ID: "presentation.chart.type.bar"}},
+		modalDialogActionSpec{ID: "line", LabelRef: i18n.Message{ID: "presentation.chart.type.line"}},
+		modalDialogActionSpec{ID: "pie", LabelRef: i18n.Message{ID: "presentation.chart.type.pie"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -102,7 +103,7 @@ func (a *App) startPresentationDataObject(view *presentationViewState, capabilit
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return true
 	}
 	bounds := presentationObjectBounds(slide)
@@ -113,7 +114,7 @@ func (a *App) startPresentationDataObject(view *presentationViewState, capabilit
 	arguments.Height = bounds.H
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true

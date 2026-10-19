@@ -2,8 +2,8 @@ package desktopui
 
 import (
 	"encoding/json"
-	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 func (a *App) clearSelectionAsync() { a.clearSpreadsheetSelectionContents("剪切") }
@@ -20,7 +20,7 @@ func (a *App) clearSpreadsheetSelectionContents(operation string) {
 	if !sparse {
 		count := selectionCellCount(bounds)
 		if count > maxClipboardCellsUI {
-			a.setStatus(fmt.Sprintf("%s选区超过 %d 个单元格", operation, maxClipboardCellsUI))
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.selection_too_large", Args: i18n.Args{"Operation": a.localizedSpreadsheetToolbarText(operation), "Limit": maxClipboardCellsUI}}, feedbackWarning, notificationToast)
 			return
 		}
 		edits := make([]document.CellEdit, 0, count)
@@ -30,7 +30,7 @@ func (a *App) clearSpreadsheetSelectionContents(operation string) {
 			}
 		}
 		if err := a.applyBatchEdits(edits, operation); err != nil {
-			a.setStatus(operation + "失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		}
 		return
 	}

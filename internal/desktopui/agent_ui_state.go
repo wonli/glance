@@ -14,15 +14,19 @@ import (
 	"glance/internal/agentsettings"
 	"glance/internal/application"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 type agentChatLine struct {
 	role           string
 	text           string
+	textRef        i18n.Message
+	confirmation   *application.ConfirmationInfo
 	markdownSource string
 	markdownBlocks []document.MarkdownBlock
 	toolName       string
 	toolSummary    string
+	toolSummaryRef i18n.Message
 	confirmationID string
 	collapsed      bool
 	inProgress     bool
@@ -58,6 +62,7 @@ type agentModelLookupState struct {
 	models        []provider.ModelInfo
 	modelsByID    map[string]provider.ModelInfo
 	err           string
+	errRef        i18n.Message
 	cancel        context.CancelFunc
 	results       chan agentModelLookupResult
 	modelIDs      []string
@@ -89,10 +94,15 @@ type agentUIState struct {
 	apiKeyInput        widget.Editor
 	settingsInfo       string
 	settingsError      string
+	settingsInfoRef    i18n.Message
+	settingsErrorRef   i18n.Message
 	settings           agentsettings.ModelSettings
 	settingsLoading    bool
 	settingsPageTab    string
 	settingsPageTabs   map[string]*widget.Clickable
+	languageMenuOpen   bool
+	languageSelector   widget.Clickable
+	languageOptions    [3]widget.Clickable
 	settingsTab        string
 	settingsTabButtons map[string]*widget.Clickable
 	settingsKeyLink    widget.Clickable
@@ -116,6 +126,7 @@ type agentUIState struct {
 	chatLines                        []agentChatLine
 	chatEvents                       chan agent.AgentEvent
 	chatStatus                       string
+	chatStatusRef                    i18n.Message
 	sidebarVisible                   bool
 	sidebarWidthDP                   unit.Dp
 	sidebarResizeDrag                gesture.Drag

@@ -2,7 +2,6 @@ package desktopui
 
 import (
 	"encoding/json"
-	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -15,6 +14,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"glance/internal/i18n"
 )
 
 var (
@@ -102,7 +103,7 @@ func agentProcessGroupCollapsed(lines []agentChatLine, indices []int) bool {
 	return true
 }
 
-func agentProcessGroupHeaderTitle(lines []agentChatLine, indices []int, now time.Time) string {
+func (a *App) agentProcessGroupHeaderTitle(lines []agentChatLine, indices []int, now time.Time) string {
 	toolCount := 0
 	var totalDuration time.Duration
 	lastInProgress := -1
@@ -124,40 +125,37 @@ func agentProcessGroupHeaderTitle(lines []agentChatLine, indices []int, now time
 	if lastInProgress >= 0 {
 		active := lines[lastInProgress]
 		if active.role == "tool" {
-			name := active.toolName
-			if name == "" {
-				name = strings.TrimSpace(strings.TrimPrefix(active.text, "正在执行"))
-			}
+			name := a.agentToolDisplayName(active.toolName)
 			if name != "" {
-				return "处理过程 · 正在执行 " + agentToolDisplayName(name)
+				return a.textArgs("agent.process.running", i18n.Args{"Action": name})
 			}
-			return "处理过程 · 正在调用工具…"
+			return a.textID("agent.process.active_tool")
 		}
-		title := "处理过程 · 正在分析…"
+		title := a.textID("agent.process.analyzing")
 		if seconds > 0 {
-			title += fmt.Sprintf(" · %d 秒", seconds)
+			title += " · " + a.textArgs("agent.process.duration", i18n.Args{"Duration": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(seconds))})
 		}
 		if toolCount > 0 {
-			title += fmt.Sprintf(" · %d 次调用", toolCount)
+			title += " · " + a.textArgs("agent.process.tool_count", i18n.Args{"Count": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(toolCount))})
 		}
 		return title
 	}
-	title := "处理过程"
+	title := a.textID("agent.process.group")
 	if seconds > 0 {
-		title += fmt.Sprintf(" · %d 秒", seconds)
+		title += " · " + a.textArgs("agent.process.duration", i18n.Args{"Duration": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(seconds))})
 	}
 	if toolCount > 0 {
-		title += fmt.Sprintf(" · %d 次调用", toolCount)
+		title += " · " + a.textArgs("agent.process.tool_count", i18n.Args{"Count": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(toolCount))})
 	}
 	return title
 }
 
-func agentSidebarProcessDisclosure(gtx layout.Context, theme *material.Theme, button *widget.Clickable, title string, collapsed bool) layout.Dimensions {
+func agentSidebarProcessDisclosure(gtx layout.Context, theme *material.Theme, button *widget.Clickable, title, description string, collapsed bool) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(20))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		semantic.Button.Add(gtx.Ops)
-		semantic.DescriptionOp("展开或折叠处理过程").Add(gtx.Ops)
+		semantic.DescriptionOp(description).Add(gtx.Ops)
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min = image.Point{}
@@ -193,14 +191,14 @@ func agentProcessLeftBar(gtx layout.Context, barColor color.NRGBA, child layout.
 	})
 }
 
-func agentSidebarResumeButton(gtx layout.Context, theme *material.Theme, button *widget.Clickable) layout.Dimensions {
+func agentSidebarResumeButton(gtx layout.Context, app *App, button *widget.Clickable) layout.Dimensions {
 	size := image.Pt(gtx.Dp(unit.Dp(42)), gtx.Dp(unit.Dp(30)))
 	gtx.Constraints = layout.Exact(size)
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		semantic.Button.Add(gtx.Ops)
-		semantic.DescriptionOp("继续尚未完成的会话").Add(gtx.Ops)
+		semantic.DescriptionOp(app.textID("agent.process.resume.description")).Add(gtx.Ops)
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			label := material.Label(theme, unit.Sp(11), "继续")
+			label := material.Label(app.theme, unit.Sp(11), app.textID("common.action.continue"))
 			label.Color = agentSidebarText
 			gtx.Constraints.Min = image.Point{}
 			return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, label.Layout)
@@ -209,52 +207,62 @@ func agentSidebarResumeButton(gtx layout.Context, theme *material.Theme, button 
 }
 
 var agentKnownToolNames = map[string]string{
-	"document.list":                "获取文档列表",
-	"document.inspect":             "读取文档内容",
-	"document.create":              "创建新文档",
-	"document.open":                "打开文档",
-	"document.save":                "保存文档",
-	"document.save_as":             "另存为文档",
-	"document.close":               "关闭文档",
-	"confirmation.get":             "查询确认状态",
-	"workbook.audit":               "检查工作簿",
-	"spreadsheet.cell.set":         "修改单元格内容",
-	"spreadsheet.range.copy":       "复制表格区域",
-	"spreadsheet.range.clear":      "清空表格区域",
-	"word.paragraph.append":        "追加文档段落",
-	"word.text_range.replace":      "替换文档文本",
-	"word.text_range.copy":         "复制文档文本",
-	"word.text_range.cut":          "剪切文档文本",
-	"word.text.search":             "搜索文档文本",
-	"word.text.statistics":         "统计文档字数",
-	"word.table.insert":            "插入文档表格",
-	"word.image.insert":            "插入文档图片",
-	"word.document.properties.get": "获取文档属性",
-	"word.document.properties.set": "设置文档属性",
+	"document.list":                "agent.tool.name.document_list",
+	"document.inspect":             "agent.tool.name.document_inspect",
+	"document.create":              "agent.tool.name.document_create",
+	"document.open":                "agent.tool.name.document_open",
+	"document.save":                "agent.tool.name.document_save",
+	"document.save_as":             "agent.tool.name.document_save_as",
+	"document.close":               "agent.tool.name.document_close",
+	"confirmation.get":             "agent.tool.name.confirmation_get",
+	"workbook.audit":               "agent.tool.name.workbook_audit",
+	"spreadsheet.cell.set":         "agent.tool.name.spreadsheet_cell_set",
+	"spreadsheet.range.copy":       "agent.tool.name.spreadsheet_range_copy",
+	"spreadsheet.range.clear":      "agent.tool.name.spreadsheet_range_clear",
+	"word.paragraph.append":        "agent.tool.name.word_paragraph_append",
+	"word.text_range.replace":      "agent.tool.name.word_text_range_replace",
+	"word.text_range.copy":         "agent.tool.name.word_text_range_copy",
+	"word.text_range.cut":          "agent.tool.name.word_text_range_cut",
+	"word.text.search":             "agent.tool.name.word_text_search",
+	"word.text.statistics":         "agent.tool.name.word_text_statistics",
+	"word.table.insert":            "agent.tool.name.word_table_insert",
+	"word.image.insert":            "agent.tool.name.word_image_insert",
+	"word.document.properties.get": "agent.tool.name.word_document_properties_get",
+	"word.document.properties.set": "agent.tool.name.word_document_properties_set",
 }
 
-func agentToolDisplayName(name string) string {
+func (a *App) agentToolDisplayName(name string) string {
 	trimmed := strings.TrimSpace(name)
-	if label, ok := agentKnownToolNames[trimmed]; ok {
-		return label
+	if messageID, ok := agentKnownToolNames[trimmed]; ok {
+		return a.textID(messageID)
 	}
 	return trimmed
 }
 
-func agentToolRecordDisplay(line agentChatLine) (string, string) {
+func (a *App) agentToolSummaryText(line agentChatLine) string {
+	if line.toolSummaryRef.ID != "" {
+		return a.text(line.toolSummaryRef)
+	}
+	return line.toolSummary
+}
+
+func (a *App) agentToolRecordDisplay(line agentChatLine) (string, string) {
 	if line.toolName != "" {
-		title := agentToolDisplayName(line.toolName)
-		summary := strings.TrimSpace(line.toolSummary)
+		title := a.agentToolDisplayName(line.toolName)
+		summary := strings.TrimSpace(a.agentToolSummaryText(line))
+		if line.needsAuth && !line.isError {
+			summary = a.textID("agent.tool.result.needs_confirmation")
+		}
 		if summary == "" {
 			switch {
 			case line.inProgress:
-				summary = "正在执行…"
+				summary = a.textID("agent.tool.result.running")
 			case line.needsAuth:
-				summary = "等待人工授权确认"
+				summary = a.textID("agent.tool.result.needs_confirmation")
 			case line.isError:
-				summary = "执行失败"
+				summary = a.textID("agent.tool.result.failed")
 			default:
-				summary = "已完成"
+				summary = a.textID("agent.tool.result.completed")
 			}
 		}
 		return title, summary
@@ -265,11 +273,11 @@ func agentToolRecordDisplay(line agentChatLine) (string, string) {
 	}
 	if strings.HasPrefix(text, "工具 ") && strings.HasSuffix(text, " 已完成") {
 		rawName := strings.TrimSuffix(strings.TrimPrefix(text, "工具 "), " 已完成")
-		return agentToolDisplayName(rawName), "已完成"
+		return a.agentToolDisplayName(rawName), a.textID("agent.tool.result.completed")
 	}
 	if strings.HasPrefix(text, "正在执行 ") {
 		rawName := strings.TrimPrefix(text, "正在执行 ")
-		return agentToolDisplayName(rawName), "正在执行…"
+		return a.agentToolDisplayName(rawName), a.textID("agent.tool.result.running")
 	}
 	return text, strings.TrimSpace(line.toolSummary)
 }
@@ -306,60 +314,56 @@ func agentToolResultNeedsConfirmation(raw []byte) bool {
 	return strings.Contains(string(raw), `"confirmation_required"`)
 }
 
-func summarizeAgentToolResult(toolName string, raw []byte, isError bool) string {
-	if agentToolResultNeedsConfirmation(raw) {
-		return "等待人工授权确认"
-	}
+func agentToolResultSummaryReference(toolName string, raw []byte, isError bool) (i18n.Message, string) {
 	if isError {
-		var errPayload struct {
+		if agentToolResultNeedsConfirmation(raw) {
+			return i18n.Message{ID: "agent.tool.result.confirmation_required"}, ""
+		}
+		var payload struct {
 			Message string   `json:"message"`
 			Error   string   `json:"error"`
 			Content []string `json:"content"`
 		}
-		if len(raw) > 0 && json.Unmarshal(raw, &errPayload) == nil {
-			if strings.TrimSpace(errPayload.Message) != "" {
-				return strings.TrimSpace(errPayload.Message)
+		if len(raw) > 0 && json.Unmarshal(raw, &payload) == nil {
+			for _, detail := range []string{payload.Message, payload.Error} {
+				if strings.TrimSpace(detail) != "" {
+					return i18n.Message{}, strings.TrimSpace(detail)
+				}
 			}
-			if len(errPayload.Content) > 0 && strings.TrimSpace(errPayload.Content[0]) != "" {
-				return strings.TrimSpace(errPayload.Content[0])
+			if len(payload.Content) > 0 && strings.TrimSpace(payload.Content[0]) != "" {
+				return i18n.Message{}, strings.TrimSpace(payload.Content[0])
 			}
 		}
-		return "执行失败，Agent 将根据错误继续处理"
+		return i18n.Message{ID: "agent.tool.result.execution_failed"}, ""
 	}
-	if len(raw) > 0 {
-		var payload struct {
-			Data struct {
-				CellsScanned  int             `json:"cells_scanned"`
-				FindingsTotal int             `json:"findings_total"`
-				Documents     []any           `json:"documents"`
-				SourcePath    string          `json:"source_path"`
-				Format        string          `json:"format"`
-				Text          string          `json:"text"`
-				Content       json.RawMessage `json:"content"`
-			} `json:"data"`
-		}
-		if json.Unmarshal(raw, &payload) == nil {
-			switch toolName {
-			case "document.list":
-				if len(payload.Data.Documents) > 0 {
-					return fmt.Sprintf("已找到 %d 份当前文档", len(payload.Data.Documents))
-				}
-			case "workbook.audit":
-				if payload.Data.CellsScanned > 0 {
-					return fmt.Sprintf("已检查 %d 个单元格", payload.Data.CellsScanned)
-				}
-			case "document.save", "document.save_as":
-				if payload.Data.SourcePath != "" {
-					return "已保存文档"
-				}
-			case "document.create":
-				return "已创建新文档"
-			case "document.inspect":
-				return "已读取当前文档内容"
-			case "word.paragraph.append":
-				return "已更新文档段落"
+	var payload struct {
+		Data struct {
+			CellsScanned int    `json:"cells_scanned"`
+			Documents    []any  `json:"documents"`
+			SourcePath   string `json:"source_path"`
+		} `json:"data"`
+	}
+	if len(raw) > 0 && json.Unmarshal(raw, &payload) == nil {
+		switch toolName {
+		case "document.list":
+			if len(payload.Data.Documents) > 0 {
+				return i18n.Message{ID: "agent.tool.result.documents_found", Args: i18n.Args{"Count": len(payload.Data.Documents)}}, ""
 			}
+		case "workbook.audit":
+			if payload.Data.CellsScanned > 0 {
+				return i18n.Message{ID: "agent.tool.result.cells_scanned", Args: i18n.Args{"Count": payload.Data.CellsScanned}}, ""
+			}
+		case "document.save", "document.save_as":
+			if payload.Data.SourcePath != "" {
+				return i18n.Message{ID: "agent.tool.result.document_saved"}, ""
+			}
+		case "document.create":
+			return i18n.Message{ID: "agent.tool.result.document_created"}, ""
+		case "document.inspect":
+			return i18n.Message{ID: "agent.tool.result.document_inspected"}, ""
+		case "word.paragraph.append":
+			return i18n.Message{ID: "agent.tool.result.paragraph_updated"}, ""
 		}
 	}
-	return "已完成"
+	return i18n.Message{ID: "agent.tool.result.completed"}, ""
 }

@@ -3,7 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
+	"glance/internal/i18n"
 
 	"glance/internal/application"
 )
@@ -63,7 +63,7 @@ func (a *App) startPresentationAnimationPane(view *presentationViewState) bool {
 	slideID := view.snapshot.Slides[view.activeSlide].ID
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true
@@ -96,47 +96,16 @@ func (a *App) startPresentationAnimationPane(view *presentationViewState) bool {
 	return true
 }
 
-func formatPresentationAnimationPane(data presentationAnimationPaneData) string {
-	var body strings.Builder
-	fmt.Fprintf(&body, "幻灯片 ID：%d\n读取修订：%d\n", data.SlideID, data.Revision)
-	if !data.HasTiming || len(data.Animations) == 0 {
-		body.WriteString("此幻灯片没有可读取的动画效果。")
-	} else {
-		body.WriteString("\n动画效果：\n")
-		limit := len(data.Animations)
-		if limit > 100 {
-			limit = 100
-		}
-		for _, animation := range data.Animations[:limit] {
-			fmt.Fprintf(&body, "%d. %s", animation.Index, animation.Kind)
-			if animation.TargetElementID != 0 {
-				fmt.Fprintf(&body, " · 元素 %d", animation.TargetElementID)
-			}
-			if animation.PresetClass != "" || animation.PresetID != "" {
-				fmt.Fprintf(&body, " · 预设 %s/%s", animation.PresetClass, animation.PresetID)
-			}
-			if animation.Effect != "" {
-				fmt.Fprintf(&body, " · 效果 %s", animation.Effect)
-			}
-			if animation.Transition != "" {
-				fmt.Fprintf(&body, " · 方向 %s", animation.Transition)
-			}
-			if animation.Duration != "" {
-				fmt.Fprintf(&body, " · 时长 %s", animation.Duration)
-			}
-			body.WriteByte('\n')
-		}
-		if limit < len(data.Animations) {
-			fmt.Fprintf(&body, "……界面显示前 %d 项；MCP 查询可读取最多 %d 项。\n", limit, len(data.Animations))
-		}
+func formatPresentationAnimationPane(data presentationAnimationPaneData) i18n.Message {
+	animations := data.Animations
+	if len(animations) > 100 {
+		animations = animations[:100]
 	}
-	if data.Truncated {
-		body.WriteString("\n结果不完整：动画时序达到解析上限。")
-	}
-	for _, diagnostic := range data.Diagnostics {
-		fmt.Fprintf(&body, "\n诊断：%s", diagnostic)
-	}
-	return body.String()
+	return i18n.Message{ID: "presentation.animation_pane.report", Args: i18n.Args{
+		"SlideID": data.SlideID, "Revision": data.Revision, "HasTiming": data.HasTiming,
+		"AnimationCount": len(data.Animations), "Animations": animations, "Truncated": data.Truncated,
+		"Diagnostics": data.Diagnostics,
+	}}
 }
 
 func (a *App) startPresentationProofread(view *presentationViewState) bool {
@@ -155,7 +124,7 @@ func (a *App) startPresentationProofread(view *presentationViewState) bool {
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true
@@ -224,31 +193,18 @@ func (a *App) startPresentationProofread(view *presentationViewState) bool {
 	return true
 }
 
-func formatPresentationProofreadData(report presentationProofreadData) string {
+func formatPresentationProofreadData(report presentationProofreadData) i18n.Message {
 	if report.TotalSlides == 0 {
-		return "演示文稿没有幻灯片。此检查只关注重复中文标点及中文括号/弯引号数量，不含词典拼写、语法或语义检查。"
+		return i18n.Message{ID: "presentation.proofread.report.no_slides"}
 	}
-	message := fmt.Sprintf("检查了 %d/%d 张幻灯片。\n此检查只关注重复中文标点及中文括号/弯引号数量，不含词典拼写、语法或语义检查。", report.ScannedSlides, report.TotalSlides)
-	if report.Complete && !report.ElementsTruncated {
-		message += "\n检查完整。"
-	} else {
-		message += "\n检查不完整；MCP 可通过 start/limit 继续分页。"
+	findings := report.Findings
+	if len(findings) > 30 {
+		findings = findings[:30]
 	}
-	if len(report.Findings) == 0 {
-		message += "\n未发现这两类问题。"
-		return message
-	}
-	if report.FindingsTruncated {
-		message += fmt.Sprintf("\n发现超过 %d 项，以下显示前 30 项：", presentationReviewMaxFindings)
-	} else {
-		message += fmt.Sprintf("\n发现 %d 项需要复核：", len(report.Findings))
-	}
-	for index, finding := range report.Findings {
-		if index == 30 {
-			message += fmt.Sprintf("\n另有 %d 项未显示。", len(report.Findings)-index)
-			break
-		}
-		message += fmt.Sprintf("\n· 第 %d 张幻灯片，元素 %d：%s", finding.SlideNumber, finding.ElementID, finding.Message)
-	}
-	return message
+	return i18n.Message{ID: "presentation.proofread.report", Args: i18n.Args{
+		"ScannedSlides": report.ScannedSlides, "TotalSlides": report.TotalSlides,
+		"Complete": report.Complete && !report.ElementsTruncated, "FindingCount": len(report.Findings),
+		"FindingsTruncated": report.FindingsTruncated, "Findings": findings,
+		"HiddenFindings": max(0, len(report.Findings)-len(findings)),
+	}}
 }

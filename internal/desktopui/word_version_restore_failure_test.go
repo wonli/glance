@@ -9,7 +9,6 @@ import (
 
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -62,20 +61,20 @@ func TestWordVersionRestoreDraftFailureSurvivesTabSwitch(t *testing.T) {
 	app.wordCommandResults <- result
 	app.processAsyncResults()
 	message, _ := original.wordRestoreNotice()
-	if original.pendingWordRestoreAfterDrafts() != 0 || message == "" {
+	if original.pendingWordRestoreAfterDrafts() != 0 || message != "word.history.error.restore_cancelled" {
 		t.Fatalf("inactive restore failure was not retained: pendingID=%d error=%q", original.pendingWordRestoreAfterDrafts(), message)
 	}
-	if strings.Contains(app.status, "恢复历史版本已取消") {
-		t.Fatalf("failure was shown on the unrelated active tab: %q", app.status)
+	if app.statusRef.ID == "word.history.error.restore_cancelled" {
+		t.Fatalf("failure was shown on the unrelated active tab: %q", app.statusText())
 	}
 	otherApp.processAsyncResults()
-	if !strings.Contains(otherApp.status, "恢复历史版本已取消") {
-		t.Fatalf("other window displaying the document did not receive its restore failure: %q", otherApp.status)
+	if otherApp.statusRef.ID != "word.history.error.restore_cancelled" {
+		t.Fatalf("other window displaying the document did not receive its restore failure: %q", otherApp.statusText())
 	}
 
 	app.activateSession(original.documentID, original)
-	if !strings.Contains(app.status, "恢复历史版本已取消") {
-		t.Fatalf("returning to the document did not surface its restore failure: status=%q", app.status)
+	if app.statusRef.ID != "word.history.error.restore_cancelled" {
+		t.Fatalf("returning to the document did not surface its restore failure: status=%q", app.statusText())
 	}
 }
 
@@ -110,14 +109,14 @@ func TestWordRestoreFailureNoticeSurvivesOriginWindowShutdown(t *testing.T) {
 	}
 
 	message, epoch := state.wordRestoreNotice()
-	if epoch == 0 || !strings.Contains(message, "恢复历史版本失败") {
+	if epoch == 0 || message != "word.history.error.restore" {
 		t.Fatalf("restore worker did not persist its failure before delivering the result: epoch=%d message=%q", epoch, message)
 	}
 	// Do not read or process origin.wordVersionRestoreResults: the surviving
 	// window must be able to surface the shared notice on its own.
 	survivor.processAsyncResults()
-	if !strings.Contains(survivor.status, "恢复历史版本失败") {
-		t.Fatalf("surviving window did not surface the shared restore failure: %q", survivor.status)
+	if survivor.statusRef.ID != "word.history.error.restore" {
+		t.Fatalf("surviving window did not surface the shared restore failure: %q", survivor.statusText())
 	}
 }
 
@@ -293,8 +292,8 @@ func TestWordVersionRestoreProtectionWriteFailureRejects(t *testing.T) {
 	if got, err := app.word.Snapshot(); err != nil || !bytes.Equal(got, before) {
 		t.Fatalf("protection write failure applied target: unchanged=%v err=%v", bytes.Equal(got, before), err)
 	}
-	if !strings.Contains(app.status, "恢复历史版本失败") {
-		t.Fatalf("protection write failure status=%q", app.status)
+	if app.statusRef.ID != "word.history.error.restore" {
+		t.Fatalf("protection write failure status=%q", app.statusText())
 	}
 }
 

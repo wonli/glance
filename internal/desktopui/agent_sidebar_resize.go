@@ -61,7 +61,7 @@ func (a *App) layoutAgentSidebarResizeHandle(gtx layout.Context, width int) {
 		area = image.Rectangle{Max: gtx.Constraints.Max}
 	}
 	stack := clip.Rect(area).Push(gtx.Ops)
-	semantic.DescriptionOp("拖动调整 AI 侧栏宽度").Add(gtx.Ops)
+	semantic.DescriptionOp(a.textID("agent.accessibility.resize_sidebar")).Add(gtx.Ops)
 	pointer.CursorColResize.Add(gtx.Ops)
 	a.agentUI.sidebarResizeDrag.Add(gtx.Ops)
 	stack.Pop()

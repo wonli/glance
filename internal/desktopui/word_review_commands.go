@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -38,7 +39,7 @@ func (a *App) toggleWordTrackRevisions() {
 	}
 	editor, ok := any(state.word).(document.WordTrackRevisionsEditor)
 	if !ok {
-		a.setStatus("当前文档不支持修订跟踪")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_cc2e8c"}, feedbackWarning, notificationToast)
 		return
 	}
 	current, _ := editor.GetTrackRevisions()
@@ -48,7 +49,7 @@ func (a *App) toggleWordTrackRevisions() {
 		label = "关闭修订跟踪"
 	}
 	if !a.runWordApplicationCommand(label, "word.review.track.set", wordReviewTrackSetArguments{Enabled: next}) {
-		a.setStatus("当前文档的应用命令运行时不可用，未修改修订跟踪状态")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_application_command_runtime_is_27bdc3"}, feedbackWarning, notificationToast)
 	}
 }
 
@@ -63,19 +64,19 @@ func (a *App) acceptWordRevisions() {
 	}
 	_, ok := any(state.word).(document.WordTrackRevisionsEditor)
 	if !ok {
-		a.setStatus("当前文档不支持修订操作")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_3a085b"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.Show("接受全部修订", "将接受文档中的所有插入并移除所有删除标记。是否继续？", func(action string) {
+	a.modal.ShowMessage("word.review.accept_all", i18n.Message{ID: "word.review.accept_all.dialog.title"}, i18n.Message{ID: "word.review.accept_all.dialog.body"}, func(action string) {
 		a.modal.Hide()
 		if action == "confirm" {
 			if !a.runWordApplicationCommand("接受全部修订", "word.review.revisions.apply", wordreviewActionArguments{Action: "accept_all"}) {
-				a.setStatus("当前文档的应用命令运行时不可用，未接受修订")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_application_command_runtime_is_43e738"}, feedbackWarning, notificationToast)
 			}
 		}
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "接受修订"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.review.accept_all.action"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -86,19 +87,19 @@ func (a *App) rejectWordRevisions() {
 	}
 	_, ok := any(state.word).(document.WordTrackRevisionsEditor)
 	if !ok {
-		a.setStatus("当前文档不支持修订操作")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_3a085b"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.Show("拒绝全部修订", "将放弃文档中的所有插入并恢复所有已删除内容。是否继续？", func(action string) {
+	a.modal.ShowMessage("word.review.reject_all", i18n.Message{ID: "word.review.reject_all.dialog.title"}, i18n.Message{ID: "word.review.reject_all.dialog.body"}, func(action string) {
 		a.modal.Hide()
 		if action == "confirm" {
 			if !a.runWordApplicationCommand("拒绝全部修订", "word.review.revisions.apply", wordreviewActionArguments{Action: "reject_all"}) {
-				a.setStatus("当前文档的应用命令运行时不可用，未拒绝修订")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_application_command_runtime_is_8a0e98"}, feedbackWarning, notificationToast)
 			}
 		}
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "拒绝修订"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.review.reject_all.action"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -109,26 +110,24 @@ func (a *App) showWordWatermarkDialog() {
 	}
 	editor, ok := any(state.word).(document.WordWatermarkEditor)
 	if !ok {
-		a.setStatus("当前文档不支持设置水印")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_273f9e"}, feedbackWarning, notificationToast)
 		return
 	}
 	currentWatermark, _ := editor.GetWatermark()
 	defaultVal := currentWatermark
 	if defaultVal == "" {
-		defaultVal = "机密"
+		defaultVal = a.text(i18n.Message{ID: "word.watermark.default_text"})
 	}
-	a.modal.ShowInput(
-		"文档水印",
-		"请输入文字水印内容（或点击清除水印）：",
+	a.modal.ShowInputMessage("word.watermark", i18n.Message{ID: "word.watermark.dialog.title"}, i18n.Message{ID: "word.watermark.dialog.body"},
 		defaultVal,
-		"机密、草稿、内部传阅等",
+		i18n.Message{ID: "word.watermark.dialog.hint"},
 		func(action string) {
 			a.modal.Hide()
 			switch action {
 			case "set":
 				text := strings.TrimSpace(a.modal.Input.Text())
 				if text == "" {
-					text = "机密"
+					text = a.text(i18n.Message{ID: "word.watermark.default_text"})
 				}
 				a.runWordWatermarkCommand("设置文档水印", func(ed document.WordWatermarkEditor) error {
 					return ed.SetWatermark(text)
@@ -139,8 +138,8 @@ func (a *App) showWordWatermarkDialog() {
 				})
 			}
 		},
-		modalDialogActionSpec{ID: "set", Label: "应用水印"},
-		modalDialogActionSpec{ID: "clear", Label: "清除水印"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "set", LabelRef: i18n.Message{ID: "word.watermark.action.apply"}},
+		modalDialogActionSpec{ID: "clear", LabelRef: i18n.Message{ID: "word.watermark.action.clear"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }

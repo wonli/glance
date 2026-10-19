@@ -18,7 +18,7 @@ func (a *App) layoutMarkdownOutline(gtx layout.Context) layout.Dimensions {
 				gtx = jsonFixedHeight(gtx, 48)
 				return layout.Inset{Left: 18, Right: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return jsonLabel(gtx, a, "大纲", 13, homeText, true, false)
+						return jsonLabel(gtx, a, a.textID("markdown.outline.title"), 13, homeText, true, false)
 					}), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return a.markdownTextButton(gtx, "outline", "‹", 28, 32, false)
 					}))
@@ -29,7 +29,7 @@ func (a *App) layoutMarkdownOutline(gtx layout.Context) layout.Dimensions {
 					gtx = jsonFixedHeight(gtx, 32)
 					return homeRoundedPanel(gtx, contentSurface, jsonBorderColor, 4, func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: 10, Right: 10, Top: 5, Bottom: 5}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							style := material.Editor(a.theme, &v.search, "搜索标题")
+							style := material.Editor(a.theme, &v.search, a.textID("markdown.outline.search.placeholder"))
 							style.TextSize = 11
 							return style.Layout(gtx)
 						})

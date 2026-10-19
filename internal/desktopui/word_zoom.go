@@ -1,7 +1,7 @@
 package desktopui
 
 import (
-	"fmt"
+	"glance/internal/i18n"
 	"math"
 	"strconv"
 	"strings"
@@ -13,7 +13,7 @@ func (a *App) showWordZoomDialog() {
 		return
 	}
 	initialPercent := strconv.Itoa(int(math.Round(wordStatusZoomClamp(state.wordLayoutZoom) * 100)))
-	a.modal.ShowInput("缩放", "设置打印布局缩放比例（50%–150%）", initialPercent, "百分比", func(action string) {
+	a.modal.ShowInputMessage("word.zoom", i18n.Message{ID: "word.zoom.dialog.title"}, i18n.Message{ID: "word.zoom.dialog.body"}, initialPercent, i18n.Message{ID: "word.zoom.dialog.hint"}, func(action string) {
 		if action != "confirm" {
 			a.modal.Hide()
 			return
@@ -21,11 +21,11 @@ func (a *App) showWordZoomDialog() {
 		value := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(a.modal.Input.Text()), "%"))
 		percent, err := strconv.Atoi(value)
 		if err != nil || percent < 50 || percent > 150 {
-			a.setStatus("缩放比例请输入 50–150 的整数百分比")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.enter_a_whole_number_zoom_20406a"}, feedbackInfo, notificationSuppressed)
 			return
 		}
 		setWordManualZoom(state, float64(percent)/100)
-		a.setStatus(fmt.Sprintf("缩放：%d%%", percent))
+		a.setStatusMessage(i18n.Message{ID: "word.zoom.status", Args: i18n.Args{"Percent": percent}}, feedbackInfo, notificationSuppressed)
 		a.modal.Hide()
-	}, modalDialogActionSpec{ID: "confirm", Label: "应用"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }

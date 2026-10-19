@@ -165,7 +165,7 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 		edGtx.Constraints = layout.Exact(image.Pt(elemW, elemH))
 		fontSize := presentationElementFontSize(elem)
 		textSize := presentationCanvasFontSize(gtx, fontSize, scale)
-		ed := material.Editor(a.theme, &v.shapeEditor, "输入文本…")
+		ed := material.Editor(a.theme, &v.shapeEditor, a.textID("presentation.canvas.text_placeholder"))
 		v.shapeEditor.ReadOnly = a.saving
 		ed.Font = presentationElementEditorFont(elem)
 		ed.Editor.Alignment = presentationElementTextAlignment(elem)
@@ -173,7 +173,7 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 		applyPresentationEditorParagraphMetrics(&ed, gtx, elem, scale)
 		ed.Color = presentationElementEditorColor(elem)
 
-		semantic.DescriptionOp("幻灯片文本编辑框").Add(edGtx.Ops)
+		semantic.DescriptionOp(a.textID("presentation.accessibility.textbox")).Add(edGtx.Ops)
 		edDims := editorInset.Layout(edGtx, ed.Layout)
 		editorClip := clip.Rect{Max: edDims.Size}.Push(gtx.Ops)
 		btnGtx := gtx
@@ -192,11 +192,11 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 			drawPresentationTransformSelection(gtx, selectionRect)
 		}
 		rotation.Pop()
-		registerPresentationTransformInputs(gtx, v, elem, interaction, selectionRect, v.selectedShape == elem.ID && len(presentationSelectedIDs(v)) == 1, true)
+		registerPresentationTransformInputs(gtx, a, v, elem, interaction, selectionRect, v.selectedShape == elem.ID && len(presentationSelectedIDs(v)) == 1, true)
 		return
 	} else if len(elem.Paragraphs) > 0 || presentationElementHasPlaceholderPrompt(elem) {
 		// 5. Read-only formatted text rendering
-		displayParagraphs := presentationElementDisplayParagraphs(elem)
+		displayParagraphs := a.presentationElementDisplayParagraphs(elem)
 		// Determine paragraph alignment
 		align := "left"
 		for _, p := range displayParagraphs {
@@ -335,7 +335,7 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 			drawPresentationTransformSelection(gtx, selectionRect)
 		}
 		rotation.Pop()
-		registerPresentationTransformInputs(gtx, v, elem, interaction, selectionRect, v.selectedShape == elem.ID && len(presentationSelectedIDs(v)) == 1, isEditing)
+		registerPresentationTransformInputs(gtx, a, v, elem, interaction, selectionRect, v.selectedShape == elem.ID && len(presentationSelectedIDs(v)) == 1, isEditing)
 		return
 	}
 
@@ -365,8 +365,8 @@ func (a *App) layoutPresentationElement(gtx layout.Context, v *presentationViewS
 	}
 	rotation.Pop()
 	if v.pictureCrop.active && v.pictureCrop.shapeID == elem.ID {
-		registerPresentationCropInputs(gtx, v, elem, interaction, selectionRect)
+		registerPresentationCropInputs(gtx, a, v, elem, interaction, selectionRect)
 	} else {
-		registerPresentationTransformInputs(gtx, v, elem, interaction, selectionRect, v.selectedShape == elem.ID && len(presentationSelectedIDs(v)) == 1, isEditing)
+		registerPresentationTransformInputs(gtx, a, v, elem, interaction, selectionRect, v.selectedShape == elem.ID && len(presentationSelectedIDs(v)) == 1, isEditing)
 	}
 }

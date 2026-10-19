@@ -17,6 +17,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -30,19 +31,19 @@ func (a *App) layoutHomeRecentTable(gtx layout.Context) layout.Dimensions {
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.layoutHomeTableHeader(gtx) }),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				if len(items) == 0 {
-					message := "最近还没有文件"
+					message := i18n.Message{ID: "home.recent.empty"}
 					if a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
-						message = "暂无文件"
-						if strings.TrimSpace(a.homeSearch.Text()) != "" || a.homeTypeFilter != "全部" {
-							message = "没有符合条件的文件"
+						message = i18n.Message{ID: "home.recent.empty.folder"}
+						if strings.TrimSpace(a.homeSearch.Text()) != "" || a.homeTypeFilter != homeFilterAll {
+							message = i18n.Message{ID: "home.recent.empty.search"}
 						}
 					} else if a.homeSection == homeSectionFavorites {
-						message = "收藏的文件会显示在这里"
-					} else if strings.TrimSpace(a.homeSearch.Text()) != "" || a.homeTypeFilter != "全部" {
-						message = "没有符合条件的文件"
+						message = i18n.Message{ID: "home.recent.empty.favorites"}
+					} else if strings.TrimSpace(a.homeSearch.Text()) != "" || a.homeTypeFilter != homeFilterAll {
+						message = i18n.Message{ID: "home.recent.empty.search"}
 					}
 					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return homeTextLabel(gtx, a.theme, message, 13, homeMuted, false)
+						return homeTextLabel(gtx, a.theme, a.text(message), 13, homeMuted, false)
 					})
 				}
 				return material.List(a.theme, &a.recentList).Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
@@ -64,7 +65,7 @@ func (a *App) layoutHomeTableHeader(gtx layout.Context) layout.Dimensions {
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return homeTableColumns(gtx, a.theme, true, nil, a.homeSortLabel())
+				return homeTableColumns(gtx, a, a.theme, true, nil, a.homeSortLabel())
 			})
 		},
 	)
@@ -116,7 +117,7 @@ func (a *App) layoutHomeRecentRow(gtx layout.Context, item workspace.Recent, ind
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return homeTableColumns(gtx, a.theme, false, &homeRowData{app: a, item: item, open: button, favorite: star, more: more}, "")
+				return homeTableColumns(gtx, a, a.theme, false, &homeRowData{app: a, item: item, open: button, favorite: star, more: more}, "")
 			})
 		},
 	)
@@ -166,7 +167,7 @@ func homeTableColumnMetricsForWidth(gtx layout.Context, contentWidth int) homeTa
 	return metrics
 }
 
-func homeTableColumns(gtx layout.Context, theme *material.Theme, header bool, row *homeRowData, sortLabel string) layout.Dimensions {
+func homeTableColumns(gtx layout.Context, app *App, theme *material.Theme, header bool, row *homeRowData, sortLabel string) layout.Dimensions {
 	metrics := homeTableColumnMetricsForWidth(gtx, gtx.Constraints.Max.X)
 	nameWidth, locationWidth, modifiedWidth, sizeWidth, actionWidth := metrics.nameWidth, metrics.locationWidth, metrics.modifiedWidth, metrics.sizeWidth, metrics.actionWidth
 	scale := metrics.scale
@@ -192,7 +193,7 @@ func homeTableColumns(gtx layout.Context, theme *material.Theme, header bool, ro
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.X, gtx.Constraints.Max.X = nameWidth, nameWidth
 			if header {
-				return textStyle("名称", false)(gtx)
+				return textStyle(homeTableColumnLabel(app, "name"), false)(gtx)
 			}
 			meta := row.app.homeMetadata[row.item.Path]
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
@@ -214,7 +215,7 @@ func homeTableColumns(gtx layout.Context, theme *material.Theme, header bool, ro
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.X, gtx.Constraints.Max.X = locationWidth, locationWidth
 			if header {
-				return textStyle("位置", false)(gtx)
+				return textStyle(homeTableColumnLabel(app, "location"), false)(gtx)
 			}
 			return textStyle(filepath.Base(filepath.Dir(row.item.Path)), false)(gtx)
 		}),
@@ -230,12 +231,12 @@ func homeTableColumns(gtx layout.Context, theme *material.Theme, header bool, ro
 			if opened.IsZero() {
 				return textStyle("—", false)(gtx)
 			}
-			return textStyle(formatHomeModified(opened), false)(gtx)
+			return textStyle(row.app.formatHomeModified(opened), false)(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.X, gtx.Constraints.Max.X = sizeWidth, sizeWidth
 			if header {
-				return textStyle("大小", false)(gtx)
+				return textStyle(homeTableColumnLabel(app, "size"), false)(gtx)
 			}
 			meta := row.app.homeMetadata[row.item.Path]
 			if meta.unavailable {
@@ -316,7 +317,7 @@ func (a *App) filterHomeRecents(recents []workspace.Recent, applyFilter bool, in
 		if a != nil && a.homeSection == homeSectionFavorites && !a.homeFavorites[item.Path] {
 			continue
 		}
-		if a != nil && a.homeTypeFilter != "全部" && !homeTypeMatches(item.Path, a.homeTypeFilter) {
+		if a != nil && a.homeTypeFilter != homeFilterAll && !homeTypeMatches(item.Path, a.homeTypeFilter) {
 			continue
 		}
 		if query != "" && !strings.Contains(strings.ToLower(filepath.Base(item.Path)), query) && !strings.Contains(strings.ToLower(filepath.Dir(item.Path)), query) {
@@ -348,9 +349,29 @@ func (a *App) filterHomeRecents(recents []workspace.Recent, applyFilter bool, in
 
 func (a *App) homeSortLabel() string {
 	if a != nil && a.homeSortOpenedDesc {
-		return "打开时间 ↓"
+		return a.text(i18n.Message{ID: "home.recent.sort.opened_descending"})
 	}
-	return "打开时间 ↑"
+	return a.text(i18n.Message{ID: "home.recent.sort.opened_ascending"})
+}
+
+func homeTableColumnLabel(app *App, column string) string {
+	ids := map[string]string{
+		"name":     "home.table.name",
+		"location": "home.table.location",
+		"size":     "home.table.size",
+	}
+	id, ok := ids[column]
+	if !ok {
+		id = "common.translation_missing"
+	}
+	if app == nil {
+		return id
+	}
+	message := i18n.Message{ID: id}
+	if !ok {
+		message.Args = i18n.Args{"ID": "home.table." + column}
+	}
+	return app.text(message)
 }
 
 func (a *App) toggleHomeFavorite(path string) {
@@ -373,7 +394,7 @@ func (a *App) toggleHomeFavorite(path string) {
 		return
 	}
 	if err := a.workspaceStore.SaveFavorite(path, favorite); err != nil {
-		a.setStatus("收藏保存失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "home.error.save_favorites"}, err, notificationToast)
 	}
 }
 
@@ -384,7 +405,7 @@ func (a *App) loadHomeFavorites() {
 	}
 	favorites, err := a.workspaceStore.LoadFavorites()
 	if err != nil {
-		a.setStatus("读取收藏失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "home.error.load_favorites"}, err, notificationToast)
 		return
 	}
 	if a.homeFavorites == nil {
@@ -398,17 +419,17 @@ func (a *App) loadHomeFavorites() {
 func homeTypeMatches(path, filter string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch filter {
-	case "文档":
+	case homeFilterDocuments:
 		return ext == ".docx" || ext == ".doc" || ext == ".txt"
-	case "表格":
+	case homeFilterSpreadsheets:
 		return ext == ".xlsx" || ext == ".xls" || ext == ".csv"
-	case "演示":
+	case homeFilterPresentations:
 		return ext == ".pptx" || ext == ".ppt"
-	case "PDF":
+	case homeFilterPDF:
 		return ext == ".pdf"
-	case "Markdown":
+	case homeFilterMarkdown:
 		return ext == ".md" || ext == ".markdown"
-	case "JSON":
+	case homeFilterJSON:
 		return ext == ".json"
 	default:
 		return true
@@ -455,19 +476,32 @@ func formatHomeFileSize(size int64) string {
 	return fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
 }
 
-func formatHomeModified(value time.Time) string {
+func (a *App) formatHomeModified(value time.Time) string {
+	return a.formatHomeModifiedAt(value, time.Now())
+}
+
+func (a *App) formatHomeModifiedAt(value, now time.Time) string {
 	value = value.Local()
-	today := time.Now().In(value.Location())
+	today := now.In(value.Location())
 	date := time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, value.Location())
 	todayDate := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, value.Location())
+	monthName := value.Format("Jan")
+	if a.localeSnapshot().Resolved == i18n.LocaleChinese {
+		monthName = fmt.Sprintf("%d月", value.Month())
+	}
+	args := i18n.Args{
+		"MonthName": monthName,
+		"Day":       value.Day(),
+		"Year":      value.Year(),
+	}
 	switch {
 	case date.Equal(todayDate):
-		return "今天"
+		return a.text(i18n.Message{ID: "home.modified.today"})
 	case date.Equal(todayDate.AddDate(0, 0, -1)):
-		return "昨天"
+		return a.text(i18n.Message{ID: "home.modified.yesterday"})
 	case value.Year() == today.Year():
-		return fmt.Sprintf("%d月%d日", value.Month(), value.Day())
+		return a.text(i18n.Message{ID: "home.modified.this_year", Args: args})
 	default:
-		return value.Format("2006/01/02")
+		return a.text(i18n.Message{ID: "home.modified.other_year", Args: args})
 	}
 }

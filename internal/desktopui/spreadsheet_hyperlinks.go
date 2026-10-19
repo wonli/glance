@@ -2,9 +2,9 @@ package desktopui
 
 import (
 	"encoding/json"
-	"fmt"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -80,16 +80,16 @@ func (a *App) showSpreadsheetLinkDialog() {
 	initialTooltip := existingLink.Tooltip
 
 	actions := []modalDialogActionSpec{
-		{ID: "confirm", Label: "确定"},
+		{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.confirm"}},
 	}
 	if hasLink {
-		actions = append(actions, modalDialogActionSpec{ID: "remove", Label: "删除链接"})
+		actions = append(actions, modalDialogActionSpec{ID: "remove", LabelRef: i18n.Message{ID: "spreadsheet.hyperlink.action.remove"}})
 	}
-	actions = append(actions, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	actions = append(actions, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 
-	a.modal.ShowDualInput("插入链接", fmt.Sprintf("为单元格 %s 设置超链接：", cellName),
-		initialTarget, "链接地址 (例如 https://example.com 或 Sheet2!A1)",
-		initialTooltip, "提示文本 (可选)",
+	a.modal.ShowDualInputMessage("spreadsheet.hyperlink", i18n.Message{ID: "spreadsheet.hyperlink.dialog.title"}, i18n.Message{ID: "spreadsheet.hyperlink.dialog.body", Args: i18n.Args{"Cell": cellName}},
+		i18n.Message{ID: "spreadsheet.hyperlink.dialog.target_hint"}, i18n.Message{ID: "spreadsheet.hyperlink.dialog.text_hint"},
+		initialTarget, initialTooltip,
 		func(action string) {
 			switch action {
 			case "confirm":
@@ -97,19 +97,19 @@ func (a *App) showSpreadsheetLinkDialog() {
 				tooltip := strings.TrimSpace(a.modal.SecondInput.Text())
 				a.modal.Hide()
 				if target == "" {
-					a.setStatus("链接地址不能为空")
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_link_address_cannot_be_578a8d"}, feedbackError, notificationToast)
 					return
 				}
 				a.runSpreadsheetHyperlinkCommand("插入链接", "spreadsheet.hyperlink.set", cellName, spreadsheetHyperlinkSetArguments{Sheet: sheet, Cell: cellName, Target: target, Tooltip: tooltip}, func(ed document.SpreadsheetHyperlinkEditor) error {
 					return ed.SetCellHyperlink(sheet, cellName, target, tooltip)
 				})
-				a.setStatus(fmt.Sprintf("已为 %s 设置链接：%s", cellName, target))
+				a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.hyperlink.added", Args: i18n.Args{"Cell": cellName, "Target": target}}, feedbackSuccess, notificationToast)
 			case "remove":
 				a.modal.Hide()
 				a.runSpreadsheetHyperlinkCommand("删除链接", "spreadsheet.hyperlink.remove", cellName, spreadsheetHyperlinkRemoveArguments{Sheet: sheet, Cell: cellName}, func(ed document.SpreadsheetHyperlinkEditor) error {
 					return ed.RemoveCellHyperlink(sheet, cellName)
 				})
-				a.setStatus(fmt.Sprintf("已删除 %s 的超链接", cellName))
+				a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.hyperlink.removed", Args: i18n.Args{"Cell": cellName}}, feedbackSuccess, notificationToast)
 			case "cancel":
 				a.modal.Hide()
 			}

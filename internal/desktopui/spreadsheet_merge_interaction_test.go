@@ -47,8 +47,8 @@ func TestSpreadsheetMergeAndCenterRibbonConfirmsBeforeDiscardAndUnmerges(t *test
 		app.processSpreadsheetFormatResult()
 		time.Sleep(time.Millisecond)
 	}
-	if !app.modal.Visible || app.modal.Title != "合并单元格" {
-		t.Fatalf("non-anchor content should open a merge confirmation, visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "合并单元格" {
+		t.Fatalf("non-anchor content should open a merge confirmation, visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	if app.formatRunning.Load() {
 		t.Fatal("showing merge confirmation must not mutate the workbook")
@@ -98,5 +98,5 @@ func waitForSpreadsheetMerge(t *testing.T, app *App) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("spreadsheet merge operation timed out; status=%q", app.status)
+	t.Fatalf("spreadsheet merge operation timed out; status=%q", app.statusText())
 }

@@ -3,6 +3,7 @@ package desktopui
 import (
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 
@@ -49,7 +50,7 @@ func (a *App) layoutPresentationSidebar(gtx layout.Context, v *presentationViewS
 	paint.FillShape(gtx.Ops, pptxBorderColor, clip.Rect{Min: image.Pt(width-1, 0), Max: gtx.Constraints.Max}.Op())
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		// Sidebar Header: "幻灯片", "+ 新建"
+		// Sidebar Header: a.textID("presentation.workspace.slides"), "+ 新建"
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			h := gtx.Dp(unit.Dp(48))
 			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
@@ -61,7 +62,7 @@ func (a *App) layoutPresentationSidebar(gtx layout.Context, v *presentationViewS
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Top: unit.Dp(5.5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Label(a.theme, unit.Sp(13), "幻灯片")
+									lbl := material.Label(a.theme, unit.Sp(13), a.textID("presentation.workspace.slides"))
 									lbl.Color = pptxAccentColor
 									lbl.Font.Weight = font.SemiBold
 									return lbl.Layout(gtx)
@@ -95,7 +96,7 @@ func (a *App) layoutPresentationSidebar(gtx layout.Context, v *presentationViewS
 													}),
 													layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 														return layout.Inset{Top: unit.Dp(4.5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-															lbl := material.Label(a.theme, unit.Sp(12), "新建")
+															lbl := material.Label(a.theme, unit.Sp(12), a.textID("presentation.ribbon.action.file_new"))
 															lbl.Color = pptxAccentColor
 															return lbl.Layout(gtx)
 														})
@@ -206,7 +207,7 @@ func (a *App) layoutPresentationNotesPanel(gtx layout.Context, v *presentationVi
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Label(a.theme, unit.Sp(11), "演讲者备注")
+						lbl := material.Label(a.theme, unit.Sp(11), a.textID("presentation.presenter.notes"))
 						lbl.Color = pptxTextMuted
 						lbl.Font.Weight = font.Medium
 						return lbl.Layout(gtx)
@@ -217,10 +218,10 @@ func (a *App) layoutPresentationNotesPanel(gtx layout.Context, v *presentationVi
 						}
 						if v.notesReloadButton.Clicked(gtx) {
 							a.resetPresentationNotesEditor(v, v.currentSlide())
-							a.setStatus("已加载最新演讲者备注")
+							a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_latest_speaker_notes_were_loaded_9d030c"}, feedbackSuccess, notificationToast)
 						}
 						return v.notesReloadButton.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Label(a.theme, unit.Sp(11), "加载最新")
+							lbl := material.Label(a.theme, unit.Sp(11), a.textID("presentation.workspace.load_latest"))
 							lbl.Color = pptxAccentColor
 							return lbl.Layout(gtx)
 						})
@@ -237,11 +238,11 @@ func (a *App) layoutPresentationNotesPanel(gtx layout.Context, v *presentationVi
 								if a.documentSessionState != nil && a.documentSessionState.pptxDoc == a.pptxDoc {
 									a.documentSessionState.setPresentationDraftDirty(a.windowID, presentationNotesDraft, v.notesEditor.Text() != v.notesEditorBase)
 								}
-								a.setStatus("将保留本地演讲者备注草稿")
+								a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_local_speaker_notes_draft_will_be_kept_e66fd6"}, feedbackInfo, notificationToast)
 							}
 						}
 						return v.notesKeepButton.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Label(a.theme, unit.Sp(11), "保留我的修改")
+							lbl := material.Label(a.theme, unit.Sp(11), a.textID("presentation.workspace.keep_changes"))
 							lbl.Color = pptxAccentColor
 							return lbl.Layout(gtx)
 						})
@@ -251,7 +252,7 @@ func (a *App) layoutPresentationNotesPanel(gtx layout.Context, v *presentationVi
 							v.notesExpanded = false
 						}
 						return v.notesToggleBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Label(a.theme, unit.Sp(11), "收起 ▾")
+							lbl := material.Label(a.theme, unit.Sp(11), a.textID("presentation.workspace.collapse"))
 							lbl.Color = pptxTextMuted
 							return lbl.Layout(gtx)
 						})
@@ -260,7 +261,7 @@ func (a *App) layoutPresentationNotesPanel(gtx layout.Context, v *presentationVi
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				v.notesEditor.ReadOnly = a.saving
-				ed := material.Editor(a.theme, &v.notesEditor, "单击此处添加演讲者备注…")
+				ed := material.Editor(a.theme, &v.notesEditor, a.textID("presentation.workspace.notes_hint"))
 				ed.TextSize = unit.Sp(12)
 				ed.Color = pptxTextDark
 				dims := ed.Layout(gtx)

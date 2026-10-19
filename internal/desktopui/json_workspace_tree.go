@@ -32,7 +32,6 @@ func jsonRowIndexStr(idx int) string {
 	return strconv.Itoa(idx)
 }
 
-
 type jsonTreeRow struct {
 	node    int
 	closing bool

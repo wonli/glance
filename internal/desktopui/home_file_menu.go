@@ -20,6 +20,7 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -33,15 +34,16 @@ const (
 
 type homeRecentMenuAction struct {
 	id, label, icon string
+	labelMessage    i18n.Message
 	remove          bool
 }
 
 var homeRecentMenuActions = [...]homeRecentMenuAction{
-	{id: "open", label: "打开", icon: "folder-open"},
-	{id: "open-folder", label: "打开文件夹", icon: "folder"},
-	{id: "copy-path", label: "复制路径", icon: "link"},
-	{id: "copy-name", label: "复制文件名", icon: "copy"},
-	{id: "remove", label: "移除", icon: "list-minus", remove: true},
+	{id: "open", label: "打开", labelMessage: i18n.Message{ID: "home.recent.action.open"}, icon: "folder-open"},
+	{id: "open-folder", label: "打开文件夹", labelMessage: i18n.Message{ID: "home.recent.action.open_folder"}, icon: "folder"},
+	{id: "copy-path", label: "复制路径", labelMessage: i18n.Message{ID: "home.recent.action.copy_path"}, icon: "link"},
+	{id: "copy-name", label: "复制文件名", labelMessage: i18n.Message{ID: "home.recent.action.copy_name"}, icon: "copy"},
+	{id: "remove", label: "移除", labelMessage: i18n.Message{ID: "home.recent.action.remove"}, icon: "list-minus", remove: true},
 }
 
 type homeRecentUndoRecord struct {
@@ -275,7 +277,7 @@ func (a *App) layoutHomeRecentMenuItem(gtx layout.Context, index int) layout.Dim
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: unit.Dp(10), Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								gtx.Constraints.Min.Y = 0
-								return homeTextLabel(gtx, a.theme, action.label, unit.Sp(13), homeRecentMenuActionColor(action), false)
+								return homeTextLabel(gtx, a.theme, a.messageText(action.labelMessage, action.label), unit.Sp(13), homeRecentMenuActionColor(action), false)
 							})
 						}),
 					)
@@ -300,70 +302,83 @@ func (a *App) executeHomeRecentMenuAction(gtx layout.Context, index int) {
 	switch homeRecentMenuActions[index].id {
 	case "open":
 		if meta, exists := a.homeMetadata[path]; exists && meta.unavailable {
-			a.setStatus("文件不存在或无法访问")
+			a.setStatusMessage(i18n.Message{ID: "home.error.file_unavailable"}, feedbackWarning, notificationToast)
 			return
 		}
 		if a.opening || a.isSaving() {
-			a.setStatus("正在处理其他文件操作，请稍后重试")
+			a.setStatusMessage(i18n.Message{ID: "home.error.operation_busy"}, feedbackWarning, notificationToast)
 			return
 		}
 		a.homeRecentOpenPath = path
 		a.startOpen(path)
 	case "open-folder":
 		if a.fileCommandRunning {
-			a.setStatus("正在处理其他文件操作，请稍后重试")
+			a.setStatusMessage(i18n.Message{ID: "home.error.operation_busy"}, feedbackWarning, notificationToast)
 			return
 		}
 		a.startFileCommand(commandRevealFile, path)
 	case "copy-path":
-		value, status, err := homeRecentMenuCopyValue("copy-path", path)
+		value, err := homeRecentMenuCopyValue("copy-path", path)
 		if err != nil {
-			a.setStatus("复制路径失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "home.error.copy_path"}, err, notificationToast)
 			return
 		}
-		a.copyHomeRecentMenuValue(gtx, value, status)
+		a.copyHomeRecentMenuValue(gtx, value, "copy-path")
 	case "copy-name":
-		value, status, err := homeRecentMenuCopyValue("copy-name", path)
+		value, err := homeRecentMenuCopyValue("copy-name", path)
 		if err != nil {
-			a.setStatus("复制文件名失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "home.error.copy_name"}, err, notificationToast)
 			return
 		}
-		a.copyHomeRecentMenuValue(gtx, value, status)
+		a.copyHomeRecentMenuValue(gtx, value, "copy-name")
 	case "remove":
 		a.removeHomeRecent(path)
 	}
 }
 
-func homeRecentMenuCopyValue(actionID, path string) (string, string, error) {
+func homeRecentMenuCopyValue(actionID, path string) (string, error) {
 	switch actionID {
 	case "copy-path":
 		absolute, err := filepath.Abs(path)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
-		return absolute, "路径已复制", nil
+		return absolute, nil
 	case "copy-name":
-		return filepath.Base(path), "文件名已复制", nil
+		return filepath.Base(path), nil
 	default:
-		return "", "", fmt.Errorf("unknown recent-menu copy action %q", actionID)
+		return "", fmt.Errorf("unknown recent-menu copy action %q", actionID)
 	}
 }
 
-func (a *App) copyHomeRecentMenuValue(gtx layout.Context, value, status string) {
+func homeRecentMenuFeedbackMessage(actionID string) (i18n.Message, bool) {
+	switch actionID {
+	case "copy-path":
+		return i18n.Message{ID: "home.feedback.path_copied"}, true
+	case "copy-name":
+		return i18n.Message{ID: "home.feedback.file_name_copied"}, true
+	default:
+		return i18n.Message{}, false
+	}
+}
+
+func (a *App) copyHomeRecentMenuValue(gtx layout.Context, value, actionID string) {
 	gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(value))})
 	a.dismissHomeRecentMenu()
-	a.setStatus(status)
+	if message, ok := homeRecentMenuFeedbackMessage(actionID); ok {
+		a.setStatusMessage(message, feedbackSuccess, notificationToast)
+	}
 }
 
 func (a *App) removeHomeRecent(path string) {
 	if a.collection == nil {
-		a.setStatus("工作区数据库不可用，无法移除最近记录")
+		a.setStatusMessage(i18n.Message{ID: "home.error.recent_unavailable"}, feedbackError, notificationToast)
 		return
 	}
 	before := a.collection.Recents()
 	after, _, ok := removeHomeRecentSnapshot(before, path)
 	if !ok {
-		a.setStatus("最近记录已不存在")
+		a.setStatusMessage(i18n.Message{ID: "home.error.recent_missing"}, feedbackWarning, notificationSuppressed)
 		a.dismissHomeRecentMenu()
 		return
 	}
@@ -377,7 +392,7 @@ func (a *App) removeHomeRecent(path string) {
 	}
 	a.homeRecentUndo = record
 	a.dismissHomeRecentMenu()
-	a.setStatus("正在移除最近记录…")
+	a.setStatusMessage(i18n.Message{ID: "home.status.removing_recent"}, feedbackInfo, notificationSuppressed)
 	a.queueHomeRecentWrite(after, record.removeGeneration)
 }
 
@@ -449,13 +464,14 @@ func (a *App) handleHomeRecentWriteResult(result homeRecentWriteResult) {
 		if result.err != nil {
 			a.collection.StageRecentsSnapshot(record.before)
 			a.homeRecentUndo = nil
-			a.setStatus("从最近列表移除失败：" + result.err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "home.error.remove_recent"}, result.err, notificationToast)
 			a.homeRecentMenuPath = record.path
 			a.homeRecentMenuIndex = 4
 			return
 		}
-		a.setStatus("已从最近列表移除")
+		a.setStatusMessage(i18n.Message{ID: "home.feedback.removed_recent"}, feedbackSuccess, notificationToast)
 		a.feedback.actionLabel = "撤销"
+		a.feedback.actionLabelRef = i18n.Message{ID: "common.action.undo"}
 		return
 	}
 	if result.generation != record.undoGeneration || !record.pendingUndo {
@@ -464,12 +480,13 @@ func (a *App) handleHomeRecentWriteResult(result homeRecentWriteResult) {
 	record.pendingUndo = false
 	if result.err != nil {
 		a.collection.StageRecentsSnapshot(record.after)
-		a.setStatus("撤销失败：" + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "home.error.undo_remove_recent"}, result.err, notificationToast)
 		a.feedback.actionLabel = "重试"
+		a.feedback.actionLabelRef = i18n.Message{ID: "common.action.retry"}
 		return
 	}
 	a.homeRecentUndo = nil
-	a.setStatus("已撤销移除")
+	a.setStatusMessage(i18n.Message{ID: "home.feedback.undo_removed_recent"}, feedbackSuccess, notificationToast)
 }
 
 func (a *App) undoHomeRecentRemoval() {
@@ -482,6 +499,7 @@ func (a *App) undoHomeRecentRemoval() {
 	record.undoGeneration = a.homeRecentWriteGeneration
 	record.pendingUndo = true
 	a.feedback.actionLabel = ""
+	a.feedback.actionLabelRef = i18n.Message{}
 	a.queueHomeRecentWrite(record.before, record.undoGeneration)
 }
 

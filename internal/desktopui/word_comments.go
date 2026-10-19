@@ -9,6 +9,7 @@ import (
 
 	"glance/internal/application"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 type wordCommentAddArguments struct {
@@ -27,20 +28,24 @@ func (a *App) showWordNewCommentDialog() {
 	}
 	args, selectedText, hasSelection, ok := wordCommentTargetArguments(state)
 	if !ok {
-		a.setStatus("请先选择可编辑的正文文本，再添加批注")
+		a.setStatusMessage(i18n.Message{ID: "word.comment.error.select_editable_text"}, feedbackWarning, notificationToast)
 		return
 	}
 	expectedRevision := state.wordRevisionAtomic.Load()
 	if _, ok := any(state.word).(document.WordCommentEditor); !ok {
-		a.setStatus("当前文档不支持原生 Word 批注")
+		a.setStatusMessage(i18n.Message{ID: "word.comment.error.unsupported"}, feedbackWarning, notificationToast)
 		return
 	}
 
-	a.modal.ShowInput(
-		"新建批注",
-		wordCommentDialogSummary(selectedText, hasSelection),
-		"请核对此处表述是否准确",
-		"输入批注内容",
+	body := i18n.Message{ID: "word.comment.add.body"}
+	if hasSelection {
+		body = i18n.Message{ID: "word.comment.add.body.selection", Args: i18n.Args{"Selection": wordCommentSelectionPreview(selectedText)}}
+	}
+	a.modal.ShowInputMessage(
+		"word.comment.add",
+		i18n.Message{ID: "word.comment.add.title"}, body,
+		"",
+		i18n.Message{ID: "word.comment.add.hint"},
 		func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
@@ -48,16 +53,16 @@ func (a *App) showWordNewCommentDialog() {
 			}
 			commentText := strings.TrimSpace(a.modal.Input.Text())
 			if commentText == "" {
-				a.setStatus("批注内容不能为空")
+				a.setStatusMessage(i18n.Message{ID: "word.comment.error.empty"}, feedbackError, notificationToast)
 				return
 			}
 			args.Text = commentText
 			if !a.runWordApplicationCommandExpectedRevision("添加批注", "word.comment.add", args, expectedRevision) {
-				a.setStatus("文档已变化或应用命令运行时不可用，请重新选择文本后添加批注")
+				a.setStatusMessage(i18n.Message{ID: "word.comment.error.stale_add"}, feedbackWarning, notificationToast)
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "添加批注"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.comment.action.add"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -105,15 +110,12 @@ func wordCommentTargetArguments(state *documentSessionState) (wordCommentAddArgu
 	return wordCommentAddArguments{RunId: run.ID}, "", false, true
 }
 
-func wordCommentDialogSummary(selectedText string, hasSelection bool) string {
-	if !hasSelection {
-		return "批注将附着到当前选中的正文文本运行。"
-	}
+func wordCommentSelectionPreview(selectedText string) string {
 	selectedText = strings.Join(strings.Fields(selectedText), " ")
 	if len([]rune(selectedText)) > 80 {
 		selectedText = string([]rune(selectedText)[:77]) + "…"
 	}
-	return "批注范围：\u201c" + selectedText + "\u201d"
+	return selectedText
 }
 
 type wordCommentsListArguments struct {
@@ -127,12 +129,12 @@ func (a *App) showWordDeleteCommentDialog() {
 		return
 	}
 	if !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("当前文档的应用命令运行时不可用，无法读取批注")
+		a.setStatusMessage(i18n.Message{ID: "word.comment.error.runtime_unavailable"}, feedbackWarning, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("文档正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "word.status.operation_busy"}, feedbackWarning, notificationToast)
 		return
 	}
 	generation := a.documentGeneration
@@ -169,7 +171,7 @@ func (a *App) showWordDeleteCommentDialog() {
 			wordComments: comments, wordCommentTotal: total, err: err,
 		})
 	})
-	a.setStatus("正在读取 Word 批注…")
+	a.setStatusMessage(i18n.Message{ID: "word.comment.status.loading"}, feedbackInfo, notificationSuppressed)
 }
 
 type wordCommentDeleteArguments struct {
@@ -185,20 +187,22 @@ func (a *App) showWordDeleteCommentPrompt(comments []document.WordComment, total
 	for _, comment := range comments[:visible] {
 		text := strings.Join(strings.Fields(comment.Text), " ")
 		text = truncateWordCommentPreview(text, 96)
-		fmt.Fprintf(&listing, "\n%s · %s：%s", comment.ID, comment.Author, text)
+		fmt.Fprintf(&listing, "\n%s · %s: %s", comment.ID, comment.Author, text)
 	}
 	if total > visible {
-		fmt.Fprintf(&listing, "\n当前列出 %d/%d 条；其余批注可通过 MCP word.comments.list 分页查询。", visible, total)
+		listing.WriteString("\n")
+		listing.WriteString(a.text(i18n.Message{ID: "word.comment.delete.more", Args: i18n.Args{"Visible": visible, "Total": total}}))
 	}
 	initial := ""
 	if total == 1 && len(comments) == 1 {
 		initial = comments[0].ID
 	}
-	a.modal.ShowInput(
-		"删除批注",
-		"输入要删除的批注 ID："+listing.String(),
+	a.modal.ShowInputMessage(
+		"word.comment.delete",
+		i18n.Message{ID: "word.comment.delete.title"},
+		i18n.Message{ID: "word.comment.delete.body", Args: i18n.Args{"CommentList": listing.String()}},
 		initial,
-		"批注 ID",
+		i18n.Message{ID: "word.comment.delete.hint"},
 		func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
@@ -213,15 +217,15 @@ func (a *App) showWordDeleteCommentPrompt(comments []document.WordComment, total
 				}
 			}
 			if !found {
-				a.setStatus("批注 ID 不在当前列表中，请重新打开删除批注")
+				a.setStatusMessage(i18n.Message{ID: "word.comment.error.not_found"}, feedbackWarning, notificationToast)
 				return
 			}
 			if !a.runWordApplicationCommandExpectedRevision("删除批注", "word.comment.delete", wordCommentDeleteArguments{CommentId: commentID}, expectedRevision) {
-				a.setStatus("文档已变化或应用命令运行时不可用，请重新打开删除批注")
+				a.setStatusMessage(i18n.Message{ID: "word.comment.error.stale_delete"}, feedbackWarning, notificationToast)
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "删除"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.delete"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"glance/internal/i18n"
 	"path/filepath"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ func (a *App) showAgentChat() {
 	if view.DocumentID != "" && view.DocumentID != GlobalAIAssistantDocumentID {
 		a.agentUI.sidebarVisible = true
 		a.ensureAgentChatDocument(view.DocumentID)
-		if a.modal.Visible && a.modal.Title == "AI 助手" {
+		if a.modal.Visible && a.modal.DialogID == dialogIDAgentAssistant {
 			a.modal.Hide()
 		}
 		return
@@ -31,7 +32,7 @@ func (a *App) showAgentChat() {
 	a.resetHomeContentScroll()
 	a.ensureGlobalAIAssistant()
 	a.homeSection = homeSectionAIAssistant
-	if a.modal.Visible && a.modal.Title == "AI 助手" {
+	if a.modal.Visible && a.modal.DialogID == dialogIDAgentAssistant {
 		a.modal.Hide()
 	}
 }
@@ -67,7 +68,7 @@ func (a *App) resolveAgentConfirmation(card *agentConfirmationCard, approved boo
 	operator := application.Operator{ID: fmt.Sprintf("desktop-window-%d", a.windowID), Kind: application.OperatorHuman}
 	if err := runtime.ResolveConfirmation(context.Background(), card.info.ConfirmationID, approved, operator); err != nil {
 		if !errors.Is(err, application.ErrConfirmationNotFound) {
-			a.setStatus("确认操作失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 			return
 		}
 	}
@@ -91,11 +92,11 @@ func (a *App) sendAgentChatMessage() {
 		return
 	}
 	if a.agentUI.conversationInterrupted {
-		if strings.TrimSpace(a.agentUI.chatInput.Text()) == "继续" {
+		if strings.TrimSpace(a.agentUI.chatInput.Text()) == a.textID("common.action.continue") {
 			a.agentUI.chatInput.SetText("")
 			a.resumeAgentChatConversation()
 		} else {
-			a.agentUI.chatStatus = ""
+			a.clearAgentChatStatus()
 		}
 		return
 	}
@@ -105,17 +106,17 @@ func (a *App) sendAgentChatMessage() {
 	}
 	view := a.agentViewContext()
 	if view.DocumentID == "" {
-		a.agentUI.chatStatus = "请先打开一份文档，再开始与该文档关联的会话。"
+		a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.no_document"})
 		return
 	}
 	if a.agentUI.conversationID == "" {
 		a.ensureAgentChatDocument(view.DocumentID)
-		a.agentUI.chatStatus = "正在准备文档会话，请稍后再发送。"
+		a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.preparing_document"})
 		return
 	}
 	host, _ := a.ensureDesktopRuntime().currentAgentHost()
 	if host == nil {
-		a.agentUI.chatLines = appendAgentChatLine(a.agentUI.chatLines, agentChatLine{role: "error", text: "请先在模型设置中配置可用的模型和 API Key。"})
+		a.agentUI.chatLines = appendAgentChatLine(a.agentUI.chatLines, agentChatLine{role: "error", textRef: i18n.Message{ID: "agent.chat.error.configure_model"}})
 		a.agentUI.chatInput.SetText("")
 		return
 	}
@@ -125,7 +126,7 @@ func (a *App) sendAgentChatMessage() {
 	a.agentUI.chatInput.SetText("")
 	a.agentUI.chatLines = appendAgentChatLine(a.agentUI.chatLines, agentChatLine{role: "user", text: message})
 	a.agentUI.conversationBusy = true
-	a.agentUI.chatStatus = "正在联系模型…"
+	a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.contacting_model"})
 	ctx, cancel := context.WithCancel(context.Background())
 	conversationID := a.agentUI.conversationID
 	watcherStarted := a.launchManagedBackground(func() {
@@ -162,7 +163,7 @@ func (a *App) resumeAgentChatConversation() {
 	}
 	host, _ := a.ensureDesktopRuntime().currentAgentHost()
 	if host == nil {
-		a.agentUI.chatStatus = "请先配置可用模型，再继续此会话。"
+		a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.no_model"})
 		return
 	}
 	id := a.agentUI.conversationID
@@ -173,7 +174,7 @@ func (a *App) resumeAgentChatConversation() {
 	a.agentUI.activeReasoningLine = -1
 	a.agentUI.activeAnswerStarted = false
 	a.agentUI.conversationBusy = true
-	a.agentUI.chatStatus = "正在恢复已保存的会话…"
+	a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.resuming"})
 	view := a.agentViewContext()
 	ctx, cancel := context.WithCancel(context.Background())
 	watcherStarted := a.launchManagedBackground(func() {
@@ -203,7 +204,7 @@ func (a *App) resumeAgentChatConversation() {
 	}) {
 		cancel()
 		a.agentUI.conversationBusy = false
-		a.agentUI.chatStatus = "无法启动会话恢复请求。"
+		a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.resume_failed"})
 	}
 }
 
@@ -212,7 +213,7 @@ func (a *App) stopAgentChatTurn() {
 	if host == nil || !a.agentUI.conversationBusy {
 		return
 	}
-	a.agentUI.chatStatus = "正在停止…"
+	a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.stopping"})
 	conversationID := a.agentUI.conversationID
 	if !a.launchManagedBackground(func() {
 		if err := host.Cancel(conversationID); err != nil {
@@ -225,7 +226,7 @@ func (a *App) stopAgentChatTurn() {
 			a.window.Invalidate()
 		}
 	}) {
-		a.agentUI.chatStatus = "无法启动停止请求。"
+		a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.stop_failed"})
 	}
 }
 
@@ -338,28 +339,24 @@ func (a *App) processAgentChatEvents() {
 				a.collapseCurrentAgentReasoning()
 				a.agentUI.activeReasoningLine = -1
 				a.agentUI.activeAnswerStarted = false
-				a.agentUI.chatStatus = "正在调用工具：" + event.ToolName
+				a.setAgentChatStatus(i18n.Message{ID: "agent.tool.status.running", Args: i18n.Args{"Name": a.agentToolDisplayName(event.ToolName)}})
 				a.appendLiveAgentChatLine(agentChatLine{
-					role:       "tool",
-					text:       "正在执行 " + event.ToolName,
-					toolName:   event.ToolName,
-					inProgress: true,
-					collapsed:  true,
-					startedAt:  time.Now(),
+					role:           "tool",
+					toolName:       event.ToolName,
+					toolSummaryRef: i18n.Message{ID: "agent.tool.result.running"},
+					inProgress:     true,
+					collapsed:      true,
+					startedAt:      time.Now(),
 				})
 			case agent.EventToolCompleted:
-				a.agentUI.chatStatus = ""
-				message := "工具 " + event.ToolName + " 已完成"
-				if event.IsError {
-					message = "工具 " + event.ToolName + " 执行失败，Agent 会收到错误并决定下一步。"
-				}
+				a.clearAgentChatStatus()
 				needsAuth := agentToolResultNeedsConfirmation(event.Result)
-				summary := summarizeAgentToolResult(event.ToolName, event.Result, event.IsError)
+				summaryRef, summary := agentToolResultSummaryReference(event.ToolName, event.Result, event.IsError)
 				if len(a.agentUI.chatLines) > 0 && a.agentUI.chatLines[len(a.agentUI.chatLines)-1].role == "tool" {
 					last := &a.agentUI.chatLines[len(a.agentUI.chatLines)-1]
-					last.text = message
 					last.toolName = event.ToolName
 					last.toolSummary = summary
+					last.toolSummaryRef = summaryRef
 					last.inProgress = false
 					last.isError = event.IsError
 					last.needsAuth = needsAuth
@@ -369,13 +366,13 @@ func (a *App) processAgentChatEvents() {
 					}
 				} else {
 					a.appendLiveAgentChatLine(agentChatLine{
-						role:        "tool",
-						text:        message,
-						toolName:    event.ToolName,
-						toolSummary: summary,
-						isError:     event.IsError,
-						needsAuth:   needsAuth,
-						collapsed:   true,
+						role:           "tool",
+						toolName:       event.ToolName,
+						toolSummary:    summary,
+						toolSummaryRef: summaryRef,
+						isError:        event.IsError,
+						needsAuth:      needsAuth,
+						collapsed:      true,
 					})
 				}
 			case agent.EventTurnCompleted:
@@ -383,7 +380,7 @@ func (a *App) processAgentChatEvents() {
 				a.completeActiveAgentProcessLines()
 				a.agentUI.conversationBusy = false
 				a.agentUI.conversationInterrupted = false
-				a.agentUI.chatStatus = ""
+				a.clearAgentChatStatus()
 				a.agentUI.activeReasoningLine = -1
 				a.agentUI.activeAnswerStarted = false
 				a.refreshAgentConversationHistory(false)
@@ -391,7 +388,7 @@ func (a *App) processAgentChatEvents() {
 				a.collapseCurrentAgentReasoning()
 				a.completeActiveAgentProcessLines()
 				a.agentUI.conversationBusy = false
-				a.agentUI.chatStatus = ""
+				a.clearAgentChatStatus()
 				a.agentUI.activeReasoningLine = -1
 				a.agentUI.activeAnswerStarted = false
 				optimisticMessage := ""
@@ -437,7 +434,7 @@ func (a *App) processAgentApplicationEvents() {
 			if event.Type == application.EventConfirmationRequested || event.Type == application.EventConfirmationUpdated {
 				var info application.ConfirmationInfo
 				if err := json.Unmarshal(event.Data, &info); err != nil {
-					a.setStatus("无法读取操作确认事件：" + err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 					continue
 				}
 				if info.ConfirmationID == "" {
@@ -451,7 +448,7 @@ func (a *App) processAgentApplicationEvents() {
 					if event.Source == application.OperatorBuiltInAgent && info.WindowID == a.windowID {
 						a.updateAgentConfirmationChatLine(info, true)
 					}
-					a.setStatus("有高影响操作等待确认，请检查操作目标后批准或拒绝。")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.a_high_impact_action_is_waiting_for_approv_d96fc1"}, feedbackInfo, notificationSuppressed)
 					if a.window != nil && !a.modal.Visible && !a.agentUI.sidebarVisible {
 						a.showAgentChat()
 					}
@@ -459,15 +456,15 @@ func (a *App) processAgentApplicationEvents() {
 					a.updateAgentConfirmationChatLine(info, false)
 					switch info.Status {
 					case application.ConfirmationCompleted:
-						a.setStatus("已完成人工批准的操作：" + info.CapabilityName)
+						a.setStatusMessage(i18n.Message{ID: "agent.confirmation.completed", Args: i18n.Args{"Capability": info.CapabilityName}}, feedbackSuccess, notificationToast)
 					case application.ConfirmationRejected:
-						a.setStatus("已拒绝操作：" + info.CapabilityName)
+						a.setStatusMessage(i18n.Message{ID: "agent.confirmation.rejected", Args: i18n.Args{"Capability": info.CapabilityName}}, feedbackWarning, notificationToast)
 					case application.ConfirmationFailed:
-						a.setStatus("批准后的操作执行失败：" + info.Error)
+						a.setStatusDetailMessage(i18n.Message{ID: "agent.confirmation.failed"}, feedbackError, notificationToast, info.Error)
 					case application.ConfirmationExpired:
-						a.setStatus("操作确认已过期：" + info.CapabilityName)
+						a.setStatusMessage(i18n.Message{ID: "agent.confirmation.expired", Args: i18n.Args{"Capability": info.CapabilityName}}, feedbackWarning, notificationToast)
 					case application.ConfirmationCancelled:
-						a.setStatus("应用关闭时取消了待确认操作：" + info.CapabilityName)
+						a.setStatusMessage(i18n.Message{ID: "agent.confirmation.cancelled", Args: i18n.Args{"Capability": info.CapabilityName}}, feedbackInfo, notificationSuppressed)
 					}
 				}
 				continue
@@ -477,7 +474,7 @@ func (a *App) processAgentApplicationEvents() {
 			}
 			var info application.DocumentInfo
 			if err := json.Unmarshal(event.Data, &info); err != nil {
-				a.setStatus("无法读取新文档事件：" + err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 				continue
 			}
 			if info.DocumentID == "" {
@@ -492,7 +489,7 @@ func (a *App) processAgentApplicationEvents() {
 					continue
 				}
 				if err := a.installDocument(loadedDocumentFromSharedSession(shared)); err != nil {
-					a.setStatus("无法在桌面中打开 MCP 创建的文档：" + err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 					continue
 				}
 			}
@@ -504,7 +501,7 @@ func (a *App) processAgentApplicationEvents() {
 				a.tabMeta[info.DocumentID] = meta
 				if a.collection != nil {
 					if err := a.collection.UpdateTabMeta(meta); err != nil {
-						a.setStatus("文档已保存，但标签信息未能更新：" + err.Error())
+						a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 					}
 					a.collection.StageRecents([]workspace.Recent{{Path: info.SourcePath, Kind: string(info.Format)}})
 					a.refreshHomeMetadata()
@@ -544,10 +541,12 @@ func (a *App) updateAgentConfirmationChatLine(info application.ConfirmationInfo,
 	if a == nil || info.ConfirmationID == "" || info.WindowID != a.windowID {
 		return
 	}
-	text := confirmationChatSummary(info)
+	infoSnapshot := info
+	text := a.agentConfirmationChatSummary(info)
 	for index := len(a.agentUI.chatLines) - 1; index >= 0; index-- {
 		if a.agentUI.chatLines[index].confirmationID == info.ConfirmationID {
 			a.agentUI.chatLines[index].text = text
+			a.agentUI.chatLines[index].confirmation = &infoSnapshot
 			return
 		}
 	}
@@ -555,41 +554,49 @@ func (a *App) updateAgentConfirmationChatLine(info application.ConfirmationInfo,
 		return
 	}
 	a.agentUI.chatLines = appendAgentChatLine(a.agentUI.chatLines, agentChatLine{
-		role: "confirmation", text: text, confirmationID: info.ConfirmationID,
+		role: "confirmation", text: text, confirmationID: info.ConfirmationID, confirmation: &infoSnapshot,
 	})
 }
 
-func confirmationChatSummary(info application.ConfirmationInfo) string {
-	status := "等待批准"
+func (a *App) agentConfirmationChatSummary(info application.ConfirmationInfo) string {
+	statusID := "agent.confirmation.status.pending"
 	switch info.Status {
 	case application.ConfirmationRunning:
-		status = "已批准，正在执行"
+		statusID = "agent.confirmation.status.running"
 	case application.ConfirmationCompleted:
-		status = "已批准并执行完成"
+		statusID = "agent.confirmation.status.completed"
 	case application.ConfirmationRejected:
-		status = "已拒绝"
+		statusID = "agent.confirmation.status.rejected"
 	case application.ConfirmationFailed:
-		status = "执行失败"
+		statusID = "agent.confirmation.status.failed"
 	case application.ConfirmationExpired:
-		status = "已过期"
+		statusID = "agent.confirmation.status.expired"
 	case application.ConfirmationCancelled:
-		status = "已取消"
+		statusID = "agent.confirmation.status.cancelled"
 	}
-	text := fmt.Sprintf("%s：%s\n%s", status, info.CapabilityName, info.ImpactSummary)
-	if info.DocumentID != "" {
-		label := info.DocumentLabel
-		if label == "" {
-			label = info.DocumentID
-		}
-		text += fmt.Sprintf("\n文档 %s (%s) · 修订版本 %d", label, info.DocumentID, info.ExpectedRevision)
+	documentLabel := info.DocumentLabel
+	if documentLabel == "" {
+		documentLabel = info.DocumentID
 	}
+	resultRevision := ""
 	if info.Status == application.ConfirmationCompleted && info.Result != nil && info.Result.Revision != 0 {
-		text += fmt.Sprintf("\n完成后修订版本 %d", info.Result.Revision)
+		resultRevision = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(info.Result.Revision))
 	}
-	if info.Error != "" {
-		text += "\n" + info.Error
+	return a.textArgs("agent.confirmation.chat_line", i18n.Args{
+		"Status": a.textID(statusID), "Action": a.agentConfirmationActionLabel(info), "Document": documentLabel,
+		"DocumentID": info.DocumentID, "Revision": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(info.ExpectedRevision)),
+		"ResultRevision": resultRevision, "Error": info.Error,
+	})
+}
+
+func (a *App) agentChatLineDisplayText(line agentChatLine) string {
+	if line.confirmation != nil {
+		return a.agentConfirmationChatSummary(*line.confirmation)
 	}
-	return text
+	if line.textRef.ID != "" {
+		return a.text(line.textRef)
+	}
+	return line.text
 }
 
 func appendAgentChatLine(lines []agentChatLine, line agentChatLine) []agentChatLine {

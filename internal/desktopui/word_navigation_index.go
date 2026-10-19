@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 func wordNavigationCachedEntries(state *documentSessionState, blocks []document.WordBlock, query string) ([]wordNavigationEntry, int, int) {
@@ -43,7 +44,7 @@ func wordNavigationDrafts(state *documentSessionState) map[string]string {
 func wordNavigationEntries(blocks []document.WordBlock, styles []document.WordStyle, query string, drafts map[string]string) ([]wordNavigationEntry, int, int) {
 	paragraphs := wordNavigationParagraphRefs(blocks)
 	styleParents := wordNavigationStyleParents(styles)
-	entries := []wordNavigationEntry{{kind: wordNavigationGroup, key: "group:headings", label: "文档标题"}}
+	entries := []wordNavigationEntry{{kind: wordNavigationGroup, key: "group:headings", label: "文档标题", labelMessageID: "word.navigation.group.headings"}}
 	headingCount := 0
 	for _, ref := range paragraphs {
 		paragraph := ref.paragraph
@@ -63,12 +64,12 @@ func wordNavigationEntries(blocks []document.WordBlock, styles []document.WordSt
 		headingCount++
 	}
 	if headingCount == 0 {
-		entries = append(entries, wordNavigationEntry{kind: wordNavigationGroup, key: "empty:headings", label: "未发现标题"})
+		entries = append(entries, wordNavigationEntry{kind: wordNavigationGroup, key: "empty:headings", label: "未发现标题", labelMessageID: "word.navigation.empty.headings"})
 	}
 	resultCount := 0
 	if query != "" {
 		resultGroupIndex := len(entries)
-		entries = append(entries, wordNavigationEntry{kind: wordNavigationGroup, key: "group:results", label: "搜索结果"})
+		entries = append(entries, wordNavigationEntry{kind: wordNavigationGroup, key: "group:results", label: "搜索结果", labelMessageID: "word.navigation.group.results"})
 		needle := lowerWordRunes([]rune(query))
 		for _, ref := range paragraphs {
 			paragraph := ref.paragraph
@@ -102,9 +103,11 @@ func wordNavigationEntries(blocks []document.WordBlock, styles []document.WordSt
 			}
 		}
 		if resultCount == 0 {
-			entries = append(entries, wordNavigationEntry{kind: wordNavigationGroup, key: "empty:results", label: "没有搜索结果"})
+			entries = append(entries, wordNavigationEntry{kind: wordNavigationGroup, key: "empty:results", label: "没有搜索结果", labelMessageID: "word.navigation.empty.results"})
 		} else if resultCount > wordNavigationResultLimit {
 			entries[resultGroupIndex].label = fmt.Sprintf("搜索结果（显示前 %d 个，共 %d 个）", wordNavigationResultLimit, resultCount)
+			entries[resultGroupIndex].labelMessageID = "word.navigation.group.results_limited"
+			entries[resultGroupIndex].labelArgs = i18n.Args{"Shown": wordNavigationResultLimit, "Total": resultCount}
 		}
 	}
 	return entries, headingCount, resultCount

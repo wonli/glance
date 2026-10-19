@@ -209,7 +209,7 @@ func (a *App) layoutMCPConnectionCopyButton(gtx layout.Context, button *widget.C
 			return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return homeTextLabel(gtx, a.theme, "已复制", 11, settingsBlack, false)
+						return homeTextLabel(gtx, a.theme, a.textID("common.feedback.copied"), 11, settingsBlack, false)
 					})
 				})
 			})

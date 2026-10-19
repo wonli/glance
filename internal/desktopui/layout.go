@@ -72,10 +72,10 @@ func (a *App) layoutWorkspaceBody(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) visibleStatus() string {
-	if a.workspaceWriteError != "" {
-		return a.workspaceWriteError
+	if a.workspaceWriteErrorRef.ID != "" {
+		return a.text(a.workspaceWriteErrorRef)
 	}
-	return a.status
+	return a.statusText()
 }
 
 func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
@@ -106,7 +106,7 @@ func (a *App) layoutWorkbook(gtx layout.Context) layout.Dimensions {
 	a.handleOfficeShortcuts(gtx)
 	if _, ok := a.book.(document.GridReader); !ok {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return material.H6(a.theme, "当前工作簿未提供统一网格读取能力").Layout(gtx)
+			return material.H6(a.theme, a.textID("workspace.grid.read_capability_unavailable")).Layout(gtx)
 		})
 	}
 	a.handleSpreadsheetToolbarEvents(gtx)

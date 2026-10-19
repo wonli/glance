@@ -63,7 +63,7 @@ func TestAgentHistoryHoverDeleteDoesNotSelectConversation(t *testing.T) {
 		router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, Position: pos})
 		frame()
 		frame()
-		if !a.modal.Visible || a.modal.Title != "删除这条会话？" {
+		if !a.modal.Visible || a.messageText(a.modal.TitleRef, a.modal.Title) != "删除这条会话？" {
 			t.Fatal("hover delete click did not show confirmation")
 		}
 		if a.agentUI.conversationID != "current" || a.agentUI.conversationHistoryLoading {

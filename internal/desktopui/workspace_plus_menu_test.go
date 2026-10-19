@@ -12,11 +12,13 @@ import (
 	"gioui.org/unit"
 
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
 func TestPlusMenuDoesNotExposeSaveActions(t *testing.T) {
 	a := New(nil, "")
+	a.applyLocaleSelection(i18n.SelectionChinese)
 	for _, state := range []string{"empty", "draft", "saved"} {
 		if state == "draft" {
 			a.documentSessionState = newDocumentSessionState("")

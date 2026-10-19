@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"glance/internal/format/markdowndoc"
+	"glance/internal/i18n"
 )
 
 func (a *App) showMarkdownInsertDialog(kind string) {
@@ -9,7 +10,7 @@ func (a *App) showMarkdownInsertDialog(kind string) {
 	v.dialogEpoch++
 	epoch := v.dialogEpoch
 	if markdownEditorComposing(&v.editor) {
-		a.setStatus("请先完成输入法选字")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.finish_chinese_input_composition_first_b4284e"}, feedbackWarning, notificationSuppressed)
 		return
 	}
 	state := a.documentSessionState
@@ -19,22 +20,23 @@ func (a *App) showMarkdownInsertDialog(kind string) {
 		start, end = end, start
 	}
 	selected := string([]rune(source)[start:end])
-	labels, hints, initial := []string{"文字", "目标地址"}, []string{"显示文字", "https://… 或相对路径"}, []string{selected, ""}
-	title := "插入链接"
-	actions := []modalDialogActionSpec{{ID: "cancel", Label: "取消"}, {ID: "insert", Label: "插入"}}
+	labels, hints, initial := []i18n.Message{{ID: "markdown.insert.link.label"}, {ID: "markdown.insert.link.destination"}}, []i18n.Message{{ID: "markdown.insert.link.label_hint"}, {ID: "markdown.insert.link.destination_hint"}}, []string{selected, ""}
+	title := i18n.Message{ID: "markdown.insert.link.title"}
+	dialogID := "markdown.insert.link"
+	actions := []modalDialogActionSpec{{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}}, {ID: "insert", LabelRef: i18n.Message{ID: "common.action.insert"}}}
 	if kind == "image" {
-		title = "插入图片"
-		labels = []string{"替代文字", "图片路径"}
-		hints[1] = "本地绝对路径或相对路径"
-		actions = []modalDialogActionSpec{{ID: "cancel", Label: "取消"}, {ID: "browse", Label: "选择图片"}, {ID: "insert", Label: "插入"}}
+		title, dialogID = i18n.Message{ID: "markdown.insert.image.title"}, "markdown.insert.image"
+		labels = []i18n.Message{{ID: "markdown.insert.image.alt_text"}, {ID: "markdown.insert.image.path"}}
+		hints[1] = i18n.Message{ID: "markdown.insert.image.path_hint"}
+		actions = []modalDialogActionSpec{{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}}, {ID: "browse", LabelRef: i18n.Message{ID: "markdown.insert.image.action.browse"}}, {ID: "insert", LabelRef: i18n.Message{ID: "common.action.insert"}}}
 	} else if kind == "math" {
-		title = "插入公式"
-		labels = []string{"公式"}
-		hints = []string{`例如 \frac{a}{b} 或 x^2`}
+		title, dialogID = i18n.Message{ID: "markdown.insert.math.title"}, "markdown.insert.math"
+		labels = []i18n.Message{{ID: "markdown.insert.math.label"}}
+		hints = []i18n.Message{{ID: "markdown.insert.math.hint"}}
 		initial = []string{selected}
-		actions = []modalDialogActionSpec{{ID: "cancel", Label: "取消"}, {ID: "inline", Label: "行内公式"}, {ID: "block", Label: "独立公式"}}
+		actions = []modalDialogActionSpec{{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}}, {ID: "inline", LabelRef: i18n.Message{ID: "markdown.insert.math.action.inline"}}, {ID: "block", LabelRef: i18n.Message{ID: "markdown.insert.math.action.block"}}}
 	}
-	a.modal.ShowForm(title, "", labels, hints, initial, func(id string) {
+	a.modal.ShowFormMessage(dialogID, title, i18n.Message{}, labels, hints, initial, func(id string) {
 		if id == "browse" {
 			if v.imagePickPending {
 				return
@@ -42,7 +44,8 @@ func (a *App) showMarkdownInsertDialog(kind string) {
 			v.imagePickPending = true
 			choose := a.wordImageFilePicker
 			if choose == nil {
-				choose = chooseOfficeImageFile
+				pickerLabels := a.filePickerLabels()
+				choose = func() (string, error) { return chooseOfficeImageFile(pickerLabels) }
 			}
 			window, shutdown := a.window, a.shutdown
 			a.launchManagedBackground(func() {
@@ -64,19 +67,19 @@ func (a *App) showMarkdownInsertDialog(kind string) {
 		}
 		if a.documentSessionState != state || v.text() != source {
 			a.modal.Hide()
-			a.setStatus("文档内容已改变，插入已取消")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_document_content_changed_the_insertion_258927"}, feedbackInfo, notificationSuppressed)
 			return
 		}
 		args := markdowndoc.EditArgs{Label: a.modal.FormInputs[0].Text(), Display: id == "block"}
 		if kind == "math" {
 			if _, err := markdowndoc.RenderMath(args.Label, args.Display); err != nil {
-				a.setStatus(err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, err, notificationToast)
 				return
 			}
 			v.editor.SetCaret(start, end)
 			out, err := markdowndoc.ApplyEdit(source, "math", start, end, args)
 			if err != nil {
-				a.setStatus(err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, err, notificationToast)
 				return
 			} // Formula text replaces the retained selection before wrapping.
 			_ = out
@@ -86,14 +89,14 @@ func (a *App) showMarkdownInsertDialog(kind string) {
 		} else {
 			args.Destination = a.modal.FormInputs[1].Text()
 			if args.Destination == "" {
-				a.setStatus("请输入目标地址")
+				a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.enter_the_destination_address_ebc866"}, feedbackInfo, notificationSuppressed)
 				return
 			}
 			v.editor.SetCaret(start, end)
 		}
 		a.modal.Hide()
 		if err := a.applyMarkdownEdit(kind, args); err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, err, notificationToast)
 		}
 	}, actions...)
 }
@@ -107,7 +110,7 @@ func (a *App) pollMarkdownImagePicker() {
 			return
 		}
 		if result.err != nil {
-			a.setStatus(result.err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, result.err, notificationToast)
 			return
 		}
 		if result.path != "" {

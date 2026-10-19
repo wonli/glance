@@ -2,10 +2,10 @@ package desktopui
 
 import (
 	"errors"
+	"glance/internal/i18n"
 	"image"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 
 	"gioui.org/font"
@@ -144,7 +144,7 @@ func (a *App) startSpreadsheetAutoFitDimensionRange(gtx layout.Context, row bool
 	dimensions, rangeSupported := state.book.(document.SpreadsheetDimensionRangeCellReader)
 	batch, batchSupported := state.book.(document.SpreadsheetDimensionBatchEditor)
 	if !rangeSupported || !batchSupported {
-		a.setStatus("当前工作簿不支持自动调整行列尺寸")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.this_workbook_does_not_support_automatic_r_0412bb"}, feedbackWarning, notificationToast)
 		return
 	}
 	axis := document.SpreadsheetDimensionColumn
@@ -160,7 +160,7 @@ func (a *App) startSpreadsheetAutoFitDimensionRange(gtx layout.Context, row bool
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("表格正在处理其他操作，请稍后再试")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.a_table_operation_is_in_12e4b9"}, feedbackWarning, notificationSuppressed)
 		return
 	}
 	sheet, generation, window := state.sheet, a.documentGeneration, v
@@ -256,29 +256,21 @@ func (a *App) startSpreadsheetAutoFitDimensionRange(gtx layout.Context, row bool
 		}
 
 		changed := false
-		details := ""
+		details := i18n.Message{}
 		noOp := false
 		if err == nil && contentCount == 0 {
 			noOp = true
-			if row {
-				details = selectedDimensionNoContentDetails(start, end, true)
-			} else {
-				details = selectedDimensionNoContentDetails(start, end, false)
-			}
+			details = i18n.Message{ID: "spreadsheet.status.dimensions.no_content"}
 		} else if err == nil && len(sizes) == 0 {
 			noOp = true
-			if row {
-				details = selectedDimensionAlreadyFitDetails(start, end, true)
-			} else {
-				details = selectedDimensionAlreadyFitDetails(start, end, false)
-			}
+			details = i18n.Message{ID: "spreadsheet.status.dimensions.already_fit"}
 		} else if err == nil {
 			unlock := lockSessionAdapterWrite(state)
 			err = batch.SetDimensionSizes(sheet, axis, sizes)
 			unlock()
 			changed = err == nil
 			if changed {
-				details = selectedDimensionChangedDetails(start, end, len(sizes), row)
+				details = i18n.Message{ID: "spreadsheet.status.dimensions.autofit"}
 			}
 		}
 		a.completeSessionOperation(state, token, err, changed)
@@ -304,49 +296,16 @@ func (a *App) startSpreadsheetAutoFitDimensionRange(gtx layout.Context, row bool
 		}
 	}) {
 		state.finishOperation(token)
-		a.setStatus("无法启动自动调整行列尺寸")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.could_not_start_automatic_row_or_column_si_8f283d"}, feedbackWarning, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
-	a.setStatus("正在" + operation + "…")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.operation_started", Args: i18n.Args{"Operation": a.localizedSpreadsheetToolbarText(operation)}}, feedbackInfo, notificationSuppressed)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
 }
 
 var errGridAutoFitCanceled = errors.New("automatic dimension sizing canceled")
-
-func selectedDimensionNoContentDetails(start, end int, row bool) string {
-	name := "列"
-	if row {
-		name = "行"
-	}
-	if start == end {
-		return "当前" + name + "没有可自动调整的内容"
-	}
-	return "所选" + name + "没有可自动调整的内容"
-}
-
-func selectedDimensionAlreadyFitDetails(start, end int, row bool) string {
-	name := "列"
-	if row {
-		name = "行"
-	}
-	if start == end {
-		return "第 " + strconv.Itoa(start) + " " + name + "已适合当前内容"
-	}
-	return "所选" + name + "已适合当前内容"
-}
-
-func selectedDimensionChangedDetails(start, end, changed int, row bool) string {
-	name := "列"
-	if row {
-		name = "行"
-	}
-	if start == end {
-		return "第 " + strconv.Itoa(start) + " " + name + "已按内容自动调整；点击保存写入原文件"
-	}
-	return "已按内容自动调整选中的 " + strconv.Itoa(changed) + " " + name + "；点击保存写入原文件"
-}

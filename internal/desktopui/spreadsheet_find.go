@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -39,7 +40,7 @@ func (a *App) showSpreadsheetSearchReplaceDialog(replaceTab bool) {
 	}
 	searcher, ok := state.book.(document.SpreadsheetSearcher)
 	if !ok {
-		a.setStatus("当前表格不支持查找")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_spreadsheet_does_not_support_3ad634"}, feedbackWarning, notificationToast)
 		return
 	}
 	_, hasGrid := state.book.(document.GridReader)
@@ -47,16 +48,16 @@ func (a *App) showSpreadsheetSearchReplaceDialog(replaceTab bool) {
 	_, hasValueKind := state.book.(document.SpreadsheetCellValueKindReader)
 	canReplace := hasGrid && hasBatch && hasValueKind
 	if replaceTab && !canReplace {
-		a.setStatus("当前表格不支持安全替换")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_spreadsheet_does_not_support_8ba12d"}, feedbackWarning, notificationToast)
 		return
 	}
 	query := spreadsheetFindInitialQuery(state)
-	actions := []modalDialogActionSpec{{ID: "find-next", Label: "查找下一个", Style: modalDialogActionPrimary}}
+	actions := []modalDialogActionSpec{{ID: "find-next", LabelRef: i18n.Message{ID: "office.search_replace.action.find_next"}, Style: modalDialogActionPrimary}}
 	if canReplace {
 		actions = []modalDialogActionSpec{
-			{ID: "find-next", Label: "查找下一个", Style: modalDialogActionSecondary, WidthDp: 96, TextSizeSp: 11},
-			{ID: "replace", Label: "替换", Style: modalDialogActionPrimary, WidthDp: 76, TextSizeSp: 12},
-			{ID: "replace-all", Label: "全部替换", Style: modalDialogActionSecondary, WidthDp: 92, TextSizeSp: 11},
+			{ID: "find-next", LabelRef: i18n.Message{ID: "office.search_replace.action.find_next"}, Style: modalDialogActionSecondary, WidthDp: 96, TextSizeSp: 11},
+			{ID: "replace", LabelRef: i18n.Message{ID: "office.search_replace.action.replace"}, Style: modalDialogActionPrimary, WidthDp: 76, TextSizeSp: 12},
+			{ID: "replace-all", LabelRef: i18n.Message{ID: "office.search_replace.action.replace_all"}, Style: modalDialogActionSecondary, WidthDp: 92, TextSizeSp: 11},
 		}
 	}
 	onAction := func(action string) {
@@ -67,8 +68,8 @@ func (a *App) showSpreadsheetSearchReplaceDialog(replaceTab bool) {
 		query := strings.TrimSpace(a.modal.Input.Text())
 		replacement := a.modal.SecondInput.Text()
 		if query == "" {
-			a.setStatus("请输入要查找的内容")
-			a.modal.SearchReplaceSummary = "请输入要查找的内容"
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.enter_text_to_find_5340a9"}, feedbackInfo, notificationSuppressed)
+			a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.search.status.enter_query"})
 			a.modal.FocusInputRequested = true
 			return
 		}
@@ -95,16 +96,16 @@ func (a *App) showSpreadsheetSearchReplaceDialog(replaceTab bool) {
 		a.modal.FocusInputRequested = true
 	}
 	if canReplace {
-		a.modal.ShowDualInput("查找和替换", "", query, "查找内容", state.excelReplaceText, "替换为", onAction, actions...)
+		a.modal.ShowDualInputMessage(dialogIDOfficeSearchReplace, i18n.Message{ID: "office.search_replace.title"}, i18n.Message{}, i18n.Message{ID: "office.search_replace.field.find"}, i18n.Message{ID: "office.search_replace.field.replace"}, query, state.excelReplaceText, onAction, actions...)
 	} else {
-		a.modal.ShowInput("查找和替换", "", query, "查找内容", onAction, actions...)
+		a.modal.ShowInputMessage(dialogIDOfficeSearchReplace, i18n.Message{ID: "office.search_replace.title"}, i18n.Message{}, query, i18n.Message{ID: "office.search_replace.field.find"}, onAction, actions...)
 	}
 	a.modal.Input.SetCaret(0, len([]rune(query)))
 	a.modal.SearchReplace = true
 	a.modal.SearchReplaceHasReplace = canReplace
 	a.modal.SearchReplaceReplaceTab = replaceTab
 	a.modal.SearchReplaceScope = "当前工作表"
-	a.modal.SearchReplaceSummary = "输入查找内容后，点击“查找下一个”"
+	a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.search.status.default"})
 	a.modal.CardWidthDp = 560
 	a.modal.FocusInputRequested = true
 }
@@ -164,8 +165,8 @@ func (a *App) findSpreadsheetText(searcher document.SpreadsheetSearcher, query s
 	if a.applicationSessionRegistered(state.documentID) {
 		token, ok := state.beginOperation(sessionOperationRead)
 		if !ok {
-			a.setStatus("表格正在处理其他操作")
-			a.modal.SearchReplaceSummary = "表格正在处理其他操作"
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.a_table_operation_is_in_a186a1"}, feedbackInfo, notificationSuppressed)
+			a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.search.status.busy"})
 			return
 		}
 		result, commandErr := a.executeRibbonApplicationCommand(token, "spreadsheet.range.search", "spreadsheet_sheet", state.sheet, state.sheet, spreadsheetRangeSearchArguments{Sheet: state.sheet, Query: query, MaxResults: 1000})
@@ -183,13 +184,13 @@ func (a *App) findSpreadsheetText(searcher document.SpreadsheetSearcher, query s
 		matches, err = searcher.SearchSheet(state.sheet, query)
 	}
 	if err != nil {
-		a.setStatus("查找失败：" + err.Error())
-		a.modal.SearchReplaceSummary = "查找失败"
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.search.status.failed"})
 		return
 	}
 	if len(matches) == 0 {
-		a.setStatus("未找到：" + query)
-		a.modal.SearchReplaceSummary = "未找到匹配项"
+		a.setStatusMessage(i18n.Message{ID: "common.error.not_found", Args: i18n.Args{"Query": query}}, feedbackInfo, notificationSuppressed)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.search.status.not_found"})
 		return
 	}
 	currentPos := state.selection.Active
@@ -213,12 +214,13 @@ func (a *App) findSpreadsheetText(searcher document.SpreadsheetSearcher, query s
 		}
 	}
 	a.navigateToCell(target.Row, target.Column)
-	countSuffix := fmt.Sprintf("共 %d 处匹配", len(matches))
+	cell := xlsx.CellName(target.Column, target.Row)
 	if truncated {
-		countSuffix = fmt.Sprintf("至少 %d 处匹配，结果已截断", len(matches))
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.search.status.located_truncated", Args: i18n.Args{"Cell": cell, "Count": len(matches)}}, feedbackInfo, notificationSuppressed)
+	} else {
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.search.status.located", Args: i18n.Args{"Cell": cell, "Count": len(matches)}}, feedbackInfo, notificationSuppressed)
 	}
-	a.setStatus(fmt.Sprintf("已定位至 %s（%s）", xlsx.CellName(target.Column, target.Row), countSuffix))
-	a.modal.SearchReplaceSummary = fmt.Sprintf("找到 %d 个匹配项 · 当前单元格 %s", len(matches), xlsx.CellName(target.Column, target.Row))
+	a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.search.status.found", Args: i18n.Args{"Count": len(matches), "Cell": cell}})
 }
 
 func (a *App) replaceSelectedSpreadsheetText(searcher document.SpreadsheetSearcher, query, replacement string) {
@@ -240,32 +242,32 @@ func (a *App) replaceSelectedSpreadsheetText(searcher document.SpreadsheetSearch
 	}
 	window, err := grid.Window(state.sheet, row, column, 1, 1)
 	if err != nil {
-		a.setStatus("读取当前单元格失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	if len(window.Cells) == 0 || len(window.Cells[0]) == 0 {
-		a.setStatus("无法读取当前单元格")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.could_not_read_the_current_1c5ebd"}, feedbackWarning, notificationToast)
 		return
 	}
 	cell := window.Cells[0][0]
 	if cell.Formula != "" {
-		a.setStatus("公式单元格暂不支持替换")
-		a.modal.SearchReplaceSummary = "公式单元格暂不支持替换"
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.formula_cells_cannot_be_replaced_f18a31"}, feedbackWarning, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.error.formula_cell"})
 		return
 	}
 	typeReader, ok := state.book.(document.SpreadsheetCellValueKindReader)
 	if !ok {
-		a.setStatus("当前表格不支持安全替换")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_spreadsheet_does_not_support_8ba12d"}, feedbackWarning, notificationToast)
 		return
 	}
 	valueKind, err := typeReader.StoredCellValueKind(state.sheet, xlsx.CellName(column, row))
 	if err != nil {
-		a.setStatus("读取单元格类型失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	if valueKind != document.CellValueText {
-		a.setStatus("目前仅支持替换文本单元格")
-		a.modal.SearchReplaceSummary = "目前仅支持替换文本单元格"
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.only_text_cells_can_be_75c0e7"}, feedbackInfo, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.error.text_only"})
 		return
 	}
 	runes := []rune(cell.Value)
@@ -277,22 +279,22 @@ func (a *App) replaceSelectedSpreadsheetText(searcher document.SpreadsheetSearch
 	}
 	updated := string(runes[:start]) + replacement + string(runes[start+len(needle):])
 	if updated == cell.Value {
-		a.setStatus("替换内容与当前值相同")
-		a.modal.SearchReplaceSummary = "替换内容与当前值相同"
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_replacement_matches_the_current_cf3cce"}, feedbackInfo, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.status.unchanged"})
 		return
 	}
 	if strings.HasPrefix(strings.TrimSpace(updated), "=") {
-		a.setStatus("替换结果不能以 = 开头")
-		a.modal.SearchReplaceSummary = "替换结果不能以 = 开头"
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.a_replacement_value_cannot_begin_836003"}, feedbackWarning, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.error.formula_prefix"})
 		return
 	}
 	typedValue := document.CellValue{Kind: document.CellValueText, Text: updated}
 	if err := a.applyBatchEdits([]document.CellEdit{{Row: row, Column: column, Value: updated, TypedValue: &typedValue}}, "替换单元格"); err != nil {
-		a.setStatus("替换失败：" + err.Error())
-		a.modal.SearchReplaceSummary = "替换失败"
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.error.failed"})
 		return
 	}
-	a.modal.SearchReplaceSummary = "正在替换当前单元格…"
+	a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.status.replacing_current"})
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -306,24 +308,24 @@ func (a *App) replaceAllSpreadsheetText(searcher document.SpreadsheetSearcher, q
 	grid, hasGrid := state.book.(document.GridReader)
 	typeReader, hasValueKind := state.book.(document.SpreadsheetCellValueKindReader)
 	if !hasGrid || !hasValueKind {
-		a.setStatus("当前工作簿不支持安全替换")
-		a.modal.SearchReplaceSummary = "当前工作簿不支持安全替换"
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_a175ea"}, feedbackWarning, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.error.unsupported"})
 		return
 	}
 	if a.formatResults == nil {
-		a.setStatus("替换服务不可用")
-		a.modal.SearchReplaceSummary = "替换服务不可用"
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_replacement_service_is_unavailable_e19527"}, feedbackWarning, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.error.unavailable"})
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("表格正在处理其他操作")
-		a.modal.SearchReplaceSummary = "表格正在处理其他操作"
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.a_table_operation_is_in_a186a1"}, feedbackInfo, notificationSuppressed)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.search.status.busy"})
 		return
 	}
 	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
 	results, shutdown, appWindow := a.formatResults, a.shutdown, a.window
-	a.modal.SearchReplaceSummary = "正在扫描当前工作表…"
+	a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.status.scanning"})
 	if !a.launchManagedBackground(func() {
 		plan := &spreadsheetReplaceAllPlan{}
 		matches, truncated, err := a.findSpreadsheetMatchesForReplace(token, searcher, sheet, query)
@@ -389,8 +391,8 @@ func (a *App) replaceAllSpreadsheetText(searcher document.SpreadsheetSearcher, q
 		}
 	}) {
 		state.finishOperation(token)
-		a.setStatus("替换任务无法启动")
-		a.modal.SearchReplaceSummary = "替换任务无法启动"
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.could_not_start_the_replacement_18d9a7"}, feedbackWarning, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.error.start_failed"})
 	}
 }
 
@@ -461,37 +463,34 @@ func (a *App) applySpreadsheetReplaceAllPlan(result spreadsheetFormatResult) {
 		return
 	}
 	if result.err != nil {
-		a.setStatus("替换全部失败：" + result.err.Error())
-		a.modal.SearchReplaceSummary = "替换失败"
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, result.err, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.error.failed"})
 		return
 	}
 	if plan.truncated {
-		const message = "匹配超过 10,000 个单元格，未修改；请缩小查找内容后重试"
-		a.setStatus(message)
-		a.modal.SearchReplaceSummary = message
+		message := i18n.Message{ID: "spreadsheet.replace.error.too_many_matches"}
+		a.setStatusMessage(message, feedbackWarning, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(message)
 		return
 	}
 	if len(plan.edits) == 0 {
-		message := "未找到匹配项"
+		message := i18n.Message{ID: "spreadsheet.search.status.not_found"}
 		if plan.foundCells > 0 && plan.skippedMatches > 0 {
-			message = "找到匹配项，但没有可替换的文本单元格"
+			message = i18n.Message{ID: "spreadsheet.replace.status.no_replaceable_text"}
 		} else if plan.foundCells > 0 {
-			message = "匹配内容已是替换结果"
+			message = i18n.Message{ID: "spreadsheet.replace.status.unchanged"}
 		}
-		a.setStatus(message)
-		a.modal.SearchReplaceSummary = message
+		a.setStatusMessage(message, feedbackInfo, notificationSuppressed)
+		a.modal.SetSearchReplaceSummaryRef(message)
 		a.modal.FocusInputRequested = true
 		return
 	}
-	details := fmt.Sprintf("已替换 %d 个单元格", plan.changedCells)
-	if plan.skippedMatches > 0 {
-		details += fmt.Sprintf("；跳过 %d 个公式或非文本单元格", plan.skippedMatches)
-	}
-	progress := fmt.Sprintf("正在替换 %d 个单元格…", plan.changedCells)
-	a.modal.SearchReplaceSummary = progress
-	a.setStatus(progress)
+	details := i18n.Message{ID: "spreadsheet.replace.status.completed", Args: i18n.Args{"Changed": plan.changedCells, "Skipped": plan.skippedMatches}}
+	progress := i18n.Message{ID: "spreadsheet.replace.status.replacing", Args: i18n.Args{"Count": plan.changedCells}}
+	a.modal.SetSearchReplaceSummaryRef(progress)
+	a.setStatusMessage(progress, feedbackInfo, notificationSuppressed)
 	if err := a.applyBatchEditsWithDetails(plan.edits, "替换全部", details); err != nil {
-		a.setStatus("替换全部失败：" + err.Error())
-		a.modal.SearchReplaceSummary = "替换失败"
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.error.failed"})
 	}
 }

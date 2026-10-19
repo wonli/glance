@@ -11,10 +11,28 @@ import (
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/widget"
+
+	"glance/internal/i18n"
+)
+
+const (
+	dialogIDAgentAssistant      = "agent.assistant"
+	dialogIDAgentModelSettings  = "agent.settings.model"
+	dialogIDWordMacros          = "word.macros.security"
+	dialogIDWordEditorReview    = "word.review.editor"
+	dialogIDWordCompare         = "word.compare"
+	dialogIDWordDocumentInfo    = "word.document-info"
+	dialogIDWordProtection      = "word.document-protection"
+	dialogIDWordPrintWarning    = "word.print.layout-warning"
+	dialogIDWordPrintPrepared   = "word.print.prepared"
+	dialogIDWordPDFWarning      = "word.export.layout-warning"
+	dialogIDPDFExportPreview    = "pdf.export.preview"
+	dialogIDOfficeSearchReplace = "office.search-replace"
 )
 
 type modalDialogActionSpec struct {
 	ID, Label  string
+	LabelRef   i18n.Message
 	Style      modalDialogActionStyle
 	WidthDp    float32
 	TextSizeSp float32
@@ -22,6 +40,7 @@ type modalDialogActionSpec struct {
 
 type modalDialogAction struct {
 	ID, Label  string
+	LabelRef   i18n.Message
 	Style      modalDialogActionStyle
 	WidthDp    float32
 	TextSizeSp float32
@@ -48,6 +67,9 @@ type modalDialogConfirmStyle struct {
 type modalDialog struct {
 	AgentHistoryDelete      bool
 	Visible                 bool
+	DialogID                string
+	TitleRef                i18n.Message
+	MessageRef              i18n.Message
 	Title                   string
 	Message                 string
 	Actions                 []modalDialogAction
@@ -56,9 +78,13 @@ type modalDialog struct {
 	FormInputs              [5]widget.Editor
 	FormLabels              [5]string
 	FormHints               [5]string
+	FormLabelRefs           [5]i18n.Message
+	FormHintRefs            [5]i18n.Message
 	FormInputCount          int
 	InputHint               string
 	SecondInputHint         string
+	InputHintRef            i18n.Message
+	SecondInputHintRef      i18n.Message
 	HasInput                bool
 	HasSecondInput          bool
 	HasForm                 bool
@@ -74,6 +100,7 @@ type modalDialog struct {
 	SearchReplaceReplaceTab bool
 	SearchReplaceScope      string
 	SearchReplaceSummary    string
+	SearchReplaceSummaryRef i18n.Message
 	searchReplaceFindTab    widget.Clickable
 	searchReplaceReplaceTab widget.Clickable
 	searchReplaceClose      widget.Clickable
@@ -91,17 +118,13 @@ func resolveDialogActionStyle(action modalDialogActionSpec) modalDialogActionSty
 	case "delete", "discard":
 		return modalDialogActionDanger
 	}
-	switch action.Label {
-	case "取消", "关闭":
-		return modalDialogActionSecondary
-	case "删除", "不保存":
-		return modalDialogActionDanger
-	default:
-		return modalDialogActionPrimary
-	}
+	return modalDialogActionPrimary
 }
 
 func (d *modalDialog) Show(title, message string, onAction func(string), actions ...modalDialogActionSpec) {
+	d.DialogID = ""
+	d.TitleRef = i18n.Message{}
+	d.MessageRef = i18n.Message{}
 	d.Title, d.Message, d.Visible = title, message, true
 	d.HasInput = false
 	d.HasSecondInput = false
@@ -117,22 +140,22 @@ func (d *modalDialog) Show(title, message string, onAction func(string), actions
 	d.SearchReplaceReplaceTab = false
 	d.SearchReplaceScope = ""
 	d.SearchReplaceSummary = ""
-	if style, ok := defaultConfirmStyleForTitle(title); ok {
-		d.HasConfirmStyle = true
-		d.ConfirmStyle = style
-	} else {
-		d.HasConfirmStyle = false
-		d.ConfirmStyle = modalDialogConfirmStyle{}
-	}
+	d.SearchReplaceSummaryRef = i18n.Message{}
+	d.HasConfirmStyle = false
+	d.ConfirmStyle = modalDialogConfirmStyle{}
 	d.FormInputCount = 0
 	d.InputHint = ""
 	d.SecondInputHint = ""
+	d.InputHintRef = i18n.Message{}
+	d.SecondInputHintRef = i18n.Message{}
 	d.Input.SetText("")
 	d.SecondInput.SetText("")
 	for i := range d.FormInputs {
 		d.FormInputs[i].SetText("")
 		d.FormLabels[i] = ""
 		d.FormHints[i] = ""
+		d.FormLabelRefs[i] = i18n.Message{}
+		d.FormHintRefs[i] = i18n.Message{}
 	}
 	d.OnAction = onAction
 	d.Actions = make([]modalDialogAction, len(actions))
@@ -140,6 +163,7 @@ func (d *modalDialog) Show(title, message string, onAction func(string), actions
 		d.Actions[i] = modalDialogAction{
 			ID:         action.ID,
 			Label:      action.Label,
+			LabelRef:   action.LabelRef,
 			Style:      resolveDialogActionStyle(action),
 			WidthDp:    action.WidthDp,
 			TextSizeSp: action.TextSizeSp,
@@ -147,12 +171,82 @@ func (d *modalDialog) Show(title, message string, onAction func(string), actions
 	}
 }
 
-func (d *modalDialog) ShowConfirm(title, message string, style modalDialogConfirmStyle, onAction func(string), actions ...modalDialogActionSpec) {
-	d.Show(title, message, onAction, actions...)
+func (d *modalDialog) SetMessageRef(message i18n.Message) {
+	d.Message = ""
+	d.MessageRef = message
+}
+
+func (d *modalDialog) SetMessageText(message string) {
+	d.MessageRef = i18n.Message{}
+	d.Message = message
+}
+
+func (d *modalDialog) SetSearchReplaceSummaryRef(message i18n.Message) {
+	d.SearchReplaceSummary = ""
+	d.SearchReplaceSummaryRef = message
+}
+
+func (d *modalDialog) ShowMessage(dialogID string, title, body i18n.Message, onAction func(string), actions ...modalDialogActionSpec) {
+	d.Show(title.ID, body.ID, onAction, actions...)
+	d.DialogID = dialogID
+	d.TitleRef = title
+	d.MessageRef = body
+	for i := range d.Actions {
+		if d.Actions[i].LabelRef.ID != "" {
+			d.Actions[i].Label = d.Actions[i].LabelRef.ID
+		}
+	}
+}
+
+func (d *modalDialog) ShowConfirmMessage(dialogID string, title, body i18n.Message, style modalDialogConfirmStyle, onAction func(string), actions ...modalDialogActionSpec) {
+	d.ShowMessage(dialogID, title, body, onAction, actions...)
 	d.HasConfirmStyle = true
 	d.ConfirmStyle = style
 }
 
+func (d *modalDialog) ShowCustomMessage(dialogID string, title, body i18n.Message, cardWidthDp int, customLayout func(gtx layout.Context) layout.Dimensions, onAction func(string), actions ...modalDialogActionSpec) {
+	d.ShowMessage(dialogID, title, body, onAction, actions...)
+	d.CardWidthDp = cardWidthDp
+	d.CustomLayout = customLayout
+}
+
+func (d *modalDialog) ShowFormMessage(dialogID string, title, body i18n.Message, labels, hints []i18n.Message, initial []string, onAction func(string), actions ...modalDialogActionSpec) {
+	d.ShowMessage(dialogID, title, body, onAction, actions...)
+	count := min(len(labels), len(d.FormInputs))
+	d.HasForm = count > 0
+	d.FormInputCount = count
+	for i := 0; i < count; i++ {
+		d.FormLabelRefs[i] = labels[i]
+		if i < len(hints) {
+			d.FormHintRefs[i] = hints[i]
+		}
+		if i < len(initial) {
+			d.FormInputs[i].SetText(initial[i])
+		}
+		d.FormInputs[i].SingleLine = true
+		d.FormInputs[i].Submit = true
+	}
+}
+
+func (d *modalDialog) ShowInputMessage(dialogID string, title, body i18n.Message, initial string, hint i18n.Message, onAction func(string), actions ...modalDialogActionSpec) {
+	d.ShowMessage(dialogID, title, body, onAction, actions...)
+	d.HasInput = true
+	d.InputHintRef = hint
+	d.Input.SingleLine = true
+	d.Input.Submit = true
+	d.Input.SetText(initial)
+}
+
+func (d *modalDialog) ShowDualInputMessage(dialogID string, title, body, firstHint, secondHint i18n.Message, firstInitial, secondInitial string, onAction func(string), actions ...modalDialogActionSpec) {
+	d.ShowInputMessage(dialogID, title, body, firstInitial, firstHint, onAction, actions...)
+	d.HasSecondInput = true
+	d.SecondInputHintRef = secondHint
+	d.SecondInput.SingleLine = true
+	d.SecondInput.Submit = true
+	d.SecondInput.SetText(secondInitial)
+}
+
+// String-based helpers remain for interaction-test fixtures. Production dialogs use message references.
 func (d *modalDialog) ShowCustom(title, message string, cardWidthDp int, customLayout func(gtx layout.Context) layout.Dimensions, onAction func(string), actions ...modalDialogActionSpec) {
 	d.Show(title, message, onAction, actions...)
 	d.CardWidthDp = cardWidthDp
@@ -161,10 +255,7 @@ func (d *modalDialog) ShowCustom(title, message string, cardWidthDp int, customL
 
 func (d *modalDialog) ShowForm(title, message string, labels, hints, initial []string, onAction func(string), actions ...modalDialogActionSpec) {
 	d.Show(title, message, onAction, actions...)
-	count := len(labels)
-	if count > len(d.FormInputs) {
-		count = len(d.FormInputs)
-	}
+	count := min(len(labels), len(d.FormInputs))
 	d.HasForm = count > 0
 	d.FormInputCount = count
 	for i := 0; i < count; i++ {
@@ -231,9 +322,9 @@ func (d *modalDialog) cancelFromEscape() {
 		}
 	}
 	if d.OnAction != nil && actionID != "" {
-		title := d.Title
+		dialogID := d.DialogID
 		d.OnAction(actionID)
-		if d.Visible && d.Title == title {
+		if d.Visible && d.DialogID == dialogID {
 			d.Hide()
 		}
 		return
@@ -323,8 +414,8 @@ func (a *App) handleOverlayEscape(gtx layout.Context) bool {
 	return true
 }
 
-func (a *App) showConfirmDialog(title, message string, style modalDialogConfirmStyle, onAction func(string), actions ...modalDialogActionSpec) {
-	a.modal.ShowConfirm(title, message, style, onAction, actions...)
+func (a *App) showConfirmMessage(dialogID string, title, message i18n.Message, style modalDialogConfirmStyle, onAction func(string), actions ...modalDialogActionSpec) {
+	a.modal.ShowConfirmMessage(dialogID, title, message, style, onAction, actions...)
 }
 
 func (a *App) layoutModalDialog(gtx layout.Context) layout.Dimensions {

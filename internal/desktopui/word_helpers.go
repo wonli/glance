@@ -82,13 +82,6 @@ func allWordParagraphs(blocks []document.WordBlock) []document.WordParagraph {
 	return paragraphs
 }
 
-func wordCommandError(operation string, err error) string {
-	if err == nil {
-		return "已完成" + operation
-	}
-	return fmt.Sprintf("%s失败：%v", operation, err)
-}
-
 func parseHexColor(s string) (color.NRGBA, error) {
 	s = strings.TrimPrefix(strings.TrimSpace(s), "#")
 	if len(s) == 3 {

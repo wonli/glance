@@ -5,6 +5,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"image"
 	"strings"
 	"sync"
@@ -17,7 +18,7 @@ type pdfPageResult struct {
 	err      error
 	info     document.PDFInfo
 	mutation bool
-	notice   string
+	notice   i18n.Message
 	search   []int
 }
 type pdfViewState struct {
@@ -38,6 +39,7 @@ type pdfViewState struct {
 	cache                             map[int]pdfPageResult
 	thumbCache                        map[int]image.Image
 	message                           string
+	messageRef                        i18n.Message
 	tag                               struct{}
 	scale                             float64
 	scene                             document.PDFPage
@@ -149,7 +151,8 @@ func (v *pdfViewState) accept(r pdfPageResult) {
 	}
 	if r.err != nil {
 		v.message = r.err.Error()
-		if !r.mutation && r.notice == "" {
+		v.messageRef = i18n.Message{}
+		if !r.mutation && r.notice.ID == "" {
 			v.cache[r.page.Index] = r
 		}
 		return
@@ -160,18 +163,21 @@ func (v *pdfViewState) accept(r pdfPageResult) {
 		v.clearSelection()
 	}
 	v.info = r.info
-	if r.notice != "" {
-		v.message = r.notice
+	if r.notice.ID != "" {
+		v.message = ""
+		v.messageRef = r.notice
 		return
 	}
 	if r.mutation {
-		v.message = "修改已应用"
+		v.message = ""
+		v.messageRef = i18n.Message{ID: "pdf.status.change_applied"}
 		return
 	}
 	if len(r.search) > 0 {
 		v.page = r.search[0]
 		v.clearSelection()
-		v.message = "已定位搜索结果"
+		v.message = ""
+		v.messageRef = i18n.Message{ID: "pdf.status.search_result_located"}
 		return
 	}
 	if r.pixels != nil {
@@ -195,6 +201,7 @@ func (v *pdfViewState) accept(r pdfPageResult) {
 		}
 	}
 	v.message = r.warning
+	v.messageRef = i18n.Message{}
 }
 func (a *App) requestPDFPage(index int) {
 	v := a.ensurePDFView()

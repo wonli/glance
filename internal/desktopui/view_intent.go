@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"math"
 
 	"glance/internal/application"
@@ -135,9 +136,9 @@ func (a *App) applyDesktopViewIntent(intent application.ViewIntent) (json.RawMes
 	}
 	zoomPercent := int(math.Round(a.spreadsheetZoom() * 100))
 	if input.Operation == "reset" {
-		a.setStatus("缩放比例：100%")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.zoom_100_ce4551"}, feedbackInfo, notificationSuppressed)
 	} else {
-		a.setStatus(fmt.Sprintf("缩放比例：%d%%", zoomPercent))
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.zoom", Args: i18n.Args{"Percent": zoomPercent}}, feedbackInfo, notificationSuppressed)
 	}
 	result, err := json.Marshal(struct {
 		WindowID    uint64 `json:"window_id"`
@@ -236,7 +237,7 @@ func (a *App) applySpreadsheetFilterViewIntent(state *documentSessionState, raw 
 			changed = true
 			a.clearValueFilter(state)
 		}
-		a.setStatus("已清除筛选")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.filter_cleared_69427d"}, feedbackSuccess, notificationSuppressed)
 	case "set":
 		rows := input.Bounds.EndRow - input.Bounds.StartRow + 1
 		columns := input.Bounds.EndColumn - input.Bounds.StartColumn + 1
@@ -260,7 +261,7 @@ func (a *App) applySpreadsheetFilterViewIntent(state *documentSessionState, raw 
 		}
 		a.installSpreadsheetValueFilter(state, filter)
 		changed = true
-		a.setStatus("已完成筛选")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.filter_applied_d9a0e7"}, feedbackSuccess, notificationSuppressed)
 	default:
 		return nil, application.ErrInvalidCommandArguments
 	}

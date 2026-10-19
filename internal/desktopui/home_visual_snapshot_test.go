@@ -73,7 +73,7 @@ func TestHomeVisualSnapshot(t *testing.T) {
 	collection.StageRecents(recents)
 	app.collection = collection
 	app.homeSection = homeSectionRecent
-	app.homeTypeFilter = "全部"
+	app.homeTypeFilter = homeFilterAll
 
 	const width, height = 1440, 900
 	ops := new(op.Ops)

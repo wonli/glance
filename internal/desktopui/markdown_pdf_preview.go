@@ -6,6 +6,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"io"
@@ -23,29 +24,29 @@ func (a *App) openMarkdownPDFExportPreview(result markdownFileResult) {
 		markdownResult: result,
 	}
 	a.pdfExportPreview.resourceWarnings.Axis = layout.Vertical
-	message := "设置页面方向并预览导出效果"
-	label := "导出 PDF"
+	body := i18n.Message{ID: "markdown.pdf.preview.body"}
+	label := i18n.Message{ID: "markdown.pdf.action.export"}
 	if result.missingImages > 0 {
-		message = fmt.Sprintf("%d 张图片无法访问。仍然导出时，PDF 将保留图片名称、地址和失败原因。", result.missingImages)
-		label = "仍然导出 PDF"
+		body = i18n.Message{ID: "markdown.pdf.preview.body.with_warnings", Args: i18n.Args{"Count": result.missingImages}}
+		label = i18n.Message{ID: "markdown.pdf.action.export_with_warnings"}
 	}
-	a.modal.ShowCustom("导出 PDF 预览", message, 680, a.layoutMarkdownPDFExportPreview, func(action string) {
+	a.modal.ShowCustomMessage("markdown.pdf.preview", i18n.Message{ID: "markdown.pdf.preview.title"}, body, 680, a.layoutMarkdownPDFExportPreview, func(action string) {
 		prev := &a.pdfExportPreview
 		if action == "confirm" && prev.wordPreviewPending {
-			a.setMarkdownExportStatus("正在按所选方向重新排版，请稍后再导出")
+			a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.status.reformatting"}, feedbackInfo, notificationSuppressed, "")
 			return
 		}
 		a.modal.Hide()
 		prev.Active = false
 		if action != "confirm" {
 			v.exportPending = false
-			a.setMarkdownExportStatus("已取消导出 PDF")
+			a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.status.cancelled"}, feedbackWarning, notificationSuppressed, "")
 			return
 		}
 		a.startMarkdownPDFPicker(prev.markdownResult)
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消"}, modalDialogActionSpec{ID: "confirm", Label: label})
+	}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}}, modalDialogActionSpec{ID: "confirm", LabelRef: label})
 	a.modal.CustomActionsInLayout = true
-	a.setMarkdownExportStatus("请确认 PDF 预览和页面方向")
+	a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.status.confirm_preview"}, feedbackInfo, notificationSuppressed, "")
 }
 
 func (a *App) layoutMarkdownPDFExportPreview(gtx layout.Context) layout.Dimensions {
@@ -124,7 +125,7 @@ func (a *App) applyMarkdownPDFOrientation(result markdownFileResult) {
 	a.markdownView.exportPending = true
 	prev.wordPreviewPending = false
 	if result.err != nil {
-		a.setMarkdownExportStatus("切换 PDF 方向失败：" + result.err.Error())
+		a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.error.orientation"}, feedbackError, notificationToast, result.err.Error())
 		return
 	}
 	prev.Orientation = result.orientation

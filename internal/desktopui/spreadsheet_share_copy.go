@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 )
 
 type spreadsheetShareCopyPickerRequest struct {
@@ -33,7 +34,7 @@ func (a *App) beginSpreadsheetShareCopy(state *documentSessionState) {
 		return
 	}
 	if a.documentSessionState != state {
-		a.setStatus("工作簿已切换，共享副本导出已取消")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.share.error.document_switched"}, feedbackWarning, notificationToast)
 		return
 	}
 	var histState uint64
@@ -50,31 +51,31 @@ func (a *App) beginSpreadsheetShareCopy(state *documentSessionState) {
 
 func (a *App) startSpreadsheetShareCopyFile(request *spreadsheetShareCopyPickerRequest, path string) {
 	if request == nil || request.state == nil || request.state.book == nil || request.state.closed.Load() {
-		a.setStatus("共享副本状态已过期，请重新导出")
+		a.setStatusMessage(i18n.Message{ID: "share.copy.error.expired"}, feedbackWarning, notificationToast)
 		return
 	}
 	state := request.state
 	if a.documentSessionState != state {
-		a.setStatus("工作簿已切换，共享副本导出已取消")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.share.error.document_switched"}, feedbackWarning, notificationToast)
 		return
 	}
 	if state.formatRunning.Load() {
-		a.setStatus("工作簿在选择位置期间正在处理操作，未导出共享副本；请重试")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.share.error.operation_busy_during_picker"}, feedbackWarning, notificationToast)
 		return
 	}
 	if h, ok := state.book.(interface{ HistoryState() uint64 }); ok && h.HistoryState() != request.historyState {
-		a.setStatus("工作簿在选择位置期间已更改，未导出共享副本；请重试")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.share.error.changed_during_picker"}, feedbackWarning, notificationToast)
 		return
 	}
 	path = ensureShareCopyExtension(path, "xlsx")
 	if sameDocumentPath(path, state.path) {
-		a.setStatus("共享副本不能覆盖当前 XLSX")
+		a.setStatusMessage(i18n.Message{ID: "share.copy.error.overwrite_source", Args: i18n.Args{"Format": "XLSX"}}, feedbackError, notificationToast)
 		return
 	}
 	if a.applicationSessionRegistered(state.documentID) {
 		results, shutdown := a.spreadsheetShareCopyResults, a.shutdown
 		if results == nil {
-			a.setStatus("共享副本导出不可用")
+			a.setStatusMessage(i18n.Message{ID: "share.copy.error.unavailable"}, feedbackError, notificationToast)
 			return
 		}
 		if a.startDocumentExportCopy(state, path, state.wordRevisionAtomic.Load(), func(outputPath string, err error) {
@@ -83,7 +84,7 @@ func (a *App) startSpreadsheetShareCopyFile(request *spreadsheetShareCopyPickerR
 			case <-shutdown:
 			}
 		}) {
-			a.setStatus("正在导出共享 XLSX 副本…")
+			a.setStatusMessage(i18n.Message{ID: "share.copy.status.exporting", Args: i18n.Args{"Format": "XLSX"}}, feedbackInfo, notificationSuppressed)
 			return
 		}
 	}
@@ -91,19 +92,19 @@ func (a *App) startSpreadsheetShareCopyFile(request *spreadsheetShareCopyPickerR
 	book := state.book
 	snapshooter, ok := book.(interface{ Snapshot() ([]byte, error) })
 	if !ok {
-		a.setStatus("当前表格格式不支持导出共享副本")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.share.error.snapshot_unsupported"}, feedbackError, notificationToast)
 		return
 	}
 	histState := request.historyState
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
-		a.setStatus("文档正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "share.copy.error.operation_busy"}, feedbackWarning, notificationToast)
 		return
 	}
 	results, shutdown, window := a.spreadsheetShareCopyResults, a.shutdown, a.window
 	if results == nil {
 		state.finishOperation(token)
-		a.setStatus("共享副本导出不可用")
+		a.setStatusMessage(i18n.Message{ID: "share.copy.error.unavailable"}, feedbackError, notificationToast)
 		return
 	}
 	a.launchManagedBackground(func() {
@@ -153,7 +154,7 @@ func (a *App) startSpreadsheetShareCopyFile(request *spreadsheetShareCopyPickerR
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在导出共享 XLSX 副本…")
+	a.setStatusMessage(i18n.Message{ID: "share.copy.status.exporting", Args: i18n.Args{"Format": "XLSX"}}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) applySpreadsheetShareCopyResult(result spreadsheetShareCopyResult) {

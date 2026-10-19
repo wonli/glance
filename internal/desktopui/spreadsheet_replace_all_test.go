@@ -83,7 +83,7 @@ func TestSpreadsheetReplaceAllReplacesAllTextMatchesAsOneUndoableEdit(t *testing
 	if err != nil || other.Cells[0][0].Value != "23" {
 		t.Fatalf("other worksheet A1 = %+v, err=%v; want untouched value 23", other, err)
 	}
-	if got := a.modal.SearchReplaceSummary; !strings.HasPrefix(got, "已替换 2 个单元格") {
+	if got := a.messageText(a.modal.SearchReplaceSummaryRef, a.modal.SearchReplaceSummary); !strings.HasPrefix(got, "已替换 2 个单元格") {
 		t.Fatalf("Replace All summary = %q; want replaced-cell count and optional skipped-cell details", got)
 	}
 	if undone, err := book.Undo(); err != nil || !undone {

@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-func chooseOfficeFile() (string, error) {
+func chooseOfficeFile(labels filePickerLabels) (string, error) {
 	if _, err := exec.LookPath("zenity"); err != nil {
-		return "", fmt.Errorf("请安装 zenity，或在路径框中输入文档路径")
+		return "", fmt.Errorf("%s", labels.InstallPickerNotice)
 	}
-	output, err := exec.Command("zenity", "--file-selection", "--file-filter=Office/JSON/CSV | *.xlsx *.xls *.docx *.json *.md *.markdown *.pdf *.csv").Output()
+	output, err := exec.Command("zenity", "--file-selection", "--title="+labels.OpenDocument, "--file-filter="+labels.DocumentFilter+" | *.xlsx *.xls *.docx *.json *.md *.markdown *.pdf *.csv").Output()
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return "", nil
@@ -22,8 +22,8 @@ func chooseOfficeFile() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func chooseOfficeFolder() (string, error) {
-	output, err := exec.Command("zenity", "--file-selection", "--directory").Output()
+func chooseOfficeFolder(labels filePickerLabels) (string, error) {
+	output, err := exec.Command("zenity", "--file-selection", "--directory", "--title="+labels.OpenFolder).Output()
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return "", nil
@@ -33,8 +33,8 @@ func chooseOfficeFolder() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func chooseSavePath(ext string) (string, error) {
-	output, err := exec.Command("zenity", "--file-selection", "--save", "--confirm-overwrite", "--filename=未命名."+ext, "--file-filter=Document | *."+ext).Output()
+func chooseSavePath(ext string, labels filePickerLabels) (string, error) {
+	output, err := exec.Command("zenity", "--file-selection", "--save", "--confirm-overwrite", "--title="+labels.SaveAs, "--filename="+labels.UntitledFile+"."+ext, "--file-filter="+labels.SaveFilter+" | *."+ext).Output()
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return "", nil
@@ -44,11 +44,11 @@ func chooseSavePath(ext string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func chooseOfficeImageFile() (string, error) {
+func chooseOfficeImageFile(labels filePickerLabels) (string, error) {
 	if _, err := exec.LookPath("zenity"); err != nil {
-		return "", fmt.Errorf("请安装 zenity，或在文件选择器中选择 PNG/JPEG 图片")
+		return "", fmt.Errorf("%s", labels.ImagePickerNotice)
 	}
-	output, err := exec.Command("zenity", "--file-selection", "--file-filter=Images | *.png *.jpg *.jpeg").Output()
+	output, err := exec.Command("zenity", "--file-selection", "--title="+labels.ImagePrompt, "--file-filter="+labels.ImageFilter+" | *.png *.jpg *.jpeg").Output()
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return "", nil
@@ -58,15 +58,15 @@ func chooseOfficeImageFile() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func choosePresentationMediaFile(kind string) (string, error) {
+func choosePresentationMediaFile(kind string, labels filePickerLabels) (string, error) {
 	if _, err := exec.LookPath("zenity"); err != nil {
-		return "", fmt.Errorf("请安装 zenity，或在文件选择器中选择媒体文件")
+		return "", fmt.Errorf("%s", labels.MediaPickerNotice)
 	}
-	filter := "Audio | *.mp3 *.wav"
+	title, filter := labels.AudioPrompt, labels.AudioFilter+" | *.mp3 *.wav"
 	if kind == "video" {
-		filter = "Video | *.mp4 *.webm"
+		title, filter = labels.VideoPrompt, labels.VideoFilter+" | *.mp4 *.webm"
 	}
-	output, err := exec.Command("zenity", "--file-selection", "--file-filter="+filter).Output()
+	output, err := exec.Command("zenity", "--file-selection", "--title="+title, "--file-filter="+filter).Output()
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return "", nil

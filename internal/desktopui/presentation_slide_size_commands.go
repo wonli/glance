@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"encoding/json"
+	"glance/internal/i18n"
 	"math"
 
 	"glance/internal/application"
@@ -9,10 +10,10 @@ import (
 
 func (a *App) showPresentationSlideSizeOptions(view *presentationViewState) {
 	if view == nil || view.snapshot.SlideCount == 0 {
-		a.setStatus("未找到演示文稿")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_was_not_found_ac507e"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.Show("幻灯片大小", "调整整个演示文稿的画布。现有对象保持原 point 坐标，不会自动缩放或移动。", func(action string) {
+	a.modal.ShowMessage("presentation.slide_size", i18n.Message{ID: "presentation.slide_size.title"}, i18n.Message{ID: "presentation.slide_size.body"}, func(action string) {
 		a.modal.Hide()
 		sizes := map[string][2]float64{
 			"widescreen": {960, 540},
@@ -24,10 +25,10 @@ func (a *App) showPresentationSlideSizeOptions(view *presentationViewState) {
 		}
 		a.startPresentationSlideSizeSet(view, sizes[0], sizes[1])
 	},
-		modalDialogActionSpec{ID: "widescreen", Label: "宽屏 16:9"},
-		modalDialogActionSpec{ID: "standard", Label: "标准 4:3"},
-		modalDialogActionSpec{ID: "a4", Label: "A4 横向"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "widescreen", LabelRef: i18n.Message{ID: "presentation.slide_size.widescreen"}},
+		modalDialogActionSpec{ID: "standard", LabelRef: i18n.Message{ID: "presentation.slide_size.standard"}},
+		modalDialogActionSpec{ID: "a4", LabelRef: i18n.Message{ID: "presentation.slide_size.a4"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -39,11 +40,11 @@ type presentationSlideSizeSetArguments struct {
 func (a *App) startPresentationSlideSizeSet(view *presentationViewState, widthPT, heightPT float64) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("演示文稿能力尚未连接")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_capabilities_are_not_connecte_811cbe"}, feedbackInfo, notificationToast)
 		return true
 	}
 	if view.commandPending {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
@@ -54,7 +55,7 @@ func (a *App) startPresentationSlideSizeSet(view *presentationViewState, widthPT
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true

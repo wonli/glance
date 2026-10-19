@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"math"
 
 	"glance/internal/document"
@@ -277,9 +278,9 @@ func (a *App) applySpreadsheetZoomLocally(operation string, zoomPercent int) {
 	}
 	a.setSpreadsheetZoom(target)
 	if operation == "reset" {
-		a.setStatus("缩放比例：100%")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.zoom_100_ce4551"}, feedbackInfo, notificationSuppressed)
 	} else {
-		a.setStatus(fmt.Sprintf("缩放比例：%.0f%%", a.spreadsheetZoom()*100))
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.zoom", Args: i18n.Args{"Percent": fmt.Sprintf("%.0f", a.spreadsheetZoom()*100)}}, feedbackInfo, notificationSuppressed)
 	}
 }
 

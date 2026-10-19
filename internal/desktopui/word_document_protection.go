@@ -1,6 +1,9 @@
 package desktopui
 
-import "glance/internal/document"
+import (
+	"glance/internal/document"
+	"glance/internal/i18n"
+)
 
 type wordDocumentProtectionSetArguments struct {
 	Enabled bool `json:"enabled"`
@@ -12,7 +15,7 @@ func (a *App) runWordProtectionApplicationCommand(operation string, enabled bool
 		return false
 	}
 	if !a.runWordApplicationCommand(operation, "word.document.protection.set", wordDocumentProtectionSetArguments{Enabled: enabled}) {
-		a.setStatus("Word 文档正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "word.status.operation_busy"}, feedbackWarning, notificationToast)
 	}
 	return true
 }
@@ -33,28 +36,28 @@ func (a *App) showWordDocumentProtectionDialog() {
 	}
 
 	if protected {
-		a.modal.Show("限制编辑", "当前文档已开启编辑限制（只读保护）。\n是否解除编辑限制以允许修改？", func(action string) {
+		a.modal.ShowMessage(dialogIDWordProtection, i18n.Message{ID: "word.protection.title"}, i18n.Message{ID: "word.protection.body.unprotect"}, func(action string) {
 			a.modal.Hide()
 			if action == "unprotect" {
 				if !a.runWordProtectionApplicationCommand("解除限制编辑", false) {
-					a.setStatus("当前文档的应用命令运行时不可用，未解除编辑限制")
+					a.setStatusMessage(i18n.Message{ID: "word.protection.error.unprotect_unavailable"}, feedbackWarning, notificationToast)
 				}
 			}
 		},
-			modalDialogActionSpec{ID: "unprotect", Label: "解除限制"},
-			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+			modalDialogActionSpec{ID: "unprotect", LabelRef: i18n.Message{ID: "word.protection.action.unprotect"}},
+			modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 		)
 	} else {
-		a.modal.Show("限制编辑", "开启编辑限制后，文档将被标记为受保护（只读模式），防止误修改正文内容。\n是否开启限制编辑？", func(action string) {
+		a.modal.ShowMessage(dialogIDWordProtection, i18n.Message{ID: "word.protection.title"}, i18n.Message{ID: "word.protection.body.protect"}, func(action string) {
 			a.modal.Hide()
 			if action == "protect" {
 				if !a.runWordProtectionApplicationCommand("开启限制编辑", true) {
-					a.setStatus("当前文档的应用命令运行时不可用，未开启编辑限制")
+					a.setStatusMessage(i18n.Message{ID: "word.protection.error.protect_unavailable"}, feedbackWarning, notificationToast)
 				}
 			}
 		},
-			modalDialogActionSpec{ID: "protect", Label: "开启限制"},
-			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+			modalDialogActionSpec{ID: "protect", LabelRef: i18n.Message{ID: "word.protection.action.protect"}},
+			modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 		)
 	}
 }

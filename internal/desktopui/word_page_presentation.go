@@ -12,6 +12,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget/material"
 
+	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 )
 
@@ -40,7 +41,7 @@ func (a *App) layoutWordPages(gtx layout.Context, state *documentSessionState, p
 	result := state.wordLayoutResult
 	if result == nil && state.wordLayoutError != "" {
 		if state.wordGridlinesVisible && !state.wordReadingMode {
-			drawWordGridlines(gtx, image.Rectangle{Max: gtx.Constraints.Max})
+			drawWordGridlines(gtx, a, image.Rectangle{Max: gtx.Constraints.Max})
 		}
 		return layoutWordPageMessage(gtx, a.theme, "分页失败："+state.wordLayoutError, wordPageErrorSurface)
 	}
@@ -53,7 +54,7 @@ func (a *App) layoutWordPages(gtx layout.Context, state *documentSessionState, p
 			message = "页面数尚未计算"
 		}
 		if state.wordGridlinesVisible && !state.wordReadingMode {
-			drawWordGridlines(gtx, image.Rectangle{Max: gtx.Constraints.Max})
+			drawWordGridlines(gtx, a, image.Rectangle{Max: gtx.Constraints.Max})
 		}
 		return layoutWordPageMessage(gtx, a.theme, message, surface)
 	}
@@ -170,7 +171,7 @@ func (a *App) layoutWordPages(gtx layout.Context, state *documentSessionState, p
 		style := material.Scrollbar(a.theme, &state.wordPageListState.Scrollbar)
 		trackWidth := gtx.Dp(style.Width())
 		trackClip := clip.Rect{Min: image.Pt(max(0, gtx.Constraints.Max.X-trackWidth), 0), Max: gtx.Constraints.Max}.Push(gtx.Ops)
-		semantic.DescriptionOp("Word 页面滚动条").Add(gtx.Ops)
+		semantic.DescriptionOp(a.textID("word.accessibility.page_scrollbar")).Add(gtx.Ops)
 		trackClip.Pop()
 		gtx.Constraints.Min.X = gtx.Constraints.Max.X
 		layout.E.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -276,10 +277,10 @@ func (a *App) drawWordPageSurface(gtx layout.Context, state *documentSessionStat
 	}
 	paint.FillShape(gtx.Ops, surfaceColor, clip.Rect{Min: pageRect.Min, Max: pageRect.Max}.Op())
 	if state.wordGridlinesVisible && !state.wordReadingMode {
-		drawWordGridlines(gtx, pageRect)
+		drawWordGridlines(gtx, a, pageRect)
 	}
 	pageClip := clip.Rect{Min: pageRect.Min, Max: pageRect.Max}.Push(gtx.Ops)
-	semantic.DescriptionOp(fmt.Sprintf("Word 第 %d 页，共 %d 页", index+1, total)).Add(gtx.Ops)
+	semantic.DescriptionOp(a.textArgs("word.accessibility.page_number", i18n.Args{"Current": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(index+1)), "Total": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(total))})).Add(gtx.Ops)
 	a.drawWordPageScene(gtx, state, page, pageRect.Min, pageScale)
 	pageClip.Pop()
 }

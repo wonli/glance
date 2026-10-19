@@ -22,6 +22,7 @@ import (
 	"glance/internal/format/pdfdoc"
 	"glance/internal/format/pptx"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 )
 
 type homeSection uint8
@@ -48,6 +49,7 @@ type homeMetadataResult struct {
 type homeAction struct {
 	id        string
 	label     string
+	labelRef  i18n.Message
 	extension string
 	icon      string
 	iconColor color.NRGBA
@@ -62,13 +64,35 @@ var homeActions = []homeAction{
 	{id: "md", label: "AI Markdown", extension: ".md", icon: "file-code", iconColor: color.NRGBA{R: 133, G: 88, B: 232, A: 255}, titleSize: 13, ai: true},
 	{id: "json", label: "JSON", extension: ".json", icon: "braces", iconColor: color.NRGBA{R: 214, G: 154, B: 45, A: 255}, titleSize: 16},
 	{id: "pdf", label: "AI PDF", extension: ".pdf", icon: "file", iconColor: color.NRGBA{R: 240, G: 68, B: 69, A: 255}, titleSize: 16, ai: true},
-	{id: "open", label: "打开本地文件", extension: ".docx / .xlsx", icon: "folder-open", iconColor: color.NRGBA{R: 123, G: 134, B: 146, A: 255}, titleSize: 13},
+	{id: "open", label: "打开本地文件", labelRef: i18n.Message{ID: "home.action.open_file"}, extension: ".docx / .xlsx", icon: "folder-open", iconColor: color.NRGBA{R: 123, G: 134, B: 146, A: 255}, titleSize: 13},
 }
 
-var homeFilters = []string{"全部", "文档", "表格", "演示", "PDF", "Markdown", "JSON"}
+const (
+	homeFilterAll           = "all"
+	homeFilterDocuments     = "documents"
+	homeFilterSpreadsheets  = "spreadsheets"
+	homeFilterPresentations = "presentations"
+	homeFilterPDF           = "pdf"
+	homeFilterMarkdown      = "markdown"
+	homeFilterJSON          = "json"
+)
+
+type homeFilter struct {
+	id      string
+	message i18n.Message
+}
+
+var homeFilters = []homeFilter{
+	{id: homeFilterAll, message: i18n.Message{ID: "home.filter.all"}},
+	{id: homeFilterDocuments, message: i18n.Message{ID: "home.filter.documents"}},
+	{id: homeFilterSpreadsheets, message: i18n.Message{ID: "home.filter.spreadsheets"}},
+	{id: homeFilterPresentations, message: i18n.Message{ID: "home.filter.presentations"}},
+	{id: homeFilterPDF, message: i18n.Message{ID: "home.filter.pdf"}},
+	{id: homeFilterMarkdown, message: i18n.Message{ID: "home.filter.markdown"}},
+	{id: homeFilterJSON, message: i18n.Message{ID: "home.filter.json"}},
+}
 
 const (
-	homeSearchPlaceholder                 = "搜索文件名..."
 	homeTextOpticalCenterTopInset unit.Dp = 6
 )
 
@@ -195,7 +219,7 @@ func (a *App) layoutSettingsSidebar(gtx layout.Context) layout.Dimensions {
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Left: unit.Dp(12), Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return homeTextLabel(gtx, a.theme, "设置", 15, homeText, true)
+									return homeTextLabel(gtx, a.theme, a.text(i18n.Message{ID: "settings.sidebar.title"}), 15, homeText, true)
 								})
 							}),
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -224,11 +248,16 @@ func (a *App) layoutSettingsSidebar(gtx layout.Context) layout.Dimensions {
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return a.layoutSettingsNavItem(gtx, "providers", "AI 提供商", "bot")
+						return a.layoutSettingsNavItem(gtx, "basic", a.text(i18n.Message{ID: "settings.nav.basic"}), "settings-2")
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return a.layoutSettingsNavItem(gtx, "mcp", "MCP 连接", "plug")
+							return a.layoutSettingsNavItem(gtx, "providers", a.text(i18n.Message{ID: "settings.nav.providers"}), "bot")
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return a.layoutSettingsNavItem(gtx, "mcp", a.text(i18n.Message{ID: "settings.nav.mcp"}), "plug")
 						})
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
@@ -329,21 +358,21 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 					}),
 					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return a.layoutHomeNavRow(gtx, "recent", "clock-3", "最近", len(a.homeVisibleRecents(false)), a.homeSection == homeSectionRecent)
+							return a.layoutHomeNavRow(gtx, "recent", "clock-3", a.text(i18n.Message{ID: "home.nav.recent"}), len(a.homeVisibleRecents(false)), a.homeSection == homeSectionRecent)
 						})
 					}),
 					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return a.layoutHomeNavRow(gtx, "favorites", "star-outline", "收藏", len(a.homeFavorites), a.homeSection == homeSectionFavorites)
+							return a.layoutHomeNavRow(gtx, "favorites", "star-outline", a.text(i18n.Message{ID: "home.nav.favorites"}), len(a.homeFavorites), a.homeSection == homeSectionFavorites)
 						})
 					}),
 					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return a.layoutHomeNavRow(gtx, "ai-assistant", "sparkles", "AI 助手", -1, a.homeSection == homeSectionAIAssistant)
+							return a.layoutHomeNavRow(gtx, "ai-assistant", "sparkles", a.text(i18n.Message{ID: "home.nav.assistant"}), -1, a.homeSection == homeSectionAIAssistant)
 						})
 					}),
 					trackedRigid(func(gtx layout.Context) layout.Dimensions {
-						return a.layoutHomeNavRow(gtx, "agent-settings", "settings-2", "设置", -1, a.homeSection == homeSectionSettings)
+						return a.layoutHomeNavRow(gtx, "agent-settings", "settings-2", a.text(i18n.Message{ID: "home.nav.settings"}), -1, a.homeSection == homeSectionSettings)
 					}),
 					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(18), Bottom: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -360,7 +389,7 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 										gtx.Constraints.Min.Y = 0
 										return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											return homeTextLabel(gtx, a.theme, "文件夹", 14, color.NRGBA{R: 125, G: 135, B: 146, A: 255}, true)
+											return homeTextLabel(gtx, a.theme, a.text(i18n.Message{ID: "home.folder.title"}), 14, color.NRGBA{R: 125, G: 135, B: 146, A: 255}, true)
 										})
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -590,7 +619,7 @@ func (a *App) layoutHomeGreeting(gtx layout.Context) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(78))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	gtx.Execute(op.InvalidateCmd{At: nextHomeGreetingChange(gtx.Now)})
-	style := material.H4(a.theme, homeGreetingForTime(gtx.Now)+"\n今天想创建点什么？")
+	style := material.H4(a.theme, a.text(homeGreetingMessageForTime(gtx.Now))+"\n"+a.text(i18n.Message{ID: "home.greeting.prompt"}))
 	style.TextSize = a.tokens().Typography.Display
 	style.LineHeightScale = 1.15
 	style.MaxLines = 2
@@ -610,18 +639,18 @@ func nextHomeGreetingChange(now time.Time) time.Time {
 	return time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 0, 0, 0, 0, now.Location())
 }
 
-func homeGreetingForTime(now time.Time) string {
+func homeGreetingMessageForTime(now time.Time) i18n.Message {
 	switch hour := now.Hour(); {
 	case hour < 5:
-		return "凌晨好"
+		return i18n.Message{ID: "home.greeting.early"}
 	case hour < 12:
-		return "早上好"
+		return i18n.Message{ID: "home.greeting.morning"}
 	case hour < 14:
-		return "中午好"
+		return i18n.Message{ID: "home.greeting.noon"}
 	case hour < 18:
-		return "下午好"
+		return i18n.Message{ID: "home.greeting.afternoon"}
 	default:
-		return "晚上好"
+		return i18n.Message{ID: "home.greeting.evening"}
 	}
 }
 
@@ -700,6 +729,7 @@ func (a *App) homeActionCardChild(item homeAction, cardWidth, outerWidth int, wi
 }
 
 func (a *App) layoutHomeActionCard(gtx layout.Context, item homeAction) layout.Dimensions {
+	item.label = a.messageText(item.labelRef, item.label)
 	button := a.homeActionButtons[item.id]
 	if button == nil {
 		button = new(widget.Clickable)
@@ -716,7 +746,7 @@ func (a *App) handleHomeAction(id string) {
 	case "docx":
 		word, err := docx.NewBlank()
 		if err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "home.create.error.failed"}, err, notificationToast)
 			return
 		}
 		_ = a.installDocument(loadedDocument{word: word})
@@ -730,18 +760,18 @@ func (a *App) handleHomeAction(id string) {
 	case "pptx":
 		doc, err := pptx.NewBlank()
 		if err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "home.create.error.failed"}, err, notificationToast)
 			return
 		}
 		_ = a.installDocument(loadedDocument{pptxDoc: doc})
 	case "md":
 		_ = a.installDocument(loadedDocument{markdownDoc: markdowndoc.NewBlank()})
 	case "html":
-		a.setStatus("HTML 创建功能尚未开放")
+		a.setStatusMessage(i18n.Message{ID: "home.create.error.not_available"}, feedbackWarning, notificationToast)
 	case "pdf":
 		doc, err := pdfdoc.NewBlank()
 		if err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "home.create.error.failed"}, err, notificationToast)
 			return
 		}
 		_ = a.installDocument(loadedDocument{pdfDoc: doc})

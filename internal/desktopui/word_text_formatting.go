@@ -3,6 +3,7 @@ package desktopui
 import (
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"math"
 	"strconv"
 )
@@ -14,7 +15,7 @@ func (a *App) toggleWordTextStyle(property string) {
 	}
 	if start, end, selected := wordTextFormattingSelection(state); selected {
 		if _, ok := any(state.word).(document.WordTextSelectionFormatter); !ok {
-			a.setStatus("当前 DOCX 适配器不支持选中文字格式")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.formatting_selected_text_is_not_da448e"}, feedbackWarning, notificationToast)
 			return
 		}
 		run, ok := firstSelectedWordTextRun(state, start, end)
@@ -100,7 +101,7 @@ func (a *App) queueWordSelectionStyle(state *documentSessionState, start, end wo
 	if draft := state.wordSelectionInputDraft; draft != nil {
 		if editor := state.wordRunEditors[draft.runID]; editor != nil {
 			if editorHasActiveComposition(editor) {
-				a.setStatus("请先完成中文输入，再设置文字格式")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.finish_chinese_input_composition_before_fb60d3"}, feedbackWarning, notificationToast)
 				return false
 			}
 			if editor.Text() != draft.text {
@@ -115,7 +116,7 @@ func (a *App) queueWordSelectionStyle(state *documentSessionState, start, end wo
 	for id, editor := range state.wordRunEditors {
 		if editorHasActiveComposition(editor) {
 			state.wordSelectionEditIntent = nil
-			a.setStatus("请先完成中文输入，再设置文字格式")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.finish_chinese_input_composition_before_fb60d3"}, feedbackWarning, notificationToast)
 			return false
 		}
 		captureWordEditorDraft(state, id, editor.Text())
@@ -320,6 +321,14 @@ func selectedWordFontSizeDisplay(state *documentSessionState) string {
 	return wordFontSizeDisplayName(size)
 }
 
+func (a *App) localizedSelectedWordFontSizeDisplay(state *documentSessionState) string {
+	size := selectedWordFontSize(state)
+	if a.localeSnapshot().Resolved == i18n.LocaleChinese {
+		return wordFontSizeDisplayName(size)
+	}
+	return strconv.FormatFloat(size, 'f', -1, 64)
+}
+
 func (a *App) setWordFontSize(points float64) {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
@@ -411,7 +420,7 @@ func (a *App) toggleWordFormatPainter() {
 		state.wordFormatPainterActive = false
 		state.wordFormatPainterSourceRunID = ""
 		clearWordFormatPainterTarget(state)
-		a.setStatus("格式刷已取消")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.format_painter_canceled_cab564"}, feedbackInfo, notificationToast)
 		return
 	}
 	run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
@@ -424,7 +433,7 @@ func (a *App) toggleWordFormatPainter() {
 	state.wordFormatPainterSourceRunID = run.ID
 	state.wordFormatPainterActive = true
 	clearWordFormatPainterTarget(state)
-	a.setStatus("已启动格式刷；单击目标文字应用，页面视图可拖选范围应用")
+	a.setStatusMessage(i18n.Message{ID: "word.status.inline.format_painter_is_active_click_987771"}, feedbackSuccess, notificationToast)
 }
 
 func (a *App) queueWordFormatPainterTarget(paragraphID, runID string) {
@@ -566,7 +575,7 @@ func (a *App) startWordFormatPainter() {
 		if !wordFormatPainterSelectionStillMatches(state, startRunID, startOffset, endRunID, endOffset, selectionText) {
 			state.wordFormatPainterSourceRunID = ""
 			clearWordFormatPainterTarget(state)
-			a.setStatus("目标文字已变化，请重新选择后使用格式刷")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_target_text_changed_select_8a6a5c"}, feedbackWarning, notificationToast)
 			return
 		}
 		if selectedPainter, ok := any(state.word).(document.WordTextSelectionFormatPainter); ok {
@@ -591,7 +600,7 @@ func (a *App) startWordFormatPainter() {
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
 		return
 	}
-	a.setStatus("正在应用格式刷")
+	a.setStatusMessage(i18n.Message{ID: "word.status.inline.applying_format_painter_cb3668"}, feedbackInfo, notificationToast)
 	generation := a.documentGeneration
 	a.launchManagedBackground(func() {
 		blocks, err := runWordMutation(state, apply)
@@ -637,7 +646,7 @@ func (a *App) setWordAlignment(actionID string) {
 	}
 	paragraphIDs := wordParagraphIDsForSelection(state)
 	if len(paragraphIDs) == 0 {
-		a.setStatus("请先将光标放在可编辑的 Word 段落中")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.place_the_caret_in_an_75475b"}, feedbackWarning, notificationToast)
 		return
 	}
 	alignment := map[string]document.WordAlignment{"align-left": document.WordAlignLeft, "align-center": document.WordAlignCenter, "align-right": document.WordAlignRight, "align-justify": document.WordAlignJustified}[actionID]

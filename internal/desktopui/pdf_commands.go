@@ -8,6 +8,7 @@ import (
 	"gioui.org/layout"
 	"glance/internal/application"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"io"
 	"math"
 	"strconv"
@@ -25,7 +26,7 @@ func (a *App) startPDFCommand(c document.PDFCommand) bool {
 	}
 	runtime := a.ensureDesktopRuntime()
 	if runtime.applicationRuntimeErr != nil || runtime.applicationRuntime == nil {
-		a.setStatus("PDF Agent 能力目录不可用")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_pdf_agent_capability_catalog_is_unavai_c1dcaf"}, feedbackWarning, notificationToast)
 		return false
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
@@ -34,13 +35,13 @@ func (a *App) startPDFCommand(c document.PDFCommand) bool {
 	}
 	if c.Revision != 0 && c.Revision != token.revision {
 		state.finishOperation(token)
-		a.setStatus("PDF 页面已更新，请重新选择后再操作")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_pdf_page_changed_select_the_text_again_901e07"}, feedbackInfo, notificationSuppressed)
 		return false
 	}
 	capabilityID, arguments, err := pdfCommandCapability(c)
 	if err != nil {
 		state.finishOperation(token)
-		a.setStatus("PDF 操作无效：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "pdf.error.operation_failed"}, err, notificationToast)
 		return false
 	}
 	encoded, err := json.Marshal(arguments)
@@ -90,7 +91,7 @@ func (a *App) startPDFCommand(c document.PDFCommand) bool {
 		}
 		result := pdfPageResult{mutation: changed, err: e, info: state.pdfDoc.Info()}
 		if e == nil && !changed {
-			result.notice = "PDF 操作没有产生更改"
+			result.notice = i18n.Message{ID: "pdf.status.no_change"}
 		}
 		select {
 		case v.results <- result:
@@ -173,7 +174,7 @@ func (a *App) pdfTextDialog(kind string) {
 		x, y = t.Bounds.X, t.Bounds.Y
 		if kind == "replace" {
 			if !t.Editable {
-				a.setStatus("此文字暂不支持原位编辑")
+				a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.this_text_cannot_be_edited_in_place_yet_f672e7"}, feedbackWarning, notificationToast)
 				return
 			}
 			initial = t.Text
@@ -183,15 +184,20 @@ func (a *App) pdfTextDialog(kind string) {
 		return
 	}
 
-	a.showPDFDraft(document.PDFCommand{Kind: kind, Page: p.Index, Revision: p.Revision, Run: run, Text: initial, X: x, Y: y}, "确认后更新当前页面；取消不修改文档。")
+	a.showPDFDraft(document.PDFCommand{Kind: kind, Page: p.Index, Revision: p.Revision, Run: run, Text: initial, X: x, Y: y})
 }
-func (a *App) showPDFDraft(command document.PDFCommand, message string) {
-	title := "添加批注"
+
+func (a *App) showPDFDraft(command document.PDFCommand) {
+	title := i18n.Message{ID: "pdf.annotation.dialog.title"}
 	if command.Kind == "replace" {
-		title = "编辑 PDF 文字"
+		title = i18n.Message{ID: "pdf.text.replace.dialog.title"}
 	}
 	state := a.documentSessionState
-	a.modal.ShowInput(title, message, command.Text, "输入内容", func(action string) {
+	dialogID := "pdf.annotation.draft"
+	if command.Kind == "replace" {
+		dialogID = "pdf.text.replace"
+	}
+	a.modal.ShowInputMessage(dialogID, title, i18n.Message{ID: "pdf.draft.dialog.body"}, command.Text, i18n.Message{ID: "pdf.draft.dialog.hint"}, func(action string) {
 		if action != "confirm" {
 			a.modal.Hide()
 			return
@@ -203,9 +209,9 @@ func (a *App) showPDFDraft(command document.PDFCommand, message string) {
 		if a.startPDFCommand(command) {
 			a.modal.Hide()
 		} else {
-			a.modal.Message = "文档正在处理，请稍后重试；输入已保留。"
+			a.modal.SetMessageRef(i18n.Message{ID: "pdf.draft.error.busy"})
 		}
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消"}, modalDialogActionSpec{ID: "confirm", Label: "应用", Style: modalDialogActionPrimary})
+	}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}, Style: modalDialogActionPrimary})
 }
 
 type handlePDFActionSetToolArguments struct {
@@ -409,7 +415,7 @@ func (a *App) startPDFSearch() {
 					break
 				}
 				if result.PageContentTruncated {
-					r.notice = "搜索范围内页面内容达到读取上限，结果可能不完整"
+					r.notice = i18n.Message{ID: "pdf.status.search_limit_reached"}
 					break
 				}
 				if result.TotalPages < 1 {
@@ -418,14 +424,14 @@ func (a *App) startPDFSearch() {
 				}
 				first += pageLimit
 			}
-			if r.err != nil || len(r.search) > 0 || r.notice != "" {
+			if r.err != nil || len(r.search) > 0 || r.notice.ID != "" {
 				break
 			}
 		}
 		if len(r.search) == 0 && r.err == nil {
-			if r.notice == "" {
+			if r.notice.ID == "" {
 				r.err = fmt.Errorf("未找到 %q", query)
-				r.notice = "搜索完成"
+				r.notice = i18n.Message{ID: "pdf.status.search_complete"}
 			}
 		}
 		r.info = d.Info()
@@ -450,21 +456,25 @@ func (a *App) printCurrentPDF() {
 	}
 	state := a.documentSessionState
 	if state == nil || state.pdfDoc == nil || state.closed.Load() {
-		v.message = "PDF 文档会话不可用"
+		v.messageRef = i18n.Message{ID: "pdf.error.session_unavailable"}
+		v.message = ""
 		return
 	}
 	if a.nativePrinter == nil || !a.nativePrinter.Available() {
-		v.message = "当前平台不支持原生打印"
+		v.messageRef = i18n.Message{ID: "pdf.error.native_print_unsupported"}
+		v.message = ""
 		return
 	}
 	runtime := a.ensureDesktopRuntime()
 	if runtime.applicationRuntimeErr != nil || runtime.applicationRuntime == nil || !a.applicationSessionRegistered(state.documentID) {
-		v.message = "PDF 应用运行时不可用，无法通过共享打印能力执行"
+		v.messageRef = i18n.Message{ID: "pdf.error.runtime_unavailable"}
+		v.message = ""
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		v.message = "PDF 文档正在处理其他操作，请稍后重试"
+		v.messageRef = i18n.Message{ID: "pdf.error.operation_in_progress"}
+		v.message = ""
 		return
 	}
 	v.pending = true
@@ -498,7 +508,7 @@ func (a *App) printCurrentPDF() {
 			if decodeErr := json.Unmarshal(invocation.Data, &printed); decodeErr != nil || printed.Status != "sent_to_system_print_queue" || printed.PrintedRevision != token.revision {
 				result.err = application.ErrInvalidCommandResult
 			} else {
-				result.notice = fmt.Sprintf("已将 PDF 修订版本 r%d 发送到系统打印服务", printed.PrintedRevision)
+				result.notice = i18n.Message{ID: "pdf.status.print_sent", Args: i18n.Args{"Revision": printed.PrintedRevision}}
 			}
 		}
 		state.finishOperation(token)

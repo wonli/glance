@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"sort"
 
 	"gioui.org/io/key"
@@ -60,17 +61,17 @@ func (a *App) queueWordParagraphSplit(runID, value string, selectionStart, selec
 		selectionStart, selectionEnd = selectionEnd, selectionStart
 	}
 	if _, _, valid := wordTextAroundSelection(value, selectionStart, selectionEnd); !valid {
-		a.setStatus("无法按当前光标位置拆分段落，请重试")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_split_the_paragraph_c61e5a"}, feedbackWarning, notificationToast)
 		return
 	}
 	boundaryInsert, insertBefore := wordParagraphBoundaryForEnter(state, runID, value, selectionStart, selectionEnd)
 	if boundaryInsert {
 		if _, ok := any(state.word).(document.WordParagraphBoundaryEditor); !ok {
-			a.setStatus("当前 DOCX 适配器不支持在段落边界插入段落")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserting_a_paragraph_at_a_550718"}, feedbackWarning, notificationToast)
 			return
 		}
 	} else if _, ok := any(state.word).(document.WordParagraphEditor); !ok {
-		a.setStatus("当前 DOCX 适配器不支持按光标拆分段落")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.splitting_a_paragraph_at_the_8c89b9"}, feedbackWarning, notificationToast)
 		return
 	}
 	state.wordParagraphSplitIntent = &wordParagraphSplitIntent{
@@ -99,7 +100,7 @@ func (a *App) queueWordParagraphJoin(runID string, value string, direction docum
 		return
 	}
 	if _, ok := any(state.word).(document.WordParagraphJoiner); !ok {
-		a.setStatus("当前 DOCX 适配器不支持合并段落")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.paragraph_merging_is_not_supported_9365e5"}, feedbackWarning, notificationToast)
 		return
 	}
 	state.wordParagraphJoinIntent = &wordParagraphJoinIntent{runID: runID, direction: direction}
@@ -264,7 +265,7 @@ func (a *App) startNextWordTextCommitFor(state *documentSessionState) {
 		state.wordFlushAllDrafts.Store(false)
 		state.clearPendingWordRestore()
 		state.wordParagraphJoinIntent = nil
-		a.setStatus("当前 DOCX 适配器不支持原位文字编辑")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.in_place_text_editing_is_712956"}, feedbackWarning, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
@@ -309,8 +310,7 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 		}
 		if !a.startRestoreWordVersionAfterDrafts(state, versionID) {
 			state.releaseWordRestoreClaim()
-			message := "恢复历史版本已取消，无法开始恢复，请重试"
-			a.publishWordRestoreNotice(state, message)
+			a.publishWordRestoreNoticeMessage(state, i18n.Message{ID: "word.history.error.restore_start_failed"})
 		}
 		return
 	}
@@ -373,7 +373,7 @@ func (a *App) startWordParagraphJoin(state *documentSessionState) {
 		state.wordParagraphJoinIntent = nil
 		state.wordFlushRequested.Store(false)
 		state.wordFlushAllDrafts.Store(false)
-		a.setStatus("当前 DOCX 适配器不支持合并段落")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.paragraph_merging_is_not_supported_9365e5"}, feedbackWarning, notificationToast)
 		return
 	}
 	intent := *state.wordParagraphJoinIntent
@@ -413,7 +413,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 	state.formatRunning.Store(false)
 	if result.err != nil {
 		if active {
-			a.setStatus(wordCommandError(result.operation, result.err))
+			a.setWordCommandStatus(result.err)
 			a.finishWordTextFlush(state)
 		}
 		return
@@ -426,7 +426,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 	run, ok := selectedWordRun(wordBlocksForState(state), result.joinRunID)
 	if !ok || !run.Editable {
 		if active {
-			a.setStatus("段落已合并，但无法定位接缝文字")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.paragraphs_were_merged_but_the_68d513"}, feedbackWarning, notificationToast)
 			a.finishWordTextFlush(state)
 		}
 		return
@@ -443,7 +443,7 @@ func (a *App) completeWordParagraphJoin(result wordCommandResult, active bool) {
 	state.selectedBlockEditable = true
 	if active {
 		state.wordPendingFocusRunID = run.ID
-		a.setStatus("正在编辑 Word 正文")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.editing_word_document_text_556c9c"}, feedbackInfo, notificationSuppressed)
 		a.persistActiveSession()
 	} else {
 		state.wordPendingFocusRunID = ""
@@ -459,7 +459,7 @@ func (a *App) startWordParagraphSplit(state *documentSessionState) {
 	prefix, suffix, valid := wordTextAroundSelection(intent.value, intent.selectionStart, intent.selectionEnd)
 	if !valid {
 		state.wordParagraphSplitIntent = nil
-		a.setStatus("无法按当前光标位置拆分段落，请重试")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_split_the_paragraph_c61e5a"}, feedbackWarning, notificationToast)
 		return
 	}
 	var splitter document.WordParagraphEditor
@@ -468,14 +468,14 @@ func (a *App) startWordParagraphSplit(state *documentSessionState) {
 		boundaryEditor, _ = any(state.word).(document.WordParagraphBoundaryEditor)
 		if boundaryEditor == nil {
 			state.wordParagraphSplitIntent = nil
-			a.setStatus("当前 DOCX 适配器不支持在段落边界插入段落")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserting_a_paragraph_at_a_550718"}, feedbackWarning, notificationToast)
 			return
 		}
 	} else {
 		splitter, _ = any(state.word).(document.WordParagraphEditor)
 		if splitter == nil {
 			state.wordParagraphSplitIntent = nil
-			a.setStatus("当前 DOCX 适配器不支持按光标拆分段落")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.splitting_a_paragraph_at_the_8c89b9"}, feedbackWarning, notificationToast)
 			return
 		}
 	}
@@ -588,7 +588,7 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult, active bool) 
 			}
 		}
 		if active {
-			a.setStatus(wordCommandError(result.operation, result.err))
+			a.setWordCommandStatus(result.err)
 		}
 		return
 	}
@@ -605,7 +605,7 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult, active bool) 
 		paragraph, ok := wordParagraphAfter(wordBlocksForState(state), result.splitParagraphID)
 		if !ok || len(paragraph.Inlines) == 0 || paragraph.Inlines[0].Text == nil || !paragraph.Inlines[0].Text.Editable {
 			if active {
-				a.setStatus("段落已插入，但无法定位原段落")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.a_paragraph_was_inserted_but_5bf62a"}, feedbackWarning, notificationToast)
 				a.persistActiveSession()
 			}
 			return
@@ -633,7 +633,7 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult, active bool) 
 		state.wordPageFocusedMetaRevision = state.wordRevisionAtomic.Load()
 		state.wordPageFocusedParagraph = paragraph
 		if active {
-			a.setStatus("正在编辑 Word 正文")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.editing_word_document_text_556c9c"}, feedbackInfo, notificationSuppressed)
 			a.persistActiveSession()
 		} else {
 			state.wordPendingFocusRunID = ""
@@ -650,9 +650,9 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult, active bool) 
 	if !ok {
 		if active {
 			if intent != nil && intent.boundaryInsert {
-				a.setStatus("段落已插入，但无法定位新段落文字")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.a_paragraph_was_inserted_but_3e5154"}, feedbackWarning, notificationToast)
 			} else {
-				a.setStatus("段落已拆分，但无法定位后续文字")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_paragraph_was_split_but_95dfae"}, feedbackWarning, notificationToast)
 			}
 			a.persistActiveSession()
 		}
@@ -669,7 +669,7 @@ func (a *App) completeWordParagraphSplit(result wordCommandResult, active bool) 
 	state.selectedBlockEditable = true
 	state.wordPendingFocusRunID = result.splitRunID
 	if active {
-		a.setStatus("正在编辑 Word 正文")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.editing_word_document_text_556c9c"}, feedbackInfo, notificationSuppressed)
 		a.persistActiveSession()
 	} else {
 		state.wordPendingFocusRunID = ""

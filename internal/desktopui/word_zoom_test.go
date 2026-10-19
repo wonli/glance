@@ -23,8 +23,8 @@ func TestWordRibbonZoomDialogAppliesPercentAndRejectsOutOfRange(t *testing.T) {
 	}
 
 	app.executeWordToolbarAction(action.id)
-	if !app.modal.Visible || app.modal.Title != "缩放" || !app.modal.HasInput || app.modal.Input.Text() != "100" {
-		t.Fatalf("Zoom dialog = visible:%v title:%q input:%q hasInput:%v", app.modal.Visible, app.modal.Title, app.modal.Input.Text(), app.modal.HasInput)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "缩放" || !app.modal.HasInput || app.modal.Input.Text() != "100" {
+		t.Fatalf("Zoom dialog = visible:%v title:%q input:%q hasInput:%v", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title), app.modal.Input.Text(), app.modal.HasInput)
 	}
 	app.modal.Input.SetText("125%")
 	app.modal.OnAction("confirm")
@@ -35,8 +35,8 @@ func TestWordRibbonZoomDialogAppliesPercentAndRejectsOutOfRange(t *testing.T) {
 	app.executeWordToolbarAction(action.id)
 	app.modal.Input.SetText("200")
 	app.modal.OnAction("confirm")
-	if !app.modal.Visible || state.wordLayoutZoom != 1.25 || !strings.Contains(app.status, "50–150") {
-		t.Fatalf("out-of-range zoom: modal visible=%v zoom=%.2f status=%q", app.modal.Visible, state.wordLayoutZoom, app.status)
+	if !app.modal.Visible || state.wordLayoutZoom != 1.25 || !strings.Contains(app.statusText(), "50–150") {
+		t.Fatalf("out-of-range zoom: modal visible=%v zoom=%.2f status=%q", app.modal.Visible, state.wordLayoutZoom, app.statusText())
 	}
 	app.modal.OnAction("cancel")
 	if app.modal.Visible || state.wordLayoutZoom != 1.25 {

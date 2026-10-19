@@ -144,7 +144,7 @@ func (a *App) layoutModalInputs(gtx layout.Context) layout.Dimensions {
 				bottom = unit.Dp(10)
 			}
 			return layout.Inset{Bottom: bottom}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layoutModalInputField(gtx, a.theme, &a.modal.Input, a.modal.InputHint)
+				return layoutModalInputField(gtx, a.theme, &a.modal.Input, a.messageText(a.modal.InputHintRef, a.modal.InputHint))
 			})
 		}))
 	}
@@ -155,7 +155,7 @@ func (a *App) layoutModalInputs(gtx layout.Context) layout.Dimensions {
 				bottom = unit.Dp(10)
 			}
 			return layout.Inset{Bottom: bottom}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layoutModalInputField(gtx, a.theme, &a.modal.SecondInput, a.modal.SecondInputHint)
+				return layoutModalInputField(gtx, a.theme, &a.modal.SecondInput, a.messageText(a.modal.SecondInputHintRef, a.modal.SecondInputHint))
 			})
 		}))
 	}
@@ -170,14 +170,14 @@ func (a *App) layoutModalInputs(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Bottom: bottom}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							label := material.Caption(a.theme, a.modal.FormLabels[fieldIndex])
+							label := material.Caption(a.theme, a.messageText(a.modal.FormLabelRefs[fieldIndex], a.modal.FormLabels[fieldIndex]))
 							label.TextSize = a.tokens().Typography.Secondary
 							label.Font.Weight = font.SemiBold
 							label.Color = color.NRGBA{R: 78, G: 87, B: 98, A: 255}
 							return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, label.Layout)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layoutModalInputField(gtx, a.theme, &a.modal.FormInputs[fieldIndex], a.modal.FormHints[fieldIndex])
+							return layoutModalInputField(gtx, a.theme, &a.modal.FormInputs[fieldIndex], a.messageText(a.modal.FormHintRefs[fieldIndex], a.modal.FormHints[fieldIndex]))
 						}),
 					)
 				})
@@ -226,7 +226,7 @@ func (a *App) layoutConfirmDialogHeader(gtx layout.Context) layout.Dimensions {
 	titleSection := func(gtx layout.Context) layout.Dimensions {
 		children := []layout.FlexChild{
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				label := material.Body1(a.theme, a.modal.Title)
+				label := material.Body1(a.theme, a.messageText(a.modal.TitleRef, a.modal.Title))
 				label.TextSize = a.tokens().Typography.Heading
 				label.Color = color.NRGBA{R: 31, G: 37, B: 45, A: 255}
 				label.Font.Weight = font.SemiBold
@@ -234,10 +234,11 @@ func (a *App) layoutConfirmDialogHeader(gtx layout.Context) layout.Dimensions {
 				return label.Layout(gtx)
 			}),
 		}
-		if a.modal.Message != "" {
+		message := a.messageText(a.modal.MessageRef, a.modal.Message)
+		if message != "" {
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					label := material.Body2(a.theme, a.modal.Message)
+					label := material.Body2(a.theme, message)
 					label.TextSize = a.tokens().Typography.Body
 					label.Color = color.NRGBA{R: 104, G: 113, B: 124, A: 255}
 					return label.Layout(gtx)
@@ -288,6 +289,7 @@ func (a *App) layoutConfirmDialogIcon(gtx layout.Context) layout.Dimensions {
 func (a *App) layoutConfirmDialogActions(gtx layout.Context) layout.Dimensions {
 	actions := make([]*modalDialogAction, 0, len(a.modal.Actions))
 	for i := range a.modal.Actions {
+		a.modal.Actions[i].Label = a.messageText(a.modal.Actions[i].LabelRef, a.modal.Actions[i].Label)
 		actions = append(actions, &a.modal.Actions[i])
 	}
 	return a.layoutModalActionButtons(gtx, actions, 10)

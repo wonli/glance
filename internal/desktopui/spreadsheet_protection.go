@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"encoding/json"
+	"glance/internal/i18n"
 
 	"glance/internal/document"
 )
@@ -67,7 +68,7 @@ func (a *App) showSpreadsheetProtectSheetDialog() {
 	isProtected, _ := editor.GetSheetProtection(sheet)
 
 	if isProtected {
-		a.modal.ShowInput("撤销保护工作表", "当前工作表已受保护。\n若设置了密码请输入密码（无密码直接确定）：", "", "密码（可选）", func(action string) {
+		a.modal.ShowInputMessage("spreadsheet.protection.sheet", i18n.Message{ID: "spreadsheet.protection.dialog.unprotect_sheet.title"}, i18n.Message{ID: "spreadsheet.protection.dialog.unprotect_sheet.body"}, "", i18n.Message{ID: "spreadsheet.protection.dialog.password_hint"}, func(action string) {
 			pwd := a.modal.Input.Text()
 			a.modal.Hide()
 			if action != "confirm" {
@@ -76,13 +77,13 @@ func (a *App) showSpreadsheetProtectSheetDialog() {
 			a.runSpreadsheetProtectionCommand("撤销保护工作表", "sheet", spreadsheetprotectionGoScopeSheetArguments{Scope: "sheet", Sheet: sheet, Enabled: false, Password: pwd}, func(ed document.SpreadsheetProtectionEditor) error {
 				return ed.UnprotectSheet(sheet, pwd)
 			})
-			a.setStatus("已撤销工作表保护")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.worksheet_protection_removed_a314d5"}, feedbackSuccess, notificationToast)
 		},
-			modalDialogActionSpec{ID: "confirm", Label: "撤销保护"},
-			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+			modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "spreadsheet.protection.action.unprotect"}},
+			modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 		)
 	} else {
-		a.modal.ShowInput("保护工作表", "保护工作表可防止其他用户更改工作表中的数据。\n可设置保护密码（可选，留空无密码）：", "", "密码（可选）", func(action string) {
+		a.modal.ShowInputMessage("spreadsheet.protection.sheet", i18n.Message{ID: "spreadsheet.protection.dialog.protect_sheet.title"}, i18n.Message{ID: "spreadsheet.protection.dialog.protect_sheet.body"}, "", i18n.Message{ID: "spreadsheet.protection.dialog.password_hint"}, func(action string) {
 			pwd := a.modal.Input.Text()
 			a.modal.Hide()
 			if action != "confirm" {
@@ -91,10 +92,10 @@ func (a *App) showSpreadsheetProtectSheetDialog() {
 			a.runSpreadsheetProtectionCommand("保护工作表", "sheet", spreadsheetprotectionGoScopeSheetArguments{Scope: "sheet", Sheet: sheet, Enabled: true, Password: pwd}, func(ed document.SpreadsheetProtectionEditor) error {
 				return ed.ProtectSheet(sheet, pwd)
 			})
-			a.setStatus("已保护工作表")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.worksheet_protection_enabled_a6ecf1"}, feedbackSuccess, notificationToast)
 		},
-			modalDialogActionSpec{ID: "confirm", Label: "保护工作表"},
-			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+			modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "spreadsheet.protection.action.protect_sheet"}},
+			modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 		)
 	}
 }
@@ -158,7 +159,7 @@ func (a *App) showSpreadsheetProtectWorkbookDialog() {
 	isProtected, _ := editor.GetWorkbookProtection()
 
 	if isProtected {
-		a.modal.ShowInput("撤销保护工作簿", "当前工作簿已受保护。\n若设置了密码请输入密码（无密码直接确定）：", "", "密码（可选）", func(action string) {
+		a.modal.ShowInputMessage("spreadsheet.protection.workbook", i18n.Message{ID: "spreadsheet.protection.dialog.unprotect_workbook.title"}, i18n.Message{ID: "spreadsheet.protection.dialog.unprotect_workbook.body"}, "", i18n.Message{ID: "spreadsheet.protection.dialog.password_hint"}, func(action string) {
 			pwd := a.modal.Input.Text()
 			a.modal.Hide()
 			if action != "confirm" {
@@ -167,13 +168,13 @@ func (a *App) showSpreadsheetProtectWorkbookDialog() {
 			a.runSpreadsheetWorkbookProtectionCommand("撤销保护工作簿", spreadsheetprotectionGoScopeEnabledArguments{Scope: "workbook", Enabled: false, Password: pwd}, func(ed document.SpreadsheetWorkbookProtectionEditor) error {
 				return ed.UnprotectWorkbook(pwd)
 			})
-			a.setStatus("已撤销工作簿保护")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.workbook_protection_removed_aabf48"}, feedbackSuccess, notificationToast)
 		},
-			modalDialogActionSpec{ID: "confirm", Label: "撤销保护"},
-			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+			modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "spreadsheet.protection.action.unprotect"}},
+			modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 		)
 	} else {
-		a.modal.ShowInput("保护工作簿", "保护工作簿结构可防止其他用户查看隐藏的工作表、添加、移动、删除或重命名工作表。\n可设置保护密码（可选，留空无密码）：", "", "密码（可选）", func(action string) {
+		a.modal.ShowInputMessage("spreadsheet.protection.workbook", i18n.Message{ID: "spreadsheet.protection.dialog.protect_workbook.title"}, i18n.Message{ID: "spreadsheet.protection.dialog.protect_workbook.body"}, "", i18n.Message{ID: "spreadsheet.protection.dialog.password_hint"}, func(action string) {
 			pwd := a.modal.Input.Text()
 			a.modal.Hide()
 			if action != "confirm" {
@@ -182,10 +183,10 @@ func (a *App) showSpreadsheetProtectWorkbookDialog() {
 			a.runSpreadsheetWorkbookProtectionCommand("保护工作簿", spreadsheetprotectionGoScopeEnabledArguments{Scope: "workbook", Enabled: true, Password: pwd}, func(ed document.SpreadsheetWorkbookProtectionEditor) error {
 				return ed.ProtectWorkbook(pwd)
 			})
-			a.setStatus("已保护工作簿")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.workbook_protection_enabled_49da7c"}, feedbackSuccess, notificationToast)
 		},
-			modalDialogActionSpec{ID: "confirm", Label: "保护工作簿"},
-			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+			modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "spreadsheet.protection.action.protect_workbook"}},
+			modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 		)
 	}
 }

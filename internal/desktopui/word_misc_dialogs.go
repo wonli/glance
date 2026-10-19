@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/application"
 	"glance/internal/document"
@@ -28,11 +29,7 @@ func (a *App) showWordDictateDialog() {
 		return
 	}
 	run, hasRun := selectedWordRun(wordBlocksForState(state), state.selectedWordRunID)
-	a.modal.ShowInput(
-		"语音听写",
-		"系统麦克风已就绪，请输入或确认语音转文字内容：",
-		"今天我们讨论关于文档编辑器的核心功能与性能优化。",
-		"语音识别内容",
+	a.modal.ShowInputMessage("word.dictation", i18n.Message{ID: "word.dictation.dialog.title"}, i18n.Message{ID: "word.dictation.dialog.body"}, a.text(i18n.Message{ID: "word.dictation.default_text"}), i18n.Message{ID: "word.dictation.dialog.hint"},
 		func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
@@ -44,18 +41,18 @@ func (a *App) showWordDictateDialog() {
 			}
 			if hasRun && run.Editable {
 				if !a.runWordApplicationCommand("语音听写录入", "word.text.insert", wordTextInsertArgumentsTarget{Target: "run", RunId: run.ID, Text: text}) {
-					a.setStatus("无法启动 Word 听写插入操作")
+					a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_start_word_dictation_f02ce1"}, feedbackWarning, notificationToast)
 				}
 			} else if _, ok := any(state.word).(document.WordTextBoxEditor); ok {
 				if !a.runWordApplicationCommand("语音听写录入", "word.text.insert", wordTextInsertArguments{Target: "textbox", AfterParagraphId: state.selectedWordParagraphID, Text: text}) {
-					a.setStatus("无法启动 Word 听写插入操作")
+					a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_start_word_dictation_f02ce1"}, feedbackWarning, notificationToast)
 				}
 			} else {
-				a.setStatus("请先选择文字段落以插入听写内容")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.select_a_text_paragraph_before_5de47c"}, feedbackWarning, notificationToast)
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "插入到正文"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.dictation.action.insert"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -69,7 +66,7 @@ func (a *App) showWordAddInsDialog() {
 	}
 	runtime := a.ensureDesktopRuntime()
 	if runtime.applicationRuntimeErr != nil || runtime.applicationRuntime == nil {
-		a.setStatus("Word Agent 能力目录不可用")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_word_agent_capability_catalog_99d6fd"}, feedbackWarning, notificationToast)
 		return
 	}
 	arguments, _ := json.Marshal(showWordAddInsDialogPayload{})
@@ -80,7 +77,7 @@ func (a *App) showWordAddInsDialog() {
 		Arguments: arguments,
 	})
 	if err != nil {
-		a.setStatus("读取 Word Agent 能力失败：" + err.Error())
+		a.setWordCommandStatus(err)
 		return
 	}
 	var catalog struct {
@@ -92,7 +89,7 @@ func (a *App) showWordAddInsDialog() {
 		} `json:"capabilities"`
 	}
 	if err := json.Unmarshal(result.Data, &catalog); err != nil {
-		a.setStatus("读取 Word Agent 能力失败：" + application.ErrInvalidCommandResult.Error())
+		a.setWordCommandStatus(application.ErrInvalidCommandResult)
 		return
 	}
 	categoryCounts := map[string]int{}
@@ -106,13 +103,10 @@ func (a *App) showWordAddInsDialog() {
 	if len(catalog.Capabilities) > 12 {
 		fmt.Fprintf(&rows, "· 另有 %d 项能力；完整目录和调用参数由 MCP 工具列表提供。\n", len(catalog.Capabilities)-12)
 	}
-	a.modal.Show(
-		"加载项与扩展",
-		fmt.Sprintf("当前文档注册了 %d 项 Agent 能力（查询 %d、命令 %d、工作流 %d）。\n\n%s\n使用 MCP 工具列表可以读取完整用途说明和 JSON Schema。",
-			len(catalog.Capabilities), categoryCounts["query"], categoryCounts["command"], categoryCounts["workflow"], rows.String()),
+	a.modal.ShowMessage("word.addins", i18n.Message{ID: "word.addins.dialog.title"}, i18n.Message{ID: "word.addins.dialog.body", Args: i18n.Args{"Total": len(catalog.Capabilities), "Queries": categoryCounts["query"], "Commands": categoryCounts["command"], "Workflows": categoryCounts["workflow"], "Rows": rows.String()}},
 		func(action string) {
 			a.modal.Hide()
 		},
-		modalDialogActionSpec{ID: "close", Label: "关闭"},
+		modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}},
 	)
 }

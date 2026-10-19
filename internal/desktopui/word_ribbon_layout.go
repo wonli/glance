@@ -13,12 +13,13 @@ import (
 )
 
 const (
-	wordRibbonCategoryHeightDP    = 34
-	wordRibbonCategoryTabWidthDP  = 31
-	wordRibbonCategoryTabHeightDP = 30
-	wordRibbonCommandHeightDP     = 88
-	wordRibbonHeightDP            = wordRibbonCategoryHeightDP + wordRibbonCommandHeightDP
-	spreadsheetRibbonLeftInsetDP  = 16
+	wordRibbonCategoryHeightDP      = 34
+	wordRibbonCategoryTabMinWidthDP = 31
+	wordRibbonCategoryTabHeightDP   = 30
+	wordRibbonCategoryTabGapDP      = 12
+	wordRibbonCommandHeightDP       = 88
+	wordRibbonHeightDP              = wordRibbonCategoryHeightDP + wordRibbonCommandHeightDP
+	spreadsheetRibbonLeftInsetDP    = 16
 )
 
 type wordRibbonGroup struct {
@@ -162,7 +163,7 @@ func (a *App) layoutWordRibbon(gtx layout.Context) layout.Dimensions {
 		func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Surface, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
-			semantic.DescriptionOp("Word 功能区").Add(gtx.Ops)
+			semantic.DescriptionOp(a.textID("word.accessibility.ribbon")).Add(gtx.Ops)
 			bounds.Pop()
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
@@ -184,15 +185,31 @@ func (a *App) layoutWordRibbonCategories(gtx layout.Context, state *documentSess
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	tabs := wordToolbarTabs(state)
 	paint.FillShape(gtx.Ops, a.tokens().Colors.Surface.Surface, clip.Rect{Max: gtx.Constraints.Max}.Op())
+	x := 16
 	for index, tab := range tabs {
-		x := 22 + index*(wordRibbonCategoryTabWidthDP+28)
-		a.layoutWordRibbonCategoryTabAt(gtx, state, index, x, 2, wordToolbarTabLabels[tab], tab == state.wordToolbarTab)
+		label := a.text(wordToolbarTabMessage(tab))
+		width := wordRibbonCategoryTabWidth(gtx, a.theme, label)
+		a.layoutWordRibbonCategoryTabAt(gtx, state, index, x, 2, width, label, tab == state.wordToolbarTab)
+		x += width + wordRibbonCategoryTabGapDP
 	}
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
-func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentSessionState, index int, xDP, yDP int, label string, selected bool) {
-	width, height := gtx.Dp(unit.Dp(wordRibbonCategoryTabWidthDP)), gtx.Dp(unit.Dp(wordRibbonCategoryTabHeightDP))
+func wordRibbonCategoryTabWidth(gtx layout.Context, theme *material.Theme, label string) int {
+	measure := gtx
+	measure.Constraints = layout.Constraints{Max: image.Pt(1<<20, gtx.Dp(unit.Dp(wordRibbonCategoryTabHeightDP)))}
+	recorder := op.Record(measure.Ops)
+	dimensions := material.Body2(theme, label).Layout(measure)
+	recorder.Stop()
+	if gtx.Metric.PxPerDp <= 0 {
+		return wordRibbonCategoryTabMinWidthDP
+	}
+	width := int(float32(dimensions.Size.X)/gtx.Metric.PxPerDp) + 16
+	return max(wordRibbonCategoryTabMinWidthDP, width)
+}
+
+func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentSessionState, index int, xDP, yDP, widthDP int, label string, selected bool) {
+	width, height := gtx.Dp(unit.Dp(widthDP)), gtx.Dp(unit.Dp(wordRibbonCategoryTabHeightDP))
 	x, y := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(yDP))
 	transform := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
 	buttonGtx := gtx

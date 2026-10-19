@@ -91,12 +91,12 @@ func TestWordNewWindowActionDisabledWithoutWordRuntime(t *testing.T) {
 	app.documentSessionState = state
 	app.desktopRuntime = nil
 	enabled, reason := wordNewWindowAvailability(state, nil)
-	if enabled || strings.TrimSpace(reason) == "" || app.wordToolbarActionEnabled(findWordViewTestAction(t, "view-new-window")) {
+	if enabled || strings.TrimSpace(reason.ID) == "" || app.wordToolbarActionEnabled(findWordViewTestAction(t, "view-new-window")) {
 		t.Fatal("New Window must be disabled when the App has no attached runtime")
 	}
-	before := app.status
+	before := app.statusText()
 	app.executeWordToolbarAction("view-new-window")
-	if strings.TrimSpace(app.status) == "" || app.status == before {
+	if strings.TrimSpace(app.statusText()) == "" || app.statusText() == before {
 		t.Fatal("disabled New Window did not explain why it is unavailable")
 	}
 }

@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"gioui.org/unit"
+	"glance/internal/i18n"
 	"math"
 	"strconv"
 )
@@ -14,7 +15,7 @@ func (a *App) loadAgentSidebarPreference() {
 	}
 	value, found, err := a.workspaceStore.Preference(agentSidebarWidthPreference)
 	if err != nil {
-		a.setStatus("读取 AI 面板宽度失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 		return
 	}
 	if !found {

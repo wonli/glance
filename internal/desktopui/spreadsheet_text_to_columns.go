@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 func (a *App) runSpreadsheetTextToColumnsCommand(operation string, arguments any, edit func(document.SpreadsheetTextToColumnsEditor) (document.SpreadsheetTextToColumnsResult, error)) {
@@ -37,7 +38,7 @@ func (a *App) runSpreadsheetTextToColumnsCommand(operation string, arguments any
 		}
 		a.completeSessionOperation(state, token, err, err == nil && res.RowsSplit > 0 && !commandRouted)
 		if err == nil {
-			a.setStatus(fmt.Sprintf("已完成分列：处理 %d 行，最多拆分为 %d 列", res.RowsSplit, res.MaxCols))
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.text_to_columns.completed", Args: i18n.Args{"Rows": res.RowsSplit, "Columns": res.MaxCols}}, feedbackSuccess, notificationToast)
 		}
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
@@ -59,7 +60,7 @@ func (a *App) showSpreadsheetTextToColumnsDialog() {
 		return
 	}
 	if !state.selectionSet {
-		a.setStatus("请先选择包含数据的单元格区域")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.select_a_cell_range_containing_33d185"}, feedbackWarning, notificationToast)
 		return
 	}
 	bounds := state.selection.Bounds()
@@ -70,7 +71,6 @@ func (a *App) showSpreadsheetTextToColumnsDialog() {
 	}
 	activeColName := columnName(keyCol)
 	rangeRef := fmt.Sprintf("%s%d:%s%d", columnName(bounds.StartColumn), bounds.StartRow, columnName(bounds.EndColumn), bounds.EndRow)
-	msg := fmt.Sprintf("将在选区 %s 中对 %s 列进行文本分列。\n选择预设分隔符或输入自定义字符向右拆分数据：", rangeRef, activeColName)
 
 	splitWith := func(delim, label string) {
 		a.runSpreadsheetTextToColumnsCommand("文本分列 ("+label+")", spreadsheettextSheetBoundsArguments{Sheet: sheet, Bounds: bounds, KeyColumn: keyCol, Delimiter: delim}, func(ed document.SpreadsheetTextToColumnsEditor) (document.SpreadsheetTextToColumnsResult, error) {
@@ -78,7 +78,7 @@ func (a *App) showSpreadsheetTextToColumnsDialog() {
 		})
 	}
 
-	a.modal.Show("文本分列", msg, func(action string) {
+	a.modal.ShowMessage("spreadsheet.text_to_columns", i18n.Message{ID: "spreadsheet.text_to_columns.dialog.title"}, i18n.Message{ID: "spreadsheet.text_to_columns.dialog.body", Args: i18n.Args{"Range": rangeRef, "Column": activeColName}}, func(action string) {
 		a.modal.Hide()
 		switch action {
 		case "comma":
@@ -90,7 +90,7 @@ func (a *App) showSpreadsheetTextToColumnsDialog() {
 		case "tab":
 			splitWith("\t", "制表符")
 		case "custom":
-			a.modal.ShowInput("自定义分列", "输入分隔符（支持单个字符、单词或 \\t 制表符）：", ",", "分隔符", func(act string) {
+			a.modal.ShowInputMessage("spreadsheet.text_to_columns.custom", i18n.Message{ID: "spreadsheet.text_to_columns.custom.title"}, i18n.Message{ID: "spreadsheet.text_to_columns.custom.body"}, ",", i18n.Message{ID: "spreadsheet.text_to_columns.custom.hint"}, func(act string) {
 				delim := a.modal.Input.Text()
 				a.modal.Hide()
 				if act != "confirm" {
@@ -100,18 +100,18 @@ func (a *App) showSpreadsheetTextToColumnsDialog() {
 					delim = "\t"
 				}
 				if delim == "" {
-					a.setStatus("分隔符不能为空")
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_delimiter_cannot_be_empty_18c4fc"}, feedbackError, notificationToast)
 					return
 				}
 				splitWith(delim, "自定义")
-			}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+			}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.confirm"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 		}
 	},
-		modalDialogActionSpec{ID: "comma", Label: "逗号 (,)"},
-		modalDialogActionSpec{ID: "semicolon", Label: "分号 (;)"},
-		modalDialogActionSpec{ID: "space", Label: "空格 ( )"},
-		modalDialogActionSpec{ID: "tab", Label: "制表符 (\\t)"},
-		modalDialogActionSpec{ID: "custom", Label: "自定义..."},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "comma", LabelRef: i18n.Message{ID: "spreadsheet.text_to_columns.delimiter.comma"}},
+		modalDialogActionSpec{ID: "semicolon", LabelRef: i18n.Message{ID: "spreadsheet.text_to_columns.delimiter.semicolon"}},
+		modalDialogActionSpec{ID: "space", LabelRef: i18n.Message{ID: "spreadsheet.text_to_columns.delimiter.space"}},
+		modalDialogActionSpec{ID: "tab", LabelRef: i18n.Message{ID: "spreadsheet.text_to_columns.delimiter.tab"}},
+		modalDialogActionSpec{ID: "custom", LabelRef: i18n.Message{ID: "spreadsheet.text_to_columns.delimiter.custom"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }

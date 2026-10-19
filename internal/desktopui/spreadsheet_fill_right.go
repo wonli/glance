@@ -6,6 +6,7 @@ import (
 
 	"glance/internal/application"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 type spreadsheetFillRightArguments struct {
@@ -70,7 +71,7 @@ func (a *App) fillRightSpreadsheetSelection() error {
 		case a.formatResults <- spreadsheetFormatResult{
 			state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation,
 			sheet: sheet, window: window, err: err, operation: "向右填充", applied: changed,
-			noOp: err == nil && !changed, details: "选区内容已与首列一致",
+			noOp: err == nil && !changed, details: i18n.Message{ID: "spreadsheet.status.noop.same_as_first_column"},
 		}:
 		case <-a.shutdown:
 		}

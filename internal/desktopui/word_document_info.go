@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 type wordDocumentInfoResult struct {
@@ -25,7 +26,7 @@ func (a *App) startWordDocumentInfoLoad() {
 	if !ok {
 		return
 	}
-	a.setStatus("正在读取文档信息")
+	a.setStatusMessage(i18n.Message{ID: "word.status.inline.reading_document_information_053d93"}, feedbackInfo, notificationSuppressed)
 	generation := a.documentGeneration
 	a.launchManagedBackground(func() {
 		unlock := lockSessionAdapterRead(state)
@@ -46,10 +47,10 @@ func (a *App) startWordDocumentInfoLoad() {
 }
 
 func (a *App) showWordDocumentInfoDialog(properties document.WordDocumentProperties) {
-	labels := []string{"标题", "主题", "作者", "关键词", "说明"}
-	hints := []string{"输入文档标题", "输入文档主题", "输入作者", "输入关键词", "输入文档说明"}
+	labels := []i18n.Message{{ID: "word.document_info.field.title"}, {ID: "word.document_info.field.subject"}, {ID: "word.document_info.field.author"}, {ID: "word.document_info.field.keywords"}, {ID: "word.document_info.field.description"}}
+	hints := []i18n.Message{{ID: "word.document_info.hint.title"}, {ID: "word.document_info.hint.subject"}, {ID: "word.document_info.hint.author"}, {ID: "word.document_info.hint.keywords"}, {ID: "word.document_info.hint.description"}}
 	initial := []string{properties.Title, properties.Subject, properties.Creator, properties.Keywords, properties.Description}
-	a.modal.ShowForm("文档信息", "编辑 DOCX 核心属性", labels, hints, initial, func(action string) {
+	a.modal.ShowFormMessage(dialogIDWordDocumentInfo, i18n.Message{ID: "word.document_info.title"}, i18n.Message{ID: "word.document_info.body"}, labels, hints, initial, func(action string) {
 		switch action {
 		case "confirm":
 			properties := document.WordDocumentProperties{
@@ -64,7 +65,7 @@ func (a *App) showWordDocumentInfoDialog(properties document.WordDocumentPropert
 		case "cancel":
 			a.modal.Hide()
 		}
-	}, modalDialogActionSpec{ID: "confirm", Label: "应用"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }
 
 func (a *App) runWordDocumentInfoCommand(properties document.WordDocumentProperties) {

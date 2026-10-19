@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"errors"
+	"glance/internal/i18n"
 	"strings"
 
 	"gioui.org/io/key"
@@ -176,7 +177,7 @@ func (a *App) handleWordSelectionDeleteKey(gtx layout.Context, state *documentSe
 		return true
 	}
 	if _, ok := any(state.word).(document.WordTextSelectionEditor); !ok {
-		a.setStatus("当前文档不支持删除此文字选区")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_750fa0"}, feedbackWarning, notificationToast)
 		return true
 	}
 	// A targeted key filter can pull Delete ahead of earlier edit/selection
@@ -264,14 +265,14 @@ func (a *App) startPendingWordSelectionPaste(state *documentSessionState) {
 	pending := *state.wordPendingPasteSelection
 	if _, ok := any(state.word).(document.WordTextSelectionReplacer); !ok {
 		state.wordPendingPasteSelection = nil
-		a.setStatus("当前 DOCX 适配器不支持替换文字选区")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.replacing_a_text_selection_is_1c3fcf"}, feedbackWarning, notificationToast)
 		return
 	}
 	if draft := state.wordSelectionInputDraft; draft != nil {
 		if editor := state.wordRunEditors[draft.runID]; editor != nil {
 			if editorHasActiveComposition(editor) {
 				state.wordPendingPasteSelection = nil
-				a.setStatus("请先完成当前中文输入，再粘贴选区文字")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.finish_chinese_input_composition_before_297909"}, feedbackWarning, notificationToast)
 				return
 			}
 			if editor.Text() != draft.text {
@@ -283,13 +284,13 @@ func (a *App) startPendingWordSelectionPaste(state *documentSessionState) {
 	}
 	if !wordSelectionPasteTargetValid(state, pending.target) {
 		state.wordPendingPasteSelection = nil
-		a.setStatus("Word 粘贴选区已失效，请重新选择文字后粘贴")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_word_paste_selection_expired_9e3286"}, feedbackWarning, notificationToast)
 		return
 	}
 	for _, editor := range state.wordRunEditors {
 		if editorHasActiveComposition(editor) {
 			state.wordPendingPasteSelection = nil
-			a.setStatus("请先完成当前中文输入，再粘贴选区文字")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.finish_chinese_input_composition_before_297909"}, feedbackWarning, notificationToast)
 			return
 		}
 	}
@@ -466,7 +467,7 @@ func (a *App) completeWordSelectionEdit(result wordCommandResult, active bool) {
 			restoreWordSelectionReplacementDraft(state, *intent)
 		}
 		if active {
-			a.setStatus(wordCommandError(result.operation, result.err))
+			a.setWordCommandStatus(result.err)
 		}
 		return
 	}
@@ -501,11 +502,11 @@ func (a *App) completeWordSelectionEdit(result wordCommandResult, active bool) {
 	state.wordPendingFocusRunID = ""
 	if active {
 		state.wordPendingFocusRunID = caret.RunID
-		message := "已删除选区文字"
+		messageID := "word.selection.status.deleted"
 		if intent != nil && intent.replaces {
-			message = "已替换选区文字"
+			messageID = "word.selection.status.replaced"
 		}
-		a.setStatus(message)
+		a.setStatusMessage(i18n.Message{ID: messageID}, feedbackSuccess, notificationToast)
 		a.persistActiveSession()
 	}
 }
@@ -559,7 +560,7 @@ func (a *App) completeWordSelectionFormat(state *documentSessionState, formatted
 		}
 	}
 	if active {
-		a.setStatus("已格式化选中文字")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.formatted_the_selected_text_605de5"}, feedbackSuccess, notificationToast)
 		a.persistActiveSession()
 	}
 }

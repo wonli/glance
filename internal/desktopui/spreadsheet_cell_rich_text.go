@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"strings"
 
 	"gioui.org/widget"
@@ -142,7 +143,7 @@ func (a *App) applySpreadsheetCellTextFormat(slot int) {
 	}
 
 	if err := richEditor.SetCellTextSelectionFormat(sheet, cell, text, start, end, patch); err != nil {
-		a.setStatus("设置富文本格式失败: " + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		return
 	}
 

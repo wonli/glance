@@ -1,22 +1,25 @@
 package desktopui
 
-import "fmt"
+import (
+	"fmt"
+	"glance/internal/i18n"
+)
 
-func wordNewWindowAvailability(state *documentSessionState, runtime *desktopRuntime) (bool, string) {
+func wordNewWindowAvailability(state *documentSessionState, runtime *desktopRuntime) (bool, i18n.Message) {
 	if state == nil || state.word == nil {
-		return false, "请先打开 Word 文档"
+		return false, i18n.Message{ID: "word.new_window.reason.open_document"}
 	}
 	if state.sharedDocumentSession == nil {
-		return false, "当前 Word 文档尚未连接到共享会话"
+		return false, i18n.Message{ID: "word.new_window.reason.shared_session"}
 	}
 	if state.closed.Load() || state.finalized.Load() {
-		return false, "当前 Word 文档会话已关闭"
+		return false, i18n.Message{ID: "word.new_window.reason.closed"}
 	}
 	if !supportsMultipleDesktopWindows() {
-		return false, "当前平台不支持多个桌面窗口"
+		return false, i18n.Message{ID: "word.new_window.reason.platform"}
 	}
 	if runtime == nil {
-		return false, "新建窗口需要已连接的桌面运行时"
+		return false, i18n.Message{ID: "word.new_window.reason.runtime"}
 	}
 	documentID := state.documentID
 	if documentID == "" {
@@ -24,17 +27,17 @@ func wordNewWindowAvailability(state *documentSessionState, runtime *desktopRunt
 	}
 	shared, ok := runtime.session(documentID)
 	if !ok || shared != state.sharedDocumentSession {
-		return false, "当前 Word 文档尚未连接到桌面会话"
+		return false, i18n.Message{ID: "word.new_window.reason.desktop_session"}
 	}
 	if !runtime.hasWindow(state.windowID) {
-		return false, "当前 Word 视图未连接到已打开的桌面窗口"
+		return false, i18n.Message{ID: "word.new_window.reason.window"}
 	}
-	return true, ""
+	return true, i18n.Message{}
 }
 
 func (a *App) requestWordNewWindow() {
 	if err := a.openWordNewWindow(); err != nil {
-		a.setStatus(err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "word.new_window.error.open"}, err, notificationToast)
 	}
 }
 
@@ -42,7 +45,7 @@ func (a *App) openWordNewWindow() error {
 	state := a.documentSessionState
 	enabled, reason := wordNewWindowAvailability(state, a.desktopRuntime)
 	if !enabled {
-		return fmt.Errorf("%s", reason)
+		return fmt.Errorf("%s", a.text(reason))
 	}
 	documentID := state.documentID
 	if documentID == "" {

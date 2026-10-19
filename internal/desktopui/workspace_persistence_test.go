@@ -5,12 +5,12 @@ import (
 
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"glance/internal/document"
 
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -193,19 +193,20 @@ func TestScanOfficeFolderIsShallowAndFiltersUnsupportedFiles(t *testing.T) {
 
 func TestWorkspaceWriteFailureStaysVisibleUntilNextSuccessfulWrite(t *testing.T) {
 	a := New(nil, "")
+	a.applyLocaleSelection(i18n.SelectionChinese)
 	a.workspaceWriteResults = make(chan error, 1)
 	a.workspaceWriteResults <- errors.New("disk full")
 	a.processAsyncResults()
-	if got := a.visibleStatus(); !strings.Contains(got, "disk full") {
+	if got := a.visibleStatus(); got != "工作区保存失败。" || a.feedback.detail != "disk full" {
 		t.Fatalf("visible status=%q, want persistence failure", got)
 	}
-	a.status = "已打开另一个文档"
-	if got := a.visibleStatus(); !strings.Contains(got, "disk full") {
+	a.setStatusMessage(i18n.Message{ID: "workspace.status.opened_another_document"}, feedbackInfo, notificationSuppressed)
+	if got := a.visibleStatus(); got != "工作区保存失败。" {
 		t.Fatalf("workspace failure was hidden by another status: %q", got)
 	}
 	a.workspaceWriteResults <- nil
 	a.processAsyncResults()
-	if got := a.visibleStatus(); got != a.status {
-		t.Fatalf("successful write did not clear persistence error: got=%q status=%q", got, a.status)
+	if got := a.visibleStatus(); got != a.statusText() {
+		t.Fatalf("successful write did not clear persistence error: got=%q status=%q", got, a.statusText())
 	}
 }

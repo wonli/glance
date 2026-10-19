@@ -31,15 +31,15 @@ func TestShareCopyRejectsExtensionlessSourcePath(t *testing.T) {
 			&spreadsheetShareCopyPickerRequest{state: state, historyState: book.HistoryState()},
 			strings.TrimSuffix(sourcePath, ".xlsx"),
 		)
-		want := "共享副本不能覆盖当前 XLSX"
-		if app.status != want {
+		want := "共享 XLSX 副本不能覆盖源文档。"
+		if app.statusText() != want {
 			select {
 			case result := <-results:
 				app.applySpreadsheetShareCopyResult(result)
 			case <-time.After(3 * time.Second):
 				t.Fatal("unexpected XLSX share-copy operation did not finish")
 			}
-			t.Fatalf("extensionless source selection status = %q, want %q", app.status, want)
+			t.Fatalf("extensionless source selection status = %q, want %q", app.statusText(), want)
 		}
 		if state.formatRunning.Load() {
 			t.Fatal("extensionless source selection started an XLSX export")
@@ -64,10 +64,10 @@ func TestShareCopyRejectsExtensionlessSourcePath(t *testing.T) {
 			&wordShareCopyPickerRequest{state: state, revision: 4, draftEpoch: state.wordDraftEpoch.Load()},
 			strings.TrimSuffix(sourcePath, ".docx"),
 		)
-		want := "共享副本不能覆盖当前 DOCX"
-		if app.status != want {
+		want := "共享 DOCX 副本不能覆盖源文档。"
+		if app.statusText() != want {
 			waitWordShareResult(t, app)
-			t.Fatalf("extensionless source selection status = %q, want %q", app.status, want)
+			t.Fatalf("extensionless source selection status = %q, want %q", app.statusText(), want)
 		}
 		if state.formatRunning.Load() {
 			t.Fatal("extensionless source selection started a DOCX export")

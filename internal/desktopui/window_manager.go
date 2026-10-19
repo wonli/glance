@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"fmt"
+	"glance/internal/i18n"
 	"log"
 	"runtime"
 
@@ -76,7 +77,7 @@ func (r *desktopRuntime) runWindowFrom(windowID uint64, window *app.Window, init
 			a.sessions[initialDocumentID] = view
 			a.activateSession(initialDocumentID, view)
 		} else {
-			a.setStatus("文档会话已关闭，请重新打开文档")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_document_session_is_closed_reopen_the_8de5b7"}, feedbackInfo, notificationSuppressed)
 		}
 	}
 	r.runAppWindow(a)
@@ -132,7 +133,7 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 			select {
 			case err := <-a.trayStartupResults:
 				if err != nil {
-					a.setStatus("托盘启动失败：" + err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 				}
 			default:
 			}

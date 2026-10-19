@@ -35,8 +35,8 @@ func TestWordPageSetupDialogsAndCommands(t *testing.T) {
 
 	// 1. Orientation Dialog and Command
 	app.executeWordToolbarAction("layout-orientation")
-	if !app.modal.Visible || app.modal.Title != "页面方向" {
-		t.Fatalf("expected modal dialog for layout-orientation, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "页面方向" {
+		t.Fatalf("expected modal dialog for layout-orientation, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("landscape")
 	if app.modal.Visible {
@@ -60,8 +60,8 @@ func TestWordPageSetupDialogsAndCommands(t *testing.T) {
 
 	// 2. Margins Dialog and Command
 	app.executeWordToolbarAction("layout-margins")
-	if !app.modal.Visible || app.modal.Title != "页边距设置" {
-		t.Fatalf("expected modal dialog for layout-margins, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "页边距设置" {
+		t.Fatalf("expected modal dialog for layout-margins, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("narrow")
 	if app.modal.Visible {
@@ -86,8 +86,8 @@ func TestWordPageSetupDialogsAndCommands(t *testing.T) {
 
 	// 3. Page Size Dialog and Command
 	app.executeWordToolbarAction("layout-size")
-	if !app.modal.Visible || app.modal.Title != "纸张大小设置" {
-		t.Fatalf("expected modal dialog for layout-size, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "纸张大小设置" {
+		t.Fatalf("expected modal dialog for layout-size, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("letter")
 	if app.modal.Visible {
@@ -117,8 +117,8 @@ func TestWordPageSetupDialogsAndCommands(t *testing.T) {
 		t.Fatal("expected layout-columns action to be enabled")
 	}
 	app.executeWordToolbarAction("layout-columns")
-	if !app.modal.Visible || app.modal.Title != "分栏设置" {
-		t.Fatalf("expected modal dialog for layout-columns, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "分栏设置" {
+		t.Fatalf("expected modal dialog for layout-columns, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("col2")
 	if app.modal.Visible {
@@ -197,8 +197,8 @@ func TestWordLineNumbersDialogAndCommand(t *testing.T) {
 
 	// 1. Show line numbers dialog -> Click "continuous"
 	app.showWordLineNumbersDialog()
-	if !app.modal.Visible || app.modal.Title != "行号设置" {
-		t.Fatalf("expected modal dialog for line numbers, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "行号设置" {
+		t.Fatalf("expected modal dialog for line numbers, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 
 	app.modal.OnAction("continuous")
@@ -296,8 +296,8 @@ func TestWordSelectAllAndPageColor(t *testing.T) {
 
 	// 2. Test Select All
 	app.selectAllWordText()
-	if app.status != "已全选文档正文" {
-		t.Fatalf("unexpected status: %q", app.status)
+	if app.statusText() != "已全选文档正文" {
+		t.Fatalf("unexpected status: %q", app.statusText())
 	}
 	if state.wordPageTextSelection == nil {
 		t.Fatal("expected active wordPageTextSelection after select all")
@@ -309,8 +309,8 @@ func TestWordSelectAllAndPageColor(t *testing.T) {
 
 	// 3. Test Page Color Dialog & Parchment
 	app.showWordPageColorDialog()
-	if !app.modal.Visible || app.modal.Title != "页面颜色" {
-		t.Fatalf("expected 页面颜色 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "页面颜色" {
+		t.Fatalf("expected 页面颜色 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("parchment")
 	if state.wordBackgroundColor == nil {
@@ -351,8 +351,8 @@ func TestWordToolbar_ColumnsDialogAndLayout(t *testing.T) {
 	}
 
 	app.showWordColumnsDialog()
-	if !app.modal.Visible || app.modal.Title != "分栏设置" {
-		t.Fatalf("modal not shown: visible=%v, title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "分栏设置" {
+		t.Fatalf("modal not shown: visible=%v, title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 
 	action := app.modal.Actions[1] // col2

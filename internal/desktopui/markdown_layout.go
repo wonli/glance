@@ -1,12 +1,12 @@
 package desktopui
 
 import (
-	"fmt"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+	"glance/internal/i18n"
 	"image"
 )
 
@@ -107,7 +107,7 @@ func (a *App) layoutMarkdownEditor(gtx layout.Context) layout.Dimensions {
 		return jsonPanel(gtx, contentSurface, false, false, func(gtx layout.Context) layout.Dimensions {
 			return markdownColumn(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
-				style := material.Editor(a.theme, &v.editor, "开始编写 Markdown…")
+				style := material.Editor(a.theme, &v.editor, a.textID("markdown.editor.placeholder"))
 				style.TextSize = 16
 				style.Color = homeText
 				return style.Layout(gtx)
@@ -134,23 +134,24 @@ func (a *App) layoutMarkdownStatus(gtx layout.Context) layout.Dimensions {
 	return jsonPanel(gtx, chromeSurface, false, false, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Left: 20, Right: 20}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				text := fmt.Sprintf("%d 字    阅读约 %d 分钟", v.snapshot.Characters, v.snapshot.ReadingMinutes)
-				if v.exportMessage != "" {
-					text = v.exportMessage
+				locale := a.localeSnapshot().Resolved
+				text := a.textArgs("markdown.status.document_stats", i18n.Args{"Characters": i18n.FormatNumber(locale, float64(v.snapshot.Characters)), "Minutes": i18n.FormatNumber(locale, float64(v.snapshot.ReadingMinutes))})
+				if v.exportMessage.ID != "" {
+					text = a.text(v.exportMessage)
 				} else if v.err != nil {
-					text = v.err.Error()
+					text = a.text(i18n.Message{ID: "markdown.error.parse_failed"})
 				} else if len(v.errors) > 0 {
-					text += fmt.Sprintf("    %d 项预览提示", len(v.errors))
+					text += "    " + a.textArgs("markdown.status.preview_warnings", i18n.Args{"Count": i18n.FormatNumber(locale, float64(len(v.errors)))})
 				}
 				return jsonLabel(gtx, a, text, 11, mutedText, false, false)
 			}), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if v.lastPDFPath == "" {
 					return layout.Dimensions{}
 				}
-				return a.markdownTextButton(gtx, "reveal-pdf", "打开目录", 80, 34, false)
+				return a.markdownTextButton(gtx, "reveal-pdf", a.textID("markdown.action.open_output_folder"), 80, 34, false)
 			}), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = 0
-				text := fmt.Sprintf("行 %d，列 %d    UTF-8    Markdown", line, column)
+				text := a.textArgs("markdown.status.cursor", i18n.Args{"Line": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(line)), "Column": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(column))})
 				if gtx.Constraints.Max.X < gtx.Dp(260) {
 					text = "Markdown"
 				}

@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"io"
 	"strings"
 
@@ -30,11 +31,11 @@ type spreadsheetClipboardData struct {
 
 func (a *App) requestSpreadsheetClipboardPaste(gtx layout.Context, state *documentSessionState) {
 	if state == nil || state.book == nil || !state.selectionSet {
-		a.setStatus("请先选择粘贴起始单元格")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.select_the_starting_cell_for_be14f0"}, feedbackWarning, notificationToast)
 		return
 	}
 	if state.clipboardPasteTarget != nil {
-		a.setStatus("已有一项粘贴正在读取剪贴板")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.a_paste_is_already_reading_403883"}, feedbackSuccess, notificationSuppressed)
 		return
 	}
 	state.clipboardPasteTarget = &spreadsheetClipboardPasteTarget{sheet: state.sheet, bounds: state.selection.Bounds()}
@@ -237,7 +238,7 @@ func supportsRichSpreadsheetClipboard(cells [][]document.Cell) bool {
 func (a *App) writeSpreadsheetSelectionToClipboard(gtx layout.Context, cut bool) {
 	text, err := a.copySelection()
 	if err != nil {
-		a.setStatus("剪贴板操作失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})

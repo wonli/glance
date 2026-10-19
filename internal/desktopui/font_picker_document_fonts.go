@@ -67,10 +67,18 @@ func documentFontNames(state *documentSessionState) ([]string, error) {
 // Read only the selected run; avoid cloning the document on every Ribbon frame.
 func selectedWordFontFamilyName(state *documentSessionState) string {
 	if state == nil {
-		return "字体"
+		return ""
 	}
 	if run, ok := selectedWordFormattingRun(state, state.selectedWordRunID); ok && run.Style.FontFamily != "" {
 		return wordRunDisplayFamily(run)
 	}
-	return "字体"
+	return ""
+}
+
+func (a *App) localizedSelectedWordFontFamilyName(state *documentSessionState) string {
+	name := selectedWordFontFamilyName(state)
+	if name == "" {
+		return a.textID("font.picker.title")
+	}
+	return name
 }

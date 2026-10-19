@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"math"
 	"strings"
 )
@@ -142,13 +143,13 @@ func (a *App) commitGridCell(value string) error {
 	a.cellEditor.SetText(a.cellEdit.Original)
 	a.formulaEditor.SetText(a.cellEdit.Original)
 	if changed {
-		a.setStatus(fmt.Sprintf("%s 已修改；点击保存写入原文件", a.selectedCell))
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.cell.status.modified", Args: i18n.Args{"Cell": a.selectedCell}}, feedbackSuccess, notificationToast)
 	}
 	rowHeightChanged, rowHeightErr := a.persistCellEditRowHeightPreview(changed)
 	if rowHeightErr != nil {
-		a.setStatus("单元格已修改，但自动调整行高失败：" + rowHeightErr.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.cell.error.auto_fit_row"}, rowHeightErr, notificationToast)
 	} else if rowHeightChanged {
-		a.setStatus(fmt.Sprintf("%s 已修改并调整行高；点击保存写入原文件", a.selectedCell))
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.cell.status.modified_auto_fit", Args: i18n.Args{"Cell": a.selectedCell}}, feedbackSuccess, notificationToast)
 	}
 	if changed || rowHeightChanged {
 		a.persistActiveSession()

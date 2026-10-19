@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"context"
+	"glance/internal/i18n"
 	"os"
 	"path/filepath"
 
@@ -106,7 +107,7 @@ func (a *App) pollFontResults() {
 				p.documentNames = result.names
 				p.rowsDirty = true
 				if result.err != nil {
-					a.setStatus("读取文档字体失败：" + result.err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, result.err, notificationToast)
 				}
 			}
 		case result := <-p.downloadResults:

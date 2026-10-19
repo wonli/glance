@@ -151,12 +151,12 @@ func waitForWordBreakShortcut(t *testing.T, app *App, state *documentSessionStat
 	for time.Now().Before(deadline) {
 		app.processAsyncResults()
 		if state.wordPageBreakIntent == nil && !state.formatRunning.Load() {
-			if strings.Contains(app.status, "失败") {
-				t.Fatalf("Word break shortcut failed: %s", app.status)
+			if strings.Contains(app.statusText(), "失败") {
+				t.Fatalf("Word break shortcut failed: %s", app.statusText())
 			}
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for the Word break shortcut: intent=%+v formatRunning=%t status=%q", state.wordPageBreakIntent, state.formatRunning.Load(), app.status)
+	t.Fatalf("timed out waiting for the Word break shortcut: intent=%+v formatRunning=%t status=%q", state.wordPageBreakIntent, state.formatRunning.Load(), app.statusText())
 }

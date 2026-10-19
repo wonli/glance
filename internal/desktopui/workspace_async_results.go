@@ -1,8 +1,9 @@
 package desktopui
 
 import (
-	"fmt"
 	"path/filepath"
+
+	"glance/internal/i18n"
 )
 
 func (a *App) processAsyncResults() {
@@ -34,7 +35,7 @@ func (a *App) processAsyncResults() {
 	select {
 	case err := <-a.windowOpenResults:
 		if err != nil {
-			a.setStatus("创建新窗口失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.create_window"}, err, notificationToast)
 		}
 	default:
 	}
@@ -111,7 +112,7 @@ func (a *App) processAsyncResults() {
 	case result := <-a.fileCommandResults:
 		a.fileCommandRunning = false
 		if result.err != nil {
-			a.setStatus(result.err.Error())
+			a.setStatusErrorMessage(fileCommandFailureMessage(result.kind), result.err, notificationToast)
 			if result.kind == commandExportPDF {
 				a.wordPDFPickerRequest = nil
 				a.spreadsheetPDFPickerRequest = nil
@@ -122,7 +123,9 @@ func (a *App) processAsyncResults() {
 				a.spreadsheetShareCopyRequest = nil
 			}
 			if result.kind == commandSaveAs && a.pendingCloseTabID != "" {
-				a.showCloseConfirmation(a.pendingCloseTabID, "保存失败", "无法选择另存为位置。可以重试保存、不保存并关闭，或取消关闭。")
+				a.showCloseConfirmationMessage(a.pendingCloseTabID,
+					i18n.Message{ID: "document.save.failure.title"},
+					i18n.Message{ID: "document.save.close_retry_body"})
 			}
 		} else {
 			switch result.kind {
@@ -130,20 +133,20 @@ func (a *App) processAsyncResults() {
 				if result.path != "" {
 					a.startOpen(result.path)
 				} else {
-					a.setStatus("已取消打开文件")
+					a.setStatusMessage(i18n.Message{ID: "file.command.open_cancelled"}, feedbackInfo, notificationSuppressed)
 				}
 			case commandOpenFolder:
 				if result.path == "" {
-					a.setStatus("已取消打开文件夹")
+					a.setStatusMessage(i18n.Message{ID: "file.command.folder_cancelled"}, feedbackInfo, notificationSuppressed)
 				} else if a.collection == nil {
-					a.setStatus("工作区数据库不可用，无法记录文件夹内容")
+					a.setStatusMessage(i18n.Message{ID: "file.command.workspace_unavailable"}, feedbackError, notificationToast)
 				} else if len(result.recents) == 0 {
-					a.setStatus("所选文件夹中没有支持的文档")
+					a.setStatusMessage(i18n.Message{ID: "file.command.folder_no_supported_files"}, feedbackWarning, notificationToast)
 				} else {
 					a.collection.StageRecents(result.recents)
 					a.refreshHomeMetadata()
 					a.persistRecentsAsync()
-					a.setStatus(fmt.Sprintf("已添加 %d 个文档到最近打开", len(result.recents)))
+					a.setStatusMessage(i18n.Message{ID: "file.command.folder_opened", Args: i18n.Args{"Count": len(result.recents)}}, feedbackSuccess, notificationToast)
 				}
 			case commandRegisterHomeFolder:
 				a.handleHomeFolderPickerResult(result)
@@ -151,12 +154,12 @@ func (a *App) processAsyncResults() {
 				if result.path == a.homeRecentMenuPath {
 					a.dismissHomeRecentMenu()
 				}
-				a.setStatus("已在文件夹中打开")
+				a.setStatusMessage(i18n.Message{ID: "file.command.revealed"}, feedbackInfo, notificationSuppressed)
 			case commandSaveAs:
 				if result.path != "" {
 					a.startSaveAs(result.path)
 				} else {
-					a.setStatus("已取消另存为")
+					a.setStatusMessage(i18n.Message{ID: "file.command.save_as_cancelled"}, feedbackInfo, notificationSuppressed)
 					if a.pendingCloseTabID != "" {
 						a.pendingCloseTabID = ""
 					}
@@ -169,7 +172,7 @@ func (a *App) processAsyncResults() {
 				a.spreadsheetPDFPickerRequest = nil
 				a.presentationPDFPickerRequest = nil
 				if result.path == "" {
-					a.setStatus("已取消导出 PDF")
+					a.setStatusMessage(i18n.Message{ID: "file.command.pdf_cancelled"}, feedbackInfo, notificationSuppressed)
 				} else if wordReq != nil {
 					a.startWordPDFFileExport(wordReq.state, wordReq.key, result.path, wordReq.orientation)
 				} else if sheetReq != nil {
@@ -177,7 +180,7 @@ func (a *App) processAsyncResults() {
 				} else if presentationReq != nil {
 					a.startPresentationPDFFileExport(presentationReq, result.path)
 				} else {
-					a.setStatus("PDF 导出状态已过期，请重新导出")
+					a.setStatusMessage(i18n.Message{ID: "file.command.pdf_request_expired"}, feedbackWarning, notificationToast)
 				}
 			case commandShareCopy:
 				wordReq := a.wordShareCopyRequest
@@ -185,13 +188,13 @@ func (a *App) processAsyncResults() {
 				a.wordShareCopyRequest = nil
 				a.spreadsheetShareCopyRequest = nil
 				if result.path == "" {
-					a.setStatus("已取消共享副本导出")
+					a.setStatusMessage(i18n.Message{ID: "file.command.share_cancelled"}, feedbackInfo, notificationSuppressed)
 				} else if wordReq != nil {
 					a.startWordShareCopyFile(wordReq, result.path)
 				} else if sheetReq != nil {
 					a.startSpreadsheetShareCopyFile(sheetReq, result.path)
 				} else {
-					a.setStatus("共享副本状态已过期，请重新导出")
+					a.setStatusMessage(i18n.Message{ID: "file.command.share_request_expired"}, feedbackWarning, notificationToast)
 				}
 			}
 		}
@@ -241,7 +244,7 @@ func (a *App) processAsyncResults() {
 		}
 		if result.generation == a.documentGeneration && result.state == a.documentSessionState {
 			if result.err != nil {
-				a.setStatus("读取文档信息失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "word.document_info.error.read"}, result.err, notificationToast)
 			} else {
 				a.showWordDocumentInfoDialog(result.properties)
 			}
@@ -262,7 +265,7 @@ func (a *App) processAsyncResults() {
 			return
 		}
 		if result.err != nil {
-			a.publishWordRestoreNotice(result.state, "恢复历史版本失败："+result.err.Error())
+			a.publishWordRestoreNoticeMessage(result.state, i18n.Message{ID: "word.history.error.restore"})
 		}
 		if !result.state.acceptsResult(result.token) || result.state.wordRevisionAtomic.Load() != result.revision {
 			return
@@ -271,7 +274,7 @@ func (a *App) processAsyncResults() {
 		if result.err == nil && activeResult && result.applied {
 			invalidateAllWordImagePreviews(result.state)
 			reconcileWordSelection(result.state, true)
-			a.setStatus("已恢复历史版本")
+			a.setStatusMessage(i18n.Message{ID: "word.history.status.restored"}, feedbackSuccess, notificationToast)
 			a.startWordPagination(result.state)
 			a.persistActiveSession()
 		}
@@ -302,12 +305,12 @@ func (a *App) processAsyncResults() {
 				if result.err != nil {
 					state.wordImageErrors[result.id] = result.err.Error()
 					if state == a.documentSessionState {
-						a.setStatus("图片预览失败：" + result.err.Error())
+						a.setStatusErrorMessage(i18n.Message{ID: "word.image.error.preview"}, result.err, notificationToast)
 					}
 				} else if !state.wordImageCache.Put(result.id, result.image) {
-					state.wordImageErrors[result.id] = "图片无法放入文档预览缓存"
+					state.wordImageErrors[result.id] = a.text(i18n.Message{ID: "word.image.error.cache"})
 					if state == a.documentSessionState {
-						a.setStatus("图片预览失败：图片无法放入文档预览缓存")
+						a.setStatusMessage(i18n.Message{ID: "word.image.error.cache"}, feedbackError, notificationToast)
 					}
 				} else {
 					delete(state.wordImageErrors, result.id)
@@ -322,9 +325,10 @@ func (a *App) processAsyncResults() {
 	select {
 	case err := <-a.workspaceWriteResults:
 		if err != nil {
-			a.workspaceWriteError = "工作区保存失败：" + err.Error()
+			a.workspaceWriteErrorRef = i18n.Message{ID: "workspace.error.save_state"}
+			a.setStatusErrorMessage(a.workspaceWriteErrorRef, err, notificationToast)
 		} else {
-			a.workspaceWriteError = ""
+			a.workspaceWriteErrorRef = i18n.Message{}
 		}
 	default:
 	}
@@ -343,21 +347,13 @@ func (a *App) processAsyncResults() {
 		a.opening = false
 		openSucceeded := false
 		if result.err != nil {
-			msg := documentOpenFailureStatus(result.err)
-			a.setStatus(msg)
-			a.modal.ShowConfirm("无法打开文档", msg, modalDialogWarningConfirmStyle, func(string) {
-				a.modal.Hide()
-			}, modalDialogActionSpec{ID: "close", Label: "我知道了", Style: modalDialogActionPrimary})
+			a.showDocumentOpenFailure(result.err)
 		} else if err := a.installDocument(result.loaded); err != nil {
-			msg := documentOpenFailureStatus(err)
-			a.setStatus(msg)
-			a.modal.ShowConfirm("无法打开文档", msg, modalDialogWarningConfirmStyle, func(string) {
-				a.modal.Hide()
-			}, modalDialogActionSpec{ID: "close", Label: "我知道了", Style: modalDialogActionPrimary})
+			a.showDocumentOpenFailure(err)
 		} else {
 			openSucceeded = true
 			if result.historyErr != nil && result.loaded.word != nil {
-				a.setStatus("文档已打开，但历史版本暂不可用：" + result.historyErr.Error())
+				a.setStatusDetailMessage(i18n.Message{ID: "word.history.warning.unavailable"}, feedbackWarning, notificationToast, result.historyErr.Error())
 			}
 		}
 		if openSucceeded && a.homeRecentOpenPath != "" && a.path == a.homeRecentOpenPath {
@@ -369,9 +365,11 @@ func (a *App) processAsyncResults() {
 	case result := <-a.saveResults:
 		a.saving = false
 		if result.err != nil {
-			a.setStatus("保存失败：" + result.err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "document.save.error.failed"}, result.err, notificationToast)
 			if result.tabID == a.pendingCloseTabID && result.tabID != "" {
-				a.showCloseConfirmation(result.tabID, "保存失败", "保存没有完成。可以重试保存、不保存并关闭，或取消关闭。")
+				a.showCloseConfirmationMessage(result.tabID,
+					i18n.Message{ID: "document.save.failure.title"},
+					i18n.Message{ID: "document.save.close_retry_body"})
 			}
 		} else {
 			if result.saveAs {
@@ -411,14 +409,11 @@ func (a *App) processAsyncResults() {
 					a.path = result.path
 				}
 			}
-			historyWarning := ""
-			if result.historyErr != nil {
-				historyWarning = "文件已保存，但历史版本未记录：" + result.historyErr.Error()
-			}
 			if state := a.sessions[result.tabID]; state != nil && result.token.documentID != "" && state.wordRevisionAtomic.Load() != result.token.revision {
-				a.setStatus("保存已完成，但保存后文档又有修改")
-				if historyWarning != "" {
-					a.setStatus(historyWarning + "；保存后文档又有修改")
+				if result.historyErr != nil {
+					a.setStatusDetailMessage(i18n.Message{ID: "document.save.warning.saved_and_modified_history"}, feedbackWarning, notificationToast, result.historyErr.Error())
+				} else {
+					a.setStatusMessage(i18n.Message{ID: "document.save.status.saved_and_modified"}, feedbackWarning, notificationToast)
 				}
 				a.updatePersistedTab(a.tabMeta[result.tabID])
 				a.maybeAutoSaveWord(a.documentSessionState)
@@ -427,10 +422,10 @@ func (a *App) processAsyncResults() {
 				}
 				return
 			}
-			if historyWarning != "" {
-				a.setStatus(historyWarning)
+			if result.historyErr != nil {
+				a.setStatusDetailMessage(i18n.Message{ID: "word.history.warning.save_failed"}, feedbackWarning, notificationToast, result.historyErr.Error())
 			} else {
-				a.setStatus("已保存 " + result.path)
+				a.setStatusMessage(i18n.Message{ID: "document.save.status.saved", Args: i18n.Args{"Path": result.path}}, feedbackSuccess, notificationToast)
 			}
 			if state := a.sessions[result.tabID]; state != nil {
 				a.updatePersistedTab(a.tabMeta[result.tabID])
@@ -441,9 +436,6 @@ func (a *App) processAsyncResults() {
 			if result.tabID != "" && result.tabID == a.pendingCloseTabID {
 				a.pendingCloseTabID = ""
 				a.closeWorkspaceTab(result.tabID)
-			}
-			if historyWarning != "" {
-				a.setStatus(historyWarning)
 			}
 			a.maybeAutoSaveWord(a.documentSessionState)
 		}

@@ -49,7 +49,7 @@ func (a *App) layoutWordHorizontalRuler(gtx layout.Context, state *documentSessi
 			paint.FillShape(gtx.Ops, wordRulerBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			paint.FillShape(gtx.Ops, a.tokens().Colors.Toolbar.Divider, clip.Rect{Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))), Max: image.Pt(gtx.Constraints.Max.X, height)}.Op())
 			bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
-			semantic.DescriptionOp("Word 水平标尺").Add(gtx.Ops)
+			semantic.DescriptionOp(a.textID("word.accessibility.ruler")).Add(gtx.Ops)
 			bounds.Pop()
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
@@ -81,7 +81,7 @@ func (a *App) layoutWordHorizontalRuler(gtx layout.Context, state *documentSessi
 			for _, edge := range []int{pageLeft, pageRight} {
 				hitWidth := max(1, gtx.Dp(unit.Dp(10)))
 				area := clip.Rect{Min: image.Pt(max(0, edge-hitWidth), 0), Max: image.Pt(min(width, edge+hitWidth), height)}.Push(gtx.Ops)
-				semantic.DescriptionOp("拖动标尺调整画布宽度").Add(gtx.Ops)
+				semantic.DescriptionOp(a.textID("word.accessibility.resize_ruler")).Add(gtx.Ops)
 				pointer.CursorColResize.Add(gtx.Ops)
 				state.wordCanvasResizeDrag.Add(gtx.Ops)
 				area.Pop()

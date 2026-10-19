@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -27,13 +28,14 @@ func (a *App) showSpreadsheetSpellCheckDialog() {
 	if !ok {
 		return
 	}
-	a.setStatus("正在检查选区文本…")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.checking_the_selected_text_fabbbd"}, feedbackInfo, notificationSuppressed)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
 	a.launchManagedBackground(func() {
 		result, err := a.executeRibbonApplicationCommand(token, "spreadsheet.text.proofread", "spreadsheet_range", "selection", sheet, spreadsheetTextProofreadArguments{Sheet: sheet, Bounds: bounds})
-		details := ""
+		var details i18n.Message
+		var detail string
 		if err == nil {
 			var report struct {
 				CellsScanned      int  `json:"cells_scanned"`
@@ -48,14 +50,15 @@ func (a *App) showSpreadsheetSpellCheckDialog() {
 			}
 			err = json.Unmarshal(result.Data, &report)
 			if err == nil {
-				details = formatSpreadsheetProofreadSummary(report.CellsScanned, report.Issues, report.IssuesTruncated)
+				details = i18n.Message{ID: "spreadsheet.status.proofread.completed", Args: i18n.Args{"Count": report.CellsScanned}}
+				detail = formatSpreadsheetProofreadSummary(report.CellsScanned, report.Issues, report.IssuesTruncated)
 			}
 		}
 		a.completeSessionOperation(state, token, err, false)
 		select {
 		case a.formatResults <- spreadsheetFormatResult{
 			state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation,
-			sheet: sheet, window: window, err: err, operation: "拼写检查", details: details,
+			sheet: sheet, window: window, err: err, operation: "拼写检查", details: details, detail: detail,
 		}:
 		case <-a.shutdown:
 		}
@@ -107,9 +110,9 @@ func (a *App) showSpreadsheetTranslateDialog() {
 	if currentText == "" {
 		currentText = "Hello"
 	}
-	a.modal.ShowDualInput("智能翻译", fmt.Sprintf("为单元格 %s 的内容设置或查看翻译：", cellName),
-		currentText, "原文内容",
-		"", "译文内容 (可选填入覆盖单元格)",
+	a.modal.ShowDualInputMessage("spreadsheet.translation", i18n.Message{ID: "spreadsheet.translation.dialog.title"}, i18n.Message{ID: "spreadsheet.translation.dialog.body", Args: i18n.Args{"Cell": cellName}},
+		i18n.Message{ID: "spreadsheet.translation.dialog.source_hint"}, i18n.Message{ID: "spreadsheet.translation.dialog.translation_hint"},
+		currentText, "",
 		func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
@@ -118,11 +121,11 @@ func (a *App) showSpreadsheetTranslateDialog() {
 			translated := strings.TrimSpace(a.modal.SecondInput.Text())
 			if translated != "" {
 				if err := a.applyBatchEdits([]document.CellEdit{{Row: row, Column: col, Value: translated}}, "翻译"); err != nil {
-					a.setStatus("翻译写入失败：" + err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 				}
 				return
 			}
-			a.setStatus("翻译查询完成")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.translation_lookup_complete_6d1662"}, feedbackInfo, notificationSuppressed)
 			if a.window != nil {
 				a.window.Invalidate()
 			}

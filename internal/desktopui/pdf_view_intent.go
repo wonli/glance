@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"encoding/json"
+	"glance/internal/i18n"
 	"math"
 
 	"glance/internal/application"
@@ -40,7 +41,7 @@ func (a *App) applyPDFViewIntent(action string, raw json.RawMessage) (json.RawMe
 	if err := json.Unmarshal(raw, &input); err != nil {
 		return nil, application.ErrInvalidViewIntent
 	}
-	oldPage, oldZoom, oldFit, oldMode, oldTool, oldMessage, oldThumbnails, oldSearchVisible := v.page, v.zoom, v.fit, v.mode, v.tool, v.message, v.thumbnails, v.showSearch
+	oldPage, oldZoom, oldFit, oldMode, oldTool, oldMessage, oldMessageRefID, oldThumbnails, oldSearchVisible := v.page, v.zoom, v.fit, v.mode, v.tool, v.message, v.messageRef.ID, v.thumbnails, v.showSearch
 	switch input.Operation {
 	case "set_page":
 		if *input.PageNumber > info.Pages {
@@ -81,22 +82,26 @@ func (a *App) applyPDFViewIntent(action string, raw json.RawMessage) (json.RawMe
 		v.mode = input.Mode
 		v.tool = ""
 		v.message = ""
+		v.messageRef = i18n.Message{}
 		if input.Mode == "signature" {
 			v.tool = "ink"
-			v.message = "在页面上手写签名（非数字证书签名）"
+			v.messageRef = i18n.Message{ID: "pdf.tool.signature_hint"}
 		}
 	case "set_tool":
 		v.mode = "annotate"
 		v.tool = input.Tool
 		if input.Tool == "highlight" {
-			v.message = "点击或拖拽要高亮的文字"
+			v.message = ""
+			v.messageRef = i18n.Message{ID: "pdf.tool.highlight_hint"}
 		} else if input.Tool == "ink" {
-			v.message = "拖动鼠标绘制，松开后提交；撤销可恢复"
+			v.message = ""
+			v.messageRef = i18n.Message{ID: "pdf.tool.ink_hint"}
 		} else {
 			v.message = ""
+			v.messageRef = i18n.Message{}
 		}
 	}
-	changed := oldPage != v.page || oldZoom != v.zoom || oldFit != v.fit || oldMode != v.mode || oldTool != v.tool || oldMessage != v.message || oldThumbnails != v.thumbnails || oldSearchVisible != v.showSearch
+	changed := oldPage != v.page || oldZoom != v.zoom || oldFit != v.fit || oldMode != v.mode || oldTool != v.tool || oldMessage != v.message || oldMessageRefID != v.messageRef.ID || oldThumbnails != v.thumbnails || oldSearchVisible != v.showSearch
 	if oldPage != v.page {
 		v.canvas.Position.First = v.page
 		v.canvas.Position.Offset = 0
@@ -144,6 +149,6 @@ func (a *App) runPDFViewAction(operation string, arguments any) {
 		_, err = a.applyPDFViewIntent("pdf.view.set", raw)
 	}
 	if err != nil {
-		a.setStatus("设置 PDF 视图（" + operation + "）失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "pdf.view.error.operation_failed", Args: i18n.Args{"Operation": operation}}, err, notificationToast)
 	}
 }

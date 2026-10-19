@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"encoding/json"
+	"glance/internal/i18n"
 )
 
 type wordMacrosInspectionResult struct {
@@ -21,19 +22,19 @@ func (a *App) showWordMacrosDialog() {
 		return
 	}
 	if !a.applicationSessionRegistered(state.documentID) {
-		a.modal.Show("宏与安全性", "Word 应用能力目录当前不可用，无法检查宏部件。", func(string) { a.modal.Hide() }, modalDialogActionSpec{ID: "close", Label: "关闭"})
+		a.modal.ShowMessage(dialogIDWordMacros, i18n.Message{ID: "word.macros.title"}, i18n.Message{ID: "word.macros.error.unavailable"}, func(string) { a.modal.Hide() }, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("Word 文档正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "word.status.operation_busy"}, feedbackWarning, notificationToast)
 		return
 	}
 	a.wordMacrosInspectionRequest++
 	request := a.wordMacrosInspectionRequest
 	generation := a.documentGeneration
 	window, shutdown, results := a.window, a.shutdown, a.wordMacrosInspectionResults
-	a.modal.Show("宏与安全性", "正在检查 DOCX 中是否包含 VBA 宏部件…", func(string) {
+	a.modal.ShowMessage(dialogIDWordMacros, i18n.Message{ID: "word.macros.title"}, i18n.Message{ID: "word.macros.scanning"}, func(string) {
 		if a.wordMacrosInspectionRequest == request {
 			a.wordMacrosInspectionRequest++
 		}
@@ -41,7 +42,7 @@ func (a *App) showWordMacrosDialog() {
 		if window != nil {
 			window.Invalidate()
 		}
-	}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+	}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
 	a.launchManagedBackground(func() {
 		command, err := a.executeRibbonApplicationCommand(token, "word.macros.inspect", "word_document", state.documentID, "", wordMacrosInspectArguments{})
 		state.finishOperation(token)
@@ -60,25 +61,25 @@ func (a *App) showWordMacrosDialog() {
 }
 
 func (a *App) applyWordMacrosInspectionResult(result wordMacrosInspectionResult) {
-	if result.request != a.wordMacrosInspectionRequest || !a.modal.Visible || a.modal.Title != "宏与安全性" {
+	if result.request != a.wordMacrosInspectionRequest || !a.modal.Visible || a.modal.DialogID != dialogIDWordMacros {
 		return
 	}
 	if result.state == nil || result.state.closed.Load() || result.state != a.documentSessionState || result.generation != a.documentGeneration {
-		a.modal.Message = "当前文档已切换，宏检查结果已丢弃。"
+		a.modal.SetMessageRef(i18n.Message{ID: "word.macros.error.switched"})
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
 	if result.state.wordRevisionAtomic.Load() != result.revision {
-		a.modal.Message = "文档在宏检查期间发生变化，结果已过期。请重新检查。"
+		a.modal.SetMessageRef(i18n.Message{ID: "word.macros.error.stale"})
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
 	if result.err != nil {
-		a.modal.Message = "宏部件检查失败：" + result.err.Error()
+		a.modal.SetMessageRef(i18n.Message{ID: "word.macros.error.failed", Args: i18n.Args{"Details": result.err.Error()}})
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -90,11 +91,11 @@ func (a *App) applyWordMacrosInspectionResult(result wordMacrosInspectionResult)
 		Summary              string `json:"summary"`
 	}
 	if err := json.Unmarshal(result.data, &inspection); err != nil {
-		a.modal.Message = "无法读取宏检查结果：" + err.Error()
+		a.modal.SetMessageRef(i18n.Message{ID: "word.macros.error.read", Args: i18n.Args{"Details": err.Error()}})
 	} else if inspection.Summary == "" || inspection.ExecutionSupported {
-		a.modal.Message = "宏检查结果格式无效。"
+		a.modal.SetMessageRef(i18n.Message{ID: "word.macros.error.invalid_result"})
 	} else {
-		a.modal.Message = inspection.Summary
+		a.modal.SetMessageText(inspection.Summary)
 	}
 	if a.window != nil {
 		a.window.Invalidate()

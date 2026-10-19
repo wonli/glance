@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
@@ -129,10 +130,11 @@ func (a *App) startPresentationPictureInsertPicker() {
 		a.pptxPicPickerResults = make(chan presentationPicturePickerResult, 1)
 	}
 	a.pptxPicPickerRunning = true
-	a.setStatus("选择要插入的 PNG/JPEG 图片…")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.choose_a_png_or_jpeg_2076ca"}, feedbackInfo, notificationSuppressed)
 	choose := a.pptxPicFilePicker
 	if choose == nil {
-		choose = chooseOfficeImageFile
+		pickerLabels := a.filePickerLabels()
+		choose = func() (string, error) { return chooseOfficeImageFile(pickerLabels) }
 	}
 	results, shutdown, window := a.pptxPicPickerResults, a.shutdown, a.window
 	a.launchManagedBackground(func() {
@@ -182,10 +184,11 @@ func (a *App) startPresentationPicturePicker() {
 		a.pptxPicPickerResults = make(chan presentationPicturePickerResult, 1)
 	}
 	a.pptxPicPickerRunning = true
-	a.setStatus("选择用于替换的 PNG/JPEG 图片…")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.choose_a_png_or_jpeg_5f614f"}, feedbackInfo, notificationSuppressed)
 	choose := a.pptxPicFilePicker
 	if choose == nil {
-		choose = chooseOfficeImageFile
+		pickerLabels := a.filePickerLabels()
+		choose = func() (string, error) { return chooseOfficeImageFile(pickerLabels) }
 	}
 	results, shutdown, window := a.pptxPicPickerResults, a.shutdown, a.window
 	a.launchManagedBackground(func() {
@@ -216,19 +219,19 @@ func (a *App) handlePresentationPicturePickerResult(result presentationPicturePi
 	}
 	if result.insert {
 		if result.err != nil {
-			a.setStatus("图片读取失败：" + result.err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			return
 		}
 		if result.path == "" {
-			a.setStatus("已取消选择图片")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.image_selection_canceled_5978be"}, feedbackWarning, notificationSuppressed)
 			return
 		}
 		if len(result.data) == 0 || len(result.data) > maxPresentationInsertPictureBytes || result.width <= 0 || result.height <= 0 {
-			a.setStatus("图片数据无效或超过插入上限")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_image_data_is_invalid_or_exceeds_the_i_ed21ae"}, feedbackError, notificationToast)
 			return
 		}
 		if result.state.formatRunning.Load() || a.isSaving() {
-			a.setStatus("演示文稿正在处理其他操作，请稍后重新插入图片")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_is_busy_try_inserting_the_b6485a"}, feedbackWarning, notificationToast)
 			return
 		}
 		v.insertTextBox = false
@@ -239,7 +242,7 @@ func (a *App) handlePresentationPicturePickerResult(result presentationPicturePi
 		v.insertPictureWidth = result.width
 		v.insertPictureHeight = result.height
 		v.insertPictureGeneration = result.generation
-		a.setStatus("请点击幻灯片上的位置放置图片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.click_a_position_on_the_slide_to_place_the_130e91"}, feedbackWarning, notificationSuppressed)
 		return
 	}
 	slideIndex, picture, selected := presentationSelectedEditablePicture(v)
@@ -247,19 +250,19 @@ func (a *App) handlePresentationPicturePickerResult(result presentationPicturePi
 		return
 	}
 	if result.err != nil {
-		a.setStatus("图片读取失败：" + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 		return
 	}
 	if result.path == "" {
-		a.setStatus("已取消选择图片")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.image_selection_canceled_5978be"}, feedbackWarning, notificationSuppressed)
 		return
 	}
 	if result.state.formatRunning.Load() || a.isSaving() {
-		a.setStatus("演示文稿正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_is_busy_try_again_shortly_10cf71"}, feedbackWarning, notificationToast)
 		return
 	}
 	if result.revision != 0 && result.state.wordRevisionAtomic.Load() != result.revision {
-		a.setStatus("图片在选择期间已被其他操作修改；请重新选择目标图片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_picture_changed_while_the_picker_was_o_365f48"}, feedbackInfo, notificationToast)
 		return
 	}
 	a.startPresentationPictureReplacement(result)
@@ -279,12 +282,12 @@ func (a *App) startPresentationPictureReplacement(request presentationPicturePic
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_is_busy_try_again_shortly_10cf71"}, feedbackWarning, notificationToast)
 		return
 	}
 	if request.revision != 0 && token.revision != request.revision {
 		state.finishOperation(token)
-		a.setStatus("图片在选择期间已被其他操作修改；请重新选择目标图片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_picture_changed_while_the_picker_was_o_365f48"}, feedbackInfo, notificationToast)
 		return
 	}
 	if a.pptxPicCommandResults == nil {
@@ -342,7 +345,7 @@ func (a *App) applyPresentationPictureCommandResult(result presentationPictureCo
 			a.markPresentationCropDraft(a.pptxView, true)
 		}
 		if result.generation == a.documentGeneration && state == a.documentSessionState && result.doc == a.pptxDoc {
-			a.setStatus(result.operation + "失败：" + result.err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 		}
 		if a.window != nil {
 			a.window.Invalidate()
@@ -361,9 +364,9 @@ func (a *App) applyPresentationPictureCommandResult(result presentationPictureCo
 	}
 	switch result.operation {
 	case "裁剪图片":
-		a.setStatus("已完成图片裁剪")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.picture_crop_completed_d5f25c"}, feedbackSuccess, notificationToast)
 	default:
-		a.setStatus("已替换图片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.picture_replaced_510413"}, feedbackSuccess, notificationToast)
 	}
 	if a.window != nil {
 		a.window.Invalidate()

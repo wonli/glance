@@ -25,8 +25,8 @@ func TestSpreadsheetProtectSheetDialogAndCommand(t *testing.T) {
 
 	// 1. Show protect sheet dialog (currently unprotected)
 	app.showSpreadsheetProtectSheetDialog()
-	if !app.modal.Visible || app.modal.Title != "保护工作表" {
-		t.Fatalf("expected protect sheet modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "保护工作表" {
+		t.Fatalf("expected protect sheet modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("testpass")
 	app.modal.OnAction("confirm")
@@ -46,8 +46,8 @@ func TestSpreadsheetProtectSheetDialogAndCommand(t *testing.T) {
 
 	// 2. Show unprotect sheet dialog (currently protected)
 	app.showSpreadsheetProtectSheetDialog()
-	if !app.modal.Visible || app.modal.Title != "撤销保护工作表" {
-		t.Fatalf("expected unprotect sheet modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "撤销保护工作表" {
+		t.Fatalf("expected unprotect sheet modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("testpass")
 	app.modal.OnAction("confirm")
@@ -93,8 +93,8 @@ func TestSpreadsheetProtectWorkbookDialogAndCommand(t *testing.T) {
 
 	// 1. Show protect workbook dialog (currently unprotected)
 	app.showSpreadsheetProtectWorkbookDialog()
-	if !app.modal.Visible || app.modal.Title != "保护工作簿" {
-		t.Fatalf("expected protect workbook modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "保护工作簿" {
+		t.Fatalf("expected protect workbook modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("bookpass")
 	app.modal.OnAction("confirm")
@@ -114,8 +114,8 @@ func TestSpreadsheetProtectWorkbookDialogAndCommand(t *testing.T) {
 
 	// 2. Show unprotect workbook dialog (currently protected)
 	app.showSpreadsheetProtectWorkbookDialog()
-	if !app.modal.Visible || app.modal.Title != "撤销保护工作簿" {
-		t.Fatalf("expected unprotect workbook modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "撤销保护工作簿" {
+		t.Fatalf("expected unprotect workbook modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("bookpass")
 	app.modal.OnAction("confirm")

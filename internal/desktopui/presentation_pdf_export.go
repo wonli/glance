@@ -3,6 +3,7 @@ package desktopui
 import (
 	"context"
 	"fmt"
+	"glance/internal/i18n"
 	"image"
 	"path/filepath"
 	"strings"
@@ -49,7 +50,7 @@ func (a *App) requestPresentationPDFExport() {
 
 func (a *App) requestPresentationPDFPrint() {
 	if a.nativePrinter == nil || !a.nativePrinter.Available() {
-		a.setStatus("当前平台不支持原生打印")
+		a.setStatusMessage(i18n.Message{ID: "presentation.print.error.unsupported"}, feedbackWarning, notificationToast)
 		return
 	}
 	a.requestPresentationPDFPreview(true)
@@ -62,20 +63,20 @@ func (a *App) requestPresentationPDFPreview(printMode bool) {
 	}
 	view := a.ensurePresentationView()
 	if view != nil && view.pictureCrop.active {
-		a.setStatus("请先完成或取消图片裁剪后再导出 PDF")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.finish_or_cancel_picture_cropping_before_e_dd4cfa"}, feedbackWarning, notificationSuppressed)
 		return
 	}
 	if err := a.flushPresentationTextDraft(); err != nil {
-		a.setStatus("提交幻灯片文字失败，未打开 PDF 预览：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
-		a.setStatus("提交演讲者备注失败，未打开 PDF 预览：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_is_busy_try_again_shortly_10cf71"}, feedbackWarning, notificationToast)
 		return
 	}
 	a.presentationPDFPreviewGen++
@@ -83,7 +84,7 @@ func (a *App) requestPresentationPDFPreview(printMode bool) {
 	results, shutdown, window := a.presentationPDFPreviewResults, a.shutdown, a.window
 	if results == nil {
 		state.finishOperation(token)
-		a.setStatus("演示文稿 PDF 预览不可用")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_pdf_preview_is_unavailabl_4fd241"}, feedbackWarning, notificationToast)
 		return
 	}
 	stateCopy := state
@@ -118,7 +119,7 @@ func (a *App) requestPresentationPDFPreview(printMode bool) {
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在准备演示文稿 PDF 预览…")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.preparing_the_presentation_pdf_preview_1c40d8"}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) applyPresentationPDFPreviewResult(result presentationPDFPreviewResult) {
@@ -129,10 +130,6 @@ func (a *App) applyPresentationPDFPreviewResult(result presentationPDFPreviewRes
 		return
 	}
 	if result.err != nil {
-		verb := "准备演示文稿 PDF 预览失败："
-		if result.printMode {
-			verb = "准备演示文稿打印预览失败："
-		}
 		if !result.openPreview {
 			prev := &a.pdfExportPreview
 			if prev.Active && prev.Format == "presentation" && prev.presentationPreviewGen == result.generation {
@@ -140,7 +137,7 @@ func (a *App) applyPresentationPDFPreviewResult(result presentationPDFPreviewRes
 				prev.presentationPreviewError = result.err.Error()
 			}
 		}
-		a.setStatus(verb + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -155,27 +152,31 @@ func (a *App) applyPresentationPDFPreviewResult(result presentationPDFPreviewRes
 			presentationPreviewGen: result.generation,
 			presentationPrintMode:  result.printMode,
 		}
-		title, body, confirmLabel := "导出 PDF 预览", "每张幻灯片适配到一张 A4 页面。预览按 Glance 当前支持的 PPTX 内容子集生成；动画、切换和媒体播放不会导出，未投影的 Office 内容无法在此列出。", "导出 PDF"
+		title := i18n.Message{ID: "presentation.export.preview.title"}
+		body := i18n.Message{ID: "presentation.export.preview.body"}
+		confirmLabel := i18n.Message{ID: "common.action.export_pdf"}
 		if result.printMode {
-			title, body, confirmLabel = "打印预览", fmt.Sprintf("将把全部 %d 张幻灯片发送到系统打印面板。每张幻灯片适配到一张 A4 页面；动画、切换和媒体播放不会打印，音视频仅显示占位符，未投影的 Office 内容无法在此列出。", len(result.snapshot.Slides)), "打开打印面板"
+			title = i18n.Message{ID: "presentation.export.print.title"}
+			body = i18n.Message{ID: "presentation.export.print.body", Args: i18n.Args{"Count": len(result.snapshot.Slides)}}
+			confirmLabel = i18n.Message{ID: "common.action.open_print_panel"}
 		}
-		a.modal.ShowCustom(title, body, 680, a.layoutPDFExportPreview, func(action string) {
+		a.modal.ShowCustomMessage("presentation.pdf.preview", title, body, 680, a.layoutPDFExportPreview, func(action string) {
 			prev := &a.pdfExportPreview
 			if action == "confirm" && prev.presentationPreviewPending {
-				verb := "导出"
 				if prev.presentationPrintMode {
-					verb = "打印"
+					a.setStatusMessage(i18n.Message{ID: "presentation.export.status.preview_pending_print"}, feedbackInfo, notificationSuppressed)
+				} else {
+					a.setStatusMessage(i18n.Message{ID: "presentation.export.status.preview_pending_export"}, feedbackInfo, notificationSuppressed)
 				}
-				a.setStatus("正在生成所选幻灯片预览，请稍后" + verb)
 				return
 			}
 			a.modal.Hide()
 			prev.Active = false
 			if action != "confirm" {
 				if prev.presentationPrintMode {
-					a.setStatus("已取消打印演示文稿")
+					a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_printing_canceled_29cda8"}, feedbackSuccess, notificationSuppressed)
 				} else {
-					a.setStatus("已取消导出演示文稿 PDF")
+					a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_pdf_export_canceled_8ec621"}, feedbackSuccess, notificationSuppressed)
 				}
 				return
 			}
@@ -184,10 +185,10 @@ func (a *App) applyPresentationPDFPreviewResult(result presentationPDFPreviewRes
 			} else {
 				a.startPresentationPDFSavePicker(prev.presentationState, prev.presentationSnapshot, prev.Orientation)
 			}
-		}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary},
-			modalDialogActionSpec{ID: "confirm", Label: confirmLabel, Style: modalDialogActionPrimary})
+		}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}, Style: modalDialogActionSecondary},
+			modalDialogActionSpec{ID: "confirm", LabelRef: confirmLabel, Style: modalDialogActionPrimary})
 		a.modal.CustomActionsInLayout = true
-		a.setStatus("请检查所选幻灯片的 PDF 预览")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.review_the_selected_slides_in_the_pdf_prev_dad618"}, feedbackWarning, notificationToast)
 		return
 	}
 	prev := &a.pdfExportPreview
@@ -244,7 +245,7 @@ func (a *App) requestPresentationPDFPreviewPage(index int, orientation string) {
 
 func (a *App) startPresentationPDFSavePicker(state *documentSessionState, snapshot document.PresentationSnapshot, orientation string) {
 	if state == nil || state.pptxDoc == nil || state.closed.Load() || a.fileCommandRunning {
-		a.setStatus("演示文稿 PDF 导出状态已过期")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_pdf_export_request_expire_60b651"}, feedbackWarning, notificationToast)
 		return
 	}
 	a.presentationPDFPickerRequest = &presentationPDFPickerRequest{state: state, snapshot: snapshot, orientation: orientation}
@@ -258,30 +259,30 @@ type presentationDocumentExportPdfArguments struct {
 
 func (a *App) startPresentationPDFFileExport(request *presentationPDFPickerRequest, path string) {
 	if request == nil || request.state == nil || request.state.pptxDoc == nil || request.state.closed.Load() {
-		a.setStatus("演示文稿 PDF 导出状态已过期，请重新导出")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_pdf_export_request_expire_0e9637"}, feedbackWarning, notificationToast)
 		return
 	}
 	state := request.state
 	if state != a.documentSessionState || state.pptxDoc != a.pptxDoc {
-		a.setStatus("演示文稿已切换，PDF 导出已取消")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_active_presentation_changed_pdf_export_932da1"}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	if !strings.EqualFold(filepath.Ext(path), ".pdf") {
 		path += ".pdf"
 	}
 	if pathsReferToSameFile(path, state.path) {
-		a.setStatus("PDF 保存路径不能覆盖源演示文稿")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_pdf_destination_cannot_overwrite_the_s_61cd27"}, feedbackInfo, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_is_busy_try_again_shortly_10cf71"}, feedbackWarning, notificationToast)
 		return
 	}
 	current := state.pptxDoc.Snapshot()
 	if current.Revision != request.snapshot.Revision || token.revision != request.snapshot.Revision {
 		state.finishOperation(token)
-		a.setStatus("演示文稿在选择保存位置期间已更改，请重新打开 PDF 预览")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_changed_while_choosing_a_de7186"}, feedbackInfo, notificationToast)
 		return
 	}
 	if state.presentationPDFExportRunning {
@@ -290,7 +291,7 @@ func (a *App) startPresentationPDFFileExport(request *presentationPDFPickerReque
 	}
 	if !a.applicationSessionRegistered(state.documentID) {
 		state.finishOperation(token)
-		a.setStatus("共享应用运行时不可用，无法导出演示文稿 PDF")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_shared_application_runtime_is_unavaila_b0d4dd"}, feedbackWarning, notificationToast)
 		return
 	}
 	state.presentationPDFExportRunning = true
@@ -318,7 +319,7 @@ func (a *App) startPresentationPDFFileExport(request *presentationPDFPickerReque
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在生成演示文稿 PDF…")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.generating_the_presentation_pdf_5054ca"}, feedbackInfo, notificationSuppressed)
 }
 
 type presentationDocumentPrintArguments struct {
@@ -328,26 +329,26 @@ type presentationDocumentPrintArguments struct {
 
 func (a *App) startPresentationPDFPrint(state *documentSessionState, snapshot document.PresentationSnapshot, orientation string) {
 	if a.nativePrinter == nil || !a.nativePrinter.Available() {
-		a.setStatus("当前平台不支持原生打印")
+		a.setStatusMessage(i18n.Message{ID: "presentation.print.error.unsupported"}, feedbackWarning, notificationToast)
 		return
 	}
 	if state == nil || state.pptxDoc == nil || state.closed.Load() || state != a.documentSessionState {
-		a.setStatus("演示文稿打印状态已过期，请重新打印")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_print_request_expired_sta_f8e7b9"}, feedbackWarning, notificationToast)
 		return
 	}
 	if state.presentationPDFExportRunning || a.fileCommandRunning || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("共享应用运行时不可用，或演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_shared_application_runtime_is_unavaila_52b405"}, feedbackWarning, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_is_busy_try_again_shortly_10cf71"}, feedbackWarning, notificationToast)
 		return
 	}
 	current := state.pptxDoc.Snapshot()
 	if current.Revision != snapshot.Revision || token.revision != snapshot.Revision {
 		state.finishOperation(token)
-		a.setStatus("演示文稿在确认期间已更改，请重新打开打印预览")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_changed_during_confirmati_a91262"}, feedbackInfo, notificationToast)
 		return
 	}
 	state.presentationPDFExportRunning = true
@@ -375,7 +376,7 @@ func (a *App) startPresentationPDFPrint(state *documentSessionState, snapshot do
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在生成并发送演示文稿打印页面…")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.generating_and_sending_presentation_print_bef299"}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) applyPresentationPDFExportResult(result presentationPDFExportResult) {
@@ -388,24 +389,20 @@ func (a *App) applyPresentationPDFExportResult(result presentationPDFExportResul
 		return
 	}
 	if result.err != nil {
-		verb := "导出演示文稿 PDF 失败："
-		if result.printJob {
-			verb = "打印演示文稿失败："
-		}
-		a.setStatus(verb + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 		return
 	}
 	if result.printed {
-		a.setStatus("已将当前演示文稿修订版本发送到系统打印服务")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.sent_the_current_presentation_revision_to_a6cf76"}, feedbackSuccess, notificationToast)
 	} else {
-		a.setStatus("PDF 已导出：" + filepath.Base(result.path))
+		a.setStatusMessage(i18n.Message{ID: "presentation.export.status.exported", Args: i18n.Args{"File": filepath.Base(result.path)}}, feedbackSuccess, notificationToast)
 	}
 }
 
 func (a *App) layoutMiniaturePresentationPaper(gtx layout.Context) layout.Dimensions {
 	prev := &a.pdfExportPreview
 	if prev.presentationPreviewPending {
-		label := material.Caption(a.theme, "正在生成预览…")
+		label := material.Caption(a.theme, a.textID("presentation.preview.generating"))
 		label.TextSize = unit.Sp(11)
 		return label.Layout(gtx)
 	}

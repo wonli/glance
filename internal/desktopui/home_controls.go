@@ -11,6 +11,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"glance/internal/i18n"
 )
 
 func homeTextLabel(gtx layout.Context, theme *material.Theme, text string, size unit.Sp, fg color.NRGBA, bold bool) layout.Dimensions {
@@ -125,7 +127,7 @@ func homeActionBadge(gtx layout.Context, action homeAction) layout.Dimensions {
 	})
 }
 
-func homeFilterGroup(gtx layout.Context, theme *material.Theme, buttons map[string]*widget.Clickable, active *string, scale float32, onChange func(string)) layout.Dimensions {
+func homeFilterGroup(gtx layout.Context, app *App, buttons map[string]*widget.Clickable, active *string, scale float32, onChange func(string)) layout.Dimensions {
 	width, height := gtx.Dp(unit.Dp(650*scale)), gtx.Dp(unit.Dp(44*scale))
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
 	return layout.Background{}.Layout(gtx,
@@ -137,23 +139,24 @@ func homeFilterGroup(gtx layout.Context, theme *material.Theme, buttons map[stri
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(4 * scale), Bottom: unit.Dp(4 * scale), Left: unit.Dp(6 * scale)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				children := make([]layout.FlexChild, 0, len(homeFilters))
-				for index, label := range homeFilters {
-					filter := label
-					button := buttons[filter]
+				locale := app.localeSnapshot().Resolved
+				for index, filter := range homeFilters {
+					button := buttons[filter.id]
 					if button == nil {
 						button = new(widget.Clickable)
-						buttons[filter] = button
+						buttons[filter.id] = button
 					}
 					if button.Clicked(gtx) {
-						onChange(filter)
+						onChange(filter.id)
 					}
+					label := app.text(filter.message)
 					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						right := unit.Dp(0)
 						if index < len(homeFilters)-1 {
 							right = unit.Dp(4 * scale)
 						}
 						return layout.Inset{Right: right}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return homeFilterChip(gtx, theme, button, filter, *active == filter, scale)
+							return homeFilterChip(gtx, app.theme, button, filter.id, label, *active == filter.id, scale, locale)
 						})
 					}))
 				}
@@ -163,8 +166,8 @@ func homeFilterGroup(gtx layout.Context, theme *material.Theme, buttons map[stri
 	)
 }
 
-func homeFilterChip(gtx layout.Context, theme *material.Theme, button *widget.Clickable, label string, selected bool, scale float32) layout.Dimensions {
-	width := homeFilterWidth(label)
+func homeFilterChip(gtx layout.Context, theme *material.Theme, button *widget.Clickable, filterID, label string, selected bool, scale float32, locale i18n.Locale) layout.Dimensions {
+	width := homeFilterWidth(filterID, locale)
 	height := unit.Dp(36 * scale)
 	width = unit.Dp(float32(width) * scale)
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(gtx.Dp(width), gtx.Dp(height)), image.Pt(gtx.Dp(width), gtx.Dp(height))
@@ -198,22 +201,54 @@ func homeFilterChip(gtx layout.Context, theme *material.Theme, button *widget.Cl
 	})
 }
 
-func homeFilterWidth(label string) unit.Dp {
-	switch label {
-	case "全部", "文档", "表格", "演示":
-		return 65
-	case "PDF":
-		return 64
-	case "Markdown":
-		return 109
-	case "JSON":
-		return 77
+func homeFilterWidth(filterID string, locale i18n.Locale) unit.Dp {
+	if locale == i18n.LocaleChinese {
+		switch filterID {
+		case homeFilterAll, homeFilterDocuments, homeFilterSpreadsheets, homeFilterPresentations:
+			return 65
+		case homeFilterPDF:
+			return 64
+		case homeFilterMarkdown:
+			return 109
+		case homeFilterJSON:
+			return 77
+		}
+		return 0
+	}
+	switch filterID {
+	case homeFilterAll:
+		return 52
+	case homeFilterDocuments:
+		return 100
+	case homeFilterSpreadsheets:
+		return 112
+	case homeFilterPresentations:
+		return 120
+	case homeFilterPDF:
+		return 58
+	case homeFilterMarkdown:
+		return 102
+	case homeFilterJSON:
+		return 66
 	default:
 		return 0
 	}
 }
 
-func homeSearchField(gtx layout.Context, theme *material.Theme, editor *widget.Editor, width, height float32) layout.Dimensions {
+func (a *App) homeFilterLabel(filterID string) string {
+	for _, filter := range homeFilters {
+		if filter.id == filterID {
+			return a.text(filter.message)
+		}
+	}
+	return a.text(i18n.Message{ID: "common.translation_missing", Args: i18n.Args{"ID": "home.filter." + filterID}})
+}
+
+func (a *App) homeSearchPlaceholder() string {
+	return a.text(i18n.Message{ID: "home.search.placeholder"})
+}
+
+func homeSearchField(gtx layout.Context, theme *material.Theme, editor *widget.Editor, placeholder string, width, height float32) layout.Dimensions {
 	searchHeight := gtx.Dp(unit.Dp(height))
 	searchWidth := gtx.Constraints.Max.X
 	scale := width / 240
@@ -240,7 +275,7 @@ func homeSearchField(gtx layout.Context, theme *material.Theme, editor *widget.E
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = 0
-				style := material.Editor(theme, editor, homeSearchPlaceholder)
+				style := material.Editor(theme, editor, placeholder)
 				style.TextSize = unit.Sp(float32(defaultShellTokens.Typography.Nav) * scale)
 				style.Color = homeText
 				style.HintColor = color.NRGBA{R: 150, G: 157, B: 166, A: 255}

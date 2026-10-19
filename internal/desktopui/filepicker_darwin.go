@@ -5,13 +5,12 @@ package desktopui
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"os/exec"
 	"strings"
 )
 
-func chooseOfficeFile() (string, error) {
-	script := `set pickedFile to choose file with prompt "选择 Office、PDF、JSON、Markdown 或 CSV 文档" of type {"xlsx", "xls", "doc", "docx", "json", "md", "markdown", "pdf", "csv"}
+func chooseOfficeFile(labels filePickerLabels) (string, error) {
+	script := `set pickedFile to choose file with prompt ` + appleScriptString(labels.OpenDocument) + ` of type {"xlsx", "xls", "doc", "docx", "json", "md", "markdown", "pdf", "csv"}
 POSIX path of pickedFile`
 	cmd := exec.Command("osascript", "-e", script)
 	var stderr bytes.Buffer
@@ -30,8 +29,8 @@ POSIX path of pickedFile`
 	return strings.TrimSpace(string(output)), nil
 }
 
-func chooseOfficeFolder() (string, error) {
-	cmd := exec.Command("osascript", "-e", `set pickedFolder to choose folder with prompt "选择文件夹"`+"\n"+`POSIX path of pickedFolder`)
+func chooseOfficeFolder(labels filePickerLabels) (string, error) {
+	cmd := exec.Command("osascript", "-e", `set pickedFolder to choose folder with prompt `+appleScriptString(labels.OpenFolder)+"\n"+`POSIX path of pickedFolder`)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -44,8 +43,8 @@ func chooseOfficeFolder() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func chooseSavePath(ext string) (string, error) {
-	cmd := exec.Command("osascript", "-e", fmt.Sprintf(`set pickedFile to choose file name with prompt "另存为" default name "未命名.%s"`+"\n"+`POSIX path of pickedFile`, ext))
+func chooseSavePath(ext string, labels filePickerLabels) (string, error) {
+	cmd := exec.Command("osascript", "-e", `set pickedFile to choose file name with prompt `+appleScriptString(labels.SaveAs)+` default name `+appleScriptString(labels.UntitledFile+"."+ext)+"\n"+`POSIX path of pickedFile`)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -58,8 +57,8 @@ func chooseSavePath(ext string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func chooseOfficeImageFile() (string, error) {
-	cmd := exec.Command("osascript", "-e", `set pickedFile to choose file with prompt "选择 PNG 或 JPEG 图片"`+"\n"+`POSIX path of pickedFile`)
+func chooseOfficeImageFile(labels filePickerLabels) (string, error) {
+	cmd := exec.Command("osascript", "-e", `set pickedFile to choose file with prompt `+appleScriptString(labels.ImagePrompt)+"\n"+`POSIX path of pickedFile`)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	output, err := cmd.Output()
@@ -76,12 +75,12 @@ func chooseOfficeImageFile() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func choosePresentationMediaFile(kind string) (string, error) {
-	prompt, types := "选择 MP3 或 WAV 音频", `{"mp3", "wav"}`
+func choosePresentationMediaFile(kind string, labels filePickerLabels) (string, error) {
+	prompt, types := labels.AudioPrompt, `{"mp3", "wav"}`
 	if kind == "video" {
-		prompt, types = "选择 MP4 或 WebM 视频", `{"mp4", "webm"}`
+		prompt, types = labels.VideoPrompt, `{"mp4", "webm"}`
 	}
-	script := fmt.Sprintf("set pickedFile to choose file with prompt %q of type %s\nPOSIX path of pickedFile", prompt, types)
+	script := "set pickedFile to choose file with prompt " + appleScriptString(prompt) + " of type " + types + "\nPOSIX path of pickedFile"
 	cmd := exec.Command("osascript", "-e", script)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -97,4 +96,10 @@ func choosePresentationMediaFile(kind string) (string, error) {
 		return "", errors.New(message)
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+func appleScriptString(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `"`, `\"`)
+	return `"` + value + `"`
 }

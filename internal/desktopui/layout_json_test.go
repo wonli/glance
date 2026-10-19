@@ -2,7 +2,6 @@ package desktopui
 
 import (
 	"image"
-	"strings"
 	"testing"
 
 	"gioui.org/layout"
@@ -53,16 +52,16 @@ func TestJSONToolbarFormatOperation(t *testing.T) {
 	if app.jsonEditor.Text() != expected {
 		t.Fatalf("expected editor text %q, got %q", expected, app.jsonEditor.Text())
 	}
-	if app.status != "已格式化 JSON" {
-		t.Fatalf("unexpected status: %s", app.status)
+	if app.statusText() != "已格式化 JSON。" {
+		t.Fatalf("unexpected status: %s", app.statusText())
 	}
 
 	// Error handling with invalid JSON
 	_ = app.jsonDoc.SetText(`{"broken":`)
 	app.jsonEditor.SetText(`{"broken":`)
 	app.formatJSONDocument()
-	if !strings.Contains(app.status, "格式化失败") {
-		t.Fatalf("expected failure status, got: %s", app.status)
+	if app.statusText() != "JSON 操作失败。" || app.feedback.detail == "" {
+		t.Fatalf("expected localized failure with retained details, status=%q detail=%q", app.statusText(), app.feedback.detail)
 	}
 	if app.jsonDoc.Text() != `{"broken":` {
 		t.Fatalf("invalid text should not be overwritten on error")
@@ -80,8 +79,8 @@ func TestJSONToolbarMinifyOperation(t *testing.T) {
 	if app.jsonEditor.Text() != expected {
 		t.Fatalf("expected editor text %q, got %q", expected, app.jsonEditor.Text())
 	}
-	if app.status != "已压缩 JSON" {
-		t.Fatalf("unexpected status: %s", app.status)
+	if app.statusText() != "已压缩 JSON。" {
+		t.Fatalf("unexpected status: %s", app.statusText())
 	}
 }
 
@@ -93,23 +92,23 @@ func TestJSONToolbarSortKeysOperation(t *testing.T) {
 	if app.jsonDoc.Text() != expected {
 		t.Fatalf("expected sorted text %q, got %q", expected, app.jsonDoc.Text())
 	}
-	if app.status != "已对 JSON 键排序" {
-		t.Fatalf("unexpected status: %s", app.status)
+	if app.statusText() != "已对 JSON 键排序。" {
+		t.Fatalf("unexpected status: %s", app.statusText())
 	}
 }
 
 func TestJSONToolbarValidateOperation(t *testing.T) {
 	app := newTestAppWithJSON(t, `{"valid": true}`)
 	app.validateJSONDocument()
-	if app.status != "JSON 格式正确" {
-		t.Fatalf("expected valid status, got: %s", app.status)
+	if app.statusText() != "JSON 格式正确" {
+		t.Fatalf("expected valid status, got: %s", app.statusText())
 	}
 
 	_ = app.jsonDoc.SetText(`{"invalid":`)
 	app.jsonEditor.SetText(`{"invalid":`)
 	app.validateJSONDocument()
-	if !strings.Contains(app.status, "验证失败") {
-		t.Fatalf("expected validation failure, got: %s", app.status)
+	if app.statusText() != "JSON 操作失败。" || app.feedback.detail == "" {
+		t.Fatalf("expected localized validation failure with retained details, status=%q detail=%q", app.statusText(), app.feedback.detail)
 	}
 }
 

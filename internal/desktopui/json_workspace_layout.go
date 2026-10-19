@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"fmt"
+
 	"gioui.org/font"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
@@ -10,6 +11,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"strings"
@@ -152,7 +154,7 @@ func (a *App) layoutJSONNavigator(gtx layout.Context) layout.Dimensions {
 				return jsonPanel(gtx, jsonSidebarColor, false, true, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: 18}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.W.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return jsonLabel(gtx, a, "JSON 结构", 12, homeText, true, false)
+							return jsonLabel(gtx, a, a.textID("json.workspace.structure"), 12, homeText, true, false)
 						})
 					})
 				})
@@ -166,7 +168,7 @@ func (a *App) layoutJSONNavigator(gtx layout.Context) layout.Dimensions {
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions { return jsonIcon(gtx, "search", 14, homeMuted) }),
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 									gtx.Constraints.Min.Y = 0
-									style := material.Editor(a.theme, &v.search, "搜索键或值")
+									style := material.Editor(a.theme, &v.search, a.textID("json.inspector.search.placeholder"))
 									style.TextSize = 11
 									style.HintColor = homeMuted
 									return layout.Inset{Left: 8}.Layout(gtx, style.Layout)
@@ -206,7 +208,7 @@ func (a *App) layoutJSONNavigator(gtx layout.Context) layout.Dimensions {
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: 12, Right: 12, Top: 12, Bottom: 24}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return a.jsonActionButton(gtx, "paste", "粘贴或导入 JSON", "clipboard-paste", 42, false)
+					return a.jsonActionButton(gtx, "paste", a.textID("json.action.paste_import"), "clipboard-paste", 42, false)
 				})
 			}),
 		)
@@ -234,16 +236,16 @@ func (a *App) layoutJSONBreadcrumb(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if v.pending {
-						return jsonLabel(gtx, a, "正在解析…", 11, homeMuted, false, false)
+						return jsonLabel(gtx, a, a.textID("json.workspace.parsing"), 11, homeMuted, false, false)
 					}
 					if v.err != nil {
-						return jsonLabel(gtx, a, "JSON 无效", 11, color.NRGBA{R: 188, G: 63, B: 60, A: 255}, true, false)
+						return jsonLabel(gtx, a, a.textID("json.workspace.invalid"), 11, color.NRGBA{R: 188, G: 63, B: 60, A: 255}, true, false)
 					}
 					return layout.UniformInset(0).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(98), gtx.Dp(26)))
 						return homeRoundedPanel(gtx, color.NRGBA{R: 237, G: 247, B: 240, A: 255}, color.NRGBA{}, 13, func(gtx layout.Context) layout.Dimensions {
 							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return jsonLabel(gtx, a, "✓ 有效 JSON", 11, color.NRGBA{R: 71, G: 122, B: 83, A: 255}, true, false)
+								return jsonLabel(gtx, a, a.textID("json.workspace.valid"), 11, color.NRGBA{R: 71, G: 122, B: 83, A: 255}, true, false)
 							})
 						})
 					})
@@ -261,7 +263,7 @@ func (a *App) layoutJSONComparison(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(16).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return jsonLabel(gtx, a, "打开时的源码", 11, mutedText, true, false)
+							return jsonLabel(gtx, a, a.textID("json.workspace.source_at_open"), 11, mutedText, true, false)
 						}),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							if len(v.baseline) > jsonSourceEditLimit {
@@ -283,7 +285,7 @@ func (a *App) layoutJSONComparison(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: 20, Top: 16}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return jsonLabel(gtx, a, "当前源码", 11, mutedText, true, false)
+							return jsonLabel(gtx, a, a.textID("json.workspace.current_source"), 11, mutedText, true, false)
 						})
 					}),
 					layout.Flexed(1, a.layoutJSONEditor),
@@ -303,21 +305,21 @@ func (a *App) layoutJSONStatus(gtx layout.Context) layout.Dimensions {
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					text := fmt.Sprintf("%s", formatHomeFileSize(int64(len(a.jsonDoc.Text()))))
 					if v.tree != nil && v.tree.Source == a.jsonDoc.Text() {
-						text = fmt.Sprintf("%d 个键    %d 层 · %s", v.tree.KeyCount, v.tree.MaxDepth+1, formatHomeFileSize(int64(len(v.tree.Source))))
+						text = a.textArgs("json.workspace.stats", i18n.Args{"Keys": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(v.tree.KeyCount)), "Levels": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(v.tree.MaxDepth+1)), "Size": formatHomeFileSize(int64(len(v.tree.Source)))})
 					}
 					if v.toolPending {
-						text = "正在处理 JSON…"
-					} else if v.toolMessage != "" {
-						text = v.toolMessage
+						text = a.textID("json.workspace.processing")
+					} else if v.toolMessage.ID != "" {
+						text = a.text(v.toolMessage)
 					}
 					return jsonLabel(gtx, a, text, 11, mutedText, false, false)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					text, fg := "有效 JSON", color.NRGBA{R: 77, G: 128, B: 90, A: 255}
+					text, fg := a.textID("json.workspace.valid"), color.NRGBA{R: 77, G: 128, B: 90, A: 255}
 					if v.pending || v.parsed != a.jsonDoc.Text() {
-						text, fg = "正在解析…", homeMuted
+						text, fg = a.textID("json.workspace.parsing"), homeMuted
 					} else if v.err != nil {
-						text, fg = "JSON 无效", color.NRGBA{R: 188, G: 63, B: 60, A: 255}
+						text, fg = a.textID("json.workspace.invalid"), color.NRGBA{R: 188, G: 63, B: 60, A: 255}
 					}
 					return jsonLabel(gtx, a, text, 11, fg, false, false)
 				}),

@@ -12,6 +12,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strings"
 )
 
 var pdfToolbarActions = []ribbonAction{
@@ -39,6 +40,14 @@ var pdfToolbarActions = []ribbonAction{
 
 	{id: "undo", label: "撤销", group: "history", icon: "undo"},
 	{id: "redo", label: "重做", group: "history", icon: "redo"},
+}
+
+func (a *App) localizedPDFToolbarActions() []ribbonAction {
+	localized := append([]ribbonAction(nil), pdfToolbarActions...)
+	for index := range localized {
+		localized[index].label = a.textID("pdf.ribbon.action." + strings.ReplaceAll(localized[index].id, "-", "_"))
+	}
+	return localized
 }
 
 var pdfIconAliases = map[string]string{
@@ -152,127 +161,132 @@ func (a *App) updatePDFScale(gtx layout.Context) {
 
 func (a *App) layoutPDFRibbon(gtx layout.Context) layout.Dimensions {
 	v := a.ensurePDFView()
-	gtx = jsonFixedHeight(gtx, 54)
+	gtx = jsonFixedHeight(gtx, documentRibbonHeightDP)
+	actions := a.localizedPDFToolbarActions()
 	return jsonPanel(gtx, contentSurface, false, true, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Rigid(a.layoutAgentRibbonEntry),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return v.toolbar.Layout(gtx, len(pdfToolbarActions), func(gtx layout.Context, i int) layout.Dimensions {
-					action := pdfToolbarActions[i]
-					if action.id == "page-indicator" {
-						return layoutToolbarActionItem(gtx, action, i, pdfToolbarActions, func(gtx layout.Context) layout.Dimensions {
-							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(82), gtx.Dp(34)))
-							paint.FillShape(gtx.Ops, color.NRGBA{R: 221, G: 226, B: 231, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(5)).Op(gtx.Ops))
-							paint.FillShape(gtx.Ops, color.NRGBA{R: 247, G: 248, B: 250, A: 255}, clip.UniformRRect(image.Rect(1, 1, gtx.Constraints.Max.X-1, gtx.Constraints.Max.Y-1), gtx.Dp(4)).Op(gtx.Ops))
-							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										l := material.Label(a.theme, 12, fmt.Sprintf("%d", v.page+1))
-										l.Color = color.NRGBA{R: 52, G: 64, B: 75, A: 255}
-										l.Font.Weight = font.SemiBold
-										return l.Layout(gtx)
-									}),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return layout.Inset{Left: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											l := material.Label(a.theme, 12, fmt.Sprintf("/ %d", max(1, v.info.Pages)))
-											l.Color = color.NRGBA{R: 122, G: 131, B: 142, A: 255}
-											return l.Layout(gtx)
-										})
-									}),
-								)
-							})
-						})
-					}
-					if action.id == "zoom-indicator" {
-						return layoutToolbarActionItem(gtx, action, i, pdfToolbarActions, func(gtx layout.Context) layout.Dimensions {
-							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(64), gtx.Dp(34)))
-							paint.FillShape(gtx.Ops, color.NRGBA{R: 221, G: 226, B: 231, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(5)).Op(gtx.Ops))
-							btn := v.button("zoom-indicator")
-							bg := color.NRGBA{R: 247, G: 248, B: 250, A: 255}
-							if btn.Hovered() {
-								bg = color.NRGBA{R: 238, G: 242, B: 246, A: 255}
-							}
-							paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rect(1, 1, gtx.Constraints.Max.X-1, gtx.Constraints.Max.Y-1), gtx.Dp(4)).Op(gtx.Ops))
-							return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(a.layoutAgentRibbonEntry),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return v.toolbar.Layout(gtx, len(actions), func(gtx layout.Context, i int) layout.Dimensions {
+						action := actions[i]
+						if action.id == "page-indicator" {
+							return layoutToolbarActionItem(gtx, action, i, actions, func(gtx layout.Context) layout.Dimensions {
+								gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(82), gtx.Dp(34)))
+								paint.FillShape(gtx.Ops, color.NRGBA{R: 221, G: 226, B: 231, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(5)).Op(gtx.Ops))
+								paint.FillShape(gtx.Ops, color.NRGBA{R: 247, G: 248, B: 250, A: 255}, clip.UniformRRect(image.Rect(1, 1, gtx.Constraints.Max.X-1, gtx.Constraints.Max.Y-1), gtx.Dp(4)).Op(gtx.Ops))
 								return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									l := material.Label(a.theme, 11, fmt.Sprintf("%.0f%%", v.currentZoom(gtx.Metric)*100))
-									l.Color = color.NRGBA{R: 78, G: 88, B: 99, A: 255}
-									l.Font.Weight = font.SemiBold
-									return l.Layout(gtx)
+									return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											l := material.Label(a.theme, 12, fmt.Sprintf("%d", v.page+1))
+											l.Color = color.NRGBA{R: 52, G: 64, B: 75, A: 255}
+											l.Font.Weight = font.SemiBold
+											return l.Layout(gtx)
+										}),
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											return layout.Inset{Left: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+												l := material.Label(a.theme, 12, fmt.Sprintf("/ %d", max(1, v.info.Pages)))
+												l.Color = color.NRGBA{R: 122, G: 131, B: 142, A: 255}
+												return l.Layout(gtx)
+											})
+										}),
+									)
 								})
 							})
-						})
-					}
-					enabled := !a.isSaving()
-					if action.id == "save" {
-						enabled = enabled && a.isDirty()
-					}
-					if action.id == "undo" {
-						enabled = enabled && v.info.CanUndo
-					}
-					if action.id == "redo" {
-						enabled = enabled && v.info.CanRedo
-					}
-					active := false
-					if action.id == "thumbnails" && v.thumbnails {
-						active = true
-					}
-					if action.id == "fit-width" && v.fit == "width" {
-						active = true
-					}
-					if action.id == "fit-page" && v.fit == "page" {
-						active = true
-					}
-					if action.id == "highlight" && v.tool == "highlight" {
-						active = true
-					}
-					if action.id == "ink" && v.tool == "ink" {
-						active = true
-					}
-					if action.id == "note" && v.tool == "note" {
-						active = true
-					}
+						}
+						if action.id == "zoom-indicator" {
+							return layoutToolbarActionItem(gtx, action, i, actions, func(gtx layout.Context) layout.Dimensions {
+								gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(64), gtx.Dp(34)))
+								paint.FillShape(gtx.Ops, color.NRGBA{R: 221, G: 226, B: 231, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(5)).Op(gtx.Ops))
+								btn := v.button("zoom-indicator")
+								bg := color.NRGBA{R: 247, G: 248, B: 250, A: 255}
+								if btn.Hovered() {
+									bg = color.NRGBA{R: 238, G: 242, B: 246, A: 255}
+								}
+								paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rect(1, 1, gtx.Constraints.Max.X-1, gtx.Constraints.Max.Y-1), gtx.Dp(4)).Op(gtx.Ops))
+								return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										l := material.Label(a.theme, 11, fmt.Sprintf("%.0f%%", v.currentZoom(gtx.Metric)*100))
+										l.Color = color.NRGBA{R: 78, G: 88, B: 99, A: 255}
+										l.Font.Weight = font.SemiBold
+										return l.Layout(gtx)
+									})
+								})
+							})
+						}
+						enabled := !a.isSaving()
+						if action.id == "save" {
+							enabled = enabled && a.isDirty()
+						}
+						if action.id == "undo" {
+							enabled = enabled && v.info.CanUndo
+						}
+						if action.id == "redo" {
+							enabled = enabled && v.info.CanRedo
+						}
+						active := false
+						if action.id == "thumbnails" && v.thumbnails {
+							active = true
+						}
+						if action.id == "fit-width" && v.fit == "width" {
+							active = true
+						}
+						if action.id == "fit-page" && v.fit == "page" {
+							active = true
+						}
+						if action.id == "highlight" && v.tool == "highlight" {
+							active = true
+						}
+						if action.id == "ink" && v.tool == "ink" {
+							active = true
+						}
+						if action.id == "note" && v.tool == "note" {
+							active = true
+						}
 
-					iconCol := toolbarIconColor(enabled)
-					background := contentSurface
-					if active {
-						iconCol = color.NRGBA{R: 43, G: 108, B: 176, A: 255}
-						background = toolbarActiveBackground
-					}
-					icon, ok := pdfToolbarIcon(action.icon, iconCol)
-					if !ok {
-						icon, _ = markdownToolbarIcon(action, enabled)
-					}
-					return layoutToolbarActionItem(gtx, action, i, pdfToolbarActions, func(gtx layout.Context) layout.Dimensions {
-						gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
-						return toolbarIconButton(gtx, a.theme, v.button(action.id), icon, toolbarIconSize, action.label, action.label, enabled, false, background)
+						iconCol := toolbarIconColor(enabled)
+						background := contentSurface
+						if active {
+							iconCol = color.NRGBA{R: 43, G: 108, B: 176, A: 255}
+							background = toolbarActiveBackground
+						}
+						icon, ok := pdfToolbarIcon(action.icon, iconCol)
+						if !ok {
+							icon, _ = markdownToolbarIcon(action, enabled)
+						}
+						return layoutToolbarActionItem(gtx, action, i, actions, func(gtx layout.Context) layout.Dimensions {
+							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
+							return toolbarIconButton(gtx, a.theme, v.button(action.id), icon, toolbarIconSize, action.label, action.label, enabled, false, background)
+						})
 					})
-				})
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: 8, Right: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(a.layoutPDFModeSwitch),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Left: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								enabled := !a.isSaving()
-								icon, _ := pdfToolbarIcon("printer", toolbarIconColor(enabled))
-								gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
-								return toolbarIconButton(gtx, a.theme, v.button("print"), icon, toolbarIconSize, "打印", "打印", enabled, false, contentSurface)
-							})
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Left: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								enabled := !a.isSaving()
-								icon, _ := pdfToolbarIcon("file-down", toolbarIconColor(enabled))
-								gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
-								return toolbarIconButton(gtx, a.theme, v.button("download"), icon, toolbarIconSize, "下载", "下载", enabled, false, contentSurface)
-							})
-						}),
-					)
-				})
-			}),
-		)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: 8, Right: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+							layout.Rigid(a.layoutPDFModeSwitch),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Left: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									enabled := !a.isSaving()
+									icon, _ := pdfToolbarIcon("printer", toolbarIconColor(enabled))
+									gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
+									label := a.textID("pdf.ribbon.action.print")
+									return toolbarIconButton(gtx, a.theme, v.button("print"), icon, toolbarIconSize, label, label, enabled, false, contentSurface)
+								})
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Left: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									enabled := !a.isSaving()
+									icon, _ := pdfToolbarIcon("file-down", toolbarIconColor(enabled))
+									gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
+									label := a.textID("pdf.ribbon.action.download")
+									return toolbarIconButton(gtx, a.theme, v.button("download"), icon, toolbarIconSize, label, label, enabled, false, contentSurface)
+								})
+							}),
+						)
+					})
+				}),
+			)
+		})
 	})
 }
 
@@ -282,10 +296,10 @@ func (a *App) layoutPDFModeSwitch(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 241, G: 243, B: 245, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(6)).Op(gtx.Ops))
 	return layout.UniformInset(3).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		var children []layout.FlexChild
-		modes := []struct{ id, label string }{
-			{"read", "阅读"},
-			{"annotate", "批注"},
-			{"signature", "签名"},
+		modes := []struct{ id, message string }{
+			{"read", "pdf.ribbon.mode.read"},
+			{"annotate", "pdf.ribbon.mode.annotate"},
+			{"signature", "pdf.ribbon.mode.signature"},
 		}
 		for _, item := range modes {
 			item := item
@@ -299,7 +313,7 @@ func (a *App) layoutPDFModeSwitch(gtx layout.Context) layout.Dimensions {
 						paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(4)).Op(gtx.Ops))
 					}
 					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						l := material.Label(a.theme, 11, item.label)
+						l := material.Label(a.theme, 11, a.textID(item.message))
 						if active {
 							l.Color = color.NRGBA{R: 43, G: 108, B: 176, A: 255}
 							l.Font.Weight = font.SemiBold

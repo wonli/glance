@@ -109,12 +109,12 @@ func TestSpreadsheetFreezePanesRibbonMenuAndCommand(t *testing.T) {
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
 			app.processSpreadsheetFormatResult()
-			if app.status == wantStatus {
+			if app.statusText() == wantStatus {
 				return
 			}
 			time.Sleep(time.Millisecond)
 		}
-		t.Fatalf("Ribbon command %q did not complete; status=%q", command, app.status)
+		t.Fatalf("Ribbon command %q did not complete; status=%q", command, app.statusText())
 	}
 
 	// Exercise the toolbar -> Ribbon menu -> async pane command -> viewport path.

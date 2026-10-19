@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"runtime"
 
 	"gioui.org/io/key"
@@ -60,7 +61,7 @@ func (a *App) activateSpreadsheetSheet(gtx layout.Context, sheetName string) boo
 	formulaReferenceActive := state.formulaReference.Active
 	if state.cellEdit.Editing && !formulaReferenceActive {
 		if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-			a.setStatus("修改失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 			if a.window != nil {
 				a.window.Invalidate()
 			}

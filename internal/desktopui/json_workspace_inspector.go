@@ -45,7 +45,7 @@ func (a *App) layoutJSONInspector(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: 18}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-									return jsonLabel(gtx, a, "当前节点", 13, homeText, true, false)
+									return jsonLabel(gtx, a, a.textID("json.inspector.current_node"), 13, homeText, true, false)
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(62), gtx.Dp(24)))
@@ -62,7 +62,7 @@ func (a *App) layoutJSONInspector(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: 18}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return jsonLabel(gtx, a, "键名", 10, homeMuted, false, false)
+									return jsonLabel(gtx, a, a.textID("json.inspector.key"), 10, homeMuted, false, false)
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Top: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return jsonLabel(gtx, a, n.Key, 18, homeText, true, true) })
@@ -83,7 +83,7 @@ func (a *App) layoutJSONInspector(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: 18}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return jsonLabel(gtx, a, "值", 10, mutedText, true, false)
+									return jsonLabel(gtx, a, a.textID("json.inspector.value"), 10, mutedText, true, false)
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Top: 7}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -128,11 +128,11 @@ func (a *App) layoutJSONInspector(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Bottom: 18}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-									return a.jsonActionButton(gtx, "apply-value", "应用", "circle-check", 34, true)
+									return a.jsonActionButton(gtx, "apply-value", a.textID("json.action.apply_value"), "circle-check", 34, true)
 								}),
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										return a.jsonActionButton(gtx, "cancel-value", "取消", "fold-vertical", 34, false)
+										return a.jsonActionButton(gtx, "cancel-value", a.textID("json.action.cancel_value"), "fold-vertical", 34, false)
 									})
 								}),
 							)
@@ -141,16 +141,16 @@ func (a *App) layoutJSONInspector(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								return a.jsonActionButton(gtx, "copy-value", "复制值", "copy", 34, true)
+								return a.jsonActionButton(gtx, "copy-value", a.textID("json.action.copy_value"), "copy", 34, true)
 							}),
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return a.jsonActionButton(gtx, "copy-key", "复制键", "key-round", 34, false)
+									return a.jsonActionButton(gtx, "copy-key", a.textID("json.action.copy_key"), "key-round", 34, false)
 								})
 							}),
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return a.jsonActionButton(gtx, "copy-object", "复制对象", "braces", 34, false)
+									return a.jsonActionButton(gtx, "copy-object", a.textID("json.action.copy_object"), "braces", 34, false)
 								})
 							}),
 						)

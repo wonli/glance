@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"io"
 	"strings"
 	"unicode/utf8"
@@ -48,7 +49,7 @@ func (a *App) handlePresentationClipboardEvents(gtx layout.Context, v *presentat
 		if _, cancelled := ev.(transfer.CancelEvent); cancelled {
 			v.clipboardReadPending = false
 			v.clipboardDocumentID = ""
-			a.setStatus("粘贴已取消")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.paste_canceled_296266"}, feedbackInfo, notificationSuppressed)
 			continue
 		}
 		data, ok := ev.(transfer.DataEvent)
@@ -64,24 +65,24 @@ func (a *App) handlePresentationClipboardEvents(gtx layout.Context, v *presentat
 		pasteSlideID, pasteElementID := v.clipboardPasteSlideID, v.clipboardPasteElementID
 		v.clipboardDocumentID = ""
 		if err != nil {
-			a.setStatus("读取剪贴板失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 			continue
 		}
 		if clipboardDocumentID == "" || a.documentSessionState == nil || a.documentSessionState.documentID != clipboardDocumentID || a.documentGeneration != clipboardDocumentVersion {
-			a.setStatus("文档已切换，已取消粘贴")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_document_changed_paste_canceled_df1442"}, feedbackInfo, notificationSuppressed)
 			continue
 		}
 		text := string(value)
 		if !utf8.Valid(value) || len(value) > 4*presentationClipboardMaxRunes || len([]rune(text)) > presentationClipboardMaxRunes {
-			a.setStatus("粘贴失败：剪贴板文本超过 32767 个字符或不是有效 UTF-8")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.paste_failed_clipboard_text_exceeds_32_767_43b585"}, feedbackError, notificationToast)
 			continue
 		}
 		if strings.ContainsAny(text, "\r\n") {
-			a.setStatus("粘贴失败：当前文本元素只支持单段落；请先拆分换行内容")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.paste_failed_this_text_element_supports_on_cd5ed4"}, feedbackError, notificationToast)
 			continue
 		}
 		if text == "" {
-			a.setStatus("剪贴板中没有可粘贴的文本")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.there_is_no_text_to_paste_from_the_clipboa_bf1827"}, feedbackInfo, notificationSuppressed)
 			continue
 		}
 		a.startPresentationTextPaste(v, pasteSlideID, pasteElementID, text)
@@ -106,12 +107,12 @@ func (a *App) startPresentationTextCopy(v *presentationViewState) bool {
 	}
 	slideID, element, ok := presentationTextElement(v)
 	if !ok {
-		a.setStatus("请先选择可编辑文本框或含文本的形状")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.select_an_editable_text_box_or_a_shape_wit_de0ce6"}, feedbackWarning, notificationSuppressed)
 		return true
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	v.commandPending = true
@@ -155,7 +156,7 @@ func (a *App) startPresentationClipboardPaste(gtx layout.Context, v *presentatio
 	}
 	slideID, element, ok := presentationTextElement(v)
 	if !ok {
-		a.setStatus("请先选择可编辑文本框或含文本的形状")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.select_an_editable_text_box_or_a_shape_wit_de0ce6"}, feedbackWarning, notificationSuppressed)
 		return true
 	}
 	if err := a.flushPresentationTextDraft(); err != nil {
@@ -167,7 +168,7 @@ func (a *App) startPresentationClipboardPaste(gtx layout.Context, v *presentatio
 	v.clipboardPasteElementID = element.ID
 	v.clipboardReadPending = true
 	gtx.Execute(clipboard.ReadCmd{Tag: &v.clipboardTarget})
-	a.setStatus("正在读取剪贴板文本")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.reading_text_from_the_clipboard_8fb421"}, feedbackInfo, notificationSuppressed)
 	return true
 }
 
@@ -184,7 +185,7 @@ func (a *App) startPresentationTextPaste(v *presentationViewState, slideID uint3
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	v.commandPending = true

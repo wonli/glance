@@ -2,10 +2,12 @@ package desktopui
 
 import (
 	"fmt"
-	"glance/internal/workspace"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"glance/internal/i18n"
+	"glance/internal/workspace"
 )
 
 type workspaceWriteJob struct {
@@ -79,27 +81,11 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 		return
 	}
 	a.fileCommandRunning = true
-	switch kind {
-	case commandOpenFile:
-		a.setStatus("选择要打开的文件…")
-	case commandOpenFolder:
-		a.setStatus("选择要浏览的文件夹…")
-	case commandRegisterHomeFolder:
-		a.setStatus("选择要加入文件夹导航的本地目录…")
-	case commandSaveAs:
-		a.setStatus("选择另存为位置…")
-	case commandExportPDF:
-		a.setStatus("选择 PDF 保存位置…")
-	case commandShareCopy:
-		if format == "xlsx" {
-			a.setStatus("选择共享 XLSX 副本保存位置…")
-		} else {
-			a.setStatus("选择共享 DOCX 副本保存位置…")
-		}
-	case commandRevealFile:
-		a.setStatus("正在打开文件夹…")
+	if message := fileCommandStartMessage(kind, format); message.ID != "" {
+		a.setStatusMessage(message, feedbackInfo, notificationSuppressed)
 	}
 	runner := a.fileCommandRunner
+	pickerLabels := a.filePickerLabels()
 	a.launchManagedBackground(func() {
 		result := fileCommandResult{kind: kind}
 		if runner != nil {
@@ -111,14 +97,14 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 		} else {
 			switch kind {
 			case commandOpenFile:
-				result.path, result.err = chooseOfficeFile()
+				result.path, result.err = chooseOfficeFile(pickerLabels)
 			case commandOpenFolder:
-				result.path, result.err = chooseOfficeFolder()
+				result.path, result.err = chooseOfficeFolder(pickerLabels)
 				if result.err == nil && result.path != "" {
 					result.recents, result.err = scanOfficeFolder(result.path)
 				}
 			case commandRegisterHomeFolder:
-				result.path, result.err = chooseOfficeFolder()
+				result.path, result.err = chooseOfficeFolder(pickerLabels)
 				if result.err == nil && result.path != "" {
 					result.path, result.err = validateHomeFolderDirectory(result.path)
 				}
@@ -126,7 +112,7 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 				result.path = format
 				result.err = revealHomeRecentFile(format)
 			case commandSaveAs, commandExportPDF, commandShareCopy:
-				result.path, result.err = chooseSavePath(format)
+				result.path, result.err = chooseSavePath(format, pickerLabels)
 			}
 		}
 		select {
@@ -137,6 +123,51 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 		case <-a.shutdown:
 		}
 	})
+}
+
+func fileCommandStartMessage(kind fileCommandKind, format string) i18n.Message {
+	switch kind {
+	case commandOpenFile:
+		return i18n.Message{ID: "file.command.choose_open_file"}
+	case commandOpenFolder:
+		return i18n.Message{ID: "file.command.choose_open_folder"}
+	case commandRegisterHomeFolder:
+		return i18n.Message{ID: "file.command.choose_register_folder"}
+	case commandSaveAs:
+		return i18n.Message{ID: "file.command.choose_save_as"}
+	case commandExportPDF:
+		return i18n.Message{ID: "file.command.choose_pdf_export"}
+	case commandShareCopy:
+		if format == "xlsx" {
+			return i18n.Message{ID: "file.command.choose_shared_xlsx"}
+		}
+		return i18n.Message{ID: "file.command.choose_shared_docx"}
+	case commandRevealFile:
+		return i18n.Message{ID: "file.command.reveal_file"}
+	default:
+		return i18n.Message{}
+	}
+}
+
+func fileCommandFailureMessage(kind fileCommandKind) i18n.Message {
+	switch kind {
+	case commandOpenFile:
+		return i18n.Message{ID: "file.command.open_file_failed"}
+	case commandOpenFolder:
+		return i18n.Message{ID: "file.command.open_folder_failed"}
+	case commandRegisterHomeFolder:
+		return i18n.Message{ID: "home.folder.error.register_failed"}
+	case commandSaveAs:
+		return i18n.Message{ID: "file.command.save_as_failed"}
+	case commandExportPDF:
+		return i18n.Message{ID: "file.command.pdf_failed"}
+	case commandShareCopy:
+		return i18n.Message{ID: "file.command.share_failed"}
+	case commandRevealFile:
+		return i18n.Message{ID: "file.command.reveal_failed"}
+	default:
+		return i18n.Message{ID: "common.feedback.operation_failed"}
+	}
 }
 
 func validateHomeFolderDirectory(path string) (string, error) {
@@ -185,7 +216,7 @@ func (a *App) persistRecentsAsync() {
 	}
 	if a.workspaceStore != nil {
 		if err := a.workspaceStore.SaveRecents(recents); err != nil {
-			a.setStatus("工作区保存失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.save_recent_files"}, err, notificationToast)
 		}
 	}
 }

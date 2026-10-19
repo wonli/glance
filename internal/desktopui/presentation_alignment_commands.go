@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/application"
 	"glance/internal/document"
@@ -17,12 +18,12 @@ type presentationAlignment struct {
 
 func (a *App) showPresentationAlignmentOptions(view *presentationViewState) {
 	if view == nil || view.selectedShape == 0 {
-		a.setStatus("请先选择一个可排列的幻灯片对象")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.select_a_slide_object_that_can_be_arranged_79adea"}, feedbackWarning, notificationSuppressed)
 		return
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return
 	}
 	var selected *document.PresentationElement
@@ -33,7 +34,7 @@ func (a *App) showPresentationAlignmentOptions(view *presentationViewState) {
 		}
 	}
 	if selected == nil {
-		a.setStatus("当前选择已失效，请重新选择对象")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_selection_is_no_longer_valid_s_f43588"}, feedbackWarning, notificationToast)
 		return
 	}
 	options := []presentationAlignment{
@@ -44,7 +45,7 @@ func (a *App) showPresentationAlignmentOptions(view *presentationViewState) {
 		{action: "middle", label: "垂直居中", x: selected.Bounds.X, y: (slide.HeightPT - selected.Bounds.H) / 2},
 		{action: "bottom", label: "底端对齐", x: selected.Bounds.X, y: slide.HeightPT - selected.Bounds.H},
 	}
-	a.modal.Show("排列对齐", "相对于当前幻灯片画布对齐所选对象。", func(action string) {
+	a.modal.ShowMessage("presentation.alignment", i18n.Message{ID: "presentation.alignment.title"}, i18n.Message{ID: "presentation.alignment.body"}, func(action string) {
 		a.modal.Hide()
 		for _, option := range options {
 			if option.action == action {
@@ -53,24 +54,24 @@ func (a *App) showPresentationAlignmentOptions(view *presentationViewState) {
 			}
 		}
 	},
-		modalDialogActionSpec{ID: "left", Label: "左对齐"},
-		modalDialogActionSpec{ID: "center", Label: "水平居中"},
-		modalDialogActionSpec{ID: "right", Label: "右对齐"},
-		modalDialogActionSpec{ID: "top", Label: "顶端对齐"},
-		modalDialogActionSpec{ID: "middle", Label: "垂直居中"},
-		modalDialogActionSpec{ID: "bottom", Label: "底端对齐"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "left", LabelRef: i18n.Message{ID: "presentation.alignment.left_label"}},
+		modalDialogActionSpec{ID: "center", LabelRef: i18n.Message{ID: "presentation.alignment.center_label"}},
+		modalDialogActionSpec{ID: "right", LabelRef: i18n.Message{ID: "presentation.alignment.right_label"}},
+		modalDialogActionSpec{ID: "top", LabelRef: i18n.Message{ID: "presentation.alignment.top_label"}},
+		modalDialogActionSpec{ID: "middle", LabelRef: i18n.Message{ID: "presentation.alignment.middle_label"}},
+		modalDialogActionSpec{ID: "bottom", LabelRef: i18n.Message{ID: "presentation.alignment.bottom_label"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
 func (a *App) startPresentationElementAlignment(view *presentationViewState, slide *document.PresentationSlide, element document.PresentationElement, alignment presentationAlignment) bool {
 	state := a.documentSessionState
 	if view == nil || slide == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("演示文稿能力尚未连接")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_capabilities_are_not_connecte_811cbe"}, feedbackInfo, notificationToast)
 		return true
 	}
 	if view.commandPending {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
@@ -81,7 +82,7 @@ func (a *App) startPresentationElementAlignment(view *presentationViewState, sli
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true
@@ -92,7 +93,7 @@ func (a *App) startPresentationElementAlignment(view *presentationViewState, sli
 	a.launchManagedBackground(func() {
 		result, err := a.executeRibbonApplicationCommand(token, "presentation.element.transform.set", "presentation_element", fmt.Sprint(element.ID), "", presentationElementTransformSetArguments{SlideId: slide.ID, ElementId: element.ID, X: bounds.X, Y: bounds.Y, Width: bounds.W, Height: bounds.H, RotationDeg: element.RotationDeg})
 		state.finishOperation(token)
-		out := presentationCommandResult{state: state, view: view, generation: generation, elementAlignment: true, alignmentAction: alignment.label, err: err}
+		out := presentationCommandResult{state: state, view: view, generation: generation, elementAlignment: true, alignmentAction: alignment.action, err: err}
 		if err == nil {
 			var data struct {
 				SlideID   uint32 `json:"slide_id"`

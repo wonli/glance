@@ -3,6 +3,7 @@ package desktopui
 import (
 	"context"
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/document"
 )
@@ -17,7 +18,7 @@ type spreadsheetPrintResult struct {
 func (a *App) requestSpreadsheetPrint() {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || a.nativePrinter == nil || !a.nativePrinter.Available() {
-		a.setStatus("当前平台不支持原生打印")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.native_printing_is_not_available_0eccba"}, feedbackWarning, notificationToast)
 		return
 	}
 	if state.closed.Load() || state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning || state.spreadsheetPrintRunning {
@@ -25,7 +26,7 @@ func (a *App) requestSpreadsheetPrint() {
 	}
 	if a.cellEdit.Editing {
 		if err := a.commitGridCell(a.cellEdit.Draft); err != nil {
-			a.setStatus("提交单元格编辑失败，未打印：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 			return
 		}
 	}
@@ -33,7 +34,7 @@ func (a *App) requestSpreadsheetPrint() {
 		Dimension(string) (int, int, error)
 	})
 	if !ok {
-		a.setStatus("当前工作簿不支持读取打印范围")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_548458"}, feedbackWarning, notificationToast)
 		return
 	}
 	sheet := state.sheet
@@ -41,33 +42,33 @@ func (a *App) requestSpreadsheetPrint() {
 	maxColumn, maxRow, err := dimensions.Dimension(sheet)
 	unlock()
 	if err != nil {
-		a.setStatus("读取工作表打印范围失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	if maxColumn <= 0 || maxRow <= 0 {
 		maxColumn, maxRow = 1, 1
 	}
 	if maxColumn > 100 || maxRow > 5000 {
-		a.setStatus("当前工作表已用范围超过打印上限 5000 行 × 100 列")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_worksheet_used_range_exceeds_798ae8"}, feedbackError, notificationToast)
 		return
 	}
 	bounds := document.CellRange{StartRow: 1, StartColumn: 1, EndRow: maxRow, EndColumn: maxColumn}
 	revision := state.wordRevisionAtomic.Load()
 	generation := a.documentGeneration
 	rangeLabel := fmt.Sprintf("%s%d:%s%d", columnName(bounds.StartColumn), bounds.StartRow, columnName(bounds.EndColumn), bounds.EndRow)
-	a.modal.Show("打印工作表", fmt.Sprintf("工作表：%s\n打印范围：%s\n方向：纵向\n\n确认后将根据当前工作簿修订版本生成 PDF 并发送到系统打印面板。", sheet, rangeLabel), func(action string) {
+	a.modal.ShowMessage("spreadsheet.print", i18n.Message{ID: "spreadsheet.print.dialog.title"}, i18n.Message{ID: "spreadsheet.print.dialog.body", Args: i18n.Args{"Sheet": sheet, "Range": rangeLabel, "Orientation": a.text(i18n.Message{ID: "spreadsheet.page_layout.orientation.portrait"})}}, func(action string) {
 		a.modal.Hide()
 		if action != "print" {
 			return
 		}
 		if state != a.documentSessionState || state.closed.Load() || generation != a.documentGeneration || state.wordRevisionAtomic.Load() != revision {
-			a.setStatus("工作簿在确认期间已变化，未打印；请重新发起打印")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_workbook_changed_during_confirmation_8aa4b0"}, feedbackInfo, notificationToast)
 			return
 		}
 		a.beginSpreadsheetPrint(state, sheet, bounds)
 	},
-		modalDialogActionSpec{ID: "print", Label: "确认打印"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "print", LabelRef: i18n.Message{ID: "spreadsheet.print.action.confirm"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -82,12 +83,12 @@ func (a *App) beginSpreadsheetPrint(state *documentSessionState, sheet string, b
 		return
 	}
 	if !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("MCP 应用运行时不可用，无法通过共享打印能力执行")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_mcp_application_runtime_is_c4923c"}, feedbackWarning, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("工作簿正在处理其他操作，未打印")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_workbook_is_busy_nothing_8afb04"}, feedbackInfo, notificationToast)
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -99,7 +100,7 @@ func (a *App) beginSpreadsheetPrint(state *documentSessionState, sheet string, b
 		cancel()
 		state.spreadsheetPrintCancel = nil
 		state.spreadsheetPrintRunning = false
-		a.setStatus("打印服务不可用")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_print_service_is_unavailable_cd0e6b"}, feedbackWarning, notificationToast)
 		return
 	}
 	generation := a.documentGeneration
@@ -120,7 +121,7 @@ func (a *App) beginSpreadsheetPrint(state *documentSessionState, sheet string, b
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在生成并发送工作表打印页面…")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.generating_and_sending_worksheet_print_d51eeb"}, feedbackInfo, notificationToast)
 }
 
 func (a *App) applySpreadsheetPrintResult(result spreadsheetPrintResult) {
@@ -137,9 +138,9 @@ func (a *App) applySpreadsheetPrintResult(result spreadsheetPrintResult) {
 		return
 	}
 	if result.err != nil {
-		a.setStatus("工作表打印失败：" + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, result.err, notificationToast)
 	} else {
-		a.setStatus(fmt.Sprintf("已将工作表修订版本 r%d 发送到系统打印服务", result.revision))
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.print_submitted", Args: i18n.Args{"Revision": result.revision}}, feedbackSuccess, notificationToast)
 	}
 	if a.window != nil {
 		a.window.Invalidate()

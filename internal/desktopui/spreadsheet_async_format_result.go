@@ -1,7 +1,7 @@
 package desktopui
 
 import (
-	"strconv"
+	"glance/internal/i18n"
 
 	"glance/internal/document"
 )
@@ -60,16 +60,23 @@ func (a *App) processSpreadsheetFormatResult() bool {
 				}
 			}
 			if result.err != nil {
-				a.setStatus("格式应用失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, result.err, notificationToast)
 				if result.operation != "" {
-					a.setStatus(result.operation + "失败：" + result.err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, result.err, notificationToast)
 				}
 			} else if result.noOp {
-				a.setStatus(result.details)
+				if result.details.ID != "" {
+					a.setStatusMessage(result.details, feedbackInfo, notificationSuppressed)
+				} else {
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.no_changes"}, feedbackInfo, notificationSuppressed)
+				}
 			} else if !result.history || result.applied {
-				a.setStatus("已应用单元格格式")
-				if result.operation != "" {
-					a.setStatus("已完成" + result.operation)
+				if result.details.ID != "" {
+					a.setStatusDetailMessage(result.details, feedbackSuccess, notificationToast, result.detail)
+				} else if result.operation != "" {
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.operation_completed", Args: i18n.Args{"Operation": a.localizedSpreadsheetToolbarText(result.operation)}}, feedbackSuccess, notificationToast)
+				} else {
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.cell_formatting_applied_209933"}, feedbackSuccess, notificationSuppressed)
 				}
 				switch result.operation {
 				case "向下填充":
@@ -78,9 +85,9 @@ func (a *App) processSpreadsheetFormatResult() bool {
 					}
 				case "合并后居中":
 					if result.merge != nil && result.merge.Unmerged {
-						a.setStatus("已取消合并")
+						a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.cells_unmerged_b88b83"}, feedbackSuccess, notificationToast)
 					} else {
-						a.setStatus("已合并并居中")
+						a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.cells_merged_and_centered_65ffe2"}, feedbackSuccess, notificationToast)
 					}
 					if result.window != nil && result.state.virtualGrid == result.window && result.state.sheet == result.sheet {
 						result.window.PendingSelectionLoad = true
@@ -94,7 +101,9 @@ func (a *App) processSpreadsheetFormatResult() bool {
 						result.window.PendingSelectionLoad = true
 					}
 				case "求和", "平均值", "计数", "最大值", "最小值":
-					a.setStatus(result.details)
+					if result.details.ID != "" {
+						a.setStatusDetailMessage(result.details, feedbackSuccess, notificationToast, result.detail)
+					}
 				case "调整行高", "调整列宽":
 					if len(result.dimensions) > 0 {
 						change := result.dimensions[0]
@@ -102,27 +111,29 @@ func (a *App) processSpreadsheetFormatResult() bool {
 						if !change.row {
 							unitName = "列"
 						}
-						a.setStatus("第 " + strconv.Itoa(change.index) + " " + unitName + "已调整；点击保存写入原文件")
+						a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.row_column_resized", Args: i18n.Args{"Index": change.index, "Unit": a.localizedSpreadsheetToolbarText(unitName)}}, feedbackSuccess, notificationToast)
 					}
 				case "自动调整行高", "自动调整列宽":
-					a.setStatus(result.details)
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.dimensions.autofit"}, feedbackSuccess, notificationToast)
 				case "替换单元格":
-					a.setStatus("已替换当前单元格")
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.current_cell_replaced_cbc1b4"}, feedbackSuccess, notificationToast)
 					if a.modal.Visible && a.modal.SearchReplace {
-						a.modal.SearchReplaceSummary = "已替换当前单元格"
+						a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "spreadsheet.replace.status.replaced_current"})
 						a.modal.FocusInputRequested = true
 					}
 				case "替换全部":
-					a.setStatus(result.details)
+					if result.details.ID != "" {
+						a.setStatusMessage(result.details, feedbackSuccess, notificationToast)
+					}
 					if a.modal.Visible && a.modal.SearchReplace {
-						a.modal.SearchReplaceSummary = result.details
+						a.modal.SetSearchReplaceSummaryRef(result.details)
 						a.modal.FocusInputRequested = true
 					}
 				case "重新计算公式":
-					a.setStatus("已刷新公式结果（不包含外部数据连接）")
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.formula_results_refreshed_external_data_db9373"}, feedbackSuccess, notificationToast)
 				case "刷新全部工作表":
 					result.state.sheets = result.state.book.SheetNames()
-					a.setStatus("已刷新全部工作表公式结果（不包含外部数据连接）")
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.formula_results_refreshed_on_all_6971a2"}, feedbackSuccess, notificationToast)
 				}
 				switch result.operation {
 				case "保护工作表":
@@ -136,9 +147,9 @@ func (a *App) processSpreadsheetFormatResult() bool {
 				}
 				if result.history {
 					if result.undo {
-						a.setStatus("已撤销")
+						a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.undid_the_last_action_fef96e"}, feedbackSuccess, notificationToast)
 					} else {
-						a.setStatus("已重做")
+						a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.redid_the_last_action_12998e"}, feedbackSuccess, notificationToast)
 					}
 					if ed, ok := result.state.book.(document.SpreadsheetProtectionEditor); ok {
 						result.state.spreadsheetSheetProtected, _ = ed.GetSheetProtection(result.sheet)
@@ -161,13 +172,9 @@ func (a *App) processSpreadsheetFormatResult() bool {
 				a.window.Invalidate()
 			}
 			if result.err == nil && result.operation == "拼写检查" {
-				a.modal.Show("拼写检查", result.details, func(action string) {
-					a.modal.Hide()
-					a.setStatus("文本检查完成；未使用词典判断拼写")
-					if a.window != nil {
-						a.window.Invalidate()
-					}
-				}, modalDialogActionSpec{ID: "confirm", Label: "完成"})
+				if result.details.ID != "" {
+					a.setStatusDetailMessage(result.details, feedbackInfo, notificationToast, result.detail)
+				}
 			}
 		}
 	default:

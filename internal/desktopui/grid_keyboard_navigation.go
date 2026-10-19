@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"fmt"
+	"glance/internal/i18n"
 	"math"
 	"runtime"
 
@@ -129,13 +130,13 @@ func (a *App) handleSpreadsheetGridNavigationKey(gtx layout.Context, v *gridView
 	case key.Name(";"), key.Name(":"):
 		if spreadsheetDateShortcut(event.Name, event.Modifiers) {
 			if err := a.insertCurrentDateIntoSpreadsheetCell(); err != nil {
-				a.setStatus("插入日期失败：" + err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 			}
 			return true
 		}
 		if spreadsheetTimeShortcut(event.Name, event.Modifiers, runtime.GOOS) {
 			if err := a.insertCurrentTimeIntoSpreadsheetCell(); err != nil {
-				a.setStatus("插入时间失败：" + err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 			}
 			return true
 		}
@@ -146,7 +147,7 @@ func (a *App) handleSpreadsheetGridNavigationKey(gtx layout.Context, v *gridView
 			return false
 		}
 		if err := a.fillDownSpreadsheetSelection(); err != nil {
-			a.setStatus("向下填充失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		}
 		return true
 	case key.Name("R"):
@@ -155,7 +156,7 @@ func (a *App) handleSpreadsheetGridNavigationKey(gtx layout.Context, v *gridView
 			return false
 		}
 		if err := a.fillRightSpreadsheetSelection(); err != nil {
-			a.setStatus("向右填充失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		}
 		return true
 	default:
@@ -205,7 +206,7 @@ func (a *App) handleSpreadsheetEditorNavigation(gtx layout.Context, v *gridViewp
 				continue
 			}
 			if err := a.enterSpreadsheetValueInSelection(editor.Text()); err != nil {
-				a.setStatus("输入选区失败：" + err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 				if a.window != nil {
 					a.window.Invalidate()
 				}
@@ -261,7 +262,7 @@ func (a *App) handleSpreadsheetEditorNavigation(gtx layout.Context, v *gridViewp
 			}
 			if _, submit := pending.(widget.SubmitEvent); submit {
 				if err := a.commitGridCell(editor.Text()); err != nil {
-					a.setStatus("修改失败：" + err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 					gtx.Execute(key.FocusCmd{Tag: editor})
 					if a.window != nil {
 						a.window.Invalidate()
@@ -282,7 +283,7 @@ func (a *App) handleSpreadsheetEditorNavigation(gtx layout.Context, v *gridViewp
 			}
 		}
 		if err := a.commitGridCell(editor.Text()); err != nil {
-			a.setStatus("修改失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 			gtx.Execute(key.FocusCmd{Tag: editor})
 			a.window.Invalidate()
 			return true
@@ -380,14 +381,14 @@ func (a *App) startSpreadsheetGridJump(v *gridViewport, direction document.Sprea
 	if nextNonEmpty {
 		nextNavigator, supportsNextCell := state.book.(document.SpreadsheetNextNonEmptyCellReader)
 		if !supportsNextCell {
-			a.setStatus("当前表格不支持 End 模式跳转")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.this_worksheet_does_not_support_end_mode_n_f8c3b0"}, feedbackWarning, notificationToast)
 			return
 		}
 		readTarget = nextNavigator.NextNonEmptyCell
 	} else {
 		navigator, ok := state.book.(document.SpreadsheetDataRegionReader)
 		if !ok {
-			a.setStatus("当前表格不支持数据区跳转")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.this_worksheet_does_not_support_data_regio_78de00"}, feedbackWarning, notificationToast)
 			return
 		}
 		readTarget = navigator.DataRegionEdge
@@ -422,7 +423,7 @@ func (a *App) startSpreadsheetGridJump(v *gridViewport, direction document.Sprea
 		case <-a.shutdown:
 		}
 	}) {
-		a.setStatus("数据区跳转已取消")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.data_region_navigation_canceled_f7ab81"}, feedbackInfo, notificationSuppressed)
 	}
 }
 
@@ -433,7 +434,7 @@ func (a *App) startSpreadsheetUsedRangeJump(extend bool) {
 	}
 	dimensions, ok := state.book.(document.SpreadsheetDimensionReader)
 	if !ok {
-		a.setStatus("当前表格不支持已用区域跳转")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.this_worksheet_does_not_support_used_range_24715b"}, feedbackWarning, notificationToast)
 		return
 	}
 	active := spreadsheetActiveCell(state, a.selectedCell)
@@ -473,7 +474,7 @@ func (a *App) startSpreadsheetUsedRangeJump(extend bool) {
 		case <-a.shutdown:
 		}
 	}) {
-		a.setStatus("已用区域跳转已取消")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.used_range_navigation_canceled_a193bd"}, feedbackSuccess, notificationSuppressed)
 	}
 }
 
@@ -531,7 +532,7 @@ func (a *App) startSpreadsheetSelectAll(v *gridViewport) {
 		}
 	}) {
 		state.gridSelectAllPendingSequence = 0
-		a.setStatus("选择数据区域已取消")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.data_region_selection_canceled_e72ded"}, feedbackInfo, notificationSuppressed)
 	}
 }
 
@@ -558,9 +559,9 @@ func (a *App) pollSpreadsheetGridNavigation(gtx layout.Context, v *gridViewport)
 			}
 			if result.err != nil {
 				if result.selectRange {
-					a.setStatus("选择数据区域失败：" + result.err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, result.err, notificationToast)
 				} else {
-					a.setStatus("单元格跳转失败：" + result.err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, result.err, notificationToast)
 				}
 				continue
 			}
@@ -568,7 +569,7 @@ func (a *App) pollSpreadsheetGridNavigation(gtx layout.Context, v *gridViewport)
 				bounds := result.selectionBounds
 				if bounds.StartRow < 1 || bounds.StartColumn < 1 || bounds.EndRow < bounds.StartRow || bounds.EndColumn < bounds.StartColumn ||
 					bounds.EndRow > xlsxRows || bounds.EndColumn > xlsxColumns {
-					a.setStatus("无法确定当前数据区域")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.could_not_determine_the_current_data_regio_23a99d"}, feedbackWarning, notificationToast)
 					continue
 				}
 				wholeSheet := document.CellRange{StartRow: 1, StartColumn: 1, EndRow: xlsxRows, EndColumn: xlsxColumns}

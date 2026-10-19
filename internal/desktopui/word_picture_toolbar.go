@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"math"
@@ -26,19 +27,19 @@ func (a *App) showWordImageResizeDialog() {
 		return
 	}
 	defaultWidth := strconv.FormatFloat(float64(imageData.WidthEMU)/914400, 'f', 2, 64)
-	a.modal.ShowInput("调整图片大小", "输入宽度（英寸，保持宽高比）", defaultWidth, "宽度", func(action string) {
+	a.modal.ShowInputMessage("word.image.resize", i18n.Message{ID: "word.image.resize.dialog.title"}, i18n.Message{ID: "word.image.resize.dialog.body"}, defaultWidth, i18n.Message{ID: "word.image.resize.dialog.hint"}, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
 		}
 		widthInches, err := strconv.ParseFloat(strings.TrimSpace(a.modal.Input.Text()), 64)
 		if err != nil || math.IsNaN(widthInches) || math.IsInf(widthInches, 0) || widthInches <= 0 || widthInches > 100 {
-			a.setStatus("图片宽度必须大于 0 且不超过 100 英寸")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.image_width_must_be_greater_777b95"}, feedbackError, notificationToast)
 			return
 		}
 		widthEMU := int64(math.Round(widthInches * 914400))
 		a.runWordImageCommand("调整图片", imageID, func(editor document.WordImageEditor) error { return editor.ResizeInlineImage(imageID, widthEMU) }, false)
-	}, modalDialogActionSpec{ID: "confirm", Label: "应用"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }
 
 func (a *App) layoutWordToolbarColorPicker(gtx layout.Context) layout.Dimensions {

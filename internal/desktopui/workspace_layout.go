@@ -18,6 +18,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -431,7 +432,7 @@ func (a *App) activateWorkspaceTab(id string) {
 	if a.collection != nil {
 		if record, ok := a.collection.Get(id); ok && len(record.Payload) == 0 && record.Tab.SourcePath != "" {
 			// No snapshot available – open the source file asynchronously.
-			a.setStatus("工作区快照不可用，正在从源文件恢复：" + record.Tab.SourcePath)
+			a.setStatusMessage(i18n.Message{ID: "workspace.status.restore_from_source", Args: i18n.Args{"Path": record.Tab.SourcePath}}, feedbackInfo, notificationSuppressed)
 			a.startOpen(record.Tab.SourcePath)
 			return
 		}
@@ -441,12 +442,16 @@ func (a *App) activateWorkspaceTab(id string) {
 		a.activateSession(id, state)
 		return
 	}
-	if meta, ok := a.tabMeta[id]; ok && meta.SourcePath != "" {
-		a.setStatus("工作区快照不可用，正在从源文件恢复：" + meta.SourcePath)
-		a.startOpen(meta.SourcePath)
-		return
+	title := id
+	if meta, ok := a.tabMeta[id]; ok {
+		title = meta.Title
+		if meta.SourcePath != "" {
+			a.setStatusMessage(i18n.Message{ID: "workspace.status.restore_from_source", Args: i18n.Args{"Path": meta.SourcePath}}, feedbackInfo, notificationSuppressed)
+			a.startOpen(meta.SourcePath)
+			return
+		}
 	}
-	a.setStatus("恢复文档标签失败：" + err.Error())
+	a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.restore_tab", Args: i18n.Args{"Title": title}}, err, notificationToast)
 }
 
 func (a *App) documentTabWidgets(id string) (*widget.Clickable, *widget.Clickable) {

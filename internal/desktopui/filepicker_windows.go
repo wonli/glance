@@ -10,8 +10,8 @@ import (
 	"syscall"
 )
 
-func chooseOfficeFile() (string, error) {
-	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = 'Office/JSON/CSV documents (*.xlsx;*.xls;*.docx;*.json;*.md;*.markdown;*.pdf;*.csv)|*.xlsx;*.xls;*.docx;*.json;*.md;*.markdown;*.pdf;*.csv'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }"
+func chooseOfficeFile(labels filePickerLabels) (string, error) {
+	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Title = '" + powerShellString(labels.OpenDocument) + "'; $d.Filter = '" + powerShellString(labels.DocumentFilter) + " (*.xlsx;*.xls;*.docx;*.json;*.md;*.markdown;*.pdf;*.csv)|*.xlsx;*.xls;*.docx;*.json;*.md;*.markdown;*.pdf;*.csv'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }"
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	var stderr bytes.Buffer
@@ -27,13 +27,13 @@ func chooseOfficeFile() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func chooseOfficeFolder() (string, error) {
-	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }"
+func chooseOfficeFolder(labels filePickerLabels) (string, error) {
+	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = '" + powerShellString(labels.OpenFolder) + "'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }"
 	return windowsPicker(command)
 }
 
-func chooseSavePath(ext string) (string, error) {
-	command := fmt.Sprintf("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.SaveFileDialog; $d.Filter = '%s files (*.%s)|*.%s'; $d.FileName = '未命名.%s'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }", strings.ToUpper(ext), ext, ext, ext)
+func chooseSavePath(ext string, labels filePickerLabels) (string, error) {
+	command := fmt.Sprintf("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.SaveFileDialog; $d.Title = '%s'; $d.Filter = '%s (*.%s)|*.%s'; $d.FileName = '%s.%s'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }", powerShellString(labels.SaveAs), powerShellString(labels.SaveFilter), ext, ext, powerShellString(labels.UntitledFile), ext)
 	return windowsPicker(command)
 }
 
@@ -50,16 +50,20 @@ func windowsPicker(command string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func chooseOfficeImageFile() (string, error) {
-	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = 'PNG or JPEG images (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }"
+func chooseOfficeImageFile(labels filePickerLabels) (string, error) {
+	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Title = '" + powerShellString(labels.ImagePrompt) + "'; $d.Filter = '" + powerShellString(labels.ImageFilter) + " (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }"
 	return windowsPicker(command)
 }
 
-func choosePresentationMediaFile(kind string) (string, error) {
-	filter := "Audio files (*.mp3;*.wav)|*.mp3;*.wav"
+func choosePresentationMediaFile(kind string, labels filePickerLabels) (string, error) {
+	filter := powerShellString(labels.AudioFilter) + " (*.mp3;*.wav)|*.mp3;*.wav"
+	title := labels.AudioPrompt
 	if kind == "video" {
-		filter = "Video files (*.mp4;*.webm)|*.mp4;*.webm"
+		filter = powerShellString(labels.VideoFilter) + " (*.mp4;*.webm)|*.mp4;*.webm"
+		title = labels.VideoPrompt
 	}
-	command := fmt.Sprintf("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = '%s'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }", filter)
+	command := fmt.Sprintf("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Title = '%s'; $d.Filter = '%s'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }", powerShellString(title), filter)
 	return windowsPicker(command)
 }
+
+func powerShellString(value string) string { return strings.ReplaceAll(value, "'", "''") }

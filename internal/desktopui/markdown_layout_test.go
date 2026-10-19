@@ -49,7 +49,7 @@ func TestMarkdownRibbonActionsAndBounds(t *testing.T) {
 		for _, width := range []int{1440, 640, 360} {
 			var ops op.Ops
 			var router input.Router
-			gtx := layout.Context{Ops: &ops, Source: router.Source(), Metric: unit.Metric{PxPerDp: scale, PxPerSp: scale}, Constraints: layout.Exact(image.Pt(int(float32(width)*scale), int(54*scale)))}
+			gtx := layout.Context{Ops: &ops, Source: router.Source(), Metric: unit.Metric{PxPerDp: scale, PxPerSp: scale}, Constraints: layout.Exact(image.Pt(int(float32(width)*scale), int(float32(documentRibbonHeightDP)*scale)))}
 			dims := a.layoutMarkdownRibbon(gtx)
 			if dims.Size != gtx.Constraints.Max {
 				t.Fatalf("ribbon scale %v width %d got %v want %v", scale, width, dims.Size, gtx.Constraints.Max)
@@ -122,7 +122,7 @@ func TestMarkdownNarrowRibbonCanReachLastAction(t *testing.T) {
 		var router input.Router
 		var ops op.Ops
 		a.markdownView.toolbar.ScrollTo(len(markdownToolbarActions) - 1)
-		gtx := layout.Context{Ops: &ops, Source: router.Source(), Metric: unit.Metric{PxPerDp: scale, PxPerSp: scale}, Constraints: layout.Exact(image.Pt(int(360*scale), int(54*scale)))}
+		gtx := layout.Context{Ops: &ops, Source: router.Source(), Metric: unit.Metric{PxPerDp: scale, PxPerSp: scale}, Constraints: layout.Exact(image.Pt(int(360*scale), int(float32(documentRibbonHeightDP)*scale)))}
 		a.layoutMarkdownRibbon(gtx)
 		router.Frame(&ops)
 		found := false

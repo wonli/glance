@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"strings"
 
 	"glance/internal/document"
@@ -108,7 +109,7 @@ func (a *App) applyWordParagraphStyleAction(actionID string) {
 	}
 	paragraphIDs := wordParagraphIDsForSelection(state)
 	if len(paragraphIDs) == 0 {
-		a.setStatus("请先将光标放在可编辑的 Word 段落中")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.place_the_caret_in_an_75475b"}, feedbackWarning, notificationToast)
 		return
 	}
 	styleID := wordParagraphStyleID(actionID)

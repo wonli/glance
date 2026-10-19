@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -26,14 +27,12 @@ func (a *App) showWordLayoutAlignDialog() {
 		}
 	}
 	if pID == "" {
-		a.setStatus("未找到可对齐的段落或对象")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.no_paragraph_or_object_is_97b04f"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.ShowInput(
-		"排列对齐",
-		"请选择对齐方式（输入：left / center / right / both）：",
+	a.modal.ShowInputMessage("word.layout.alignment", i18n.Message{ID: "word.layout.alignment.dialog.title"}, i18n.Message{ID: "word.layout.alignment.dialog.body"},
 		"center",
-		"left, center, right, both",
+		i18n.Message{ID: "word.layout.alignment.dialog.hint"},
 		func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
@@ -57,8 +56,8 @@ func (a *App) showWordLayoutAlignDialog() {
 				})
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "应用对齐"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.layout.alignment.action.apply"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -75,19 +74,23 @@ func (a *App) showWordLayoutWrapDialog() {
 	imageID := state.selectedWordImageID
 	image := findWordImage(wordBlocksForState(state), imageID)
 	if image == nil {
-		a.setStatus("请先选择可安全调整环绕方式的图片")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.select_an_image_whose_wrapping_c02ca9"}, feedbackWarning, notificationToast)
 		return
 	}
 	if !image.WrapEditable {
-		a.setStatus("该图片的环绕结构暂不支持安全修改")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.this_image_s_wrapping_structure_72958e"}, feedbackWarning, notificationToast)
 		return
 	}
 	if image.WrapMode == "inline" {
-		a.setStatus("该图片已是嵌入型排版")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.this_image_already_uses_inline_dfcca7"}, feedbackInfo, notificationSuppressed)
 		return
 	}
-	message := "将选中图片从“" + image.WrapMode + "”浮动环绕转换为嵌入型。此操作会移除绝对位置和浮动环绕规则，保留图片、尺寸及正文内容；段落和分页可能变化。"
-	a.modal.Show("文字环绕", message, func(action string) {
+	wrapModeLabelID := map[string]string{"none": "word.layout.wrap.mode.none", "square": "word.layout.wrap.mode.square", "tight": "word.layout.wrap.mode.tight", "through": "word.layout.wrap.mode.through", "top_and_bottom": "word.layout.wrap.mode.top_and_bottom"}[image.WrapMode]
+	wrapModeLabel := image.WrapMode
+	if wrapModeLabelID != "" {
+		wrapModeLabel = a.text(i18n.Message{ID: wrapModeLabelID})
+	}
+	a.modal.ShowMessage("word.layout.wrap", i18n.Message{ID: "word.layout.wrap.dialog.title"}, i18n.Message{ID: "word.layout.wrap.dialog.body", Args: i18n.Args{"WrapMode": wrapModeLabel}}, func(action string) {
 		a.modal.Hide()
 		if action != "apply" {
 			return
@@ -95,14 +98,14 @@ func (a *App) showWordLayoutWrapDialog() {
 		args := showWordLayoutWrapDialogPayload{ImageID: imageID, WrapMode: "inline"}
 		if a.applicationSessionRegistered(state.documentID) {
 			if !a.runWordApplicationCommand("设置图片文字环绕", "word.image.wrap.set", args) {
-				a.setStatus("无法启动图片环绕调整")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_start_image_wrapping_fc78d3"}, feedbackWarning, notificationToast)
 			}
 			return
 		}
 		if !a.runWordImageWrapCommand("设置图片文字环绕", imageID, "inline") {
-			a.setStatus("无法启动图片环绕调整")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_start_image_wrapping_fc78d3"}, feedbackWarning, notificationToast)
 		}
-	}, modalDialogActionSpec{ID: "apply", Label: "转换为嵌入型"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "apply", LabelRef: i18n.Message{ID: "word.layout.wrap.action.inline"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }
 
 type showWordLayoutPositionDialogPayload struct {
@@ -120,7 +123,7 @@ func (a *App) showWordLayoutPositionDialog() {
 	imageID := state.selectedWordImageID
 	image := findWordImage(blocks, imageID)
 	if image == nil || !image.Editable {
-		a.setStatus("请先选择可编辑的行内图片")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.select_an_editable_inline_image_99e997"}, feedbackWarning, notificationToast)
 		return
 	}
 	paragraphID := state.selectedWordParagraphID
@@ -139,7 +142,7 @@ func (a *App) showWordLayoutPositionDialog() {
 		}
 	}
 	if paragraphID == "" {
-		a.setStatus("未找到图片目标段落")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_target_paragraph_for_the_7b50dc"}, feedbackWarning, notificationToast)
 		return
 	}
 	afterInlineID := ""
@@ -152,26 +155,25 @@ func (a *App) showWordLayoutPositionDialog() {
 		}
 	}
 	if wordImageMoveIsNoop(blocks, imageID, paragraphID, afterInlineID) {
-		a.setStatus("图片已位于目标文本位置")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_image_is_already_at_b85f9d"}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	args := showWordLayoutPositionDialogPayload{ImageID: imageID, ParagraphID: paragraphID, AfterInlineID: afterInlineID}
-	message := "将选中的图片移动到当前光标段落的行内位置。当前 DOCX 适配器支持正文流式排版，不创建浮动定位或文字环绕。"
-	a.modal.Show("对象位置", message, func(action string) {
+	a.modal.ShowMessage("word.layout.position", i18n.Message{ID: "word.layout.position.dialog.title"}, i18n.Message{ID: "word.layout.position.dialog.body"}, func(action string) {
 		a.modal.Hide()
 		if action != "move" {
 			return
 		}
 		if a.applicationSessionRegistered(state.documentID) {
 			if !a.runWordApplicationCommand("移动图片位置", "word.image.move", args) {
-				a.setStatus("无法启动图片位置调整")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_start_image_positioning_c78912"}, feedbackWarning, notificationToast)
 			}
 			return
 		}
 		if !a.runWordImageCommand("移动图片位置", imageID, func(editor document.WordImageEditor) error {
 			return editor.MoveInlineImage(imageID, paragraphID, afterInlineID)
 		}, false) {
-			a.setStatus("无法启动图片位置调整")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_start_image_positioning_c78912"}, feedbackWarning, notificationToast)
 		}
-	}, modalDialogActionSpec{ID: "move", Label: "移动到此处"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "move", LabelRef: i18n.Message{ID: "word.layout.position.action.move"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }

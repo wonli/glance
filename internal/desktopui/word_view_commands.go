@@ -1,12 +1,14 @@
 package desktopui
 
+import "glance/internal/i18n"
+
 func (a *App) toggleWordSideBySideView() {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {
 		return
 	}
 	if a.desktopRuntime != nil && a.desktopRuntime.windowCount() > 1 {
-		a.setStatus("已开启并排查看模式")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.side_by_side_view_is_782e6d"}, feedbackSuccess, notificationSuppressed)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -15,9 +17,9 @@ func (a *App) toggleWordSideBySideView() {
 	enabled, _ := wordNewWindowAvailability(state, a.desktopRuntime)
 	if enabled {
 		a.requestWordNewWindow()
-		a.setStatus("已打开新窗口并排查看")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.opened_a_new_window_for_074edf"}, feedbackSuccess, notificationSuppressed)
 	} else {
 		a.selectWordMultiplePagesView()
-		a.setStatus("已开启双页并排查看")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.two_page_side_by_side_71eeb7"}, feedbackSuccess, notificationSuppressed)
 	}
 }

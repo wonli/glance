@@ -4,6 +4,7 @@ import (
 	"errors"
 	"glance/internal/application"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 
@@ -27,7 +28,7 @@ func (a *App) layoutPresentationDocument(gtx layout.Context) layout.Dimensions {
 	a.syncPresentationNotesDraft(v)
 	if !v.notesDraftConflict {
 		if err := a.flushPresentationNotesDraft(v); err != nil && !errors.Is(err, application.ErrPresentationNotesConflict) {
-			a.setStatus("备注更新失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		}
 	}
 
@@ -71,7 +72,7 @@ func (a *App) layoutPresentationCategoryBar(gtx layout.Context, v *presentationV
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	paint.FillShape(gtx.Ops, pptxBorderColor, clip.Rect{Min: image.Pt(0, height-1), Max: gtx.Constraints.Max}.Op())
 
-	tabs := presentationRibbonTabs(v)
+	tabs := a.localizedPresentationRibbonTabs(v)
 	if v.activeRibbonTab == "picture" {
 		if _, _, ok := presentationSelectedEditablePicture(v); !ok {
 			v.activeRibbonTab = "home"
@@ -144,6 +145,7 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return v.ribbonActionList.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
 					action := actions[index]
+					localizedAction := a.localizedPresentationAction(action)
 					button := v.ribbonBtn(action.id)
 					enabled := a.presentationActionEnabled(v, action.id)
 					clicked := button.Clicked(gtx)
@@ -169,7 +171,7 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 						btnGtx := gtx
 						btnGtx.Constraints.Min = image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight))
 						btnGtx.Constraints.Max = btnGtx.Constraints.Min
-						return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, action.label, action.label, enabled, false, background)
+						return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, localizedAction.label, localizedAction.label, enabled, false, background)
 					})
 				})
 			}),
@@ -296,7 +298,7 @@ func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID 
 		a.handlePresentationAddSlide(v)
 	case "home_layout":
 		if !a.startPresentationLayoutList(v) {
-			a.setStatus("无法读取演示文稿版式目录")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_read_the_presentation_layout_cat_856ec3"}, feedbackWarning, notificationToast)
 		}
 	case "home_textbox", "insert_textbox":
 		a.handlePresentationAddTextBox(v)
@@ -308,12 +310,12 @@ func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID 
 	case "show_from_current":
 		v.slideshowMode = true
 	case "show_rehearse":
-		a.setStatus("排练计时就绪")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.rehearsal_timer_ready_75bb0a"}, feedbackInfo, notificationSuppressed)
 	case "view_fit":
 		v.fitMode = true
 		v.zoom = 1.0
 	case "view_sorter":
-		a.setStatus("幻灯片浏览视图")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.slide_sorter_view_633a4a"}, feedbackInfo, notificationSuppressed)
 	case "design_theme":
 		a.showPresentationThemeOptions(v)
 	case "design_colors":
@@ -323,7 +325,7 @@ func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID 
 	case "design_size":
 		a.showPresentationSlideSizeOptions(v)
 	case "home_bullets":
-		a.setStatus("项目符号")
+		a.setStatusMessage(i18n.Message{ID: "word.ribbon.action.bullet_list"}, feedbackInfo, notificationSuppressed)
 	case "home_shapes", "insert_shapes":
 		a.handlePresentationAddShape(v)
 	case "home_align":
@@ -338,7 +340,7 @@ func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID 
 		a.startPresentationPicturePicker()
 	case "picture_crop":
 		if !a.beginPresentationPictureCrop(v) {
-			a.setStatus("无法裁剪当前图片")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_crop_the_current_picture_3ec3f0"}, feedbackWarning, notificationToast)
 		}
 	case "picture_crop_done":
 		a.commitPresentationPictureCrop(v)
@@ -350,47 +352,47 @@ func (a *App) handlePresentationRibbonAction(v *presentationViewState, actionID 
 		a.showPresentationChartInsertOptions(v)
 	case "insert_video":
 		if !a.startPresentationMediaInsertPicker(v, "video") {
-			a.setStatus("无法启动视频插入")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_video_insertion_ef329a"}, feedbackWarning, notificationToast)
 		}
 	case "insert_audio":
 		if !a.startPresentationMediaInsertPicker(v, "audio") {
-			a.setStatus("无法启动音频插入")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_audio_insertion_a0638d"}, feedbackWarning, notificationToast)
 		}
 	case "review_spell":
 		if !a.startPresentationProofread(v) {
-			a.setStatus("无法启动演示文稿文本检查")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_presentation_text_review_a6efd3"}, feedbackWarning, notificationToast)
 		}
 	case "review_new_comment":
 		a.showPresentationNewCommentDialog(v)
 	case "review_del_comment":
 		if !a.startPresentationDeleteComment(v) {
-			a.setStatus("无法启动批注读取")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_reading_comments_c79d84"}, feedbackWarning, notificationToast)
 		}
 	case "review_access":
 		if !a.startPresentationAccessibilityReview(v) {
-			a.setStatus("无法启动演示文稿辅助功能检查")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_the_presentation_accessibi_40747a"}, feedbackWarning, notificationToast)
 		}
 	case "anim_pane":
 		if !a.startPresentationAnimationPane(v) {
-			a.setStatus("无法启动动画窗格")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_open_the_animation_pane_4894cb"}, feedbackWarning, notificationToast)
 		}
 	case "anim_appear":
 		if !a.startPresentationElementAnimation(v, "appear", 1) {
-			a.setStatus("无法启动出现动画")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_the_appear_animation_38e8d4"}, feedbackWarning, notificationToast)
 		}
 	case "anim_fadein":
 		if !a.startPresentationElementAnimation(v, "fade", 500) {
-			a.setStatus("无法启动淡入动画")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_the_fade_in_animation_29fec0"}, feedbackWarning, notificationToast)
 		}
 	case "anim_flyin":
 		if !a.startPresentationElementAnimation(v, "fly_in", 500) {
-			a.setStatus("无法启动飞入动画")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_the_fly_in_animation_e9d688"}, feedbackWarning, notificationToast)
 		}
 	case "anim_add":
 		a.showPresentationAnimationAddOptions(v)
 	case "anim_duration":
 		a.showPresentationAnimationDurationOptions(v)
 	default:
-		a.setStatus("功能已就绪")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.ready_ddc094"}, feedbackSuccess, notificationSuppressed)
 	}
 }

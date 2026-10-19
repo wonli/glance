@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"glance/internal/application"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 func (a *App) handlePresentationAddSlide(v *presentationViewState) {
@@ -21,7 +22,7 @@ func (a *App) handlePresentationAddSlide(v *presentationViewState) {
 		return
 	}
 	if err := a.pptxDoc.AddSlide(); err != nil {
-		a.setStatus("新建幻灯片失败: " + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	v.snapshot = a.pptxDoc.Snapshot()
@@ -35,7 +36,7 @@ func (a *App) handlePresentationAddSlide(v *presentationViewState) {
 	if cur := v.currentSlide(); cur != nil {
 		a.resetPresentationNotesEditor(v, cur)
 	}
-	a.setStatus("已新建幻灯片")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.new_slide_created_050935"}, feedbackSuccess, notificationToast)
 }
 
 type presentationCommandResult struct {
@@ -43,11 +44,11 @@ type presentationCommandResult struct {
 	view                                 *presentationViewState
 	generation                           uint64
 	accessibility                        bool
-	accessibilityText                    string
+	accessibilityText                    i18n.Message
 	animationPane                        bool
-	animationPaneText                    string
+	animationPaneText                    i18n.Message
 	proofread                            bool
-	proofreadText                        string
+	proofreadText                        i18n.Message
 	presentationCommentList              bool
 	presentationCommentMutation          string
 	presentationCommentChanged           bool
@@ -119,7 +120,7 @@ func (a *App) startPresentationAddSlide(v *presentationViewState) bool {
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	v.commandPending = true
@@ -163,140 +164,140 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 		if result.err != nil {
 			switch {
 			case result.presentationTheme:
-				a.setStatus("设置演示文稿主题失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.presentationGroup:
-				a.setStatus("组合演示文稿对象失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.presentationLayoutList:
-				a.setStatus("读取演示文稿版式失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.presentationLayoutSet:
-				a.setStatus("设置幻灯片版式失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.animationPane:
-				a.setStatus("读取动画窗格失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.transition:
-				a.setStatus("设置切换效果失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.presentationAnimation:
-				a.setStatus("设置元素动画失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.presentationAnimationDuration:
-				a.setStatus("设置动画时长失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.background:
-				a.setStatus("设置幻灯片背景失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.slideSize:
-				a.setStatus("设置幻灯片大小失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.elementAlignment:
-				a.setStatus("排列对象失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.proofread:
-				a.setStatus("演示文稿文本检查失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.presentationCommentList:
-				a.setStatus("读取演示文稿批注失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.presentationCommentMutation != "":
-				a.setStatus("操作演示文稿批注失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.clipboardCopy:
-				a.setStatus("复制文本失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.clipboardPaste:
-				a.setStatus("粘贴文本失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.accessibility:
-				a.setStatus("辅助功能检查失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.deleted:
-				a.setStatus("删除幻灯片失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.createdTextBox:
-				a.setStatus("新建文本框失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.createdShape:
-				a.setStatus("新建形状失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.createdPicture:
-				a.setStatus("插入图片失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.createdTable:
-				a.setStatus("插入表格失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.createdChart:
-				a.setStatus("插入图表失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.createdAudio:
-				a.setStatus("插入音频失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			case result.createdVideo:
-				a.setStatus("插入视频失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			default:
-				a.setStatus("新建幻灯片失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 			}
 			return
 		}
 		if result.accessibility {
-			a.modal.Show("辅助功能检查", result.accessibilityText, func(action string) {
+			a.modal.ShowMessage("presentation.accessibility", i18n.Message{ID: "presentation.accessibility.title"}, result.accessibilityText, func(action string) {
 				a.modal.Hide()
-			}, modalDialogActionSpec{ID: "close", Label: "关闭"})
-			a.setStatus("已完成演示文稿辅助功能检查")
+			}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_accessibility_check_completed_3e162c"}, feedbackSuccess, notificationToast)
 			return
 		}
 		if result.state.pptxDoc == nil {
 			switch {
 			case result.presentationTheme:
-				a.setStatus("设置演示文稿主题失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_set_the_presentation_theme_becau_a66f97"}, feedbackError, notificationToast)
 			case result.presentationGroup:
-				a.setStatus("组合演示文稿对象失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_group_presentation_objects_becau_e085fa"}, feedbackError, notificationToast)
 			case result.presentationLayoutList:
-				a.setStatus("读取演示文稿版式失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_read_presentation_layouts_becaus_261b52"}, feedbackError, notificationToast)
 			case result.presentationLayoutSet:
-				a.setStatus("设置幻灯片版式失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_set_the_slide_layout_because_the_4a9473"}, feedbackError, notificationToast)
 			case result.animationPane:
-				a.setStatus("读取动画窗格失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_read_the_animation_pane_because_452159"}, feedbackError, notificationToast)
 			case result.transition:
-				a.setStatus("设置切换效果失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_set_the_transition_because_the_p_390882"}, feedbackError, notificationToast)
 			case result.presentationAnimation:
-				a.setStatus("设置元素动画失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_set_the_element_animation_becaus_8f4f1b"}, feedbackError, notificationToast)
 			case result.presentationAnimationDuration:
-				a.setStatus("设置动画时长失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_set_the_animation_duration_becau_f2ad63"}, feedbackError, notificationToast)
 			case result.background:
-				a.setStatus("设置幻灯片背景失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_set_the_slide_background_because_0ca4f0"}, feedbackError, notificationToast)
 			case result.slideSize:
-				a.setStatus("设置幻灯片大小失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_set_the_slide_size_because_the_p_21ddfa"}, feedbackError, notificationToast)
 			case result.elementAlignment:
-				a.setStatus("排列对象失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_arrange_objects_because_the_pres_947cad"}, feedbackError, notificationToast)
 			case result.proofread:
-				a.setStatus("演示文稿文本检查失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_text_review_failed_because_th_a83624"}, feedbackError, notificationToast)
 			case result.presentationCommentList:
-				a.setStatus("读取演示文稿批注失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_read_presentation_comments_becau_6fc2e8"}, feedbackError, notificationToast)
 			case result.presentationCommentMutation != "":
-				a.setStatus("操作演示文稿批注失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_update_presentation_comments_bec_90921d"}, feedbackError, notificationToast)
 			case result.clipboardCopy:
-				a.setStatus("复制文本失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_copy_text_because_the_presentati_8af4c9"}, feedbackError, notificationToast)
 			case result.clipboardPaste:
-				a.setStatus("粘贴文本失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_paste_text_because_the_presentat_66801e"}, feedbackError, notificationToast)
 			case result.deleted:
-				a.setStatus("删除幻灯片失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_delete_the_slide_because_the_pre_f2d819"}, feedbackError, notificationToast)
 			case result.createdTextBox:
-				a.setStatus("新建文本框失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_create_the_text_box_because_the_d67b9f"}, feedbackError, notificationToast)
 			case result.createdShape:
-				a.setStatus("新建形状失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_create_the_shape_because_the_pre_838280"}, feedbackError, notificationToast)
 			case result.createdPicture:
-				a.setStatus("插入图片失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_insert_the_picture_because_the_p_31edac"}, feedbackError, notificationToast)
 			case result.createdTable:
-				a.setStatus("插入表格失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_insert_the_table_because_the_pre_a0535a"}, feedbackError, notificationToast)
 			case result.createdChart:
-				a.setStatus("插入图表失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_insert_the_chart_because_the_pre_d13bf6"}, feedbackError, notificationToast)
 			case result.createdAudio:
-				a.setStatus("插入音频失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_insert_the_audio_because_the_pre_649aec"}, feedbackError, notificationToast)
 			case result.createdVideo:
-				a.setStatus("插入视频失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_insert_the_video_because_the_pre_96eeec"}, feedbackError, notificationToast)
 			default:
-				a.setStatus("新建幻灯片失败：演示文稿会话已关闭")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_create_a_slide_because_the_prese_2de729"}, feedbackError, notificationToast)
 			}
 			return
 		}
 		if result.animationPane {
-			a.modal.Show("动画窗格", result.animationPaneText, func(action string) {
+			a.modal.ShowMessage("presentation.animation_pane", i18n.Message{ID: "presentation.animation_pane.title"}, result.animationPaneText, func(action string) {
 				a.modal.Hide()
-			}, modalDialogActionSpec{ID: "close", Label: "关闭"})
-			a.setStatus("已读取当前幻灯片动画")
+			}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.read_animations_for_the_current_slide_8d45d2"}, feedbackSuccess, notificationToast)
 			return
 		}
 		if result.proofread {
-			a.modal.Show("拼写检查", result.proofreadText, func(action string) {
+			a.modal.ShowMessage("presentation.proofread", i18n.Message{ID: "presentation.proofread.title"}, result.proofreadText, func(action string) {
 				a.modal.Hide()
-			}, modalDialogActionSpec{ID: "close", Label: "关闭"})
-			a.setStatus("已完成演示文稿文本检查")
+			}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_text_review_completed_0428e3"}, feedbackSuccess, notificationToast)
 			return
 		}
 		if result.presentationCommentList {
 			if len(result.presentationComments) == 0 {
-				a.modal.Show("删除批注", "当前幻灯片没有批注。", func(action string) { a.modal.Hide() }, modalDialogActionSpec{ID: "close", Label: "关闭"})
-				a.setStatus("当前幻灯片没有批注")
+				a.modal.ShowMessage("presentation.comments.none", i18n.Message{ID: "presentation.comments.delete.title"}, i18n.Message{ID: "presentation.comments.none"}, func(action string) { a.modal.Hide() }, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_has_no_comments_6b1fcc"}, feedbackInfo, notificationSuppressed)
 				return
 			}
 			a.showPresentationDeleteCommentPrompt(v, result.presentationComments, result.presentationCommentTotal, result.revision)
@@ -307,15 +308,15 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 			a.persistActiveSession()
 			if result.presentationCommentMutation == "add" {
 				if result.presentationCommentChanged {
-					a.setStatus("已添加批注：" + result.presentationCommentID)
+					a.setStatusMessage(i18n.Message{ID: "presentation.comment.status.added", Args: i18n.Args{"ID": result.presentationCommentID}}, feedbackSuccess, notificationToast)
 				} else {
-					a.setStatus("批注已存在：" + result.presentationCommentID)
+					a.setStatusMessage(i18n.Message{ID: "presentation.comment.status.exists", Args: i18n.Args{"ID": result.presentationCommentID}}, feedbackInfo, notificationSuppressed)
 				}
 			} else {
 				if result.presentationCommentChanged {
-					a.setStatus("已删除批注：" + result.presentationCommentID)
+					a.setStatusMessage(i18n.Message{ID: "presentation.comment.status.deleted", Args: i18n.Args{"ID": result.presentationCommentID}}, feedbackSuccess, notificationToast)
 				} else {
-					a.setStatus("批注无需更改：" + result.presentationCommentID)
+					a.setStatusMessage(i18n.Message{ID: "presentation.comment.status.unchanged", Args: i18n.Args{"ID": result.presentationCommentID}}, feedbackInfo, notificationSuppressed)
 				}
 			}
 			return
@@ -327,7 +328,7 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 		if result.clipboardCopy {
 			v.clipboardWriteText = result.clipboardText
 			v.clipboardWritePending = true
-			a.setStatus("已复制所选元素文本")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.copied_the_selected_element_text_329f7f"}, feedbackSuccess, notificationToast)
 			return
 		}
 		if result.clipboardPaste {
@@ -339,9 +340,9 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 			}
 			a.persistActiveSession()
 			if result.clipboardChanged {
-				a.setStatus("已粘贴到原选中的文本元素")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.pasted_into_the_originally_selected_text_e_3336e4"}, feedbackSuccess, notificationToast)
 			} else {
-				a.setStatus("文本内容相同，无需粘贴")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_text_is_unchanged_nothing_was_pasted_5dd9a0"}, feedbackInfo, notificationToast)
 			}
 			return
 		}
@@ -350,12 +351,12 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 			a.persistActiveSession()
 			if result.presentationThemeChanged {
 				if result.presentationThemeOperation == "palette" {
-					a.setStatus("已应用配色方案：" + result.presentationThemeID)
+					a.setStatusMessage(i18n.Message{ID: "presentation.theme.status.palette_applied", Args: i18n.Args{"Theme": result.presentationThemeID}}, feedbackSuccess, notificationToast)
 				} else {
-					a.setStatus("已应用主题：" + result.presentationThemeID)
+					a.setStatusMessage(i18n.Message{ID: "presentation.theme.status.applied", Args: i18n.Args{"Theme": result.presentationThemeID}}, feedbackSuccess, notificationToast)
 				}
 			} else {
-				a.setStatus("主题无需更改")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_theme_is_already_applied_3ff948"}, feedbackInfo, notificationSuppressed)
 			}
 			return
 		}
@@ -363,9 +364,9 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 			v.snapshot = result.state.pptxDoc.Snapshot()
 			a.persistActiveSession()
 			if result.presentationGroupChanged {
-				a.setStatus(fmt.Sprintf("已组合 %d 个对象（组合 ID %d）", len(result.presentationGroupElementIDs), result.presentationGroupID))
+				a.setStatusMessage(i18n.Message{ID: "presentation.group.status.created", Args: i18n.Args{"Count": len(result.presentationGroupElementIDs), "ID": result.presentationGroupID}}, feedbackSuccess, notificationToast)
 			} else {
-				a.setStatus("对象已组合，无需再次更改")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_objects_are_already_grouped_41c6d0"}, feedbackInfo, notificationToast)
 			}
 			return
 		}
@@ -373,63 +374,65 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 		if result.presentationLayoutSet {
 			a.persistActiveSession()
 			if result.presentationLayoutChanged {
-				a.setStatus(fmt.Sprintf("已将幻灯片 %d 设置为版式：%s", result.presentationLayoutSlideID, result.presentationLayoutOption.Name))
+				a.setStatusMessage(i18n.Message{ID: "presentation.layout.status.applied", Args: i18n.Args{"Slide": result.presentationLayoutSlideID, "Layout": result.presentationLayoutOption.Name}}, feedbackSuccess, notificationToast)
 			} else {
-				a.setStatus("幻灯片已使用该版式，无需更改")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_slide_already_uses_this_layout_056d34"}, feedbackInfo, notificationSuppressed)
 			}
 			return
 		}
 		if result.background {
 			a.persistActiveSession()
 			if result.backgroundChanged {
-				a.setStatus("已更新幻灯片背景颜色")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.slide_background_color_updated_e7288b"}, feedbackSuccess, notificationToast)
 			} else {
-				a.setStatus("幻灯片背景无需更改")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_slide_background_is_already_set_5ed59e"}, feedbackInfo, notificationSuppressed)
 			}
 			return
 		}
 		if result.slideSize {
 			a.persistActiveSession()
 			if result.slideSizeChanged {
-				a.setStatus(fmt.Sprintf("已设置画布尺寸为 %.2f × %.2f point；对象位置和尺寸保持不变", result.slideWidthPT, result.slideHeightPT))
+				a.setStatusMessage(i18n.Message{ID: "presentation.slide_size.status.applied", Args: i18n.Args{"Width": fmt.Sprintf("%.2f", result.slideWidthPT), "Height": fmt.Sprintf("%.2f", result.slideHeightPT)}}, feedbackSuccess, notificationToast)
 			} else {
-				a.setStatus("幻灯片大小无需更改")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_slide_size_is_already_set_4e741a"}, feedbackInfo, notificationSuppressed)
 			}
 			return
 		}
 		if result.elementAlignment {
 			a.persistActiveSession()
 			if result.alignmentChanged {
-				a.setStatus("已将所选对象" + result.alignmentAction)
+				alignment := a.presentationAlignmentLabel(result.alignmentAction)
+				a.setStatusMessage(i18n.Message{ID: "presentation.alignment.status.applied", Args: i18n.Args{"Alignment": alignment}}, feedbackSuccess, notificationToast)
 			} else {
-				a.setStatus("对象已符合" + result.alignmentAction + "，无需更改")
+				alignment := a.presentationAlignmentLabel(result.alignmentAction)
+				a.setStatusMessage(i18n.Message{ID: "presentation.alignment.status.unchanged", Args: i18n.Args{"Alignment": alignment}}, feedbackInfo, notificationSuppressed)
 			}
 			return
 		}
 		if result.transition {
 			a.persistActiveSession()
 			if result.transitionChanged {
-				a.setStatus(fmt.Sprintf("已更新 %d 张幻灯片的切换效果", result.transitionAffected))
+				a.setStatusMessage(i18n.Message{ID: "presentation.transition.status.updated", Args: i18n.Args{"Count": result.transitionAffected}}, feedbackSuccess, notificationToast)
 			} else {
-				a.setStatus("切换效果无需更改")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_transition_is_already_applied_48c2bb"}, feedbackInfo, notificationSuppressed)
 			}
 			return
 		}
 		if result.presentationAnimation {
 			a.persistActiveSession()
 			if result.presentationAnimationChanged {
-				a.setStatus("已添加动画：" + result.presentationAnimationEffect)
+				a.setStatusMessage(i18n.Message{ID: "presentation.animation.status.added", Args: i18n.Args{"Effect": result.presentationAnimationEffect}}, feedbackSuccess, notificationToast)
 			} else {
-				a.setStatus("动画无需更改")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_animation_is_already_applied_734906"}, feedbackInfo, notificationSuppressed)
 			}
 			return
 		}
 		if result.presentationAnimationDuration {
 			a.persistActiveSession()
 			if result.presentationAnimationDurationChanged {
-				a.setStatus(fmt.Sprintf("已将所选动画时长设为 %d 毫秒", result.presentationAnimationDurationMS))
+				a.setStatusMessage(i18n.Message{ID: "presentation.animation.status.duration", Args: i18n.Args{"Duration": result.presentationAnimationDurationMS}}, feedbackSuccess, notificationToast)
 			} else {
-				a.setStatus("动画时长无需更改")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_animation_duration_is_already_set_136d40"}, feedbackInfo, notificationSuppressed)
 			}
 			return
 		}
@@ -444,19 +447,19 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 			}
 			if !foundSlide {
 				if result.createdShape {
-					a.setStatus("新建形状失败：返回的幻灯片未出现在当前视图中")
+					a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_create_the_shape_because_the_ret_137678"}, feedbackError, notificationToast)
 				} else if result.createdPicture {
-					a.setStatus("插入图片失败：返回的幻灯片未出现在当前视图中")
+					a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_insert_the_picture_because_the_r_c68c3e"}, feedbackError, notificationToast)
 				} else if result.createdTable {
-					a.setStatus("插入表格失败：返回的幻灯片未出现在当前视图中")
+					a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_insert_the_table_because_the_ret_8e9f79"}, feedbackError, notificationToast)
 				} else if result.createdChart {
-					a.setStatus("插入图表失败：返回的幻灯片未出现在当前视图中")
+					a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_insert_the_chart_because_the_ret_f87bad"}, feedbackError, notificationToast)
 				} else if result.createdAudio {
-					a.setStatus("插入音频失败：返回的幻灯片未出现在当前视图中")
+					a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_insert_the_audio_because_the_ret_aaf493"}, feedbackError, notificationToast)
 				} else if result.createdVideo {
-					a.setStatus("插入视频失败：返回的幻灯片未出现在当前视图中")
+					a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_insert_the_video_because_the_ret_764a60"}, feedbackError, notificationToast)
 				} else {
-					a.setStatus("新建文本框失败：返回的幻灯片未出现在当前视图中")
+					a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_create_the_text_box_because_the_08c2be"}, feedbackError, notificationToast)
 				}
 				return
 			}
@@ -480,23 +483,23 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 		a.persistActiveSession()
 		switch {
 		case result.deleted:
-			a.setStatus("已删除幻灯片")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.slide_deleted_5c31c3"}, feedbackSuccess, notificationToast)
 		case result.createdTextBox:
-			a.setStatus("已新建文本框；双击文本框可编辑内容")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.text_box_created_double_click_it_to_edit_i_a9171f"}, feedbackSuccess, notificationToast)
 		case result.createdShape:
-			a.setStatus("已新建矩形；可调整其大小和样式")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.rectangle_created_you_can_adjust_its_size_8cabe7"}, feedbackSuccess, notificationToast)
 		case result.createdPicture:
-			a.setStatus("已插入图片；可调整大小和样式")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.picture_inserted_you_can_adjust_its_size_a_0c87cc"}, feedbackSuccess, notificationToast)
 		case result.createdTable:
-			a.setStatus("已插入表格；Agent 可继续填入和整理单元格数据")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.table_inserted_the_agent_can_fill_in_and_o_7ef07d"}, feedbackSuccess, notificationToast)
 		case result.createdChart:
-			a.setStatus("已插入图表模板；Agent 可按实际数据新建正式图表")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.chart_template_inserted_the_agent_can_crea_9c9e0a"}, feedbackSuccess, notificationToast)
 		case result.createdAudio:
-			a.setStatus("已嵌入音频文件")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.audio_embedded_fa4d22"}, feedbackSuccess, notificationToast)
 		case result.createdVideo:
-			a.setStatus("已嵌入视频文件")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.video_embedded_85bb99"}, feedbackSuccess, notificationToast)
 		default:
-			a.setStatus(fmt.Sprintf("已新建第 %d 张幻灯片", v.activeSlide+1))
+			a.setStatusMessage(i18n.Message{ID: "presentation.slide.status.created", Args: i18n.Args{"Number": v.activeSlide + 1}}, feedbackSuccess, notificationToast)
 		}
 	default:
 	}
@@ -524,7 +527,7 @@ func (a *App) startPresentationAccessibilityReview(v *presentationViewState) boo
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	v.commandPending = true
@@ -612,34 +615,16 @@ type presentationAccessibilityReviewResult struct {
 	}
 }
 
-func formatPresentationAccessibilityReview(report presentationAccessibilityReviewResult) string {
-	text := fmt.Sprintf("检查了 %d/%d 张幻灯片。\n此规则检查关注可读取文本和图片替代文本，不判断图片语义、颜色对比度或内容质量。", report.CheckedSlides, report.TotalSlides)
-	if report.Complete {
-		text += "\n检查完整。"
-	} else {
-		text += "\n检查结果不完整。可通过 document.inspect 使用 start/limit 继续分页检查。"
+func formatPresentationAccessibilityReview(report presentationAccessibilityReviewResult) i18n.Message {
+	issues := report.Issues
+	if len(issues) > 30 {
+		issues = issues[:30]
 	}
-	if len(report.Issues) == 0 {
-		if report.ElementLimitReached {
-			text += "\n在当前扫描到的元素中未发现可读取文本或图片替代文本问题。"
-		} else {
-			text += "\n未发现缺少可读取文本或图片替代文本的问题。"
-		}
-		return text
-	}
-	text += fmt.Sprintf("\n发现 %d 项需要复核：", len(report.Issues))
-	for index, issue := range report.Issues {
-		if index == 30 {
-			text += fmt.Sprintf("\n另有 %d 项未显示。", len(report.Issues)-index)
-			break
-		}
-		text += fmt.Sprintf("\n· 第 %d 张幻灯片", issue.SlideNumber)
-		if issue.ElementID != 0 {
-			text += fmt.Sprintf("，元素 %d", issue.ElementID)
-		}
-		text += "：" + issue.Message
-	}
-	return text
+	return i18n.Message{ID: "presentation.accessibility.report", Args: i18n.Args{
+		"CheckedSlides": report.CheckedSlides, "TotalSlides": report.TotalSlides, "Complete": report.Complete,
+		"ElementLimitReached": report.ElementLimitReached, "IssueCount": len(report.Issues),
+		"HiddenIssues": max(0, len(report.Issues)-len(issues)), "Issues": issues,
+	}}
 }
 
 func (a *App) handlePresentationDeleteSlide(v *presentationViewState) {
@@ -647,7 +632,7 @@ func (a *App) handlePresentationDeleteSlide(v *presentationViewState) {
 		return
 	}
 	if v.snapshot.SlideCount <= 1 {
-		a.setStatus("无法删除演示文稿中的最后一页幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_last_slide_in_a_presentation_cannot_be_aa2057"}, feedbackWarning, notificationToast)
 		return
 	}
 	if err := a.flushPresentationNotesDraft(v); err != nil {
@@ -665,7 +650,7 @@ func (a *App) handlePresentationDeleteSlide(v *presentationViewState) {
 	}
 	deletedIndex := v.activeSlide
 	if err := a.pptxDoc.DeleteSlideByID(current.ID); err != nil {
-		a.setStatus("删除幻灯片失败: " + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	v.snapshot = a.pptxDoc.Snapshot()
@@ -680,7 +665,7 @@ func (a *App) handlePresentationDeleteSlide(v *presentationViewState) {
 		a.resetPresentationNotesEditor(v, cur)
 	}
 	a.persistActiveSession()
-	a.setStatus("已删除幻灯片")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.slide_deleted_5c31c3"}, feedbackSuccess, notificationToast)
 }
 
 type presentationSlideDeleteArguments struct {
@@ -701,7 +686,7 @@ func (a *App) startPresentationDeleteSlide(v *presentationViewState) bool {
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	deletedSlideID := current.ID
@@ -751,7 +736,7 @@ func (a *App) handlePresentationAddTextBox(v *presentationViewState) {
 	v.insertPictureMediaType = ""
 	v.insertPictureWidth, v.insertPictureHeight = 0, 0
 	v.insertTextBox = true
-	a.setStatus("请点击幻灯片上的位置放置文本框")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.click_a_position_on_the_slide_to_place_the_5ddd6a"}, feedbackWarning, notificationSuppressed)
 }
 
 func (a *App) addPresentationTextBoxAt(v *presentationViewState, slideID uint32, bounds document.PresentationRect, text string) {
@@ -763,7 +748,7 @@ func (a *App) addPresentationTextBoxAt(v *presentationViewState, slideID uint32,
 	}
 	elementID, err := a.pptxDoc.AddTextBoxByID(slideID, bounds, text)
 	if err != nil {
-		a.setStatus("新建文本框失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	v.snapshot = a.pptxDoc.Snapshot()
@@ -778,7 +763,7 @@ func (a *App) addPresentationTextBoxAt(v *presentationViewState, slideID uint32,
 		a.resetPresentationNotesEditor(v, cur)
 	}
 	a.persistActiveSession()
-	a.setStatus("已新建文本框；双击文本框可编辑内容")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.text_box_created_double_click_it_to_edit_i_a9171f"}, feedbackSuccess, notificationToast)
 }
 
 type startPresentationCreateTextBoxPayload struct {
@@ -800,7 +785,7 @@ func (a *App) startPresentationCreateTextBox(v *presentationViewState, slideID u
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	v.commandPending = true
@@ -849,7 +834,7 @@ func (a *App) handlePresentationAddShape(v *presentationViewState) {
 	v.insertPictureMediaType = ""
 	v.insertPictureWidth, v.insertPictureHeight = 0, 0
 	v.insertShape = true
-	a.setStatus("请点击幻灯片上的位置放置矩形")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.click_a_position_on_the_slide_to_place_the_6760ff"}, feedbackWarning, notificationSuppressed)
 }
 
 func (a *App) addPresentationShapeAt(v *presentationViewState, slideID uint32, bounds document.PresentationRect, geometry, text string) {
@@ -861,7 +846,7 @@ func (a *App) addPresentationShapeAt(v *presentationViewState, slideID uint32, b
 	}
 	elementID, err := a.pptxDoc.AddAutoShapeByID(slideID, bounds, geometry, text)
 	if err != nil {
-		a.setStatus("新建形状失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	v.snapshot = a.pptxDoc.Snapshot()
@@ -876,7 +861,7 @@ func (a *App) addPresentationShapeAt(v *presentationViewState, slideID uint32, b
 		a.resetPresentationNotesEditor(v, cur)
 	}
 	a.persistActiveSession()
-	a.setStatus("已新建矩形；可调整其大小和样式")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.rectangle_created_you_can_adjust_its_size_8cabe7"}, feedbackSuccess, notificationToast)
 }
 
 type startPresentationCreateShapePayload struct {
@@ -899,7 +884,7 @@ func (a *App) startPresentationCreateShape(v *presentationViewState, slideID uin
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	v.commandPending = true
@@ -942,7 +927,7 @@ func (a *App) addPresentationPictureAt(v *presentationViewState, slideID uint32,
 	}
 	elementID, _, err := a.pptxDoc.AddSlidePictureByID(slideID, bounds, mediaType, data, fit, "", false)
 	if err != nil {
-		a.setStatus("插入图片失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	v.snapshot = a.pptxDoc.Snapshot()
@@ -957,7 +942,7 @@ func (a *App) addPresentationPictureAt(v *presentationViewState, slideID uint32,
 		a.resetPresentationNotesEditor(v, cur)
 	}
 	a.persistActiveSession()
-	a.setStatus("已插入图片；可调整大小和样式")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.picture_inserted_you_can_adjust_its_size_a_0c87cc"}, feedbackSuccess, notificationToast)
 }
 
 type startPresentationCreatePicturePayload struct {
@@ -981,7 +966,7 @@ func (a *App) startPresentationCreatePicture(v *presentationViewState, slideID u
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	v.commandPending = true
@@ -1013,4 +998,8 @@ func (a *App) startPresentationCreatePicture(v *presentationViewState, slideID u
 		}
 	})
 	return true
+}
+
+func (a *App) presentationAlignmentLabel(actionID string) string {
+	return a.text(i18n.Message{ID: "presentation.alignment." + actionID})
 }

@@ -16,39 +16,40 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/application"
+	"glance/internal/i18n"
 )
 
 var (
 	// Node EV5Zd (轻量确认 · 插入文档)
-	agentLightweightBackdrop   = color.NRGBA{R: 23, G: 32, B: 46, A: 0x4D} // #17202E4D
+	agentLightweightBackdrop   = color.NRGBA{R: 23, G: 32, B: 46, A: 0x4D}   // #17202E4D
 	agentLightweightBorder     = color.NRGBA{R: 221, G: 228, B: 236, A: 255} // #DDE4EC
-	agentLightweightPromptFg   = color.NRGBA{R: 48, G: 59, B: 73, A: 255} // #303B49
+	agentLightweightPromptFg   = color.NRGBA{R: 48, G: 59, B: 73, A: 255}    // #303B49
 	agentLightweightBarBg      = color.NRGBA{R: 246, G: 248, B: 251, A: 255} // #F6F8FB
 	agentLightweightBarBorder  = color.NRGBA{R: 233, G: 237, B: 243, A: 255} // #E9EDF3
 	agentLightweightAIBadgeBg  = color.NRGBA{R: 237, G: 242, B: 250, A: 255} // #EDF2FA
 	agentLightweightAIBadgeBdr = color.NRGBA{R: 224, G: 232, B: 244, A: 255} // #E0E8F4
-	agentLightweightAIIconFg   = color.NRGBA{R: 89, G: 116, B: 154, A: 255} // #59749A
-	agentLightweightRejectFg   = color.NRGBA{R: 86, G: 97, B: 112, A: 255} // #566170
+	agentLightweightAIIconFg   = color.NRGBA{R: 89, G: 116, B: 154, A: 255}  // #59749A
+	agentLightweightRejectFg   = color.NRGBA{R: 86, G: 97, B: 112, A: 255}   // #566170
 	agentLightweightRejectBdr  = color.NRGBA{R: 220, G: 227, B: 236, A: 255} // #DCE3EC
-	agentLightweightApproveBg  = color.NRGBA{R: 52, G: 63, B: 80, A: 255} // #343F50
+	agentLightweightApproveBg  = color.NRGBA{R: 52, G: 63, B: 80, A: 255}    // #343F50
 
 	// Node yInjn (全局权限确认 · 底部居中)
-	agentPermissionBackdrop     = color.NRGBA{R: 23, G: 32, B: 46, A: 0x66} // #17202E66
+	agentPermissionBackdrop     = color.NRGBA{R: 23, G: 32, B: 46, A: 0x66}   // #17202E66
 	agentPermissionBorder       = color.NRGBA{R: 225, G: 229, B: 235, A: 255} // #E1E5EB
 	agentPermissionShieldBg     = color.NRGBA{R: 238, G: 243, B: 249, A: 255} // #EEF3F9
-	agentPermissionShieldIconFg = color.NRGBA{R: 72, G: 101, B: 129, A: 255} // #486581
-	agentPermissionTitleFg      = color.NRGBA{R: 35, G: 40, B: 48, A: 255} // #232830
+	agentPermissionShieldIconFg = color.NRGBA{R: 72, G: 101, B: 129, A: 255}  // #486581
+	agentPermissionTitleFg      = color.NRGBA{R: 35, G: 40, B: 48, A: 255}    // #232830
 	agentPermissionSubtitleFg   = color.NRGBA{R: 116, G: 128, B: 145, A: 255} // #748091
-	agentPermissionDescFg       = color.NRGBA{R: 86, G: 97, B: 112, A: 255} // #566170
+	agentPermissionDescFg       = color.NRGBA{R: 86, G: 97, B: 112, A: 255}   // #566170
 	agentPermissionScopeBg      = color.NRGBA{R: 245, G: 247, B: 249, A: 255} // #F5F7F9
 	agentPermissionFolderIconFg = color.NRGBA{R: 104, G: 117, B: 130, A: 255} // #687582
-	agentPermissionFolderNameFg = color.NRGBA{R: 50, G: 60, B: 72, A: 255} // #323C48
+	agentPermissionFolderNameFg = color.NRGBA{R: 50, G: 60, B: 72, A: 255}    // #323C48
 	agentPermissionFolderPathFg = color.NRGBA{R: 116, G: 128, B: 145, A: 255} // #748091
-	agentPermissionBadgeFg      = color.NRGBA{R: 72, G: 101, B: 129, A: 255} // #486581
+	agentPermissionBadgeFg      = color.NRGBA{R: 72, G: 101, B: 129, A: 255}  // #486581
 	agentPermissionRejectBdr    = color.NRGBA{R: 220, G: 225, B: 231, A: 255} // #DCE1E7
 	agentPermissionAlwaysBg     = color.NRGBA{R: 240, G: 243, B: 246, A: 255} // #F0F3F6
-	agentPermissionAlwaysFg     = color.NRGBA{R: 62, G: 74, B: 88, A: 255} // #3E4A58
-	agentPermissionOnceBg       = color.NRGBA{R: 52, G: 59, B: 69, A: 255} // #343B45
+	agentPermissionAlwaysFg     = color.NRGBA{R: 62, G: 74, B: 88, A: 255}    // #3E4A58
+	agentPermissionOnceBg       = color.NRGBA{R: 52, G: 59, B: 69, A: 255}    // #343B45
 	agentPermissionNoticeFg     = color.NRGBA{R: 122, G: 135, B: 151, A: 255} // #7A8797
 )
 
@@ -69,18 +70,10 @@ func (a *App) activeAgentConfirmation() *agentConfirmationCard {
 
 func isPermissionConfirmation(info application.ConfirmationInfo) bool {
 	lowerID := strings.ToLower(info.CapabilityID)
-	lowerName := strings.ToLower(info.CapabilityName)
-	lowerSummary := strings.ToLower(info.ImpactSummary)
 	return strings.Contains(lowerID, "permission") ||
 		strings.Contains(lowerID, "folder") ||
 		strings.Contains(lowerID, "dir") ||
-		strings.Contains(lowerID, "access") ||
-		strings.Contains(lowerName, "权限") ||
-		strings.Contains(lowerName, "文件夹") ||
-		strings.Contains(lowerName, "目录") ||
-		strings.Contains(lowerName, "访问") ||
-		strings.Contains(lowerSummary, "权限") ||
-		strings.Contains(lowerSummary, "文件夹")
+		strings.Contains(lowerID, "access")
 }
 
 func (a *App) resolveAgentPermissionConfirmation(card *agentConfirmationCard, approved bool, remember bool) {
@@ -190,7 +183,7 @@ func (a *App) layoutAgentLightweightConfirmCard(gtx layout.Context, card *agentC
 						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(12)), 0)}
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						prompt := agentLightweightPromptText(card.info)
+						prompt := a.agentLightweightPromptText(card.info)
 						lbl := homeLabelStyle(a.theme, prompt, unit.Sp(14), agentLightweightPromptFg, font.Medium)
 						lbl.LineHeight = unit.Sp(21)
 						return lbl.Layout(gtx)
@@ -214,14 +207,14 @@ func (a *App) layoutAgentLightweightConfirmCard(gtx layout.Context, card *agentC
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceStart}.Layout(gtx,
 							layout.Flexed(1, layout.Spacer{}.Layout),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return layoutModalActionButton(gtx, a.theme, &card.reject, "拒绝", unit.Dp(80), unit.Dp(36),
+								return layoutModalActionButton(gtx, a.theme, &card.reject, a.textID("agent.confirmation.action.reject"), unit.Dp(80), unit.Dp(36),
 									color.NRGBA{R: 255, G: 255, B: 255, A: 255}, agentLightweightRejectBdr, agentLightweightRejectFg, "")
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(10)), 0)}
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return layoutModalActionButton(gtx, a.theme, &card.approve, "允许", unit.Dp(96), unit.Dp(36),
+								return layoutModalActionButton(gtx, a.theme, &card.approve, a.textID("agent.confirmation.action.allow"), unit.Dp(96), unit.Dp(36),
 									agentLightweightApproveBg, agentLightweightApproveBg, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, "check")
 							}),
 						)
@@ -265,14 +258,24 @@ func (a *App) layoutAgentLightweightConfirmCard(gtx layout.Context, card *agentC
 	return dims
 }
 
-func agentLightweightPromptText(info application.ConfirmationInfo) string {
-	if info.CapabilityName != "" && !strings.Contains(info.CapabilityName, "插入") {
-		return "是否允许 AI " + info.CapabilityName + "？"
+func (a *App) agentLightweightPromptText(info application.ConfirmationInfo) string {
+	return a.textArgs("agent.confirmation.prompt", i18n.Args{"Action": a.agentConfirmationActionLabel(info)})
+}
+
+func (a *App) agentConfirmationActionLabel(info application.ConfirmationInfo) string {
+	id := strings.ToLower(info.CapabilityID)
+	switch {
+	case strings.Contains(id, "insert"), strings.Contains(id, "create"), strings.Contains(id, "append"):
+		return a.textID("agent.confirmation.action.add_content")
+	case strings.Contains(id, "save"):
+		return a.textID("agent.confirmation.action.save_document")
+	case strings.Contains(id, "read"), strings.Contains(id, "get"), strings.Contains(id, "list"), strings.Contains(id, "inspect"), strings.Contains(id, "search"), strings.Contains(id, "audit"), strings.Contains(id, "statistics"), strings.Contains(id, "copy"):
+		return a.textID("agent.confirmation.action.read_document")
+	case strings.Contains(id, "delete"), strings.Contains(id, "remove"), strings.Contains(id, "clear"), strings.Contains(id, "replace"), strings.Contains(id, "set"), strings.Contains(id, "update"), strings.Contains(id, "move"), strings.Contains(id, "resize"), strings.Contains(id, "format"), strings.Contains(id, "apply"):
+		return a.textID("agent.confirmation.action.change_document")
+	default:
+		return a.textID("agent.confirmation.action.perform_request")
 	}
-	if info.ImpactSummary != "" && strings.HasPrefix(info.ImpactSummary, "是否允许") {
-		return info.ImpactSummary
-	}
-	return "是否允许 AI 将结果插入当前文档？"
 }
 
 // layoutAgentPermissionConfirmModal renders Node yInjn:
@@ -324,8 +327,12 @@ func (a *App) layoutAgentPermissionConfirmCard(gtx layout.Context, card *agentCo
 	gtx.Constraints.Min.Y = 0
 
 	folderName, folderPath := parseFolderScope(card.info)
-	title := agentPermissionTitleText(card.info)
-	purpose := agentPermissionPurposeText(card.info)
+	if folderPath == "" {
+		folderName = a.textID("agent.confirmation.permission.default_folder")
+		folderPath = a.textID("agent.confirmation.permission.default_path")
+	}
+	title := a.textID("agent.confirmation.permission.title")
+	purpose := a.textID("agent.confirmation.permission.purpose")
 
 	rec := op.Record(gtx.Ops)
 	dims := layout.Inset{
@@ -360,7 +367,7 @@ func (a *App) layoutAgentPermissionConfirmCard(gtx layout.Context, card *agentCo
 								return layout.Dimensions{Size: image.Pt(0, gtx.Dp(unit.Dp(4)))}
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								lbl := homeLabelStyle(a.theme, "Glance AI · 正在等待你的确认", unit.Sp(12), agentPermissionSubtitleFg, font.Normal)
+								lbl := homeLabelStyle(a.theme, a.textID("agent.confirmation.permission.subtitle"), unit.Sp(12), agentPermissionSubtitleFg, font.Normal)
 								return lbl.Layout(gtx)
 							}),
 						)
@@ -417,7 +424,7 @@ func (a *App) layoutAgentPermissionConfirmCard(gtx layout.Context, card *agentCo
 									)
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									lbl := homeLabelStyle(a.theme, "只读", unit.Sp(12), agentPermissionBadgeFg, font.Normal)
+									lbl := homeLabelStyle(a.theme, a.textID("agent.confirmation.permission.read_only"), unit.Sp(12), agentPermissionBadgeFg, font.Normal)
 									return lbl.Layout(gtx)
 								}),
 							)
@@ -433,21 +440,21 @@ func (a *App) layoutAgentPermissionConfirmCard(gtx layout.Context, card *agentCo
 				btnHeight := unit.Dp(40)
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return layoutModalActionButton(gtx, a.theme, &card.reject, "拒绝", 0, btnHeight,
+						return layoutModalActionButton(gtx, a.theme, &card.reject, a.textID("agent.confirmation.action.reject"), 0, btnHeight,
 							color.NRGBA{R: 255, G: 255, B: 255, A: 255}, agentPermissionRejectBdr, agentLightweightRejectFg, "")
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(10)), 0)}
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return layoutModalActionButton(gtx, a.theme, &card.alwaysAllow, "始终允许", 0, btnHeight,
+						return layoutModalActionButton(gtx, a.theme, &card.alwaysAllow, a.textID("agent.confirmation.action.always_allow"), 0, btnHeight,
 							agentPermissionAlwaysBg, agentPermissionAlwaysBg, agentPermissionAlwaysFg, "")
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(10)), 0)}
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return layoutModalActionButton(gtx, a.theme, &card.allowOnce, "仅允许本次", 0, btnHeight,
+						return layoutModalActionButton(gtx, a.theme, &card.allowOnce, a.textID("agent.confirmation.action.allow_once"), 0, btnHeight,
 							agentPermissionOnceBg, agentPermissionOnceBg, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, "")
 					}),
 				)
@@ -459,7 +466,7 @@ func (a *App) layoutAgentPermissionConfirmCard(gtx layout.Context, card *agentCo
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := homeLabelStyle(a.theme, "你可以随时在「设置 → 权限管理」中撤销授权。", unit.Sp(11), agentPermissionNoticeFg, font.Normal)
+					lbl := homeLabelStyle(a.theme, a.textID("agent.confirmation.permission.revoke_notice"), unit.Sp(11), agentPermissionNoticeFg, font.Normal)
 					return lbl.Layout(gtx)
 				})
 			}),
@@ -504,44 +511,18 @@ func parseFolderScope(info application.ConfirmationInfo) (name, path string) {
 		if end := strings.Index(rest, `"`); end != -1 {
 			path = rest[:end]
 		}
-	} else if idx := strings.Index(info.ImpactSummary, "路径="); idx != -1 {
-		rest := info.ImpactSummary[idx+7:]
-		if end := strings.IndexAny(rest, " ；;\n"); end != -1 {
-			path = rest[:end]
-		} else {
-			path = rest
-		}
 	}
 	if path == "" && info.DocumentLabel != "" {
 		path = info.DocumentLabel
 	}
 	if path == "" {
-		name = "项目资料"
-		path = "~/Documents/项目资料"
-		return
+		return "", ""
 	}
 	name = filepath.Base(path)
 	if name == "." || name == "/" || name == "" {
 		name = path
 	}
 	return
-}
-
-func agentPermissionPurposeText(info application.ConfirmationInfo) string {
-	if info.ImpactSummary != "" && strings.Contains(info.ImpactSummary, "\n") {
-		return info.ImpactSummary
-	}
-	return "为总结项目进展，AI 需要读取下方文件夹中的文件。\n此权限仅用于读取，不会修改或删除文件。"
-}
-
-func agentPermissionTitleText(info application.ConfirmationInfo) string {
-	if info.CapabilityName != "" && strings.Contains(info.CapabilityName, "文件夹") {
-		return "允许 AI 访问这个文件夹？"
-	}
-	if info.CapabilityName != "" {
-		return "允许 AI " + info.CapabilityName + "？"
-	}
-	return "允许 AI 访问这个文件夹？"
 }
 
 func layoutModalActionButton(gtx layout.Context, theme *material.Theme, button *widget.Clickable, label string, width, height unit.Dp, bg, border, fg color.NRGBA, icon string) layout.Dimensions {

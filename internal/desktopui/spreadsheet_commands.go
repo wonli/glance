@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 type spreadsheetFormatResult struct {
@@ -24,7 +25,8 @@ type spreadsheetFormatResult struct {
 	sort        *document.SortRequest
 	filter      *ValueFilter
 	clearFilter bool
-	details     string
+	details     i18n.Message
+	detail      string
 	rangeEntry  *string
 	replaceAll  *spreadsheetReplaceAllPlan
 	dimensions  []spreadsheetDimensionChange
@@ -152,26 +154,26 @@ func (a *App) applyCellFormatTo(state *documentSessionState, sheet string, selec
 }
 
 func (a *App) applyBatchEdits(edits []document.CellEdit, operation string) error {
-	return a.applyBatchEditsWithDetails(edits, operation, "")
+	return a.applyBatchEditsWithDetails(edits, operation, i18n.Message{})
 }
 
-func (a *App) applyBatchEditsWithDetails(edits []document.CellEdit, operation, details string) error {
+func (a *App) applyBatchEditsWithDetails(edits []document.CellEdit, operation string, details i18n.Message) error {
 	return a.applyBatchEditsWithDetailsForSheet(edits, operation, details, "")
 }
 
 func (a *App) applyBatchEditsForSheet(edits []document.CellEdit, operation, sheet string) error {
-	return a.applyBatchEditsWithDetailsForSheet(edits, operation, "", sheet)
+	return a.applyBatchEditsWithDetailsForSheet(edits, operation, i18n.Message{}, sheet)
 }
 
-func (a *App) applyBatchEditsWithDetailsForSheet(edits []document.CellEdit, operation, details, sheet string) error {
+func (a *App) applyBatchEditsWithDetailsForSheet(edits []document.CellEdit, operation string, details i18n.Message, sheet string) error {
 	return a.applyBatchEditsWithDetailsForSheetAndRangeEntry(edits, operation, details, sheet, nil)
 }
 
 func (a *App) applyBatchEditsForRangeEntry(edits []document.CellEdit, sheet, value string) error {
-	return a.applyBatchEditsWithDetailsForSheetAndRangeEntry(edits, "填充选区", "", sheet, &value)
+	return a.applyBatchEditsWithDetailsForSheetAndRangeEntry(edits, "填充选区", i18n.Message{}, sheet, &value)
 }
 
-func (a *App) applyBatchEditsWithDetailsForSheetAndRangeEntry(edits []document.CellEdit, operation, details, sheet string, rangeEntry *string) error {
+func (a *App) applyBatchEditsWithDetailsForSheetAndRangeEntry(edits []document.CellEdit, operation string, details i18n.Message, sheet string, rangeEntry *string) error {
 	state := a.documentSessionState
 	if state == nil || state.book == nil || state.formatRunning.Load() {
 		return fmt.Errorf("表格正在处理其他操作")
@@ -220,7 +222,7 @@ func (a *App) applyBatchEditsWithDetailsForSheetAndRangeEntry(edits []document.C
 		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		noOp, resultDetails := rangeEntry != nil && err == nil && !changed, details
 		if noOp {
-			resultDetails = "选区内容未变化"
+			resultDetails = i18n.Message{ID: "spreadsheet.status.no_changes"}
 		}
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed, noOp: noOp, details: resultDetails, rangeEntry: rangeEntry}:

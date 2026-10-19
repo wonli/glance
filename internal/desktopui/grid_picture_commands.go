@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/document"
 )
@@ -59,7 +60,7 @@ func (a *App) startGridPictureMoveResize(state *documentSessionState, picture do
 func (a *App) startGridPictureCommand(state *documentSessionState, request gridPictureCommandRequest) {
 	if state == nil || state.formatRunning.Load() || a.isSaving() {
 		if a.window != nil {
-			a.setStatus("正在处理其他操作，请稍后重试")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.another_operation_is_in_progress_try_again_17714f"}, feedbackInfo, notificationSuppressed)
 			a.window.Invalidate()
 		}
 		return
@@ -67,7 +68,7 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 	_, ok := any(state.book).(document.SpreadsheetImageEditor)
 	if !ok {
 		if a.window != nil {
-			a.setStatus("当前工作簿不支持编辑图片")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.this_workbook_does_not_support_picture_edi_10f34c"}, feedbackWarning, notificationToast)
 			a.window.Invalidate()
 		}
 		return
@@ -78,7 +79,7 @@ func (a *App) startGridPictureCommand(state *documentSessionState, request gridP
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
 		if a.window != nil {
-			a.setStatus("正在处理其他操作，请稍后重试")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.another_operation_is_in_progress_try_again_17714f"}, feedbackInfo, notificationSuppressed)
 			a.window.Invalidate()
 		}
 		return
@@ -260,7 +261,7 @@ func (a *App) applyGridPictureCommand(result gridPictureCommandResult) {
 		if result.mutated {
 			a.invalidateGridPictures(state)
 		}
-		a.setStatus(result.operation + "失败：" + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, result.err, notificationToast)
 	} else {
 		state.gridPictures = append([]document.SpreadsheetImage(nil), result.images...)
 		state.gridPicturesSheet = result.sheet
@@ -269,7 +270,7 @@ func (a *App) applyGridPictureCommand(result gridPictureCommandResult) {
 		state.gridPicturesError = ""
 		setSelectedGridPicture(state, result.selectedID)
 		invalidateGridPicturePreviews(state)
-		a.setStatus("已" + result.operation)
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.picture_operation_completed", Args: i18n.Args{"Operation": a.localizedSpreadsheetToolbarText(result.operation)}}, feedbackSuccess, notificationToast)
 		a.persistActiveSession()
 	}
 	if a.window != nil {

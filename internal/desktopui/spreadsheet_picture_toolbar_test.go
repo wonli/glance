@@ -184,8 +184,8 @@ func TestSpreadsheetPicturePickerCancellationDoesNotDirtyWorkbook(t *testing.T) 
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for canceled picker")
 	}
-	if app.xlsxImagePickerRunning || app.status != "已取消选择图片" || book.Dirty() {
-		t.Fatalf("cancel changed state: running=%v status=%q dirty=%v", app.xlsxImagePickerRunning, app.status, book.Dirty())
+	if app.xlsxImagePickerRunning || app.statusText() != "已取消选择图片" || book.Dirty() {
+		t.Fatalf("cancel changed state: running=%v status=%q dirty=%v", app.xlsxImagePickerRunning, app.statusText(), book.Dirty())
 	}
 }
 

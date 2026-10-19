@@ -5,6 +5,7 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 func pdfPoint(x, y float64) f32.Point { return f32.Pt(float32(x), float32(y)) }
@@ -22,7 +23,8 @@ func (a *App) handlePDFEvents(gtx layout.Context) {
 		v.accept(r)
 		if r.mutation && r.err != nil && (v.lastCommand.Kind == "replace" || v.lastCommand.Kind == "note") {
 			c := v.lastCommand
-			a.showPDFDraft(c, r.err.Error())
+			a.showPDFDraft(c)
+			a.setStatusErrorMessage(i18n.Message{ID: "pdf.error.operation_failed"}, r.err, notificationToast)
 		}
 		if r.mutation && r.err == nil {
 			a.persistActiveSession()

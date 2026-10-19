@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"image/color"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"glance/internal/agent"
 	"glance/internal/agent/provider"
 	"glance/internal/agentsettings"
+	"glance/internal/i18n"
 )
 
 const agentModelLookupDebounce = 450 * time.Millisecond
@@ -59,6 +59,7 @@ func (a *App) cancelAgentModelLookup(reset bool) {
 		lookup.fingerprint = ""
 		lookup.models = nil
 		lookup.err = ""
+		lookup.errRef = i18n.Message{}
 	}
 }
 
@@ -82,6 +83,7 @@ func (a *App) observeAgentModelLookup() {
 	lookup.fingerprint = fingerprint
 	lookup.models = nil
 	lookup.err = ""
+	lookup.errRef = i18n.Message{}
 	if !shouldLookupAgentModels(settings.ProviderID, apiKey, a.settingsSavedKeyMatchesDraft()) {
 		lookup.loading = false
 		return
@@ -123,7 +125,8 @@ func (a *App) observeAgentModelLookup() {
 		cancel()
 		lookup.cancel = nil
 		lookup.loading = false
-		lookup.err = "无法启动模型列表请求。"
+		lookup.errRef = i18n.Message{ID: "settings.provider.model_lookup_unavailable"}
+		lookup.err = a.text(lookup.errRef)
 	}
 }
 
@@ -131,7 +134,7 @@ func (a *App) agentSettingsVisible() bool {
 	if a.homeSection == homeSectionSettings && a.agentUI.settingsPageTab == "providers" && (a.activeTabID == "" || a.activeTabID == "recent") {
 		return true
 	}
-	return a.modal.Visible && a.modal.Title == "模型设置"
+	return a.modal.Visible && a.modal.DialogID == dialogIDAgentModelSettings
 }
 
 func (a *App) processAgentModelLookupResult() {
@@ -153,10 +156,12 @@ func (a *App) processAgentModelLookupResult() {
 		lookup.loading = false
 		lookup.models = result.models
 		lookup.err = ""
+		lookup.errRef = i18n.Message{}
 		if result.err != nil {
 			_, lookup.err = agent.DescribeTurnError(result.err)
 		} else if len(result.models) == 0 {
-			lookup.err = "服务连接成功，但没有返回可选模型。"
+			lookup.errRef = i18n.Message{ID: "settings.provider.no_models"}
+			lookup.err = a.text(lookup.errRef)
 		}
 		if a.window != nil {
 			a.window.Invalidate()
@@ -169,14 +174,14 @@ func (a *App) layoutAgentModelOptions(gtx layout.Context) layout.Dimensions {
 	lookup := &a.agentUI.modelLookup
 	if lookup.loading {
 		return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			style := material.Caption(a.theme, "正在验证连接并获取模型列表…")
+			style := material.Caption(a.theme, a.text(i18n.Message{ID: "settings.provider.loading_models"}))
 			style.Color = homeMuted
 			return style.Layout(gtx)
 		})
 	}
 	if lookup.err != "" {
 		return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			style := material.Caption(a.theme, lookup.err)
+			style := material.Caption(a.theme, a.messageText(lookup.errRef, lookup.err))
 			style.Color = colorSettingsError
 			style.MaxLines = 2
 			return style.Layout(gtx)
@@ -203,7 +208,7 @@ func (a *App) layoutAgentModelOptions(gtx layout.Context) layout.Dimensions {
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			label := fmt.Sprintf("连接可用 · 已获取 %d 个模型，点击填入", len(lookup.modelIDs))
+			label := a.text(i18n.Message{ID: "settings.provider.models_available", Args: i18n.Args{"Count": len(lookup.modelIDs)}})
 			style := material.Caption(a.theme, label)
 			style.Color = homeMuted
 			return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(4)}.Layout(gtx, style.Layout)

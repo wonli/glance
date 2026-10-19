@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -22,7 +23,7 @@ func (a *App) showSpreadsheetNewCommentDialog() {
 	}
 	_, ok := state.book.(document.SpreadsheetCommentEditor)
 	if !ok {
-		a.setStatus("当前工作簿不支持批注")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_3f4364"}, feedbackWarning, notificationToast)
 		return
 	}
 	activeCol := state.selection.Active.Column + 1
@@ -32,8 +33,7 @@ func (a *App) showSpreadsheetNewCommentDialog() {
 		cellName = fmt.Sprintf("%s%d", columnName(activeCol), activeRow)
 	}
 
-	prompt := fmt.Sprintf("为单元格 %s 添加批注：", cellName)
-	a.modal.ShowInput("新建批注", prompt, "", "输入批注内容", func(action string) {
+	a.modal.ShowInputMessage("spreadsheet.comment.add", i18n.Message{ID: "spreadsheet.comment.dialog.title"}, i18n.Message{ID: "spreadsheet.comment.dialog.body", Args: i18n.Args{"Cell": cellName}}, "", i18n.Message{ID: "spreadsheet.comment.dialog.hint"}, func(action string) {
 		text := strings.TrimSpace(a.modal.Input.Text())
 		a.modal.Hide()
 		if action != "confirm" || text == "" {
@@ -48,7 +48,7 @@ func (a *App) showSpreadsheetNewCommentDialog() {
 		a.runSpreadsheetCommentCommand("新建批注", "spreadsheet.comment.add", spreadsheetCommentAddArguments{Sheet: sheet, Cell: cellName, Author: comment.Author, Text: comment.Text}, func(ed document.SpreadsheetCommentEditor) error {
 			return ed.AddComment(sheet, comment)
 		})
-	}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.confirm"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }
 
 type spreadsheetCommentDeleteArguments struct {
@@ -63,7 +63,7 @@ func (a *App) deleteSpreadsheetComment() {
 	}
 	_, ok := state.book.(document.SpreadsheetCommentEditor)
 	if !ok {
-		a.setStatus("当前工作簿不支持批注")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_3f4364"}, feedbackWarning, notificationToast)
 		return
 	}
 	activeCol := state.selection.Active.Column + 1
@@ -114,7 +114,7 @@ func (a *App) runSpreadsheetCommentCommand(operation, commandID string, argument
 		}
 		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		if err == nil {
-			a.setStatus("已完成" + operation)
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.operation_completed", Args: i18n.Args{"Operation": a.localizedSpreadsheetToolbarText(operation)}}, feedbackSuccess, notificationToast)
 		}
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed}:

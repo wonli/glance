@@ -90,8 +90,8 @@ func TestImportedXLSSaveStartsXLSXSaveAs(t *testing.T) {
 	if app.saving || app.path != path || !book.Dirty() || !app.documentSessionState.saveAsRequired {
 		t.Fatalf("cancel changed session: saving=%v path=%q dirty=%v saveAsRequired=%v", app.saving, app.path, book.Dirty(), app.documentSessionState.saveAsRequired)
 	}
-	if app.status != "已取消另存为" {
-		t.Fatalf("cancel status = %q", app.status)
+	if app.statusText() != "已取消另存为" {
+		t.Fatalf("cancel status = %q", app.statusText())
 	}
 	after, err := os.ReadFile(path)
 	if err != nil {
@@ -108,8 +108,8 @@ func TestImportedXLSSaveAsRejectsXLSAndKeepsSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.startSaveAs(filepath.Join(t.TempDir(), "wrong-format.xls"))
-	if !strings.Contains(app.status, ".xlsx") {
-		t.Fatalf("rejected Save As status = %q; want .xlsx guidance", app.status)
+	if !strings.Contains(app.statusText(), ".xlsx") {
+		t.Fatalf("rejected Save As status = %q; want .xlsx guidance", app.statusText())
 	}
 	if app.saving || app.path != path || !book.Dirty() || !app.documentSessionState.saveAsRequired {
 		t.Fatalf("rejected Save As changed session: saving=%v path=%q dirty=%v saveAsRequired=%v", app.saving, app.path, book.Dirty(), app.documentSessionState.saveAsRequired)

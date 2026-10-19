@@ -183,8 +183,8 @@ func TestWordFileRibbonOpenAndSaveAsUseWorkspacePickers(t *testing.T) {
 			t.Fatalf("%s picker did not finish", action)
 		}
 		app.processAsyncResults()
-		if app.status != wantStatus {
-			t.Fatalf("%s cancellation status = %q; want %q", action, app.status, wantStatus)
+		if app.statusText() != wantStatus {
+			t.Fatalf("%s cancellation status = %q; want %q", action, app.statusText(), wantStatus)
 		}
 	}
 	apply("open", commandOpenFile, "", "已取消打开文件")
@@ -218,8 +218,8 @@ func TestWordFileRibbonRecentReturnsToWorkspaceRecentView(t *testing.T) {
 
 	app.executeWordToolbarAction("recent")
 
-	if app.activeTabID != workspace.RecentTabID || app.word != nil || app.status != "最近打开的本地文档" {
-		t.Fatalf("File > Recent state = tab %q, word %v, status %q", app.activeTabID, app.word, app.status)
+	if app.activeTabID != workspace.RecentTabID || app.word != nil || app.statusText() != "最近打开的本地文档" {
+		t.Fatalf("File > Recent state = tab %q, word %v, status %q", app.activeTabID, app.word, app.statusText())
 	}
 	if app.sessions["current"] != state || state.word != word {
 		t.Fatal("File > Recent discarded the previously open Word document session")
@@ -286,8 +286,8 @@ func TestWordFileAutosavePersistsToggleAndSavesCommittedEdits(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for the AutoSave result")
 	}
-	if word.Dirty() || app.saving || app.status != "已保存 "+path {
-		t.Fatalf("AutoSave completion: dirty=%v saving=%v status=%q", word.Dirty(), app.saving, app.status)
+	if word.Dirty() || app.saving || app.statusText() != "已保存 "+path {
+		t.Fatalf("AutoSave completion: dirty=%v saving=%v status=%q", word.Dirty(), app.saving, app.statusText())
 	}
 	reopened, err := docx.Open(path)
 	if err != nil {
@@ -334,8 +334,8 @@ func TestWordFileAutosaveOnDraftWaitsForSaveAs(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for draft AutoSave capability")
 	}
-	if !state.wordAutoSave || app.status != "自动保存将在文档另存为后启用" {
-		t.Fatalf("draft AutoSave state: enabled=%v status=%q", state.wordAutoSave, app.status)
+	if !state.wordAutoSave || app.statusText() != "自动保存将在文档另存为后启用" {
+		t.Fatalf("draft AutoSave state: enabled=%v status=%q", state.wordAutoSave, app.statusText())
 	}
 	if app.saving {
 		t.Fatal("an unsaved draft attempted to write to a nonexistent source path")

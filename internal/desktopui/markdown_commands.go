@@ -7,6 +7,7 @@ import (
 	"gioui.org/layout"
 	"glance/internal/application"
 	"glance/internal/format/markdowndoc"
+	"glance/internal/i18n"
 	"net/url"
 	"os/exec"
 	"path/filepath"
@@ -42,7 +43,7 @@ func (a *App) flushMarkdownDraft() {
 	if err == nil {
 		a.persistActiveSession()
 	} else {
-		a.setStatus(err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, err, notificationToast)
 	}
 }
 func (a *App) applyMarkdownEdit(action string, args markdowndoc.EditArgs) error {
@@ -124,7 +125,7 @@ func (a *App) startMarkdownViewApplicationCommand(v *markdownViewState, mode str
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("Markdown 文档正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_markdown_document_is_busy_with_another_3c81c0"}, feedbackInfo, notificationSuppressed)
 		return true
 	}
 	v.editPending = true
@@ -152,18 +153,18 @@ func (a *App) pollMarkdownEditResult(v *markdownViewState) {
 		if result.action == "view" {
 			if result.err != nil {
 				if result.state == a.documentSessionState && result.generation == a.documentGeneration {
-					a.setStatus("切换 Markdown 视图失败：" + result.err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, result.err, notificationToast)
 				}
 				return
 			}
 			if result.state == a.documentSessionState && result.generation == a.documentGeneration {
-				a.setStatus("Markdown 视图已切换")
+				a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.markdown_view_changed_8d90cd"}, feedbackInfo, notificationSuppressed)
 			}
 			return
 		}
 		if result.err != nil {
 			if result.state == a.documentSessionState && result.generation == a.documentGeneration {
-				a.setStatus("Markdown 操作失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, result.err, notificationToast)
 			}
 			return
 		}
@@ -179,7 +180,7 @@ func (a *App) pollMarkdownEditResult(v *markdownViewState) {
 		}
 		if err := json.Unmarshal(result.data, &output); err != nil {
 			if result.state == a.documentSessionState && result.generation == a.documentGeneration {
-				a.setStatus("无法读取 Markdown 操作结果：" + err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, err, notificationToast)
 			}
 			return
 		}
@@ -195,8 +196,7 @@ func (a *App) pollMarkdownEditResult(v *markdownViewState) {
 		}
 		if output.Changed && result.state == a.documentSessionState && result.generation == a.documentGeneration {
 			a.persistActiveSession()
-			label := map[string]string{"heading": "标题", "bold": "加粗", "italic": "斜体", "quote": "引用", "code": "代码", "link": "链接", "image": "图片", "list": "列表", "todo": "待办", "math": "公式"}[result.action]
-			a.setStatus("已应用 Markdown" + label)
+			a.setStatusMessage(i18n.Message{ID: "markdown.status.applied"}, feedbackSuccess, notificationToast)
 		}
 	default:
 	}
@@ -227,7 +227,7 @@ func (a *App) handleMarkdownAction(gtx layout.Context, id string) {
 	case "save":
 		a.flushMarkdownDraft()
 		if markdownEditorComposing(&v.editor) {
-			a.setStatus("请先完成输入法选字")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.finish_chinese_input_composition_first_b4284e"}, feedbackWarning, notificationSuppressed)
 			return
 		}
 		if a.path == "" {
@@ -266,14 +266,14 @@ func (a *App) handleMarkdownAction(gtx layout.Context, id string) {
 			}
 		} else if offset, ok := v.tasks[id]; ok {
 			if err := a.toggleMarkdownTask(offset); err != nil {
-				a.setStatus(err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, err, notificationToast)
 			}
 		} else if formula, ok := v.formulas[id]; ok {
 			a.showMarkdownFormulaEdit(formula)
 		} else if dest, ok := v.links[id]; ok {
 			a.openMarkdownLink(dest)
 		} else if err := a.applyMarkdownEdit(id, markdowndoc.EditArgs{}); err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, err, notificationToast)
 		}
 	}
 	if v.focus && v.mode != 1 {
@@ -300,7 +300,7 @@ func (a *App) openMarkdownLink(destination string) {
 	}
 	target, local, err := markdownLinkTarget(destination, a.path)
 	if err != nil {
-		a.setStatus(err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "markdown.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	if local && (strings.EqualFold(filepath.Ext(target), ".md") || strings.EqualFold(filepath.Ext(target), ".markdown")) {

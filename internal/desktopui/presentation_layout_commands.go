@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"strconv"
 
 	"gioui.org/layout"
@@ -31,13 +32,13 @@ func (a *App) startPresentationLayoutList(view *presentationViewState) bool {
 		return true
 	}
 	if view.activeSlide < 0 || view.activeSlide >= len(view.snapshot.Slides) {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return true
 	}
 	slideID := view.snapshot.Slides[view.activeSlide].ID
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true
@@ -79,7 +80,7 @@ func (a *App) startPresentationLayoutList(view *presentationViewState) bool {
 
 func (a *App) showPresentationLayoutChoices(view *presentationViewState, slideID uint32, summary document.PresentationLayoutSummary) {
 	if view == nil || slideID == 0 || summary.Revision == 0 {
-		a.setStatus("版式目录无效，请重新打开版式选择")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_layout_catalog_is_invalid_reopen_layou_e27bf7"}, feedbackError, notificationToast)
 		return
 	}
 	view.layoutOptions = append(view.layoutOptions[:0], summary.Layouts...)
@@ -88,16 +89,15 @@ func (a *App) showPresentationLayoutChoices(view *presentationViewState, slideID
 	view.layoutList.Position.First = 0
 	view.layoutList.Position.Offset = 0
 	view.layoutOptionButtons = make(map[int]*widget.Clickable, len(summary.Layouts))
-	var message string
+	var message i18n.Message
 	if len(summary.Layouts) == 0 {
-		message = "当前演示文稿没有可用版式。"
+		message = i18n.Message{ID: "presentation.layout.empty"}
+	} else if summary.Truncated {
+		message = i18n.Message{ID: "presentation.layout.body.truncated", Args: i18n.Args{"Slide": slideID, "Revision": summary.Revision, "Total": summary.Total, "Visible": len(summary.Layouts)}}
 	} else {
-		message = fmt.Sprintf("为幻灯片 ID %d 选择版式（读取修订：%d）。", slideID, summary.Revision)
-		if summary.Truncated {
-			message += fmt.Sprintf("\n版式总数为 %d，当前显示前 %d 项。", summary.Total, len(summary.Layouts))
-		}
+		message = i18n.Message{ID: "presentation.layout.body", Args: i18n.Args{"Slide": slideID, "Revision": summary.Revision}}
 	}
-	a.modal.ShowCustom("幻灯片版式", message, 500,
+	a.modal.ShowCustomMessage("presentation.layout", i18n.Message{ID: "presentation.layout.title"}, message, 500,
 		func(gtx layout.Context) layout.Dimensions {
 			return a.layoutPresentationLayoutChoices(gtx, view)
 		},
@@ -108,7 +108,7 @@ func (a *App) showPresentationLayoutChoices(view *presentationViewState, slideID
 			}
 			index, err := strconv.Atoi(action)
 			if err != nil || index < 0 || index >= len(view.layoutOptions) {
-				a.setStatus("版式选项已失效，请重新读取目录")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_layout_option_expired_read_the_catalog_d727e6"}, feedbackWarning, notificationToast)
 				a.modal.Hide()
 				return
 			}
@@ -116,7 +116,7 @@ func (a *App) showPresentationLayoutChoices(view *presentationViewState, slideID
 			a.modal.Hide()
 			a.startPresentationLayoutSet(view, view.layoutSlideID, option, view.layoutRevision)
 		},
-		modalDialogActionSpec{ID: "close", Label: "关闭"},
+		modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}},
 	)
 }
 
@@ -154,11 +154,11 @@ type presentationSlideLayoutSetArguments struct {
 func (a *App) startPresentationLayoutSet(view *presentationViewState, slideID uint32, option document.PresentationLayoutOption, expectedRevision uint64) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("演示文稿能力尚未连接")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_capabilities_are_not_connecte_811cbe"}, feedbackInfo, notificationToast)
 		return true
 	}
 	if view.commandPending {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
@@ -169,12 +169,12 @@ func (a *App) startPresentationLayoutSet(view *presentationViewState, slideID ui
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	if token.revision != expectedRevision {
 		state.finishOperation(token)
-		a.setStatus("文档在选择版式期间发生变化，请重新打开版式目录")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_document_changed_while_choosing_a_layo_5562ed"}, feedbackInfo, notificationToast)
 		return true
 	}
 	view.commandPending = true

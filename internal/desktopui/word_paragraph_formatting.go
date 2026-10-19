@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"math"
 	"strconv"
 	"strings"
@@ -67,12 +68,12 @@ func (a *App) showWordParagraphSpacingDialog(actionID string) {
 		return
 	}
 	paragraphID := paragraph.ID
-	title, message, currentPT, opName := "段前间距", "设置段前间距（磅，0–1584）", paragraph.Layout.BeforePT, "设置段前间距"
+	title, body, currentPT, operation := i18n.Message{ID: "word.paragraph_format.spacing_before.title"}, i18n.Message{ID: "word.paragraph_format.spacing_before.body"}, paragraph.Layout.BeforePT, i18n.Message{ID: "word.paragraph_format.spacing_before.operation"}
 	if actionID == "layout-after" {
-		title, message, currentPT, opName = "段后间距", "设置段后间距（磅，0–1584）", paragraph.Layout.AfterPT, "设置段后间距"
+		title, body, currentPT, operation = i18n.Message{ID: "word.paragraph_format.spacing_after.title"}, i18n.Message{ID: "word.paragraph_format.spacing_after.body"}, paragraph.Layout.AfterPT, i18n.Message{ID: "word.paragraph_format.spacing_after.operation"}
 	}
 	initialVal := strconv.FormatFloat(currentPT, 'f', -1, 64)
-	a.modal.ShowInput(title, message, initialVal, "间距（磅）", func(action string) {
+	a.modal.ShowInputMessage("word.paragraph_format.spacing", title, body, initialVal, i18n.Message{ID: "word.paragraph_format.spacing.hint"}, func(action string) {
 		draft := strings.TrimSpace(a.modal.Input.Text())
 		a.modal.Hide()
 		if action != "confirm" {
@@ -80,20 +81,20 @@ func (a *App) showWordParagraphSpacingDialog(actionID string) {
 		}
 		pt, err := strconv.ParseFloat(draft, 64)
 		if err != nil || math.IsNaN(pt) || math.IsInf(pt, 0) || pt < 0 || pt > 1584 {
-			a.setStatus(title + "必须在 0 到 1584 磅之间")
+			a.setStatusMessage(i18n.Message{ID: "word.paragraph_format.error.range"}, feedbackError, notificationToast)
 			if a.window != nil {
 				a.window.Invalidate()
 			}
 			return
 		}
 		twips := int64(math.Round(pt * 20.0))
-		a.runWordSpacingCommand(opName, func(editor document.WordParagraphSpacingEditor) error {
+		a.runWordSpacingCommand(a.text(operation), func(editor document.WordParagraphSpacingEditor) error {
 			if actionID == "layout-before" {
 				return editor.SetParagraphSpacing(paragraphID, &twips, nil)
 			}
 			return editor.SetParagraphSpacing(paragraphID, nil, &twips)
 		})
-	}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }
 
 func (a *App) runWordSpacingCommand(operation string, edit func(document.WordParagraphSpacingEditor) error) {
@@ -127,26 +128,26 @@ func (a *App) showWordParagraphIndentDialog() {
 	paragraphID := paragraph.ID
 	leftPT := float64(paragraph.LeftIndentEMU) / 12700.0
 	rightPT := float64(paragraph.RightIndentEMU) / 12700.0
-	labels := []string{"左侧缩进（磅）", "右侧缩进（磅）"}
-	hints := []string{"0", "0"}
+	labels := []i18n.Message{{ID: "word.paragraph_format.indent.left"}, {ID: "word.paragraph_format.indent.right"}}
+	hints := []i18n.Message{{ID: "word.paragraph_format.indent.hint"}, {ID: "word.paragraph_format.indent.hint"}}
 	initial := []string{
 		strconv.FormatFloat(leftPT, 'f', -1, 64),
 		strconv.FormatFloat(rightPT, 'f', -1, 64),
 	}
-	a.modal.ShowForm("段落缩进", "设置所选段落的左侧和右侧缩进（0–1000 磅）：",
+	a.modal.ShowFormMessage("word.paragraph_format.indent", i18n.Message{ID: "word.paragraph_format.indent.title"}, i18n.Message{ID: "word.paragraph_format.indent.body"},
 		labels, hints, initial,
 		func(action string) {
 			switch action {
 			case "none":
 				a.modal.Hide()
-				a.runWordCommand("清除段落缩进", func(editor document.WordTextEditor) error {
+				a.runWordCommand(a.text(i18n.Message{ID: "word.paragraph_format.indent.operation.clear"}), func(editor document.WordTextEditor) error {
 					return editor.SetParagraphIndents(paragraphID, 0, 0)
 				})
 			case "confirm":
 				left, err1 := strconv.ParseFloat(strings.TrimSpace(a.modal.FormInputs[0].Text()), 64)
 				right, err2 := strconv.ParseFloat(strings.TrimSpace(a.modal.FormInputs[1].Text()), 64)
 				if err1 != nil || err2 != nil || left < 0 || right < 0 || left > 1000 || right > 1000 {
-					a.setStatus("缩进必须是 0 到 1000 磅之间的数值")
+					a.setStatusMessage(i18n.Message{ID: "word.status.inline.indent_must_be_a_value_999ca8"}, feedbackError, notificationToast)
 					if a.window != nil {
 						a.window.Invalidate()
 					}
@@ -155,15 +156,15 @@ func (a *App) showWordParagraphIndentDialog() {
 				a.modal.Hide()
 				leftEMU := int64(math.Round(left * 12700.0))
 				rightEMU := int64(math.Round(right * 12700.0))
-				a.runWordCommand("设置段落缩进", func(editor document.WordTextEditor) error {
+				a.runWordCommand(a.text(i18n.Message{ID: "word.paragraph_format.indent.operation.set"}), func(editor document.WordTextEditor) error {
 					return editor.SetParagraphIndents(paragraphID, leftEMU, rightEMU)
 				})
 			case "cancel":
 				a.modal.Hide()
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "应用"},
-		modalDialogActionSpec{ID: "none", Label: "无缩进 (0pt)"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}},
+		modalDialogActionSpec{ID: "none", LabelRef: i18n.Message{ID: "word.paragraph_format.indent.none"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }

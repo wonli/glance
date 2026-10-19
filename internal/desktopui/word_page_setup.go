@@ -1,8 +1,8 @@
 package desktopui
 
 import (
-	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"strconv"
 	"strings"
 )
@@ -21,12 +21,11 @@ func (a *App) showWordOrientationDialog() {
 			currentOrient = o
 		}
 	}
-	label := "纵向"
+	label := a.text(i18n.Message{ID: "word.page_setup.orientation.portrait"})
 	if currentOrient == "landscape" {
-		label = "横向"
+		label = a.text(i18n.Message{ID: "word.page_setup.orientation.landscape"})
 	}
-	message := fmt.Sprintf("当前页面方向：%s\n请选择目标方向：", label)
-	a.modal.Show("页面方向", message, func(action string) {
+	a.modal.ShowMessage("word.page_setup.orientation", i18n.Message{ID: "word.page_setup.orientation.dialog.title"}, i18n.Message{ID: "word.page_setup.orientation.dialog.body", Args: i18n.Args{"Orientation": label}}, func(action string) {
 		a.modal.Hide()
 		if action == "portrait" || action == "landscape" {
 			a.runWordPageSetupCommand("修改页面方向", func(editor document.WordPageSetupEditor) error {
@@ -34,9 +33,9 @@ func (a *App) showWordOrientationDialog() {
 			})
 		}
 	},
-		modalDialogActionSpec{ID: "portrait", Label: "纵向"},
-		modalDialogActionSpec{ID: "landscape", Label: "横向"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "portrait", LabelRef: i18n.Message{ID: "word.page_setup.orientation.portrait"}},
+		modalDialogActionSpec{ID: "landscape", LabelRef: i18n.Message{ID: "word.page_setup.orientation.landscape"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -64,15 +63,15 @@ func (a *App) showWordMarginsDialog() {
 			leftPT = s.MarginLeftPT
 		}
 	}
-	labels := []string{"上边距（磅）", "右边距（磅）", "下边距（磅）", "左边距（磅）"}
-	hints := []string{"72", "72", "72", "72"}
+	labels := []i18n.Message{{ID: "word.page_setup.margin.top"}, {ID: "word.page_setup.margin.right"}, {ID: "word.page_setup.margin.bottom"}, {ID: "word.page_setup.margin.left"}}
+	hints := []i18n.Message{{ID: "word.page_setup.margin.default"}, {ID: "word.page_setup.margin.default"}, {ID: "word.page_setup.margin.default"}, {ID: "word.page_setup.margin.default"}}
 	initial := []string{
 		strconv.FormatFloat(topPT, 'f', -1, 64),
 		strconv.FormatFloat(rightPT, 'f', -1, 64),
 		strconv.FormatFloat(bottomPT, 'f', -1, 64),
 		strconv.FormatFloat(leftPT, 'f', -1, 64),
 	}
-	a.modal.ShowForm("页边距设置", "可选择快速预设或输入自定义页边距（磅，1 厘米 ≈ 28.35 磅）：",
+	a.modal.ShowFormMessage("word.page_setup.margins", i18n.Message{ID: "word.page_setup.margins.dialog.title"}, i18n.Message{ID: "word.page_setup.margins.dialog.body"},
 		labels, hints, initial,
 		func(action string) {
 			switch action {
@@ -94,7 +93,7 @@ func (a *App) showWordMarginsDialog() {
 				if err1 != nil || err2 != nil || err3 != nil || err4 != nil ||
 					top < 0 || right < 0 || bottom < 0 || left < 0 ||
 					top > 1000 || right > 1000 || bottom > 1000 || left > 1000 {
-					a.setStatus("页边距必须是 0 到 1000 磅之间的数值")
+					a.setStatusMessage(i18n.Message{ID: "word.status.inline.margins_must_be_values_from_211781"}, feedbackError, notificationToast)
 					if a.window != nil {
 						a.window.Invalidate()
 					}
@@ -108,10 +107,10 @@ func (a *App) showWordMarginsDialog() {
 				a.modal.Hide()
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "应用"},
-		modalDialogActionSpec{ID: "normal", Label: "普通 (72pt)"},
-		modalDialogActionSpec{ID: "narrow", Label: "窄边距 (36pt)"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}},
+		modalDialogActionSpec{ID: "normal", LabelRef: i18n.Message{ID: "word.page_setup.margins.preset.normal"}},
+		modalDialogActionSpec{ID: "narrow", LabelRef: i18n.Message{ID: "word.page_setup.margins.preset.narrow"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -133,13 +132,13 @@ func (a *App) showWordPageSizeDialog() {
 			hPT = s.HeightPT
 		}
 	}
-	labels := []string{"宽度（磅）", "高度（磅）"}
-	hints := []string{"A4 约为 595.3", "A4 约为 841.9"}
+	labels := []i18n.Message{{ID: "word.page_setup.paper_size.width"}, {ID: "word.page_setup.paper_size.height"}}
+	hints := []i18n.Message{{ID: "word.page_setup.paper_size.width_hint"}, {ID: "word.page_setup.paper_size.height_hint"}}
 	initial := []string{
 		strconv.FormatFloat(wPT, 'f', 1, 64),
 		strconv.FormatFloat(hPT, 'f', 1, 64),
 	}
-	a.modal.ShowForm("纸张大小设置", "可选择标准纸张规格或输入自定义尺寸（磅）：",
+	a.modal.ShowFormMessage("word.page_setup.paper_size", i18n.Message{ID: "word.page_setup.paper_size.dialog.title"}, i18n.Message{ID: "word.page_setup.paper_size.dialog.body"},
 		labels, hints, initial,
 		func(action string) {
 			switch action {
@@ -157,7 +156,7 @@ func (a *App) showWordPageSizeDialog() {
 				w, err1 := strconv.ParseFloat(strings.TrimSpace(a.modal.FormInputs[0].Text()), 64)
 				h, err2 := strconv.ParseFloat(strings.TrimSpace(a.modal.FormInputs[1].Text()), 64)
 				if err1 != nil || err2 != nil || w <= 0 || h <= 0 || w > 3000 || h > 3000 {
-					a.setStatus("纸张宽度和高度必须在 1 到 3000 磅之间")
+					a.setStatusMessage(i18n.Message{ID: "word.status.inline.paper_width_and_height_must_1e89e5"}, feedbackError, notificationToast)
 					if a.window != nil {
 						a.window.Invalidate()
 					}
@@ -171,10 +170,10 @@ func (a *App) showWordPageSizeDialog() {
 				a.modal.Hide()
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "应用"},
-		modalDialogActionSpec{ID: "a4", Label: "A4 (210×297mm)"},
-		modalDialogActionSpec{ID: "letter", Label: "Letter (8.5×11in)"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}},
+		modalDialogActionSpec{ID: "a4", LabelRef: i18n.Message{ID: "word.page_setup.paper_size.a4"}},
+		modalDialogActionSpec{ID: "letter", LabelRef: i18n.Message{ID: "word.page_setup.paper_size.letter"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -186,8 +185,7 @@ func (a *App) showWordColumnsDialog() {
 	if _, ok := any(state.word).(document.WordPageSetupEditor); !ok {
 		return
 	}
-	message := "选择页面分栏排版布局："
-	a.modal.Show("分栏设置", message, func(action string) {
+	a.modal.ShowMessage("word.page_setup.columns", i18n.Message{ID: "word.page_setup.columns.dialog.title"}, i18n.Message{ID: "word.page_setup.columns.dialog.body"}, func(action string) {
 		a.modal.Hide()
 		var cols int
 		switch action {
@@ -200,14 +198,14 @@ func (a *App) showWordColumnsDialog() {
 		default:
 			return
 		}
-		a.runWordPageSetupCommand(fmt.Sprintf("设置页面分栏为 %d 栏", cols), func(editor document.WordPageSetupEditor) error {
+		a.runWordPageSetupCommand(a.text(i18n.Message{ID: "word.page_setup.columns.operation", Args: i18n.Args{"Columns": cols}}), func(editor document.WordPageSetupEditor) error {
 			return editor.SetPageColumns(cols)
 		})
 	},
-		modalDialogActionSpec{ID: "col1", Label: "一栏 (单栏常规)"},
-		modalDialogActionSpec{ID: "col2", Label: "两栏 (双栏排版)"},
-		modalDialogActionSpec{ID: "col3", Label: "三栏 (三栏报刊)"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "col1", LabelRef: i18n.Message{ID: "word.page_setup.columns.option.one"}},
+		modalDialogActionSpec{ID: "col2", LabelRef: i18n.Message{ID: "word.page_setup.columns.option.two"}},
+		modalDialogActionSpec{ID: "col3", LabelRef: i18n.Message{ID: "word.page_setup.columns.option.three"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -219,32 +217,31 @@ func (a *App) showWordLineNumbersDialog() {
 	if _, ok := any(state.word).(document.WordPageSetupEditor); !ok {
 		return
 	}
-	message := "请选择正文行号编排方式："
-	a.modal.Show("行号设置", message, func(action string) {
+	a.modal.ShowMessage("word.page_setup.line_numbers", i18n.Message{ID: "word.page_setup.line_numbers.dialog.title"}, i18n.Message{ID: "word.page_setup.line_numbers.dialog.body"}, func(action string) {
 		a.modal.Hide()
 		var mode string
-		var label string
+		var modeLabelID string
 		switch action {
 		case "continuous":
 			mode = "continuous"
-			label = "连续行号"
+			modeLabelID = "word.page_setup.line_numbers.mode.continuous"
 		case "newPage":
 			mode = "newPage"
-			label = "每页重置行号"
+			modeLabelID = "word.page_setup.line_numbers.mode.new_page"
 		case "none":
 			mode = "none"
-			label = "清除行号"
+			modeLabelID = "word.page_setup.line_numbers.mode.none"
 		default:
 			return
 		}
-		a.runWordPageSetupCommand("设置"+label, func(editor document.WordPageSetupEditor) error {
+		a.runWordPageSetupCommand(a.text(i18n.Message{ID: "word.page_setup.line_numbers.operation", Args: i18n.Args{"Mode": a.text(i18n.Message{ID: modeLabelID})}}), func(editor document.WordPageSetupEditor) error {
 			return editor.SetPageLineNumbers(mode)
 		})
 	},
-		modalDialogActionSpec{ID: "continuous", Label: "连续编号"},
-		modalDialogActionSpec{ID: "newPage", Label: "每页重置"},
-		modalDialogActionSpec{ID: "none", Label: "无 (清除行号)"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "continuous", LabelRef: i18n.Message{ID: "word.page_setup.line_numbers.mode.continuous"}},
+		modalDialogActionSpec{ID: "newPage", LabelRef: i18n.Message{ID: "word.page_setup.line_numbers.mode.new_page"}},
+		modalDialogActionSpec{ID: "none", LabelRef: i18n.Message{ID: "word.page_setup.line_numbers.mode.none"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -256,8 +253,7 @@ func (a *App) showWordBreaksDialog() {
 	if _, ok := any(state.word).(document.WordPageBreakEditor); !ok {
 		return
 	}
-	message := "选择在当前光标位置插入的分隔符类型："
-	a.modal.Show("插入分隔符", message, func(action string) {
+	a.modal.ShowMessage("word.page_setup.breaks", i18n.Message{ID: "word.page_setup.breaks.dialog.title"}, i18n.Message{ID: "word.page_setup.breaks.dialog.body"}, func(action string) {
 		a.modal.Hide()
 		switch action {
 		case "page":
@@ -266,9 +262,9 @@ func (a *App) showWordBreaksDialog() {
 			a.queueWordBreak(document.WordBreakColumn)
 		}
 	},
-		modalDialogActionSpec{ID: "page", Label: "分页符 (进入下一页)"},
-		modalDialogActionSpec{ID: "column", Label: "分栏符 (进入下一栏)"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "page", LabelRef: i18n.Message{ID: "word.page_setup.breaks.page"}},
+		modalDialogActionSpec{ID: "column", LabelRef: i18n.Message{ID: "word.page_setup.breaks.column"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -303,16 +299,9 @@ func (a *App) showWordCountDetails() {
 		return
 	}
 	statistics := wordTextStatisticsForState(state)
-	message := fmt.Sprintf(
-		"字符数（不含空白）：%d\n字符数（含空白）：%d\n段落数：%d\n表格数：%d",
-		statistics.charactersWithoutWhitespace,
-		statistics.charactersWithWhitespace,
-		statistics.paragraphs,
-		statistics.tables,
-	)
-	a.modal.Show("字数统计", message, func(action string) {
+	a.modal.ShowMessage("word.word_count", i18n.Message{ID: "word.word_count.dialog.title"}, i18n.Message{ID: "word.word_count.dialog.body", Args: i18n.Args{"WithoutWhitespace": statistics.charactersWithoutWhitespace, "WithWhitespace": statistics.charactersWithWhitespace, "Paragraphs": statistics.paragraphs, "Tables": statistics.tables}}, func(action string) {
 		if action == "close" {
 			a.modal.Hide()
 		}
-	}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+	}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
 }

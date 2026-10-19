@@ -36,8 +36,8 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 
 	// 1. Orientation Dialog
 	app.showSpreadsheetOrientationDialog()
-	if !app.modal.Visible || app.modal.Title != "纸张方向" {
-		t.Fatalf("expected modal dialog for orientation, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "纸张方向" {
+		t.Fatalf("expected modal dialog for orientation, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("landscape")
 	select {
@@ -55,8 +55,8 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 
 	// 2. Margins Dialog
 	app.showSpreadsheetMarginsDialog()
-	if !app.modal.Visible || app.modal.Title != "页边距设置" {
-		t.Fatalf("expected modal dialog for margins, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "页边距设置" {
+		t.Fatalf("expected modal dialog for margins, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("narrow")
 	select {
@@ -74,8 +74,8 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 
 	// 3. Page Size Dialog
 	app.showSpreadsheetPageSizeDialog()
-	if !app.modal.Visible || app.modal.Title != "纸张大小设置" {
-		t.Fatalf("expected modal dialog for page size, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "纸张大小设置" {
+		t.Fatalf("expected modal dialog for page size, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("letter")
 	select {
@@ -101,8 +101,8 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 		Active: CellPosition{Row: 9, Column: 3},
 	}
 	app.showSpreadsheetPrintAreaDialog()
-	if !app.modal.Visible || app.modal.Title != "打印区域设置" {
-		t.Fatalf("expected modal dialog for print area, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "打印区域设置" {
+		t.Fatalf("expected modal dialog for print area, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("set")
 	select {
@@ -142,8 +142,8 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 		t.Fatal("header-row / print-titles should be enabled")
 	}
 	app.showSpreadsheetPrintTitlesDialog()
-	if !app.modal.Visible || app.modal.Title != "打印标题设置" {
-		t.Fatalf("expected modal dialog for print titles, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "打印标题设置" {
+		t.Fatalf("expected modal dialog for print titles, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("set")
 	select {
@@ -194,8 +194,8 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 	if !state.spreadsheetGridlinesHidden {
 		t.Fatal("expected gridlines to be hidden after toggle")
 	}
-	if app.status != "已隐藏网格线" {
-		t.Fatalf("expected status '已隐藏网格线', got %q", app.status)
+	if app.statusText() != "已隐藏网格线" {
+		t.Fatalf("expected status '已隐藏网格线', got %q", app.statusText())
 	}
 	select {
 	case result := <-app.formatResults:
@@ -210,8 +210,8 @@ func TestSpreadsheetPageLayoutDialogsAndCommands(t *testing.T) {
 	if state.spreadsheetGridlinesHidden {
 		t.Fatal("expected gridlines to be visible after second toggle")
 	}
-	if app.status != "已显示网格线" {
-		t.Fatalf("expected status '已显示网格线', got %q", app.status)
+	if app.statusText() != "已显示网格线" {
+		t.Fatalf("expected status '已显示网格线', got %q", app.statusText())
 	}
 	select {
 	case result := <-app.formatResults:

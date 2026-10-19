@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"errors"
+	"glance/internal/i18n"
 
 	"glance/internal/document"
 )
@@ -66,7 +67,7 @@ func (a *App) toggleSpreadsheetFormatPainter() {
 		return
 	}
 	if !state.selectionSet {
-		a.setStatus("请先选择要复制格式的单元格")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.select_the_cell_whose_formatting_ec1592"}, feedbackWarning, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -77,7 +78,7 @@ func (a *App) toggleSpreadsheetFormatPainter() {
 	state.excelFormatPainterActive = true
 	state.excelFormatPainterPatch = &patch
 	state.excelFormatPainterSourceCell = a.selectedCell
-	a.setStatus("已启动格式刷；选择目标单元格区域应用，再点格式刷或按 Esc 取消")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.format_painter_is_active_select_542a5a"}, feedbackSuccess, notificationToast)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -91,7 +92,7 @@ func (a *App) cancelSpreadsheetFormatPainter() {
 	state.excelFormatPainterActive = false
 	state.excelFormatPainterPatch = nil
 	state.excelFormatPainterSourceCell = ""
-	a.setStatus("已取消格式刷")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.format_painter_canceled_1e3acc"}, feedbackSuccess, notificationToast)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -114,7 +115,7 @@ func (a *App) applySpreadsheetFormatPainter() {
 		return
 	}
 	a.applyCellFormat(patch)
-	a.setStatus("格式刷已应用至所选区域")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.format_painter_applied_to_the_3a1558"}, feedbackSuccess, notificationToast)
 	if a.window != nil {
 		a.window.Invalidate()
 	}

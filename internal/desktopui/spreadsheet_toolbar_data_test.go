@@ -29,8 +29,8 @@ func TestSpreadsheetLinkDialogAndCommand(t *testing.T) {
 
 	// 1. Show link dialog on empty cell B2
 	app.showSpreadsheetLinkDialog()
-	if !app.modal.Visible || app.modal.Title != "插入链接" {
-		t.Fatalf("expected modal dialog for link, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入链接" {
+		t.Fatalf("expected modal dialog for link, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("https://example.com")
 	app.modal.SecondInput.SetText("Example")
@@ -98,8 +98,8 @@ func TestSpreadsheetRemoveDuplicatesDialogAndCommand(t *testing.T) {
 	}
 
 	app.showSpreadsheetRemoveDuplicatesDialog()
-	if !app.modal.Visible || app.modal.Title != "删除重复项" {
-		t.Fatalf("expected modal dialog for remove duplicates, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "删除重复项" {
+		t.Fatalf("expected modal dialog for remove duplicates, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 
 	// Deduplicate across all columns
@@ -171,8 +171,8 @@ func TestSpreadsheetTextToColumnsDialogAndCommand(t *testing.T) {
 	}
 
 	app.showSpreadsheetTextToColumnsDialog()
-	if !app.modal.Visible || app.modal.Title != "文本分列" {
-		t.Fatalf("expected modal dialog for text to columns, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "文本分列" {
+		t.Fatalf("expected modal dialog for text to columns, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 
 	// Split by comma
@@ -230,8 +230,8 @@ func TestSpreadsheetInsertTableDialogAndCommand(t *testing.T) {
 	}
 
 	app.showSpreadsheetInsertTableDialog("")
-	if !app.modal.Visible || app.modal.Title != "创建表格" {
-		t.Fatalf("expected modal dialog for insert table, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "创建表格" {
+		t.Fatalf("expected modal dialog for insert table, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 
 	app.modal.OnAction("medium")
@@ -284,12 +284,12 @@ func TestSpreadsheetRecalculateAndRefreshAll(t *testing.T) {
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
 			app.processSpreadsheetFormatResult()
-			if app.status == wantStatus {
+			if app.statusText() == wantStatus {
 				return
 			}
 			time.Sleep(time.Millisecond)
 		}
-		t.Fatalf("%s did not publish status %q; last status %q", operation, wantStatus, app.status)
+		t.Fatalf("%s did not publish status %q; last status %q", operation, wantStatus, app.statusText())
 	}
 	apply(app.recalculateSpreadsheet, "重新计算公式", "已刷新公式结果（不包含外部数据连接）")
 	apply(app.refreshAllSpreadsheet, "刷新全部工作表", "已刷新全部工作表公式结果（不包含外部数据连接）")
@@ -329,8 +329,8 @@ func TestSpreadsheetFormulaAndNameManagerAndFlashFill(t *testing.T) {
 
 	// 2. Insert Formula Dialog and execution
 	app.showSpreadsheetInsertFunctionDialog("")
-	if !app.modal.Visible || app.modal.Title != "插入函数" {
-		t.Fatalf("expected 插入函数 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入函数" {
+		t.Fatalf("expected 插入函数 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("=SUM(A1:A2)")
 	app.modal.OnAction("confirm")
@@ -350,8 +350,8 @@ func TestSpreadsheetFormulaAndNameManagerAndFlashFill(t *testing.T) {
 
 	// 3. Name Manager Dialog and execution
 	app.showSpreadsheetNameManagerDialog()
-	if !app.modal.Visible || app.modal.Title != "名称管理器" {
-		t.Fatalf("expected 名称管理器 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "名称管理器" {
+		t.Fatalf("expected 名称管理器 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("TestTotal")
 	app.modal.OnAction("confirm")

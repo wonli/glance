@@ -10,6 +10,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"strings"
@@ -21,18 +22,18 @@ func (a *App) layoutMarkdownPreview(gtx layout.Context) layout.Dimensions {
 	return jsonPanel(gtx, contentSurface, true, false, func(gtx layout.Context) layout.Dimensions {
 		return markdownColumn(gtx, func(gtx layout.Context) layout.Dimensions {
 			if v.err != nil {
-				return jsonLabel(gtx, a, v.err.Error(), 14, mutedText, false, false)
+				return jsonLabel(gtx, a, a.text(i18n.Message{ID: "markdown.error.parse_failed"}), 14, mutedText, false, false)
 			}
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if v.pending {
 					return layout.Dimensions{}
 				}
-				count, _ := markdownImageWarnings(v.snapshot, v.images, v.errors)
+				count, _ := markdownImageWarnings(v.snapshot, v.images, v.errors, a.text)
 				if count == 0 {
 					return layout.Dimensions{}
 				}
 				return layout.Inset{Bottom: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return jsonLabel(gtx, a, fmt.Sprintf("%d 张图片无法加载，导出 PDF 前会提示确认", count), 14, color.NRGBA{R: 128, G: 91, B: 36, A: 255}, false, false)
+					return jsonLabel(gtx, a, a.text(i18n.Message{ID: "markdown.preview.images_unavailable", Args: i18n.Args{"Count": count}}), 14, color.NRGBA{R: 128, G: 91, B: 36, A: 255}, false, false)
 				})
 			}), layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return v.preview.Layout(gtx, len(v.snapshot.Blocks), func(gtx layout.Context, index int) layout.Dimensions {

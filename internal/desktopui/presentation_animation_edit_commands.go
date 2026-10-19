@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/application"
 	"glance/internal/document"
@@ -12,7 +13,7 @@ func (a *App) showPresentationAnimationAddOptions(view *presentationViewState) {
 	if view == nil {
 		return
 	}
-	a.modal.Show("添加进入动画", "选择要应用到当前选中元素的进入效果。", func(action string) {
+	a.modal.ShowMessage("presentation.animation.add", i18n.Message{ID: "presentation.animation.add.title"}, i18n.Message{ID: "presentation.animation.add.body"}, func(action string) {
 		a.modal.Hide()
 		effect := ""
 		switch action {
@@ -26,13 +27,13 @@ func (a *App) showPresentationAnimationAddOptions(view *presentationViewState) {
 			return
 		}
 		if !a.startPresentationElementAnimation(view, effect, 500) {
-			a.setStatus("无法启动动画设置")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_the_animation_operation_04cc99"}, feedbackWarning, notificationToast)
 		}
 	},
-		modalDialogActionSpec{ID: "appear", Label: "出现"},
-		modalDialogActionSpec{ID: "fade", Label: "淡入"},
-		modalDialogActionSpec{ID: "fly_in", Label: "从左侧飞入"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "appear", LabelRef: i18n.Message{ID: "presentation.animation.effect.appear"}},
+		modalDialogActionSpec{ID: "fade", LabelRef: i18n.Message{ID: "presentation.animation.effect.fade_in"}},
+		modalDialogActionSpec{ID: "fly_in", LabelRef: i18n.Message{ID: "presentation.animation.effect.fly_in"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -46,11 +47,11 @@ type startPresentationElementAnimationPayload struct {
 func (a *App) startPresentationElementAnimation(view *presentationViewState, effect string, durationMS int) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("演示文稿能力尚未连接")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_capabilities_are_not_connecte_811cbe"}, feedbackInfo, notificationToast)
 		return true
 	}
 	if view.commandPending {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
@@ -61,12 +62,12 @@ func (a *App) startPresentationElementAnimation(view *presentationViewState, eff
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return true
 	}
 	elementID := view.selectedShape
 	if elementID <= 0 {
-		a.setStatus("请先选择要设置动画的幻灯片元素")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.select_a_slide_element_to_animate_first_2c75c1"}, feedbackWarning, notificationSuppressed)
 		return true
 	}
 	targetFound := false
@@ -75,19 +76,19 @@ func (a *App) startPresentationElementAnimation(view *presentationViewState, eff
 			continue
 		}
 		if element.Kind != document.ElementKindText && element.Kind != document.ElementKindShape && element.Kind != document.ElementKindPicture {
-			a.setStatus("所选元素类型暂不支持动画")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.animations_are_not_supported_for_the_selec_739e47"}, feedbackWarning, notificationToast)
 			return true
 		}
 		targetFound = true
 		break
 	}
 	if !targetFound {
-		a.setStatus("所选元素已不在当前幻灯片中，请重新选择")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_selected_element_is_no_longer_on_the_c_2aeb64"}, feedbackInfo, notificationToast)
 		return true
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true
@@ -126,7 +127,7 @@ func (a *App) showPresentationAnimationDurationOptions(view *presentationViewSta
 	if view == nil {
 		return
 	}
-	a.modal.Show("动画持续时间", "选择当前幻灯片选中元素最近一条进入动画的时长。", func(action string) {
+	a.modal.ShowMessage("presentation.animation.duration", i18n.Message{ID: "presentation.animation.duration.title"}, i18n.Message{ID: "presentation.animation.duration.body"}, func(action string) {
 		a.modal.Hide()
 		durationMS := 0
 		switch action {
@@ -142,14 +143,14 @@ func (a *App) showPresentationAnimationDurationOptions(view *presentationViewSta
 			return
 		}
 		if !a.startPresentationAnimationDuration(view, durationMS) {
-			a.setStatus("无法启动动画时长设置")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.could_not_start_the_animation_duration_ope_583d40"}, feedbackWarning, notificationToast)
 		}
 	},
-		modalDialogActionSpec{ID: "250", Label: "0.25 秒"},
-		modalDialogActionSpec{ID: "500", Label: "0.5 秒"},
-		modalDialogActionSpec{ID: "1000", Label: "1 秒"},
-		modalDialogActionSpec{ID: "2000", Label: "2 秒"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "250", LabelRef: i18n.Message{ID: "presentation.animation.duration.250ms"}},
+		modalDialogActionSpec{ID: "500", LabelRef: i18n.Message{ID: "presentation.animation.duration.500ms"}},
+		modalDialogActionSpec{ID: "1000", LabelRef: i18n.Message{ID: "presentation.animation.duration.1000ms"}},
+		modalDialogActionSpec{ID: "2000", LabelRef: i18n.Message{ID: "presentation.animation.duration.2000ms"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -167,11 +168,11 @@ type presentationAnimationsListArguments struct {
 func (a *App) startPresentationAnimationDuration(view *presentationViewState, durationMS int) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("演示文稿能力尚未连接")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_capabilities_are_not_connecte_811cbe"}, feedbackInfo, notificationToast)
 		return true
 	}
 	if view.commandPending {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
@@ -182,17 +183,17 @@ func (a *App) startPresentationAnimationDuration(view *presentationViewState, du
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return true
 	}
 	elementID := view.selectedShape
 	if elementID <= 0 {
-		a.setStatus("请先选择要调整动画时长的元素")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.select_an_element_whose_animation_duration_2e54cb"}, feedbackWarning, notificationSuppressed)
 		return true
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true

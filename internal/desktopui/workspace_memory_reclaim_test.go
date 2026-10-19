@@ -59,10 +59,10 @@ func TestJSONAndCSVCloseMemoryReclaim(t *testing.T) {
 
 	var ops op.Ops
 	gtx := layout.Context{
-		Ops: &ops,
-		Now: time.Now(),
+		Ops:         &ops,
+		Now:         time.Now(),
 		Constraints: layout.Exact(image.Pt(800, 600)),
-		Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
 	}
 	warmupDoc, _ := loadDocument(csvPath)
 	if err := app.installDocument(warmupDoc); err == nil {
@@ -78,8 +78,6 @@ func TestJSONAndCSVCloseMemoryReclaim(t *testing.T) {
 	t.Logf("Baseline with document UI and fonts loaded: HeapAlloc=%d MB, HeapSys=%d MB",
 		mBaseline.HeapAlloc/1024/1024, mBaseline.HeapSys/1024/1024)
 
-
-
 	// 1. Open JSON tab
 	loadedJSON, err := loadDocument(jsonPath)
 	if err != nil {
@@ -93,7 +91,6 @@ func TestJSONAndCSVCloseMemoryReclaim(t *testing.T) {
 
 	ops.Reset()
 	app.layout(gtx)
-
 
 	// 2. Open CSV tab
 	loadedCSV, err := loadDocument(csvPath)
@@ -166,10 +163,10 @@ func Test100MBJSONFullOpenAndCloseMemory(t *testing.T) {
 
 	var ops op.Ops
 	gtx := layout.Context{
-		Ops: &ops,
-		Now: time.Now(),
+		Ops:         &ops,
+		Now:         time.Now(),
 		Constraints: layout.Exact(image.Pt(800, 600)),
-		Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
 	}
 
 	runtime.GC()
@@ -828,4 +825,3 @@ func TestMultipleTabsOpenEvictsOldestInactiveSession(t *testing.T) {
 		t.Fatal("expected tab1 (Word) to be seamlessly rehydrated on demand")
 	}
 }
-

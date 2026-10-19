@@ -340,7 +340,7 @@ func TestSpreadsheetAverageMenuCommandInsertsFormula(t *testing.T) {
 		if result.err != nil {
 			t.Fatalf("Average command error: %v", result.err)
 		}
-		if !result.applied || result.noOp || result.details != "已插入平均值公式：A3" {
+		if !result.applied || result.noOp || result.details.ID != "spreadsheet.status.formula_inserted_one" || result.details.Args["Cell"] != "A3" {
 			t.Fatalf("Average command completion = applied %v noOp %v details %q", result.applied, result.noOp, result.details)
 		}
 	case <-time.After(time.Second):
@@ -426,8 +426,8 @@ func TestSpreadsheetFindDialogAndAutoSumIntegration(t *testing.T) {
 
 	// Test Find execution
 	app.showSpreadsheetFindDialog()
-	if app.modal.Title != "查找和替换" {
-		t.Fatalf("modal title = %q; want 查找和替换", app.modal.Title)
+	if app.messageText(app.modal.TitleRef, app.modal.Title) != "查找和替换" {
+		t.Fatalf("modal title = %q; want 查找和替换", app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("Apple")
 	app.modal.OnAction("confirm")

@@ -19,6 +19,7 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 const wordStatusBarHeightDP = 34
@@ -52,29 +53,29 @@ func (a *App) layoutWordStatusBar(gtx layout.Context, state *documentSessionStat
 	paint.FillShape(gtx.Ops, wordStatusBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	paint.FillShape(gtx.Ops, wordStatusTopRule, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(1)))}.Op())
 	barBounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
-	semantic.DescriptionOp("Word 状态栏").Add(gtx.Ops)
+	semantic.DescriptionOp(a.textID("word.accessibility.status_bar")).Add(gtx.Ops)
 	barBounds.Pop()
 
-	a.drawWordStatusText(gtx, 18, 11, 118, 16, "Word 页码", wordPaginationStatusText(state))
-	a.drawWordStatusText(gtx, 142, 11, 46, 16, "Word 字数", wordStatusWordCount(state))
-	a.drawWordStatusText(gtx, 250, 11, 53, 16, "Word 语言", "中文(中国)")
-	a.drawWordStatusIcon(gtx, 350, 9, 15, 15, "tX3tP", "Word 辅助功能图标")
-	a.drawWordStatusText(gtx, 371, 11, 77, 16, "Word 辅助功能", "辅助功能：正常")
+	a.drawWordStatusText(gtx, 18, 11, 118, 16, a.text(i18n.Message{ID: "word.status.description.pages"}), a.localizedWordPaginationStatusText(state))
+	a.drawWordStatusText(gtx, 142, 11, 46, 16, a.text(i18n.Message{ID: "word.status.description.word_count"}), a.wordStatusWordCountText(state))
+	a.drawWordStatusText(gtx, 250, 11, 53, 16, a.text(i18n.Message{ID: "word.status.language"}), a.text(i18n.Message{ID: "word.status.language.chinese"}))
+	a.drawWordStatusIcon(gtx, 350, 9, 15, 15, "tX3tP", a.text(i18n.Message{ID: "word.status.accessibility.icon"}))
+	a.drawWordStatusText(gtx, 371, 11, 77, 16, a.text(i18n.Message{ID: "word.status.accessibility"}), a.text(i18n.Message{ID: "word.status.accessibility.normal"}))
 
 	widthDP := int(float32(gtx.Constraints.Max.X) / gtx.Metric.PxPerDp)
 	rightShift := widthDP - 1440
 	zoom := wordStatusZoomClamp(state.wordLayoutZoom)
 	a.layoutWordStatusZoomSlider(gtx, state, rightShift)
 	zoom = wordStatusZoomClamp(state.wordLayoutZoom)
-	a.drawWordStatusIcon(gtx, 1112+rightShift, 9, 15, 15, "X8Le51", "Word 专注模式")
-	a.drawWordStatusClickableIcon(gtx, 1145+rightShift, 9, "rTjWY", "Word 打印布局", &state.wordStatusPrintLayoutButton, state.wordViewMode == wordViewPrintLayout)
-	a.drawWordStatusClickableIcon(gtx, 1178+rightShift, 9, "RWUft", "Word Web版式", &state.wordStatusWebLayoutButton, state.wordViewMode == wordViewWebLayout)
-	a.drawWordStatusClickableIcon(gtx, 1230+rightShift, 9, "x6Trh", "Word 缩小", &state.wordStatusZoomOutButton, false)
-	a.drawWordStatusRect(gtx, 1257+rightShift, 16, 92, 2, "Word 缩放轨道", wordStatusTrack, 0)
+	a.drawWordStatusIcon(gtx, 1112+rightShift, 9, 15, 15, "X8Le51", a.text(i18n.Message{ID: "word.status.focus_mode"}))
+	a.drawWordStatusClickableIcon(gtx, 1145+rightShift, 9, "rTjWY", a.text(i18n.Message{ID: "word.status.print_layout"}), &state.wordStatusPrintLayoutButton, state.wordViewMode == wordViewPrintLayout)
+	a.drawWordStatusClickableIcon(gtx, 1178+rightShift, 9, "RWUft", a.text(i18n.Message{ID: "word.status.web_layout"}), &state.wordStatusWebLayoutButton, state.wordViewMode == wordViewWebLayout)
+	a.drawWordStatusClickableIcon(gtx, 1230+rightShift, 9, "x6Trh", a.text(i18n.Message{ID: "word.status.zoom_out"}), &state.wordStatusZoomOutButton, false)
+	a.drawWordStatusRect(gtx, 1257+rightShift, 16, 92, 2, a.text(i18n.Message{ID: "word.status.zoom_track"}), wordStatusTrack, 0)
 	thumbX := wordStatusZoomThumbLeftDP(zoom)
-	a.drawWordStatusRect(gtx, thumbX+rightShift, 11, 11, 11, "Word 缩放滑块", wordStatusThumb, 6)
-	a.drawWordStatusClickableIcon(gtx, 1361+rightShift, 9, "kqOIJ", "Word 放大", &state.wordStatusZoomInButton, false)
-	a.drawWordStatusText(gtx, 1390+rightShift, 11, 30, 13, "Word 缩放百分比", fmt.Sprintf("%.0f%%", zoom*100))
+	a.drawWordStatusRect(gtx, thumbX+rightShift, 11, 11, 11, a.text(i18n.Message{ID: "word.status.zoom_slider"}), wordStatusThumb, 6)
+	a.drawWordStatusClickableIcon(gtx, 1361+rightShift, 9, "kqOIJ", a.text(i18n.Message{ID: "word.status.zoom_in"}), &state.wordStatusZoomInButton, false)
+	a.drawWordStatusText(gtx, 1390+rightShift, 11, 30, 13, a.text(i18n.Message{ID: "word.status.zoom_percent"}), fmt.Sprintf("%.0f%%", zoom*100))
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
@@ -140,7 +141,7 @@ func (a *App) layoutWordStatusZoomSlider(gtx layout.Context, state *documentSess
 		Max: image.Pt(gtx.Dp(unit.Dp(rightDP)), gtx.Dp(unit.Dp(bottomDP))),
 	}.Push(gtx.Ops)
 	semantic.Button.Add(gtx.Ops)
-	semantic.DescriptionOp("Word 缩放控制").Add(gtx.Ops)
+	semantic.DescriptionOp(a.textID("word.accessibility.zoom_controls")).Add(gtx.Ops)
 	state.wordStatusZoomDrag.Add(gtx.Ops)
 
 	for event, ok := state.wordStatusZoomDrag.Update(gtx.Metric, gtx.Source, gesture.Horizontal); ok; event, ok = state.wordStatusZoomDrag.Update(gtx.Metric, gtx.Source, gesture.Horizontal) {
@@ -227,6 +228,11 @@ func (a *App) drawWordStatusRect(gtx layout.Context, xDP, yDP, widthDP, heightDP
 
 func wordStatusWordCount(state *documentSessionState) string {
 	return fmt.Sprintf("%d 个字", wordTextStatisticsForState(state).charactersWithWhitespace)
+}
+
+func (a *App) wordStatusWordCountText(state *documentSessionState) string {
+	count := wordTextStatisticsForState(state).charactersWithWhitespace
+	return a.plural(i18n.Message{ID: "word.status.word_count", Args: i18n.Args{"Count": count}}, int64(count))
 }
 
 type wordTextStatistics struct {

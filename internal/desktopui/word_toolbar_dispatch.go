@@ -3,6 +3,7 @@ package desktopui
 import (
 	"glance/internal/document"
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 )
 
 type wordParagraphSpacingAllSetArguments struct {
@@ -24,11 +25,11 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	case "new":
 		word, err := docx.NewBlank()
 		if err != nil {
-			a.setStatus("新建 Word 文档失败：" + err.Error())
+			a.setWordCommandStatus(err)
 			return
 		}
 		if err := a.installDocument(loadedDocument{word: word}); err != nil {
-			a.setStatus("新建 Word 文档失败：" + err.Error())
+			a.setWordCommandStatus(err)
 		}
 	case "open":
 		a.startOpenFilePicker()
@@ -52,7 +53,7 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		a.requestWordNewWindow()
 	case "autosave":
 		if !a.runWordViewRibbonAction("autosave") {
-			a.setStatus("自动保存需要已连接的 Word 运行时")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.autosave_requires_a_connected_word_db4263"}, feedbackInfo, notificationToast)
 		}
 	case "format-painter":
 		a.toggleWordFormatPainter()
@@ -73,16 +74,16 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	case "view-ruler":
 		state.wordRulerHidden = !state.wordRulerHidden
 		if state.wordRulerHidden {
-			a.setStatus("已隐藏标尺")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.ruler_hidden_6ead58"}, feedbackSuccess, notificationSuppressed)
 		} else {
-			a.setStatus("已显示标尺")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.ruler_shown_c451b3"}, feedbackSuccess, notificationSuppressed)
 		}
 	case "view-gridlines":
 		state.wordGridlinesVisible = !state.wordGridlinesVisible
 		if state.wordGridlinesVisible {
-			a.setStatus("已显示网格线")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.gridlines_shown_0ad14e"}, feedbackSuccess, notificationSuppressed)
 		} else {
-			a.setStatus("已隐藏网格线")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.gridlines_hidden_1d300b"}, feedbackSuccess, notificationSuppressed)
 		}
 	case "apply-format-painter":
 		a.startWordFormatPainter()

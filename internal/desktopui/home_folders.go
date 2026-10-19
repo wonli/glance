@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -137,7 +138,7 @@ func (a *App) registerCanonicalHomeFolderPath(path string) error {
 	}
 	name := filepath.Base(cleaned)
 	if name == "." || name == string(filepath.Separator) || name == "" {
-		name = "本地文件夹"
+		name = a.text(i18n.Message{ID: "home.folder.local_name"})
 	}
 	id := newDraftSessionID("home-folder")
 	if _, err := a.mutateHomeFolderSnapshot(func(snapshot workspace.HomeFolderSnapshot) (workspace.HomeFolderSnapshot, bool, error) {
@@ -161,18 +162,18 @@ func (a *App) registerCanonicalHomeFolderPath(path string) error {
 
 func (a *App) handleHomeFolderPickerResult(result fileCommandResult) {
 	if result.err != nil {
-		a.setStatus("登记文件夹失败：" + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "home.folder.error.register_failed"}, result.err, notificationToast)
 		return
 	}
 	if result.path == "" {
-		a.setStatus("已取消打开文件夹")
+		a.setStatusMessage(i18n.Message{ID: "home.folder.status.open_cancelled"}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	if err := a.registerCanonicalHomeFolderPath(result.path); err != nil {
-		a.setStatus("登记文件夹失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "home.folder.error.register_failed"}, err, notificationToast)
 		return
 	}
-	a.setStatus("已添加文件夹到导航")
+	a.setStatusMessage(i18n.Message{ID: "home.folder.status.added"}, feedbackSuccess, notificationToast)
 }
 
 func (a *App) selectHomeFolder(folderID string) {
@@ -342,11 +343,11 @@ func (a *App) homeFolderRecents(folderID string) []workspace.Recent {
 	return all
 }
 
-func homeFolderEmptyStateMessage(hasUnderlyingItems bool) string {
+func homeFolderEmptyStateMessage(hasUnderlyingItems bool) i18n.Message {
 	if !hasUnderlyingItems {
-		return "暂无文件"
+		return i18n.Message{ID: "home.folder.empty"}
 	}
-	return "没有符合条件的文件"
+	return i18n.Message{ID: "home.folder.no_matches"}
 }
 
 func cleanHomeDocumentPath(path string) string {
@@ -368,9 +369,9 @@ func (a *App) homeDocumentIdentity(path string) string {
 
 func (a *App) handleHomeFolderWriteResult(result homeFolderWriteResult) {
 	if result.err != nil {
-		a.setStatus("文件夹保存失败：" + result.err.Error())
-	} else if strings.HasPrefix(a.status, "文件夹保存失败：") {
-		a.setStatus("")
+		a.setStatusErrorMessage(i18n.Message{ID: "home.folder.error.save_failed"}, result.err, notificationToast)
+	} else if a.statusRef.ID == "home.folder.error.save_failed" {
+		a.clearStatus()
 	}
 	a.reconcileHomeFolderSelection()
 }
@@ -490,7 +491,7 @@ func (a *App) applyHomeFolderContentsResult(result homeFolderContentsResult) {
 	if result.err != nil {
 		delete(a.homeFolderContents, result.folderID)
 		if a.homeSelectedFolderID == result.folderID {
-			a.setStatus("读取文件夹内容失败：" + result.err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "home.folder.error.content_failed"}, result.err, notificationToast)
 			if a.window != nil {
 				a.window.Invalidate()
 			}
@@ -569,26 +570,30 @@ func (a *App) showCreateHomeFolderDialog(parentID string) {
 	if parentID != "" {
 		parentPath += " / " + a.homeFolderDisplayPath(parentID)
 	}
-	a.modal.ShowInput("新建文件夹", "创建位置："+parentPath, "未命名文件夹", "文件夹名称", func(action string) {
-		if action == "cancel" {
+	a.modal.ShowInputMessage("home.folder.create",
+		i18n.Message{ID: "home.folder.dialog.create.title"},
+		i18n.Message{ID: "home.folder.dialog.create.body", Args: i18n.Args{"Path": parentPath}},
+		a.text(i18n.Message{ID: "home.folder.default_name"}),
+		i18n.Message{ID: "home.folder.dialog.name_hint"}, func(action string) {
+			if action == "cancel" {
+				a.modal.Hide()
+				return
+			}
+			if action != "confirm" {
+				return
+			}
+			if err := a.createHomeFolder(parentID, a.modal.Input.Text()); err != nil {
+				a.setStatusErrorMessage(i18n.Message{ID: "home.folder.error.create_failed"}, err, notificationToast)
+				return
+			}
 			a.modal.Hide()
-			return
-		}
-		if action != "confirm" {
-			return
-		}
-		if err := a.createHomeFolder(parentID, a.modal.Input.Text()); err != nil {
-			a.setStatus("创建文件夹失败：" + err.Error())
-			return
-		}
-		a.modal.Hide()
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消"}, modalDialogActionSpec{ID: "confirm", Label: "创建"})
+		}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.create"}, Style: modalDialogActionPrimary})
 }
 
 func (a *App) showRenameHomeFolderDialog(folderID string) {
 	snapshot, _, err := a.currentHomeFolderSnapshot()
 	if err != nil {
-		a.setStatus(err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "home.folder.error.read_failed"}, err, notificationToast)
 		return
 	}
 	name := ""
@@ -599,29 +604,33 @@ func (a *App) showRenameHomeFolderDialog(folderID string) {
 		}
 	}
 	if name == "" {
-		a.setStatus("文件夹不存在")
+		a.setStatusMessage(i18n.Message{ID: "home.folder.error.folder_missing"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.ShowInput("重命名文件夹", "重命名「"+name+"」", name, "文件夹名称", func(action string) {
-		if action == "cancel" {
+	a.modal.ShowInputMessage("home.folder.rename",
+		i18n.Message{ID: "home.folder.dialog.rename.title"},
+		i18n.Message{ID: "home.folder.dialog.rename.body", Args: i18n.Args{"Name": name}},
+		name,
+		i18n.Message{ID: "home.folder.dialog.name_hint"}, func(action string) {
+			if action == "cancel" {
+				a.modal.Hide()
+				return
+			}
+			if action != "confirm" {
+				return
+			}
+			if err := a.renameHomeFolder(folderID, a.modal.Input.Text()); err != nil {
+				a.setStatusErrorMessage(i18n.Message{ID: "home.folder.error.rename_failed"}, err, notificationToast)
+				return
+			}
 			a.modal.Hide()
-			return
-		}
-		if action != "confirm" {
-			return
-		}
-		if err := a.renameHomeFolder(folderID, a.modal.Input.Text()); err != nil {
-			a.setStatus("重命名失败：" + err.Error())
-			return
-		}
-		a.modal.Hide()
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消"}, modalDialogActionSpec{ID: "confirm", Label: "保存"})
+		}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.save"}, Style: modalDialogActionPrimary})
 }
 
 func (a *App) showRemoveHomeFolderConfirm(folderID string) {
 	snapshot, _, err := a.currentHomeFolderSnapshot()
 	if err != nil {
-		a.setStatus(err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "home.folder.error.read_failed"}, err, notificationToast)
 		return
 	}
 	name := ""
@@ -632,21 +641,23 @@ func (a *App) showRemoveHomeFolderConfirm(folderID string) {
 		}
 	}
 	if name == "" {
-		a.setStatus("文件夹不存在")
+		a.setStatusMessage(i18n.Message{ID: "home.folder.error.folder_missing"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.ShowConfirm("移除文件夹", "移除「"+name+"」？\n仅从 Glance 的文件夹列表中移除；本地文件与子文件夹不会被删除。", modalDialogConfirmStyle{}, func(action string) {
-		if action == "cancel" {
+	a.modal.ShowConfirmMessage("home.folder.remove",
+		i18n.Message{ID: "home.folder.dialog.remove.title"},
+		i18n.Message{ID: "home.folder.dialog.remove.body", Args: i18n.Args{"Name": name}}, modalDialogConfirmStyle{}, func(action string) {
+			if action == "cancel" {
+				a.modal.Hide()
+				return
+			}
+			if action != "confirm" {
+				return
+			}
+			if err := a.removeHomeFolder(folderID); err != nil {
+				a.setStatusErrorMessage(i18n.Message{ID: "home.folder.error.remove_failed"}, err, notificationToast)
+				return
+			}
 			a.modal.Hide()
-			return
-		}
-		if action != "confirm" {
-			return
-		}
-		if err := a.removeHomeFolder(folderID); err != nil {
-			a.setStatus("移除文件夹失败：" + err.Error())
-			return
-		}
-		a.modal.Hide()
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消"}, modalDialogActionSpec{ID: "confirm", Label: "从列表移除", Style: modalDialogActionDanger})
+		}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "home.folder.action.remove"}, Style: modalDialogActionDanger})
 }

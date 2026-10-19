@@ -101,6 +101,26 @@ func presentationElementDisplayParagraphs(elem document.PresentationElement) []d
 	}}
 }
 
+func (a *App) presentationElementDisplayParagraphs(elem document.PresentationElement) []document.PresentationParagraph {
+	paragraphs := presentationElementDisplayParagraphs(elem)
+	if elem.PlainText() != "" || len(paragraphs) != 1 || len(paragraphs[0].Runs) != 1 {
+		return paragraphs
+	}
+	messageID := ""
+	switch elem.PlaceholderType {
+	case "title", "ctrTitle":
+		messageID = "presentation.placeholder.title"
+	case "subTitle":
+		messageID = "presentation.placeholder.subtitle"
+	case "body", "obj", "content", "vert", "vert270", "vertTitle", "vertBody":
+		messageID = "presentation.placeholder.body"
+	}
+	if messageID != "" {
+		paragraphs[0].Runs[0].Text = a.textID(messageID)
+	}
+	return paragraphs
+}
+
 func presentationElementHasPlaceholderPrompt(elem document.PresentationElement) bool {
 	return elem.PlainText() == "" && presentationPlaceholderPrompt(elem.PlaceholderType) != ""
 }

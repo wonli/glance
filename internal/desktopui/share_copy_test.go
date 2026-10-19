@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"glance/internal/i18n"
 )
 
 func TestEnsureShareCopyExtension(t *testing.T) {
@@ -216,39 +218,49 @@ func TestApplyShareCopyResultPreservesCompletionStatus(t *testing.T) {
 	} {
 		t.Run(tt.format+" success", func(t *testing.T) {
 			state := newDocumentSessionState("source." + strings.ToLower(tt.format))
-			app := &App{documentSessionState: state}
+			app := &App{desktopRuntime: newDesktopRuntime(), documentSessionState: state}
+			app.applyLocaleSelection(i18n.SelectionChinese)
 			app.applyShareCopyResult(state, tt.path, nil, tt.format)
-			if app.status != tt.want {
-				t.Fatalf("success status = %q, want %q", app.status, tt.want)
+			if got := app.statusText(); got != tt.want {
+				t.Fatalf("success status = %q, want %q", got, tt.want)
+			}
+			app.applyLocaleSelection(i18n.SelectionEnglish)
+			wantEnglish := "Shared " + tt.format + " copy exported: " + tt.path
+			if got := app.statusText(); got != wantEnglish {
+				t.Fatalf("status after locale switch = %q, want %q", got, wantEnglish)
 			}
 		})
 	}
 
 	t.Run("active error", func(t *testing.T) {
 		state := newDocumentSessionState("source.xlsx")
-		app := &App{documentSessionState: state}
+		app := &App{desktopRuntime: newDesktopRuntime(), documentSessionState: state}
+		app.applyLocaleSelection(i18n.SelectionChinese)
 		app.applyShareCopyResult(state, "shared.xlsx", errors.New("disk full"), "XLSX")
-		if want := "导出共享副本失败：disk full"; app.status != want {
-			t.Fatalf("error status = %q, want %q", app.status, want)
+		if want := "导出共享副本失败。"; app.statusText() != want {
+			t.Fatalf("error status = %q, want %q", app.statusText(), want)
+		}
+		if app.feedback.detail != "disk full" {
+			t.Fatalf("technical diagnostic detail = %q, want preserved source error", app.feedback.detail)
 		}
 	})
 
 	t.Run("closed result leaves status unchanged", func(t *testing.T) {
 		state := newDocumentSessionState("source.xlsx")
 		state.closed.Store(true)
-		app := &App{documentSessionState: state, status: "existing status"}
+		app := &App{desktopRuntime: newDesktopRuntime(), documentSessionState: state, statusRef: i18n.Message{ID: "status.initial.open_document"}}
 		app.applyShareCopyResult(state, "shared.xlsx", nil, "XLSX")
-		if app.status != "existing status" {
-			t.Fatalf("closed result changed status to %q", app.status)
+		if app.statusRef.ID != "status.initial.open_document" {
+			t.Fatalf("closed result changed status reference to %+v", app.statusRef)
 		}
 	})
 
 	t.Run("noncurrent result leaves status unchanged", func(t *testing.T) {
 		state := newDocumentSessionState("source.xlsx")
-		app := &App{documentSessionState: newDocumentSessionState("other.xlsx"), status: "existing status"}
+		app := &App{desktopRuntime: newDesktopRuntime(), documentSessionState: newDocumentSessionState("other.xlsx"), statusRef: i18n.Message{ID: "status.initial.open_document"}}
 		app.applyShareCopyResult(state, "shared.xlsx", nil, "XLSX")
-		if app.status != "existing status" {
-			t.Fatalf("noncurrent result changed status to %q", app.status)
+		if app.statusRef.ID != "status.initial.open_document" {
+			t.Fatalf("noncurrent result changed status reference to %+v", app.statusRef)
 		}
 	})
 }

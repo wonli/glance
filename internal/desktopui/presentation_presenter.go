@@ -2,7 +2,7 @@ package desktopui
 
 import (
 	"encoding/json"
-	"fmt"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"strings"
@@ -23,7 +23,7 @@ func (a *App) layoutPresentationPresenter(gtx layout.Context, v *presentationVie
 
 	if v.exitShowBtn.Clicked(gtx) {
 		if _, err := a.applyPresentationViewIntent("presentation.view.set", json.RawMessage(`{"operation":"set_mode","mode":"normal"}`)); err != nil {
-			a.setStatus("退出演讲者视图失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		}
 	}
 	if v.prevSlideBtn.Clicked(gtx) && v.activeSlide > 0 {
@@ -53,12 +53,12 @@ func (a *App) layoutPresentationPresenter(gtx layout.Context, v *presentationVie
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										lbl := material.Label(a.theme, unit.Sp(18), "演讲者视图")
+										lbl := material.Label(a.theme, unit.Sp(18), a.textID("presentation.presenter.title"))
 										lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 										return lbl.Layout(gtx)
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										elapsed := "计时未启动"
+										elapsed := a.textID("presentation.presenter.not_started")
 										if v.rehearsalRunning() || v.rehearsalElapsed > 0 {
 											elapsed = formatPresentationRehearsalDuration(v.rehearsalDuration(time.Now()))
 										}
@@ -72,13 +72,13 @@ func (a *App) layoutPresentationPresenter(gtx layout.Context, v *presentationVie
 								return layout.Inset{Top: unit.Dp(20), Bottom: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											lbl := material.Label(a.theme, unit.Sp(13), "演讲者备注")
+											lbl := material.Label(a.theme, unit.Sp(13), a.textID("presentation.presenter.notes"))
 											lbl.Color = secondary
 											return lbl.Layout(gtx)
 										}),
 										layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 											slide := v.currentSlide()
-											notes := "此页尚无演讲者备注。"
+											notes := a.textID("presentation.presenter.notes_empty")
 											if slide != nil && strings.TrimSpace(slide.Notes) != "" {
 												notes = slide.Notes
 											}
@@ -103,7 +103,7 @@ func (a *App) layoutPresentationPresenter(gtx layout.Context, v *presentationVie
 			return layout.Inset{Left: unit.Dp(18), Right: unit.Dp(18), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Label(a.theme, unit.Sp(12), presentationCurrentPageLabel(v))
+						lbl := material.Label(a.theme, unit.Sp(12), a.presentationCurrentPageLabel(v))
 						lbl.Color = secondary
 						return lbl.Layout(gtx)
 					}),
@@ -111,21 +111,21 @@ func (a *App) layoutPresentationPresenter(gtx layout.Context, v *presentationVie
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(unit.Dp(18))}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return v.prevSlideBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Label(a.theme, unit.Sp(13), "◀ 上一页")
+									lbl := material.Label(a.theme, unit.Sp(13), a.textID("presentation.presenter.previous"))
 									lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 									return lbl.Layout(gtx)
 								})
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return v.nextSlideBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Label(a.theme, unit.Sp(13), "下一页 ▶")
+									lbl := material.Label(a.theme, unit.Sp(13), a.textID("presentation.presenter.next"))
 									lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 									return lbl.Layout(gtx)
 								})
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return v.exitShowBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Label(a.theme, unit.Sp(13), "退出 (Esc)")
+									lbl := material.Label(a.theme, unit.Sp(13), a.textID("presentation.presenter.exit"))
 									lbl.Color = color.NRGBA{R: 255, G: 150, B: 150, A: 255}
 									return lbl.Layout(gtx)
 								})
@@ -141,7 +141,7 @@ func (a *App) layoutPresentationPresenter(gtx layout.Context, v *presentationVie
 func (a *App) layoutPresentationNextSlideSummary(gtx layout.Context, v *presentationViewState, secondary color.NRGBA) layout.Dimensions {
 	gtx.Constraints.Min.Y = 0
 	if v.activeSlide+1 >= len(v.snapshot.Slides) {
-		lbl := material.Label(a.theme, unit.Sp(13), "已是最后一页")
+		lbl := material.Label(a.theme, unit.Sp(13), a.textID("presentation.presenter.last_page"))
 		lbl.Color = secondary
 		return lbl.Layout(gtx)
 	}
@@ -160,14 +160,14 @@ func (a *App) layoutPresentationNextSlideSummary(gtx layout.Context, v *presenta
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			lbl := material.Label(a.theme, unit.Sp(13), "下一页 · "+presentationCurrentPageLabel(v, 1))
+			lbl := material.Label(a.theme, unit.Sp(13), a.textArgs("presentation.presenter.next_summary", i18n.Args{"Page": a.presentationCurrentPageLabel(v, 1)}))
 			lbl.Color = secondary
 			return lbl.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = 0
 			if text == "" {
-				text = "无可读取的标题或文本摘要。"
+				text = a.textID("presentation.presenter.empty_summary")
 			}
 			lbl := material.Label(a.theme, unit.Sp(14), text)
 			lbl.Color = color.NRGBA{R: 238, G: 240, B: 244, A: 255}
@@ -176,10 +176,10 @@ func (a *App) layoutPresentationNextSlideSummary(gtx layout.Context, v *presenta
 	)
 }
 
-func presentationCurrentPageLabel(v *presentationViewState, offset ...int) string {
+func (a *App) presentationCurrentPageLabel(v *presentationViewState, offset ...int) string {
 	page := v.activeSlide + 1
 	if len(offset) > 0 {
 		page += offset[0]
 	}
-	return fmt.Sprintf("%d / %d", page, max(1, v.snapshot.SlideCount))
+	return a.textArgs("presentation.presenter.page_number", i18n.Args{"Current": page, "Total": max(1, v.snapshot.SlideCount)})
 }

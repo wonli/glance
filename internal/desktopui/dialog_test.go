@@ -16,7 +16,55 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+
+	"glance/internal/i18n"
 )
+
+func TestDialogIDSurvivesLocaleChange(t *testing.T) {
+	app := &App{desktopRuntime: newDesktopRuntime()}
+	app.applyLocaleSelection(i18n.SelectionEnglish)
+	app.modal.ShowInputMessage("word.rename", i18n.Message{ID: "common.dialog.confirm.title"},
+		i18n.Message{ID: "common.dialog.confirm.body"}, "draft name",
+		i18n.Message{ID: "common.dialog.field.name"}, nil,
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.confirm"}},
+	)
+	app.modal.Input.SetText("unsaved title")
+	if got := app.text(app.modal.TitleRef); got != "Confirm" {
+		t.Fatalf("English dialog title = %q; want Confirm", got)
+	}
+
+	app.applyLocaleSelection(i18n.SelectionChinese)
+	if app.modal.DialogID != "word.rename" {
+		t.Fatalf("dialog ID after locale switch = %q", app.modal.DialogID)
+	}
+	if got := app.text(app.modal.TitleRef); got != "确认" {
+		t.Fatalf("Chinese dialog title = %q; want 确认", got)
+	}
+	if got := app.modal.Input.Text(); got != "unsaved title" {
+		t.Fatalf("locale switch discarded the input draft: %q", got)
+	}
+	if len(app.modal.Actions) != 1 || app.text(app.modal.Actions[0].LabelRef) != "确定" {
+		t.Fatalf("dialog action label did not resolve in the new locale: %+v", app.modal.Actions)
+	}
+}
+
+func TestDialogActionStyleUsesActionID(t *testing.T) {
+	cases := []struct {
+		id    string
+		label string
+		want  modalDialogActionStyle
+	}{
+		{"confirm", "删除", modalDialogActionPrimary},
+		{"custom", "取消", modalDialogActionPrimary},
+		{"cancel", "Continue", modalDialogActionSecondary},
+		{"delete", "Delete", modalDialogActionDanger},
+	}
+	for _, tc := range cases {
+		if got := resolveDialogActionStyle(modalDialogActionSpec{ID: tc.id, Label: tc.label}); got != tc.want {
+			t.Errorf("action id=%q label=%q resolved style=%v; want %v", tc.id, tc.label, got, tc.want)
+		}
+	}
+}
 
 func TestModalDialogActionStyleResolution(t *testing.T) {
 	tests := []struct {
@@ -44,25 +92,21 @@ func TestModalDialogActionStyleResolution(t *testing.T) {
 	}
 }
 
-func TestModalDialogDefaultConfirmStyleForTitle(t *testing.T) {
-	titles := []string{
-		"保存更改？",
-		"恢复历史版本？",
-		"字数统计",
-		"替换",
-		"查找",
-		"设置字体",
-		"调整图片大小",
-		"缩放",
-		"文档信息",
-		"重命名工作表",
+func TestModalConfirmStyleUsesExplicitMetadata(t *testing.T) {
+	app := &App{desktopRuntime: newDesktopRuntime()}
+	app.applyLocaleSelection(i18n.SelectionEnglish)
+	app.modal.Show("保存更改？", "内容未保存。", nil)
+	if app.modal.HasConfirmStyle {
+		t.Fatal("raw dialog wording selected a confirmation style")
 	}
-
-	for _, title := range titles {
-		style, ok := defaultConfirmStyleForTitle(title)
-		if !ok || style.Icon == "" {
-			t.Errorf("expected default confirm style with icon for %q", title)
-		}
+	style := modalDialogConfirmStyle{Icon: "alert", IconBackground: color.NRGBA{R: 20, G: 30, B: 40, A: 255}}
+	app.modal.ShowConfirmMessage("document.save.confirm", i18n.Message{ID: "common.dialog.confirm.title"}, i18n.Message{ID: "common.dialog.confirm.body"}, style, nil)
+	if !app.modal.HasConfirmStyle || app.modal.ConfirmStyle != style {
+		t.Fatalf("explicit confirmation style was not applied: %+v", app.modal)
+	}
+	app.applyLocaleSelection(i18n.SelectionChinese)
+	if got := app.text(app.modal.TitleRef); got != "确认" || app.modal.ConfirmStyle != style {
+		t.Fatalf("locale change altered title/style: title=%q style=%+v", got, app.modal.ConfirmStyle)
 	}
 }
 

@@ -1,7 +1,6 @@
 package desktopui
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -82,7 +81,7 @@ func TestWordInsertSymbolAtCaretAndPlacesCaretAfterUnicodeRune(t *testing.T) {
 		t.Fatalf("symbol picker visible=%v target=%q range=%d:%d; want current caret 2:2", app.wordSymbolPickerVisible, app.wordSymbolRunID, app.wordSymbolStart, app.wordSymbolEnd)
 	}
 	app.chooseWordSymbol(0)
-	waitForWordSymbolStatus(t, app, state, "已插入符号 ©")
+	waitForWordSymbolStatus(t, app, state, "已插入符号 ©。")
 	assertWordSymbolTextAndCaret(t, state, runID, "A🙂©B", 3)
 }
 
@@ -106,7 +105,7 @@ func TestWordInsertSymbolReplacesOnlySelectionAndPreservesFormatting(t *testing.
 		t.Fatalf("picker selection range=%d:%d; want 7:13", app.wordSymbolStart, app.wordSymbolEnd)
 	}
 	app.chooseWordSymbol(6)
-	waitForWordSymbolStatus(t, app, state, "已插入符号 €")
+	waitForWordSymbolStatus(t, app, state, "已插入符号 €。")
 	assertWordSymbolTextAndCaret(t, state, runID, "prefix € suffix", 8)
 	run, ok := selectedWordRun(state.wordBlocks, runID)
 	if !ok || !run.Style.Bold {
@@ -134,8 +133,8 @@ func TestWordInsertSymbolRejectsTargetChangedWhilePickerIsOpen(t *testing.T) {
 	app.executeWordToolbarAction("insert-symbol")
 	state.wordDraftEpoch.Add(1)
 	app.chooseWordSymbol(0)
-	if app.status != "文档内容或编辑草稿已变化，请提交后重新打开符号面板" {
-		t.Fatalf("stale picker status = %q", app.status)
+	if app.statusText() != "文档内容或编辑草稿已变化，请提交后重新打开符号面板" {
+		t.Fatalf("stale picker status = %q", app.statusText())
 	}
 	if state.formatRunning.Load() {
 		t.Fatal("stale picker left a document operation active")
@@ -208,12 +207,12 @@ func waitForWordSymbolStatus(t *testing.T, app *App, state *documentSessionState
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		app.processAsyncResults()
-		if app.status == want && !state.formatRunning.Load() {
+		if app.statusText() == want && !state.formatRunning.Load() {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for symbol completion; status=%q running=%v", app.status, state.formatRunning.Load())
+	t.Fatalf("timed out waiting for symbol completion; status=%q running=%v", app.statusText(), state.formatRunning.Load())
 }
 
 func waitForWordSymbolFailure(t *testing.T, app *App, state *documentSessionState) {
@@ -221,12 +220,12 @@ func waitForWordSymbolFailure(t *testing.T, app *App, state *documentSessionStat
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		app.processAsyncResults()
-		if strings.Contains(app.status, "插入符号失败") && !state.formatRunning.Load() {
+		if app.feedback.kind == feedbackError && app.feedback.detail != "" && !state.formatRunning.Load() {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for expected insertion failure; status=%q running=%v", app.status, state.formatRunning.Load())
+	t.Fatalf("timed out waiting for expected insertion failure; status=%q running=%v", app.statusText(), state.formatRunning.Load())
 }
 
 func wordSymbolBoolPointer(value bool) *bool { return &value }

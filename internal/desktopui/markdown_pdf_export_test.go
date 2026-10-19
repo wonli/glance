@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"gioui.org/io/input"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -194,23 +193,10 @@ func TestMarkdownPDFExportReportsActualPathAndPersistentFailure(t *testing.T) {
 	v.exports <- result
 	a.pollMarkdownFileResults()
 	var ops op.Ops
-	var router input.Router
-	gtx := layout.Context{Ops: &ops, Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(1200, 34))}
+	gtx := layout.Context{Ops: &ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(1200, 34))}
 	a.layoutMarkdownStatus(gtx)
-	router.Frame(&ops)
-	var found bool
-	var visit func([]input.SemanticNode)
-	visit = func(nodes []input.SemanticNode) {
-		for _, node := range nodes {
-			if strings.Contains(node.Desc.Label, "导出 PDF 失败") && strings.Contains(node.Desc.Label, "HTTP 400") {
-				found = true
-			}
-			visit(node.Children)
-		}
-	}
-	visit(router.AppendSemantics(nil))
-	if !found {
-		t.Fatal("export failure is absent from persistent status")
+	if v.exportMessage.ID != "markdown.pdf.export.error.failed" || !strings.Contains(a.feedback.detail, "HTTP 400") {
+		t.Fatalf("export failure should be localized while preserving its diagnostic: message=%+v detail=%q", v.exportMessage, a.feedback.detail)
 	}
 }
 
@@ -263,7 +249,7 @@ func TestMarkdownPDFUnavailableImagesStillCreateFileAndReportWarning(t *testing.
 	v.exports <- preflight
 	a.pollMarkdownFileResults()
 	if !a.modal.Visible || !strings.Contains(a.pdfExportPreview.markdownResult.warnings, "封面") || !strings.Contains(a.pdfExportPreview.markdownResult.warnings, "HTTP 400") {
-		t.Fatalf("missing preflight warning: %q", a.modal.Message)
+		t.Fatalf("missing preflight warning: %q", a.messageText(a.modal.MessageRef, a.modal.Message))
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("PDF written before confirmation")
@@ -288,10 +274,10 @@ func TestMarkdownPDFUnavailableImagesStillCreateFileAndReportWarning(t *testing.
 	if err != nil || !bytes.HasPrefix(data, []byte("%PDF")) {
 		t.Fatalf("missing PDF: %v", err)
 	}
-	if result.missingImages != 2 || v.lastPDFPath != path || !strings.Contains(v.exportMessage, "2 张图片不可用") {
+	if result.missingImages != 2 || v.lastPDFPath != path || v.exportMessage.ID != "markdown.pdf.export.status.exported_with_warnings" || v.exportMessage.Args["Count"] != 2 {
 		t.Fatalf("warning not reported: count=%d message=%q", result.missingImages, v.exportMessage)
 	}
-	if feedbackSeverity(v.exportMessage) == feedbackError {
+	if a.feedback.kind == feedbackError {
 		t.Fatal("completed export was reported as failure")
 	}
 	if v.text() != source || !a.markdownDoc.Dirty() {
@@ -384,7 +370,7 @@ func TestMarkdownPDFPreviewOrientationAndCancellation(t *testing.T) {
 	preflight := <-v.exports
 	v.exports <- preflight
 	a.pollMarkdownFileResults()
-	if !a.modal.Visible || a.modal.Title != "导出 PDF 预览" || a.pdfExportPreview.Format != "markdown" {
+	if !a.modal.Visible || a.messageText(a.modal.TitleRef, a.modal.Title) != "导出 PDF 预览" || a.pdfExportPreview.Format != "markdown" {
 		t.Fatal("missing shared PDF preview")
 	}
 	a.updateMarkdownPDFOrientation("landscape")

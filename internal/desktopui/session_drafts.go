@@ -1,6 +1,9 @@
 package desktopui
 
-import "glance/internal/document"
+import (
+	"glance/internal/document"
+	"glance/internal/i18n"
+)
 
 func (s *sharedDocumentSession) wordTextStateSnapshot() (committed, drafts map[string]string) {
 	committed = make(map[string]string)
@@ -200,23 +203,6 @@ func wordCommittedTextMap(blocks []document.WordBlock) map[string]string {
 	return committed
 }
 
-func (s *sharedDocumentSession) setWordRestoreError(message string) uint64 {
-	if s == nil {
-		return 0
-	}
-	s.wordRestoreNoticeMu.Lock()
-	if s.wordRestoreError == message {
-		epoch := s.wordRestoreErrorEpoch
-		s.wordRestoreNoticeMu.Unlock()
-		return epoch
-	}
-	s.wordRestoreError = message
-	s.wordRestoreErrorEpoch++
-	epoch := s.wordRestoreErrorEpoch
-	s.wordRestoreNoticeMu.Unlock()
-	return epoch
-}
-
 func (s *sharedDocumentSession) wordRestoreNotice() (string, uint64) {
 	if s == nil {
 		return "", 0
@@ -230,6 +216,16 @@ func (s *sharedDocumentSession) wordRestoreNotice() (string, uint64) {
 func (s *sharedDocumentSession) wordRestoreNoticeEpoch() uint64 {
 	_, epoch := s.wordRestoreNotice()
 	return epoch
+}
+
+func (s *sharedDocumentSession) wordRestoreMessageSnapshot() (i18n.Message, uint64) {
+	if s == nil {
+		return i18n.Message{}, 0
+	}
+	s.wordRestoreNoticeMu.Lock()
+	message, epoch := s.wordRestoreMessage, s.wordRestoreErrorEpoch
+	s.wordRestoreNoticeMu.Unlock()
+	return message, epoch
 }
 
 func (s *sharedDocumentSession) queueWordRestoreAfterDrafts(versionID int64) bool {
@@ -306,29 +302,39 @@ func (a *App) surfacePendingWordRestoreError(state *documentSessionState) {
 		return
 	}
 	message, epoch := state.wordRestoreNotice()
+	messageRef, _ := state.wordRestoreMessageSnapshot()
 	if message == "" || epoch <= state.appliedWordRestoreErrorEpoch.Load() {
 		return
 	}
-	a.setStatus(message)
+	if messageRef.ID != "" {
+		a.setStatusMessage(messageRef, feedbackWarning, notificationToast)
+	} else {
+		a.setStatusMessage(i18n.Message{ID: "word.history.error.restore"}, feedbackWarning, notificationToast)
+	}
 	state.appliedWordRestoreErrorEpoch.Store(epoch)
 }
 
-func (a *App) publishWordRestoreNotice(state *documentSessionState, message string) {
-	if a == nil || state == nil || message == "" {
+func (a *App) publishWordRestoreNoticeMessage(state *documentSessionState, message i18n.Message) {
+	if a == nil || state == nil || message.ID == "" {
 		return
 	}
-	epoch := recordWordRestoreNotice(a.ensureDesktopRuntime(), state, message)
+	epoch := recordWordRestoreMessage(a.ensureDesktopRuntime(), state, message)
 	if state == a.documentSessionState {
-		a.setStatus(message)
+		a.setStatusMessage(message, feedbackWarning, notificationToast)
 		state.appliedWordRestoreErrorEpoch.Store(epoch)
 	}
 }
 
-func recordWordRestoreNotice(runtime *desktopRuntime, state *documentSessionState, message string) uint64 {
-	if state == nil || message == "" {
+func recordWordRestoreMessage(runtime *desktopRuntime, state *documentSessionState, message i18n.Message) uint64 {
+	if state == nil || message.ID == "" {
 		return 0
 	}
-	epoch := state.setWordRestoreError(message)
+	state.wordRestoreNoticeMu.Lock()
+	state.wordRestoreError = message.ID
+	state.wordRestoreMessage = message
+	state.wordRestoreErrorEpoch++
+	epoch := state.wordRestoreErrorEpoch
+	state.wordRestoreNoticeMu.Unlock()
 	if runtime != nil {
 		runtime.invalidateSessionViews(state.documentID)
 	}

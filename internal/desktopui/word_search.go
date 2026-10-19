@@ -1,11 +1,11 @@
 package desktopui
 
 import (
-	"fmt"
 	"strings"
 	"unicode"
 
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 type wordTextMatch struct {
@@ -194,11 +194,11 @@ func (a *App) showWordReplaceDialog() {
 		return
 	}
 	if _, ok := any(state.word).(document.WordContentReader); !ok {
-		a.setStatus("当前文档暂不支持查找")
+		a.setStatusMessage(i18n.Message{ID: "word.search.error.unsupported"}, feedbackWarning, notificationToast)
 		return
 	}
 	if _, ok := any(state.word).(document.WordTextRangeEditor); !ok {
-		a.setStatus("当前 DOCX 暂不支持文字替换")
+		a.setStatusMessage(i18n.Message{ID: "word.search.error.replace_unsupported"}, feedbackWarning, notificationToast)
 		return
 	}
 	a.showWordSearchReplaceDialog(true)
@@ -210,24 +210,24 @@ func (a *App) showWordSearchReplaceDialog(replaceTab bool) {
 		return
 	}
 	if _, ok := any(state.word).(document.WordContentReader); !ok {
-		a.setStatus("当前文档暂不支持查找")
+		a.setStatusMessage(i18n.Message{ID: "word.search.error.unsupported"}, feedbackWarning, notificationToast)
 		return
 	}
 	_, canReplace := any(state.word).(document.WordTextRangeEditor)
 	if replaceTab && !canReplace {
-		a.setStatus("当前 DOCX 暂不支持文字替换")
+		a.setStatusMessage(i18n.Message{ID: "word.search.error.replace_unsupported"}, feedbackWarning, notificationToast)
 		return
 	}
 	query := wordFindInitialQuery(state)
-	actions := []modalDialogActionSpec{{ID: "find-next", Label: "查找下一个", Style: modalDialogActionPrimary}}
+	actions := []modalDialogActionSpec{{ID: "find-next", LabelRef: i18n.Message{ID: "office.search_replace.action.find_next"}, Style: modalDialogActionPrimary}}
 	if canReplace {
 		actions = []modalDialogActionSpec{
-			{ID: "replace", Label: "替换", Style: modalDialogActionSecondary, WidthDp: 76, TextSizeSp: 12},
+			{ID: "replace", LabelRef: i18n.Message{ID: "office.search_replace.action.replace"}, Style: modalDialogActionSecondary, WidthDp: 76, TextSizeSp: 12},
 		}
 		if _, canReplaceAll := any(state.word).(document.WordTextBatchEditor); canReplaceAll {
-			actions = append(actions, modalDialogActionSpec{ID: "replace-all", Label: "全部替换", Style: modalDialogActionSecondary, WidthDp: 92, TextSizeSp: 11})
+			actions = append(actions, modalDialogActionSpec{ID: "replace-all", LabelRef: i18n.Message{ID: "office.search_replace.action.replace_all"}, Style: modalDialogActionSecondary, WidthDp: 92, TextSizeSp: 11})
 		}
-		actions = append(actions, modalDialogActionSpec{ID: "find-next", Label: "查找下一个", Style: modalDialogActionPrimary, WidthDp: 130, TextSizeSp: 12})
+		actions = append(actions, modalDialogActionSpec{ID: "find-next", LabelRef: i18n.Message{ID: "office.search_replace.action.find_next"}, Style: modalDialogActionPrimary, WidthDp: 130, TextSizeSp: 12})
 	}
 	onAction := func(action string) {
 		if action == "close" {
@@ -237,8 +237,8 @@ func (a *App) showWordSearchReplaceDialog(replaceTab bool) {
 		query := a.modal.Input.Text()
 		replacement := a.modal.SecondInput.Text()
 		if query == "" {
-			a.setStatus("请输入要查找的文字")
-			a.modal.SearchReplaceSummary = "请输入要查找的文字"
+			a.setStatusMessage(i18n.Message{ID: "word.search.error.empty_query"}, feedbackWarning, notificationToast)
+			a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.error.empty_query"})
 			a.modal.FocusInputRequested = true
 			return
 		}
@@ -259,8 +259,8 @@ func (a *App) showWordSearchReplaceDialog(replaceTab bool) {
 				return
 			}
 			if !a.runWordRangeReplacement(match, query, replacement) {
-				a.setStatus("当前 DOCX 暂时无法替换文字")
-				a.modal.SearchReplaceSummary = "当前匹配项暂时无法替换"
+				a.setStatusMessage(i18n.Message{ID: "word.search.error.replace_match_unavailable"}, feedbackWarning, notificationToast)
+				a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.error.replace_match_unavailable"})
 				a.modal.FocusInputRequested = true
 				return
 			}
@@ -282,16 +282,18 @@ func (a *App) showWordSearchReplaceDialog(replaceTab bool) {
 			a.modal.FocusInputRequested = true
 		}
 	}
+	title := i18n.Message{ID: "office.search_replace.title"}
+	findHint := i18n.Message{ID: "office.search_replace.field.find"}
 	if canReplace {
-		a.modal.ShowDualInput("查找和替换", "", query, "查找内容", state.wordReplaceText, "替换为", onAction, actions...)
+		a.modal.ShowDualInputMessage(dialogIDOfficeSearchReplace, title, i18n.Message{}, findHint, i18n.Message{ID: "office.search_replace.field.replace"}, query, state.wordReplaceText, onAction, actions...)
 	} else {
-		a.modal.ShowInput("查找和替换", "", query, "查找内容", onAction, actions...)
+		a.modal.ShowInputMessage(dialogIDOfficeSearchReplace, title, i18n.Message{}, query, findHint, onAction, actions...)
 	}
 	a.modal.Input.SetCaret(0, len([]rune(query)))
 	a.modal.SearchReplace = true
 	a.modal.SearchReplaceHasReplace = canReplace
 	a.modal.SearchReplaceReplaceTab = replaceTab
-	a.modal.SearchReplaceSummary = "输入查找内容后，点击“查找下一个”"
+	a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "office.search_replace.summary.default"})
 	a.modal.CardWidthDp = 560
 	a.modal.FocusInputRequested = true
 }
@@ -347,13 +349,13 @@ func (a *App) findNextWordText(query string) {
 	state.setWordSearchHighlights(query, results.ranges)
 	match, found := findWordTextMatchInResults(blocks, results.matches, state.selectedWordRunID, currentEnd)
 	if !found {
-		a.setStatus("未找到：" + query)
-		a.modal.SearchReplaceSummary = "未找到匹配项"
+		a.setStatusMessage(i18n.Message{ID: "word.search.status.not_found", Args: i18n.Args{"Query": query}}, feedbackInfo, notificationSuppressed)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "office.search_replace.summary.not_found"})
 		return
 	}
 	a.focusWordTextMatch(state, blocks, match)
 	a.updateWordSearchSummary(state, results.matches, match)
-	a.setStatus("已定位：" + query)
+	a.setStatusMessage(i18n.Message{ID: "word.search.status.found", Args: i18n.Args{"Query": query}}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) findPreviousWordText(query string) {
@@ -376,13 +378,13 @@ func (a *App) findPreviousWordText(query string) {
 	state.setWordSearchHighlights(query, results.ranges)
 	match, found := findPreviousWordTextMatchInResults(blocks, results.matches, currentRunID, currentStart)
 	if !found {
-		a.setStatus("未找到：" + query)
-		a.modal.SearchReplaceSummary = "未找到匹配项"
+		a.setStatusMessage(i18n.Message{ID: "word.search.status.not_found", Args: i18n.Args{"Query": query}}, feedbackInfo, notificationSuppressed)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "office.search_replace.summary.not_found"})
 		return
 	}
 	a.focusWordTextMatch(state, blocks, match)
 	a.updateWordSearchSummary(state, results.matches, match)
-	a.setStatus("已定位：" + query)
+	a.setStatusMessage(i18n.Message{ID: "word.search.status.found", Args: i18n.Args{"Query": query}}, feedbackInfo, notificationSuppressed)
 }
 
 func findPreviousWordTextMatch(blocks []document.WordBlock, query, currentRunID string, currentStart int, drafts map[string]string) (wordTextMatch, bool) {
@@ -518,7 +520,7 @@ func appendWordSearchHighlightRanges(ranges map[string][]wordSearchTextRange, ch
 
 func (a *App) updateWordSearchSummary(state *documentSessionState, matches []wordTextMatch, current wordTextMatch) {
 	if len(matches) == 0 {
-		a.modal.SearchReplaceSummary = "未找到匹配项"
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "office.search_replace.summary.not_found"})
 		return
 	}
 	index := 0
@@ -542,7 +544,7 @@ func (a *App) updateWordSearchSummary(state *documentSessionState, matches []wor
 	if index == 0 {
 		index = 1
 	}
-	a.modal.SearchReplaceSummary = fmt.Sprintf("找到 %d 个匹配项 · 当前第 %d 项", len(matches), index)
+	a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "office.search_replace.summary.matches", Args: i18n.Args{"Count": len(matches), "Index": index}})
 }
 
 func selectedWordTextQueryMatch(state *documentSessionState, query string) (wordTextMatch, bool) {
@@ -627,8 +629,8 @@ func (a *App) runWordRangeReplacement(match wordTextMatch, query, replacement st
 		}
 	}
 	if unchanged {
-		a.setStatus("替换内容与当前文字相同")
-		a.modal.SearchReplaceSummary = "替换结果与当前文字相同"
+		a.setStatusMessage(i18n.Message{ID: "word.search.error.replacement_identical"}, feedbackInfo, notificationSuppressed)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.error.replacement_identical"})
 		return true
 	}
 	batchEditor, canBatch := any(state.word).(document.WordTextBatchEditor)
@@ -639,8 +641,8 @@ func (a *App) runWordRangeReplacement(match wordTextMatch, query, replacement st
 		for runID, text := range plan.inputTexts {
 			run, ok := selectedWordRun(blocks, runID)
 			if !ok || run.Text != text {
-				a.setStatus("当前文档暂不支持替换未提交的文字草稿")
-				a.modal.SearchReplaceSummary = "请先完成当前文字输入，再重试替换"
+				a.setStatusMessage(i18n.Message{ID: "word.search.error.pending_draft"}, feedbackWarning, notificationToast)
+				a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.error.pending_draft"})
 				return true
 			}
 		}
@@ -653,7 +655,7 @@ func (a *App) runWordRangeReplacement(match wordTextMatch, query, replacement st
 		return false
 	}
 	generation := a.documentGeneration
-	a.modal.SearchReplaceSummary = "正在替换当前匹配项…"
+	a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.status.replacing"})
 	started := a.launchManagedBackground(func() {
 		var changed bool
 		updatedBlocks, err := runWordMutation(state, func() error {
@@ -680,8 +682,8 @@ func (a *App) runWordRangeReplacement(match wordTextMatch, query, replacement st
 	})
 	if !started {
 		state.finishOperation(token)
-		a.setStatus("替换任务无法启动")
-		a.modal.SearchReplaceSummary = "替换任务无法启动"
+		a.setStatusMessage(i18n.Message{ID: "word.search.error.replace_start"}, feedbackError, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.error.replace_start"})
 		return false
 	}
 	return true
@@ -693,13 +695,13 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 		return
 	}
 	if result.err != nil {
-		a.setStatus(wordCommandError(result.operation, result.err))
+		a.setWordCommandStatus(result.err)
 		return
 	}
 	if !result.applied {
-		a.setStatus("替换结果与当前文字相同")
+		a.setStatusMessage(i18n.Message{ID: "word.search.error.replacement_identical"}, feedbackInfo, notificationSuppressed)
 		if a.modal.Visible && a.modal.SearchReplace {
-			a.modal.SearchReplaceSummary = "替换结果与当前文字相同"
+			a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.error.replacement_identical"})
 		}
 		return
 	}
@@ -725,7 +727,7 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 	blocks := wordBlocksForState(state)
 	run, ok := selectedWordRun(blocks, result.replaceRunID)
 	if !ok || !run.Editable {
-		a.setStatus("文字已替换，但无法定位编辑位置")
+		a.setStatusMessage(i18n.Message{ID: "word.search.status.replaced_caret_unavailable"}, feedbackWarning, notificationToast)
 		return
 	}
 	editor := wordRunEditor(state, run)
@@ -763,7 +765,7 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 	match, found := findWordTextMatchInResults(blocks, searchResults.matches, run.ID, startAfter)
 	if found {
 		a.focusWordTextMatch(state, blocks, match)
-		a.setStatus("已替换，并已定位下一处")
+		a.setStatusMessage(i18n.Message{ID: "word.search.status.replaced_next"}, feedbackSuccess, notificationToast)
 		if a.modal.Visible && a.modal.SearchReplace {
 			a.updateWordSearchSummary(state, searchResults.matches, match)
 		}
@@ -771,9 +773,9 @@ func (a *App) completeWordRangeReplacement(result wordCommandResult) {
 		startAfter = max(0, min(startAfter, len([]rune(run.Text))))
 		editor.SetCaret(startAfter, startAfter)
 		state.wordPendingFocusRunID = run.ID
-		a.setStatus("已替换；没有更多匹配项")
+		a.setStatusMessage(i18n.Message{ID: "word.search.status.replaced_last"}, feedbackSuccess, notificationToast)
 		if a.modal.Visible && a.modal.SearchReplace {
-			a.modal.SearchReplaceSummary = "已替换当前匹配项；没有更多匹配项"
+			a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.status.replaced_last"})
 		}
 	}
 	a.persistActiveSession()

@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"runtime"
 
 	"gioui.org/io/event"
@@ -260,15 +261,15 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 			if wordHyperlinkShortcut {
 				a.updateFocusedWordEditorBeforeCommand(gtx, state)
 				if a.isSaving() {
-					a.setStatus("文档正在保存，请稍后插入超链接")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_document_is_saving_try_inserting_the_h_e0b2b9"}, feedbackInfo, notificationToast)
 					continue
 				}
 				if state.formatRunning.Load() && !state.wordFlushRequested.Load() {
-					a.setStatus("文档正在处理其他操作，请稍后插入超链接")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_document_is_busy_try_inserting_the_hyp_fa1aa3"}, feedbackInfo, notificationToast)
 					continue
 				}
 				if state.wordDeferredToolbarAction != "" && state.wordDeferredToolbarAction != "insert-link" {
-					a.setStatus("请等待当前文字修改完成后再插入超链接")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.finish_the_current_text_edit_before_insert_771284"}, feedbackWarning, notificationSuppressed)
 					continue
 				}
 				if state.wordFlushRequested.Load() || wordHasPendingTextDrafts(state) {
@@ -289,15 +290,15 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 			if wordCommentShortcut && pressed.Name == wordCommentShortcutName {
 				a.updateFocusedWordEditorBeforeCommand(gtx, state)
 				if a.isSaving() {
-					a.setStatus("文档正在保存，请稍后添加批注")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_document_is_saving_try_adding_the_comm_1284d5"}, feedbackInfo, notificationToast)
 					continue
 				}
 				if state.formatRunning.Load() && !state.wordFlushRequested.Load() {
-					a.setStatus("文档正在处理其他操作，请稍后添加批注")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_document_is_busy_try_adding_the_commen_a766fc"}, feedbackInfo, notificationToast)
 					continue
 				}
 				if state.wordDeferredToolbarAction != "" && state.wordDeferredToolbarAction != "review-new-comment" {
-					a.setStatus("请等待当前文字修改完成后再添加批注")
+					a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.finish_the_current_text_edit_before_adding_f603d2"}, feedbackWarning, notificationSuppressed)
 					continue
 				}
 				if state.wordFlushRequested.Load() || wordHasPendingTextDrafts(state) {
@@ -482,7 +483,7 @@ func (a *App) commitSpreadsheetEditorBeforeCommand(gtx layout.Context, state *do
 		return true
 	}
 	if err := a.commitGridCell(value); err != nil {
-		a.setStatus("修改失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}

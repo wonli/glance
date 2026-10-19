@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 const maxSpreadsheetRangeEntryCells = 10_000
@@ -107,7 +108,7 @@ func (a *App) applySpreadsheetFormulaRangeEntry(active document.CellCoordinate, 
 		case a.formatResults <- spreadsheetFormatResult{
 			state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation,
 			sheet: sheet, window: window, err: err, operation: "填充选区", applied: changed,
-			noOp: err == nil && !changed, details: "选区已包含相同公式", rangeEntry: &entryValue,
+			noOp: err == nil && !changed, details: i18n.Message{ID: "spreadsheet.status.noop.same_formula"}, rangeEntry: &entryValue,
 		}:
 		case <-a.shutdown:
 		}

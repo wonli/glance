@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 )
@@ -202,4 +203,20 @@ func presentationActionsForView(v *presentationViewState) []ribbonAction {
 		return nil
 	}
 	return pptxActionsForTab(v.activeRibbonTab)
+}
+
+func (a *App) localizedPresentationAction(action ribbonAction) ribbonAction {
+	if action.id == "" {
+		return action
+	}
+	action.label = a.text(i18n.Message{ID: "presentation.ribbon.action." + action.id})
+	return action
+}
+
+func (a *App) localizedPresentationRibbonTabs(v *presentationViewState) []presentationRibbonTab {
+	tabs := presentationRibbonTabs(v)
+	for index := range tabs {
+		tabs[index].label = a.text(i18n.Message{ID: "presentation.ribbon.tab." + tabs[index].id})
+	}
+	return tabs
 }

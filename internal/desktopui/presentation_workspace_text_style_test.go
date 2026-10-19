@@ -105,7 +105,7 @@ func TestPresentationStyleCommandsKeepEditDraftAndOnlyChangeRequestedStyle(t *te
 		t.Fatalf("line spacing action did not open its presets: popover=%q options=%d", h.view.stylePopover, len(spacingOptions))
 	}
 	if !h.app.applyPresentationStylePatch(h.view, spacingOptions[2].patch) {
-		t.Fatalf("applying the 1.5x line-spacing preset failed: status=%q", h.app.status)
+		t.Fatalf("applying the 1.5x line-spacing preset failed: status=%q", h.app.statusText())
 	}
 	spaced := presentationElementByID(t, h.view.currentSlide(), h.elem.ID)
 	if spacing := spaced.Paragraphs[0].LineSpacing; spacing == nil || *spacing != (document.PresentationSpacing{Kind: "pct", Value: 1.5}) {

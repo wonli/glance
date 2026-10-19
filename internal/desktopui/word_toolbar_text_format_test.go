@@ -203,8 +203,8 @@ func TestWordFormatPainterAppliesSourceFormattingToNextFocusedRun(t *testing.T) 
 		t.Fatal("format painter should be enabled for an editable source run")
 	}
 	app.executeWordToolbarAction("format-painter")
-	if app.status != "已启动格式刷；单击目标文字应用，页面视图可拖选范围应用" {
-		t.Fatalf("arming format painter status = %q", app.status)
+	if app.statusText() != "已启动格式刷；单击目标文字应用，页面视图可拖选范围应用" {
+		t.Fatalf("arming format painter status = %q", app.statusText())
 	}
 	targetSelector, ok := any(app).(interface {
 		queueWordFormatPainterTarget(paragraphID, runID string)
@@ -494,8 +494,8 @@ func TestWordEditing_SplitAfterFontColorAndHighlight(t *testing.T) {
 	if len(blocks) < 2 {
 		t.Fatalf("expected at least 2 paragraphs after split, got %d", len(blocks))
 	}
-	if strings.Contains(app.status, "失败") {
-		t.Fatalf("status reported failure: %s", app.status)
+	if strings.Contains(app.statusText(), "失败") {
+		t.Fatalf("status reported failure: %s", app.statusText())
 	}
 }
 

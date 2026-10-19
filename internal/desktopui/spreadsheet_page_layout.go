@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"strconv"
 	"strings"
 )
@@ -68,13 +69,12 @@ func (a *App) showSpreadsheetOrientationDialog() {
 	if layout, err := editor.GetSheetPageLayout(state.sheet); err == nil && layout.Orientation != "" {
 		currentOrient = layout.Orientation
 	}
-	label := "纵向"
+	label := a.text(i18n.Message{ID: "spreadsheet.page_layout.orientation.portrait"})
 	if currentOrient == "landscape" {
-		label = "横向"
+		label = a.text(i18n.Message{ID: "spreadsheet.page_layout.orientation.landscape"})
 	}
-	message := fmt.Sprintf("当前工作表打印方向：%s\n请选择目标方向：", label)
 	sheet := state.sheet
-	a.modal.Show("纸张方向", message, func(action string) {
+	a.modal.ShowMessage("spreadsheet.page_layout.orientation", i18n.Message{ID: "spreadsheet.page_layout.orientation.dialog.title"}, i18n.Message{ID: "spreadsheet.page_layout.orientation.dialog.body", Args: i18n.Args{"Orientation": label}}, func(action string) {
 		a.modal.Hide()
 		if action == "portrait" || action == "landscape" {
 			a.runSpreadsheetPageLayoutCommand("修改纸张方向", showSpreadsheetOrientationDialogArguments{Sheet: sheet, Operation: "orientation", Orientation: action}, func(ed document.SpreadsheetPageLayoutEditor) error {
@@ -82,9 +82,9 @@ func (a *App) showSpreadsheetOrientationDialog() {
 			})
 		}
 	},
-		modalDialogActionSpec{ID: "portrait", Label: "纵向"},
-		modalDialogActionSpec{ID: "landscape", Label: "横向"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "portrait", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.orientation.portrait"}},
+		modalDialogActionSpec{ID: "landscape", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.orientation.landscape"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -121,8 +121,8 @@ func (a *App) showSpreadsheetMarginsDialog() {
 			left = layout.MarginLeft
 		}
 	}
-	labels := []string{"上边距（英寸）", "右边距（英寸）", "下边距（英寸）", "左边距（英寸）"}
-	hints := []string{"0.75", "0.7", "0.75", "0.7"}
+	labels := []i18n.Message{{ID: "spreadsheet.page_layout.margin.top"}, {ID: "spreadsheet.page_layout.margin.right"}, {ID: "spreadsheet.page_layout.margin.bottom"}, {ID: "spreadsheet.page_layout.margin.left"}}
+	hints := []i18n.Message{{ID: "spreadsheet.page_layout.margin.default_top"}, {ID: "spreadsheet.page_layout.margin.default_right"}, {ID: "spreadsheet.page_layout.margin.default_bottom"}, {ID: "spreadsheet.page_layout.margin.default_left"}}
 	initial := []string{
 		strconv.FormatFloat(top, 'f', -1, 64),
 		strconv.FormatFloat(right, 'f', -1, 64),
@@ -130,7 +130,7 @@ func (a *App) showSpreadsheetMarginsDialog() {
 		strconv.FormatFloat(left, 'f', -1, 64),
 	}
 	sheet := state.sheet
-	a.modal.ShowForm("页边距设置", "可选择快速预设或输入自定义页边距（英寸，1 英寸 = 2.54 厘米）：",
+	a.modal.ShowFormMessage("spreadsheet.page_layout.margins", i18n.Message{ID: "spreadsheet.page_layout.margins.dialog.title"}, i18n.Message{ID: "spreadsheet.page_layout.margins.dialog.body"},
 		labels, hints, initial,
 		func(action string) {
 			switch action {
@@ -157,7 +157,7 @@ func (a *App) showSpreadsheetMarginsDialog() {
 				if err1 != nil || err2 != nil || err3 != nil || err4 != nil ||
 					tVal < 0 || rVal < 0 || bVal < 0 || lVal < 0 ||
 					tVal > 20 || rVal > 20 || bVal > 20 || lVal > 20 {
-					a.setStatus("页边距必须是 0 到 20 英寸之间的数值")
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.margins_must_be_between_0_71fe5b"}, feedbackError, notificationToast)
 					if a.window != nil {
 						a.window.Invalidate()
 					}
@@ -171,11 +171,11 @@ func (a *App) showSpreadsheetMarginsDialog() {
 				a.modal.Hide()
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "应用"},
-		modalDialogActionSpec{ID: "normal", Label: "普通 (0.75/0.7\")"},
-		modalDialogActionSpec{ID: "narrow", Label: "窄 (0.75/0.25\")"},
-		modalDialogActionSpec{ID: "wide", Label: "宽 (1.0\")"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}},
+		modalDialogActionSpec{ID: "normal", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.margins.preset.normal"}},
+		modalDialogActionSpec{ID: "narrow", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.margins.preset.narrow"}},
+		modalDialogActionSpec{ID: "wide", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.margins.preset.wide"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -198,15 +198,14 @@ func (a *App) showSpreadsheetPageSizeDialog() {
 	if layout, err := editor.GetSheetPageLayout(state.sheet); err == nil && layout.PaperSize > 0 {
 		currentSize = layout.PaperSize
 	}
-	sizeName := "A4 (210×297mm)"
+	sizeName := a.text(i18n.Message{ID: "spreadsheet.page_layout.paper_size.a4"})
 	if currentSize == 1 {
-		sizeName = "Letter (8.5×11in)"
+		sizeName = a.text(i18n.Message{ID: "spreadsheet.page_layout.paper_size.letter"})
 	} else if currentSize == 8 {
-		sizeName = "A3 (297×420mm)"
+		sizeName = a.text(i18n.Message{ID: "spreadsheet.page_layout.paper_size.a3"})
 	}
-	message := fmt.Sprintf("当前工作表纸张大小：%s\n请选择常用纸张规格：", sizeName)
 	sheet := state.sheet
-	a.modal.Show("纸张大小设置", message, func(action string) {
+	a.modal.ShowMessage("spreadsheet.page_layout.paper_size", i18n.Message{ID: "spreadsheet.page_layout.paper_size.dialog.title"}, i18n.Message{ID: "spreadsheet.page_layout.paper_size.dialog.body", Args: i18n.Args{"Size": sizeName}}, func(action string) {
 		a.modal.Hide()
 		var paperSize int
 		switch action {
@@ -223,10 +222,10 @@ func (a *App) showSpreadsheetPageSizeDialog() {
 			return ed.SetSheetPageSize(sheet, paperSize)
 		})
 	},
-		modalDialogActionSpec{ID: "a4", Label: "A4 (210×297mm)"},
-		modalDialogActionSpec{ID: "letter", Label: "Letter (8.5×11in)"},
-		modalDialogActionSpec{ID: "a3", Label: "A3 (297×420mm)"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "a4", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.paper_size.a4"}},
+		modalDialogActionSpec{ID: "letter", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.paper_size.letter"}},
+		modalDialogActionSpec{ID: "a3", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.paper_size.a3"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -253,23 +252,21 @@ func (a *App) showSpreadsheetPrintAreaDialog() {
 		selRef = fmt.Sprintf("$%s$%d:$%s$%d", columnName(bounds.StartColumn), bounds.StartRow, columnName(bounds.EndColumn), bounds.EndRow)
 	}
 
-	var message string
+	message := i18n.Message{ID: "spreadsheet.page_layout.print_area.dialog.body.empty"}
 	if layout.PrintArea != "" {
-		message = fmt.Sprintf("当前打印区域：%s\n\n您可将当前选区设为新的打印区域，或清除现有打印区域。", layout.PrintArea)
-	} else {
-		message = "当前未设置打印区域。\n\n您可将当前选区设为打印区域。"
+		message = i18n.Message{ID: "spreadsheet.page_layout.print_area.dialog.body.set", Args: i18n.Args{"Range": layout.PrintArea}}
 	}
 
 	actions := make([]modalDialogActionSpec, 0, 3)
 	if selRef != "" {
-		actions = append(actions, modalDialogActionSpec{ID: "set", Label: "设为打印区域 (" + selRef + ")"})
+		actions = append(actions, modalDialogActionSpec{ID: "set", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.print_area.action.set", Args: i18n.Args{"Range": selRef}}})
 	}
 	if layout.PrintArea != "" {
-		actions = append(actions, modalDialogActionSpec{ID: "clear", Label: "清除打印区域"})
+		actions = append(actions, modalDialogActionSpec{ID: "clear", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.print_area.action.clear"}})
 	}
-	actions = append(actions, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	actions = append(actions, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 
-	a.modal.Show("打印区域设置", message, func(action string) {
+	a.modal.ShowMessage("spreadsheet.page_layout.print_area", i18n.Message{ID: "spreadsheet.page_layout.print_area.dialog.title"}, message, func(action string) {
 		a.modal.Hide()
 		switch action {
 		case "set":
@@ -279,12 +276,12 @@ func (a *App) showSpreadsheetPrintAreaDialog() {
 			a.runSpreadsheetPageLayoutCommand("设置打印区域", spreadsheetpageSheetOperationPrintAreaArguments{Sheet: sheet, Operation: "print_area", PrintArea: selRef}, func(ed document.SpreadsheetPageLayoutEditor) error {
 				return ed.SetSheetPrintArea(sheet, selRef)
 			})
-			a.setStatus("已设置打印区域：" + selRef)
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.print_area_set", Args: i18n.Args{"Range": selRef}}, feedbackSuccess, notificationToast)
 		case "clear":
 			a.runSpreadsheetPageLayoutCommand("清除打印区域", spreadsheetpageSheetOperationPrintAreaArguments{Sheet: sheet, Operation: "print_area", PrintArea: ""}, func(ed document.SpreadsheetPageLayoutEditor) error {
 				return ed.SetSheetPrintArea(sheet, "")
 			})
-			a.setStatus("已清除打印区域")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.print_area_cleared_047ba9"}, feedbackSuccess, notificationToast)
 		}
 	}, actions...)
 }
@@ -312,23 +309,21 @@ func (a *App) showSpreadsheetPrintTitlesDialog() {
 		selRowsRef = fmt.Sprintf("$%d:$%d", bounds.StartRow, bounds.EndRow)
 	}
 
-	var message string
+	message := i18n.Message{ID: "spreadsheet.page_layout.print_titles.dialog.body.empty"}
 	if layout.PrintTitles != "" {
-		message = fmt.Sprintf("当前打印标题行：%s\n\n您可将当前选中行设为顶端标题行，或清除现有打印标题。", layout.PrintTitles)
-	} else {
-		message = "当前未设置打印标题行。\n\n在打印多页表格时，打印标题行会在每一页顶端重复打印。\n您可将当前选中行设为顶端标题行。"
+		message = i18n.Message{ID: "spreadsheet.page_layout.print_titles.dialog.body.set", Args: i18n.Args{"Rows": layout.PrintTitles}}
 	}
 
 	actions := make([]modalDialogActionSpec, 0, 3)
 	if selRowsRef != "" {
-		actions = append(actions, modalDialogActionSpec{ID: "set", Label: "设为标题行 (" + selRowsRef + ")"})
+		actions = append(actions, modalDialogActionSpec{ID: "set", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.print_titles.action.set", Args: i18n.Args{"Rows": selRowsRef}}})
 	}
 	if layout.PrintTitles != "" {
-		actions = append(actions, modalDialogActionSpec{ID: "clear", Label: "清除标题行"})
+		actions = append(actions, modalDialogActionSpec{ID: "clear", LabelRef: i18n.Message{ID: "spreadsheet.page_layout.print_titles.action.clear"}})
 	}
-	actions = append(actions, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	actions = append(actions, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 
-	a.modal.Show("打印标题设置", message, func(action string) {
+	a.modal.ShowMessage("spreadsheet.page_layout.print_titles", i18n.Message{ID: "spreadsheet.page_layout.print_titles.dialog.title"}, message, func(action string) {
 		a.modal.Hide()
 		switch action {
 		case "set":
@@ -338,12 +333,12 @@ func (a *App) showSpreadsheetPrintTitlesDialog() {
 			a.runSpreadsheetPageLayoutCommand("设置打印标题行", spreadsheetpageSheetOperationPrintTitlesArguments{Sheet: sheet, Operation: "print_titles", PrintTitles: selRowsRef}, func(ed document.SpreadsheetPageLayoutEditor) error {
 				return ed.SetSheetPrintTitles(sheet, selRowsRef)
 			})
-			a.setStatus("已设置打印标题行：" + selRowsRef)
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.print_title_rows_set", Args: i18n.Args{"Rows": selRowsRef}}, feedbackSuccess, notificationToast)
 		case "clear":
 			a.runSpreadsheetPageLayoutCommand("清除打印标题行", spreadsheetpageSheetOperationPrintTitlesArguments{Sheet: sheet, Operation: "print_titles", PrintTitles: ""}, func(ed document.SpreadsheetPageLayoutEditor) error {
 				return ed.SetSheetPrintTitles(sheet, "")
 			})
-			a.setStatus("已清除打印标题行")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.print_title_rows_cleared_20e250"}, feedbackSuccess, notificationToast)
 		}
 	}, actions...)
 }

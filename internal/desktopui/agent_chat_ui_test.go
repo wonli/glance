@@ -49,7 +49,7 @@ func TestAgentChatEventsKeepLongRepliesAndRenderToolAndErrorStatus(t *testing.T)
 	if app.agentUI.chatLines[0].role != "assistant" || app.agentUI.chatLines[0].text != longReply {
 		t.Fatalf("streamed assistant reply was split or truncated: role=%q bytes=%d", app.agentUI.chatLines[0].role, len(app.agentUI.chatLines[0].text))
 	}
-	if app.agentUI.chatLines[1].role != "tool" || app.agentUI.chatLines[1].text != "工具 workbook.audit 已完成" {
+	if app.agentUI.chatLines[1].role != "tool" || app.agentUI.chatLines[1].toolName != "workbook.audit" || app.agentUI.chatLines[1].toolSummaryRef.ID != "agent.tool.result.completed" {
 		t.Fatalf("tool progress line = %+v", app.agentUI.chatLines[1])
 	}
 	if app.agentUI.chatLines[2].role != "error" || app.agentUI.chatLines[2].text != "模型连接中断，请检查网络。" {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"image"
 	"os"
 	"path/filepath"
@@ -70,13 +71,14 @@ func (a *App) startWordImagePicker(operation wordImagePickerOperation) {
 	}
 	a.wordImagePickerRunning = true
 	if operation == wordImageInsert {
-		a.setStatus("选择要插入的 PNG/JPEG 图片…")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.choose_a_png_or_jpeg_2076ca"}, feedbackInfo, notificationSuppressed)
 	} else {
-		a.setStatus("选择用于替换的 PNG/JPEG 图片…")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.choose_a_png_or_jpeg_5f614f"}, feedbackInfo, notificationSuppressed)
 	}
 	choose := a.wordImageFilePicker
 	if choose == nil {
-		choose = chooseOfficeImageFile
+		pickerLabels := a.filePickerLabels()
+		choose = func() (string, error) { return chooseOfficeImageFile(pickerLabels) }
 	}
 	shutdown, results, window := a.shutdown, a.wordImagePickerResults, a.window
 	a.launchManagedBackground(func() {
@@ -139,15 +141,15 @@ func (a *App) handleWordImagePickerResult(result wordImagePickerResult) {
 		return
 	}
 	if result.err != nil {
-		a.setStatus("图片读取失败：" + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, result.err, notificationToast)
 		return
 	}
 	if result.path == "" {
-		a.setStatus("已取消选择图片")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.image_selection_canceled_5978be"}, feedbackWarning, notificationSuppressed)
 		return
 	}
 	if result.state.formatRunning.Load() || a.isSaving() {
-		a.setStatus("文档正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_document_is_busy_try_again_shortly_66cff7"}, feedbackInfo, notificationToast)
 		return
 	}
 	switch result.operation {
@@ -159,7 +161,7 @@ func (a *App) handleWordImagePickerResult(result wordImagePickerResult) {
 			return editor.ReplaceInlineImage(imageID, result.mediaType, result.data)
 		}, false)
 	default:
-		a.setStatus("无效的图片操作")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.invalid_image_operation_def800"}, feedbackError, notificationToast)
 	}
 }
 

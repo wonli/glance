@@ -1,7 +1,7 @@
 package desktopui
 
 import (
-	"fmt"
+	"glance/internal/i18n"
 	"math"
 	"strconv"
 	"strings"
@@ -16,25 +16,25 @@ func (a *App) showSpreadsheetRowHeightDialog() {
 	}
 	row := state.selection.Active.Row + 1
 	current := devicePixelsToPoints(v.Rows.sizeAt(row-1), v.Scale)
-	a.modal.ShowInput("行高", fmt.Sprintf("设置当前行（第 %d 行）的高度，单位为磅。", row), strconv.FormatFloat(current, 'f', 1, 64), "0.1–409.5 磅", func(action string) {
+	a.modal.ShowInputMessage("spreadsheet.dimension.row", i18n.Message{ID: "spreadsheet.dimension.row.dialog.title"}, i18n.Message{ID: "spreadsheet.dimension.row.dialog.body", Args: i18n.Args{"Row": row}}, strconv.FormatFloat(current, 'f', 1, 64), i18n.Message{ID: "spreadsheet.dimension.row.dialog.hint"}, func(action string) {
 		value, err := strconv.ParseFloat(strings.TrimSpace(a.modal.Input.Text()), 64)
 		a.modal.Hide()
 		if action != "confirm" {
 			return
 		}
 		if err != nil || !finite(value) || value < 0.1 || value > 409.5 {
-			a.setStatus("行高必须是 0.1 到 409.5 磅之间的有限数值")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.row_height_must_be_a_04728f"}, feedbackError, notificationToast)
 			if a.window != nil {
 				a.window.Invalidate()
 			}
 			return
 		}
 		if math.Abs(value-current) <= 0.01 {
-			a.setStatus("行高未变化")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.row_height_is_unchanged_3c158d"}, feedbackWarning, notificationToast)
 			return
 		}
 		a.applySpreadsheetDimension(row, value, true)
-	}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.confirm"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }
 
 func (a *App) showSpreadsheetColumnWidthDialog() {
@@ -44,25 +44,25 @@ func (a *App) showSpreadsheetColumnWidthDialog() {
 	}
 	column := state.selection.Active.Column + 1
 	current := devicePixelsToChars(v.Columns.sizeAt(column-1), v.Scale)
-	a.modal.ShowInput("列宽", fmt.Sprintf("设置当前列（第 %d 列）的列宽，单位为字符。", column), strconv.FormatFloat(current, 'f', 2, 64), "0.1–255 字符", func(action string) {
+	a.modal.ShowInputMessage("spreadsheet.dimension.column", i18n.Message{ID: "spreadsheet.dimension.column.dialog.title"}, i18n.Message{ID: "spreadsheet.dimension.column.dialog.body", Args: i18n.Args{"Column": column}}, strconv.FormatFloat(current, 'f', 2, 64), i18n.Message{ID: "spreadsheet.dimension.column.dialog.hint"}, func(action string) {
 		value, err := strconv.ParseFloat(strings.TrimSpace(a.modal.Input.Text()), 64)
 		a.modal.Hide()
 		if action != "confirm" {
 			return
 		}
 		if err != nil || !finite(value) || value < 0.1 || value > 255 {
-			a.setStatus("列宽必须是 0.1 到 255 字符之间的有限数值")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.column_width_must_be_a_01a7e6"}, feedbackError, notificationToast)
 			if a.window != nil {
 				a.window.Invalidate()
 			}
 			return
 		}
 		if math.Abs(value-current) <= 0.01 {
-			a.setStatus("列宽未变化")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.column_width_is_unchanged_2c5b94"}, feedbackWarning, notificationToast)
 			return
 		}
 		a.applySpreadsheetDimension(column, value, false)
-	}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.confirm"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }
 
 func (a *App) applySpreadsheetDimension(index int, value float64, row bool) {
@@ -72,12 +72,12 @@ func (a *App) applySpreadsheetDimension(index int, value float64, row bool) {
 	}
 	reader, ok := state.book.(document.GridReader)
 	if !ok {
-		a.setStatus("当前工作簿不支持行列尺寸调整")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_b3613c"}, feedbackWarning, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("表格正在处理其他操作，请稍后再试")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.a_table_operation_is_in_12e4b9"}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	sheet, generation, window := state.sheet, a.documentGeneration, v
@@ -116,15 +116,15 @@ func (a *App) applySpreadsheetDimension(index int, value float64, row bool) {
 		}
 	}) {
 		state.finishOperation(token)
-		a.setStatus("无法启动行列尺寸调整")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.could_not_start_row_or_f24e3a"}, feedbackWarning, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
-	a.setStatus("正在设置行高…")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.setting_row_height_03e570"}, feedbackInfo, notificationToast)
 	if !row {
-		a.setStatus("正在设置列宽…")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.setting_column_width_81fef3"}, feedbackInfo, notificationToast)
 	}
 	if a.window != nil {
 		a.window.Invalidate()

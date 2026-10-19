@@ -21,6 +21,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -150,17 +151,18 @@ func TestHomeRecentMenuCopiesAbsolutePathAndFilenameWithExtension(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, status, err := homeRecentMenuCopyValue("copy-path", path); err != nil || got != absolute || status != "路径已复制" {
-		t.Fatalf("copy path=(%q,%q,%v); want (%q,路径已复制,nil)", got, status, err, absolute)
+	if got, err := homeRecentMenuCopyValue("copy-path", path); err != nil || got != absolute {
+		t.Fatalf("copy path=(%q,%v); want (%q,nil)", got, err, absolute)
 	}
-	if got, status, err := homeRecentMenuCopyValue("copy-name", path); err != nil || got != "报告 final.docx" || status != "文件名已复制" {
-		t.Fatalf("copy filename=(%q,%q,%v); want (报告 final.docx,文件名已复制,nil)", got, status, err)
+	if got, err := homeRecentMenuCopyValue("copy-name", path); err != nil || got != "报告 final.docx" {
+		t.Fatalf("copy filename=(%q,%v); want (报告 final.docx,nil)", got, err)
 	}
 }
 
 func TestHomeRecentMenuEscapeAndEnterKeyboardActions(t *testing.T) {
 	app := New(nil, "")
 	t.Cleanup(func() { close(app.shutdown) })
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	var router input.Router
 	var ops op.Ops
 	draw := func() {
@@ -193,8 +195,8 @@ func TestHomeRecentMenuEscapeAndEnterKeyboardActions(t *testing.T) {
 	draw()
 	router.Queue(key.Event{Name: key.NameReturn, State: key.Press})
 	draw()
-	if app.status != "文件名已复制" || app.homeRecentMenuPath != "" {
-		t.Fatalf("Enter action status=%q menu=%q; want copied filename and a closed menu", app.status, app.homeRecentMenuPath)
+	if app.statusText() != "文件名已复制" || app.homeRecentMenuPath != "" {
+		t.Fatalf("Enter action status=%q menu=%q; want copied filename and a closed menu", app.statusText(), app.homeRecentMenuPath)
 	}
 }
 
@@ -257,8 +259,8 @@ func TestHomeRecentFolderActionUsesDirectRevealCommandAndRetriesAfterFailure(t *
 		t.Fatal("reveal command did not complete")
 	}
 	app.processAsyncResults()
-	if app.homeRecentMenuPath != path || !strings.Contains(app.status, "permission") {
-		t.Fatalf("failed reveal closed menu or hid reason: menu=%q status=%q", app.homeRecentMenuPath, app.status)
+	if app.homeRecentMenuPath != path || app.statusRef.ID != "file.command.reveal_failed" || !strings.Contains(app.feedback.detail, "permission") {
+		t.Fatalf("failed reveal closed menu or hid reason: menu=%q status=%q detail=%q", app.homeRecentMenuPath, app.statusText(), app.feedback.detail)
 	}
 }
 
@@ -322,8 +324,8 @@ func TestHomeRecentRemovalFailureRestoresRowAndReopensMenu(t *testing.T) {
 	if got := app.collection.Recents(); len(got) != 1 || got[0] != original[0] {
 		t.Fatalf("failed removal did not restore recent row: %+v", got)
 	}
-	if app.homeRecentMenuPath != path || !strings.Contains(app.status, "从最近列表移除失败") {
-		t.Fatalf("failed removal did not leave a retry path: menu=%q status=%q", app.homeRecentMenuPath, app.status)
+	if app.homeRecentMenuPath != path || !strings.Contains(app.statusText(), "从最近列表移除失败") {
+		t.Fatalf("failed removal did not leave a retry path: menu=%q status=%q", app.homeRecentMenuPath, app.statusText())
 	}
 }
 

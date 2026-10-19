@@ -10,6 +10,7 @@ import (
 
 	"glance/internal/document"
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 )
 
@@ -42,20 +43,21 @@ func TestWordPDFExportConfirmsLayoutWarningsBeforePicker(t *testing.T) {
 		fileCommandResults:   make(chan fileCommandResult, 1),
 		shutdown:             make(chan struct{}),
 	}
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	app.setWordFileCommandRunner(func(kind fileCommandKind, format string) fileCommandResult {
 		pickerCalls++
 		return fileCommandResult{kind: kind, path: ""}
 	})
 	app.requestWordPDFExport()
-	if !app.modal.Visible || app.modal.Title != "导出 PDF 前确认版式提示" {
-		t.Fatalf("warning modal visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.text(app.modal.TitleRef) != "导出 PDF 前确认版式提示" {
+		t.Fatalf("warning modal visible=%v title=%q", app.modal.Visible, app.text(app.modal.TitleRef))
 	}
-	if !bytes.Contains([]byte(app.modal.Message), []byte("使用了替代字体")) {
-		t.Fatalf("warning modal message = %q", app.modal.Message)
+	if !bytes.Contains([]byte(app.messageText(app.modal.MessageRef, app.modal.Message)), []byte("使用了替代字体")) {
+		t.Fatalf("warning modal message = %q", app.messageText(app.modal.MessageRef, app.modal.Message))
 	}
 	app.modal.OnAction("cancel")
-	if app.modal.Visible || pickerCalls != 0 || app.status != "已取消导出 PDF" {
-		t.Fatalf("cancel state: visible=%v picker calls=%d status=%q", app.modal.Visible, pickerCalls, app.status)
+	if app.modal.Visible || pickerCalls != 0 || app.statusText() != "已取消导出 PDF" {
+		t.Fatalf("cancel state: visible=%v picker calls=%d status=%q", app.modal.Visible, pickerCalls, app.statusText())
 	}
 }
 
@@ -86,6 +88,7 @@ func TestWordPDFExportRibbonUsesPDFPickerAndCancelPreservesSource(t *testing.T) 
 		fileCommandResults:   make(chan fileCommandResult, 1),
 		shutdown:             make(chan struct{}),
 	}
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	app.setWordFileCommandRunner(func(kind fileCommandKind, format string) fileCommandResult {
 		pickerCalls <- struct {
 			kind   fileCommandKind
@@ -97,8 +100,8 @@ func TestWordPDFExportRibbonUsesPDFPickerAndCancelPreservesSource(t *testing.T) 
 		t.Fatal("Word File > Export PDF should be enabled for a DOCX")
 	}
 	app.executeWordToolbarAction("export-pdf")
-	if !app.modal.Visible || app.modal.Title != "导出 PDF 预览" {
-		t.Fatalf("expected PDF preview before picker, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.text(app.modal.TitleRef) != "导出 PDF 预览" {
+		t.Fatalf("expected PDF preview before picker, got visible=%v title=%q", app.modal.Visible, app.text(app.modal.TitleRef))
 	}
 	app.modal.OnAction("confirm")
 	select {
@@ -116,8 +119,8 @@ func TestWordPDFExportRibbonUsesPDFPickerAndCancelPreservesSource(t *testing.T) 
 		t.Fatal("PDF picker did not finish")
 	}
 	app.processAsyncResults()
-	if app.status != "已取消导出 PDF" || !word.Dirty() || state.path != "source.docx" {
-		t.Fatalf("cancel result: status=%q dirty=%v source path=%q", app.status, word.Dirty(), state.path)
+	if app.statusText() != "已取消导出 PDF" || !word.Dirty() || state.path != "source.docx" {
+		t.Fatalf("cancel result: status=%q dirty=%v source path=%q", app.statusText(), word.Dirty(), state.path)
 	}
 }
 
@@ -156,7 +159,7 @@ func TestWordPDFPreviewReflowsLandscapeBeforeExport(t *testing.T) {
 		t.Fatal("timed out waiting for Word preview reflow")
 	}
 	if app.pdfExportPreview.wordPreviewPending || app.pdfExportPreview.Orientation != "landscape" {
-		t.Fatalf("preview orientation = %q, pending=%v, status=%q", app.pdfExportPreview.Orientation, app.pdfExportPreview.wordPreviewPending, app.status)
+		t.Fatalf("preview orientation = %q, pending=%v, status=%q", app.pdfExportPreview.Orientation, app.pdfExportPreview.wordPreviewPending, app.statusText())
 	}
 	if app.pdfExportPreview.wordResult == nil || len(app.pdfExportPreview.wordResult.Pages) == 0 ||
 		app.pdfExportPreview.wordResult.Pages[0].Clip.WidthPT <= app.pdfExportPreview.wordResult.Pages[0].Clip.HeightPT {
@@ -196,6 +199,7 @@ func TestWordPDFExportWritesValidatedPDFWithoutChangingDOCX(t *testing.T) {
 		shutdown:             make(chan struct{}),
 		wordPDFFontSource:    nil,
 	}
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	app.startWordPDFFileExport(state, key, path, "portrait")
 	var result wordPDFExportResult
 	select {
@@ -227,8 +231,8 @@ func TestWordPDFExportWritesValidatedPDFWithoutChangingDOCX(t *testing.T) {
 	if reader.NumPages() != 1 {
 		t.Fatalf("generated PDF pages = %d, want 1", reader.NumPages())
 	}
-	if app.status != "PDF 已导出：export.pdf" {
-		t.Fatalf("export success status = %q", app.status)
+	if app.statusText() != "PDF 已导出：export.pdf" {
+		t.Fatalf("export success status = %q", app.statusText())
 	}
 }
 
@@ -237,14 +241,15 @@ func TestWordPDFExportIgnoresStaleCompletion(t *testing.T) {
 	state.wordRevision = 5
 	state.wordRevisionAtomic.Store(5)
 	state.documentID = "stale-export"
-	app := &App{documentSessionState: state, status: "unchanged"}
+	app := &App{documentSessionState: state, statusRef: i18n.Message{ID: "status.initial.open_document"}}
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	app.applyWordPDFExportResult(wordPDFExportResult{
 		state: state,
 		key:   wordLayoutKey{DocumentID: state.documentID, Revision: 4},
 		path:  "stale.pdf",
 	})
-	if app.status != "文档已更改，旧分页结果未用于当前文档" {
-		t.Fatalf("stale export status = %q", app.status)
+	if app.statusText() != "文档已更改，旧分页结果未用于当前文档" {
+		t.Fatalf("stale export status = %q", app.statusText())
 	}
 }
 

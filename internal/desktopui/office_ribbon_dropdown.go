@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"image"
 	"math"
 	"strconv"
@@ -414,7 +415,7 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 		if strings.HasPrefix(command, "word-size-") {
 			if command == "word-size-custom" {
 				currentStr := strconv.FormatFloat(selectedWordFontSize(state), 'f', -1, 64)
-				a.modal.ShowInput("设置字号", "输入字号（磅）", currentStr, "1–1638 之间", func(action string) {
+				a.modal.ShowInputMessage("office.font_size", i18n.Message{ID: "office.font_size.dialog.title"}, i18n.Message{ID: "office.font_size.dialog.body"}, currentStr, i18n.Message{ID: "office.font_size.dialog.word_hint"}, func(action string) {
 					value := strings.TrimSpace(a.modal.Input.Text())
 					a.modal.Hide()
 					if action != "confirm" {
@@ -422,14 +423,14 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 					}
 					size, err := strconv.ParseFloat(value, 64)
 					if err != nil || size < 1 || size > 1638 {
-						a.setStatus("字号必须是 1 到 1638 之间的数值")
+						a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.font_size_must_be_a_value_from_1_to_1_638_293b48"}, feedbackInfo, notificationSuppressed)
 						if a.window != nil {
 							a.window.Invalidate()
 						}
 						return
 					}
 					a.setWordFontSize(size)
-				}, modalDialogActionSpec{ID: "confirm", Label: "应用"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+				}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 			} else {
 				if size, err := strconv.ParseFloat(strings.TrimPrefix(command, "word-size-"), 64); err == nil {
 					a.setWordFontSize(size)
@@ -501,7 +502,7 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 		size, _ := strconv.ParseFloat(strings.TrimPrefix(command, "excel-size-"), 64)
 		a.applyCellFormat(document.CellFormatPatch{FontSize: &size})
 	case "excel-size-custom":
-		a.modal.ShowInput("设置字号", "输入字号（磅）", "11", "1–409 之间", func(action string) {
+		a.modal.ShowInputMessage("office.font_size", i18n.Message{ID: "office.font_size.dialog.title"}, i18n.Message{ID: "office.font_size.dialog.body"}, "11", i18n.Message{ID: "office.font_size.dialog.spreadsheet_hint"}, func(action string) {
 			value := strings.TrimSpace(a.modal.Input.Text())
 			a.modal.Hide()
 			if action != "confirm" {
@@ -509,14 +510,14 @@ func (a *App) executeOfficeRibbonMenuCommand(gtx layout.Context, kind officeRibb
 			}
 			size, err := strconv.ParseFloat(value, 64)
 			if err != nil || size < 1 || size > 409 {
-				a.setStatus("字号必须是 1 到 409 之间的数值")
+				a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.font_size_must_be_a_value_from_1_to_409_pt_2a1e6d"}, feedbackInfo, notificationSuppressed)
 				if a.window != nil {
 					a.window.Invalidate()
 				}
 				return
 			}
 			a.applyCellFormat(document.CellFormatPatch{FontSize: &size})
-		}, modalDialogActionSpec{ID: "confirm", Label: "应用"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+		}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 	case "excel-style-normal":
 		a.applyCellFormat(document.CellFormatPatch{ClearFormat: true})
 	case "excel-style-emphasis":

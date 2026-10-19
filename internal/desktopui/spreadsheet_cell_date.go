@@ -7,6 +7,7 @@ import (
 
 	"glance/internal/application"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 type spreadsheetCellDateArguments struct {
@@ -69,7 +70,7 @@ func (a *App) insertCurrentDateIntoSpreadsheetCell() error {
 		case a.formatResults <- spreadsheetFormatResult{
 			state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation,
 			sheet: sheet, window: window, err: err, operation: "插入日期", applied: changed,
-			noOp: err == nil && !changed, details: "单元格已是当天日期",
+			noOp: err == nil && !changed, details: i18n.Message{ID: "spreadsheet.status.noop.current_date"},
 		}:
 		case <-a.shutdown:
 		}

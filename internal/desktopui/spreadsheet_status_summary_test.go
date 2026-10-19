@@ -11,6 +11,7 @@ import (
 	"github.com/xuri/excelize/v2"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 )
 
 func TestSpreadsheetStatusBarLoadsSelectionStatsAsynchronously(t *testing.T) {
@@ -30,7 +31,7 @@ func TestSpreadsheetStatusBarLoadsSelectionStatsAsynchronously(t *testing.T) {
 	app.documentSessionState = state
 	app.documentGeneration = 7
 	app.sheet = "Sheet1"
-	app.status = "就绪"
+	app.statusRef = i18n.Message{ID: "desktop.status.inline.ready_b796f2"}
 	defer book.Close()
 	defer func() {
 		app.shutdownOnce.Do(func() { close(app.shutdown) })
@@ -51,8 +52,8 @@ func TestSpreadsheetStatusBarLoadsSelectionStatsAsynchronously(t *testing.T) {
 			if got.Count != 4 || got.NumericCount != 2 || got.Sum != 6 {
 				t.Fatalf("selection stats = %+v; want Count=4 NumericCount=2 Sum=6", got)
 			}
-			if app.status != "就绪" {
-				t.Fatalf("selection summary replaced the document status with %q", app.status)
+			if app.statusText() != "就绪" {
+				t.Fatalf("selection summary replaced the document status with %q", app.statusText())
 			}
 			if gotText, wantText := app.spreadsheetStatusSelectionStatsText(), "平均值 3  ·  计数 4  ·  求和 6"; gotText != wantText {
 				t.Fatalf("selection summary text = %q; want %q", gotText, wantText)

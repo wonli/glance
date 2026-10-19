@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"io"
 	"strings"
 
@@ -29,7 +30,7 @@ func (a *App) requestWordClipboardRead(gtx layout.Context, state *documentSessio
 		return
 	}
 	if state.wordClipboardRunID != "" || state.wordClipboardSelection != nil {
-		a.setStatus("已有一项粘贴正在读取剪贴板")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.a_paste_is_already_reading_403883"}, feedbackSuccess, notificationSuppressed)
 		return
 	}
 	state.wordClipboardRunID = state.selectedWordRunID
@@ -54,7 +55,7 @@ func (a *App) requestWordClipboardRead(gtx layout.Context, state *documentSessio
 	}
 	if state.wordClipboardSelection == nil {
 		state.wordClipboardRunID = ""
-		a.setStatus("请先将光标放到 Word 正文中再粘贴")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.place_the_caret_in_the_f286e3"}, feedbackWarning, notificationToast)
 		return
 	}
 	gtx.Execute(clipboard.ReadCmd{Tag: &state.wordClipboardTarget})
@@ -62,27 +63,27 @@ func (a *App) requestWordClipboardRead(gtx layout.Context, state *documentSessio
 
 func (a *App) pasteWordLocalEditorSelection(gtx layout.Context, state *documentSessionState, target wordClipboardSelectionTarget, text string) {
 	if state == nil || state.wordReadingMode || state.formatRunning.Load() || a.isSaving() {
-		a.setStatus("当前 Word 文档不可编辑")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_word_document_is_e4d6b3"}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	run, ok := selectedWordRun(wordBlocksForState(state), target.localRunID)
 	if !ok || !run.Editable {
-		a.setStatus("Word 粘贴位置已失效，请重新选择光标位置")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_word_paste_target_expired_1a3179"}, feedbackWarning, notificationToast)
 		return
 	}
 	editor := wordRunEditor(state, run)
 	if editorHasActiveComposition(editor) {
-		a.setStatus("请先完成当前中文输入，再粘贴文字")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.finish_chinese_input_composition_before_e3b0d1"}, feedbackWarning, notificationToast)
 		return
 	}
 	current := []rune(editor.Text())
 	if editor.Text() != target.localText {
-		a.setStatus("正文在剪贴板数据返回前已变化，请重新粘贴")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_body_changed_before_clipboard_61c34e"}, feedbackWarning, notificationToast)
 		return
 	}
 	start, end := target.localStart, target.localEnd
 	if start < 0 || end < start || end > len(current) {
-		a.setStatus("Word 粘贴光标已失效，请重新选择光标位置")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_word_paste_caret_expired_16cf74"}, feedbackWarning, notificationToast)
 		return
 	}
 	editor.SetCaret(start, end)
@@ -102,7 +103,7 @@ func (a *App) pasteWordLocalEditorSelection(gtx layout.Context, state *documentS
 	state.wordPendingFocusRunID = run.ID
 	captureWordTextDraft(state, run.ID, value)
 	gtx.Execute(key.FocusCmd{Tag: editor})
-	a.setStatus("正在编辑 Word 正文")
+	a.setStatusMessage(i18n.Message{ID: "word.status.inline.editing_word_document_text_556c9c"}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) cutSelectedWordText(gtx layout.Context, state *documentSessionState) bool {
@@ -141,14 +142,14 @@ func (a *App) handleWordClipboardEvents(gtx layout.Context) {
 		if err != nil {
 			state.wordClipboardRunID = ""
 			state.wordClipboardSelection = nil
-			a.setStatus("读取剪贴板失败：" + err.Error())
+			a.setWordCommandStatus(err)
 			continue
 		}
 		state.wordClipboardRunID = ""
 		selection := state.wordClipboardSelection
 		state.wordClipboardSelection = nil
 		if selection == nil {
-			a.setStatus("Word 粘贴位置已失效，请重新选择光标位置")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_word_paste_target_expired_1a3179"}, feedbackWarning, notificationToast)
 			continue
 		}
 		if selection.localRunID != "" {
@@ -156,7 +157,7 @@ func (a *App) handleWordClipboardEvents(gtx layout.Context) {
 			continue
 		}
 		if state.wordPendingPasteSelection != nil {
-			a.setStatus("已有一项 Word 粘贴正在等待完成")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.a_word_paste_is_already_57b9fb"}, feedbackSuccess, notificationSuppressed)
 			continue
 		}
 		state.wordPendingPasteSelection = &wordPendingSelectionPaste{target: *selection, text: string(value)}
@@ -164,7 +165,7 @@ func (a *App) handleWordClipboardEvents(gtx layout.Context) {
 			if editor := state.wordRunEditors[draft.runID]; editor != nil {
 				if editorHasActiveComposition(editor) {
 					state.wordPendingPasteSelection = nil
-					a.setStatus("请先完成当前中文输入，再粘贴选区文字")
+					a.setStatusMessage(i18n.Message{ID: "word.status.inline.finish_chinese_input_composition_before_297909"}, feedbackWarning, notificationToast)
 					continue
 				}
 				if editor.Text() != draft.text {
@@ -185,12 +186,12 @@ func (a *App) handleWordClipboardEvents(gtx layout.Context) {
 		}
 		if composing {
 			state.wordPendingPasteSelection = nil
-			a.setStatus("请先完成当前中文输入，再粘贴选区文字")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.finish_chinese_input_composition_before_297909"}, feedbackWarning, notificationToast)
 			continue
 		}
 		if wordSelectionPasteTargetHasPendingDraft(state, *selection) {
 			state.wordPendingPasteSelection = nil
-			a.setStatus("选区内有未提交的文字修改，请完成编辑后重新粘贴")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_selection_has_uncommitted_text_33ffa5"}, feedbackWarning, notificationSuppressed)
 			continue
 		}
 		for id, editor := range state.wordRunEditors {

@@ -3,6 +3,7 @@ package desktopui
 import (
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -19,14 +20,10 @@ func (a *App) showWordWordArtDialog() {
 		return
 	}
 	if _, ok := any(state.word).(document.WordTextBoxEditor); !ok {
-		a.setStatus("当前文档不支持插入艺术字")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_06e28a"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.ShowInput(
-		"插入艺术字",
-		"请输入艺术字文本（选择样式后将插入艺术字排版块）：",
-		"艺术字标题",
-		"输入艺术字文本内容",
+	a.modal.ShowInputMessage("word.wordart", i18n.Message{ID: "word.wordart.dialog.title"}, i18n.Message{ID: "word.wordart.dialog.body"}, a.text(i18n.Message{ID: "word.wordart.default_text"}), i18n.Message{ID: "word.wordart.dialog.hint"},
 		func(action string) {
 			a.modal.Hide()
 			if action == "cancel" {
@@ -34,31 +31,31 @@ func (a *App) showWordWordArtDialog() {
 			}
 			text := strings.TrimSpace(a.modal.Input.Text())
 			if text == "" {
-				text = "艺术字标题"
+				text = a.text(i18n.Message{ID: "word.wordart.default_text"})
 			}
 			var stylePrefix string
 			switch action {
 			case "style_gold":
-				stylePrefix = "【艺术字·金辉立体】"
+				stylePrefix = a.text(i18n.Message{ID: "word.wordart.content_prefix.gold"})
 			case "style_neon":
-				stylePrefix = "【艺术字·霓虹光效】"
+				stylePrefix = a.text(i18n.Message{ID: "word.wordart.content_prefix.neon"})
 			case "style_hollow":
-				stylePrefix = "【艺术字·极简空心】"
+				stylePrefix = a.text(i18n.Message{ID: "word.wordart.content_prefix.hollow"})
 			default:
-				stylePrefix = "【艺术字】"
+				stylePrefix = a.text(i18n.Message{ID: "word.wordart.content_prefix.default"})
 			}
 			afterPID := state.selectedWordParagraphID
 			content := fmt.Sprintf("%s %s", stylePrefix, text)
 			if !a.runWordApplicationCommand("插入艺术字", "word.text_box.insert", wordTextBoxInsertArguments{AfterParagraphId: afterPID, Text: content}) {
-				a.setStatus("当前会话无法通过能力目录插入艺术字")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.this_session_cannot_insert_wordart_797df7"}, feedbackWarning, notificationToast)
 				return
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "默认样式"},
-		modalDialogActionSpec{ID: "style_gold", Label: "金辉立体"},
-		modalDialogActionSpec{ID: "style_neon", Label: "霓虹光效"},
-		modalDialogActionSpec{ID: "style_hollow", Label: "极简空心"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.wordart.style.default"}},
+		modalDialogActionSpec{ID: "style_gold", LabelRef: i18n.Message{ID: "word.wordart.style.gold"}},
+		modalDialogActionSpec{ID: "style_neon", LabelRef: i18n.Message{ID: "word.wordart.style.neon"}},
+		modalDialogActionSpec{ID: "style_hollow", LabelRef: i18n.Message{ID: "word.wordart.style.hollow"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -67,11 +64,9 @@ func (a *App) showWordEquationDialog() {
 	if state == nil || state.word == nil {
 		return
 	}
-	a.modal.ShowInput(
-		"插入公式",
-		"输入公式表达式；当前将公式作为可编辑文本插入，不创建 Office 数学公式对象：",
+	a.modal.ShowInputMessage("word.equation", i18n.Message{ID: "word.equation.dialog.title"}, i18n.Message{ID: "word.equation.dialog.body"},
 		"x = (-b ± √(b² - 4ac)) / (2a)",
-		"输入或编辑数学公式",
+		i18n.Message{ID: "word.equation.dialog.hint"},
 		func(action string) {
 			a.modal.Hide()
 			var formula string
@@ -99,20 +94,20 @@ func (a *App) showWordEquationDialog() {
 				}
 				arguments = wordEquationArguments{Target: "run", RunID: run.ID, Expression: expression}
 			} else if _, hasTextBox := any(state.word).(document.WordTextBoxEditor); hasTextBox {
-				arguments = wordEquationArguments{Target: "textbox", AfterParagraphID: state.selectedWordParagraphID, Expression: "【公式】" + formula}
+				arguments = wordEquationArguments{Target: "textbox", AfterParagraphID: state.selectedWordParagraphID, Expression: a.text(i18n.Message{ID: "word.equation.content_prefix"}) + formula}
 			} else {
-				a.setStatus("请先选择可编辑的文字段落以插入公式")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.select_an_editable_text_paragraph_5d5852"}, feedbackWarning, notificationToast)
 				return
 			}
 			if !a.runWordApplicationCommand("插入公式文本", "word.equation.insert", arguments) {
-				a.setStatus("当前会话无法通过能力目录插入公式文本")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.this_session_cannot_insert_equation_1e8d06"}, feedbackWarning, notificationToast)
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "插入输入内容"},
-		modalDialogActionSpec{ID: "quadratic", Label: "二次方程"},
-		modalDialogActionSpec{ID: "euler", Label: "欧拉公式"},
-		modalDialogActionSpec{ID: "pythagorean", Label: "勾股定理"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.equation.action.insert"}},
+		modalDialogActionSpec{ID: "quadratic", LabelRef: i18n.Message{ID: "word.equation.preset.quadratic"}},
+		modalDialogActionSpec{ID: "euler", LabelRef: i18n.Message{ID: "word.equation.preset.euler"}},
+		modalDialogActionSpec{ID: "pythagorean", LabelRef: i18n.Message{ID: "word.equation.preset.pythagorean"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -127,14 +122,10 @@ func (a *App) showWordShapesDialog() {
 		return
 	}
 	if _, ok := any(state.word).(document.WordTextBoxEditor); !ok {
-		a.setStatus("当前文档不支持插入形状容器")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_45df2a"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.ShowInput(
-		"插入形状",
-		"请选择几何形状类型并输入形状内嵌文本：",
-		"形状注释内容",
-		"输入形状标注文本",
+	a.modal.ShowInputMessage("word.shapes", i18n.Message{ID: "word.shapes.dialog.title"}, i18n.Message{ID: "word.shapes.dialog.body"}, a.text(i18n.Message{ID: "word.shapes.default_text"}), i18n.Message{ID: "word.shapes.dialog.hint"},
 		func(action string) {
 			a.modal.Hide()
 			if action == "cancel" {
@@ -142,33 +133,33 @@ func (a *App) showWordShapesDialog() {
 			}
 			text := strings.TrimSpace(a.modal.Input.Text())
 			if text == "" {
-				text = "说明文本"
+				text = a.text(i18n.Message{ID: "word.shapes.default_text"})
 			}
 			var shapeType string
 			switch action {
 			case "rect":
-				shapeType = "矩形框"
+				shapeType = a.text(i18n.Message{ID: "word.shapes.type.rectangle"})
 			case "round_rect":
-				shapeType = "圆角矩形框"
+				shapeType = a.text(i18n.Message{ID: "word.shapes.type.round_rectangle"})
 			case "callout":
-				shapeType = "标注提示框"
+				shapeType = a.text(i18n.Message{ID: "word.shapes.type.callout"})
 			case "flowchart":
-				shapeType = "流程处理框"
+				shapeType = a.text(i18n.Message{ID: "word.shapes.type.flowchart"})
 			default:
-				shapeType = "图形框"
+				shapeType = a.text(i18n.Message{ID: "word.shapes.type.generic"})
 			}
 			afterPID := state.selectedWordParagraphID
-			content := fmt.Sprintf("【形状·%s】%s", shapeType, text)
+			content := a.text(i18n.Message{ID: "word.shapes.content_prefix", Args: i18n.Args{"Type": shapeType}}) + text
 			if !a.runWordApplicationCommand("插入形状", "word.text_box.insert", wordTextBoxInsertArguments{AfterParagraphId: afterPID, Text: content}) {
-				a.setStatus("当前会话无法通过能力目录插入形状文本框")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.this_session_cannot_insert_a_8e33fd"}, feedbackWarning, notificationToast)
 				return
 			}
 		},
-		modalDialogActionSpec{ID: "rect", Label: "矩形框"},
-		modalDialogActionSpec{ID: "round_rect", Label: "圆角矩形"},
-		modalDialogActionSpec{ID: "callout", Label: "标注框"},
-		modalDialogActionSpec{ID: "flowchart", Label: "流程框"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "rect", LabelRef: i18n.Message{ID: "word.shapes.type.rectangle"}},
+		modalDialogActionSpec{ID: "round_rect", LabelRef: i18n.Message{ID: "word.shapes.type.round_rectangle"}},
+		modalDialogActionSpec{ID: "callout", LabelRef: i18n.Message{ID: "word.shapes.type.callout"}},
+		modalDialogActionSpec{ID: "flowchart", LabelRef: i18n.Message{ID: "word.shapes.type.flowchart"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -185,38 +176,32 @@ func (a *App) showWordChartDialog() {
 	}
 	_, ok := any(state.word).(document.WordTableInsertEditor)
 	if !ok {
-		a.setStatus("当前文档不支持插入图表数据表")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_1488fb"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.Show(
-		"插入图表",
-		"选择图表类型并在文档中插入图表数据源结构：\n\n"+
-			"· 簇状柱形图（3x3 类别/系列数据表）\n"+
-			"· 折线趋势图（4x3 时间序列数据表）\n"+
-			"· 饼状分布图（3x2 占比分布数据表）",
+	a.modal.ShowMessage("word.chart.insert", i18n.Message{ID: "word.chart.dialog.title"}, i18n.Message{ID: "word.chart.dialog.body"},
 		func(action string) {
 			a.modal.Hide()
 			var rows, cols int
-			var chartName string
 			switch action {
 			case "column":
-				rows, cols, chartName = 3, 3, "柱形图"
+				rows, cols = 3, 3
 			case "line":
-				rows, cols, chartName = 4, 3, "折线图"
+				rows, cols = 4, 3
 			case "pie":
-				rows, cols, chartName = 3, 2, "饼状图"
+				rows, cols = 3, 2
 			default:
 				return
 			}
 			if !a.runWordApplicationCommand("插入图表基础数据表", "word.table.insert", wordTableInsertArguments{AfterParagraphId: state.selectedWordParagraphID, Rows: rows, Columns: cols}) {
-				a.setStatus("当前会话无法通过能力目录插入图表数据表")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.this_session_cannot_insert_chart_794979"}, feedbackWarning, notificationToast)
 				return
 			}
-			a.setStatus(fmt.Sprintf("正在插入 %s 基础数据表格（%d 行 × %d 列）", chartName, rows, cols))
+			a.setStatusMessage(i18n.Message{ID: "word.insert.chart.status.inserting", Args: i18n.Args{"Rows": rows, "Columns": cols}}, feedbackInfo, notificationSuppressed)
 		},
-		modalDialogActionSpec{ID: "column", Label: "柱形图"},
-		modalDialogActionSpec{ID: "line", Label: "折线图"},
-		modalDialogActionSpec{ID: "pie", Label: "饼状图"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "column", LabelRef: i18n.Message{ID: "word.chart.type.column"}},
+		modalDialogActionSpec{ID: "line", LabelRef: i18n.Message{ID: "word.chart.type.line"}},
+		modalDialogActionSpec{ID: "pie", LabelRef: i18n.Message{ID: "word.chart.type.pie"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }

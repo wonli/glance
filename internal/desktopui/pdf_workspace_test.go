@@ -197,7 +197,7 @@ func TestPDFBusyConfirmRetainsDraft(t *testing.T) {
 	a.pdfDoc = d
 	v := a.ensurePDFView()
 	v.pending = true
-	a.showPDFDraft(document.PDFCommand{Kind: "replace", Revision: d.Info().Revision, Text: "original"}, "edit")
+	a.showPDFDraft(document.PDFCommand{Kind: "replace", Revision: d.Info().Revision, Text: "original"})
 	a.modal.Input.SetText("中文输入草稿")
 	a.modal.OnAction("confirm")
 	if !a.modal.Visible || a.modal.Input.Text() != "中文输入草稿" || d.Dirty() {

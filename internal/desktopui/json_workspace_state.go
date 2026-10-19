@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"io"
 
 	"strings"
@@ -26,35 +27,36 @@ const (
 )
 
 type jsonWorkspaceView struct {
-	mode                                      jsonViewMode
-	toolPending                               bool
-	clipboardWritePending                     bool
-	clipboardWriteText                        string
-	toolResults                               chan jsonToolResult
-	toolMessage                               string
-	tree                                      *document.JSONTree
-	err                                       error
-	valueError                                string
-	requested, parsed, sourceSynced, baseline string
-	pending                                   bool
-	results                                   chan jsonTreeResult
-	done                                      chan struct{}
-	selected                                  int
-	collapsed                                 map[int]bool
-	rows                                      []jsonTreeRow
-	outline                                   []int
-	search                                    widget.Editor
-	value                                     widget.Editor
-	original                                  widget.Editor
-	treeList, outlineList, inspectorList                   widget.List
+	levelControl                                              adaptiveChoice
+	mode                                                      jsonViewMode
+	toolPending                                               bool
+	clipboardWritePending                                     bool
+	clipboardWriteText                                        string
+	toolResults                                               chan jsonToolResult
+	toolMessage                                               i18n.Message
+	tree                                                      *document.JSONTree
+	err                                                       error
+	valueError                                                string
+	requested, parsed, sourceSynced, baseline                 string
+	pending                                                   bool
+	results                                                   chan jsonTreeResult
+	done                                                      chan struct{}
+	selected                                                  int
+	collapsed                                                 map[int]bool
+	rows                                                      []jsonTreeRow
+	outline                                                   []int
+	search                                                    widget.Editor
+	value                                                     widget.Editor
+	original                                                  widget.Editor
+	treeList, outlineList, inspectorList                      widget.List
 	rowButtons, toggleButtons, outlineButtons, closingButtons map[int]*widget.Clickable
 	activeRowIDs, activeClosingIDs, activeToggleIDs           []int
-	clipboardTarget                                        struct{}
-	expandedLevel                                          int
-	sourceLoaded                                           bool
-	sourceSegments                                         []jsonSourceSegment
-	baselineSegments                                       []jsonSourceSegment
-	sourceList, baselineList                               widget.List
+	clipboardTarget                                           struct{}
+	expandedLevel                                             int
+	sourceLoaded                                              bool
+	sourceSegments                                            []jsonSourceSegment
+	baselineSegments                                          []jsonSourceSegment
+	sourceList, baselineList                                  widget.List
 }
 
 func (a *App) ensureJSONView() *jsonWorkspaceView {
@@ -197,11 +199,11 @@ func (a *App) handleJSONWorkspaceEvents(gtx layout.Context) {
 			raw, err := io.ReadAll(io.LimitReader(reader, 8*1024*1024+1))
 			_ = reader.Close()
 			if err != nil {
-				a.setStatus(err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 			} else if len(raw) > 8*1024*1024 {
-				a.setStatus("JSON 粘贴内容超过 8 MB")
+				a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_pasted_json_exceeds_8_mb_fe3967"}, feedbackError, notificationToast)
 			} else {
-				a.applyJSONTextMutation(string(raw), "已粘贴 JSON")
+				a.applyJSONTextMutation(string(raw), i18n.Message{ID: "json.status.pasted"})
 				v.mode = jsonModeSource
 			}
 		}
@@ -227,7 +229,7 @@ func (a *App) commitJSONSourceDraft() {
 	unlock()
 	a.completeSessionOperation(a.documentSessionState, token, err, err == nil)
 	if err != nil {
-		a.setStatus(err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	v.sourceSynced = updated
@@ -264,8 +266,8 @@ func (a *App) commitJSONNodeValue() error {
 		return err
 	}
 	if text != v.tree.Source {
-		if !a.applyJSONTextMutationIfSource(text, "已修改 JSON 值", v.tree.Source) {
-			return fmt.Errorf("%s", a.status)
+		if !a.applyJSONTextMutationIfSource(text, i18n.Message{ID: "json.status.value_updated"}, v.tree.Source) {
+			return fmt.Errorf("%s", a.text(a.statusRef))
 		}
 	}
 	return nil
@@ -312,7 +314,7 @@ func (a *App) handleJSONWorkspaceAction(gtx layout.Context, id string) {
 			a.startJSONTool("copy")
 		} else {
 			writeJSONClipboard(gtx, a.jsonDraftText())
-			a.setStatus("已复制 JSON")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.json_copied_14f177"}, feedbackSuccess, notificationSuppressed)
 		}
 	case "paste":
 		gtx.Execute(clipboard.ReadCmd{Tag: &v.clipboardTarget})
@@ -320,7 +322,7 @@ func (a *App) handleJSONWorkspaceAction(gtx layout.Context, id string) {
 		a.startOpenFilePicker()
 	case "apply-value":
 		if err := a.commitJSONNodeValue(); err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 			v.valueError = err.Error()
 		} else {
 			v.valueError = ""
@@ -356,7 +358,7 @@ func (a *App) handleJSONWorkspaceAction(gtx layout.Context, id string) {
 			return
 		}
 		writeJSONClipboard(gtx, value)
-		a.setStatus("已复制到剪贴板")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.copied_to_the_clipboard_c2bb6d"}, feedbackSuccess, notificationSuppressed)
 	}
 }
 

@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"gioui.org/layout"
+	"glance/internal/i18n"
 )
 
 func markdownHasPendingDraft(state *documentSessionState) bool {
@@ -85,7 +86,7 @@ func (a *App) prepareMarkdownSave() bool {
 		return true
 	}
 	if a.markdownView != nil && markdownEditorComposing(&a.markdownView.editor) {
-		a.setStatus("请先完成输入法选字")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.finish_chinese_input_composition_first_b4284e"}, feedbackWarning, notificationSuppressed)
 		return false
 	}
 	a.flushMarkdownDraft()

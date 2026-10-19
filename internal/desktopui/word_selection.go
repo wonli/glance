@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"errors"
+	"glance/internal/i18n"
 
 	"gioui.org/io/key"
 	"gioui.org/layout"
@@ -174,10 +175,10 @@ func (a *App) selectAllWordText() {
 	}
 	changed, err := a.setWordTextSelection(state, wordTextSelectionRequest{Scope: "document"})
 	if err != nil {
-		a.setStatus("当前文档无文字内容")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_contains_no_6fd14b"}, feedbackInfo, notificationSuppressed)
 		return
 	}
-	a.setStatus("已全选文档正文")
+	a.setStatusMessage(i18n.Message{ID: "word.status.inline.selected_the_entire_document_body_ef99e2"}, feedbackSuccess, notificationSuppressed)
 	if changed && a.window != nil {
 		a.window.Invalidate()
 	}

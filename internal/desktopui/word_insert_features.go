@@ -1,8 +1,8 @@
 package desktopui
 
 import (
-	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -13,34 +13,34 @@ func (a *App) showWordCoverPageDialog() {
 	}
 	editor, ok := any(state.word).(document.WordCoverPageEditor)
 	if !ok {
-		a.setStatus("当前文档不支持插入封面")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_4e91b9"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.ShowInput("插入封面", "请输入封面文档标题：", "工作报告", "输入主标题（副标题和作者将自动补全）", func(action string) {
+	a.modal.ShowInputMessage("word.cover_page", i18n.Message{ID: "word.cover_page.dialog.title"}, i18n.Message{ID: "word.cover_page.dialog.body"}, a.text(i18n.Message{ID: "word.cover_page.default_title"}), i18n.Message{ID: "word.cover_page.dialog.hint"}, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
 		}
 		title := strings.TrimSpace(a.modal.Input.Text())
 		if title == "" {
-			title = "工作报告"
+			title = a.text(i18n.Message{ID: "word.cover_page.default_title"})
 		}
-		err := editor.InsertCoverPage(title, "业务总结与未来规划", "项目负责人")
+		err := editor.InsertCoverPage(title, a.text(i18n.Message{ID: "word.cover_page.default_subtitle"}), a.text(i18n.Message{ID: "word.cover_page.default_author"}))
 		if err != nil {
-			a.setStatus("插入封面失败：" + err.Error())
+			a.setWordCommandStatus(err)
 			return
 		}
 		if state.word != nil {
 			state.setWordBlocks(state.word.WordBlocks())
 			a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 		}
-		a.setStatus("已成功在文档首页插入标准封面页")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserted_a_standard_cover_page_ddfc3b"}, feedbackSuccess, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "插入封面"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.cover_page.action.insert"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -51,16 +51,15 @@ func (a *App) showWordLanguageDialog() {
 	}
 	editor, ok := any(state.word).(document.WordLanguageEditor)
 	if !ok {
-		a.setStatus("当前文档不支持设置语言")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_a61cb2"}, feedbackWarning, notificationToast)
 		return
 	}
 	runID := state.selectedWordRunID
-	targetDesc := "当前选区"
+	targetDesc := a.text(i18n.Message{ID: "word.language.target.selection"})
 	if runID == "" {
-		targetDesc = "全文档"
+		targetDesc = a.text(i18n.Message{ID: "word.language.target.document"})
 	}
-	prompt := fmt.Sprintf("请选择或输入要为%s设置的校对语言代码：", targetDesc)
-	a.modal.ShowInput("语言设置", prompt, "zh-CN", "例如: zh-CN (中文), en-US (英语), ja-JP (日语)", func(action string) {
+	a.modal.ShowInputMessage("word.language", i18n.Message{ID: "word.language.dialog.title"}, i18n.Message{ID: "word.language.dialog.body", Args: i18n.Args{"Target": targetDesc}}, "zh-CN", i18n.Message{ID: "word.language.dialog.hint"}, func(action string) {
 		a.modal.Hide()
 		var lang string
 		switch action {
@@ -80,19 +79,23 @@ func (a *App) showWordLanguageDialog() {
 		}
 		err := editor.SetLanguage(runID, lang)
 		if err != nil {
-			a.setStatus("设置语言失败：" + err.Error())
+			a.setWordCommandStatus(err)
 			return
 		}
-		a.setStatus(fmt.Sprintf("已成功将%s语言设置为 %s", targetDesc, lang))
+		messageID := "word.insert.language.status.applied.document"
+		if runID != "" {
+			messageID = "word.insert.language.status.applied.selection"
+		}
+		a.setStatusMessage(i18n.Message{ID: messageID, Args: i18n.Args{"Language": lang}}, feedbackSuccess, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "应用自定义"},
-		modalDialogActionSpec{ID: "zh-CN", Label: "简体中文"},
-		modalDialogActionSpec{ID: "en-US", Label: "英语 (美国)"},
-		modalDialogActionSpec{ID: "ja-JP", Label: "日语"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.language.action.custom"}},
+		modalDialogActionSpec{ID: "zh-CN", LabelRef: i18n.Message{ID: "locale.name.zh_cn"}},
+		modalDialogActionSpec{ID: "en-US", LabelRef: i18n.Message{ID: "locale.name.en_us"}},
+		modalDialogActionSpec{ID: "ja-JP", LabelRef: i18n.Message{ID: "word.language.locale.ja_jp"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -103,11 +106,11 @@ func (a *App) showWordBookmarkDialog() {
 	}
 	editor, ok := any(state.word).(document.WordBookmarkEditor)
 	if !ok {
-		a.setStatus("当前文档不支持插入书签")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_526b19"}, feedbackWarning, notificationToast)
 		return
 	}
 	runID := state.selectedWordRunID
-	a.modal.ShowInput("插入书签", "请输入书签名称（仅支持字母、数字与下划线）：", "Bookmark1", "例如 Bookmark_1", func(action string) {
+	a.modal.ShowInputMessage("word.insert.bookmark", i18n.Message{ID: "word.insert.bookmark.title"}, i18n.Message{ID: "word.insert.bookmark.body"}, "Bookmark1", i18n.Message{ID: "word.insert.bookmark.hint"}, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
@@ -118,20 +121,20 @@ func (a *App) showWordBookmarkDialog() {
 		}
 		err := editor.InsertBookmark(runID, name)
 		if err != nil {
-			a.setStatus("插入书签失败：" + err.Error())
+			a.setWordCommandStatus(err)
 			return
 		}
 		if state.word != nil {
 			state.setWordBlocks(state.word.WordBlocks())
 			a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 		}
-		a.setStatus(fmt.Sprintf("已成功插入书签 “%s”", name))
+		a.setStatusMessage(i18n.Message{ID: "word.insert.bookmark.status.inserted", Args: i18n.Args{"Name": name}}, feedbackSuccess, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "插入书签"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.insert.bookmark.action.insert"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -142,7 +145,7 @@ func (a *App) showWordHyperlinkDialog() {
 	}
 	editor, ok := any(state.word).(document.WordHyperlinkEditor)
 	if !ok {
-		a.setStatus("当前文档不支持插入超链接")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_c9db67"}, feedbackWarning, notificationToast)
 		return
 	}
 	runID := state.selectedWordRunID
@@ -152,19 +155,19 @@ func (a *App) showWordHyperlinkDialog() {
 		var ok bool
 		defaultText, ok = wordPageSelectedText(state)
 		if !ok {
-			a.setStatus("无法确定当前 Word 选区，请重新选择后插入超链接")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_identify_the_current_e11d47"}, feedbackWarning, notificationToast)
 			return
 		}
 	} else if run, ok := selectedWordRun(wordBlocksForState(state), runID); ok {
 		defaultText = run.Text
 	}
 	if defaultText == "" {
-		defaultText = "访问链接"
+		defaultText = a.text(i18n.Message{ID: "word.hyperlink.default_text"})
 	}
 
-	a.modal.ShowDualInput("插入超链接", "为当前位置设置超链接：",
-		"https://example.com", "链接地址 (例如 https://example.com 或 #书签名称)",
-		defaultText, "显示文本",
+	a.modal.ShowDualInputMessage("word.hyperlink", i18n.Message{ID: "word.hyperlink.dialog.title"}, i18n.Message{ID: "word.hyperlink.dialog.body"},
+		i18n.Message{ID: "word.hyperlink.dialog.url_hint"}, i18n.Message{ID: "word.hyperlink.dialog.text_hint"},
+		"https://example.com", defaultText,
 		func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
@@ -173,7 +176,7 @@ func (a *App) showWordHyperlinkDialog() {
 			urlVal := strings.TrimSpace(a.modal.Input.Text())
 			textVal := a.modal.SecondInput.Text()
 			if urlVal == "" {
-				a.setStatus("超链接地址不能为空")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_hyperlink_address_cannot_be_34921d"}, feedbackError, notificationToast)
 				return
 			}
 			if strings.TrimSpace(textVal) == "" {
@@ -183,7 +186,7 @@ func (a *App) showWordHyperlinkDialog() {
 			if hasSelection {
 				selectionEditor, supported := any(state.word).(document.WordTextSelectionHyperlinkEditor)
 				if !supported {
-					a.setStatus("当前文档暂不支持为文字选区插入超链接")
+					a.setStatusMessage(i18n.Message{ID: "word.status.inline.this_document_does_not_yet_229ca8"}, feedbackWarning, notificationToast)
 					return
 				}
 				err = selectionEditor.InsertHyperlinkForTextSelection(selectionStart.runID, selectionStart.runeOffset, selectionEnd.runID, selectionEnd.runeOffset, textVal, urlVal)
@@ -191,7 +194,7 @@ func (a *App) showWordHyperlinkDialog() {
 				err = editor.InsertHyperlink(runID, textVal, urlVal)
 			}
 			if err != nil {
-				a.setStatus("插入超链接失败：" + err.Error())
+				a.setWordCommandStatus(err)
 				return
 			}
 			if state.word != nil {
@@ -199,13 +202,13 @@ func (a *App) showWordHyperlinkDialog() {
 				state.setWordBlocks(state.word.WordBlocks())
 				a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 			}
-			a.setStatus("已成功插入超链接")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserted_a_hyperlink_508d90"}, feedbackSuccess, notificationToast)
 			if a.window != nil {
 				a.window.Invalidate()
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "插入"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.insert"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -216,34 +219,34 @@ func (a *App) showWordTextBoxDialog() {
 	}
 	editor, ok := any(state.word).(document.WordTextBoxEditor)
 	if !ok {
-		a.setStatus("当前文档不支持插入文本框")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_d8e3be"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.ShowInput("插入文本框", "请输入文本框引用文字：", "重要提示文本", "输入内容", func(action string) {
+	a.modal.ShowInputMessage("word.text_box", i18n.Message{ID: "word.text_box.dialog.title"}, i18n.Message{ID: "word.text_box.dialog.body"}, a.text(i18n.Message{ID: "word.text_box.default_text"}), i18n.Message{ID: "word.text_box.dialog.hint"}, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
 		}
 		text := strings.TrimSpace(a.modal.Input.Text())
 		if text == "" {
-			text = "文本框内容"
+			text = a.text(i18n.Message{ID: "word.text_box.default_text"})
 		}
 		err := editor.InsertTextBox("", text)
 		if err != nil {
-			a.setStatus("插入文本框失败：" + err.Error())
+			a.setWordCommandStatus(err)
 			return
 		}
 		if state.word != nil {
 			state.setWordBlocks(state.word.WordBlocks())
 			a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load())
 		}
-		a.setStatus("已成功插入文本框")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserted_a_text_box_e627aa"}, feedbackSuccess, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "插入文本框"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.text_box.action.insert"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -254,30 +257,30 @@ func (a *App) showWordHeaderDialog() {
 	}
 	editor, ok := any(state.word).(document.WordHeaderFooterEditor)
 	if !ok {
-		a.setStatus("当前文档不支持设置页眉")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_62f6b1"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.ShowInput("插入页眉", "请输入页眉文字：", "文档标题", "输入页眉内容", func(action string) {
+	a.modal.ShowInputMessage("word.header", i18n.Message{ID: "word.header.dialog.title"}, i18n.Message{ID: "word.header.dialog.body"}, a.text(i18n.Message{ID: "word.header.default_text"}), i18n.Message{ID: "word.header.dialog.hint"}, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
 		}
 		text := strings.TrimSpace(a.modal.Input.Text())
 		if text == "" {
-			text = "页眉"
+			text = a.text(i18n.Message{ID: "word.header.default_text"})
 		}
 		err := editor.SetHeader(text)
 		if err != nil {
-			a.setStatus("设置页眉失败：" + err.Error())
+			a.setWordCommandStatus(err)
 			return
 		}
-		a.setStatus("已成功设置页眉")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.header_set_e5de44"}, feedbackSuccess, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "设置页眉"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.header.action.set"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -288,30 +291,30 @@ func (a *App) showWordFooterDialog() {
 	}
 	editor, ok := any(state.word).(document.WordHeaderFooterEditor)
 	if !ok {
-		a.setStatus("当前文档不支持设置页脚")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_96cf67"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.ShowInput("插入页脚", "请输入页脚文字：", "内部机密 · 请勿外传", "输入页脚内容", func(action string) {
+	a.modal.ShowInputMessage("word.footer", i18n.Message{ID: "word.footer.dialog.title"}, i18n.Message{ID: "word.footer.dialog.body"}, a.text(i18n.Message{ID: "word.footer.default_text"}), i18n.Message{ID: "word.footer.dialog.hint"}, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
 		}
 		text := strings.TrimSpace(a.modal.Input.Text())
 		if text == "" {
-			text = "页脚"
+			text = a.text(i18n.Message{ID: "word.footer.default_text"})
 		}
 		err := editor.SetFooter(text)
 		if err != nil {
-			a.setStatus("设置页脚失败：" + err.Error())
+			a.setWordCommandStatus(err)
 			return
 		}
-		a.setStatus("已成功设置页脚")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.footer_set_57199c"}, feedbackSuccess, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "设置页脚"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.footer.action.set"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -322,10 +325,10 @@ func (a *App) showWordPageNumberDialog() {
 	}
 	editor, ok := any(state.word).(document.WordHeaderFooterEditor)
 	if !ok {
-		a.setStatus("当前文档不支持插入页码")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_e114ba"}, feedbackWarning, notificationToast)
 		return
 	}
-	a.modal.ShowInput("插入页码", "选择页码对齐方式：", "center", "居中(center), 靠右(right), 靠左(left)", func(action string) {
+	a.modal.ShowInputMessage("word.page_number", i18n.Message{ID: "word.page_number.dialog.title"}, i18n.Message{ID: "word.page_number.dialog.body"}, "center", i18n.Message{ID: "word.page_number.dialog.hint"}, func(action string) {
 		a.modal.Hide()
 		var align string
 		switch action {
@@ -345,17 +348,17 @@ func (a *App) showWordPageNumberDialog() {
 		}
 		err := editor.SetPageNumber(align)
 		if err != nil {
-			a.setStatus("插入页码失败：" + err.Error())
+			a.setWordCommandStatus(err)
 			return
 		}
-		a.setStatus("已成功在页脚插入页码")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserted_page_numbers_in_the_7fbc35"}, feedbackSuccess, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 	},
-		modalDialogActionSpec{ID: "center", Label: "居中对齐"},
-		modalDialogActionSpec{ID: "right", Label: "靠右对齐"},
-		modalDialogActionSpec{ID: "left", Label: "靠左对齐"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "center", LabelRef: i18n.Message{ID: "word.page_number.align.center"}},
+		modalDialogActionSpec{ID: "right", LabelRef: i18n.Message{ID: "word.page_number.align.right"}},
+		modalDialogActionSpec{ID: "left", LabelRef: i18n.Message{ID: "word.page_number.align.left"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }

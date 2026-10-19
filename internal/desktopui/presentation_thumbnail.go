@@ -83,7 +83,7 @@ func (a *App) drawPresentationThumbnailElement(gtx layout.Context, elem document
 
 	if len(elem.Paragraphs) > 0 || presentationElementHasPlaceholderPrompt(elem) {
 		displayElem := elem
-		displayElem.Paragraphs = presentationElementDisplayParagraphs(elem)
+		displayElem.Paragraphs = a.presentationElementDisplayParagraphs(elem)
 		a.drawPresentationThumbnailText(gtx, displayElem, shapeRect, scale)
 	}
 }

@@ -353,6 +353,17 @@ var wordImageResizeHandles = [8]wordImageResizeHandle{
 	{name: "左", x: -1},
 }
 
+func wordImageResizeHandleMessageID(index int) string {
+	ids := [...]string{
+		"word.image.handle.top_left", "word.image.handle.top", "word.image.handle.top_right", "word.image.handle.right",
+		"word.image.handle.bottom_right", "word.image.handle.bottom", "word.image.handle.bottom_left", "word.image.handle.left",
+	}
+	if index < 0 || index >= len(ids) {
+		return "word.image.handle.right"
+	}
+	return ids[index]
+}
+
 func wordImageResizeWidthForHandle(widthEMU int64, frame image.Point, handleIndex int, drag f32.Point) int64 {
 	if widthEMU <= 0 || frame.X <= 0 || frame.Y <= 0 || handleIndex < 0 || handleIndex >= len(wordImageResizeHandles) {
 		return widthEMU

@@ -14,6 +14,7 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -122,7 +123,7 @@ func (a *App) updateHomeDocumentDrag(gtx layout.Context, path string, origin ima
 				target := homeFolderDropTargetAt(point, a.homeFolderDropTargets)
 				if target != "" {
 					if err := a.assignHomeDocumentToFolder(path, target); err != nil {
-						a.setStatus("归类文件失败：" + err.Error())
+						a.setStatusErrorMessage(i18n.Message{ID: "home.folder.error.categorize_failed"}, err, notificationToast)
 					}
 				}
 			}
@@ -211,7 +212,7 @@ func (a *App) assignHomeDocumentToFolder(path, folderID string) error {
 		return err
 	}
 	if targetName != "" {
-		a.setStatus("已归类到「" + targetName + "」")
+		a.setStatusMessage(i18n.Message{ID: "home.folder.status.categorized", Args: i18n.Args{"Name": targetName}}, feedbackSuccess, notificationToast)
 	}
 	return nil
 }

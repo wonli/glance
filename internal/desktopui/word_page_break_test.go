@@ -56,8 +56,8 @@ func TestWordInsertPageBreakToolbarCommitsDraftAndReturnsCaret(t *testing.T) {
 	if state.formatRunning.Load() || state.wordPageBreakIntent != nil {
 		t.Fatal("timed out waiting for the asynchronous page-break command")
 	}
-	if strings.Contains(app.status, "失败") {
-		t.Fatalf("page-break command failed: %s", app.status)
+	if strings.Contains(app.statusText(), "失败") {
+		t.Fatalf("page-break command failed: %s", app.statusText())
 	}
 	paragraph = state.wordBlocks[0].Paragraph
 	if len(paragraph.Inlines) != 3 || paragraph.Inlines[0].Text == nil || paragraph.Inlines[0].Text.Text != "A草" || paragraph.Inlines[1].PageBreak == nil || paragraph.Inlines[2].Text == nil || paragraph.Inlines[2].Text.Text != "稿B" {
@@ -69,8 +69,8 @@ func TestWordInsertPageBreakToolbarCommitsDraftAndReturnsCaret(t *testing.T) {
 	if start, end := state.wordRunEditors[state.selectedWordRunID].Selection(); start != 0 || end != 0 {
 		t.Fatalf("caret after page break = %d:%d; want 0:0", start, end)
 	}
-	if !strings.Contains(app.status, "已插入分页符") {
-		t.Fatalf("page-break status=%q", app.status)
+	if !strings.Contains(app.statusText(), "已插入分页符") {
+		t.Fatalf("page-break status=%q", app.statusText())
 	}
 }
 
@@ -148,8 +148,8 @@ func TestWordInsertBreaksDialogAndColumnBreak(t *testing.T) {
 	}
 
 	app.showWordBreaksDialog()
-	if !app.modal.Visible || app.modal.Title != "插入分隔符" {
-		t.Fatalf("expected modal dialog for breaks, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入分隔符" {
+		t.Fatalf("expected modal dialog for breaks, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 
 	app.modal.OnAction("column")
@@ -166,8 +166,8 @@ func TestWordInsertBreaksDialogAndColumnBreak(t *testing.T) {
 	if len(paragraph.Inlines) != 3 || paragraph.Inlines[1].PageBreak == nil || paragraph.Inlines[1].PageBreak.Type != document.WordBreakColumn {
 		t.Fatalf("expected column break inline in paragraph, got %#v", paragraph.Inlines)
 	}
-	if !strings.Contains(app.status, "已插入分栏符") {
-		t.Fatalf("expected status '已插入分栏符', got %q", app.status)
+	if !strings.Contains(app.statusText(), "已插入分栏符") {
+		t.Fatalf("expected status '已插入分栏符', got %q", app.statusText())
 	}
 }
 
@@ -230,7 +230,7 @@ func TestWordInsertBlankPageToolbar(t *testing.T) {
 	if paragraph.Inlines[2].Text == nil || state.selectedWordRunID != paragraph.Inlines[2].Text.ID {
 		t.Fatalf("expected caret on middle run %v, got %q", paragraph.Inlines[2], state.selectedWordRunID)
 	}
-	if !strings.Contains(app.status, "已插入空白页") {
-		t.Fatalf("expected status '已插入空白页', got %q", app.status)
+	if !strings.Contains(app.statusText(), "已插入空白页") {
+		t.Fatalf("expected status '已插入空白页', got %q", app.statusText())
 	}
 }

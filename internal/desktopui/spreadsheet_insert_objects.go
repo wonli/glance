@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"glance/internal/document"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -15,7 +16,7 @@ func (a *App) showSpreadsheetInsertShapeDialog() {
 	}
 	_, ok := state.book.(document.SpreadsheetShapeEditor)
 	if !ok {
-		a.setStatus("当前工作簿不支持插入形状")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_549d00"}, feedbackWarning, notificationToast)
 		return
 	}
 	col := state.selection.Active.Column + 1
@@ -23,7 +24,7 @@ func (a *App) showSpreadsheetInsertShapeDialog() {
 	cellName := xlsx.CellName(col, row)
 	sheet := state.sheet
 
-	a.modal.ShowInput("插入形状", fmt.Sprintf("在单元格 %s 处插入形状：", cellName), "roundRect", "类型: rect(矩形), roundRect(圆角矩形), ellipse(椭圆), rightArrow(箭头), star5(五角星)", func(action string) {
+	a.modal.ShowMessage("spreadsheet.shape.insert", i18n.Message{ID: "spreadsheet.shape.dialog.title"}, i18n.Message{ID: "spreadsheet.shape.dialog.body", Args: i18n.Args{"Cell": cellName}}, func(action string) {
 		a.modal.Hide()
 		var shapeType string
 		switch action {
@@ -50,12 +51,12 @@ func (a *App) showSpreadsheetInsertShapeDialog() {
 			Sheet: sheet, Cell: cellName, Type: shapeType, Width: 180, Height: 90,
 		})
 	},
-		modalDialogActionSpec{ID: "roundRect", Label: "圆角矩形"},
-		modalDialogActionSpec{ID: "rect", Label: "标准矩形"},
-		modalDialogActionSpec{ID: "ellipse", Label: "椭圆"},
-		modalDialogActionSpec{ID: "rightArrow", Label: "箭头"},
-		modalDialogActionSpec{ID: "star5", Label: "五角星"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "roundRect", LabelRef: i18n.Message{ID: "spreadsheet.shape.type.round_rectangle"}},
+		modalDialogActionSpec{ID: "rect", LabelRef: i18n.Message{ID: "spreadsheet.shape.type.rectangle"}},
+		modalDialogActionSpec{ID: "ellipse", LabelRef: i18n.Message{ID: "spreadsheet.shape.type.ellipse"}},
+		modalDialogActionSpec{ID: "rightArrow", LabelRef: i18n.Message{ID: "spreadsheet.shape.type.arrow"}},
+		modalDialogActionSpec{ID: "star5", LabelRef: i18n.Message{ID: "spreadsheet.shape.type.star"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -66,7 +67,7 @@ func (a *App) showSpreadsheetInsertTextBoxDialog() {
 	}
 	_, ok := state.book.(document.SpreadsheetShapeEditor)
 	if !ok {
-		a.setStatus("当前工作簿不支持插入文本框")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_2a0f8b"}, feedbackWarning, notificationToast)
 		return
 	}
 	col := state.selection.Active.Column + 1
@@ -74,22 +75,22 @@ func (a *App) showSpreadsheetInsertTextBoxDialog() {
 	cellName := xlsx.CellName(col, row)
 	sheet := state.sheet
 
-	a.modal.ShowInput("插入文本框", fmt.Sprintf("在单元格 %s 处插入文本框：", cellName), "文本框内容", "输入要在文本框中显示的文字", func(action string) {
+	a.modal.ShowInputMessage("spreadsheet.text_box", i18n.Message{ID: "spreadsheet.text_box.dialog.title"}, i18n.Message{ID: "spreadsheet.text_box.dialog.body", Args: i18n.Args{"Cell": cellName}}, a.text(i18n.Message{ID: "spreadsheet.text_box.default_text"}), i18n.Message{ID: "spreadsheet.text_box.dialog.hint"}, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
 		}
 		text := strings.TrimSpace(a.modal.Input.Text())
 		if text == "" {
-			text = "文本框内容"
+			text = a.text(i18n.Message{ID: "spreadsheet.text_box.default_text"})
 		}
 
 		a.runSpreadsheetShapeCommand(state, "插入文本框", document.SpreadsheetShapeSpec{
 			Sheet: sheet, Cell: cellName, Type: "rect", Width: 200, Height: 80, Text: text,
 		})
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "插入文本框"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "spreadsheet.text_box.action.insert"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -136,7 +137,7 @@ func (a *App) runSpreadsheetShapeCommand(state *documentSessionState, operation 
 		}
 		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		if err == nil {
-			a.setStatus("已成功" + operation)
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inserted_operation", Args: i18n.Args{"Operation": a.localizedSpreadsheetToolbarText(operation)}}, feedbackSuccess, notificationToast)
 		}
 		if a.formatResults != nil {
 			select {
@@ -162,7 +163,7 @@ func (a *App) showSpreadsheetInsertChartDialog(kind document.SpreadsheetChartKin
 	}
 	editor, ok := state.book.(document.SpreadsheetChartEditor)
 	if !ok {
-		a.setStatus("当前工作簿不支持插入图表")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_9477c0"}, feedbackWarning, notificationToast)
 		return
 	}
 	bounds := state.selection.Bounds()
@@ -174,23 +175,24 @@ func (a *App) showSpreadsheetInsertChartDialog(kind document.SpreadsheetChartKin
 	chartRow := bounds.StartRow
 	cellName := xlsx.CellName(chartCol, chartRow)
 
-	var defaultTitle, chartName string
+	var defaultTitle, chartName i18n.Message
 	switch kind {
 	case document.SpreadsheetChartLine:
-		defaultTitle, chartName = "趋势折线图", "折线图"
+		defaultTitle, chartName = i18n.Message{ID: "spreadsheet.chart.default_title.line"}, i18n.Message{ID: "spreadsheet.chart.type.line"}
 	case document.SpreadsheetChartPie:
-		defaultTitle, chartName = "占比饼图", "饼图"
+		defaultTitle, chartName = i18n.Message{ID: "spreadsheet.chart.default_title.pie"}, i18n.Message{ID: "spreadsheet.chart.type.pie"}
 	default:
-		defaultTitle, chartName = "数据柱状图", "柱状图"
+		defaultTitle, chartName = i18n.Message{ID: "spreadsheet.chart.default_title.column"}, i18n.Message{ID: "spreadsheet.chart.type.column"}
 	}
 
 	rangeStr := fmt.Sprintf("%s%d:%s%d",
 		columnName(bounds.StartColumn), bounds.StartRow,
 		columnName(bounds.EndColumn), bounds.EndRow)
+	chartNameText, defaultTitleText := a.text(chartName), a.text(defaultTitle)
 
-	a.modal.ShowDualInput("插入"+chartName, fmt.Sprintf("基于选区创建并在 %s 处插入%s：", cellName, chartName),
-		defaultTitle, "图表标题",
-		rangeStr, "数据范围 (例如 A1:B5)",
+	a.modal.ShowDualInputMessage("spreadsheet.chart.insert", i18n.Message{ID: "spreadsheet.chart.dialog.title", Args: i18n.Args{"Chart": a.text(chartName)}}, i18n.Message{ID: "spreadsheet.chart.dialog.body", Args: i18n.Args{"Cell": cellName, "Chart": a.text(chartName)}},
+		i18n.Message{ID: "spreadsheet.chart.dialog.title_hint"}, i18n.Message{ID: "spreadsheet.chart.dialog.range_hint"},
+		defaultTitleText, rangeStr,
 		func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
@@ -198,7 +200,7 @@ func (a *App) showSpreadsheetInsertChartDialog(kind document.SpreadsheetChartKin
 			}
 			title := strings.TrimSpace(a.modal.Input.Text())
 			if title == "" {
-				title = defaultTitle
+				title = defaultTitleText
 			}
 
 			generation, window := a.documentGeneration, state.virtualGrid
@@ -234,11 +236,11 @@ func (a *App) showSpreadsheetInsertChartDialog(kind document.SpreadsheetChartKin
 				}
 				a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 				if err == nil {
-					a.setStatus("已成功插入" + chartName)
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inserted_chart", Args: i18n.Args{"Chart": chartNameText}}, feedbackSuccess, notificationToast)
 				}
 				if a.formatResults != nil {
 					select {
-					case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "插入" + chartName, applied: changed}:
+					case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: a.text(i18n.Message{ID: "spreadsheet.status.operation.insert_chart", Args: i18n.Args{"Chart": chartNameText}}), applied: changed}:
 					case <-a.shutdown:
 					}
 				}

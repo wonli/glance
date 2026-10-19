@@ -20,6 +20,7 @@ import (
 	"glance/internal/format/pdfdoc"
 	"glance/internal/format/pptx"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 )
 
 const (
@@ -36,7 +37,7 @@ func (a *App) layoutCreateMenuPopover(gtx layout.Context) layout.Dimensions {
 			return a.createMenuScrim.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				size := gtx.Constraints.Max
 				semantic.Button.Add(gtx.Ops)
-				semantic.DescriptionOp("关闭新建菜单").Add(gtx.Ops)
+				semantic.DescriptionOp(a.text(i18n.Message{ID: "home.create.close_menu"})).Add(gtx.Ops)
 				return layout.Dimensions{Size: size}
 			})
 		}),
@@ -227,11 +228,11 @@ func (a *App) layoutCreateMenuHeader(gtx layout.Context) layout.Dimensions {
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return homeLabelStyle(a.theme, "新建或打开", 16, color.NRGBA{R: 31, G: 37, B: 45, A: 255}, font.SemiBold).Layout(gtx)
+					return homeLabelStyle(a.theme, a.text(i18n.Message{ID: "home.create.title"}), 16, color.NRGBA{R: 31, G: 37, B: 45, A: 255}, font.SemiBold).Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return homeLabelStyle(a.theme, "选择一种文件类型开始工作", 11, color.NRGBA{R: 122, G: 131, B: 142, A: 255}, font.Normal).Layout(gtx)
+						return homeLabelStyle(a.theme, a.text(i18n.Message{ID: "home.create.subtitle"}), 11, color.NRGBA{R: 122, G: 131, B: 142, A: 255}, font.Normal).Layout(gtx)
 					})
 				}),
 			)
@@ -266,6 +267,7 @@ type createMenuFormat struct {
 	click     *widget.Clickable
 	id        string
 	label     string
+	labelRef  i18n.Message
 	extension string
 	icon      string
 	accent    color.NRGBA
@@ -275,12 +277,12 @@ type createMenuFormat struct {
 // File-type glyphs are SVG exports of the matching icon nodes in Pen frame XGCJN.
 func (a *App) createMenuFormats() []createMenuFormat {
 	return []createMenuFormat{
-		{click: &a.actionNewDOCX, id: "docx", label: "文档", extension: "DOCX", icon: "docx", accent: color.NRGBA{R: 52, G: 120, B: 209, A: 255}, enabled: true},
-		{click: &a.actionNewXLSX, id: "xlsx", label: "表格", extension: "XLSX", icon: "xlsx", accent: color.NRGBA{R: 79, G: 166, B: 107, A: 255}, enabled: true},
-		{click: &a.actionNewPPTX, id: "pptx", label: "演示文稿", extension: "PPTX", icon: "pptx", accent: color.NRGBA{R: 228, G: 130, B: 60, A: 255}, enabled: true},
-		{click: &a.actionNewMarkdown, enabled: true, id: "markdown", label: "Markdown", extension: "MD", icon: "markdown", accent: color.NRGBA{R: 138, G: 90, B: 194, A: 255}},
-		{click: &a.actionNewJSON, id: "json", label: "JSON 数据", extension: "JSON", icon: "json", accent: color.NRGBA{R: 43, G: 157, B: 152, A: 255}, enabled: true},
-		{click: &a.actionNewPDF, id: "pdf", label: "PDF 文档", extension: "PDF", icon: "pdf", accent: color.NRGBA{R: 240, G: 68, B: 69, A: 255}, enabled: true},
+		{click: &a.actionNewDOCX, id: "docx", label: "文档", labelRef: i18n.Message{ID: "home.create.format.docx"}, extension: "DOCX", icon: "docx", accent: color.NRGBA{R: 52, G: 120, B: 209, A: 255}, enabled: true},
+		{click: &a.actionNewXLSX, id: "xlsx", label: "表格", labelRef: i18n.Message{ID: "home.create.format.xlsx"}, extension: "XLSX", icon: "xlsx", accent: color.NRGBA{R: 79, G: 166, B: 107, A: 255}, enabled: true},
+		{click: &a.actionNewPPTX, id: "pptx", label: "演示文稿", labelRef: i18n.Message{ID: "home.create.format.pptx"}, extension: "PPTX", icon: "pptx", accent: color.NRGBA{R: 228, G: 130, B: 60, A: 255}, enabled: true},
+		{click: &a.actionNewMarkdown, enabled: true, id: "markdown", label: "Markdown", labelRef: i18n.Message{ID: "home.create.format.markdown"}, extension: "MD", icon: "markdown", accent: color.NRGBA{R: 138, G: 90, B: 194, A: 255}},
+		{click: &a.actionNewJSON, id: "json", label: "JSON 数据", labelRef: i18n.Message{ID: "home.create.format.json"}, extension: "JSON", icon: "json", accent: color.NRGBA{R: 43, G: 157, B: 152, A: 255}, enabled: true},
+		{click: &a.actionNewPDF, id: "pdf", label: "PDF 文档", labelRef: i18n.Message{ID: "home.create.format.pdf"}, extension: "PDF", icon: "pdf", accent: color.NRGBA{R: 240, G: 68, B: 69, A: 255}, enabled: true},
 	}
 }
 
@@ -319,6 +321,7 @@ func (a *App) layoutCreateMenuFormatRow(gtx layout.Context, left, right createMe
 }
 
 func (a *App) layoutCreateMenuFormatCard(gtx layout.Context, item createMenuFormat) layout.Dimensions {
+	item.label = a.messageText(item.labelRef, item.label)
 	height := gtx.Dp(unit.Dp(68))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	semantic.Button.Add(gtx.Ops)
@@ -436,7 +439,7 @@ func (a *App) createNewMenuDocument(kind string) {
 	case "docx":
 		word, err := docx.NewBlank()
 		if err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 		} else {
 			_ = a.installDocument(loadedDocument{word: word})
 		}
@@ -446,7 +449,7 @@ func (a *App) createNewMenuDocument(kind string) {
 	case "pptx":
 		doc, err := pptx.NewBlank()
 		if err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 		} else {
 			_ = a.installDocument(loadedDocument{pptxDoc: doc})
 		}
@@ -457,7 +460,7 @@ func (a *App) createNewMenuDocument(kind string) {
 	case "pdf":
 		doc, err := pdfdoc.NewBlank()
 		if err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, err, notificationToast)
 		} else {
 			_ = a.installDocument(loadedDocument{pdfDoc: doc})
 		}
@@ -474,6 +477,7 @@ func (a *App) layoutCreateMenuDivider(gtx layout.Context) layout.Dimensions {
 type createActionItem struct {
 	click     *widget.Clickable
 	label     string
+	labelRef  i18n.Message
 	icon      string
 	separator bool
 }

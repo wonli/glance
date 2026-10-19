@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 type spreadsheetPivotCreateArguments struct {
@@ -18,7 +19,7 @@ func (a *App) showSpreadsheetPivotTableDialog() {
 	}
 	editor, ok := state.book.(document.SpreadsheetPivotTableEditor)
 	if !ok {
-		a.setStatus("当前工作簿不支持插入数据透视表")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_57b4f1"}, feedbackWarning, notificationToast)
 		return
 	}
 	bounds := state.selection.Bounds()
@@ -30,7 +31,7 @@ func (a *App) showSpreadsheetPivotTableDialog() {
 		columnName(bounds.StartColumn), bounds.StartRow,
 		columnName(bounds.EndColumn), bounds.EndRow)
 
-	a.modal.Show("插入数据透视表", fmt.Sprintf("基于选区创建数据透视表：\n数据源范围：%s\n\n将在工作表右侧生成透视表报表。若标题行有空白单元格，会自动补上“字段N”名称。是否继续？", rangeStr), func(action string) {
+	a.modal.ShowMessage("spreadsheet.pivot_table", i18n.Message{ID: "spreadsheet.pivot_table.dialog.title"}, i18n.Message{ID: "spreadsheet.pivot_table.dialog.body", Args: i18n.Args{"Range": rangeStr}}, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
@@ -65,7 +66,7 @@ func (a *App) showSpreadsheetPivotTableDialog() {
 			}
 			a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 			if err == nil {
-				a.setStatus("已成功插入数据透视表")
+				a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.pivot_table_inserted_584aa5"}, feedbackSuccess, notificationToast)
 			}
 			if a.formatResults != nil {
 				select {
@@ -75,7 +76,7 @@ func (a *App) showSpreadsheetPivotTableDialog() {
 			}
 		})
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "创建透视表"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "spreadsheet.pivot_table.action.create"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }

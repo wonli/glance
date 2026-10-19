@@ -1,6 +1,8 @@
 package desktopui
 
 import (
+	"strings"
+
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -24,17 +26,18 @@ func markdownToolbarIcon(action ribbonAction, enabled bool) (image.Image, bool) 
 }
 func (a *App) layoutMarkdownRibbon(gtx layout.Context) layout.Dimensions {
 	v := a.ensureMarkdownView()
-	gtx = jsonFixedHeight(gtx, 54)
+	gtx = jsonFixedHeight(gtx, documentRibbonHeightDP)
 	return jsonPanel(gtx, contentSurface, false, true, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Left: 8, Right: 12, Top: 3, Bottom: 3}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(a.layoutAgentRibbonEntry),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return v.toolbar.Layout(gtx, len(markdownToolbarActions), func(gtx layout.Context, index int) layout.Dimensions {
-						action := markdownToolbarActions[index]
+					actions := a.localizedMarkdownToolbarActions()
+					return v.toolbar.Layout(gtx, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
+						action := actions[index]
 						enabled := !a.isSaving() && !v.exportPending && !v.editPending
 						icon, _ := markdownToolbarIcon(action, enabled)
-						return layoutToolbarActionItem(gtx, action, index, markdownToolbarActions, func(gtx layout.Context) layout.Dimensions {
+						return layoutToolbarActionItem(gtx, action, index, actions, func(gtx layout.Context) layout.Dimensions {
 							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
 							return toolbarIconButton(gtx, a.theme, v.button(action.id), icon, 18, action.label, action.label, enabled, false, contentSurface)
 						})
@@ -47,6 +50,15 @@ func (a *App) layoutMarkdownRibbon(gtx layout.Context) layout.Dimensions {
 		})
 	})
 }
+
+func (a *App) localizedMarkdownToolbarActions() []ribbonAction {
+	localized := append([]ribbonAction(nil), markdownToolbarActions...)
+	for index := range localized {
+		localized[index].label = a.textID("markdown.ribbon.action." + strings.ReplaceAll(localized[index].id, "-", "_"))
+	}
+	return localized
+}
+
 func (a *App) layoutMarkdownModes(gtx layout.Context) layout.Dimensions {
 	v := a.ensureMarkdownView()
 	width := unit.Dp(202)
@@ -57,7 +69,7 @@ func (a *App) layoutMarkdownModes(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, chromeSurface, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(6)).Op(gtx.Ops))
 	return layout.UniformInset(3).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		children := []layout.FlexChild{}
-		for i, it := range []struct{ id, label string }{{"mode-edit", "编辑"}, {"mode-preview", "预览"}, {"mode-split", "分屏"}} {
+		for i, it := range []struct{ id, message string }{{"mode-edit", "markdown.ribbon.mode.edit"}, {"mode-preview", "markdown.ribbon.mode.preview"}, {"mode-split", "markdown.ribbon.mode.split"}} {
 			i, it := i, it
 			children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return v.button(it.id).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -65,7 +77,7 @@ func (a *App) layoutMarkdownModes(gtx layout.Context) layout.Dimensions {
 						paint.FillShape(gtx.Ops, contentSurface, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(4)).Op(gtx.Ops))
 					}
 					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return jsonLabel(gtx, a, it.label, 11, jsonBlue, i == v.mode, false)
+						return jsonLabel(gtx, a, a.textID(it.message), 11, jsonBlue, i == v.mode, false)
 					})
 				})
 			}))

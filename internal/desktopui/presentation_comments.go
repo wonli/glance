@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"strings"
 
 	"glance/internal/application"
@@ -19,7 +20,7 @@ type presentationCommentAddArguments struct {
 func (a *App) showPresentationNewCommentDialog(view *presentationViewState) {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("当前演示文稿的应用命令运行时不可用")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_application_command_runtime_is_unavail_cb81d9"}, feedbackWarning, notificationToast)
 		return
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
@@ -30,7 +31,7 @@ func (a *App) showPresentationNewCommentDialog(view *presentationViewState) {
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("请先选择一张幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.select_a_slide_first_ddb108"}, feedbackWarning, notificationSuppressed)
 		return
 	}
 	xPT, yPT := 24.0, 24.0
@@ -42,11 +43,12 @@ func (a *App) showPresentationNewCommentDialog(view *presentationViewState) {
 		}
 	}
 	expectedRevision := state.wordRevisionAtomic.Load()
-	a.modal.ShowInput(
-		"新建批注",
-		fmt.Sprintf("批注将添加到第 %d 张幻灯片（坐标 %.1f, %.1f pt）。", view.activeSlide+1, xPT, yPT),
+	a.modal.ShowInputMessage(
+		"presentation.comments.add",
+		i18n.Message{ID: "presentation.comments.add.title"},
+		i18n.Message{ID: "presentation.comments.add.body", Args: i18n.Args{"Slide": view.activeSlide + 1, "X": fmt.Sprintf("%.1f", xPT), "Y": fmt.Sprintf("%.1f", yPT)}},
 		"",
-		"输入批注内容",
+		i18n.Message{ID: "presentation.comments.add.hint"},
 		func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
@@ -54,12 +56,12 @@ func (a *App) showPresentationNewCommentDialog(view *presentationViewState) {
 			}
 			text := strings.TrimSpace(a.modal.Input.Text())
 			if text == "" {
-				a.setStatus("批注内容不能为空")
+				a.setStatusMessage(i18n.Message{ID: "word.comment.error.empty"}, feedbackError, notificationToast)
 				return
 			}
 			a.startPresentationCommentMutation(view, "presentation.comment.add", presentationCommentAddArguments{SlideId: slide.ID, XPt: xPT, YPt: yPT, Text: text}, expectedRevision, "add", "")
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "添加批注"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "presentation.comments.add.action"}},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
 }
@@ -80,12 +82,12 @@ func (a *App) startPresentationDeleteComment(view *presentationViewState) bool {
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("请先选择一张幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.select_a_slide_first_ddb108"}, feedbackWarning, notificationSuppressed)
 		return true
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true
@@ -131,7 +133,7 @@ func (a *App) startPresentationDeleteComment(view *presentationViewState) bool {
 			window.Invalidate()
 		}
 	})
-	a.setStatus("正在读取当前幻灯片批注…")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.reading_comments_on_the_current_slide_534fab"}, feedbackInfo, notificationSuppressed)
 	return true
 }
 
@@ -155,11 +157,12 @@ func (a *App) showPresentationDeleteCommentPrompt(view *presentationViewState, c
 	if total == 1 && len(comments) == 1 {
 		initial = comments[0].ID
 	}
-	a.modal.ShowInput(
-		"删除批注",
-		"输入要删除的批注 ID："+listing.String(),
+	a.modal.ShowInputMessage(
+		"presentation.comments.delete",
+		i18n.Message{ID: "presentation.comments.delete.title"},
+		i18n.Message{ID: "presentation.comments.delete.body", Args: i18n.Args{"List": listing.String()}},
 		initial,
-		"批注 ID",
+		i18n.Message{ID: "presentation.comments.delete.hint"},
 		func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
@@ -174,12 +177,12 @@ func (a *App) showPresentationDeleteCommentPrompt(view *presentationViewState, c
 				}
 			}
 			if selected == nil {
-				a.setStatus("批注 ID 不在当前列表中，请重新打开删除批注")
+				a.setStatusMessage(i18n.Message{ID: "word.comment.error.not_found"}, feedbackInfo, notificationToast)
 				return
 			}
 			a.startPresentationCommentMutation(view, "presentation.comment.delete", presentationCommentDeleteArguments{SlideId: selected.SlideID, CommentId: selected.ID}, expectedRevision, "delete", selected.ID)
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "删除"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.delete"}},
 		modalDialogActionSpec{ID: "cancel", Label: "取消"},
 	)
 }
@@ -187,7 +190,7 @@ func (a *App) showPresentationDeleteCommentPrompt(view *presentationViewState, c
 func (a *App) startPresentationCommentMutation(view *presentationViewState, commandID string, arguments any, expectedRevision uint64, action, commentID string) {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || state.formatRunning.Load() || a.isSaving() || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("当前演示文稿无法执行批注操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.comments_are_unavailable_for_the_current_p_850c72"}, feedbackWarning, notificationToast)
 		return
 	}
 	if view.commandPending {
@@ -195,12 +198,12 @@ func (a *App) startPresentationCommentMutation(view *presentationViewState, comm
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return
 	}
 	if token.revision != expectedRevision {
 		state.finishOperation(token)
-		a.setStatus("文档已变化，请重新选择批注操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_document_changed_select_the_comment_op_6dd648"}, feedbackInfo, notificationToast)
 		return
 	}
 	view.commandPending = true
@@ -237,7 +240,7 @@ func (a *App) startPresentationCommentMutation(view *presentationViewState, comm
 			window.Invalidate()
 		}
 	})
-	a.setStatus("正在更新演示文稿批注…")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.updating_presentation_comments_3ff948"}, feedbackInfo, notificationSuppressed)
 }
 
 func truncatePresentationCommentPreview(value string, maxRunes int) string {

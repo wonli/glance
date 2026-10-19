@@ -20,6 +20,7 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"glance/internal/agent"
+	"glance/internal/i18n"
 )
 
 func collectSemanticLabels(router *input.Router) []string {
@@ -142,14 +143,14 @@ func TestAgentSidebarProcessShowsLiveProgressAndSeparateFailureOrAuthReminders(t
 	a.agentUI.chatEvents <- agent.AgentEvent{ConversationID: "conv-progress", Type: agent.EventReasoningDelta, Reasoning: "正在核对工作表结构"}
 	a.processAgentChatEvents()
 	joined := strings.Join(frame(), "\n")
-	if !strings.Contains(joined, "处理过程 · 正在分析…") || !strings.Contains(joined, "正在核对工作表结构") {
+	if !strings.Contains(joined, a.textID("agent.process.analyzing")) || !strings.Contains(joined, "正在核对工作表结构") {
 		t.Fatalf("in-progress reasoning did not display current progress:\n%s", joined)
 	}
 
 	a.agentUI.chatEvents <- agent.AgentEvent{ConversationID: "conv-progress", Type: agent.EventToolStarted, ToolName: "workbook.audit"}
 	a.processAgentChatEvents()
 	joined = strings.Join(frame(), "\n")
-	if !strings.Contains(joined, "处理过程 · 正在执行 检查工作簿") {
+	if !strings.Contains(joined, a.textArgs("agent.process.running", i18n.Args{"Action": a.textID("agent.tool.name.workbook_audit")})) {
 		t.Fatalf("in-progress tool did not display current tool progress:\n%s", joined)
 	}
 	if strings.Contains(joined, "正在核对工作表结构") {
@@ -341,12 +342,12 @@ func TestAgentSidebarTypedContinueUsesResume(t *testing.T) {
 	a := New(nil, "")
 	a.agentUI.conversationInterrupted = true
 	a.agentUI.conversationID = "interrupted-test"
-	a.agentUI.chatInput.SetText("继续")
+	a.agentUI.chatInput.SetText(a.textID("common.action.continue"))
 	a.sendAgentChatMessage()
 	if a.agentUI.chatInput.Text() != "" || len(a.agentUI.chatLines) != 0 {
 		t.Fatal("continue was kept as draft or sent as duplicate user turn")
 	}
-	if a.agentUI.chatStatus != "请先配置可用模型，再继续此会话。" {
+	if a.text(a.agentUI.chatStatusRef) != a.textID("agent.chat.status.no_model") {
 		t.Fatal("typed continue did not reach resume operation")
 	}
 }

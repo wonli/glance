@@ -222,11 +222,11 @@ func (a *App) layoutWordFontRibbonGroup(gtx layout.Context, state *documentSessi
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return a.layoutWordRibbonField(gtx, fontFamily, 108, a.fontPickerDisplayFamilyName(selectedWordFontFamilyName(state)))
+					return a.layoutWordRibbonField(gtx, fontFamily, 108, a.fontPickerDisplayFamilyName(a.localizedSelectedWordFontFamilyName(state)))
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return a.layoutWordRibbonField(gtx, fontSize, 54, selectedWordFontSizeDisplay(state))
+					return a.layoutWordRibbonField(gtx, fontSize, 54, a.localizedSelectedWordFontSizeDisplay(state))
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -268,6 +268,7 @@ func (a *App) layoutWordRibbonActionRow(gtx layout.Context, state *documentSessi
 }
 
 func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionState, action ribbonAction, widthDP, heightDP int, showLabel bool) layout.Dimensions {
+	action = a.localizedWordAction(action)
 	width, height := gtx.Dp(unit.Dp(widthDP)), gtx.Dp(unit.Dp(heightDP))
 	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(width, height), image.Pt(width, height)
 	enabled := a.wordToolbarActionButtonEnabled(action)
@@ -281,9 +282,9 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 		active := enabled && wordToolbarActionActive(state, action)
 		paintRibbonControlState(gtx, image.Pt(width, height), active, false, enabled && (button.Hovered() || gtx.Focused(button)), a.tokens().Colors.Toolbar)
 		if action.id == "font-family" || action.id == "font-size" {
-			value := a.fontPickerDisplayFamilyName(selectedWordFontFamilyName(state))
+			value := a.fontPickerDisplayFamilyName(a.localizedSelectedWordFontFamilyName(state))
 			if action.id == "font-size" {
-				value = selectedWordFontSizeDisplay(state)
+				value = a.localizedSelectedWordFontSizeDisplay(state)
 			}
 			return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value, enabled, a.tokens().Colors)
 		}

@@ -12,6 +12,7 @@ import (
 	"glance/internal/format/markdowndoc"
 	"glance/internal/format/pdfdoc"
 	"glance/internal/format/pptx"
+	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 
 	"gioui.org/layout"
@@ -70,6 +71,7 @@ type sharedDocumentSession struct {
 	wordTextResetEpoch           atomic.Uint64
 	wordRestoreNoticeMu          sync.Mutex
 	wordRestoreError             string
+	wordRestoreMessage           i18n.Message
 	wordRestoreErrorEpoch        uint64
 	wordRestoreLaunchMu          sync.Mutex
 	wordRestoreLaunchClaimed     bool

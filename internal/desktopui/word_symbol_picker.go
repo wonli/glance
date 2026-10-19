@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 
@@ -16,31 +17,31 @@ import (
 )
 
 type wordSymbolChoice struct {
-	value string
-	name  string
+	value  string
+	nameID string
 }
 
 type wordSymbolGroup struct {
-	label string
-	start int
+	labelID string
+	start   int
 }
 
 var (
 	wordSymbolChoices = [...]wordSymbolChoice{
-		{value: "©", name: "版权符号"}, {value: "®", name: "注册商标"}, {value: "™", name: "商标"},
-		{value: "§", name: "章节符号"}, {value: "¶", name: "段落符号"}, {value: "•", name: "项目符号"},
-		{value: "€", name: "欧元"}, {value: "£", name: "英镑"}, {value: "¥", name: "日元或人民币"},
-		{value: "$", name: "美元"}, {value: "¢", name: "美分"}, {value: "₹", name: "印度卢比"},
-		{value: "°", name: "度"}, {value: "±", name: "正负号"}, {value: "×", name: "乘号"},
-		{value: "÷", name: "除号"}, {value: "≤", name: "小于等于"}, {value: "≥", name: "大于等于"},
-		{value: "←", name: "向左箭头"}, {value: "→", name: "向右箭头"}, {value: "↑", name: "向上箭头"},
-		{value: "↓", name: "向下箭头"}, {value: "↔", name: "左右箭头"}, {value: "✓", name: "勾号"},
+		{value: "©", nameID: "word.symbol.name.copyright"}, {value: "®", nameID: "word.symbol.name.registered"}, {value: "™", nameID: "word.symbol.name.trademark"},
+		{value: "§", nameID: "word.symbol.name.section"}, {value: "¶", nameID: "word.symbol.name.paragraph"}, {value: "•", nameID: "word.symbol.name.bullet"},
+		{value: "€", nameID: "word.symbol.name.euro"}, {value: "£", nameID: "word.symbol.name.pound"}, {value: "¥", nameID: "word.symbol.name.yen_yuan"},
+		{value: "$", nameID: "word.symbol.name.dollar"}, {value: "¢", nameID: "word.symbol.name.cent"}, {value: "₹", nameID: "word.symbol.name.rupee"},
+		{value: "°", nameID: "word.symbol.name.degree"}, {value: "±", nameID: "word.symbol.name.plus_minus"}, {value: "×", nameID: "word.symbol.name.multiply"},
+		{value: "÷", nameID: "word.symbol.name.divide"}, {value: "≤", nameID: "word.symbol.name.less_or_equal"}, {value: "≥", nameID: "word.symbol.name.greater_or_equal"},
+		{value: "←", nameID: "word.symbol.name.arrow_left"}, {value: "→", nameID: "word.symbol.name.arrow_right"}, {value: "↑", nameID: "word.symbol.name.arrow_up"},
+		{value: "↓", nameID: "word.symbol.name.arrow_down"}, {value: "↔", nameID: "word.symbol.name.arrow_both"}, {value: "✓", nameID: "word.symbol.name.check"},
 	}
 	wordSymbolGroups = [...]wordSymbolGroup{
-		{label: "常用符号", start: 0},
-		{label: "货币", start: 6},
-		{label: "数学", start: 12},
-		{label: "箭头与标记", start: 18},
+		{labelID: "word.symbol.group.common", start: 0},
+		{labelID: "word.symbol.group.currency", start: 6},
+		{labelID: "word.symbol.group.math", start: 12},
+		{labelID: "word.symbol.group.arrows_marks", start: 18},
 	}
 )
 
@@ -52,11 +53,11 @@ func (a *App) openWordSymbolPicker() {
 	blocks := wordBlocksForState(state)
 	run, ok := selectedWordRun(blocks, state.selectedWordRunID)
 	if !ok || !run.Editable || !wordBodyRunEditable(blocks, run.ID) {
-		a.setStatus("请先将光标放在可编辑的正文文字中")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.place_the_caret_in_editable_ce48f1"}, feedbackWarning, notificationToast)
 		return
 	}
 	if _, ok := any(state.word).(document.WordTextRangeEditor); !ok {
-		a.setStatus("当前 DOCX 适配器不支持按文字范围插入符号")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserting_a_symbol_in_a_19ae33"}, feedbackWarning, notificationToast)
 		return
 	}
 	paragraphID := state.selectedWordParagraphID
@@ -64,7 +65,7 @@ func (a *App) openWordSymbolPicker() {
 		paragraphID = wordParagraphIDForRun(blocks, run.ID)
 	}
 	if paragraphID == "" {
-		a.setStatus("无法定位插入符号的正文段落")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_find_the_body_0bec7c"}, feedbackWarning, notificationToast)
 		return
 	}
 	editor := wordRunEditor(state, run)
@@ -133,8 +134,8 @@ func (a *App) chooseWordSymbol(index int) {
 	draftEpoch := a.wordSymbolDraftEpoch
 	a.closeWordSymbolPicker()
 	if !a.runWordSymbolInsertion(runID, paragraphID, start, end, revision, draftEpoch, choice) {
-		if a.status == "" {
-			a.setStatus("无法插入符号，请重试")
+		if a.statusText() == "" {
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_insert_the_symbol_f4c607"}, feedbackWarning, notificationToast)
 		}
 	}
 }
@@ -142,22 +143,22 @@ func (a *App) chooseWordSymbol(index int) {
 func (a *App) runWordSymbolInsertion(runID, paragraphID string, start, end int, revision, draftEpoch uint64, choice wordSymbolChoice) bool {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || state.formatRunning.Load() || a.isSaving() {
-		a.setStatus("文档正在处理其他操作，请稍后重试插入符号")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.another_operation_is_in_progress_1ee248"}, feedbackInfo, notificationToast)
 		return false
 	}
 	editor, ok := any(state.word).(document.WordTextRangeEditor)
 	if !ok {
-		a.setStatus("当前 DOCX 适配器不支持按文字范围插入符号")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserting_a_symbol_in_a_19ae33"}, feedbackWarning, notificationToast)
 		return false
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("文档正在处理其他操作，请稍后重试插入符号")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.another_operation_is_in_progress_1ee248"}, feedbackInfo, notificationToast)
 		return false
 	}
 	if token.revision != revision || state.wordDraftEpoch.Load() != draftEpoch || wordHasPendingTextDrafts(state) {
 		state.finishOperation(token)
-		a.setStatus("文档内容或编辑草稿已变化，请提交后重新打开符号面板")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_document_or_edit_draft_709ce3"}, feedbackWarning, notificationToast)
 		return false
 	}
 	generation := a.documentGeneration
@@ -180,7 +181,7 @@ func (a *App) completeWordSymbolInsertion(result wordCommandResult) {
 		return
 	}
 	if result.err != nil {
-		a.setStatus(wordCommandError(result.operation, result.err))
+		a.setWordCommandStatus(result.err)
 		return
 	}
 	if result.blocks != nil {
@@ -189,7 +190,7 @@ func (a *App) completeWordSymbolInsertion(result wordCommandResult) {
 	}
 	run, ok := selectedWordRun(wordBlocksForState(state), result.replaceRunID)
 	if !ok || !run.Editable {
-		a.setStatus("符号已插入，但无法定位编辑位置")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_symbol_was_inserted_but_519405"}, feedbackWarning, notificationToast)
 		return
 	}
 	state.setCommittedWordTextAndClearDraft(run.ID, run.Text)
@@ -206,7 +207,7 @@ func (a *App) completeWordSymbolInsertion(result wordCommandResult) {
 	state.wordPendingFocusRunID = run.ID
 	state.wordPendingCaretRunID = ""
 	state.wordPendingCaretByX = false
-	a.setStatus("已插入符号 " + result.insertedSymbol)
+	a.setStatusMessage(i18n.Message{ID: "word.symbol.status.inserted", Args: i18n.Args{"Symbol": result.insertedSymbol}}, feedbackSuccess, notificationToast)
 	a.persistActiveSession()
 	if a.window != nil {
 		a.window.Invalidate()
@@ -225,7 +226,7 @@ func (a *App) layoutWordSymbolPicker(gtx layout.Context) layout.Dimensions {
 				}
 				size := gtx.Constraints.Max
 				paint.FillShape(gtx.Ops, color.NRGBA{R: 0, G: 0, B: 0, A: 96}, clip.Rect{Max: size}.Op())
-				semantic.DescriptionOp("关闭符号面板").Add(gtx.Ops)
+				semantic.DescriptionOp(a.textID("word.symbol.picker.close_description")).Add(gtx.Ops)
 				return layout.Dimensions{Size: size}
 			})
 		}),
@@ -240,19 +241,19 @@ func (a *App) layoutWordSymbolPicker(gtx layout.Context) layout.Dimensions {
 				children := []layout.FlexChild{
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-							layout.Flexed(1, material.H6(a.theme, "插入符号").Layout),
+							layout.Flexed(1, material.H6(a.theme, a.textID("word.symbol.picker.title")).Layout),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								if a.wordSymbolPickerClose.Clicked(gtx) {
 									a.closeWordSymbolPicker()
 								}
-								button := material.Button(a.theme, &a.wordSymbolPickerClose, "关闭")
+								button := material.Button(a.theme, &a.wordSymbolPickerClose, a.textID("common.action.close"))
 								button.TextSize = a.theme.TextSize * 12 / 16
 								return button.Layout(gtx)
 							}),
 						)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						label := material.Body2(a.theme, "选择一个字符，将其插入到当前光标或选区。")
+						label := material.Body2(a.theme, a.textID("word.symbol.picker.description"))
 						label.Color = mutedText
 						return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(10)}.Layout(gtx, label.Layout)
 					}),
@@ -260,7 +261,7 @@ func (a *App) layoutWordSymbolPicker(gtx layout.Context) layout.Dimensions {
 				for _, group := range wordSymbolGroups {
 					group := group
 					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						label := material.Caption(a.theme, group.label)
+						label := material.Caption(a.theme, a.textID(group.labelID))
 						label.Color = mutedText
 						return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(2)}.Layout(gtx, label.Layout)
 					}))
@@ -273,7 +274,7 @@ func (a *App) layoutWordSymbolPicker(gtx layout.Context) layout.Dimensions {
 								if a.wordSymbolButtons[index].Clicked(gtx) {
 									a.chooseWordSymbol(index)
 								}
-								semantic.DescriptionOp(choice.name + " " + choice.value).Add(gtx.Ops)
+								semantic.DescriptionOp(a.textID(choice.nameID) + " " + choice.value).Add(gtx.Ops)
 								button := material.Button(a.theme, &a.wordSymbolButtons[index], choice.value)
 								button.TextSize = a.theme.TextSize * 20 / 16
 								button.Background = contentSurface

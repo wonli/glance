@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"encoding/json"
+	"glance/internal/i18n"
 
 	"glance/internal/document"
 )
@@ -117,7 +118,7 @@ func (a *App) setSpreadsheetViewMode(mode string) {
 	a.runSpreadsheetViewCommand("切换"+label, "spreadsheet.view.mode.set", spreadsheetViewModeSetArguments{Sheet: sheet, Mode: mode}, func(editor document.SpreadsheetViewsEditor) error {
 		return editor.SetSheetViewMode(sheet, mode)
 	})
-	a.setStatus("已切换为" + label)
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.view_mode", Args: i18n.Args{"View": a.localizedSpreadsheetToolbarText(label)}}, feedbackSuccess, notificationSuppressed)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -140,9 +141,9 @@ func (a *App) toggleSpreadsheetRuler() {
 		return editor.SetSheetRuler(sheet, show)
 	})
 	if show {
-		a.setStatus("已显示标尺")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.ruler_shown_c451b3"}, feedbackSuccess, notificationSuppressed)
 	} else {
-		a.setStatus("已隐藏标尺")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.ruler_hidden_6ead58"}, feedbackSuccess, notificationSuppressed)
 	}
 	if a.window != nil {
 		a.window.Invalidate()

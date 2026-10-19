@@ -6,6 +6,7 @@ import (
 	"gioui.org/widget"
 	"glance/internal/document"
 	"glance/internal/format/markdowndoc"
+	"glance/internal/i18n"
 	"image"
 	"reflect"
 	"sort"
@@ -68,7 +69,8 @@ type markdownViewState struct {
 	exports                                chan markdownFileResult
 	editResults                            chan markdownEditResult
 	exportPending                          bool
-	exportMessage, lastPDFPath             string
+	exportMessage                          i18n.Message
+	lastPDFPath                            string
 	focus                                  bool
 	draftPending                           atomic.Bool
 	compositionPending                     atomic.Bool

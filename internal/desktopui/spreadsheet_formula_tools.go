@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -44,7 +45,7 @@ func (a *App) runSpreadsheetFormulaCommand(operation, sheet, cell, formula strin
 		}
 		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		if err == nil {
-			a.setStatus("已设置公式")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.formula_set_729002"}, feedbackSuccess, notificationToast)
 		}
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: activeSheet, window: window, err: err, operation: operation, applied: changed}:
@@ -60,7 +61,7 @@ func (a *App) showSpreadsheetInsertFunctionDialog(category string) {
 	}
 	_, ok := state.book.(document.SpreadsheetFormulaEditor)
 	if !ok {
-		a.setStatus("当前工作簿不支持插入函数")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_5e586e"}, feedbackWarning, notificationToast)
 		return
 	}
 	activeCol := state.selection.Active.Column + 1
@@ -79,33 +80,32 @@ func (a *App) showSpreadsheetInsertFunctionDialog(category string) {
 		}
 	}
 
-	title := "插入函数"
+	title := i18n.Message{ID: "spreadsheet.formula.dialog.insert.title"}
 	defaultFormula := fmt.Sprintf("=SUM(%s)", defaultRef)
 
 	switch category {
 	case "recent":
-		title = "最近使用的函数"
+		title = i18n.Message{ID: "spreadsheet.formula.dialog.recent.title"}
 		defaultFormula = fmt.Sprintf("=AVERAGE(%s)", defaultRef)
 	case "logical":
-		title = "逻辑函数"
+		title = i18n.Message{ID: "spreadsheet.formula.dialog.logical.title"}
 		defaultFormula = fmt.Sprintf("=IF(%s1>0, 1, 0)", columnName(activeCol))
 	case "text":
-		title = "文本函数"
+		title = i18n.Message{ID: "spreadsheet.formula.dialog.text.title"}
 		defaultFormula = fmt.Sprintf("=CONCATENATE(%s1, \" \", %s2)", columnName(activeCol), columnName(activeCol))
 	case "datetime":
-		title = "日期时间函数"
+		title = i18n.Message{ID: "spreadsheet.formula.dialog.datetime.title"}
 		defaultFormula = "=TODAY()"
 	}
 
-	prompt := fmt.Sprintf("为单元格 %s 设置公式表达式：", cellName)
-	a.modal.ShowInput(title, prompt, defaultFormula, "输入公式（例如 =SUM(A1:A10)）", func(action string) {
+	a.modal.ShowInputMessage("spreadsheet.formula.insert", title, i18n.Message{ID: "spreadsheet.formula.dialog.body", Args: i18n.Args{"Cell": cellName}}, defaultFormula, i18n.Message{ID: "spreadsheet.formula.dialog.hint"}, func(action string) {
 		formula := strings.TrimSpace(a.modal.Input.Text())
 		a.modal.Hide()
 		if action != "confirm" || formula == "" {
 			return
 		}
 		a.runSpreadsheetFormulaCommand("插入公式", state.sheet, cellName, formula)
-	}, modalDialogActionSpec{ID: "confirm", Label: "确定"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.confirm"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }
 
 func (a *App) runSpreadsheetDefinedNameCommand(name document.SpreadsheetDefinedName) {
@@ -143,9 +143,9 @@ func (a *App) runSpreadsheetDefinedNameCommand(name document.SpreadsheetDefinedN
 		}
 		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		if err != nil {
-			a.setStatus("创建定义名称失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		} else {
-			a.setStatus(fmt.Sprintf("已创建定义名称：“%s” -> %s", name.Name, name.Ref))
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.defined_name.created", Args: i18n.Args{"Name": name.Name, "Reference": name.Ref}}, feedbackSuccess, notificationToast)
 		}
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "名称管理器", applied: changed}:
@@ -161,16 +161,14 @@ func (a *App) showSpreadsheetNameManagerDialog() {
 	}
 	ed, ok := state.book.(document.SpreadsheetDefinedNameEditor)
 	if !ok {
-		a.setStatus("当前工作簿不支持名称管理器")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_2d3945"}, feedbackWarning, notificationToast)
 		return
 	}
 	existing, _ := ed.GetDefinedNames()
 	b := state.selection.Bounds()
 	defaultRef := fmt.Sprintf("'%s'!$%s$%d:$%s$%d", state.sheet, columnName(b.StartColumn), b.StartRow, columnName(b.EndColumn), b.EndRow)
-	defaultName := fmt.Sprintf("区域%d", len(existing)+1)
-
-	msg := fmt.Sprintf("当前已有 %d 个定义名称。\n请输入新名称并确认引用位置：", len(existing))
-	a.modal.ShowInput("名称管理器", msg, defaultName, "名称", func(action string) {
+	defaultName := a.text(i18n.Message{ID: "spreadsheet.defined_name.dialog.default_name", Args: i18n.Args{"Index": len(existing) + 1}})
+	a.modal.ShowInputMessage("spreadsheet.defined_name", i18n.Message{ID: "spreadsheet.defined_name.dialog.title"}, i18n.Message{ID: "spreadsheet.defined_name.dialog.body", Args: i18n.Args{"Count": len(existing)}}, defaultName, i18n.Message{ID: "spreadsheet.defined_name.dialog.hint"}, func(action string) {
 		name := strings.TrimSpace(a.modal.Input.Text())
 		a.modal.Hide()
 		if action != "confirm" || name == "" {
@@ -180,7 +178,7 @@ func (a *App) showSpreadsheetNameManagerDialog() {
 			Name: name,
 			Ref:  defaultRef,
 		})
-	}, modalDialogActionSpec{ID: "confirm", Label: "新建名称"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "spreadsheet.defined_name.dialog.create"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }
 
 type spreadsheetFlashFillApplyArguments struct {
@@ -195,7 +193,7 @@ func (a *App) applySpreadsheetFlashFill() {
 	}
 	editor, ok := state.book.(document.SpreadsheetFlashFillEditor)
 	if !ok {
-		a.setStatus("当前工作簿不支持快速填充")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_e87852"}, feedbackWarning, notificationToast)
 		return
 	}
 	generation, sheet, window := a.documentGeneration, state.sheet, state.virtualGrid
@@ -221,7 +219,7 @@ func (a *App) applySpreadsheetFlashFill() {
 		}
 		a.completeSessionOperation(state, token, err, err == nil && res.RowsFilled > 0 && !commandRouted)
 		if err == nil {
-			a.setStatus(fmt.Sprintf("快速填充完成，已自动填充 %d 个单元格", res.RowsFilled))
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.flash_fill.completed", Args: i18n.Args{"Count": res.RowsFilled}}, feedbackSuccess, notificationToast)
 		}
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: "快速填充", applied: res.RowsFilled > 0}:

@@ -22,6 +22,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -58,14 +59,14 @@ func TestHomeFolderVisibleRecentsFiltersDirectMembershipAndExistingFilters(t *te
 	if got := len(app.homeFolderVisibleRecents(root.ID)); got != 7 {
 		t.Fatalf("folder view count=%d, want all 7 direct documents", got)
 	}
-	app.homeTypeFilter = "文档"
+	app.homeTypeFilter = homeFilterDocuments
 	app.homeSearch.SetText("文档3")
 	got := app.homeFolderVisibleRecents(root.ID)
 	if len(got) != 1 || filepath.Base(got[0].Path) != "项目文档3.docx" {
 		t.Fatalf("folder filters returned %+v, want the matching direct document", got)
 	}
 	app.homeSearch.SetText("")
-	app.homeTypeFilter = "全部"
+	app.homeTypeFilter = homeFilterAll
 	if got := app.homeFolderVisibleRecents(root.ID); len(got) != 7 {
 		t.Fatalf("direct membership included nested/other-folder documents: %d", len(got))
 	}
@@ -323,8 +324,8 @@ func TestHomeFolderMenuSupportsArrowNavigationAndEnter(t *testing.T) {
 	draw()
 	router.Queue(key.Event{Name: key.NameEnter, State: key.Press})
 	draw()
-	if !app.modal.Visible || app.modal.Title != "重命名文件夹" {
-		t.Fatalf("Down, Down, Enter opened modal=%v title=%q; want the rename action", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != "home.folder.rename" {
+		t.Fatalf("Down, Down, Enter opened modal=%v title=%q; want the rename action", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	if app.homeFolderMenuFolderID != "" {
 		t.Fatalf("Enter left folder menu open for %q", app.homeFolderMenuFolderID)
@@ -349,8 +350,8 @@ func TestHomeFolderMenuUpSelectsLastItem(t *testing.T) {
 	draw()
 	router.Queue(key.Event{Name: key.NameEnter, State: key.Press})
 	draw()
-	if !app.modal.Visible || app.modal.Title != "移除文件夹" {
-		t.Fatalf("Up, Enter opened modal=%v title=%q; want the remove action", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != "home.folder.remove" {
+		t.Fatalf("Up, Enter opened modal=%v title=%q; want the remove action", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 }
 
@@ -877,11 +878,11 @@ func TestHomeFolderEmptyStateAndRemoveCancel(t *testing.T) {
 }
 
 func TestHomeFolderEmptyStateDistinguishesEmptyAndFilteredResults(t *testing.T) {
-	if got := homeFolderEmptyStateMessage(false); got != "暂无文件" {
-		t.Fatalf("empty folder message=%q; want no-files message", got)
+	if got := homeFolderEmptyStateMessage(false); got.ID != "home.folder.empty" {
+		t.Fatalf("empty folder message=%+v; want no-files message", got)
 	}
-	if got := homeFolderEmptyStateMessage(true); got != "没有符合条件的文件" {
-		t.Fatalf("filtered folder message=%q; want no-matching-files message", got)
+	if got := homeFolderEmptyStateMessage(true); got.ID != "home.folder.no_matches" {
+		t.Fatalf("filtered folder message=%+v; want no-matching-files message", got)
 	}
 }
 
@@ -1080,8 +1081,8 @@ func TestHomeFolderDirectoryPickerCancelLeavesSnapshotUnchanged(t *testing.T) {
 	result := <-app.fileCommandResults
 	app.handleHomeFolderPickerResult(result)
 	after, _ := app.homeFolderSnapshot()
-	if len(after.Folders) != len(before.Folders) || app.status != "已取消打开文件夹" {
-		t.Fatalf("cancel changed folder state or status: folders=%+v status=%q", after.Folders, app.status)
+	if len(after.Folders) != len(before.Folders) || app.statusText() != "已取消打开文件夹" {
+		t.Fatalf("cancel changed folder state or status: folders=%+v status=%q", after.Folders, app.statusText())
 	}
 }
 
@@ -1107,7 +1108,7 @@ func newHomeFolderTestApp(t *testing.T) *App {
 		desktopRuntime:             runtime,
 		theme:                      material.NewTheme(),
 		homeSection:                homeSectionRecent,
-		homeTypeFilter:             "全部",
+		homeTypeFilter:             homeFilterAll,
 		homeSortOpenedDesc:         true,
 		homeActionButtons:          make(map[string]*widget.Clickable),
 		homeFolderWriteResults:     make(chan homeFolderWriteResult, 1),
@@ -1130,6 +1131,7 @@ func newHomeFolderTestApp(t *testing.T) *App {
 		fileCommandResults:         make(chan fileCommandResult, 1),
 		shutdown:                   make(chan struct{}),
 	}
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	t.Cleanup(runtime.shutdown)
 	return app
 }

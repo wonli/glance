@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/application"
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 	"path/filepath"
 	"strings"
@@ -116,7 +117,7 @@ func (a *App) processPrimaryPromotion() {
 			a.setActiveSessionID("")
 		}
 		if err := a.collection.Activate(activeTabID); err != nil {
-			a.setStatus("活动文档恢复失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.activate_document"}, err, notificationToast)
 		}
 	}
 	a.persistActiveSession()
@@ -136,7 +137,7 @@ func (a *App) persistViewState() {
 		return
 	}
 	if err := a.collection.SaveViewState(a.activeTabID, a.viewStateBytes()); err != nil {
-		a.setStatus("视图状态保存失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.save_view"}, err, notificationToast)
 	}
 }
 
@@ -154,7 +155,7 @@ func (a *App) updatePersistedTab(meta workspace.Tab) {
 	}
 	format := sessionFormat(meta, state)
 	if err := a.collection.UpdateTabMeta(meta); err != nil {
-		a.setStatus("工作区保存失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.save_state"}, err, notificationToast)
 		return
 	}
 	job := workspaceWriteJob{documentID: meta.DocumentID, format: format, state: state, viewState: a.viewStateBytesForState(state)}
@@ -166,7 +167,7 @@ func (a *App) updatePersistedTab(meta workspace.Tab) {
 			err = a.collection.Update(meta.ID, payload, job.viewState, sessionDirty(state))
 		}
 		if err != nil {
-			a.setStatus(err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.save_state"}, err, notificationToast)
 		}
 	}
 }

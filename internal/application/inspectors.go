@@ -590,11 +590,13 @@ func inspectPresentationAccessibility(slides []presentationQuerySlide, totalSlid
 				continue
 			}
 			message := "图片没有替代文本，也未标记为装饰性图片。"
+			code := "missing_alt_text"
 			if kind == string(document.ElementKindVideo) {
 				message = "视频没有替代文本，也未标记为装饰性视频。"
+				code = "missing_video_alt_text"
 			}
 			report.Issues = append(report.Issues, presentationAccessibilityIssue{
-				Code: "missing_alt_text", Severity: "warning",
+				Code: code, Severity: "warning",
 				Message: message,
 				SlideID: slide.ID, SlideNumber: slide.Index + 1, ElementID: element.ID,
 			})

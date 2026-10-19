@@ -39,8 +39,8 @@ func TestReviewWordCountShowsDetailsForDraftsAndTables(t *testing.T) {
 		t.Fatal("Review > Word Count should open a details dialog")
 	}
 	for _, want := range []string{"字符数（不含空白）：11", "字符数（含空白）：12", "段落数：3", "表格数：1"} {
-		if !strings.Contains(app.modal.Message, want) {
-			t.Errorf("word-count details do not include %q: %q", want, app.modal.Message)
+		if !strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), want) {
+			t.Errorf("word-count details do not include %q: %q", want, app.messageText(app.modal.MessageRef, app.modal.Message))
 		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 	"glance/internal/agent"
+	"glance/internal/i18n"
 	"image"
 	"testing"
 	"time"
@@ -28,11 +29,12 @@ func TestAgentHistoryUsesFullSidebarHeight(t *testing.T) {
 func TestAgentHistoryDeleteRequiresConfirmation(t *testing.T) {
 	a := newAppWithRuntime(nil, newDesktopRuntime())
 	t.Cleanup(a.desktopRuntime.shutdown)
+	a.applyLocaleSelection(i18n.SelectionChinese)
 	a.agentUI.conversationDocumentID = "doc"
 	item := agent.ConversationSummary{ID: "chat", Title: "优化推广计划措辞"}
 	a.agentUI.conversationHistory = []agent.ConversationSummary{item}
 	a.confirmAgentConversationDelete(item)
-	if !a.modal.Visible || a.modal.Title != "删除这条会话？" {
+	if !a.modal.Visible || a.modal.DialogID != "agent.history.delete" || a.messageText(a.modal.TitleRef, a.modal.Title) != "删除这条会话？" {
 		t.Fatal("delete confirmation missing")
 	}
 	if a.agentUI.conversationHistoryLoading {
@@ -54,9 +56,19 @@ func TestAgentHistorySearchAndDateGroups(t *testing.T) {
 		{ID: "older", Title: "优化结构", UpdatedAt: now.AddDate(0, 0, -10)},
 	}
 	rows := a.agentHistoryRows(now)
-	for i, want := range []string{"今天", "昨天", "过去 7 天", "更早"} {
-		if rows[i].group != want {
-			t.Fatalf("group=%s want=%s", rows[i].group, want)
+	for _, localeCase := range []struct {
+		selection i18n.Selection
+		want      []string
+	}{
+		{i18n.SelectionEnglish, []string{"Today", "Yesterday", "Past 7 days", "Earlier"}},
+		{i18n.SelectionChinese, []string{"今天", "昨天", "过去 7 天", "更早"}},
+	} {
+		a.applyLocaleSelection(localeCase.selection)
+		rows = a.agentHistoryRows(now)
+		for i, want := range localeCase.want {
+			if rows[i].group != want {
+				t.Fatalf("locale=%s group=%s want=%s", localeCase.selection, rows[i].group, want)
+			}
 		}
 	}
 	a.agentUI.historySearch.SetText("  优化  ")

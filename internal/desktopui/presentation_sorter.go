@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 
@@ -26,7 +27,7 @@ func (a *App) layoutPresentationSorter(gtx layout.Context, view *presentationVie
 	return layout.Inset{Top: unit.Dp(20), Right: unit.Dp(24), Bottom: unit.Dp(16), Left: unit.Dp(24)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				label := material.Label(a.theme, unit.Sp(14), "幻灯片浏览")
+				label := material.Label(a.theme, unit.Sp(14), a.textID("presentation.ribbon.action.view_sorter"))
 				label.Color = pptxTextSecondary
 				label.Font.Weight = font.Medium
 				return layout.Inset{Bottom: unit.Dp(16)}.Layout(gtx, label.Layout)
@@ -96,7 +97,7 @@ func (a *App) layoutPresentationSorterCard(gtx layout.Context, view *presentatio
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							title := slide.Title
 							if title == "" {
-								title = fmt.Sprintf("幻灯片 %d", index+1)
+								title = a.textArgs("presentation.sorter.slide_number", i18n.Args{"Number": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(index+1))})
 							}
 							label := material.Label(a.theme, unit.Sp(11), fmt.Sprintf("%d. %s", index+1, title))
 							label.Color = pptxTextSecondary
@@ -118,7 +119,7 @@ type presentationsorterGoOperationModeArguments struct {
 
 func (a *App) selectPresentationSorterSlide(view *presentationViewState, slideID uint32) {
 	if view == nil || a.pptxDoc == nil {
-		a.setStatus("演示文稿已关闭，请重新打开幻灯片浏览")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_was_closed_reopen_slide_s_aa0078"}, feedbackInfo, notificationToast)
 		return
 	}
 	current := a.pptxDoc.Snapshot()
@@ -131,11 +132,11 @@ func (a *App) selectPresentationSorterSlide(view *presentationViewState, slideID
 			_, err = a.applyPresentationViewIntent("presentation.view.set", raw)
 		}
 		if err != nil {
-			a.setStatus("选择幻灯片失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		}
 		return
 	}
-	a.setStatus("目标幻灯片已删除，请重新打开幻灯片浏览")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_target_slide_was_deleted_reopen_slide_836f03"}, feedbackInfo, notificationToast)
 }
 
 func (view *presentationViewState) sorterButton(slideID uint32) *widget.Clickable {

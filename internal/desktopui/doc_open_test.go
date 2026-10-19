@@ -253,8 +253,8 @@ func TestInstallLegacyDOCStoresDOCXRecoverySnapshotAndDOCRecentKind(t *testing.T
 	if recents := collection.Recents(); len(recents) != 1 || recents[0].Kind != "doc" || recents[0].Path != path {
 		t.Fatalf("recent DOC entries = %#v; want one .doc recent", recents)
 	}
-	if !strings.Contains(app.status, "另存为 .docx") {
-		t.Fatalf("legacy DOC status = %q; want Save As instruction", app.status)
+	if !strings.Contains(app.statusText(), "另存为 .docx") {
+		t.Fatalf("legacy DOC status = %q; want Save As instruction", app.statusText())
 	}
 }
 

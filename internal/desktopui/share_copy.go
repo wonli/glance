@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"glance/internal/application"
+	"glance/internal/i18n"
 )
 
 type shareCopyDocument interface {
@@ -55,12 +56,12 @@ func (a *App) applyShareCopyResult(state *documentSessionState, path string, err
 	}
 	if err != nil {
 		if state == a.documentSessionState {
-			a.setStatus("导出共享副本失败：" + err.Error())
+			a.setStatusDetailMessage(i18n.Message{ID: "share.copy.error.failed"}, feedbackError, notificationToast, err.Error())
 		}
 		return
 	}
 	if state == a.documentSessionState {
-		a.setStatus("共享 " + format + " 副本已导出：" + filepath.Base(path))
+		a.setStatusMessage(i18n.Message{ID: "share.copy.status.exported", Args: i18n.Args{"Format": format, "File": filepath.Base(path)}}, feedbackSuccess, notificationToast)
 	}
 }
 

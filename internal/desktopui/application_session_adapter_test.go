@@ -555,8 +555,8 @@ func TestWordShareRibbonUsesRegisteredCopyCapabilityAndRejectsPendingDraft(t *te
 	draftPath := filepath.Join(t.TempDir(), "draft-copy.docx")
 	request = &wordShareCopyPickerRequest{state: state, revision: state.wordRevisionAtomic.Load(), draftEpoch: state.wordDraftEpoch.Load()}
 	app.startWordShareCopyFile(request, draftPath)
-	if app.status != "文档在选择位置期间已更改，未导出共享副本；请重试" {
-		t.Fatalf("Ribbon status with pending draft = %q", app.status)
+	if app.statusText() != "选择保存位置期间文档已更改，未导出共享副本，请重试。" {
+		t.Fatalf("Ribbon status with pending draft = %q", app.statusText())
 	}
 	info, err := desktop.applicationRuntime.GetDocument(ctx, state.documentID)
 	if err != nil {

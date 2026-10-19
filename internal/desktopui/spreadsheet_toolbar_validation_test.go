@@ -42,8 +42,8 @@ func TestSpreadsheetToolbar_DataValidationAndComments(t *testing.T) {
 
 	// 2. Data Validation Dialog & Execution
 	app.showSpreadsheetDataValidationDialog()
-	if !app.modal.Visible || app.modal.Title != "数据验证" {
-		t.Fatalf("expected 数据验证 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "数据验证" {
+		t.Fatalf("expected 数据验证 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("选项A,选项B,选项C")
 	app.modal.OnAction("confirm")
@@ -59,8 +59,8 @@ func TestSpreadsheetToolbar_DataValidationAndComments(t *testing.T) {
 	// 3. New Comment Dialog & Execution on A1
 	state.selection = CellSelection{Active: CellPosition{Row: 0, Column: 0}}
 	app.showSpreadsheetNewCommentDialog()
-	if !app.modal.Visible || app.modal.Title != "新建批注" {
-		t.Fatalf("expected 新建批注 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "新建批注" {
+		t.Fatalf("expected 新建批注 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("这是一条测试批注")
 	app.modal.OnAction("confirm")
@@ -128,8 +128,8 @@ func TestSpreadsheetToolbar_ConditionalFormat(t *testing.T) {
 
 	// 2. Open dialog and apply data bar
 	app.showSpreadsheetConditionalFormatDialog()
-	if !app.modal.Visible || app.modal.Title != "条件格式" {
-		t.Fatalf("expected 条件格式 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "条件格式" {
+		t.Fatalf("expected 条件格式 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	if app.modal.HasInput {
 		t.Fatal("conditional format choices should not expose an editable internal rule ID")

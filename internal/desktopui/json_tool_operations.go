@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"strings"
 
 	"glance/internal/format/jsondoc"
@@ -146,7 +147,7 @@ func (a *App) startJSONViewApplicationTool(v *jsonWorkspaceView, operation strin
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		v.toolMessage = "JSON 文档正在处理其他操作"
+		v.toolMessage = i18n.Message{ID: "json.status.busy"}
 		return true
 	}
 	arguments := startJSONViewApplicationToolPayload{Operation: operation}
@@ -187,21 +188,21 @@ func (a *App) applyJSONToolResult(result jsonToolResult) {
 	if a.jsonDraftText() != result.source || a.jsonDoc.Text() != result.source {
 		return
 	}
-	label := map[string]string{"format": "格式化", "minify": "压缩", "sort-keys": "排序键", "validate": "验证"}[result.id]
 	if result.err != nil {
-		a.setStatus("JSON " + label + "失败：" + result.err.Error())
-		v.toolMessage = a.status
+		message := i18n.Message{ID: "json.error.operation_failed"}
+		a.setStatusErrorMessage(message, result.err, notificationToast)
+		v.toolMessage = message
 		return
 	}
 	if result.id == "validate" {
-		a.setStatus("JSON 格式正确")
-		v.toolMessage = a.status
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_json_is_valid_593b83"}, feedbackSuccess, notificationSuppressed)
+		v.toolMessage = i18n.Message{ID: "desktop.status.inline.the_json_is_valid_593b83"}
 		return
 	}
-	if a.applyJSONTextMutationIfSource(result.text, "已"+label+" JSON", result.source) {
-		v.toolMessage = "已" + label + " JSON"
+	if a.applyJSONTextMutationIfSource(result.text, jsonSuccessMessage(result.id), result.source) {
+		v.toolMessage = jsonSuccessMessage(result.id)
 	} else {
-		v.toolMessage = a.status
+		v.toolMessage = a.statusRef
 	}
 }
 
@@ -211,9 +212,9 @@ func (a *App) applyJSONApplicationToolResult(v *jsonWorkspaceView, result jsonTo
 		state.finishOperation(result.operationToken)
 	}
 	if result.err != nil {
-		label := map[string]string{"format": "格式化", "minify": "压缩", "sort-keys": "排序键", "validate": "验证", "search": "搜索", "copy": "复制", "view": "视图"}[result.id]
-		a.setStatus("JSON " + label + "失败：" + result.err.Error())
-		v.toolMessage = a.status
+		message := i18n.Message{ID: "json.error.operation_failed"}
+		a.setStatusErrorMessage(message, result.err, notificationToast)
+		v.toolMessage = message
 		return
 	}
 	if state == nil || state.jsonDoc == nil {
@@ -225,20 +226,20 @@ func (a *App) applyJSONApplicationToolResult(v *jsonWorkspaceView, result jsonTo
 			Level   int  `json:"level"`
 		}
 		if err := json.Unmarshal(result.data, &view); err != nil {
-			a.setStatus("JSON 视图结果无法读取：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 		} else if view.Changed {
 			switch view.Level {
 			case -1:
-				a.setStatus("JSON 树已全部展开")
+				a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.expanded_the_entire_json_tree_3624e6"}, feedbackInfo, notificationSuppressed)
 			case 0:
-				a.setStatus("JSON 树已全部折叠")
+				a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.collapsed_the_entire_json_tree_d27372"}, feedbackInfo, notificationSuppressed)
 			default:
-				a.setStatus(fmt.Sprintf("JSON 树已展开到第 %d 层", view.Level))
+				a.setStatusMessage(i18n.Message{ID: "json.status.tree.expanded_to_level", Args: i18n.Args{"Level": view.Level}}, feedbackInfo, notificationSuppressed)
 			}
 		} else {
-			a.setStatus("JSON 树视图未变化")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_json_tree_view_is_unchanged_e20b7b"}, feedbackInfo, notificationSuppressed)
 		}
-		v.toolMessage = a.status
+		v.toolMessage = a.statusRef
 		return
 	}
 	if result.id == "validate" {
@@ -247,13 +248,13 @@ func (a *App) applyJSONApplicationToolResult(v *jsonWorkspaceView, result jsonTo
 			Diagnostic string `json:"diagnostic"`
 		}
 		if err := json.Unmarshal(result.data, &validation); err != nil {
-			a.setStatus("JSON 验证结果无法读取：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 		} else if validation.Valid {
-			a.setStatus("JSON 格式正确")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_json_is_valid_593b83"}, feedbackSuccess, notificationSuppressed)
 		} else {
-			a.setStatus("JSON 验证失败：" + validation.Diagnostic)
+			a.setStatusDetailMessage(i18n.Message{ID: "json.error.operation_failed"}, feedbackError, notificationToast, validation.Diagnostic)
 		}
-		v.toolMessage = a.status
+		v.toolMessage = a.statusRef
 		return
 	}
 	if result.id == "search" {
@@ -267,40 +268,40 @@ func (a *App) applyJSONApplicationToolResult(v *jsonWorkspaceView, result jsonTo
 			Truncated bool `json:"truncated"`
 		}
 		if err := json.Unmarshal(result.data, &search); err != nil {
-			a.setStatus("JSON 搜索结果无法读取：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 		} else if search.Truncated {
-			a.setStatus(fmt.Sprintf("JSON 搜索已返回 %d 项，结果已截取", len(search.Matches)))
+			a.setStatusMessage(i18n.Message{ID: "json.status.search.truncated", Args: i18n.Args{"Count": len(search.Matches)}}, feedbackInfo, notificationSuppressed)
 		} else {
-			a.setStatus(fmt.Sprintf("JSON 搜索找到 %d 项", len(search.Matches)))
+			a.setStatusMessage(i18n.Message{ID: "json.status.search.found", Args: i18n.Args{"Count": len(search.Matches)}}, feedbackInfo, notificationSuppressed)
 		}
-		v.toolMessage = a.status
+		v.toolMessage = a.statusRef
 		return
 	}
 	if result.id == "copy" {
 		if state.jsonDoc.Text() != result.source || a.jsonDraftText() != result.source {
-			a.setStatus("JSON 文档在复制期间已变化，请重试")
-			v.toolMessage = a.status
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_json_document_changed_while_it_was_bei_752e16"}, feedbackInfo, notificationToast)
+			v.toolMessage = a.statusRef
 			return
 		}
 		var copyResult struct {
 			Text string `json:"text"`
 		}
 		if err := json.Unmarshal(result.data, &copyResult); err != nil {
-			a.setStatus("JSON 原文读取结果无法解析：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 		} else {
 			v.clipboardWriteText = copyResult.Text
 			v.clipboardWritePending = true
-			a.setStatus("已复制 JSON")
+			a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.json_copied_14f177"}, feedbackSuccess, notificationSuppressed)
 		}
-		v.toolMessage = a.status
+		v.toolMessage = a.statusRef
 		return
 	}
 	var output struct {
 		Changed bool `json:"changed"`
 	}
 	if err := json.Unmarshal(result.data, &output); err != nil {
-		a.setStatus("JSON 操作结果无法读取：" + err.Error())
-		v.toolMessage = a.status
+		a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
+		v.toolMessage = a.statusRef
 		return
 	}
 	text := state.jsonDoc.Text()
@@ -319,14 +320,26 @@ func (a *App) applyJSONApplicationToolResult(v *jsonWorkspaceView, result jsonTo
 	}
 	v.sourceSynced = text
 	v.requested = text
-	label := map[string]string{"format": "格式化", "minify": "压缩", "sort-keys": "排序键"}[result.id]
 	if output.Changed {
 		a.persistActiveSession()
-		a.setStatus("已" + label + " JSON")
+		a.setStatusMessage(jsonSuccessMessage(result.id), feedbackSuccess, notificationToast)
 	} else {
-		a.setStatus("JSON 无需" + label)
+		a.setStatusMessage(i18n.Message{ID: "json.status.operation_unchanged"}, feedbackInfo, notificationSuppressed)
 	}
-	v.toolMessage = a.status
+	v.toolMessage = a.statusRef
+}
+
+func jsonSuccessMessage(id string) i18n.Message {
+	switch id {
+	case "minify":
+		return i18n.Message{ID: "json.status.minified"}
+	case "sort-keys":
+		return i18n.Message{ID: "json.status.keys_sorted"}
+	case "copy":
+		return i18n.Message{ID: "json.status.copied"}
+	default:
+		return i18n.Message{ID: "json.status.formatted"}
+	}
 }
 
 func (result jsonToolResult) operationTokenState(a *App) *documentSessionState {

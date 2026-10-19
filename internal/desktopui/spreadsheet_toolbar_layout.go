@@ -47,7 +47,7 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layoutRibbonCategoryTabs(gtx, a.theme, toolbarCategoryLabelsForState(state), state.toolbarTabs[:], int(state.toolbarTab), a.tokens().Colors)
+					return layoutRibbonCategoryTabs(gtx, a.theme, a.localizedSpreadsheetToolbarCategoryLabels(state), state.toolbarTabs[:], int(state.toolbarTab), a.tokens().Colors)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					stripHeight := gtx.Dp(unit.Dp(wordRibbonCommandHeightDP))
@@ -114,7 +114,7 @@ func (a *App) layoutSpreadsheetRibbonPlaceholder(gtx layout.Context, item spread
 	colors := a.tokens().Colors
 	bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
 	semantic.Button.Add(gtx.Ops)
-	semantic.DescriptionOp(item.label).Add(gtx.Ops)
+	semantic.DescriptionOp(a.localizedSpreadsheetToolbarText(item.label)).Add(gtx.Ops)
 	semantic.EnabledOp(false).Add(gtx.Ops)
 	bounds.Pop()
 	paint.FillShape(gtx.Ops, colors.Toolbar.Background, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
@@ -155,6 +155,7 @@ func (a *App) layoutSpreadsheetRibbonPlaceholder(gtx layout.Context, item spread
 				if caption == "" {
 					caption = item.label
 				}
+				caption = a.localizedSpreadsheetToolbarText(caption)
 				label := material.Caption(a.theme, caption)
 				label.TextSize = unit.Sp(9)
 				label.Color = colors.Text.PureBlack
@@ -172,6 +173,7 @@ func (a *App) layoutSpreadsheetRibbonPlaceholder(gtx layout.Context, item spread
 					if caption == "" {
 						caption = item.label
 					}
+					caption = a.localizedSpreadsheetToolbarText(caption)
 					label := material.Caption(a.theme, caption)
 					label.TextSize = unit.Sp(9)
 					label.Color = colors.Text.PureBlack
@@ -235,9 +237,9 @@ const (
 	spreadsheetRibbonActionField
 )
 
-func spreadsheetRibbonActionDisplayLabel(action spreadsheetToolbarAction) string {
+func (a *App) spreadsheetRibbonActionDisplayLabel(action spreadsheetToolbarAction) string {
 	if action.displayLabel != "" {
-		return action.displayLabel
+		return a.localizedSpreadsheetToolbarText(action.displayLabel)
 	}
 	label := action.label
 	switch action.slot {
@@ -250,6 +252,7 @@ func spreadsheetRibbonActionDisplayLabel(action spreadsheetToolbarAction) string
 	case toolbarActionZoomIn:
 		label = "缩放"
 	}
+	label = a.localizedSpreadsheetToolbarText(label)
 	switch action.slot {
 	case toolbarActionOpenFile, 21, toolbarActionConditionalFormat, toolbarActionTableFormat, toolbarActionCellStyles, 12, 13, toolbarActionFormat, toolbarActionSum, toolbarActionFind, toolbarActionInsertTable, toolbarActionLayoutMargins, toolbarActionRefreshAll, toolbarActionSpellCheck, toolbarActionNormalView:
 		label += " ▾"
@@ -275,24 +278,24 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 	draw := func(gtx layout.Context) layout.Dimensions {
 		bounds := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
 		semantic.Button.Add(gtx.Ops)
-		semantic.DescriptionOp(action.label).Add(gtx.Ops)
+		semantic.DescriptionOp(a.localizedSpreadsheetToolbarText(action.label)).Add(gtx.Ops)
 		semantic.EnabledOp(enabled).Add(gtx.Ops)
 		bounds.Pop()
 		colors := a.tokens().Colors
 		paintRibbonControlState(gtx, image.Pt(width, height), enabled && active, mixed, enabled && (button.Hovered() || gtx.Focused(button)), colors.Toolbar)
 		if mode == spreadsheetRibbonActionField {
-			value := spreadsheetRibbonActionDisplayLabel(action)
+			value := a.spreadsheetRibbonActionDisplayLabel(action)
 			if mixed {
-				value = "混合"
+				value = a.localizedSpreadsheetToolbarText("混合")
 			} else if action.slot == toolbarActionFontFamily {
 				value = a.fontPickerDisplayFamilyName(spreadsheetToolbarFontFamily(style))
 			} else if action.slot == toolbarActionFontSize {
 				value = formatSpreadsheetFontSize(spreadsheetToolbarFontSize(style))
 			} else if action.slot == 10 {
-				value = spreadsheetToolbarNumberFormatLabel(style.NumberFormat)
+				value = a.textID(spreadsheetToolbarNumberFormatMessageID(style.NumberFormat))
 			}
 			if action.slot == toolbarActionFontFamily || action.slot == toolbarActionFontSize {
-				return drawOfficeRibbonFontDropdown(gtx, a.theme, action.label, width, height, value, enabled, colors)
+				return drawOfficeRibbonFontDropdown(gtx, a.theme, a.localizedSpreadsheetToolbarText(action.label), width, height, value, enabled, colors)
 			}
 			paint.FillShape(gtx.Ops, colors.Surface.Border, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
 			inner := image.Rectangle{Max: image.Pt(width, height)}.Inset(gtx.Dp(unit.Dp(1)))
@@ -359,7 +362,7 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 			return dimensions
 		}
 		if mode == spreadsheetRibbonActionVertical {
-			return layoutOfficeRibbonCommandContents(gtx, a.theme, icon, spreadsheetRibbonActionDisplayLabel(action))
+			return layoutOfficeRibbonCommandContents(gtx, a.theme, icon, a.spreadsheetRibbonActionDisplayLabel(action))
 		}
 		return layout.Inset{Left: unit.Dp(4), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
@@ -373,7 +376,7 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					label := material.Caption(a.theme, spreadsheetRibbonActionDisplayLabel(action))
+					label := material.Caption(a.theme, a.spreadsheetRibbonActionDisplayLabel(action))
 					gtx.Constraints.Min.Y = 0
 					label.TextSize = unit.Sp(10)
 					label.Color = colors.Text.PureBlack
@@ -493,7 +496,7 @@ func (a *App) layoutToolbarPickerPanel(gtx layout.Context, options []string) lay
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(6), Top: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				rows := make([]layout.FlexChild, 0, (len(options)+1)/2+2)
-				title := material.Body2(a.theme, toolbarPickerTitle(a.documentSessionState.toolbarPicker))
+			title := material.Body2(a.theme, a.textID(toolbarPickerTitleMessageID(a.documentSessionState.toolbarPicker)))
 				title.Color = colors.Text.PureBlack
 				rows = append(rows, layout.Rigid(title.Layout))
 				rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -529,7 +532,7 @@ func (a *App) layoutToolbarPickerPanel(gtx layout.Context, options []string) lay
 												return layout.Dimensions{Size: image.Pt(width, height)}
 											},
 											func(gtx layout.Context) layout.Dimensions {
-												style := material.Body2(a.theme, options[index])
+											style := material.Body2(a.theme, a.textID(toolbarPickerOptionMessageID(a.documentSessionState.toolbarPicker, index)))
 												style.TextSize = unit.Sp(12)
 												style.Color = colors.Text.PureBlack
 												gtx.Constraints.Min = image.Point{}

@@ -3,7 +3,6 @@ package desktopui
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -13,6 +12,7 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/application"
+	"glance/internal/i18n"
 )
 
 type wordEditorReviewAsyncResult struct {
@@ -31,14 +31,14 @@ func (a *App) showWordEditorDialog() {
 	}
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
-		a.setStatus("Word 文档正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "word.status.operation_busy"}, feedbackWarning, notificationToast)
 		return
 	}
 	a.wordEditorReviewRequest++
 	request := a.wordEditorReviewRequest
 	generation := a.documentGeneration
 	window, shutdown, results := a.window, a.shutdown, a.wordEditorReviewResults
-	a.modal.Show("文档编辑器", "正在扫描 Word 文档…", func(string) {
+	a.modal.ShowMessage(dialogIDWordEditorReview, i18n.Message{ID: "word.review.editor.title"}, i18n.Message{ID: "word.review.editor.scanning"}, func(string) {
 		if a.wordEditorReviewRequest == request {
 			a.wordEditorReviewRequest++
 		}
@@ -46,7 +46,7 @@ func (a *App) showWordEditorDialog() {
 		if window != nil {
 			window.Invalidate()
 		}
-	}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+	}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
 	a.launchManagedBackground(func() {
 		command, err := a.executeRibbonApplicationCommand(token, "word.review.editor.analyze", "word_document", token.documentID, "", map[string]int{"start_block": 0, "max_blocks": 1000})
 		revision := token.revision
@@ -69,42 +69,42 @@ func (a *App) showWordEditorDialog() {
 }
 
 func (a *App) applyWordEditorReviewResult(result wordEditorReviewAsyncResult) {
-	if result.request != a.wordEditorReviewRequest || !a.modal.Visible || a.modal.Title != "文档编辑器" {
+	if result.request != a.wordEditorReviewRequest || !a.modal.Visible || a.modal.DialogID != dialogIDWordEditorReview {
 		return
 	}
 	if result.state == nil || result.state.closed.Load() || result.state != a.documentSessionState || result.generation != a.documentGeneration {
-		a.modal.Message = "当前文档已切换，审阅结果已丢弃。"
+		a.modal.SetMessageRef(i18n.Message{ID: "word.review.editor.error.switched"})
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
 	if result.revision != result.state.wordRevisionAtomic.Load() {
-		a.modal.Message = "文档在扫描期间发生变化，审阅结果已过期。请重新审阅。"
+		a.modal.SetMessageRef(i18n.Message{ID: "word.review.editor.error.stale"})
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
 	if result.err != nil {
-		a.modal.Message = "审阅失败：" + result.err.Error()
+		a.modal.SetMessageRef(i18n.Message{ID: "word.review.editor.error.failed", Args: i18n.Args{"Details": result.err.Error()}})
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
-	report, err := wordEditorReviewMessage(result.data)
+	report, err := a.wordEditorReviewMessage(result.data)
 	if err != nil {
-		a.modal.Message = "无法读取审阅结果：" + err.Error()
+		a.modal.SetMessageRef(i18n.Message{ID: "word.review.editor.error.read", Args: i18n.Args{"Details": err.Error()}})
 	} else {
-		a.modal.Message = report
+		a.modal.SetMessageText(report)
 	}
 	if a.window != nil {
 		a.window.Invalidate()
 	}
 }
 
-func wordEditorReviewMessage(data []byte) (string, error) {
+func (a *App) wordEditorReviewMessage(data []byte) (string, error) {
 	var result struct {
 		Score                       int `json:"heuristic_score"`
 		ScannedBlocks               int `json:"scanned_blocks"`
@@ -131,29 +131,32 @@ func wordEditorReviewMessage(data []byte) (string, error) {
 	if estMin < 1 {
 		estMin = 1
 	}
-	report := fmt.Sprintf("【文档编辑器启发式评分：%d / 100】\n\n"+
-		"统计概览：\n· 本次扫描正文块：%d / %d\n· 总字符数：%d（不含空白：%d）\n· 段落总数：%d\n· 表格总数：%d\n· 预估阅读耗时：约 %d 分钟\n\n",
-		result.Score, result.ScannedBlocks, result.TotalBlocks, result.CharactersWithWhitespace,
-		result.CharactersWithoutWhitespace, result.Paragraphs, result.Tables, estMin)
+	report := a.text(i18n.Message{ID: "word.review.editor.report.title", Args: i18n.Args{"Score": result.Score}}) + "\n\n" +
+		a.text(i18n.Message{ID: "word.review.editor.report.overview"}) + "\n" +
+		a.text(i18n.Message{ID: "word.review.editor.report.scanned", Args: i18n.Args{"Scanned": result.ScannedBlocks, "Total": result.TotalBlocks}}) + "\n" +
+		a.text(i18n.Message{ID: "word.review.editor.report.characters", Args: i18n.Args{"Count": result.CharactersWithWhitespace, "WithoutSpaces": result.CharactersWithoutWhitespace}}) + "\n" +
+		a.text(i18n.Message{ID: "word.review.editor.report.paragraphs", Args: i18n.Args{"Count": result.Paragraphs}}) + "\n" +
+		a.text(i18n.Message{ID: "word.review.editor.report.tables", Args: i18n.Args{"Count": result.Tables}}) + "\n" +
+		a.text(i18n.Message{ID: "word.review.editor.report.reading_time", Args: i18n.Args{"Minutes": estMin}}) + "\n\n"
 	if len(result.Findings) > 0 {
-		report += "启发式检查：\n"
+		report += a.text(i18n.Message{ID: "word.review.editor.report.findings"}) + "\n"
 		for i, finding := range result.Findings {
 			if i >= 3 {
-				report += "· 更多发现可通过 MCP 分页读取。\n"
+				report += a.text(i18n.Message{ID: "word.review.editor.report.more_findings"}) + "\n"
 				break
 			}
-			report += fmt.Sprintf("· 正文块 %d（%s；段落 %s，文本运行 %s）：%s\n", finding.BlockIndex+1, finding.BlockID, finding.ParagraphID, finding.RunID, finding.Detail)
+			report += a.text(i18n.Message{ID: "word.review.editor.report.finding", Args: i18n.Args{"Index": finding.BlockIndex + 1, "BlockID": finding.BlockID, "ParagraphID": finding.ParagraphID, "RunID": finding.RunID, "Detail": finding.Detail}}) + "\n"
 		}
 	} else {
-		report += "未发现重复中文标点或括号/引号数量不平衡。"
+		report += a.text(i18n.Message{ID: "word.review.editor.report.no_findings"})
 	}
 	if result.FindingsTruncated {
-		report += "\n部分发现已省略，请通过 MCP 分页检查。"
+		report += "\n" + a.text(i18n.Message{ID: "word.review.editor.report.truncated"})
 	}
 	if result.HasMore {
-		report += "\n文档超出本次扫描的 1000 个正文块；可通过 MCP 工具继续分页。"
+		report += "\n" + a.text(i18n.Message{ID: "word.review.editor.report.has_more"})
 	}
-	report += "\n\n此轻量检查不执行词典拼写、语法或语义分析。"
+	report += "\n\n" + a.text(i18n.Message{ID: "word.review.editor.report.limitation"})
 	return report, nil
 }
 
@@ -189,13 +192,13 @@ func (a *App) showWordTranslateDialog() {
 		}
 	}
 	if activeRunID == "" {
-		a.setStatus("未找到可翻译的正文内容，请先选择包含文本的段落")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.no_document_text_is_available_b791d7"}, feedbackWarning, notificationToast)
 		return
 	}
 
 	previewText := originalText
 	if previewText == "" {
-		previewText = "（空段落）"
+		previewText = a.text(i18n.Message{ID: "word.translate.empty_paragraph"})
 	} else {
 		runes := []rune(previewText)
 		if len(runes) > 25 {
@@ -203,11 +206,9 @@ func (a *App) showWordTranslateDialog() {
 		}
 	}
 
-	a.modal.ShowInput(
-		"翻译",
-		fmt.Sprintf("原文内容：%s\n请输入翻译译文（确认后将替换选中文本）：", previewText),
+	a.modal.ShowInputMessage("word.translate", i18n.Message{ID: "word.translate.dialog.title"}, i18n.Message{ID: "word.translate.dialog.body", Args: i18n.Args{"Preview": previewText}},
 		originalText,
-		"输入翻译后的内容",
+		i18n.Message{ID: "word.translate.dialog.hint"},
 		func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
@@ -218,11 +219,11 @@ func (a *App) showWordTranslateDialog() {
 				return
 			}
 			if !a.runWordApplicationCommand("翻译替换", "word.text_run.replace", wordTextRunReplaceArguments{RunId: activeRunID, Value: translated}) {
-				a.setStatus("无法启动 Word 翻译替换操作")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.could_not_start_the_word_0fa0c8"}, feedbackWarning, notificationToast)
 			}
 		},
-		modalDialogActionSpec{ID: "confirm", Label: "替换入正文"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.translate.action.replace"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -235,26 +236,26 @@ func (a *App) showWordCompareDialog() {
 	request := a.wordCompareRequest
 	runtime := a.ensureDesktopRuntime()
 	if runtime.applicationRuntimeErr != nil || runtime.applicationRuntime == nil {
-		message := "文档比较服务当前不可用。"
-		if runtime.applicationRuntimeErr != nil {
-			message += "\n" + runtime.applicationRuntimeErr.Error()
-		}
-		a.modal.Show("文档比较", message, func(string) {
+		a.modal.ShowMessage(dialogIDWordCompare, i18n.Message{ID: "word.compare.dialog.title"}, i18n.Message{ID: "word.compare.error.unavailable"}, func(string) {
 			if a.wordCompareRequest == request {
 				a.wordCompareRequest++
 			}
 			a.modal.Hide()
-		}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+		}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
+		if runtime.applicationRuntimeErr != nil {
+			a.setStatusErrorMessage(i18n.Message{ID: "word.compare.error.unavailable"}, runtime.applicationRuntimeErr, notificationToast)
+		}
 		return
 	}
 	documents, err := runtime.applicationRuntime.ListDocuments(context.Background())
 	if err != nil {
-		a.modal.Show("文档比较", "无法列出可比较的实时文档：\n"+err.Error(), func(string) {
+		a.modal.ShowMessage(dialogIDWordCompare, i18n.Message{ID: "word.compare.dialog.title"}, i18n.Message{ID: "word.compare.error.list_documents"}, func(string) {
 			if a.wordCompareRequest == request {
 				a.wordCompareRequest++
 			}
 			a.modal.Hide()
-		}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+		}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
+		a.setStatusErrorMessage(i18n.Message{ID: "word.compare.error.list_documents"}, err, notificationToast)
 		return
 	}
 	otherDocuments := make([]application.DocumentInfo, 0, len(documents))
@@ -265,27 +266,27 @@ func (a *App) showWordCompareDialog() {
 		}
 		otherDocuments = append(otherDocuments, info)
 		actionID := "compare:" + info.DocumentID
-		label := wordCompareDocumentLabel(info)
+		label := a.wordCompareDocumentLabel(info)
 		labels[actionID] = label
 	}
 	if len(otherDocuments) == 0 {
-		a.modal.Show("文档比较", "当前没有其他已打开的 Word 文档。\n请先打开或创建另一份 Word 文档，再比较两个版本。", func(string) {
+		a.modal.ShowMessage(dialogIDWordCompare, i18n.Message{ID: "word.compare.dialog.title"}, i18n.Message{ID: "word.compare.dialog.body.no_other_documents"}, func(string) {
 			if a.wordCompareRequest == request {
 				a.wordCompareRequest++
 			}
 			a.modal.Hide()
-		}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+		}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
 		return
 	}
-	message := fmt.Sprintf("文档版本比较\n当前文档：%s\n\n选择另一份已打开的 Word 文档。比较范围为双方正文开头最多 1000 个正文块。", wordCompareDocumentLabel(application.DocumentInfo{
+	currentDocument := a.wordCompareDocumentLabel(application.DocumentInfo{
 		DocumentID: state.documentID, SourcePath: sessionPath(state), Dirty: sessionDirty(state),
-	}))
+	})
 	a.wordCompareDocumentButtons = make(map[string]*widget.Clickable, len(otherDocuments))
 	for _, info := range otherDocuments {
 		a.wordCompareDocumentButtons["compare:"+info.DocumentID] = new(widget.Clickable)
 	}
 
-	a.modal.ShowCustom("文档比较", message, 520,
+	a.modal.ShowCustomMessage(dialogIDWordCompare, i18n.Message{ID: "word.compare.dialog.title"}, i18n.Message{ID: "word.compare.dialog.body.choose_document", Args: i18n.Args{"Current": currentDocument}}, 520,
 		func(gtx layout.Context) layout.Dimensions {
 			return a.layoutWordCompareDocumentChoices(gtx, otherDocuments, labels)
 		},
@@ -303,7 +304,7 @@ func (a *App) showWordCompareDialog() {
 					return
 				}
 			}
-		}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+		}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
 }
 
 func (a *App) layoutWordCompareDocumentChoices(gtx layout.Context, documents []application.DocumentInfo, labels map[string]string) layout.Dimensions {
@@ -331,7 +332,7 @@ func (a *App) layoutWordCompareDocumentChoices(gtx layout.Context, documents []a
 	})
 }
 
-func wordCompareDocumentLabel(info application.DocumentInfo) string {
+func (a *App) wordCompareDocumentLabel(info application.DocumentInfo) string {
 	name := filepath.Base(strings.TrimSpace(info.SourcePath))
 	if name == "." || name == string(filepath.Separator) {
 		name = ""
@@ -341,10 +342,10 @@ func wordCompareDocumentLabel(info application.DocumentInfo) string {
 		if len(id) > 8 {
 			id = id[:8]
 		}
-		name = "未命名文档 " + id
+		name = a.text(i18n.Message{ID: "word.compare.document.untitled", Args: i18n.Args{"ID": id}})
 	}
 	if info.Dirty {
-		name += "（未保存修改）"
+		name += a.text(i18n.Message{ID: "word.compare.document.unsaved"})
 	}
 	return name
 }
@@ -365,14 +366,14 @@ func (a *App) startWordDocumentCompare(state *documentSessionState, other applic
 	token, ok := state.beginOperation(sessionOperationRead)
 	if !ok {
 		a.modal.Hide()
-		a.setStatus("Word 文档正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "word.status.operation_busy"}, feedbackWarning, notificationToast)
 		return
 	}
 	a.wordCompareRequest++
 	request := a.wordCompareRequest
 	generation := a.documentGeneration
 	window, shutdown, results := a.window, a.shutdown, a.wordCompareResults
-	a.modal.Show("文档比较", "正在比较两份 Word 文档…", func(string) {
+	a.modal.ShowMessage(dialogIDWordCompare, i18n.Message{ID: "word.compare.dialog.title"}, i18n.Message{ID: "word.compare.dialog.body.running"}, func(string) {
 		if a.wordCompareRequest == request {
 			a.wordCompareRequest++
 		}
@@ -380,7 +381,7 @@ func (a *App) startWordDocumentCompare(state *documentSessionState, other applic
 		if window != nil {
 			window.Invalidate()
 		}
-	}, modalDialogActionSpec{ID: "close", Label: "关闭"})
+	}, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
 	a.launchManagedBackground(func() {
 		command, err := a.executeRibbonApplicationCommand(token, "document.compare", "two_word_documents", state.documentID, "", documentCompareArguments{LeftDocumentId: state.documentID, RightDocumentId: other.DocumentID, LeftExpectedRevision: token.revision, RightExpectedRevision: other.Revision, Start: 0, Limit: 1000})
 		state.finishOperation(token)
@@ -388,7 +389,7 @@ func (a *App) startWordDocumentCompare(state *documentSessionState, other applic
 			state: state, generation: generation, request: request,
 			leftDocumentID: state.documentID, rightDocumentID: other.DocumentID,
 			leftRevision: token.revision, rightRevision: other.Revision,
-			rightLabel: wordCompareDocumentLabel(other), data: command.Data, err: err,
+			rightLabel: a.wordCompareDocumentLabel(other), data: command.Data, err: err,
 		}
 		select {
 		case results <- result:
@@ -414,25 +415,26 @@ type wordCompareAsyncResult struct {
 }
 
 func (a *App) applyWordCompareResult(result wordCompareAsyncResult) {
-	if result.request != a.wordCompareRequest || !a.modal.Visible || a.modal.Title != "文档比较" {
+	if result.request != a.wordCompareRequest || !a.modal.Visible || a.modal.DialogID != dialogIDWordCompare {
 		return
 	}
 	if result.state == nil || result.state.closed.Load() || result.state != a.documentSessionState || result.generation != a.documentGeneration {
-		a.modal.Message = "当前文档已切换，比较结果已丢弃。"
+		a.modal.SetMessageRef(i18n.Message{ID: "word.compare.result.stale_current_document"})
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
 	if result.state.documentID != result.leftDocumentID || result.state.wordRevisionAtomic.Load() != result.leftRevision {
-		a.modal.Message = "比较期间当前文档发生变化，结果已过期。请重新比较。"
+		a.modal.SetMessageRef(i18n.Message{ID: "word.compare.result.stale_document_revision"})
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
 	if result.err != nil {
-		a.modal.Message = "比较失败：" + result.err.Error()
+		a.modal.SetMessageRef(i18n.Message{ID: "word.compare.result.failed"})
+		a.setStatusErrorMessage(i18n.Message{ID: "word.compare.result.failed"}, result.err, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -440,7 +442,7 @@ func (a *App) applyWordCompareResult(result wordCompareAsyncResult) {
 	}
 	runtime := a.ensureDesktopRuntime()
 	if runtime.applicationRuntime == nil {
-		a.modal.Message = "比较失败：文档运行时已关闭。"
+		a.modal.SetMessageRef(i18n.Message{ID: "word.compare.result.runtime_closed"})
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -448,7 +450,7 @@ func (a *App) applyWordCompareResult(result wordCompareAsyncResult) {
 	}
 	rightInfo, err := runtime.applicationRuntime.GetDocument(context.Background(), result.rightDocumentID)
 	if err != nil || rightInfo.Revision != result.rightRevision {
-		a.modal.Message = "比较期间所选文档已关闭或发生变化，结果已过期。请重新比较。"
+		a.modal.SetMessageRef(i18n.Message{ID: "word.compare.result.stale_compared_document"})
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -456,16 +458,18 @@ func (a *App) applyWordCompareResult(result wordCompareAsyncResult) {
 	}
 	message, err := wordDocumentCompareMessage(result.data, result.rightLabel)
 	if err != nil {
-		a.modal.Message = "无法读取比较结果：" + err.Error()
+		a.modal.SetMessageRef(i18n.Message{ID: "word.compare.error.result"})
+		a.setStatusErrorMessage(i18n.Message{ID: "word.compare.error.result"}, err, notificationToast)
 	} else {
-		a.modal.Message = message
+		a.modal.Message = ""
+		a.modal.MessageRef = message
 	}
 	if a.window != nil {
 		a.window.Invalidate()
 	}
 }
 
-func wordDocumentCompareMessage(data []byte, rightLabel string) (string, error) {
+func wordDocumentCompareMessage(data []byte, rightLabel string) (i18n.Message, error) {
 	var result struct {
 		LeftRevision       uint64   `json:"left_revision"`
 		RightRevision      uint64   `json:"right_revision"`
@@ -473,24 +477,19 @@ func wordDocumentCompareMessage(data []byte, rightLabel string) (string, error) 
 		HasMoreDifferences bool     `json:"has_more_differences"`
 	}
 	if err := json.Unmarshal(data, &result); err != nil {
-		return "", err
+		return i18n.Message{}, err
 	}
-	message := fmt.Sprintf("比较完成\n对比文档：%s\n修订版本：当前文档 r%d，对比文档 r%d\n比较范围：双方正文开头最多 1000 个正文块\n\n",
-		rightLabel, result.LeftRevision, result.RightRevision)
-	if len(result.ChangedPaths) == 0 {
-		message += "在本次读取的正文范围内未发现差异。"
-	} else {
-		message += fmt.Sprintf("发现 %d 处变化路径：\n", len(result.ChangedPaths))
-		for i, path := range result.ChangedPaths {
-			if i >= 12 {
-				message += fmt.Sprintf("· 其余 %d 项请通过 MCP 工具读取。\n", len(result.ChangedPaths)-i)
-				break
-			}
-			message += "· " + path + "\n"
+	var paths strings.Builder
+	limit := min(12, len(result.ChangedPaths))
+	for i := 0; i < limit; i++ {
+		if i > 0 {
+			paths.WriteByte('\n')
 		}
+		paths.WriteString("• ")
+		paths.WriteString(result.ChangedPaths[i])
 	}
-	if result.HasMoreDifferences {
-		message += "\n变化路径已达到结果上限；可缩小比较范围后继续检查。"
-	}
-	return message, nil
+	return i18n.Message{ID: "word.compare.result.report", Args: i18n.Args{
+		"RightDocument": rightLabel, "LeftRevision": result.LeftRevision, "RightRevision": result.RightRevision,
+		"Changes": len(result.ChangedPaths), "Paths": paths.String(), "Remaining": len(result.ChangedPaths) - limit, "HasMore": result.HasMoreDifferences,
+	}}, nil
 }

@@ -99,7 +99,7 @@ func (a *App) layoutWordAppendTarget(gtx layout.Context, state *documentSessionS
 		height := gtx.Dp(unit.Dp(560))
 		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 		semantic.Button.Add(gtx.Ops)
-		semantic.DescriptionOp("单击此处继续输入").Add(gtx.Ops)
+		semantic.DescriptionOp(a.textID("word.placeholder.continue_typing")).Add(gtx.Ops)
 		return layout.Background{}.Layout(gtx,
 			func(gtx layout.Context) layout.Dimensions {
 				paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
@@ -110,7 +110,7 @@ func (a *App) layoutWordAppendTarget(gtx layout.Context, state *documentSessionS
 					return layout.Dimensions{Size: gtx.Constraints.Max}
 				}
 				return layout.Inset{Top: unit.Dp(12), Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Caption(a.theme, "单击此处继续输入").Layout(gtx)
+					return material.Caption(a.theme, a.textID("word.placeholder.continue_typing")).Layout(gtx)
 				})
 			},
 		)

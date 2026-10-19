@@ -1,6 +1,8 @@
 package desktopui
 
-import "fmt"
+import (
+	"glance/internal/i18n"
+)
 
 type spreadsheetToolbarTab uint8
 
@@ -279,7 +281,7 @@ func unimplementedSpreadsheetToolbarAction(slot int) bool {
 }
 
 func (a *App) showSpreadsheetFeatureMissing(name string) {
-	a.setStatus(fmt.Sprintf("“%s”功能暂未实现", name))
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.feature.unavailable", Args: i18n.Args{"Feature": name}}, feedbackInfo, notificationSuppressed)
 	if a.window != nil {
 		a.window.Invalidate()
 	}

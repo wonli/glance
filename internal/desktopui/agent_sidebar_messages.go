@@ -14,6 +14,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"glance/internal/i18n"
 )
 
 func (a *App) layoutAgentSidebarMessages(gtx layout.Context) layout.Dimensions {
@@ -250,8 +251,10 @@ func (a *App) agentSidebarConversationStamp(now time.Time) string {
 	}
 	at := a.agentUI.conversationStartedAt.In(now.Location())
 	stamp := at.Format("01/02 15:04")
-	if group := agentHistoryDateGroup(at, now); group == "今天" || group == "昨天" {
-		stamp = group + " " + at.Format("15:04")
+	if group := agentHistoryDateGroup(at, now); group == "today" {
+		stamp = a.textArgs("agent.history.date.today", i18n.Args{"Time": at.Format("15:04")})
+	} else if group == "yesterday" {
+		stamp = a.textArgs("agent.history.date.yesterday", i18n.Args{"Time": at.Format("15:04")})
 	}
 	return stamp
 }
@@ -362,9 +365,9 @@ func (a *App) agentSidebarGroupSignature(index int, group [2]int, lastAssistant 
 	for i := group[0]; i < group[1]; i++ {
 		line := a.agentUI.chatLines[i]
 		writeStr(line.role)
-		writeStr(line.text)
+		writeStr(a.agentChatLineDisplayText(line))
 		writeStr(line.toolName)
-		writeStr(line.toolSummary)
+		writeStr(a.agentToolSummaryText(line))
 		writeStr(line.confirmationID)
 		writeBool(line.collapsed)
 		writeBool(line.inProgress)
@@ -374,7 +377,7 @@ func (a *App) agentSidebarGroupSignature(index int, group [2]int, lastAssistant 
 			indices := collectSubTurnProcessLines(a.agentUI.chatLines, i)
 			if len(indices) > 0 && indices[0] == i {
 				writeBool(agentProcessGroupCollapsed(a.agentUI.chatLines, indices))
-				writeStr(agentProcessGroupHeaderTitle(a.agentUI.chatLines, indices, now))
+				writeStr(a.agentProcessGroupHeaderTitle(a.agentUI.chatLines, indices, now))
 			}
 		}
 	}
@@ -419,7 +422,7 @@ func (a *App) layoutAgentSidebarMessageGroup(gtx layout.Context, group [2]int, l
 		if hasAssistant {
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = 0
-				label := material.Label(a.theme, 10, "AI 助手")
+				label := material.Label(a.theme, 10, a.textID("home.nav.assistant"))
 				label.Color = color.NRGBA{R: 122, G: 135, B: 151, A: 255}
 				label.Font.Weight = 600
 				return layout.Inset{Bottom: 4}.Layout(gtx, label.Layout)
@@ -479,15 +482,15 @@ func (a *App) layoutAgentSidebarMessageContent(gtx layout.Context, index int, la
 					if user || (line.role == "assistant" && (!showAssistantTitle || !agentSidebarStartsAssistantTurn(a.agentUI.chatLines, index))) {
 						return layout.Dimensions{}
 					}
-					role := "AI 助手"
+					role := a.textID("home.nav.assistant")
 					roleColor := color.NRGBA{R: 67, G: 90, B: 115, A: 255}
 					switch line.role {
 					case "user":
-						role, roleColor = "你", color.NRGBA{R: 59, G: 71, B: 85, A: 255}
+						role, roleColor = a.textID("common.identity.you"), color.NRGBA{R: 59, G: 71, B: 85, A: 255}
 					case "error":
-						role, roleColor = "错误", agentProcessErrorColor
+						role, roleColor = a.textID("common.status.error"), agentProcessErrorColor
 					case "confirmation":
-						role, roleColor = "人工确认", agentProcessAuthColor
+						role, roleColor = a.textID("agent.confirmation.title"), agentProcessAuthColor
 					}
 					style := material.Caption(a.theme, role)
 					style.TextSize = unit.Sp(11)
@@ -509,7 +512,7 @@ func (a *App) layoutAgentSidebarMessageContent(gtx layout.Context, index int, la
 							})
 						})
 					}
-					body := material.Body1(a.theme, line.text)
+					body := material.Body1(a.theme, a.agentChatLineDisplayText(line))
 					body.TextSize = unit.Sp(12)
 					body.Color = agentSidebarText
 					body.MaxLines = 0
@@ -556,11 +559,11 @@ func (a *App) layoutAgentSidebarProcessGroup(gtx layout.Context, indices []int) 
 			a.agentUI.chatLines[idx].collapsed = collapsed
 		}
 	}
-	title := agentProcessGroupHeaderTitle(a.agentUI.chatLines, indices, gtx.Now)
+	title := a.agentProcessGroupHeaderTitle(a.agentUI.chatLines, indices, gtx.Now)
 	return layout.Inset{Top: unit.Dp(2), Right: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return agentSidebarProcessDisclosure(gtx, a.theme, button, title, collapsed)
+				return agentSidebarProcessDisclosure(gtx, a.theme, button, title, a.textID("agent.process.toggle.description"), collapsed)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if !collapsed {
@@ -655,10 +658,10 @@ func (a *App) layoutAgentSidebarToolRun(gtx layout.Context, indices []int) layou
 }
 
 func (a *App) layoutAgentSidebarToolRecord(gtx layout.Context, line agentChatLine) layout.Dimensions {
-	title, summary := agentToolRecordDisplay(line)
+	title, summary := a.agentToolRecordDisplay(line)
 	primaryColor := agentProcessPrimaryColor
 	secondaryColor := agentProcessSecondaryColor
-	if line.isError || strings.Contains(line.text, "失败") {
+	if line.isError {
 		primaryColor = agentProcessErrorColor
 		secondaryColor = agentProcessErrorColor
 	} else if line.needsAuth {
@@ -699,8 +702,8 @@ func (a *App) layoutAgentSidebarCollapsedProcessStatus(gtx layout.Context, indic
 			continue
 		}
 		if line.role == "tool" {
-			failed := line.isError || strings.Contains(line.text, "失败")
-			authNeeded := (line.needsAuth || strings.Contains(line.text, "等待批准") || strings.Contains(line.text, "需要授权")) && !hasConfirmationCard
+			failed := line.isError
+			authNeeded := line.needsAuth && !hasConfirmationCard
 			if failed || authNeeded {
 				alertIndices = append(alertIndices, idx)
 			}
@@ -721,7 +724,7 @@ func (a *App) layoutAgentSidebarCollapsedProcessStatus(gtx layout.Context, indic
 		line := a.agentUI.chatLines[idx]
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			barColor := agentProcessErrorBarColor
-			if line.needsAuth && !line.isError && !strings.Contains(line.text, "失败") {
+			if line.needsAuth && !line.isError {
 				barColor = agentProcessAuthBarColor
 			}
 			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

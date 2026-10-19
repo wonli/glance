@@ -11,6 +11,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"glance/internal/i18n"
 )
 
 func (a *App) prepareAgentSettingsPage() {
@@ -24,10 +26,9 @@ func (a *App) prepareAgentSettingsPage() {
 	}
 	a.agentUI.settingsTab = settingsTabFor(a.agentUI.providerInput.Text(), a.agentUI.baseURLInput.Text())
 	if a.agentUI.settingsPageTab == "" {
-		a.agentUI.settingsPageTab = "providers"
+		a.agentUI.settingsPageTab = "basic"
 	}
-	a.agentUI.settingsInfo = ""
-	a.agentUI.settingsError = ""
+	a.clearAgentSettingsMessages()
 	if a.agentUI.settingsPageTabs == nil {
 		a.agentUI.settingsPageTabs = make(map[string]*widget.Clickable)
 	}
@@ -86,14 +87,17 @@ func (a *App) settingsPageTabButton(id string) *widget.Clickable {
 }
 
 func (a *App) selectSettingsPageTab(id string) {
-	if id != "providers" && id != "mcp" || a.agentUI.settingsPageTab == id {
+	if id != "basic" && id != "providers" && id != "mcp" || a.agentUI.settingsPageTab == id {
 		return
 	}
 	if id != "providers" {
 		a.cancelAgentModelLookup(true)
+		a.clearAgentSettingsKeyPreview()
+		a.agentUI.apiKeyInput.Mask = '•'
 	}
 	a.resetHomeContentScroll()
 	a.agentUI.settingsPageTab = id
+	a.agentUI.languageMenuOpen = false
 	if id == "mcp" {
 		a.clearAgentSettingsKeyPreview()
 		a.agentUI.apiKeyInput.Mask = '•'
@@ -143,14 +147,16 @@ func (a *App) selectSettingsProvider(id string) {
 	a.agentUI.providerInput.SetText(providerID)
 	a.agentUI.baseURLInput.SetText(baseURL)
 	a.agentUI.settingsTab = id
-	a.agentUI.settingsInfo = ""
-	a.agentUI.settingsError = ""
+	a.clearAgentSettingsMessages()
 }
 
 func (a *App) layoutAgentSettingsPage(gtx layout.Context) layout.Dimensions {
 	a.processAgentModelOptionClicks(gtx)
 	if a.agentUI.settingsPageTab == "" {
-		a.agentUI.settingsPageTab = "providers"
+		a.agentUI.settingsPageTab = "basic"
+	}
+	if a.agentUI.settingsPageTab == "basic" {
+		return a.layoutBasicSettingsPage(gtx)
 	}
 	if a.agentUI.settingsPageTab == "providers" {
 		for _, tab := range []struct {
@@ -168,7 +174,7 @@ func (a *App) layoutAgentSettingsPage(gtx layout.Context) layout.Dimensions {
 				if tab.enabled {
 					a.selectSettingsProvider(tab.id)
 				} else {
-					a.agentUI.settingsInfo = "该服务商暂未接入。"
+					a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.not_integrated"})
 				}
 			}
 		}
@@ -212,10 +218,11 @@ func (a *App) layoutAgentSettingsPage(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutSettingsPageHeading(gtx layout.Context) layout.Dimensions {
-	title, subtitle := "AI 提供商", "配置模型密钥和接口，选择用于文档 AI 的默认提供商。"
+	title := a.text(i18n.Message{ID: "settings.providers.title"})
+	subtitle := a.text(i18n.Message{ID: "settings.providers.subtitle"})
 	if a.agentUI.settingsPageTab == "mcp" {
-		title = "MCP 连接"
-		subtitle = "将以下连接信息填入其他 Agent 的 MCP 客户端，即可操作当前桌面会话。"
+		title = a.text(i18n.Message{ID: "settings.mcp.title"})
+		subtitle = a.text(i18n.Message{ID: "settings.mcp.subtitle"})
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -253,7 +260,7 @@ func (a *App) layoutSettingsProviderPage(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return homeTextLabel(gtx, a.theme, "将 "+settingsTabLabel(a.agentUI.settingsTab)+" 设为默认 AI 提供商", a.tokens().Typography.SettingsSecondary, settingsBlack, false)
+								return homeTextLabel(gtx, a.theme, a.text(i18n.Message{ID: "settings.provider.set_default", Args: i18n.Args{"Provider": a.localizedSettingsTabLabel(a.agentUI.settingsTab)}}), a.tokens().Typography.SettingsSecondary, settingsBlack, false)
 							})
 						})
 					}),
@@ -273,11 +280,11 @@ func (a *App) layoutSettingsProviderPage(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return agentSettingsPageButton(gtx, a.theme, &a.agentUI.settingsSave, "保存配置", true, a.agentUI.saving)
+						return agentSettingsPageButton(gtx, a.theme, &a.agentUI.settingsSave, a.text(i18n.Message{ID: "settings.provider.save"}), true, a.agentUI.saving)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return agentSettingsPageButton(gtx, a.theme, &a.agentUI.settingsTest, "测试连接", false, a.agentUI.saving)
+							return agentSettingsPageButton(gtx, a.theme, &a.agentUI.settingsTest, a.text(i18n.Message{ID: "settings.provider.test"}), false, a.agentUI.saving)
 						})
 					}),
 				)
@@ -288,9 +295,9 @@ func (a *App) layoutSettingsProviderPage(gtx layout.Context) layout.Dimensions {
 				return layout.Dimensions{}
 			}
 			return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				message, textColor := a.agentUI.settingsInfo, settingsBlack
+				message, textColor := a.messageText(a.agentUI.settingsInfoRef, a.agentUI.settingsInfo), settingsBlack
 				if a.agentUI.settingsError != "" {
-					message, textColor = a.agentUI.settingsError, settingsBlack
+					message, textColor = a.messageText(a.agentUI.settingsErrorRef, a.agentUI.settingsError), settingsBlack
 				}
 				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, message)
 				style.Color, style.MaxLines = textColor, 2
@@ -305,7 +312,7 @@ func (a *App) layoutSettingsProviderPage(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							style := settingsSecondaryLabel(a.theme, a.tokens().Typography, "请勿分享 API Key；调用费用由对应模型提供商收取。")
+							style := settingsSecondaryLabel(a.theme, a.tokens().Typography, a.text(i18n.Message{ID: "settings.provider.share_warning"}))
 							style.Color, style.MaxLines = settingsBlack, 2
 							return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, style.Layout)
 						})
@@ -334,6 +341,7 @@ func (a *App) layoutSettingsProviderTabs(gtx layout.Context) layout.Dimensions {
 	tabs := []struct {
 		id      string
 		label   string
+		message i18n.Message
 		enabled bool
 		width   unit.Dp
 	}{
@@ -342,7 +350,7 @@ func (a *App) layoutSettingsProviderTabs(gtx layout.Context) layout.Dimensions {
 		{id: "kimi", label: "Kimi", enabled: true, width: 78},
 		{id: "deepseek", label: "DeepSeek", enabled: true, width: 108},
 		{id: "ollama", label: "Ollama", enabled: true, width: 92},
-		{id: "custom", label: "自定义", enabled: true, width: 84},
+		{id: "custom", label: "", message: i18n.Message{ID: "settings.provider.tab.custom"}, enabled: true, width: 84},
 	}
 	children := make([]layout.FlexChild, 0, len(tabs))
 	for _, tab := range tabs {
@@ -365,7 +373,7 @@ func (a *App) layoutSettingsProviderTabs(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return homeTextLabel(gtx, a.theme, tab.label, 13, fg, selected)
+									return homeTextLabel(gtx, a.theme, a.messageText(tab.message, tab.label), 13, fg, selected)
 								})
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -405,9 +413,29 @@ func settingsTabLabel(tab string) string {
 	}
 }
 
+func (a *App) localizedSettingsTabLabel(tab string) string {
+	switch tab {
+	case "openai", "minimax", "kimi", "deepseek", "ollama":
+		return settingsTabLabel(tab)
+	case "custom":
+		return a.text(i18n.Message{ID: "settings.provider.tab.custom"})
+	default:
+		return a.text(i18n.Message{ID: "settings.provider.current_service"})
+	}
+}
+
+func knownSettingsProviderTab(tab string) bool {
+	switch tab {
+	case "openai", "minimax", "kimi", "deepseek", "ollama", "custom":
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimensions {
 	a.processAgentModelOptionClicks(gtx)
-	providerName := settingsTabLabel(a.agentUI.settingsTab)
+	providerName := a.localizedSettingsTabLabel(a.agentUI.settingsTab)
 	savedBaseURL := a.agentUI.settings.BaseURL
 	if savedBaseURL == "" {
 		savedBaseURL = defaultAgentBaseURL(a.agentUI.settings.ProviderID)
@@ -419,11 +447,11 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 	configured := a.agentUI.settings.ProviderID == a.agentUI.providerInput.Text() &&
 		strings.TrimRight(savedBaseURL, "/") == strings.TrimRight(currentBaseURL, "/") &&
 		(a.agentUI.settings.CredentialRef != "" || a.agentUI.settings.ProviderID == "ollama")
-	status, statusFG, statusBG := "未配置", settingsBlack, homeHoverFill
+	statusMessage, statusFG, statusBG := i18n.Message{ID: "settings.provider.status.unconfigured"}, settingsBlack, homeHoverFill
 	if configured && strings.TrimSpace(a.agentUI.apiKeyInput.Text()) == "" {
-		status, statusFG, statusBG = "已保存", settingsBlack, color.NRGBA{R: 232, G: 246, B: 238, A: 255}
+		statusMessage, statusFG, statusBG = i18n.Message{ID: "settings.provider.status.saved"}, settingsBlack, color.NRGBA{R: 232, G: 246, B: 238, A: 255}
 	} else if strings.TrimSpace(a.agentUI.providerInput.Text()) != "" {
-		status = "待验证"
+		statusMessage = i18n.Message{ID: "settings.provider.status.unverified"}
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -436,7 +464,7 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Top: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									style := settingsSecondaryLabel(a.theme, a.tokens().Typography, "独立保存每个提供商的密钥与模型偏好。")
+									style := settingsSecondaryLabel(a.theme, a.tokens().Typography, a.text(i18n.Message{ID: "settings.provider.credentials_help"}))
 									style.Color = settingsBlack
 									return style.Layout(gtx)
 								})
@@ -454,7 +482,7 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 						gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 						return homeRoundedPanel(gtx, statusBG, statusBG, unit.Dp(16), func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return homeTextLabel(gtx, a.theme, status, 12, statusFG, true)
+								return homeTextLabel(gtx, a.theme, a.text(statusMessage), 12, statusFG, true)
 							})
 						})
 					}),
@@ -464,14 +492,14 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if a.agentUI.settingsTab == "custom" {
 				return layout.Inset{Bottom: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return agentSettingsPageField(gtx, a.theme, a.tokens().Typography, "服务商 ID", &a.agentUI.providerInput, "minimax / kimi / deepseek / ollama / openai-compatible")
+					return agentSettingsPageField(gtx, a.theme, a.tokens().Typography, a.text(i18n.Message{ID: "settings.provider.id"}), &a.agentUI.providerInput, "minimax / kimi / deepseek / ollama / openai-compatible")
 				})
 			}
 			return layout.Dimensions{}
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if a.agentUI.providerInput.Text() == "ollama" {
-				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, "Ollama 在本机运行，不需要 API Key。")
+				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, a.text(i18n.Message{ID: "settings.provider.ollama_note"}))
 				style.Color = settingsBlack
 				return layout.Inset{Bottom: unit.Dp(16)}.Layout(gtx, style.Layout)
 			}
@@ -481,11 +509,11 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Bottom: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return agentSettingsPageFieldHelp(gtx, a.theme, a.tokens().Typography, "API 地址", &a.agentUI.baseURLInput, "https://api.example.com/v1", "支持官方接口或兼容 OpenAI 的代理地址。")
+				return agentSettingsPageFieldHelp(gtx, a.theme, a.tokens().Typography, a.text(i18n.Message{ID: "settings.provider.api_url"}), &a.agentUI.baseURLInput, a.text(i18n.Message{ID: "settings.provider.api_url_hint"}), a.text(i18n.Message{ID: "settings.provider.api_url_help"}), false)
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			dims := agentSettingsPageFieldHelp(gtx, a.theme, a.tokens().Typography, "默认模型", &a.agentUI.modelInput, "填写服务商提供的模型名", "用于新建 AI 对话，可在会话中切换。")
+			dims := agentSettingsPageFieldHelp(gtx, a.theme, a.tokens().Typography, a.text(i18n.Message{ID: "settings.provider.default_model"}), &a.agentUI.modelInput, a.text(i18n.Message{ID: "settings.provider.model_hint"}), a.text(i18n.Message{ID: "settings.provider.model_help"}), true)
 			a.observeAgentModelLookup()
 			return dims
 		}),
@@ -496,10 +524,10 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 }
 
 func agentSettingsPageField(gtx layout.Context, theme *material.Theme, typography Typography, label string, editor *widget.Editor, hint string) layout.Dimensions {
-	return agentSettingsPageFieldHelp(gtx, theme, typography, label, editor, hint, "")
+	return agentSettingsPageFieldHelp(gtx, theme, typography, label, editor, hint, "", false)
 }
 
-func agentSettingsPageFieldHelp(gtx layout.Context, theme *material.Theme, typography Typography, label string, editor *widget.Editor, hint, helper string) layout.Dimensions {
+func agentSettingsPageFieldHelp(gtx layout.Context, theme *material.Theme, typography Typography, label string, editor *widget.Editor, hint, helper string, showDropdown bool) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return settingsBodyLabel(gtx, theme, typography, label, settingsBlack, false)
@@ -522,7 +550,7 @@ func agentSettingsPageFieldHelp(gtx layout.Context, theme *material.Theme, typog
 							})
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if label != "默认模型" {
+							if !showDropdown {
 								return layout.Dimensions{}
 							}
 							return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -558,7 +586,7 @@ func (a *App) layoutAgentSettingsKeyField(gtx layout.Context) layout.Dimensions 
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return a.agentUI.settingsKeyLink.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return homeTextLabel(gtx, a.theme, "获取 API Key ↗", 12, settingsBlack, false)
+						return homeTextLabel(gtx, a.theme, a.text(i18n.Message{ID: "settings.provider.get_api_key"}), 12, settingsBlack, false)
 					})
 				}),
 			)
@@ -603,14 +631,14 @@ func (a *App) layoutAgentSettingsKeyField(gtx layout.Context) layout.Dimensions 
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			help := "保存后以掩码显示；API Key 保存在系统凭据库中。"
+			help := i18n.Message{ID: "settings.provider.key_help.default"}
 			if a.agentUI.settingsTab == "openai" {
-				help = "在 OpenAI 控制台创建密钥；保存后以掩码显示。"
+				help = i18n.Message{ID: "settings.provider.key_help.openai"}
 			} else if a.agentUI.settingsTab == "deepseek" {
-				help = "在 DeepSeek 开放平台创建密钥；保存后以掩码显示。"
+				help = i18n.Message{ID: "settings.provider.key_help.deepseek"}
 			}
 			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, help)
+				style := settingsSecondaryLabel(a.theme, a.tokens().Typography, a.text(help))
 				style.Color, style.MaxLines = settingsBlack, 1
 				return style.Layout(gtx)
 			})
@@ -626,7 +654,7 @@ func (a *App) openAgentAPIKeyHelp() {
 	case "deepseek":
 		url = "https://platform.deepseek.com/api_keys"
 	case "custom", "more":
-		a.setStatus("请前往所选模型服务商的网站创建 API Key")
+		a.setStatusMessage(i18n.Message{ID: "settings.provider.api_key_help"}, feedbackWarning, notificationToast)
 		return
 	}
 	if url == "" {
@@ -643,10 +671,10 @@ func (a *App) openAgentAPIKeyHelp() {
 			cmd = exec.Command("xdg-open", url)
 		}
 		if err := cmd.Run(); err != nil {
-			a.setStatus("无法打开 API Key 页面")
+			a.setStatusErrorMessage(i18n.Message{ID: "settings.provider.open_key_page_failed"}, err, notificationToast)
 		}
 	}) {
-		a.setStatus("无法打开 API Key 页面")
+		a.setStatusMessage(i18n.Message{ID: "settings.provider.open_key_page_failed"}, feedbackError, notificationToast)
 	}
 }
 

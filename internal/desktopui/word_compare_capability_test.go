@@ -9,6 +9,7 @@ import (
 
 	"glance/internal/application"
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 )
 
 func TestWordCompareRibbonUsesRegisteredDocumentCompareCapability(t *testing.T) {
@@ -24,6 +25,7 @@ func TestWordCompareRibbonUsesRegisteredDocumentCompareCapability(t *testing.T) 
 	desktop := newDesktopRuntime()
 	t.Cleanup(desktop.shutdown)
 	app := newAppWithRuntime(nil, desktop)
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	if err := app.installDocument(loadedDocument{word: current}); err != nil {
 		t.Fatalf("install current Word document: %v", err)
 	}
@@ -44,8 +46,8 @@ func TestWordCompareRibbonUsesRegisteredDocumentCompareCapability(t *testing.T) 
 
 	beforeRequests := app.applicationRequestSeq.Load()
 	app.showWordCompareDialog()
-	if !app.modal.Visible || app.modal.Title != "文档比较" {
-		t.Fatalf("expected document comparison dialog, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "文档比较" {
+		t.Fatalf("expected document comparison dialog, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	if app.modal.CustomLayout == nil || len(app.modal.Actions) != 1 || app.modal.Actions[0].ID != "close" {
 		t.Fatalf("comparison dialog should use a scrollable document picker and one close action: custom=%v actions=%+v", app.modal.CustomLayout != nil, app.modal.Actions)
@@ -56,15 +58,16 @@ func TestWordCompareRibbonUsesRegisteredDocumentCompareCapability(t *testing.T) 
 	}
 
 	app.modal.OnAction(compareAction)
-	if !app.modal.Visible || !strings.Contains(app.modal.Message, "正在比较") {
-		t.Fatalf("expected asynchronous comparison progress, got visible=%v message=%q", app.modal.Visible, app.modal.Message)
+	if !app.modal.Visible || !strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "正在比较") {
+		t.Fatalf("expected asynchronous comparison progress, got visible=%v message=%q", app.modal.Visible, app.messageText(app.modal.MessageRef, app.modal.Message))
 	}
 	waitForWordCompareResult(t, app)
 	if app.applicationRequestSeq.Load() <= beforeRequests {
 		t.Fatal("Word compare did not invoke a registered application capability")
 	}
-	if !strings.Contains(app.modal.Message, "blocks") || !strings.Contains(app.modal.Message, "变化路径") {
-		t.Fatalf("comparison result does not show real document differences: %q", app.modal.Message)
+	result := app.messageText(app.modal.MessageRef, app.modal.Message)
+	if !strings.Contains(result, "正文块") || !strings.Contains(result, "变化路径") {
+		t.Fatalf("comparison result does not show real document differences: %q", result)
 	}
 }
 
@@ -75,11 +78,11 @@ func waitForWordCompareResult(t *testing.T, app *App) {
 		if !app.modal.Visible {
 			t.Fatal("Word comparison dialog closed before the result arrived")
 		}
-		if !strings.Contains(app.modal.Message, "正在比较") {
+		if !strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "正在比较") {
 			return
 		}
 		app.processAsyncResults()
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for Word comparison result: %q", app.modal.Message)
+	t.Fatalf("timed out waiting for Word comparison result: %q", app.messageText(app.modal.MessageRef, app.modal.Message))
 }

@@ -3,6 +3,7 @@ package desktopui
 import (
 	"fmt"
 
+	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 )
 
@@ -15,27 +16,49 @@ func wordPageForCaret(result wordlayout.Result, runID string, runeOffset int) (p
 }
 
 func wordPaginationStatusText(state *documentSessionState) string {
-	if state == nil {
+	message := wordPaginationStatusMessage(state)
+	switch message.ID {
+	case "word.status.pagination.updating":
+		return "正在更新页数…"
+	case "word.status.pagination.calculating":
+		return "正在计算页数…"
+	case "word.status.pagination.failed":
+		return "分页失败"
+	case "word.status.pagination.not_computed":
+		return "页数未计算"
+	case "word.status.pagination.unsupported":
+		return "版式不支持"
+	case "word.status.pagination.empty":
+		return "无页面"
+	case "word.status.pagination.page":
+		return fmt.Sprintf("第 %v 页，共 %v 页", message.Args["Current"], message.Args["Total"])
+	default:
 		return ""
 	}
+}
+
+func wordPaginationStatusMessage(state *documentSessionState) i18n.Message {
+	if state == nil {
+		return i18n.Message{}
+	}
 	if wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
-		return "正在更新页数…"
+		return i18n.Message{ID: "word.status.pagination.updating"}
 	}
 	if state.wordLayoutError != "" {
-		return "分页失败"
+		return i18n.Message{ID: "word.status.pagination.failed"}
 	}
 	if state.wordLayoutPendingKey != nil {
-		return "正在计算页数…"
+		return i18n.Message{ID: "word.status.pagination.calculating"}
 	}
 	result := state.wordLayoutResult
 	if result == nil {
-		return "页数未计算"
+		return i18n.Message{ID: "word.status.pagination.not_computed"}
 	}
 	if !result.CanPreview {
-		return "版式不支持"
+		return i18n.Message{ID: "word.status.pagination.unsupported"}
 	}
 	if len(result.Pages) == 0 {
-		return "无页面"
+		return i18n.Message{ID: "word.status.pagination.empty"}
 	}
 	page := state.wordLayoutActivePage
 	if state.wordViewMode == wordViewPrintLayout {
@@ -55,7 +78,15 @@ func wordPaginationStatusText(state *documentSessionState) string {
 		}
 	}
 	page = max(0, min(page, len(result.Pages)-1))
-	return fmt.Sprintf("第 %d 页，共 %d 页", page+1, len(result.Pages))
+	return i18n.Message{ID: "word.status.pagination.page", Args: i18n.Args{"Current": page + 1, "Total": len(result.Pages)}}
+}
+
+func (a *App) localizedWordPaginationStatusText(state *documentSessionState) string {
+	message := wordPaginationStatusMessage(state)
+	if message.ID == "" {
+		return ""
+	}
+	return a.text(message)
 }
 
 func (a *App) toggleWordPrintLayout() {
@@ -67,7 +98,7 @@ func (a *App) toggleWordPrintLayout() {
 	if state.wordViewMode == wordViewPrintLayout {
 		state.wordViewMode = wordViewContinuous
 		setWordPageListFirst(state, currentPage)
-		a.setStatus("已切换到连续视图")
+		a.setStatusMessage(i18n.Message{ID: "word.status.view.continuous"}, feedbackInfo, notificationSuppressed)
 	} else {
 		state.wordViewMode = wordViewPrintLayout
 		if state.wordMultiplePagesMode {
@@ -76,9 +107,9 @@ func (a *App) toggleWordPrintLayout() {
 		setWordPageListFirst(state, currentPage)
 		a.startWordPagination(state)
 		if state.wordLayoutPendingKey != nil {
-			a.setStatus("正在生成打印布局")
+			a.setStatusMessage(i18n.Message{ID: "word.status.view.print_layout_preparing"}, feedbackInfo, notificationSuppressed)
 		} else if state.wordLayoutError != "" {
-			a.setStatus("分页失败：" + state.wordLayoutError)
+			a.setStatusDetailMessage(i18n.Message{ID: "word.status.pagination.failed"}, feedbackError, notificationToast, state.wordLayoutError)
 		}
 	}
 	if a.window != nil {
@@ -98,7 +129,7 @@ func (a *App) selectWordSinglePageView() {
 	state.wordPageFitMode = true
 	state.wordPageFitPageSetupKey = ""
 	a.startWordPagination(state)
-	a.setStatus("已切换到单页视图")
+	a.setStatusMessage(i18n.Message{ID: "word.status.view.single_page"}, feedbackInfo, notificationSuppressed)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -116,7 +147,7 @@ func (a *App) selectWordMultiplePagesView() {
 	state.wordPageFitMode = true
 	state.wordPageFitPageSetupKey = ""
 	a.startWordPagination(state)
-	a.setStatus("已切换到多页视图")
+	a.setStatusMessage(i18n.Message{ID: "word.status.view.multiple_pages"}, feedbackInfo, notificationSuppressed)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -179,10 +210,10 @@ func (a *App) toggleWordWebLayout() {
 	}
 	if state.wordViewMode == wordViewWebLayout {
 		state.wordViewMode = wordViewContinuous
-		a.setStatus("已切换到连续视图")
+		a.setStatusMessage(i18n.Message{ID: "word.status.view.continuous"}, feedbackInfo, notificationSuppressed)
 	} else {
 		state.wordViewMode = wordViewWebLayout
-		a.setStatus("已切换到 Web 版式")
+		a.setStatusMessage(i18n.Message{ID: "word.status.view.web_layout"}, feedbackInfo, notificationSuppressed)
 	}
 	if a.window != nil {
 		a.window.Invalidate()

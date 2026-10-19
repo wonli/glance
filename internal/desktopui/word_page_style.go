@@ -1,8 +1,8 @@
 package desktopui
 
 import (
-	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"strings"
 )
 
@@ -13,16 +13,16 @@ func (a *App) showWordPageColorDialog() {
 	}
 	editor, ok := any(state.word).(document.WordPageBackgroundEditor)
 	if !ok {
-		a.setStatus("当前文档不支持设置页面背景色")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_36eb4b"}, feedbackWarning, notificationToast)
 		return
 	}
 	currentColor, _ := editor.GetPageBackgroundColor()
-	prompt := "请选择或输入页面底色："
+	body := i18n.Message{ID: "word.page_style.color.dialog.body.empty"}
 	if currentColor != "" {
-		prompt = fmt.Sprintf("当前页面底色为 #%s。请选择或修改底色：", currentColor)
+		body = i18n.Message{ID: "word.page_style.color.dialog.body.current", Args: i18n.Args{"Color": currentColor}}
 	}
 
-	a.modal.ShowInput("页面颜色", prompt, currentColor, "16 进制颜色代码（如 FAF8F5，留空为纯白）", func(action string) {
+	a.modal.ShowInputMessage("word.page_style.color", i18n.Message{ID: "word.page_style.color.dialog.title"}, body, currentColor, i18n.Message{ID: "word.page_style.color.dialog.hint"}, func(action string) {
 		a.modal.Hide()
 		switch action {
 		case "confirm":
@@ -40,11 +40,11 @@ func (a *App) showWordPageColorDialog() {
 			a.applyWordPageColor("263238")
 		}
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "应用自定义"},
-		modalDialogActionSpec{ID: "parchment", Label: "羊皮纸米黄"},
-		modalDialogActionSpec{ID: "green", Label: "护眼绿"},
-		modalDialogActionSpec{ID: "white", Label: "纯白"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.page_style.color.action.custom"}},
+		modalDialogActionSpec{ID: "parchment", LabelRef: i18n.Message{ID: "word.page_style.color.action.parchment"}},
+		modalDialogActionSpec{ID: "green", LabelRef: i18n.Message{ID: "word.page_style.color.action.green"}},
+		modalDialogActionSpec{ID: "white", LabelRef: i18n.Message{ID: "word.page_style.color.action.white"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -59,18 +59,18 @@ func (a *App) applyWordPageColor(hexColor string) {
 	}
 	clean := strings.TrimPrefix(strings.TrimSpace(hexColor), "#")
 	if err := editor.SetPageBackgroundColor(clean); err != nil {
-		a.setStatus("设置页面颜色失败：" + err.Error())
+		a.setWordCommandStatus(err)
 		return
 	}
 	if clean == "" || strings.EqualFold(clean, "none") {
 		state.wordBackgroundColor = nil
-		a.setStatus("已清除页面背景色")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.cleared_the_page_background_color_09aa9a"}, feedbackSuccess, notificationToast)
 	} else {
 		c, err := parseHexColor(clean)
 		if err == nil {
 			state.wordBackgroundColor = &c
 		}
-		a.setStatus(fmt.Sprintf("已设置页面背景色为 #%s", strings.ToUpper(clean)))
+		a.setStatusMessage(i18n.Message{ID: "word.page_style.status.color_set", Args: i18n.Args{"Color": strings.ToUpper(clean)}}, feedbackSuccess, notificationToast)
 	}
 	if a.window != nil {
 		a.window.Invalidate()
@@ -84,11 +84,10 @@ func (a *App) showWordPageBorderDialog() {
 	}
 	editor, ok := any(state.word).(document.WordPageSetupEditor)
 	if !ok {
-		a.setStatus("当前文档不支持设置页面边框")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_current_document_does_not_813cec"}, feedbackWarning, notificationToast)
 		return
 	}
-	prompt := "请选择页面边框样式："
-	a.modal.ShowInput("页面边框", prompt, "box", "样式: box(单线), double(双线), dashed(虚线), none(无)", func(action string) {
+	a.modal.ShowInputMessage("word.page_style.border", i18n.Message{ID: "word.page_style.border.dialog.title"}, i18n.Message{ID: "word.page_style.border.dialog.body"}, "box", i18n.Message{ID: "word.page_style.border.dialog.hint"}, func(action string) {
 		a.modal.Hide()
 		var borderType string
 		switch action {
@@ -106,23 +105,23 @@ func (a *App) showWordPageBorderDialog() {
 			return
 		}
 		if err := editor.SetPageBorders(borderType); err != nil {
-			a.setStatus("设置页面边框失败：" + err.Error())
+			a.setWordCommandStatus(err)
 			return
 		}
 		if borderType == "none" || borderType == "" {
-			a.setStatus("已清除页面边框")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.cleared_the_page_border_0ffa07"}, feedbackSuccess, notificationToast)
 		} else {
-			a.setStatus(fmt.Sprintf("已设置页面边框（%s）", borderType))
+			a.setStatusMessage(i18n.Message{ID: "word.page_style.status.border_set"}, feedbackSuccess, notificationToast)
 		}
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 	},
-		modalDialogActionSpec{ID: "confirm", Label: "应用自定义"},
-		modalDialogActionSpec{ID: "box", Label: "单线方框"},
-		modalDialogActionSpec{ID: "double", Label: "双线方框"},
-		modalDialogActionSpec{ID: "dashed", Label: "虚线方框"},
-		modalDialogActionSpec{ID: "none", Label: "无边框"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "word.page_style.border.action.custom"}},
+		modalDialogActionSpec{ID: "box", LabelRef: i18n.Message{ID: "word.page_style.border.action.box"}},
+		modalDialogActionSpec{ID: "double", LabelRef: i18n.Message{ID: "word.page_style.border.action.double"}},
+		modalDialogActionSpec{ID: "dashed", LabelRef: i18n.Message{ID: "word.page_style.border.action.dashed"}},
+		modalDialogActionSpec{ID: "none", LabelRef: i18n.Message{ID: "word.page_style.border.action.none"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }

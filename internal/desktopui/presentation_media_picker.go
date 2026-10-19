@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"path/filepath"
 	"strings"
 
@@ -99,7 +100,7 @@ func (a *App) startPresentationMediaInsertPicker(view *presentationViewState, ki
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return true
 	}
 	result := presentationMediaPickerResult{
@@ -111,13 +112,14 @@ func (a *App) startPresentationMediaInsertPicker(view *presentationViewState, ki
 	}
 	choose := a.pptxMediaFilePicker
 	if choose == nil {
-		choose = choosePresentationMediaFile
+		pickerLabels := a.filePickerLabels()
+		choose = func(kind string) (string, error) { return choosePresentationMediaFile(kind, pickerLabels) }
 	}
 	a.pptxMediaPickerRunning = true
 	if kind == "audio" {
-		a.setStatus("选择要插入的 MP3/WAV 音频…")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.choose_an_mp3_wav_audio_file_to_insert_4e7ba4"}, feedbackInfo, notificationToast)
 	} else {
-		a.setStatus("选择要插入的 MP4/WebM 视频…")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.choose_an_mp4_webm_video_file_to_insert_425be8"}, feedbackInfo, notificationToast)
 	}
 	results, shutdown, window := a.pptxMediaPickerResults, a.shutdown, a.window
 	a.launchManagedBackground(func() {
@@ -140,20 +142,20 @@ func (a *App) handlePresentationMediaPickerResult(result presentationMediaPicker
 		return
 	}
 	if result.err != nil {
-		a.setStatus("读取媒体文件选择结果失败：" + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, result.err, notificationToast)
 		return
 	}
 	if result.path == "" {
-		a.setStatus("已取消选择媒体文件")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.media_file_selection_canceled_f49887"}, feedbackSuccess, notificationSuppressed)
 		return
 	}
 	mediaType := presentationMediaTypeForPath(result.path, result.kind)
 	if mediaType == "" {
-		a.setStatus("媒体格式无效；音频支持 MP3/WAV，视频支持 MP4/WebM")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.unsupported_media_format_audio_supports_mp_d37755"}, feedbackError, notificationToast)
 		return
 	}
 	if result.view.commandPending || result.state.formatRunning.Load() || a.isSaving() {
-		a.setStatus("演示文稿正在处理其他操作，请稍后重新插入媒体")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_presentation_is_busy_try_inserting_the_28d4f5"}, feedbackWarning, notificationToast)
 		return
 	}
 	if err := a.flushPresentationNotesDraft(result.view); err != nil {
@@ -164,7 +166,7 @@ func (a *App) handlePresentationMediaPickerResult(result presentationMediaPicker
 	}
 	token, ok := result.state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return
 	}
 	result.view.commandPending = true

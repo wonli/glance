@@ -1,7 +1,7 @@
 package desktopui
 
 import (
-	"fmt"
+	"glance/internal/i18n"
 	"sort"
 
 	"glance/internal/document"
@@ -240,19 +240,19 @@ func (a *App) replaceAllWordText(query, replacement string) {
 	}
 	editor, ok := any(state.word).(document.WordTextBatchEditor)
 	if !ok {
-		a.setStatus("当前 DOCX 暂不支持安全的全部替换")
-		a.modal.SearchReplaceSummary = "当前 DOCX 暂不支持全部替换"
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.safe_replace_all_is_not_47ade7"}, feedbackWarning, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.error.replace_unsupported"})
 		return
 	}
 	if a.wordCommandResults == nil {
-		a.setStatus("替换服务不可用")
-		a.modal.SearchReplaceSummary = "替换服务不可用"
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_replace_service_is_unavailable_e19527"}, feedbackWarning, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.error.replace_all_start"})
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("文档正在处理其他操作")
-		a.modal.SearchReplaceSummary = "文档正在处理其他操作"
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.another_document_operation_is_in_d54ae6"}, feedbackInfo, notificationSuppressed)
+		a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.status.operation_busy"})
 		return
 	}
 	blocks := wordBlocksForState(state)
@@ -261,7 +261,7 @@ func (a *App) replaceAllWordText(query, replacement string) {
 		drafts[runID] = editor.Text()
 	}
 	generation := a.documentGeneration
-	a.modal.SearchReplaceSummary = "正在扫描并替换当前文档…"
+	a.modal.SetSearchReplaceSummaryRef(i18n.Message{ID: "word.search.status.replacing_all"})
 	if !a.launchManagedBackground(func() {
 		plan := planWordTextReplaceAll(blocks, drafts, query, replacement)
 		var changed bool
@@ -283,9 +283,9 @@ func (a *App) replaceAllWordText(query, replacement string) {
 		})
 	}) {
 		state.finishOperation(token)
-		const message = "替换任务无法启动"
-		a.setStatus(message)
-		a.modal.SearchReplaceSummary = message
+		message := i18n.Message{ID: "word.search.error.replace_all_start"}
+		a.setStatusMessage(message, feedbackError, notificationToast)
+		a.modal.SetSearchReplaceSummaryRef(message)
 	}
 }
 
@@ -295,16 +295,16 @@ func (a *App) completeWordTextReplaceAll(result wordCommandResult, active bool) 
 		return
 	}
 	operation := result.wordReplaceAll
-	message := ""
+	var message i18n.Message
 	switch {
 	case result.err != nil:
-		message = "全部替换失败：" + result.err.Error()
+		message = i18n.Message{ID: "word.search.error.replace_all_failed"}
 	case operation.truncated:
-		message = fmt.Sprintf("匹配或受影响文字运行超过 %d 个，或替换后文字超过 64 MB；未修改，请缩小查找范围后重试", wordReplaceAllMaxMatches)
+		message = i18n.Message{ID: "word.search.error.replace_all_limit", Args: i18n.Args{"Limit": wordReplaceAllMaxMatches}}
 	case operation.matches == 0:
-		message = "未找到匹配项"
+		message = i18n.Message{ID: "word.search.status.no_matches"}
 	case !result.applied:
-		message = "替换结果与当前文本相同"
+		message = i18n.Message{ID: "word.search.status.replace_unchanged"}
 	default:
 		blocks := wordBlocksForState(state)
 		for _, runID := range operation.runIDs {
@@ -323,12 +323,18 @@ func (a *App) completeWordTextReplaceAll(result wordCommandResult, active bool) 
 			}
 		}
 		reconcileWordSelection(state, false)
-		message = fmt.Sprintf("已替换 %d 处", operation.matches)
+		message = i18n.Message{ID: "word.search.status.replace_count", Args: i18n.Args{"Count": operation.matches}}
 	}
 	if active {
-		a.setStatus(message)
+		if result.err != nil {
+			a.setStatusDetailMessage(message, feedbackError, notificationToast, result.err.Error())
+		} else if result.applied {
+			a.setStatusMessage(message, feedbackSuccess, notificationToast)
+		} else {
+			a.setStatusMessage(message, feedbackInfo, notificationSuppressed)
+		}
 		if a.modal.Visible && a.modal.SearchReplace {
-			a.modal.SearchReplaceSummary = message
+			a.modal.SetSearchReplaceSummaryRef(message)
 			a.modal.FocusInputRequested = true
 		}
 		if result.err == nil && result.applied {

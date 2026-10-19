@@ -1,16 +1,19 @@
 package desktopui
 
 import (
+	"strings"
+
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"glance/internal/i18n"
 
 	"glance/internal/format/jsondoc"
 )
 
 const (
-	jsonToolbarHeightDP = 68
+	jsonToolbarHeightDP = documentRibbonHeightDP
 	jsonToolbarIconSize = toolbarIconSize
 )
 
@@ -29,15 +32,34 @@ var jsonToolbarActions = []ribbonAction{
 	{id: "validate", label: "校验", group: "工具", icon: "circle-check"},
 }
 
+func (a *App) localizedJSONToolbarActions() []ribbonAction {
+	localized := append([]ribbonAction(nil), jsonToolbarActions...)
+	for index := range localized {
+		localized[index].label = a.textID("json.ribbon.action." + strings.ReplaceAll(localized[index].id, "-", "_"))
+	}
+	return localized
+}
+
 func (a *App) layoutJSON(gtx layout.Context) layout.Dimensions {
 	a.handleJSONWorkspaceEvents(gtx)
 	a.handleJSONToolbarEvents(gtx)
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(a.layoutJSONToolbar),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return a.layoutAgentSidebarWorkspace(gtx, a.layoutJSONWorkspace)
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(a.layoutJSONToolbar),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return a.layoutAgentSidebarWorkspace(gtx, a.layoutJSONWorkspace)
+				}),
+				layout.Rigid(a.layoutJSONStatus),
+			)
 		}),
-		layout.Rigid(a.layoutJSONStatus),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			if a.modal.Visible {
+				a.ensureJSONView().levelControl.open = false
+				return layout.Dimensions{}
+			}
+			return a.ensureJSONView().levelControl.LayoutOverlay(gtx, a.theme, a.jsonLevelOptions(), a.jsonLevelSelection())
+		}),
 	)
 }
 
@@ -48,6 +70,9 @@ func (a *App) handleJSONToolbarEvents(gtx layout.Context) {
 	state := a.documentSessionState
 	if state == nil {
 		return
+	}
+	if id := a.ensureJSONView().levelControl.Update(gtx, a.jsonLevelOptions(), a.jsonLevelSelection()); id != "" {
+		a.handleJSONWorkspaceAction(gtx, id)
 	}
 
 	saveBtn := jsonToolbarButton(state, a, "save")
@@ -142,13 +167,13 @@ func (a *App) formatJSONDocument() {
 	text := a.jsonDraftText()
 	formatted, err := jsondoc.Format(text)
 	if err != nil {
-		a.setStatus("JSON 格式化失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
-	a.applyJSONTextMutation(formatted, "已格式化 JSON")
+	a.applyJSONTextMutation(formatted, i18n.Message{ID: "json.status.formatted"})
 }
 
 func (a *App) minifyJSONDocument() {
@@ -158,13 +183,13 @@ func (a *App) minifyJSONDocument() {
 	text := a.jsonDraftText()
 	minified, err := jsondoc.Minify(text)
 	if err != nil {
-		a.setStatus("JSON 压缩失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
-	a.applyJSONTextMutation(minified, "已压缩 JSON")
+	a.applyJSONTextMutation(minified, i18n.Message{ID: "json.status.minified"})
 }
 
 func (a *App) sortJSONKeysDocument() {
@@ -174,13 +199,13 @@ func (a *App) sortJSONKeysDocument() {
 	text := a.jsonDraftText()
 	sorted, err := jsondoc.SortKeys(text)
 	if err != nil {
-		a.setStatus("JSON 排序键失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
-	a.applyJSONTextMutation(sorted, "已对 JSON 键排序")
+	a.applyJSONTextMutation(sorted, i18n.Message{ID: "json.status.keys_sorted"})
 }
 
 func (a *App) validateJSONDocument() {
@@ -189,27 +214,27 @@ func (a *App) validateJSONDocument() {
 	}
 	text := a.jsonDraftText()
 	if err := jsondoc.Validate(text); err != nil {
-		a.setStatus("JSON 验证失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 	} else {
-		a.setStatus("JSON 格式正确")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_json_is_valid_593b83"}, feedbackSuccess, notificationSuppressed)
 	}
 	if a.window != nil {
 		a.window.Invalidate()
 	}
 }
 
-func (a *App) applyJSONTextMutation(newText, successStatus string) {
+func (a *App) applyJSONTextMutation(newText string, successStatus i18n.Message) {
 	a.applyJSONTextMutationChecked(newText, successStatus, nil)
 }
 
-func (a *App) applyJSONTextMutationIfSource(newText, successStatus, expectedSource string) bool {
+func (a *App) applyJSONTextMutationIfSource(newText string, successStatus i18n.Message, expectedSource string) bool {
 	return a.applyJSONTextMutationChecked(newText, successStatus, &expectedSource)
 }
 
-func (a *App) applyJSONTextMutationChecked(newText, successStatus string, expectedSource *string) bool {
+func (a *App) applyJSONTextMutationChecked(newText string, successStatus i18n.Message, expectedSource *string) bool {
 	token, ok := a.documentSessionState.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("JSON 文档正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_json_document_is_busy_with_another_ope_1d621a"}, feedbackInfo, notificationSuppressed)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
@@ -220,7 +245,7 @@ func (a *App) applyJSONTextMutationChecked(newText, successStatus string, expect
 	if expectedSource != nil && current != *expectedSource {
 		unlock()
 		a.completeSessionOperation(a.documentSessionState, token, nil, false)
-		a.setStatus("JSON 内容已经改变，已取消操作")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_json_content_changed_the_operation_was_1de976"}, feedbackInfo, notificationSuppressed)
 		return false
 	}
 	if current == newText {
@@ -232,7 +257,7 @@ func (a *App) applyJSONTextMutationChecked(newText, successStatus string, expect
 	unlock()
 	a.completeSessionOperation(a.documentSessionState, token, err, err == nil)
 	if err != nil {
-		a.setStatus(err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "json.error.operation_failed"}, err, notificationToast)
 	} else {
 		v := a.ensureJSONView()
 		if len(newText) <= jsonSourceEditLimit {
@@ -244,7 +269,7 @@ func (a *App) applyJSONTextMutationChecked(newText, successStatus string, expect
 		}
 		v.sourceSynced = newText
 		a.persistActiveSession()
-		a.setStatus(successStatus)
+		a.setStatusMessage(successStatus, feedbackSuccess, notificationToast)
 	}
 	if a.window != nil {
 		a.window.Invalidate()
@@ -258,7 +283,7 @@ func (a *App) layoutJSONEditor(gtx layout.Context) layout.Dimensions {
 		return a.layoutJSONSourcePreview(gtx, v.parsed, v.sourceSegments, &v.sourceList)
 	}
 	return layout.Inset{Top: unit.Dp(16), Left: unit.Dp(20), Right: unit.Dp(20), Bottom: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		style := material.Editor(a.theme, &a.jsonEditor, "编辑 JSON 文本")
+		style := material.Editor(a.theme, &a.jsonEditor, a.textID("json.editor.placeholder"))
 		style.Font.Typeface = jsonMonoFace
 		style.TextSize = unit.Sp(13)
 		return style.Layout(gtx)

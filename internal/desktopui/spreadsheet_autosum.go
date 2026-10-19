@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 	"math"
 	"strconv"
 	"strings"
@@ -24,21 +25,21 @@ func (a *App) applySpreadsheetAggregate(operation string) {
 	reader, hasReader := state.book.(document.SpreadsheetRangeReader)
 	_, hasEditor := state.book.(document.SpreadsheetFormulaBatchEditor)
 	if !hasReader || !hasEditor {
-		a.setStatus("当前表格不支持此项统计")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_spreadsheet_does_not_support_398d03"}, feedbackWarning, notificationToast)
 		return
 	}
 	bounds := state.selection.Bounds()
 	edits := computeSpreadsheetAggregateFormulaEdits(reader, state.sheet, bounds, operation)
 	if len(edits) == 0 {
-		a.setStatus("未在选区中找到可计算" + name + "的连续数值")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.aggregate.no_values", Args: i18n.Args{"Operation": a.localizedSpreadsheetToolbarText(name)}}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	if err := a.applySpreadsheetFormulaBatch(edits, name); err != nil {
-		a.setStatus(name + "失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	a.navigateToCell(edits[0].Row, edits[0].Column)
-	a.setStatus("正在插入" + name + "公式")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.aggregate.inserting", Args: i18n.Args{"Operation": a.localizedSpreadsheetToolbarText(name)}}, feedbackInfo, notificationSuppressed)
 }
 
 func spreadsheetAggregateName(operation string) string {
@@ -259,7 +260,7 @@ func (a *App) applySpreadsheetFormulaBatch(edits []document.CellFormulaEdit, ope
 		}
 		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		if err == nil && !changed {
-			completedDetails = "目标单元格中已存在相同公式，未作更改"
+			completedDetails = i18n.Message{ID: "spreadsheet.status.noop.same_formula"}
 		}
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed, noOp: err == nil && !changed, details: completedDetails}:
@@ -269,19 +270,15 @@ func (a *App) applySpreadsheetFormulaBatch(edits []document.CellFormulaEdit, ope
 	return nil
 }
 
-func spreadsheetAggregateFormulaDetails(operation string, edits []document.CellFormulaEdit) string {
+func spreadsheetAggregateFormulaDetails(operation string, edits []document.CellFormulaEdit) i18n.Message {
 	if len(edits) == 1 {
-		return fmt.Sprintf("已插入%s公式：%s", operation, xlsx.CellName(edits[0].Column, edits[0].Row))
+		return i18n.Message{ID: "spreadsheet.status.formula_inserted_one", Args: i18n.Args{"Cell": xlsx.CellName(edits[0].Column, edits[0].Row)}}
 	}
 	names := make([]string, 0, minInt(len(edits), 4))
 	for _, edit := range edits[:minInt(len(edits), 4)] {
 		names = append(names, xlsx.CellName(edit.Column, edit.Row))
 	}
-	suffix := ""
-	if len(edits) > len(names) {
-		suffix = "等"
-	}
-	return fmt.Sprintf("已插入 %d 个%s公式：%s%s", len(edits), operation, strings.Join(names, "、"), suffix)
+	return i18n.Message{ID: "spreadsheet.status.formula_inserted_many", Args: i18n.Args{"Count": len(edits), "Cells": strings.Join(names, ", ")}}
 }
 
 func parseNumericValue(s string) (float64, bool) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -30,6 +31,7 @@ func TestWordVersionHistoryActionEnabledOnlyForSavedDOCX(t *testing.T) {
 
 func TestWordVersionHistorySemanticDescriptionRequiresSave(t *testing.T) {
 	app := newAppWithRuntime(nil, newDesktopRuntime())
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	if err := app.installDocument(loadedDocument{word: func() *docx.Document {
 		doc, err := docx.NewBlank()
 		if err != nil {
@@ -40,12 +42,14 @@ func TestWordVersionHistorySemanticDescriptionRequiresSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	description := app.wordToolbarActionDescription(ribbonAction{id: "version-history", label: "版本历史"})
-	if !strings.Contains(description, "请先保存文档") {
+	if !strings.Contains(description, "先保存文档") {
 		t.Fatalf("unsaved history action description = %q; want save guidance", description)
 	}
 }
 
 func TestWordVersionHistoryListShowsMetadataAndOrder(t *testing.T) {
+	app := newAppWithRuntime(nil, newDesktopRuntime())
+	app.applyLocaleSelection(i18n.SelectionEnglish)
 	store := openWordHistoryTestStore(t)
 	pathKey := filepath.Join(t.TempDir(), "history.docx")
 	firstAt := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
@@ -72,11 +76,11 @@ func TestWordVersionHistoryListShowsMetadataAndOrder(t *testing.T) {
 	if len(versions) != 2 || !versions[0].CreatedAt.After(versions[1].CreatedAt) {
 		t.Fatalf("versions not newest-first: %+v", versions)
 	}
-	labels := []string{wordVersionHistoryRowText(versions[0]), wordVersionHistoryRowText(versions[1])}
-	if !strings.Contains(labels[0], "手动保存") || !strings.Contains(labels[0], "2026") || !strings.Contains(labels[0], "字节") {
+	labels := []string{app.wordVersionHistoryRowText(versions[0]), app.wordVersionHistoryRowText(versions[1])}
+	if !strings.Contains(labels[0], "Manual save") || !strings.Contains(labels[0], "2026") || !strings.Contains(labels[0], "bytes") {
 		t.Fatalf("newest row omits source/time/size: %q", labels[0])
 	}
-	if !strings.Contains(labels[1], "打开文档") {
+	if !strings.Contains(labels[1], "Opened document") {
 		t.Fatalf("older row has unexpected metadata: %q", labels[1])
 	}
 }

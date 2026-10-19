@@ -11,6 +11,7 @@ import (
 
 	"glance/internal/document"
 	sheetpdf "glance/internal/format/pdf"
+	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 )
 
@@ -76,13 +77,13 @@ func (a *App) openSpreadsheetPDFExportPreview(state *documentSessionState, sheet
 
 	reader, ok := state.book.(document.GridReader)
 	if !ok {
-		a.setStatus("当前电子表格不支持网格视图，无法导出 PDF")
+		a.setStatusMessage(i18n.Message{ID: "pdf.preview.error.grid_unsupported"}, feedbackWarning, notificationToast)
 		return
 	}
 
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
-		a.setStatus("电子表格正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "word.status.operation_busy"}, feedbackWarning, notificationToast)
 		return
 	}
 
@@ -108,7 +109,7 @@ func (a *App) openSpreadsheetPDFExportPreview(state *documentSessionState, sheet
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在准备 PDF 预览…")
+	a.setStatusMessage(i18n.Message{ID: "pdf.preview.status.preparing"}, feedbackInfo, notificationSuppressed)
 }
 
 func readSpreadsheetPDFPreviewSnapshot(state *documentSessionState, reader document.GridReader, sheet string) (document.SheetWindow, []document.SpreadsheetImage, error) {
@@ -145,7 +146,7 @@ func (a *App) applySpreadsheetPDFPreviewResult(result spreadsheetPDFPreviewResul
 		return
 	}
 	if result.err != nil {
-		a.setStatus("准备 PDF 预览失败：" + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "pdf.preview.error.prepare"}, result.err, notificationToast)
 		return
 	}
 	trimmedWindow := result.window
@@ -187,22 +188,22 @@ func (a *App) applySpreadsheetPDFPreviewResult(result spreadsheetPDFPreviewResul
 		sheetState:       state,
 	}
 
-	a.modal.ShowCustom("导出 PDF 预览", "设置页面方向并预览导出效果", 680, a.layoutPDFExportPreview, func(action string) {
+	a.modal.ShowCustomMessage(dialogIDPDFExportPreview, i18n.Message{ID: "pdf.preview.title"}, i18n.Message{ID: "pdf.preview.body"}, 680, a.layoutPDFExportPreview, func(action string) {
 		if action == "confirm" && a.pdfExportPreview.wordPreviewPending {
-			a.setStatus("正在按所选方向重新排版，请稍后再导出")
+			a.setStatusMessage(i18n.Message{ID: "pdf.preview.status.reflowing"}, feedbackInfo, notificationSuppressed)
 			return
 		}
 		a.modal.Hide()
 		if action != "confirm" {
 			a.pdfExportPreview.Active = false
-			a.setStatus("已取消导出 PDF")
+			a.setStatusMessage(i18n.Message{ID: "word.export.status.cancelled"}, feedbackInfo, notificationSuppressed)
 			return
 		}
 		chosenOrientation := a.pdfExportPreview.Orientation
 		a.pdfExportPreview.Active = false
 		a.startSpreadsheetPDFSavePicker(state, result.sheet, chosenOrientation)
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary},
-		modalDialogActionSpec{ID: "confirm", Label: "导出 PDF", Style: modalDialogActionPrimary})
+	}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}, Style: modalDialogActionSecondary},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.export_pdf"}, Style: modalDialogActionPrimary})
 	a.modal.CustomActionsInLayout = true
 }
 
@@ -213,7 +214,7 @@ func (a *App) openWordPDFExportPreview(state *documentSessionState, key wordLayo
 
 	reader, ok := any(state.word).(document.WordLayoutReader)
 	if !ok {
-		a.setStatus("DOCX 适配器未提供分页信息，无法导出 PDF")
+		a.setStatusMessage(i18n.Message{ID: "word.export.error.pagination_unavailable"}, feedbackWarning, notificationToast)
 		return
 	}
 
@@ -243,29 +244,29 @@ func (a *App) openWordPDFExportPreview(state *documentSessionState, key wordLayo
 		wordLayout:       layoutData,
 	}
 
-	a.modal.ShowCustom("导出 PDF 预览", "设置页面方向并预览导出效果", 680, a.layoutPDFExportPreview, func(action string) {
+	a.modal.ShowCustomMessage(dialogIDPDFExportPreview, i18n.Message{ID: "pdf.preview.title"}, i18n.Message{ID: "pdf.preview.body"}, 680, a.layoutPDFExportPreview, func(action string) {
 		if action == "confirm" && a.pdfExportPreview.wordPreviewPending {
-			a.setStatus("正在按所选方向重新排版，请稍后再导出")
+			a.setStatusMessage(i18n.Message{ID: "pdf.preview.status.reflowing"}, feedbackInfo, notificationSuppressed)
 			return
 		}
 		a.modal.Hide()
 		if action != "confirm" {
 			a.pdfExportPreview.Active = false
-			a.setStatus("已取消导出 PDF")
+			a.setStatusMessage(i18n.Message{ID: "word.export.status.cancelled"}, feedbackInfo, notificationSuppressed)
 			return
 		}
 		chosenOrientation := a.pdfExportPreview.Orientation
 		a.pdfExportPreview.Active = false
 		a.startWordPDFSavePicker(state, key, chosenOrientation)
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary},
-		modalDialogActionSpec{ID: "confirm", Label: "导出 PDF", Style: modalDialogActionPrimary})
+	}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}, Style: modalDialogActionSecondary},
+		modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.export_pdf"}, Style: modalDialogActionPrimary})
 	a.modal.CustomActionsInLayout = true
 }
 
 func (a *App) updateWordPreviewOrientation(orientation string) error {
 	prev := &a.pdfExportPreview
 	if prev.wordState == nil || prev.Format != "word" {
-		return errors.New("Word 预览已失效")
+		return errors.New(a.text(i18n.Message{ID: "pdf.preview.error.word_preview_stale"}))
 	}
 	if prev.wordPreviewPending {
 		return nil
@@ -344,7 +345,7 @@ func (a *App) applyWordPDFPreviewResult(result wordPDFPreviewResult) {
 	}
 	prev.wordPreviewPending = false
 	if result.err != nil {
-		a.setStatus("切换 PDF 方向失败：" + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "pdf.preview.error.orientation"}, result.err, notificationToast)
 		return
 	}
 	prev.Orientation = result.orientation

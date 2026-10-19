@@ -13,6 +13,7 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 func paintGridPictures(gtx layout.Context, a *App, v *gridViewport) {
@@ -35,7 +36,7 @@ func paintGridPictures(gtx layout.Context, a *App, v *gridViewport) {
 		if !cached && state.gridPictureErrors[picture.ID] == "" {
 			a.requestGridPicturePreview(state, picture)
 		}
-		paintOneGridPicture(gtx, a.theme, bounds, visible, preview, gridPicturePlaceholderMessage(state, picture))
+		paintOneGridPicture(gtx, a.theme, bounds, visible, preview, a.gridPicturePlaceholderMessage(state, picture))
 	}
 }
 
@@ -70,14 +71,14 @@ func paintOneGridPicture(gtx layout.Context, theme *material.Theme, bounds, view
 	widget.Image{Src: paint.NewImageOp(preview), Fit: widget.Contain, Position: layout.Center, Scale: imageScale}.Layout(gtx)
 }
 
-func gridPicturePlaceholderMessage(state *documentSessionState, picture document.SpreadsheetImage) string {
+func (a *App) gridPicturePlaceholderMessage(state *documentSessionState, picture document.SpreadsheetImage) string {
 	if state != nil && state.gridPictureErrors[picture.ID] != "" {
-		return "无法预览图片：" + state.gridPictureErrors[picture.ID]
+		return a.textArgs("spreadsheet.picture.preview.failed", i18n.Args{"Error": state.gridPictureErrors[picture.ID]})
 	}
 	if picture.ReadOnlyReason != "" && picture.MediaType == "" {
-		return "图片无法预览：" + picture.ReadOnlyReason
+		return a.textArgs("spreadsheet.picture.preview.unsupported", i18n.Args{"Reason": picture.ReadOnlyReason})
 	}
-	return "正在载入图片…"
+	return a.textID("spreadsheet.picture.preview.loading")
 }
 
 func paintGridPictureSelection(gtx layout.Context, a *App, v *gridViewport) {

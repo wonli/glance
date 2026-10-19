@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"math"
 	"strconv"
+	"strings"
 
 	"gioui.org/io/event"
 	"gioui.org/layout"
@@ -16,6 +17,7 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 func (a *App) layoutPDFWorkspace(gtx layout.Context) layout.Dimensions {
@@ -56,7 +58,7 @@ func (a *App) layoutPDFThumbnails(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.UniformInset(16).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return material.Label(a.theme, 12, fmt.Sprintf("页面               %d 页", v.info.Pages)).Layout(gtx)
+				return material.Label(a.theme, 12, a.textArgs("pdf.thumbnails.page_count", i18n.Args{"Pages": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(v.info.Pages))})).Layout(gtx)
 			})
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -75,7 +77,7 @@ func (a *App) layoutPDFThumbnails(gtx layout.Context) layout.Dimensions {
 									}
 									paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
 									return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										return material.Label(a.theme, 11, fmt.Sprintf("第 %d 页", i+1)).Layout(gtx)
+										return material.Label(a.theme, 11, a.textArgs("pdf.thumbnails.page", i18n.Args{"Page": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(i+1))})).Layout(gtx)
 									})
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -163,7 +165,7 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 					} else {
 						a.requestPDFPage(pageIdx)
 						layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							msg := fmt.Sprintf("正在读取第 %d 页…", pageIdx+1)
+							msg := a.textArgs("pdf.canvas.loading_page", i18n.Args{"Page": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(pageIdx+1))})
 							if r.err != nil {
 								msg = r.err.Error()
 							}
@@ -209,16 +211,18 @@ func (a *App) layoutPDFNotes(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, pageBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	return layout.UniformInset(18).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return material.Label(a.theme, 13, "批注").Layout(gtx) }),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return material.Label(a.theme, 13, a.textID("pdf.annotations.title")).Layout(gtx)
+			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if !v.showSearch {
 					return layout.Dimensions{}
 				}
 				return layout.Inset{Top: 12, Bottom: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{}.Layout(gtx, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return material.Editor(a.theme, &v.search, "搜索 PDF").Layout(gtx)
+						return material.Editor(a.theme, &v.search, a.textID("pdf.search.placeholder")).Layout(gtx)
 					}), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return material.Button(a.theme, v.button("find"), "查找").Layout(gtx)
+						return material.Button(a.theme, v.button("find"), a.textID("word.ribbon.action.find")).Layout(gtx)
 					}))
 				})
 			}),
@@ -229,7 +233,7 @@ func (a *App) layoutPDFNotes(gtx layout.Context) layout.Dimensions {
 				}
 				if selText == "" {
 					return layout.Inset{Top: 12, Bottom: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return material.Label(a.theme, 11, "点击文字或拖选 · 编辑模式可修改文字").Layout(gtx)
+						return material.Label(a.theme, 11, a.textID("pdf.text_edit.hint")).Layout(gtx)
 					})
 				}
 				return layout.Inset{Top: 12, Bottom: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -243,7 +247,7 @@ func (a *App) layoutPDFNotes(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										btn := material.Button(a.theme, v.button("copy"), "复制")
+										btn := material.Button(a.theme, v.button("copy"), a.textID("word.ribbon.action.copy"))
 										btn.Inset = layout.Inset{Top: 6, Bottom: 6, Left: 14, Right: 14}
 										return btn.Layout(gtx)
 									}),
@@ -251,7 +255,7 @@ func (a *App) layoutPDFNotes(gtx layout.Context) layout.Dimensions {
 										return layout.Dimensions{Size: image.Pt(gtx.Dp(8), 0)}
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										btn := material.Button(a.theme, v.button("replace"), "编辑")
+										btn := material.Button(a.theme, v.button("replace"), a.textID("workspace.operation.edit"))
 										btn.Inset = layout.Inset{Top: 6, Bottom: 6, Left: 14, Right: 14}
 										return btn.Layout(gtx)
 									}),
@@ -263,7 +267,7 @@ func (a *App) layoutPDFNotes(gtx layout.Context) layout.Dimensions {
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Bottom: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Label(a.theme, 11, fmt.Sprintf("当前页批注 · %d", len(v.scene.Annotations))).Layout(gtx)
+					return material.Label(a.theme, 11, a.textArgs("pdf.annotations.current_page_count", i18n.Args{"Count": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(len(v.scene.Annotations)))})).Layout(gtx)
 				})
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -273,7 +277,7 @@ func (a *App) layoutPDFNotes(gtx layout.Context) layout.Dimensions {
 						return pdfCard(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.UniformInset(12).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return material.Label(a.theme, 10, fmt.Sprintf("第 %d 页 · %s", v.page+1, ann.Kind)).Layout(gtx)
+									return material.Label(a.theme, 10, a.textArgs("pdf.annotations.page_kind", i18n.Args{"Page": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(v.page+1)), "Kind": a.pdfAnnotationKindLabel(ann.Kind)})).Layout(gtx)
 								}), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Top: 9, Bottom: 9}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return material.Label(a.theme, 11, ann.Text).Layout(gtx) })
 								}), layout.Rigid(func(gtx layout.Context) layout.Dimensions { return material.Label(a.theme, 9, ann.Author).Layout(gtx) }))
@@ -295,27 +299,51 @@ func (a *App) layoutPDFStatus(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints.Min.Y = 0
-					return material.Label(a.theme, 11, fmt.Sprintf("%d / %d 页 · %.1f MB", v.page+1, v.info.Pages, float64(v.info.Bytes)/(1024*1024))).Layout(gtx)
+					locale := a.localeSnapshot().Resolved
+					pageSize := a.textArgs("pdf.status.page_size", i18n.Args{
+						"Page":  i18n.FormatNumber(locale, float64(v.page+1)),
+						"Pages": i18n.FormatNumber(locale, float64(v.info.Pages)),
+						"Size":  i18n.FormatNumber(locale, float64(v.info.Bytes)/(1024*1024)),
+					})
+					return material.Label(a.theme, 11, pageSize).Layout(gtx)
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: 20}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						gtx.Constraints.Min.Y = 0
-						l := material.Label(a.theme, 11, v.message)
+						message := v.message
+						if v.messageRef.ID != "" {
+							message = a.text(v.messageRef)
+						}
+						l := material.Label(a.theme, 11, message)
 						l.MaxLines = 1
 						return l.Layout(gtx)
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints.Min.Y = 0
-					state := "已保存"
+					state := a.textID("pdf.status.saved")
 					if v.info.Dirty {
-						state = "未保存"
+						state = a.textID("pdf.status.unsaved")
 					}
-					return material.Label(a.theme, 11, fmt.Sprintf("%s   %.0f%%   PDF", state, v.currentZoom(gtx.Metric)*100)).Layout(gtx)
+					zoom := i18n.FormatNumber(a.localeSnapshot().Resolved, math.Round(v.currentZoom(gtx.Metric)*100))
+					return material.Label(a.theme, 11, fmt.Sprintf("%s   %s%%   PDF", state, zoom)).Layout(gtx)
 				}),
 			)
 		})
 	})
+}
+
+func (a *App) pdfAnnotationKindLabel(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "text":
+		return a.textID("pdf.annotations.kind.text")
+	case "highlight":
+		return a.textID("pdf.annotations.kind.highlight")
+	case "ink":
+		return a.textID("pdf.annotations.kind.ink")
+	default:
+		return a.textID("pdf.annotations.kind.other")
+	}
 }
 
 // Keep pointer coordinates in page points; display scaling never enters saved geometry.

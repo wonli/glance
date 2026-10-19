@@ -1,7 +1,7 @@
 package desktopui
 
 import (
-	"fmt"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"strings"
@@ -35,16 +35,18 @@ const (
 )
 
 type wordNavigationEntry struct {
-	kind        wordNavigationEntryKind
-	key         string
-	label       string
-	level       int
-	blockIndex  int
-	paragraphID string
-	runID       string
-	anchorRunID string
-	start       int
-	end         int
+	kind           wordNavigationEntryKind
+	key            string
+	label          string
+	labelMessageID string
+	labelArgs      i18n.Args
+	level          int
+	blockIndex     int
+	paragraphID    string
+	runID          string
+	anchorRunID    string
+	start          int
+	end            int
 }
 
 type wordNavigationParagraphRef struct {
@@ -69,9 +71,9 @@ func (a *App) toggleWordNavigationPane() {
 	}
 	state.wordNavigationVisible = !state.wordNavigationVisible
 	if state.wordNavigationVisible {
-		a.setStatus("已打开导航窗格")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.opened_the_navigation_pane_6b4392"}, feedbackSuccess, notificationSuppressed)
 	} else {
-		a.setStatus("已关闭导航窗格")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.closed_the_navigation_pane_b17469"}, feedbackSuccess, notificationSuppressed)
 	}
 	if a.window != nil {
 		a.window.Invalidate()
@@ -135,7 +137,7 @@ func (a *App) layoutWordNavigationPane(gtx layout.Context, state *documentSessio
 			paint.FillShape(gtx.Ops, wordNavigationPaneBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			paint.FillShape(gtx.Ops, wordNavigationPaneDivider, clip.Rect{Min: image.Pt(gtx.Constraints.Max.X-gtx.Dp(unit.Dp(1)), 0), Max: gtx.Constraints.Max}.Op())
 			bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
-			semantic.DescriptionOp("Word 导航窗格").Add(gtx.Ops)
+			semantic.DescriptionOp(a.textID("word.accessibility.navigation_pane")).Add(gtx.Ops)
 			bounds.Pop()
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
@@ -152,9 +154,10 @@ func (a *App) layoutWordNavigationPane(gtx layout.Context, state *documentSessio
 					height := gtx.Dp(unit.Dp(28))
 					gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 					return layout.Inset{Left: unit.Dp(14), Right: unit.Dp(12), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						value := fmt.Sprintf("%d 个标题 · %d 个搜索结果", headingCount, resultCount)
+						locale := a.localeSnapshot().Resolved
+						value := a.textArgs("word.navigation.stats", i18n.Args{"Headings": i18n.FormatNumber(locale, float64(headingCount)), "Results": i18n.FormatNumber(locale, float64(resultCount))})
 						bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
-						semantic.DescriptionOp("Word 导航统计 " + value).Add(gtx.Ops)
+						semantic.DescriptionOp(a.textArgs("word.accessibility.navigation_stats", i18n.Args{"Value": value})).Add(gtx.Ops)
 						bounds.Pop()
 						label := material.Caption(a.theme, value)
 						label.Color = wordStatusText
@@ -177,10 +180,10 @@ func (a *App) layoutWordNavigationHeader(gtx layout.Context, state *documentSess
 	return layout.Inset{Top: unit.Dp(10), Left: unit.Dp(14), Right: unit.Dp(8), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				label := material.Body1(a.theme, "导航")
+				label := material.Body1(a.theme, a.textID("word.navigation.title"))
 				label.Color = wordStatusText
 				bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
-				semantic.DescriptionOp("Word 导航标题栏").Add(gtx.Ops)
+				semantic.DescriptionOp(a.textID("word.accessibility.navigation_header")).Add(gtx.Ops)
 				bounds.Pop()
 				return label.Layout(gtx)
 			}),
@@ -190,7 +193,7 @@ func (a *App) layoutWordNavigationHeader(gtx layout.Context, state *documentSess
 					gtx.Constraints.Min = image.Pt(size, size)
 					gtx.Constraints.Max = gtx.Constraints.Min
 					semantic.Button.Add(gtx.Ops)
-					semantic.DescriptionOp("关闭导航窗格").Add(gtx.Ops)
+					semantic.DescriptionOp(a.textID("word.accessibility.close_navigation")).Add(gtx.Ops)
 					if state.wordNavigationCloseButton.Hovered() {
 						paint.FillShape(gtx.Ops, wordNavigationRowSelected, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
 					}
@@ -212,13 +215,13 @@ func (a *App) layoutWordNavigationSearch(gtx layout.Context, state *documentSess
 				paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
 				bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 				semantic.Editor.Add(gtx.Ops)
-				semantic.DescriptionOp("Word 导航搜索").Add(gtx.Ops)
+				semantic.DescriptionOp(a.textID("word.accessibility.navigation_search")).Add(gtx.Ops)
 				bounds.Pop()
 				return layout.Dimensions{Size: gtx.Constraints.Max}
 			},
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					style := material.Editor(a.theme, &state.wordNavigationSearchEditor, "搜索文档")
+					style := material.Editor(a.theme, &state.wordNavigationSearchEditor, a.textID("word.navigation.search.placeholder"))
 					style.TextSize = unit.Sp(12)
 					style.Color = wordStatusText
 					return style.Layout(gtx)
@@ -229,12 +232,16 @@ func (a *App) layoutWordNavigationSearch(gtx layout.Context, state *documentSess
 }
 
 func (a *App) layoutWordNavigationEntry(gtx layout.Context, state *documentSessionState, blocks []document.WordBlock, entry wordNavigationEntry) layout.Dimensions {
+	labelText := entry.label
+	if entry.labelMessageID != "" {
+		labelText = a.textArgs(entry.labelMessageID, entry.labelArgs)
+	}
 	if entry.kind == wordNavigationGroup {
 		return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(5), Left: unit.Dp(14), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			label := material.Caption(a.theme, entry.label)
+			label := material.Caption(a.theme, labelText)
 			label.Color = wordStatusText
 			bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
-			semantic.DescriptionOp("Word 导航分组 " + entry.label).Add(gtx.Ops)
+			semantic.DescriptionOp(a.textArgs("word.accessibility.navigation_group", i18n.Args{"Label": labelText})).Add(gtx.Ops)
 			bounds.Pop()
 			return label.Layout(gtx)
 		})
@@ -249,15 +256,15 @@ func (a *App) layoutWordNavigationEntry(gtx layout.Context, state *documentSessi
 		}
 		left := 14 + max(0, entry.level-1)*14
 		return layout.Inset{Left: unit.Dp(left), Right: unit.Dp(10), Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			label := material.Body1(a.theme, entry.label)
+			label := material.Body1(a.theme, labelText)
 			label.TextSize = unit.Sp(12)
 			label.Color = wordStatusText
 			label.MaxLines = 2
 			bounds := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 			if entry.kind == wordNavigationHeading {
-				semantic.DescriptionOp("Word 导航标题 " + entry.label).Add(gtx.Ops)
+				semantic.DescriptionOp(a.textArgs("word.accessibility.navigation_heading", i18n.Args{"Label": labelText})).Add(gtx.Ops)
 			} else {
-				semantic.DescriptionOp("Word 导航结果 " + entry.label).Add(gtx.Ops)
+				semantic.DescriptionOp(a.textArgs("word.accessibility.navigation_result", i18n.Args{"Label": labelText})).Add(gtx.Ops)
 			}
 			semantic.Button.Add(gtx.Ops)
 			bounds.Pop()

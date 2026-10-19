@@ -64,8 +64,8 @@ func TestWordVersionOpenDatabaseFailureDoesNotBlockOpen(t *testing.T) {
 	if app.word == nil || app.path != path {
 		t.Fatalf("document did not open: word=%v path=%q", app.word, app.path)
 	}
-	if !bytes.Contains([]byte(app.status), []byte("历史版本暂不可用")) {
-		t.Fatalf("unavailable history was not reported without blocking open: status=%q", app.status)
+	if !bytes.Contains([]byte(app.statusText()), []byte("历史版本暂不可用")) {
+		t.Fatalf("unavailable history was not reported without blocking open: status=%q", app.statusText())
 	}
 }
 
@@ -108,8 +108,8 @@ func TestWordVersionHistoryFailureKeepsSuccessfulDiskSaveClean(t *testing.T) {
 	if result.err != nil || result.historyErr == nil || app.word.Dirty() {
 		t.Fatalf("successful disk save result err=%v historyErr=%v dirty=%v", result.err, result.historyErr, app.word.Dirty())
 	}
-	if app.word.Dirty() || !bytes.Contains([]byte(app.status), []byte("文件已保存，但历史版本未记录")) {
-		t.Fatalf("history failure UI state dirty=%v status=%q", app.word.Dirty(), app.status)
+	if app.word.Dirty() || !bytes.Contains([]byte(app.statusText()), []byte("文件已保存，但历史版本未记录")) {
+		t.Fatalf("history failure UI state dirty=%v status=%q", app.word.Dirty(), app.statusText())
 	}
 }
 
@@ -140,8 +140,8 @@ func TestWordVersionHistoryFailureAndLaterEditStatusIncludesBoth(t *testing.T) {
 	if result.err != nil || result.historyErr == nil || !app.word.Dirty() {
 		t.Fatalf("save result err=%v historyErr=%v dirty=%v", result.err, result.historyErr, app.word.Dirty())
 	}
-	if !bytes.Contains([]byte(app.status), []byte("文件已保存，但历史版本未记录")) || !bytes.Contains([]byte(app.status), []byte("保存后文档又有修改")) {
-		t.Fatalf("status does not report both conditions: %q", app.status)
+	if !bytes.Contains([]byte(app.statusText()), []byte("保存后文档又有修改")) || !bytes.Contains([]byte(app.statusText()), []byte("历史版本未记录")) {
+		t.Fatalf("status does not report both conditions: %q", app.statusText())
 	}
 }
 

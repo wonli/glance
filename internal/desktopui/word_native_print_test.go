@@ -8,6 +8,7 @@ import (
 	"github.com/SalvioniDigitalSolutions/gopdf"
 
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 	"glance/internal/printservice"
 	"glance/internal/wordlayout"
 )
@@ -59,6 +60,7 @@ func newNativePrintTestApp(t *testing.T, printer *testWordPrinter) (*App, *docum
 		wordPrintResults:     make(chan wordPrintResult, 1),
 		shutdown:             make(chan struct{}),
 	}
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	return app, state, word
 }
 
@@ -81,8 +83,8 @@ func TestWordPrintRequiresWarningAndPreviewConfirmationsAndPrintsSamePageScene(t
 		t.Fatal("Word Print should be enabled when a native printer is available")
 	}
 	app.executeWordToolbarAction("print")
-	if !app.modal.Visible || app.modal.Title != "打印前确认版式提示" {
-		t.Fatalf("warning modal visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.text(app.modal.TitleRef) != "打印前确认版式提示" {
+		t.Fatalf("warning modal visible=%v title=%q", app.modal.Visible, app.text(app.modal.TitleRef))
 	}
 	app.modal.OnAction("confirm")
 	if app.modal.Visible {
@@ -95,8 +97,8 @@ func TestWordPrintRequiresWarningAndPreviewConfirmationsAndPrintsSamePageScene(t
 		t.Fatal("timed out preparing native print PDF")
 	}
 	app.applyWordPrintResult(prepared)
-	if !app.modal.Visible || app.modal.Title != "打印预览已准备" {
-		t.Fatalf("preview modal visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.text(app.modal.TitleRef) != "打印预览已准备" {
+		t.Fatalf("preview modal visible=%v title=%q", app.modal.Visible, app.text(app.modal.TitleRef))
 	}
 	if state.wordViewMode != wordViewPrintLayout {
 		t.Fatal("printing did not switch the document to its shared print page view")
@@ -145,8 +147,8 @@ func TestWordPrintCancelAtPreviewDoesNotInvokePrinter(t *testing.T) {
 		t.Fatal("timed out preparing native print PDF")
 	}
 	app.applyWordPrintResult(prepared)
-	if !app.modal.Visible || app.modal.Title != "打印预览已准备" {
-		t.Fatalf("preview modal visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.text(app.modal.TitleRef) != "打印预览已准备" {
+		t.Fatalf("preview modal visible=%v title=%q", app.modal.Visible, app.text(app.modal.TitleRef))
 	}
 	app.modal.OnAction("cancel")
 	select {
@@ -154,8 +156,8 @@ func TestWordPrintCancelAtPreviewDoesNotInvokePrinter(t *testing.T) {
 		t.Fatal("canceling preview unexpectedly invoked the native printer")
 	default:
 	}
-	if app.status != "已取消打印" {
-		t.Fatalf("cancel status = %q", app.status)
+	if app.statusText() != "已取消打印" {
+		t.Fatalf("cancel status = %q", app.statusText())
 	}
 }
 
@@ -167,8 +169,8 @@ func TestWordPreparedPrintSurvivesFontCatalogRefresh(t *testing.T) {
 	state.wordLayoutAcceptedKey = nil
 	state.wordLayoutResult = nil
 	app.applyWordPrintResult(wordPrintResult{state: state, key: key, prepared: true, data: []byte("prepared PDF")})
-	if !app.modal.Visible || app.modal.Title != "打印预览已准备" {
-		t.Fatalf("prepared print discarded after refresh: %s", app.status)
+	if !app.modal.Visible || app.text(app.modal.TitleRef) != "打印预览已准备" {
+		t.Fatalf("prepared print discarded after refresh: %s", app.statusText())
 	}
 	state.wordRevisionAtomic.Add(1)
 	app.modal.OnAction("confirm")

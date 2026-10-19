@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 type spreadsheetConditionalFormatArguments struct {
@@ -20,13 +21,12 @@ func (a *App) showSpreadsheetConditionalFormatDialog() {
 	}
 	editor, ok := state.book.(document.SpreadsheetConditionalFormatEditor)
 	if !ok {
-		a.setStatus("当前工作簿不支持条件格式")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.this_workbook_does_not_support_205be4"}, feedbackWarning, notificationToast)
 		return
 	}
 	bounds := state.selection.Bounds()
-	prompt := fmt.Sprintf("为选区 %s%d:%s%d 选择条件格式规则：",
-		columnName(bounds.StartColumn), bounds.StartRow, columnName(bounds.EndColumn), bounds.EndRow)
-	a.modal.Show("条件格式", prompt, func(action string) {
+	rangeLabel := fmt.Sprintf("%s%d:%s%d", columnName(bounds.StartColumn), bounds.StartRow, columnName(bounds.EndColumn), bounds.EndRow)
+	a.modal.ShowMessage("spreadsheet.conditional_format", i18n.Message{ID: "spreadsheet.conditional_format.dialog.title"}, i18n.Message{ID: "spreadsheet.conditional_format.dialog.body", Args: i18n.Args{"Range": rangeLabel}}, func(action string) {
 		a.modal.Hide()
 		var ruleType document.SpreadsheetConditionalFormatType
 		clear := false
@@ -82,9 +82,9 @@ func (a *App) showSpreadsheetConditionalFormatDialog() {
 			a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 			if err == nil {
 				if clear {
-					a.setStatus("已清除条件格式")
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.conditional_formatting_cleared_90994a"}, feedbackSuccess, notificationToast)
 				} else {
-					a.setStatus("已应用条件格式")
+					a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.conditional_formatting_applied_bf7dae"}, feedbackSuccess, notificationSuppressed)
 				}
 			}
 			select {
@@ -93,11 +93,11 @@ func (a *App) showSpreadsheetConditionalFormatDialog() {
 			}
 		})
 	},
-		modalDialogActionSpec{ID: "data_bar", Label: "渐变数据条"},
-		modalDialogActionSpec{ID: "3_color", Label: "三色色阶"},
-		modalDialogActionSpec{ID: "duplicate", Label: "高亮重复值"},
-		modalDialogActionSpec{ID: "above_avg", Label: "高于平均值"},
-		modalDialogActionSpec{ID: "clear", Label: "清除规则"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "data_bar", LabelRef: i18n.Message{ID: "spreadsheet.conditional_format.action.data_bar"}},
+		modalDialogActionSpec{ID: "3_color", LabelRef: i18n.Message{ID: "spreadsheet.conditional_format.action.color_scale"}},
+		modalDialogActionSpec{ID: "duplicate", LabelRef: i18n.Message{ID: "spreadsheet.conditional_format.action.duplicate"}},
+		modalDialogActionSpec{ID: "above_avg", LabelRef: i18n.Message{ID: "spreadsheet.conditional_format.action.above_average"}},
+		modalDialogActionSpec{ID: "clear", LabelRef: i18n.Message{ID: "spreadsheet.conditional_format.action.clear"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }

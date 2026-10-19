@@ -1,7 +1,6 @@
 package desktopui
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"glance/internal/agent"
+	"glance/internal/i18n"
 )
 
 type agentHistoryRow struct {
@@ -44,15 +44,22 @@ func agentHistoryDateGroup(at, now time.Time) string {
 	at = at.In(now.Location())
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	if !at.Before(today) {
-		return "今天"
+		return "today"
 	}
 	if !at.Before(today.AddDate(0, 0, -1)) {
-		return "昨天"
+		return "yesterday"
 	}
 	if !at.Before(today.AddDate(0, 0, -7)) {
-		return "过去 7 天"
+		return "past_week"
 	}
-	return "更早"
+	return "earlier"
+}
+
+func (a *App) agentHistoryDateGroupLabel(group string) string {
+	if group == "" {
+		return ""
+	}
+	return a.textID("agent.history.group." + group)
 }
 
 func (a *App) layoutAgentHistorySidebar(gtx layout.Context) layout.Dimensions {
@@ -74,7 +81,7 @@ func (a *App) layoutAgentHistorySidebar(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										settingsFieldFocus(gtx, &a.agentUI.historySearch)
 										gtx.Constraints.Min.Y = 0
-										e := material.Editor(a.theme, &a.agentUI.historySearch, "搜索对话标题")
+										e := material.Editor(a.theme, &a.agentUI.historySearch, a.textID("agent.history.search.placeholder"))
 										e.TextSize = 12
 										e.Color = agentSidebarText
 										e.HintColor = agentSidebarMuted
@@ -89,7 +96,7 @@ func (a *App) layoutAgentHistorySidebar(gtx layout.Context) layout.Dimensions {
 			layout.Flexed(1, a.layoutAgentConversationHistory),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: 16, Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return a.agentHistoryLabel(gtx, fmt.Sprintf("当前文档 · %d 个会话", len(a.agentUI.conversationHistory)), 10, agentSidebarMuted)
+					return a.agentHistoryLabel(gtx, a.textArgs("agent.history.current_document_count", i18n.Args{"Count": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(len(a.agentUI.conversationHistory)))}), 10, agentSidebarMuted)
 				})
 			}),
 		)
@@ -111,16 +118,16 @@ func (a *App) layoutAgentHistoryHeader(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layoutAgentSidebarIconButton(gtx, a.theme, &a.agentUI.historyBackButton, "arrow-left", "返回聊天", false)
+				return layoutAgentSidebarIconButton(gtx, a.theme, &a.agentUI.historyBackButton, "arrow-left", a.textID("agent.history.back_to_chat"), false)
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = 0
 				return layout.Inset{Top: homeTextOpticalCenterTopInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return a.agentHistoryLabel(gtx, "历史对话", 13, agentSidebarText)
+					return a.agentHistoryLabel(gtx, a.textID("agent.history.title"), 13, agentSidebarText)
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layoutAgentSidebarIconButton(gtx, a.theme, &a.agentUI.newConversationButton, "square-pen", "新建会话", false)
+				return layoutAgentSidebarIconButton(gtx, a.theme, &a.agentUI.newConversationButton, "square-pen", a.textID("agent.sidebar.new_conversation"), false)
 			}),
 		)
 	})
@@ -187,7 +194,7 @@ func (a *App) layoutAgentHistoryListRows(gtx layout.Context, rows []agentHistory
 					return layout.Dimensions{}
 				}
 				return layout.Inset{Top: 4, Bottom: 6, Left: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return a.agentHistoryLabel(gtx, row.group, 10, agentSidebarMuted)
+					return a.agentHistoryLabel(gtx, a.agentHistoryDateGroupLabel(row.group), 10, agentSidebarMuted)
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -239,20 +246,24 @@ func (a *App) layoutAgentHistoryRow(gtx layout.Context, item agent.ConversationS
 							gtx.Constraints.Min.Y = 0
 							label := strings.TrimSpace(item.Title)
 							if label == "" {
-								label = "新会话"
+								label = a.textID("agent.history.default_title")
 							}
-							stamp := item.UpdatedAt.In(now.Location()).Format("15:04")
-							switch agentHistoryDateGroup(item.UpdatedAt, now) {
-							case "昨天":
-								stamp = "昨天 " + stamp
-							case "过去 7 天", "更早":
-								stamp = item.UpdatedAt.In(now.Location()).Format("01/02 15:04")
+							updatedAt := item.UpdatedAt.In(now.Location())
+							stamp := updatedAt.Format("15:04")
+							group := agentHistoryDateGroup(item.UpdatedAt, now)
+							switch group {
+							case "today":
+								stamp = a.textArgs("agent.history.date.today", i18n.Args{"Time": stamp})
+							case "yesterday":
+								stamp = a.textArgs("agent.history.date.yesterday", i18n.Args{"Time": stamp})
+							default:
+								stamp = i18n.FormatDateTime(a.localeSnapshot().Resolved, updatedAt)
 							}
 							if item.ID == state.conversationID {
-								stamp += " · 当前会话"
+								stamp += " · " + a.textID("agent.history.current_conversation")
 							}
 							if state.conversationDeletes[item.ID] != "" {
-								stamp = "正在删除…"
+								stamp = a.textID("agent.history.deleting")
 							}
 							return layout.Inset{Top: 3}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Vertical}.Layout(gtx,

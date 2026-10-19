@@ -3,6 +3,7 @@ package desktopui
 import (
 	"bytes"
 	"fmt"
+	"glance/internal/i18n"
 	"image"
 	"path/filepath"
 
@@ -73,13 +74,14 @@ func (a *App) startSpreadsheetImagePicker(operation spreadsheetImagePickerOperat
 	}
 	a.xlsxImagePickerRunning = true
 	if operation == spreadsheetImageInsert {
-		a.setStatus("选择要插入的 PNG/JPEG 图片…")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.choose_a_png_or_jpeg_2076ca"}, feedbackInfo, notificationToast)
 	} else {
-		a.setStatus("选择用于替换的 PNG/JPEG 图片…")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.choose_a_png_or_jpeg_5f614f"}, feedbackInfo, notificationToast)
 	}
 	choose := a.xlsxImageFilePicker
 	if choose == nil {
-		choose = chooseOfficeImageFile
+		pickerLabels := a.filePickerLabels()
+		choose = func() (string, error) { return chooseOfficeImageFile(pickerLabels) }
 	}
 	results, shutdown, window := a.xlsxImagePickerResults, a.shutdown, a.window
 	a.launchManagedBackground(func() {
@@ -106,22 +108,22 @@ func (a *App) handleSpreadsheetImagePickerResult(result spreadsheetImagePickerRe
 		return
 	}
 	if result.err != nil {
-		a.setStatus("图片读取失败：" + result.err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, result.err, notificationToast)
 		return
 	}
 	if result.path == "" {
-		a.setStatus("已取消选择图片")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.image_selection_canceled_5978be"}, feedbackSuccess, notificationSuppressed)
 		return
 	}
 	if state.formatRunning.Load() || a.isSaving() {
-		a.setStatus("工作簿正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_workbook_is_busy_try_cb4e59"}, feedbackWarning, notificationToast)
 		return
 	}
 	switch result.operation {
 	case spreadsheetImageInsert:
 		width, height, err := spreadsheetPictureInitialSize(result.data)
 		if err != nil {
-			a.setStatus("图片读取失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 			return
 		}
 		name := filepath.Base(result.path)
@@ -134,7 +136,7 @@ func (a *App) handleSpreadsheetImagePickerResult(result spreadsheetImagePickerRe
 		}
 		a.startGridPictureCommand(state, gridPictureCommandRequest{kind: gridPictureCommandReplace, operation: "替换图片", imageID: result.imageID, mediaType: result.mediaType, data: result.data})
 	default:
-		a.setStatus("无效的图片操作")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.invalid_image_operation_def800"}, feedbackError, notificationToast)
 	}
 }
 

@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"fmt"
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"math"
@@ -149,7 +150,7 @@ func (a *App) applyPresentationStylePatch(v *presentationViewState, patch docume
 	if state != nil && state.pptxDoc == a.pptxDoc && a.applicationSessionRegistered(state.documentID) {
 		token, ok := state.beginOperation(sessionOperationMutation)
 		if !ok {
-			a.setStatus("演示文稿正在处理其他操作")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 			return false
 		}
 		_, err = a.executeRibbonApplicationCommand(token, "presentation.element.style.set", "presentation_element", strconv.FormatInt(elem.ID, 10), "", presentationStyleArguments(slide.ID, elem.ID, patch))
@@ -166,14 +167,14 @@ func (a *App) applyPresentationStylePatch(v *presentationViewState, patch docume
 		}
 	}
 	if err != nil {
-		a.setStatus("样式修改失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return false
 	}
 	v.snapshot = a.pptxDoc.Snapshot()
 	if v.editingShape == elem.ID {
 		v.shapeDraftText = v.shapeEditor.Text()
 	}
-	a.setStatus("对象样式已修改；点击保存写入文件")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.object_style_changed_save_to_write_the_cha_50f2d2"}, feedbackSuccess, notificationToast)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -401,11 +402,13 @@ func (a *App) showPresentationCustomStyleDialog(v *presentationViewState, kind s
 	}
 	doc, state := a.pptxDoc, a.documentSessionState
 	labels := map[string]string{"font": "字体", "font_size": "字号（1–400 pt）", "text_color": "文字颜色（#RRGGBB）", "fill": "填充颜色（#RRGGBB）", "outline": "轮廓颜色（#RRGGBB）", "line_width": "轮廓宽度（0–20 pt）", "line_spacing": "行距（如 1.5×、150% 或 24 pt）", "space_before": "段前距（0–200 pt）", "space_after": "段后距（0–200 pt）"}
-	label, supported := labels[kind]
+	_, supported := labels[kind]
 	if !supported {
 		return
 	}
-	a.modal.ShowInput("自定义"+label, label, "", label, func(action string) {
+	labelMessage := i18n.Message{ID: "presentation.style.label." + kind}
+	label := a.text(labelMessage)
+	a.modal.ShowInputMessage("presentation.style.custom."+kind, i18n.Message{ID: "presentation.style.custom.title", Args: i18n.Args{"Label": label}}, labelMessage, "", i18n.Message{ID: "presentation.style.custom.hint"}, func(action string) {
 		draft := strings.TrimSpace(a.modal.Input.Text())
 		a.modal.Hide()
 		if action != "confirm" || a.pptxDoc != doc || a.documentSessionState != state || a.pptxView != v || v.activeSlide != slide || v.selectedShape != elem.ID {
@@ -413,11 +416,11 @@ func (a *App) showPresentationCustomStyleDialog(v *presentationViewState, kind s
 		}
 		patch, err := presentationCustomStylePatch(kind, draft)
 		if err != nil {
-			a.setStatus("样式输入无效：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 			return
 		}
 		a.applyPresentationStylePatch(v, patch)
-	}, modalDialogActionSpec{ID: "confirm", Label: "应用"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.apply"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }
 
 func presentationCustomStylePatch(kind, draft string) (document.PresentationElementStylePatch, error) {

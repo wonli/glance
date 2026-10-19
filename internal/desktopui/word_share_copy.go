@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 )
 
 type wordShareCopyPickerRequest struct {
@@ -24,7 +25,7 @@ func (a *App) requestWordShareCopy() {
 		return
 	}
 	if state.wordFlushRequested.Load() || state.wordDeferredToolbarAction != "" {
-		a.setStatus("正文正在提交，请稍后再导出共享副本")
+		a.setStatusMessage(i18n.Message{ID: "word.share.error.flush_in_progress"}, feedbackWarning, notificationSuppressed)
 		return
 	}
 	if wordHasPendingTextDrafts(state) {
@@ -32,7 +33,7 @@ func (a *App) requestWordShareCopy() {
 		state.wordFlushRequested.Store(true)
 		state.wordFlushAllDrafts.Store(true)
 		state.wordDeferredToolbarAction = "share"
-		a.setStatus("正在提交正文编辑，然后准备共享 DOCX 副本…")
+		a.setStatusMessage(i18n.Message{ID: "word.share.status.commit_before_export"}, feedbackInfo, notificationSuppressed)
 		a.startNextWordTextCommit()
 		return
 	}
@@ -44,11 +45,11 @@ func (a *App) beginWordShareCopy(state *documentSessionState) {
 		return
 	}
 	if a.documentSessionState != state {
-		a.setStatus("Word 文档已切换，共享副本导出已取消")
+		a.setStatusMessage(i18n.Message{ID: "word.share.error.document_switched"}, feedbackWarning, notificationToast)
 		return
 	}
 	if state.wordFlushRequested.Load() || wordHasPendingTextDrafts(state) {
-		a.setStatus("正文编辑尚未提交，未导出共享副本")
+		a.setStatusMessage(i18n.Message{ID: "word.share.error.pending_draft"}, feedbackWarning, notificationToast)
 		return
 	}
 	request := &wordShareCopyPickerRequest{
@@ -62,27 +63,27 @@ func (a *App) beginWordShareCopy(state *documentSessionState) {
 
 func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path string) {
 	if request == nil || request.state == nil || request.state.word == nil || request.state.closed.Load() {
-		a.setStatus("共享副本状态已过期，请重新导出")
+		a.setStatusMessage(i18n.Message{ID: "share.copy.error.expired"}, feedbackWarning, notificationToast)
 		return
 	}
 	state := request.state
 	if a.documentSessionState != state {
-		a.setStatus("Word 文档已切换，共享副本导出已取消")
+		a.setStatusMessage(i18n.Message{ID: "word.share.error.document_switched"}, feedbackWarning, notificationToast)
 		return
 	}
 	if state.formatRunning.Load() || state.wordRevisionAtomic.Load() != request.revision || state.wordDraftEpoch.Load() != request.draftEpoch || state.wordFlushRequested.Load() || wordHasPendingTextDrafts(state) {
-		a.setStatus("文档在选择位置期间已更改，未导出共享副本；请重试")
+		a.setStatusMessage(i18n.Message{ID: "word.share.error.changed_before_export"}, feedbackWarning, notificationToast)
 		return
 	}
 	path = ensureShareCopyExtension(path, "docx")
 	if sameDocumentPath(path, state.path) {
-		a.setStatus("共享副本不能覆盖当前 DOCX")
+		a.setStatusMessage(i18n.Message{ID: "share.copy.error.overwrite_source", Args: i18n.Args{"Format": "DOCX"}}, feedbackError, notificationToast)
 		return
 	}
 	if a.applicationSessionRegistered(state.documentID) {
 		results, shutdown := a.wordShareCopyResults, a.shutdown
 		if results == nil {
-			a.setStatus("共享副本导出不可用")
+			a.setStatusMessage(i18n.Message{ID: "share.copy.error.unavailable"}, feedbackError, notificationToast)
 			return
 		}
 		if a.startDocumentExportCopy(state, path, request.revision, func(outputPath string, err error) {
@@ -91,7 +92,7 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 			case <-shutdown:
 			}
 		}) {
-			a.setStatus("正在导出共享 DOCX 副本…")
+			a.setStatusMessage(i18n.Message{ID: "share.copy.status.exporting", Args: i18n.Args{"Format": "DOCX"}}, feedbackInfo, notificationSuppressed)
 			return
 		}
 	}
@@ -100,13 +101,13 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 	revision, draftEpoch := request.revision, request.draftEpoch
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
-		a.setStatus("文档正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "share.copy.error.operation_busy"}, feedbackWarning, notificationToast)
 		return
 	}
 	results, shutdown, window := a.wordShareCopyResults, a.shutdown, a.window
 	if results == nil {
 		state.finishOperation(token)
-		a.setStatus("共享副本导出不可用")
+		a.setStatusMessage(i18n.Message{ID: "share.copy.error.unavailable"}, feedbackError, notificationToast)
 		return
 	}
 	a.launchManagedBackground(func() {
@@ -146,7 +147,7 @@ func (a *App) startWordShareCopyFile(request *wordShareCopyPickerRequest, path s
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在导出共享 DOCX 副本…")
+	a.setStatusMessage(i18n.Message{ID: "share.copy.status.exporting", Args: i18n.Args{"Format": "DOCX"}}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) applyWordShareCopyResult(result wordShareCopyResult) {

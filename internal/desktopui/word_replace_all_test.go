@@ -155,7 +155,7 @@ func TestWordReplaceAllUsesOneUndoableEditAndIncludesDraftText(t *testing.T) {
 	if got := word.WordBlocks()[0].Paragraph.Inlines[0].Text.Text; got != "draft pear pear" {
 		t.Fatalf("Replace All value = %q; want draft pear pear", got)
 	}
-	if got := a.modal.SearchReplaceSummary; got != "已替换 2 处" {
+	if got := a.messageText(a.modal.SearchReplaceSummaryRef, a.modal.SearchReplaceSummary); got != "已替换 2 处。" {
 		t.Fatalf("Replace All summary = %q; want two replaced occurrences", got)
 	}
 	if got := draft.Text(); got != "draft pear pear" {

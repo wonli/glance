@@ -43,8 +43,8 @@ func TestSpreadsheetToolbar_ShapesAndCharts(t *testing.T) {
 		t.Fatal("toolbarActionInsertShapes should be enabled")
 	}
 	app.showSpreadsheetInsertShapeDialog()
-	if !app.modal.Visible || app.modal.Title != "插入形状" {
-		t.Fatalf("expected 插入形状 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入形状" {
+		t.Fatalf("expected 插入形状 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("roundRect")
 	select {
@@ -64,8 +64,8 @@ func TestSpreadsheetToolbar_ShapesAndCharts(t *testing.T) {
 		t.Fatal("toolbarActionInsertTextBox should be enabled")
 	}
 	app.showSpreadsheetInsertTextBoxDialog()
-	if !app.modal.Visible || app.modal.Title != "插入文本框" {
-		t.Fatalf("expected 插入文本框 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入文本框" {
+		t.Fatalf("expected 插入文本框 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("关键指标备注")
 	app.modal.OnAction("confirm")
@@ -86,8 +86,8 @@ func TestSpreadsheetToolbar_ShapesAndCharts(t *testing.T) {
 		t.Fatal("toolbarActionInsertColumnChart should be enabled")
 	}
 	app.showSpreadsheetInsertChartDialog(document.SpreadsheetChartColumn)
-	if !app.modal.Visible || app.modal.Title != "插入柱状图" {
-		t.Fatalf("expected 插入柱状图 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入柱状图" {
+		t.Fatalf("expected 插入柱状图 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("confirm")
 	select {
@@ -170,8 +170,8 @@ func TestSpreadsheetToolbar_PivotTableAndPrint(t *testing.T) {
 		t.Fatal("toolbarActionPivotTable should be enabled")
 	}
 	app.showSpreadsheetPivotTableDialog()
-	if !app.modal.Visible || app.modal.Title != "插入数据透视表" {
-		t.Fatalf("expected 插入数据透视表 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入数据透视表" {
+		t.Fatalf("expected 插入数据透视表 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("confirm")
 	select {
@@ -191,19 +191,19 @@ func TestSpreadsheetToolbar_PivotTableAndPrint(t *testing.T) {
 		t.Fatal("toolbarActionPrint should be enabled")
 	}
 	app.requestSpreadsheetPrint()
-	if !app.modal.Visible || app.modal.Title != "打印工作表" {
-		t.Fatalf("expected 打印工作表 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "打印工作表" {
+		t.Fatalf("expected 打印工作表 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("print")
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		app.processAsyncResults()
-		if strings.Contains(app.status, "系统打印服务") || strings.Contains(app.status, "打印失败") {
+		if strings.Contains(app.statusText(), "系统打印服务") || strings.Contains(app.statusText(), "打印失败") {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if !strings.Contains(app.status, "系统打印服务") {
-		t.Fatalf("unexpected status after print: %q", app.status)
+	if !strings.Contains(app.statusText(), "系统打印服务") {
+		t.Fatalf("unexpected status after print: %q", app.statusText())
 	}
 }

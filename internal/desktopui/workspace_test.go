@@ -11,6 +11,7 @@ import (
 	"glance/internal/format/docx"
 	"glance/internal/format/jsondoc"
 	"glance/internal/format/xlsx"
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -146,6 +147,7 @@ func TestUntouchedNewDocumentsRequireDiscardConfirmation(t *testing.T) {
 
 func TestClosingDirtyDocumentShowsSaveConfirmation(t *testing.T) {
 	a := New(nil, "")
+	a.applyLocaleSelection(i18n.SelectionEnglish)
 	book := xlsx.NewBlank()
 	if err := a.installDocument(loadedDocument{book: book, sheets: book.SheetNames()}); err != nil {
 		t.Fatal(err)
@@ -155,6 +157,13 @@ func TestClosingDirtyDocumentShowsSaveConfirmation(t *testing.T) {
 	a.closeWorkspaceTab(id)
 	if !a.modal.Visible || a.pendingCloseTabID != id {
 		t.Fatalf("dirty close did not open confirmation: visible=%v pending=%q", a.modal.Visible, a.pendingCloseTabID)
+	}
+	if a.modal.DialogID != "workspace.close.confirm" || a.text(a.modal.TitleRef) != "Save new document?" {
+		t.Fatalf("close dialog did not use a stable ID and English title: id=%q title=%q", a.modal.DialogID, a.text(a.modal.TitleRef))
+	}
+	a.applyLocaleSelection(i18n.SelectionChinese)
+	if !a.modal.Visible || a.modal.DialogID != "workspace.close.confirm" || a.text(a.modal.TitleRef) != "保存新文档？" {
+		t.Fatalf("language switch changed the pending close dialog: visible=%v id=%q title=%q", a.modal.Visible, a.modal.DialogID, a.text(a.modal.TitleRef))
 	}
 	if _, ok := a.sessions[id]; !ok {
 		t.Fatal("dirty document was removed before confirmation")

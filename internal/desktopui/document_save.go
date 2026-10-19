@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"glance/internal/application"
 	"glance/internal/document"
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 	"path/filepath"
 	"strings"
@@ -186,9 +187,11 @@ func (a *App) startSaveAs(path string) {
 		format = "csv"
 	}
 	if err := validateSaveAsExtension(format, path); err != nil {
-		a.setStatus(err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "document.save.extension_mismatch"}, err, notificationToast)
 		if a.pendingCloseTabID != "" {
-			a.showCloseConfirmation(a.pendingCloseTabID, "保存失败", "文件扩展名不匹配。可以重试保存、不保存并关闭，或取消关闭。")
+			a.showCloseConfirmationMessage(a.pendingCloseTabID,
+				i18n.Message{ID: "document.save.failure.title"},
+				i18n.Message{ID: "document.save.close_retry_body"})
 		}
 		return
 	}
@@ -202,7 +205,7 @@ func (a *App) startSaveAs(path string) {
 	}
 	state := a.documentSessionState
 	if state == nil {
-		a.setStatus("没有活动文档")
+		a.setStatusMessage(i18n.Message{ID: "document.save.no_active_document"}, feedbackWarning, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationSave)

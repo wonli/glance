@@ -2,7 +2,7 @@ package desktopui
 
 import (
 	"encoding/json"
-	"fmt"
+	"glance/internal/i18n"
 	"math"
 
 	"glance/internal/application"
@@ -36,16 +36,16 @@ func (a *App) applyWordViewIntent(state *documentSessionState, action string, ra
 		strategy := "two_page"
 		if a.desktopRuntime != nil && a.desktopRuntime.windowCount() > 1 {
 			strategy = "existing_windows"
-			a.setStatus("已开启并排查看模式")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.side_by_side_view_is_782e6d"}, feedbackSuccess, notificationSuppressed)
 		} else if enabled, _ := wordNewWindowAvailability(state, a.desktopRuntime); enabled {
 			if err := a.openWordNewWindow(); err != nil {
 				return nil, err
 			}
 			strategy = "new_window"
-			a.setStatus("已打开新窗口并排查看")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.opened_a_new_window_for_074edf"}, feedbackSuccess, notificationSuppressed)
 		} else {
 			a.selectWordMultiplePagesView()
-			a.setStatus("已开启双页并排查看")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.two_page_side_by_side_71eeb7"}, feedbackSuccess, notificationSuppressed)
 		}
 		return json.Marshal(struct {
 			WindowID uint64 `json:"window_id"`
@@ -70,11 +70,11 @@ func (a *App) applyWordAutosaveSettings(state *documentSessionState, raw json.Ra
 		state.wordAutoSave = *input.Enabled
 		switch {
 		case !*input.Enabled:
-			a.setStatus("已关闭自动保存")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.autosave_is_off_7e3438"}, feedbackSuccess, notificationToast)
 		case sessionPath(state) == "" || state.saveAsRequired:
-			a.setStatus("自动保存将在文档另存为后启用")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.autosave_will_turn_on_after_13177d"}, feedbackInfo, notificationToast)
 		default:
-			a.setStatus("已开启自动保存")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.autosave_is_on_30f470"}, feedbackSuccess, notificationToast)
 		}
 		a.persistActiveSession()
 	}
@@ -121,11 +121,11 @@ func (a *App) applyWordViewSettings(state *documentSessionState, raw json.RawMes
 		}
 		switch input.Selection.Scope {
 		case "document":
-			a.setStatus("已全选文档正文")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.selected_the_entire_document_body_ef99e2"}, feedbackSuccess, notificationSuppressed)
 		case "range":
-			a.setStatus("已选择正文范围")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.selected_the_body_range_65bb64"}, feedbackSuccess, notificationSuppressed)
 		case "clear":
-			a.setStatus("已清除正文选择")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.cleared_the_body_selection_21c400"}, feedbackSuccess, notificationToast)
 		}
 	}
 	if input.Mode != nil {
@@ -158,36 +158,36 @@ func (a *App) applyWordViewSettings(state *documentSessionState, raw json.RawMes
 		state.wordToolbarColorPicker = false
 		state.wordToolbarHighlightPicker = false
 		if *input.ReadingMode {
-			a.setStatus("已进入阅读模式")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.reading_mode_is_on_978599"}, feedbackSuccess, notificationSuppressed)
 		} else {
-			a.setStatus("已退出阅读模式")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.reading_mode_is_off_7dee19"}, feedbackSuccess, notificationSuppressed)
 		}
 		changed = true
 	}
 	if input.RulerVisible != nil && (!state.wordRulerHidden) != *input.RulerVisible {
 		state.wordRulerHidden = !*input.RulerVisible
 		if *input.RulerVisible {
-			a.setStatus("已显示标尺")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.ruler_shown_c451b3"}, feedbackSuccess, notificationSuppressed)
 		} else {
-			a.setStatus("已隐藏标尺")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.ruler_hidden_6ead58"}, feedbackSuccess, notificationSuppressed)
 		}
 		changed = true
 	}
 	if input.GridlinesVisible != nil && state.wordGridlinesVisible != *input.GridlinesVisible {
 		state.wordGridlinesVisible = *input.GridlinesVisible
 		if *input.GridlinesVisible {
-			a.setStatus("已显示网格线")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.gridlines_shown_0ad14e"}, feedbackSuccess, notificationSuppressed)
 		} else {
-			a.setStatus("已隐藏网格线")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.gridlines_hidden_1d300b"}, feedbackSuccess, notificationSuppressed)
 		}
 		changed = true
 	}
 	if input.NavigationVisible != nil && state.wordNavigationVisible != *input.NavigationVisible {
 		state.wordNavigationVisible = *input.NavigationVisible
 		if *input.NavigationVisible {
-			a.setStatus("已打开导航窗格")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.opened_the_navigation_pane_6b4392"}, feedbackSuccess, notificationSuppressed)
 		} else {
-			a.setStatus("已关闭导航窗格")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.closed_the_navigation_pane_b17469"}, feedbackSuccess, notificationSuppressed)
 		}
 		changed = true
 	}
@@ -204,7 +204,7 @@ func (a *App) applyWordViewSettings(state *documentSessionState, raw json.RawMes
 		target := wordStatusZoomClamp(float64(*input.ZoomPercent) / 100)
 		if math.Abs(state.wordLayoutZoom-target) > 0.0001 || state.wordPageFitMode || state.wordMultiplePagesMode {
 			setWordManualZoom(state, target)
-			a.setStatus(fmt.Sprintf("缩放：%d%%", *input.ZoomPercent))
+			a.setStatusMessage(i18n.Message{ID: "word.zoom.status", Args: i18n.Args{"Percent": *input.ZoomPercent}}, feedbackInfo, notificationSuppressed)
 			changed = true
 		}
 	}

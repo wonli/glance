@@ -175,13 +175,13 @@ func (a *App) layoutWordCanvas(gtx layout.Context, state *documentSessionState, 
 								func(gtx layout.Context) layout.Dimensions {
 									paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 									if state.wordGridlinesVisible && !state.wordReadingMode {
-										drawWordGridlines(gtx, image.Rectangle{Max: gtx.Constraints.Max})
+										drawWordGridlines(gtx, a, image.Rectangle{Max: gtx.Constraints.Max})
 									}
 									canvasClip := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 									if webMode {
-										semantic.DescriptionOp("Word Web 文档区域").Add(gtx.Ops)
+										semantic.DescriptionOp(a.textID("word.accessibility.web_region")).Add(gtx.Ops)
 									} else {
-										semantic.DescriptionOp("Word 文档画布").Add(gtx.Ops)
+										semantic.DescriptionOp(a.textID("word.accessibility.canvas")).Add(gtx.Ops)
 									}
 									canvasClip.Pop()
 									return layout.Dimensions{Size: gtx.Constraints.Max}
@@ -222,7 +222,7 @@ func (a *App) layoutWordCanvas(gtx layout.Context, state *documentSessionState, 
 					start, end := wordListViewportRange(state.wordListState.Position, len(blocks)+1, listViewportHeight)
 					trackWidth := gtx.Dp(material.Scrollbar(a.theme, &state.wordListState.Scrollbar).Width())
 					trackClip := clip.Rect{Min: image.Pt(max(0, gtx.Constraints.Max.X-trackWidth), 0), Max: gtx.Constraints.Max}.Push(gtx.Ops)
-					semantic.DescriptionOp("Word 文档滚动条").Add(gtx.Ops)
+					semantic.DescriptionOp(a.textID("word.accessibility.scrollbar")).Add(gtx.Ops)
 					trackClip.Pop()
 					gtx.Constraints.Min.X = gtx.Constraints.Max.X
 					return layout.E.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

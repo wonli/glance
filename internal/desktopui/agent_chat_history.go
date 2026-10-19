@@ -9,6 +9,7 @@ import (
 	"gioui.org/widget"
 
 	"glance/internal/agent"
+	"glance/internal/i18n"
 )
 
 func (a *App) ensureAgentChatDocument(documentID string) {
@@ -29,7 +30,7 @@ func (a *App) ensureAgentChatDocument(documentID string) {
 			a.agentUI.conversationBusy = false
 			a.agentUI.conversationInterrupted = false
 		}
-		a.agentUI.chatStatus = "请先打开一份文档，再开始与该文档关联的会话。"
+		a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.no_document"})
 		return
 	}
 	if a.agentUI.conversationDocumentID == documentID {
@@ -71,7 +72,7 @@ func (a *App) ensureAgentChatDocument(documentID string) {
 	a.agentUI.conversationInterrupted = false
 	a.agentUI.conversationHistoryVisible = false
 	a.agentUI.conversationHistoryError = ""
-	a.agentUI.chatStatus = "正在加载此文档的会话历史…"
+	a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.loading_history"})
 	a.refreshAgentConversationHistory(true)
 }
 
@@ -97,7 +98,7 @@ func (a *App) refreshAgentConversationHistory(selectLatest bool) {
 	if a.desktopRuntime == nil || a.desktopRuntime.workspaceStore == nil {
 		a.agentUI.conversationHistoryLoaded = true
 		a.agentUI.conversationHistoryError = "工作区会话存储不可用，无法加载历史会话。"
-		a.agentUI.chatStatus = a.agentUI.conversationHistoryError
+		a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.history_unavailable"})
 		return
 	}
 	a.startAgentChatHistoryTask("list", documentID, selectLatest, func(ctx context.Context) (agentChatHistoryResult, error) {
@@ -181,7 +182,7 @@ func (a *App) createAgentConversation() {
 	a.agentUI.chatInput.SetText("")
 	a.agentUI.activeReasoningLine = -1
 	a.agentUI.activeAnswerStarted = false
-	a.agentUI.chatStatus = "正在创建新会话…"
+	a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.creating_conversation"})
 	a.startAgentChatHistoryTask("create", documentID, false, func(ctx context.Context) (agentChatHistoryResult, error) {
 		record, err := runtime.createAgentConversation(ctx, documentID)
 		if err != nil {
@@ -243,7 +244,7 @@ func (a *App) processAgentChatHistoryResults() {
 			}
 			if result.err != nil {
 				state.conversationHistoryError = result.err.Error()
-				state.chatStatus = "会话操作失败：" + result.err.Error()
+				a.setAgentChatStatus(i18n.Message{ID: "agent.chat.status.history_operation_failed"})
 				continue
 			}
 			switch result.kind {
@@ -281,7 +282,7 @@ func (a *App) processAgentChatHistoryResults() {
 				state.activeAnswerStarted = false
 				state.conversationBusy = result.snapshot.Busy
 				state.conversationInterrupted = result.snapshot.Interrupted
-				state.chatStatus = ""
+				a.clearAgentChatStatus()
 				state.conversationHistoryVisible = false
 				if host, _ := a.ensureDesktopRuntime().currentAgentHost(); host != nil {
 					a.subscribeToAgent(host)
@@ -339,11 +340,11 @@ func agentConversationChatLines(snapshot agent.ConversationSnapshot) []agentChat
 						name = "工具"
 					}
 					lines = appendAgentChatLine(lines, agentChatLine{
-						role:        "tool",
-						text:        "Agent 请求调用 " + name,
-						toolName:    name,
-						toolSummary: "等待执行",
-						collapsed:   true,
+						role:           "tool",
+						text:           "Agent requested tool " + name,
+						toolName:       name,
+						toolSummaryRef: i18n.Message{ID: "agent.tool.result.waiting"},
+						collapsed:      true,
 					})
 				}
 			}
@@ -355,14 +356,16 @@ func agentConversationChatLines(snapshot agent.ConversationSnapshot) []agentChat
 			raw := []byte(message.Content)
 			isErr := agentToolResultHasError(raw)
 			needsAuth := agentToolResultNeedsConfirmation(raw)
+			summaryRef, summary := agentToolResultSummaryReference(name, raw, isErr)
 			lines = appendAgentChatLine(lines, agentChatLine{
-				role:        "tool",
-				text:        name + " 的结果已保存在会话上下文中",
-				toolName:    name,
-				toolSummary: summarizeAgentToolResult(name, raw, isErr),
-				isError:     isErr,
-				needsAuth:   needsAuth,
-				collapsed:   true,
+				role:           "tool",
+				text:           name + " result saved in conversation context",
+				toolName:       name,
+				toolSummary:    summary,
+				toolSummaryRef: summaryRef,
+				isError:        isErr,
+				needsAuth:      needsAuth,
+				collapsed:      true,
 			})
 		}
 	}

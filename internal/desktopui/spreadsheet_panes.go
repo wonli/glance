@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"encoding/json"
+	"glance/internal/i18n"
 
 	"gioui.org/layout"
 	"glance/internal/document"
@@ -52,13 +53,13 @@ func (a *App) runSpreadsheetPanesCommand(operation string, arguments any, target
 		}
 	}) {
 		state.finishOperation(token)
-		a.setStatus(operation + "未能启动")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.operation.start_failed", Args: i18n.Args{"Operation": a.localizedSpreadsheetToolbarText(operation)}}, feedbackError, notificationToast)
 		if a.window != nil {
 			a.window.Invalidate()
 		}
 		return
 	}
-	a.setStatus("正在" + operation + "…")
+	a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.operation_started", Args: i18n.Args{"Operation": a.localizedSpreadsheetToolbarText(operation)}}, feedbackInfo, notificationSuppressed)
 	if a.window != nil {
 		a.window.Invalidate()
 	}
@@ -100,13 +101,13 @@ func (a *App) applySpreadsheetPanesMenuCommand(gtx layout.Context, command strin
 	switch command {
 	case "excel-freeze-selection":
 		if !state.selectionSet {
-			a.setStatus("请先选择要冻结的行列交界单元格")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.select_the_row_and_column_4fc065"}, feedbackWarning, notificationToast)
 			return
 		}
 		active := state.selection.Active
 		target = document.SpreadsheetPaneFreeze{Frozen: true, XSplit: active.Column, YSplit: active.Row}
 		if target.XSplit == 0 && target.YSplit == 0 {
-			a.setStatus("请先选择首行或首列之后的单元格")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.select_a_cell_after_the_c1f7ff"}, feedbackWarning, notificationToast)
 			return
 		}
 		operation = "冻结窗格"

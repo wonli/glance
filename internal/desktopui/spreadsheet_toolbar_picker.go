@@ -25,6 +25,73 @@ func toolbarPickerTitle(picker spreadsheetToolbarPicker) string {
 	}
 }
 
+func toolbarPickerTitleMessageID(picker spreadsheetToolbarPicker) string {
+	switch picker {
+	case pickerFontColor:
+		return "spreadsheet.picker.title.font_color"
+	case pickerFillColor:
+		return "spreadsheet.picker.title.fill_color"
+	case pickerAlignment:
+		return "spreadsheet.picker.title.alignment"
+	case pickerNumberFormat:
+		return "spreadsheet.picker.title.number_format"
+	case pickerBorder:
+		return "spreadsheet.picker.title.border"
+	default:
+		return "common.translation_missing"
+	}
+}
+
+func toolbarPickerOptionMessageID(kind spreadsheetToolbarPicker, index int) string {
+	var ids []string
+	switch kind {
+	case pickerFontColor:
+		ids = []string{"spreadsheet.picker.color.black", "spreadsheet.picker.color.red", "spreadsheet.picker.color.orange", "spreadsheet.picker.color.yellow", "spreadsheet.picker.color.green", "spreadsheet.picker.color.blue", "spreadsheet.picker.color.purple", "spreadsheet.picker.color.white"}
+	case pickerFillColor:
+		ids = []string{"spreadsheet.picker.fill.none", "spreadsheet.picker.fill.red", "spreadsheet.picker.fill.orange", "spreadsheet.picker.fill.yellow", "spreadsheet.picker.fill.green", "spreadsheet.picker.fill.blue", "spreadsheet.picker.fill.purple", "spreadsheet.picker.fill.gray"}
+	case pickerAlignment:
+		ids = []string{"spreadsheet.picker.alignment.general", "spreadsheet.picker.alignment.left", "spreadsheet.picker.alignment.center", "spreadsheet.picker.alignment.right"}
+	case pickerNumberFormat:
+		ids = []string{"spreadsheet.picker.number_format.general", "spreadsheet.picker.number_format.integer", "spreadsheet.picker.number_format.number", "spreadsheet.picker.number_format.thousands", "spreadsheet.picker.number_format.percent_two_decimal", "spreadsheet.picker.number_format.percentage", "spreadsheet.picker.number_format.date", "spreadsheet.picker.number_format.date_mdy", "spreadsheet.picker.number_format.time", "spreadsheet.picker.number_format.scientific", "spreadsheet.picker.number_format.currency"}
+	case pickerBorder:
+		ids = []string{"spreadsheet.picker.border.all", "spreadsheet.picker.border.outside", "spreadsheet.picker.border.top", "spreadsheet.picker.border.right", "spreadsheet.picker.border.bottom", "spreadsheet.picker.border.left", "spreadsheet.picker.border.inside", "spreadsheet.picker.border.none"}
+	}
+	if index < 0 || index >= len(ids) {
+		return "common.translation_missing"
+	}
+	return ids[index]
+}
+
+func spreadsheetToolbarNumberFormatMessageID(format string) string {
+	label := spreadsheetToolbarNumberFormatLabel(format)
+	switch label {
+	case "常规":
+		return "spreadsheet.picker.number_format.general"
+	case "整数":
+		return "spreadsheet.picker.number_format.integer"
+	case "数值":
+		return "spreadsheet.picker.number_format.number"
+	case "千分位":
+		return "spreadsheet.picker.number_format.thousands"
+	case "百分比（两位）":
+		return "spreadsheet.picker.number_format.percent_two_decimal"
+	case "百分比":
+		return "spreadsheet.picker.number_format.percentage"
+	case "日期":
+		return "spreadsheet.picker.number_format.date"
+	case "日期（月/日/年）":
+		return "spreadsheet.picker.number_format.date_mdy"
+	case "时间":
+		return "spreadsheet.picker.number_format.time"
+	case "科学计数":
+		return "spreadsheet.picker.number_format.scientific"
+	case "货币":
+		return "spreadsheet.picker.number_format.currency"
+	default:
+		return "spreadsheet.picker.number_format.custom"
+	}
+}
+
 func formatStyleSlot(slot int) bool {
 	return (slot >= 4 && slot <= 11) ||
 		slot == toolbarActionFontFamily ||

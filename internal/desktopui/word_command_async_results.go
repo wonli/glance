@@ -1,6 +1,17 @@
 package desktopui
 
-import "glance/internal/document"
+import (
+	"glance/internal/document"
+	"glance/internal/i18n"
+)
+
+func (a *App) setWordCommandStatus(err error) {
+	if err != nil {
+		a.setStatusDetailMessage(i18n.Message{ID: "word.command.status.failed"}, feedbackError, notificationToast, err.Error())
+		return
+	}
+	a.setStatusMessage(i18n.Message{ID: "word.command.status.completed"}, feedbackSuccess, notificationToast)
+}
 
 func (a *App) processWordCommandAsyncResult() bool {
 	select {
@@ -27,9 +38,9 @@ func (a *App) processWordCommandAsyncResult() bool {
 		if result.wordCommentList {
 			if activeResult {
 				if result.err != nil {
-					a.setStatus(wordCommandError(result.operation, result.err))
+					a.setWordCommandStatus(result.err)
 				} else if len(result.wordComments) == 0 {
-					a.setStatus("当前文档没有可删除的批注")
+					a.setStatusMessage(i18n.Message{ID: "word.comment.status.none"}, feedbackInfo, notificationSuppressed)
 				} else {
 					a.showWordDeleteCommentPrompt(result.wordComments, result.wordCommentTotal, result.revision)
 				}
@@ -68,8 +79,7 @@ func (a *App) processWordCommandAsyncResult() bool {
 			a.completeInactiveWordSelectionEditDraft(result)
 		} else if result.textDraft && result.state.pendingWordRestoreAfterDrafts() != 0 {
 			if result.err != nil {
-				message := "恢复历史版本已取消，" + wordCommandError(result.operation, result.err)
-				a.publishWordRestoreNotice(result.state, message)
+				a.publishWordRestoreNoticeMessage(result.state, i18n.Message{ID: "word.history.error.restore_cancelled"})
 				result.state.wordFlushRequested.Store(false)
 				result.state.wordFlushAllDrafts.Store(false)
 				result.state.wordForceDraftFlush.Store(false)
@@ -78,7 +88,7 @@ func (a *App) processWordCommandAsyncResult() bool {
 				result.state.setCommittedWordTextAndClearDraft(result.runID, result.runText)
 				reconcileWordSelection(result.state, false)
 				if activeResult {
-					a.setStatus("正在编辑 Word 正文")
+					a.setStatusMessage(i18n.Message{ID: "word.status.inline.editing_word_document_text_556c9c"}, feedbackInfo, notificationSuppressed)
 					a.persistActiveSession()
 				}
 				if result.state.wordFlushRequested.Load() {
@@ -87,14 +97,14 @@ func (a *App) processWordCommandAsyncResult() bool {
 			}
 		} else if activeResult && result.viewOnly {
 			if result.err != nil {
-				a.setStatus(wordCommandError(result.operation, result.err))
+				a.setWordCommandStatus(result.err)
 			} else if result.operation == "设置 Word 自动保存" {
 				a.maybeAutoSaveWord(result.state)
 			}
 		} else if activeResult {
 			if result.textDraft {
 				if result.err != nil {
-					a.setStatus(wordCommandError(result.operation, result.err))
+					a.setWordCommandStatus(result.err)
 					result.state.wordFlushRequested.Store(false)
 					result.state.wordFlushAllDrafts.Store(false)
 					result.state.wordForceDraftFlush.Store(false)
@@ -129,7 +139,7 @@ func (a *App) processWordCommandAsyncResult() bool {
 						a.ensureDesktopRuntime().publishSessionRevision(result.state.documentID, result.state.wordRevisionAtomic.Load())
 					}
 					reconcileWordSelection(result.state, false)
-					a.setStatus("正在编辑 Word 正文")
+					a.setStatusMessage(i18n.Message{ID: "word.status.inline.editing_word_document_text_556c9c"}, feedbackInfo, notificationSuppressed)
 					a.persistActiveSession()
 				}
 				if result.err == nil && result.state.wordFlushRequested.Load() {
@@ -140,9 +150,9 @@ func (a *App) processWordCommandAsyncResult() bool {
 			} else if result.wordSymbolInsertion {
 				a.completeWordSymbolInsertion(result)
 			} else if result.confirmationPending {
-				a.setStatus("操作已送交人工确认；请在 AI 助手中检查目标并批准或拒绝。")
+				a.setStatusMessage(i18n.Message{ID: "word.status.inline.the_operation_is_waiting_for_bf9a4e"}, feedbackInfo, notificationSuppressed)
 			} else if result.err != nil {
-				a.setStatus(wordCommandError(result.operation, result.err))
+				a.setWordCommandStatus(result.err)
 			} else if !result.history || result.applied {
 				if result.wordTrackRevisions != nil {
 					result.state.wordTrackRevisions = *result.wordTrackRevisions
@@ -164,15 +174,15 @@ func (a *App) processWordCommandAsyncResult() bool {
 				}
 				if result.history {
 					if result.undo {
-						a.setStatus("已撤销 Word 编辑")
+						a.setStatusMessage(i18n.Message{ID: "word.status.inline.undid_the_word_edit_27a018"}, feedbackSuccess, notificationToast)
 					} else {
-						a.setStatus("已重做 Word 编辑")
+						a.setStatusMessage(i18n.Message{ID: "word.status.inline.redid_the_word_edit_982c02"}, feedbackSuccess, notificationToast)
 					}
 					if ed, ok := any(result.state.word).(document.WordDocumentProtectionEditor); ok {
 						result.state.wordProtected, _ = ed.GetWordDocumentProtection()
 					}
 				} else {
-					a.setStatus(wordCommandError(result.operation, nil))
+					a.setWordCommandStatus(nil)
 				}
 				if result.clearImageSelection && result.state.selectedWordImageID == result.imageID {
 					result.state.selectedWordImageID = ""

@@ -38,8 +38,8 @@ func TestWordLayoutAlignRibbonUsesRegisteredParagraphCapability(t *testing.T) {
 	requestSequence := app.applicationRequestSeq.Load()
 
 	app.showWordLayoutAlignDialog()
-	if !app.modal.Visible || app.modal.Title != "排列对齐" {
-		t.Fatalf("alignment dialog visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "排列对齐" {
+		t.Fatalf("alignment dialog visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("center")
 	app.modal.OnAction("confirm")
@@ -49,7 +49,7 @@ func TestWordLayoutAlignRibbonUsesRegisteredParagraphCapability(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	if state.wordRevisionAtomic.Load() != before.Revision+1 {
-		t.Fatalf("Ribbon action revision = %d, want %d; status=%q", state.wordRevisionAtomic.Load(), before.Revision+1, app.status)
+		t.Fatalf("Ribbon action revision = %d, want %d; status=%q", state.wordRevisionAtomic.Load(), before.Revision+1, app.statusText())
 	}
 	if app.applicationRequestSeq.Load() != requestSequence+1 {
 		t.Fatal("Ribbon alignment did not invoke the registered application capability")

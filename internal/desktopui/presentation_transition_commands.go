@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/application"
 )
@@ -21,7 +22,7 @@ func (a *App) runPresentationTransitionAction(view *presentationViewState, actio
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return true
 	}
 	switch actionID {
@@ -30,30 +31,30 @@ func (a *App) runPresentationTransitionAction(view *presentationViewState, actio
 	case "trans_push":
 		a.startPresentationTransition(view, presentationTransitionArguments{TransitionType: "push", Direction: "l"})
 	case "trans_options":
-		a.modal.Show("推进方向", "选择方向；当前页需要已设置推进、擦除或覆盖效果。", func(action string) {
+		a.modal.ShowMessage("presentation.transition.direction", i18n.Message{ID: "presentation.transition.direction.title"}, i18n.Message{ID: "presentation.transition.direction.body"}, func(action string) {
 			a.modal.Hide()
 			direction := map[string]string{"left": "l", "right": "r", "up": "u", "down": "d"}[action]
 			if direction != "" {
 				a.startPresentationTransition(view, presentationTransitionArguments{Direction: direction})
 			}
 		},
-			modalDialogActionSpec{ID: "left", Label: "向左"},
-			modalDialogActionSpec{ID: "right", Label: "向右"},
-			modalDialogActionSpec{ID: "up", Label: "向上"},
-			modalDialogActionSpec{ID: "down", Label: "向下"},
-			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+			modalDialogActionSpec{ID: "left", LabelRef: i18n.Message{ID: "presentation.transition.direction.left"}},
+			modalDialogActionSpec{ID: "right", LabelRef: i18n.Message{ID: "presentation.transition.direction.right"}},
+			modalDialogActionSpec{ID: "up", LabelRef: i18n.Message{ID: "presentation.transition.direction.up"}},
+			modalDialogActionSpec{ID: "down", LabelRef: i18n.Message{ID: "presentation.transition.direction.down"}},
+			modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 		)
 	case "trans_duration":
-		a.modal.Show("切换速度", "为当前页已设置的切换效果选择速度。", func(action string) {
+		a.modal.ShowMessage("presentation.transition.speed", i18n.Message{ID: "presentation.transition.speed.title"}, i18n.Message{ID: "presentation.transition.speed.body"}, func(action string) {
 			a.modal.Hide()
 			if action == "slow" || action == "med" || action == "fast" {
 				a.startPresentationTransition(view, presentationTransitionArguments{Speed: action})
 			}
 		},
-			modalDialogActionSpec{ID: "slow", Label: "慢"},
-			modalDialogActionSpec{ID: "med", Label: "中"},
-			modalDialogActionSpec{ID: "fast", Label: "快"},
-			modalDialogActionSpec{ID: "cancel", Label: "取消"},
+			modalDialogActionSpec{ID: "slow", LabelRef: i18n.Message{ID: "presentation.transition.speed.slow"}},
+			modalDialogActionSpec{ID: "med", LabelRef: i18n.Message{ID: "presentation.transition.speed.medium"}},
+			modalDialogActionSpec{ID: "fast", LabelRef: i18n.Message{ID: "presentation.transition.speed.fast"}},
+			modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 		)
 	case "trans_apply_all":
 		a.startPresentationTransition(view, presentationTransitionArguments{ApplyToAll: true})
@@ -66,11 +67,11 @@ func (a *App) runPresentationTransitionAction(view *presentationViewState, actio
 func (a *App) startPresentationTransition(view *presentationViewState, arguments presentationTransitionArguments) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("演示文稿能力尚未连接")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_capabilities_are_not_connecte_811cbe"}, feedbackInfo, notificationToast)
 		return true
 	}
 	if view.commandPending {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
@@ -81,13 +82,13 @@ func (a *App) startPresentationTransition(view *presentationViewState, arguments
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return true
 	}
 	arguments.SlideID = slide.ID
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true

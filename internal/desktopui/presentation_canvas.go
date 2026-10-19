@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 
@@ -65,7 +66,7 @@ func (a *App) layoutPresentationCanvas(gtx layout.Context, v *presentationViewSt
 				v.insertTextBox, v.insertShape, v.insertPicturePending = false, false, false
 				v.insertPictureData, v.insertPictureMediaType = nil, ""
 				v.insertPictureWidth, v.insertPictureHeight, v.insertPictureGeneration = 0, 0, 0
-				a.setStatus("已取消放置操作")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.placement_canceled_6c11b2"}, feedbackSuccess, notificationSuppressed)
 				gtx.Execute(key.FocusCmd{Tag: &v.canvasBlankClick})
 			}
 		}
@@ -89,14 +90,14 @@ func (a *App) layoutPresentationCanvas(gtx layout.Context, v *presentationViewSt
 				v.insertPictureData = nil
 				v.insertPictureMediaType = ""
 				v.insertPictureWidth, v.insertPictureHeight = 0, 0
-				a.setStatus("文档已切换，请重新选择要插入的图片")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_document_changed_select_the_picture_to_3b101f"}, feedbackInfo, notificationToast)
 				continue
 			}
 			placingShape := v.insertShape
 			placingPicture := v.insertPicturePending
 			page := image.Rectangle{Min: v.canvasCardOrigin, Max: v.canvasCardOrigin.Add(v.canvasCardSize)}
 			if !event.Position.In(page) {
-				a.setStatus("请点击白色幻灯片页面内的位置")
+				a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.click_a_position_inside_the_white_slide_ca_e7dc31"}, feedbackWarning, notificationSuppressed)
 				continue
 			}
 			slide := v.currentSlide()
@@ -170,7 +171,7 @@ func (a *App) layoutPresentationCanvas(gtx layout.Context, v *presentationViewSt
 	slide := v.currentSlide()
 	if slide == nil {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			lbl := material.Label(a.theme, unit.Sp(14), "暂无幻灯片内容")
+			lbl := material.Label(a.theme, unit.Sp(14), a.textID("presentation.canvas.empty"))
 			lbl.Color = pptxTextMuted
 			return lbl.Layout(gtx)
 		})

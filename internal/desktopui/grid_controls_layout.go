@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"strings"
@@ -46,7 +47,7 @@ func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 		for ev, ok := a.formulaEditor.Update(gtx); ok; ev, ok = a.formulaEditor.Update(gtx) {
 			if _, submit := ev.(widget.SubmitEvent); submit {
 				if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
-					a.setStatus("修改失败：" + err.Error())
+					a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 					a.window.Invalidate()
 				} else {
 					formulaCommitted = true
@@ -68,7 +69,7 @@ func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 	}
 	if a.applyButton.Clicked(gtx) {
 		if err := a.commitGridCell(a.formulaEditor.Text()); err != nil {
-			a.setStatus("修改失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 			a.window.Invalidate()
 		} else if a.virtualGrid != nil {
 			gtx.Execute(key.FocusCmd{Tag: &a.virtualGrid.PointerTag})
@@ -173,7 +174,7 @@ func (a *App) focusSpreadsheetGrid(gtx layout.Context) {
 func (a *App) goToCell(gtx layout.Context) bool {
 	state := a.documentSessionState
 	if state == nil || state.book == nil {
-		a.setStatus("当前工作簿不可用")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_current_workbook_is_unavailable_de7c9c"}, feedbackWarning, notificationToast)
 		return false
 	}
 	reference := strings.TrimSpace(a.nameBox.Text())
@@ -182,14 +183,14 @@ func (a *App) goToCell(gtx layout.Context) bool {
 		if reader, supported := state.book.(document.SpreadsheetDefinedNameEditor); supported {
 			names, err := reader.GetDefinedNames()
 			if err != nil {
-				a.setStatus("读取定义名称失败：" + err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 				return false
 			}
 			targetSheet, start, end, ok = parseSpreadsheetGoToReference(reference, state.sheet, names)
 		}
 	}
 	if !ok {
-		a.setStatus("单元格、区域地址或定义名称无效")
+		a.setStatusMessage(i18n.Message{ID: "desktop.status.inline.the_cell_range_address_or_defined_name_is_b0e5bd"}, feedbackError, notificationToast)
 		return false
 	}
 	if strings.EqualFold(targetSheet, state.sheet) {
@@ -203,7 +204,7 @@ func (a *App) goToCell(gtx layout.Context) bool {
 			}
 		}
 		if canonicalSheet == "" {
-			a.setStatus("目标工作表不存在：" + targetSheet)
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.error.sheet_not_found", Args: i18n.Args{"Sheet": targetSheet}}, feedbackError, notificationToast)
 			return false
 		}
 		targetSheet = canonicalSheet

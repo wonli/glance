@@ -38,7 +38,7 @@ func TestMarkdownCreateEntrypointsWithDurableWorkspace(t *testing.T) {
 				a.layout(gtx)
 			}
 			if a.activeTabID == workspace.RecentTabID || a.markdownDoc == nil {
-				t.Fatalf("creation returned to Recent: tab=%q status=%q", a.activeTabID, a.status)
+				t.Fatalf("creation returned to Recent: tab=%q status=%q", a.activeTabID, a.statusText())
 			}
 			record, ok := a.collection.Get(a.activeTabID)
 			if !ok || record.Format != "markdown" {

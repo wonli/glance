@@ -14,14 +14,16 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"glance/internal/i18n"
 )
 
 func (a *App) layoutOfficeSearchReplaceDialog(gtx layout.Context) layout.Dimensions {
 	if a.modal.searchReplaceClose.Clicked(gtx) {
 		if a.modal.OnAction != nil {
-			title := a.modal.Title
+			dialogID := a.modal.DialogID
 			a.modal.OnAction("close")
-			if a.modal.Visible && a.modal.Title == title {
+			if a.modal.Visible && a.modal.DialogID == dialogID {
 				a.modal.Hide()
 			}
 		} else {
@@ -97,14 +99,16 @@ func (a *App) layoutOfficeSearchReplaceCard(gtx layout.Context) layout.Dimension
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: queryGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return a.layoutOfficeSearchReplaceField(gtx, "查找内容", &a.modal.Input, "查找内容")
+					findLabel := a.text(i18n.Message{ID: "office.search_replace.field.find"})
+					return a.layoutOfficeSearchReplaceField(gtx, findLabel, &a.modal.Input, findLabel)
 				})
 			}),
 		}
 		if a.modal.SearchReplaceHasReplace && a.modal.SearchReplaceReplaceTab && a.modal.HasSecondInput {
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: fieldGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return a.layoutOfficeSearchReplaceField(gtx, "替换为", &a.modal.SecondInput, "替换为")
+					replaceLabel := a.text(i18n.Message{ID: "office.search_replace.field.replace"})
+					return a.layoutOfficeSearchReplaceField(gtx, replaceLabel, &a.modal.SecondInput, replaceLabel)
 				})
 			}))
 		}
@@ -153,7 +157,7 @@ func (a *App) layoutOfficeSearchReplaceCard(gtx layout.Context) layout.Dimension
 func (a *App) layoutOfficeSearchReplaceHeader(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			label := material.Body1(a.theme, a.modal.Title)
+			label := material.Body1(a.theme, a.messageText(a.modal.TitleRef, a.modal.Title))
 			label.TextSize = unit.Sp(16)
 			label.Font.Weight = font.SemiBold
 			label.Color = color.NRGBA{R: 31, G: 37, B: 45, A: 255}
@@ -168,7 +172,7 @@ func (a *App) layoutOfficeSearchReplaceHeader(gtx layout.Context) layout.Dimensi
 			gtx.Constraints.Max = gtx.Constraints.Min
 			return a.modal.searchReplaceClose.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				pointer.CursorPointer.Add(gtx.Ops)
-				semantic.DescriptionOp("关闭查找和替换").Add(gtx.Ops)
+				semantic.DescriptionOp(a.text(i18n.Message{ID: "office.search_replace.close"})).Add(gtx.Ops)
 				bounds := image.Rectangle{Max: gtx.Constraints.Max}
 				if a.modal.searchReplaceClose.Hovered() {
 					shape := clip.RRect{Rect: bounds, NW: gtx.Dp(unit.Dp(6)), NE: gtx.Dp(unit.Dp(6)), SW: gtx.Dp(unit.Dp(6)), SE: gtx.Dp(unit.Dp(6))}
@@ -186,13 +190,13 @@ func (a *App) layoutOfficeSearchReplaceHeader(gtx layout.Context) layout.Dimensi
 func (a *App) layoutOfficeSearchReplaceTabs(gtx layout.Context) layout.Dimensions {
 	children := []layout.FlexChild{
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layoutOfficeSearchReplaceTab(gtx, a.theme, &a.modal.searchReplaceFindTab, "查找", a.modal.SearchReplaceCompact, !a.modal.SearchReplaceReplaceTab)
+			return layoutOfficeSearchReplaceTab(gtx, a.theme, &a.modal.searchReplaceFindTab, a.text(i18n.Message{ID: "office.search_replace.tab.find"}), a.modal.SearchReplaceCompact, !a.modal.SearchReplaceReplaceTab)
 		}),
 	}
 	if a.modal.SearchReplaceHasReplace {
 		children = append(children,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layoutOfficeSearchReplaceTab(gtx, a.theme, &a.modal.searchReplaceReplaceTab, "替换", a.modal.SearchReplaceCompact, a.modal.SearchReplaceReplaceTab)
+				return layoutOfficeSearchReplaceTab(gtx, a.theme, &a.modal.searchReplaceReplaceTab, a.text(i18n.Message{ID: "office.search_replace.tab.replace"}), a.modal.SearchReplaceCompact, a.modal.SearchReplaceReplaceTab)
 			}),
 		)
 	}
@@ -258,7 +262,7 @@ func (a *App) layoutOfficeSearchReplaceScope(gtx layout.Context) layout.Dimensio
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			width := gtx.Dp(unit.Dp(91))
 			gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
-			label := material.Body2(a.theme, "范围")
+			label := material.Body2(a.theme, a.text(i18n.Message{ID: "office.search_replace.scope"}))
 			label.TextSize = unit.Sp(11)
 			label.Font.Weight = font.Medium
 			label.Color = color.NRGBA{R: 104, G: 113, B: 124, A: 255}
@@ -299,9 +303,9 @@ func (a *App) layoutOfficeSearchReplaceScope(gtx layout.Context) layout.Dimensio
 }
 
 func (a *App) layoutOfficeSearchReplaceSummary(gtx layout.Context) layout.Dimensions {
-	text := a.modal.SearchReplaceSummary
+	text := a.messageText(a.modal.SearchReplaceSummaryRef, a.modal.SearchReplaceSummary)
 	if text == "" {
-		text = "输入查找内容后，点击“查找下一个”"
+		text = a.text(i18n.Message{ID: "office.search_replace.summary.default"})
 	}
 	label := material.Caption(a.theme, text)
 	label.TextSize = unit.Sp(11)

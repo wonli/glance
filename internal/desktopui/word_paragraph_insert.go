@@ -1,6 +1,9 @@
 package desktopui
 
-import "glance/internal/document"
+import (
+	"glance/internal/document"
+	"glance/internal/i18n"
+)
 
 func (a *App) startWordBodyParagraphInsert() {
 	a.startWordParagraphInsertAfter("")
@@ -13,7 +16,7 @@ func (a *App) startWordParagraphInsertAfter(afterParagraphID string) {
 	}
 	editor, ok := any(state.word).(document.WordBodyEditor)
 	if !ok {
-		a.setStatus("当前 DOCX 适配器不支持新增正文段落")
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.adding_body_paragraphs_is_not_8bdb55"}, feedbackWarning, notificationToast)
 		return
 	}
 	if _, ok := state.beginOperation(sessionOperationMutation); !ok {
@@ -80,12 +83,12 @@ func (a *App) focusInsertedWordParagraph(state *documentSessionState, paragraphI
 			editor := wordRunEditor(state, *inline.Text)
 			editor.SetCaret(0, 0)
 			state.wordListState.ScrollTo(max(0, len(wordBlocksForState(state))-1))
-			a.setStatus("已插入正文段落，可直接输入")
+			a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserted_a_body_paragraph_you_0a0274"}, feedbackSuccess, notificationToast)
 			if a.window != nil {
 				a.window.Invalidate()
 			}
 			return
 		}
 	}
-	a.setStatus("新段落已插入，但没有可编辑的文字运行")
+	a.setStatusMessage(i18n.Message{ID: "word.status.inline.a_new_paragraph_was_inserted_2371f7"}, feedbackWarning, notificationToast)
 }

@@ -17,7 +17,20 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 )
+
+func wordImageSemanticLabel(app *App, id string) string {
+	return app.textArgs("word.accessibility.inline_image", i18n.Args{"ID": id})
+}
+
+func wordRunSemanticLabel(app *App, id string) string {
+	return app.textArgs("word.accessibility.body_text_run", i18n.Args{"ID": id})
+}
+
+func wordImageResizeSemanticLabel(app *App, index int) string {
+	return app.textArgs("word.accessibility.resize_image", i18n.Args{"Handle": app.textID(wordImageResizeHandleMessageID(index))})
+}
 
 func TestSelectingWordImageKeepsDocumentGeometryAndShowsAllResizeHandles(t *testing.T) {
 	word := syntheticWordTableDocument(t)
@@ -96,8 +109,8 @@ func TestSelectingWordImageKeepsDocumentGeometryAndShowsAllResizeHandles(t *test
 	if state.selectedWordRunID != beforeRunID {
 		t.Fatalf("text focus selected run %q; want %q before selecting the image", state.selectedWordRunID, beforeRunID)
 	}
-	imageBoundsBefore := findBounds("内嵌图片 " + imageID)
-	afterBoundsBefore := findBounds("正文文字 " + afterRunID)
+	imageBoundsBefore := findBounds(wordImageSemanticLabel(app, imageID))
+	afterBoundsBefore := findBounds(wordRunSemanticLabel(app, afterRunID))
 	canvasBoundsBefore := findBounds("Word 文档画布")
 	if imageBoundsBefore.Empty() || afterBoundsBefore.Empty() || canvasBoundsBefore.Empty() {
 		t.Fatalf("unselected image/following text/canvas bounds are missing: image=%v following=%v canvas=%v", imageBoundsBefore, afterBoundsBefore, canvasBoundsBefore)
@@ -109,8 +122,8 @@ func TestSelectingWordImageKeepsDocumentGeometryAndShowsAllResizeHandles(t *test
 	if !router.Source().Focused(wordObjectButton(state, imageID)) {
 		t.Fatal("image click left keyboard focus on the old text editor")
 	}
-	imageBoundsAfter := findBounds("内嵌图片 " + imageID)
-	afterBoundsAfter := findBounds("正文文字 " + afterRunID)
+	imageBoundsAfter := findBounds(wordImageSemanticLabel(app, imageID))
+	afterBoundsAfter := findBounds(wordRunSemanticLabel(app, afterRunID))
 	canvasBoundsAfter := findBounds("Word 文档画布")
 	if imageBoundsAfter != imageBoundsBefore {
 		t.Errorf("image bounds moved on selection: before=%v after=%v", imageBoundsBefore, imageBoundsAfter)
@@ -124,8 +137,8 @@ func TestSelectingWordImageKeepsDocumentGeometryAndShowsAllResizeHandles(t *test
 	if canvasBoundsAfter.Empty() {
 		t.Fatal("Word canvas is missing from the image selection frame")
 	}
-	for _, handle := range wordImageResizeHandles {
-		bounds := findBounds("拖动调整图片大小：" + handle.name)
+	for index, handle := range wordImageResizeHandles {
+		bounds := findBounds(wordImageResizeSemanticLabel(app, index))
 		if bounds.Empty() {
 			t.Errorf("selected image has no visible resize handle %q", handle.name)
 			continue
@@ -152,7 +165,7 @@ func TestSelectingWordImageKeepsDocumentGeometryAndShowsAllResizeHandles(t *test
 	if len(state.wordBlocks) != blockCount {
 		t.Fatalf("blank page click changed document block count from %d to %d", blockCount, len(state.wordBlocks))
 	}
-	imageBounds := findBounds("内嵌图片 " + imageID)
+	imageBounds := findBounds(wordImageSemanticLabel(app, imageID))
 	click(image.Pt(imageBounds.Min.X+imageBounds.Dx()/2, imageBounds.Min.Y+imageBounds.Dy()/2), 84)
 	if state.selectedWordImageID != imageID {
 		t.Fatalf("could not reselect the image before testing the document-end blank area: %q", state.selectedWordImageID)
@@ -234,7 +247,7 @@ func TestWordImageResizeAndRotationHandlesCommitPointerDrags(t *testing.T) {
 		}
 	}
 	frame()
-	container := findBounds("内嵌图片 " + imageID)
+	container := findBounds(wordImageSemanticLabel(app, imageID))
 	if container.Empty() {
 		t.Fatal("selected Word image has no accessible bounds")
 	}
@@ -244,7 +257,7 @@ func TestWordImageResizeAndRotationHandlesCommitPointerDrags(t *testing.T) {
 		t.Fatal("inserted Word image has no initial extent")
 	}
 	initialWidth := initial.WidthEMU
-	rightHandleBounds := findBounds("拖动调整图片大小：右")
+	rightHandleBounds := findBounds(wordImageResizeSemanticLabel(app, 3))
 	if rightHandleBounds.Empty() {
 		t.Fatal("selected Word image has no accessible right resize handle")
 	}
@@ -265,7 +278,7 @@ func TestWordImageResizeAndRotationHandlesCommitPointerDrags(t *testing.T) {
 		t.Fatal("resizing released its preview before the asynchronous image edit completed")
 	}
 	frame()
-	pendingBounds := findBounds("内嵌图片 " + imageID)
+	pendingBounds := findBounds(wordImageSemanticLabel(app, imageID))
 	if pendingBounds.Empty() || pendingBounds.Dx() <= container.Dx() {
 		t.Fatalf("image bounds during asynchronous resize = %v; want the resized preview wider than %v", pendingBounds, container)
 	}
@@ -278,10 +291,10 @@ func TestWordImageResizeAndRotationHandlesCommitPointerDrags(t *testing.T) {
 	}
 	resized := findWordImage(word.WordBlocks(), imageID)
 	if resized == nil || resized.WidthEMU <= initialWidth {
-		t.Fatalf("right resize handle committed width %v; want more than %d EMU (running=%v preview=%#v status=%q)", resized, initialWidth, state.formatRunning.Load(), wordImageInteractionFor(state, imageID).preview.Preview(), app.status)
+		t.Fatalf("right resize handle committed width %v; want more than %d EMU (running=%v preview=%#v status=%q)", resized, initialWidth, state.formatRunning.Load(), wordImageInteractionFor(state, imageID).preview.Preview(), app.statusText())
 	}
 	frame()
-	container = findBounds("内嵌图片 " + imageID)
+	container = findBounds(wordImageSemanticLabel(app, imageID))
 	absDiff := func(left, right int) int {
 		if left < right {
 			return right - left
@@ -295,7 +308,7 @@ func TestWordImageResizeAndRotationHandlesCommitPointerDrags(t *testing.T) {
 	visualWidth := wordImageEMUToPixels(resized.WidthEMU, metric.PxPerDp)
 	visualHeight := wordImageEMUToPixels(resized.HeightEMU, metric.PxPerDp)
 	center := f32.Pt(float32(imageMin.X+visualWidth/2), float32(imageMin.Y+visualHeight/2))
-	rotationHandleBounds := findBounds("拖动旋转图片")
+	rotationHandleBounds := findBounds(app.textID("word.accessibility.rotate_image"))
 	if rotationHandleBounds.Empty() {
 		var descriptions []string
 		var collect func([]input.SemanticNode)

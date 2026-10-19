@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/application"
 	"glance/internal/document"
@@ -68,7 +69,7 @@ func (a *App) mergeSpreadsheetRange(state *documentSessionState, sheet string, b
 			state: state, token: opToken, revision: state.wordRevisionAtomic.Load(), generation: generation,
 			sheet: sheet, window: window, err: err, operation: "合并后居中", applied: outcome.Changed,
 			noOp:    err == nil && !outcome.Changed && !outcome.ConfirmationRequired,
-			details: "未发生变更", merge: &outcome, mergeBounds: &mergeBounds,
+			details: i18n.Message{ID: "spreadsheet.status.no_changes"}, merge: &outcome, mergeBounds: &mergeBounds,
 		}:
 		case <-a.shutdown:
 		}
@@ -83,21 +84,20 @@ func (a *App) showSpreadsheetMergeConfirmation(state *documentSessionState, gene
 	if state == nil || outcome.ConfirmationToken == "" || outcome.DiscardedCellCount < 1 {
 		return
 	}
-	message := fmt.Sprintf("选区中有 %d 个非左上角单元格包含内容。合并后只保留左上角单元格的内容，其他内容将被删除。可使用撤销恢复。是否继续？", outcome.DiscardedCellCount)
-	a.modal.Show("合并单元格", message, func(action string) {
+	a.modal.ShowMessage("spreadsheet.merge.confirm", i18n.Message{ID: "spreadsheet.merge.dialog.title"}, i18n.Message{ID: "spreadsheet.merge.dialog.body", Args: i18n.Args{"Count": outcome.DiscardedCellCount}}, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
 			return
 		}
 		if state != a.documentSessionState || generation != a.documentGeneration || sheet != a.sheet {
-			a.setStatus("文档已切换，已取消合并")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.the_active_document_changed_the_e49e4e"}, feedbackInfo, notificationToast)
 			if a.window != nil {
 				a.window.Invalidate()
 			}
 			return
 		}
 		if err := a.mergeSpreadsheetRange(state, sheet, bounds, outcome.ConfirmationToken); err != nil {
-			a.setStatus("合并失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		}
-	}, modalDialogActionSpec{ID: "confirm", Label: "合并并居中"}, modalDialogActionSpec{ID: "cancel", Label: "取消"})
+	}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "spreadsheet.merge.action.confirm"}}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}})
 }

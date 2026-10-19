@@ -40,8 +40,8 @@ func TestSpreadsheetPDFExportToolbarActionEnabled(t *testing.T) {
 
 	app.requestSpreadsheetPDFExport()
 	waitForSpreadsheetPDFPreview(t, app)
-	if !app.modal.Visible || app.modal.Title != "导出 PDF 预览" {
-		t.Fatalf("expected PDF preview before picker, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != dialogIDPDFExportPreview {
+		t.Fatalf("expected PDF preview before picker, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("confirm")
 
@@ -56,8 +56,8 @@ func TestSpreadsheetPDFExportToolbarActionEnabled(t *testing.T) {
 
 	// Process cancel result
 	app.processAsyncResults()
-	if app.status != "已取消导出 PDF" {
-		t.Fatalf("expected status '已取消导出 PDF', got %q", app.status)
+	if app.statusText() != "已取消导出 PDF" {
+		t.Fatalf("expected status '已取消导出 PDF', got %q", app.statusText())
 	}
 }
 
@@ -123,8 +123,8 @@ func TestSpreadsheetPDFExportWritesValidatedPDFWithoutChangingWorkbook(t *testin
 	if reader.NumPages() < 1 {
 		t.Fatalf("exported PDF pages = %d, want >= 1", reader.NumPages())
 	}
-	if app.status != "PDF 已导出：export.pdf" {
-		t.Fatalf("unexpected export status: %q", app.status)
+	if app.statusText() != "PDF 已导出：export.pdf" {
+		t.Fatalf("unexpected export status: %q", app.statusText())
 	}
 }
 
@@ -158,8 +158,8 @@ func TestSpreadsheetPDFExportFlushesPendingCellDraft(t *testing.T) {
 
 	app.requestSpreadsheetPDFExport()
 	waitForSpreadsheetPDFPreview(t, app)
-	if !app.modal.Visible || app.modal.Title != "导出 PDF 预览" {
-		t.Fatalf("expected PDF preview after draft flush, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != dialogIDPDFExportPreview {
+		t.Fatalf("expected PDF preview after draft flush, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("confirm")
 

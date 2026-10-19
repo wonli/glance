@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"image"
 	"image/color"
 	"math"
@@ -197,7 +198,7 @@ func (a *App) commitPresentationTransformGesture(v *presentationViewState, gestu
 	if state != nil && state.pptxDoc == a.pptxDoc && a.applicationSessionRegistered(state.documentID) {
 		token, ok := state.beginOperation(sessionOperationMutation)
 		if !ok {
-			a.setStatus("演示文稿正在处理其他操作")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 			return
 		}
 		_, err = a.executeRibbonApplicationCommand(token, "presentation.element.transform.set", "presentation_element", strconv.FormatInt(gestureState.shapeID, 10), "", presentationElementTransformSetArguments{SlideId: slide.ID, ElementId: gestureState.shapeID, X: gestureState.preview.Bounds.X, Y: gestureState.preview.Bounds.Y, Width: gestureState.preview.Bounds.W, Height: gestureState.preview.Bounds.H, RotationDeg: gestureState.preview.RotationDeg})
@@ -214,12 +215,12 @@ func (a *App) commitPresentationTransformGesture(v *presentationViewState, gestu
 		}
 	}
 	if err != nil {
-		a.setStatus("对象变换失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
 	v.snapshot = a.pptxDoc.Snapshot()
 	v.selectedShape = gestureState.shapeID
-	a.setStatus("对象位置或大小已修改；点击保存写入文件")
+	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.object_position_or_size_changed_save_to_wr_700963"}, feedbackSuccess, notificationToast)
 }
 
 func presentationBoundsInPixels(bounds document.PresentationRect, scale float64) image.Rectangle {
@@ -341,7 +342,7 @@ var presentationResizeHandles = [...]presentationTransformHandle{
 	presentationHandleBottomRight, presentationHandleBottom, presentationHandleBottomLeft, presentationHandleLeft,
 }
 
-func registerPresentationTransformInputs(gtx layout.Context, v *presentationViewState, elem document.PresentationElement, interaction *presentationShapeInteraction, rect image.Rectangle, selected, editing bool) {
+func registerPresentationTransformInputs(gtx layout.Context, app *App, v *presentationViewState, elem document.PresentationElement, interaction *presentationShapeInteraction, rect image.Rectangle, selected, editing bool) {
 	if interaction == nil || v == nil {
 		return
 	}
@@ -384,7 +385,7 @@ func registerPresentationTransformInputs(gtx layout.Context, v *presentationView
 		area := clip.Rect{Min: hitRect.Min, Max: hitRect.Max}.Push(gtx.Ops)
 		interaction.resizeDrags[index].Add(gtx.Ops)
 		semantic.Button.Add(gtx.Ops)
-		semantic.DescriptionOp("拖动调整对象大小").Add(gtx.Ops)
+		semantic.DescriptionOp(app.textID("presentation.accessibility.resize_object")).Add(gtx.Ops)
 		area.Pop()
 	}
 	rotationPoint := presentationRotationHandleCenter(rect, presentationRotationHandleGap(gtx))
@@ -393,6 +394,6 @@ func registerPresentationTransformInputs(gtx layout.Context, v *presentationView
 	area := clip.Rect{Min: hitRect.Min, Max: hitRect.Max}.Push(gtx.Ops)
 	interaction.rotationDrag.Add(gtx.Ops)
 	semantic.Button.Add(gtx.Ops)
-	semantic.DescriptionOp("拖动旋转对象").Add(gtx.Ops)
+	semantic.DescriptionOp(app.textID("presentation.accessibility.rotate_object")).Add(gtx.Ops)
 	area.Pop()
 }

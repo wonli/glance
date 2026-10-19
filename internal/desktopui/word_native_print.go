@@ -11,6 +11,7 @@ import (
 	"glance/internal/document"
 	"glance/internal/format/docx"
 	wordpdf "glance/internal/format/pdf"
+	"glance/internal/i18n"
 	"glance/internal/printservice"
 )
 
@@ -26,7 +27,7 @@ type wordPrintResult struct {
 func (a *App) requestWordPrint() {
 	state := a.documentSessionState
 	if state == nil || state.word == nil || a.nativePrinter == nil || !a.nativePrinter.Available() {
-		a.setStatus("当前平台不支持原生打印")
+		a.setStatusMessage(i18n.Message{ID: "word.print.error.unsupported"}, feedbackWarning, notificationToast)
 		return
 	}
 	if state.formatRunning.Load() || a.isSaving() || a.fileCommandRunning || state.wordPrintPreparing || state.wordPrintRunning {
@@ -37,7 +38,7 @@ func (a *App) requestWordPrint() {
 		state.wordForceDraftFlush.Store(true)
 		state.wordFlushRequested.Store(true)
 		state.wordFlushAllDrafts.Store(true)
-		a.setStatus("正在提交正文编辑，然后准备打印…")
+		a.setStatusMessage(i18n.Message{ID: "word.print.status.commit_before_print"}, feedbackInfo, notificationSuppressed)
 		a.startNextWordTextCommit()
 		return
 	}
@@ -62,46 +63,46 @@ func (a *App) beginWordPrint(state *documentSessionState) {
 	state.wordViewMode = wordViewPrintLayout
 	key, _, ok := currentWordLayoutKey(state)
 	if !ok {
-		a.setStatus("当前 DOCX 适配器未提供分页信息，无法打印")
+		a.setStatusMessage(i18n.Message{ID: "word.print.error.pagination_unavailable"}, feedbackWarning, notificationToast)
 		return
 	}
 	if state.wordLayoutAcceptedKey == nil || *state.wordLayoutAcceptedKey != key || state.wordLayoutResult == nil {
 		if state.wordLayoutErrorKey != nil && *state.wordLayoutErrorKey == key {
-			a.setStatus("打印前分页失败：" + state.wordLayoutError)
+			a.setStatusDetailMessage(i18n.Message{ID: "word.print.error.pagination_failed"}, feedbackError, notificationToast, state.wordLayoutError)
 			return
 		}
 		state.wordPrintAfterLayout = true
-		a.setStatus("正在为打印准备页面…")
+		a.setStatusMessage(i18n.Message{ID: "word.print.status.prepare_pages"}, feedbackInfo, notificationSuppressed)
 		a.startWordPagination(state)
 		return
 	}
 	if wordLayoutBlocksPageExport(*state.wordLayoutResult) {
-		a.setStatus(blockingWordLayoutMessage(*state.wordLayoutResult))
+		a.setStatusMessage(a.wordBlockingLayoutMessage(*state.wordLayoutResult), feedbackError, notificationToast)
 		return
 	}
 	if !wordPDFLayoutStillCurrent(state, key) {
-		a.setStatus("文档分页已变化，请重新打印")
+		a.setStatusMessage(i18n.Message{ID: "word.print.error.layout_changed"}, feedbackWarning, notificationToast)
 		return
 	}
-	warnings := wordLayoutWarnings(*state.wordLayoutResult)
+	warnings := localizedWordLayoutWarnings(a, *state.wordLayoutResult)
 	if len(warnings) == 0 {
 		a.startWordPrintPreparation(state, key)
 		return
 	}
-	message := fmt.Sprintf("当前分页有 %d 项提示：\n%s\n\n确认后将按照此分页结果准备打印。", len(warnings), strings.Join(warnings, "\n"))
-	a.showConfirmDialog("打印前确认版式提示", message, modalDialogWarningConfirmStyle, func(action string) {
+	message := i18n.Message{ID: "word.print.confirm.layout_warnings", Args: i18n.Args{"Count": len(warnings), "Warnings": strings.Join(warnings, "\n")}}
+	a.modal.ShowConfirmMessage(dialogIDWordPrintWarning, i18n.Message{ID: "word.print.confirm.layout_title"}, message, modalDialogWarningConfirmStyle, func(action string) {
 		a.modal.Hide()
 		if action != "confirm" {
-			a.setStatus("已取消打印")
+			a.setStatusMessage(i18n.Message{ID: "word.print.status.cancelled"}, feedbackInfo, notificationSuppressed)
 			return
 		}
 		if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
-			a.setStatus("文档在确认期间已更改，请重新打印")
+			a.setStatusMessage(i18n.Message{ID: "word.print.error.changed_during_confirmation"}, feedbackWarning, notificationToast)
 			return
 		}
 		a.startWordPrintPreparation(state, key)
-	}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", Label: "继续", Style: modalDialogActionPrimary})
-	a.setStatus("等待确认分页提示")
+	}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}, Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.continue"}, Style: modalDialogActionPrimary})
+	a.setStatusMessage(i18n.Message{ID: "word.print.status.waiting_layout_confirmation"}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) startWordPrintPreparation(state *documentSessionState, key wordLayoutKey) {
@@ -109,25 +110,25 @@ func (a *App) startWordPrintPreparation(state *documentSessionState, key wordLay
 		return
 	}
 	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
-		a.setStatus("文档已更改，未准备打印；请重新打印")
+		a.setStatusMessage(i18n.Message{ID: "word.print.error.changed_before_prepare"}, feedbackWarning, notificationToast)
 		return
 	}
 	if a.wordPDFFontSource == nil {
 		shaper, err := newWordTextShaper()
 		if err != nil {
-			a.setStatus("初始化打印字体服务失败：" + err.Error())
+			a.setStatusErrorMessage(i18n.Message{ID: "word.print.error.font_service"}, err, notificationToast)
 			return
 		}
 		a.wordPDFFontSource = shaper
 	}
 	readerWithData, ok := any(state.word).(document.WordLayoutReader)
 	if !ok {
-		a.setStatus("DOCX 适配器未提供分页信息，无法打印")
+		a.setStatusMessage(i18n.Message{ID: "word.print.error.pagination_unavailable"}, feedbackWarning, notificationToast)
 		return
 	}
 	token, ok := state.beginOperation(sessionOperationSnapshot)
 	if !ok {
-		a.setStatus("文档正在处理其他操作，请稍后重试")
+		a.setStatusMessage(i18n.Message{ID: "word.status.operation_busy"}, feedbackWarning, notificationToast)
 		return
 	}
 	pageResult := cloneWordLayoutResult(*state.wordLayoutResult)
@@ -148,7 +149,7 @@ func (a *App) startWordPrintPreparation(state *documentSessionState, key wordLay
 		cancel()
 		state.wordPrintCancel = nil
 		state.wordPrintPreparing = false
-		a.setStatus("打印准备不可用")
+		a.setStatusMessage(i18n.Message{ID: "word.print.error.preparation_unavailable"}, feedbackError, notificationToast)
 		return
 	}
 	stateCopy := state
@@ -188,7 +189,7 @@ func (a *App) startWordPrintPreparation(state *documentSessionState, key wordLay
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在生成打印页面…")
+	a.setStatusMessage(i18n.Message{ID: "word.print.status.generating_pages"}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKey, data []byte) {
@@ -196,7 +197,7 @@ func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKe
 		return
 	}
 	if !wordPreparedPrintStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
-		a.setStatus("文档已更改，打印已取消；请重新打印")
+		a.setStatusMessage(i18n.Message{ID: "word.print.error.changed_print_cancelled"}, feedbackWarning, notificationToast)
 		return
 	}
 	if a.applicationSessionRegistered(state.documentID) {
@@ -220,7 +221,7 @@ func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKe
 		cancel()
 		state.wordPrintCancel = nil
 		state.wordPrintRunning = false
-		a.setStatus("打印服务不可用")
+		a.setStatusMessage(i18n.Message{ID: "word.print.error.service_unavailable"}, feedbackError, notificationToast)
 		return
 	}
 	stateCopy := state
@@ -236,7 +237,7 @@ func (a *App) beginWordNativePrint(state *documentSessionState, key wordLayoutKe
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在打开系统打印面板…")
+	a.setStatusMessage(i18n.Message{ID: "word.print.status.opening_panel"}, feedbackInfo, notificationSuppressed)
 }
 
 type wordDocumentPrintArguments struct {
@@ -257,7 +258,7 @@ func (a *App) beginWordApplicationPrint(state *documentSessionState, key wordLay
 		cancel()
 		state.wordPrintCancel = nil
 		state.wordPrintRunning = false
-		a.setStatus("打印服务不可用")
+		a.setStatusMessage(i18n.Message{ID: "word.print.error.service_unavailable"}, feedbackError, notificationToast)
 		return
 	}
 	a.launchManagedBackground(func() {
@@ -272,7 +273,7 @@ func (a *App) beginWordApplicationPrint(state *documentSessionState, key wordLay
 		case <-shutdown:
 		}
 	})
-	a.setStatus("正在把当前 Word 修订版本发送到系统打印面板…")
+	a.setStatusMessage(i18n.Message{ID: "word.print.status.sending_revision"}, feedbackInfo, notificationSuppressed)
 }
 
 func (a *App) applyWordPrintResult(result wordPrintResult) {
@@ -291,18 +292,18 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 	}
 	if state.wordRevisionAtomic.Load() != result.key.Revision || !wordPreparedPrintStillCurrent(state, result.key) {
 		if state == a.documentSessionState {
-			a.setStatus("文档已更改，旧打印页面已丢弃")
+			a.setStatusMessage(i18n.Message{ID: "word.print.status.stale_page_discarded"}, feedbackInfo, notificationSuppressed)
 		}
 		return
 	}
 	if result.err != nil {
 		if state == a.documentSessionState {
 			if errors.Is(result.err, printservice.ErrCanceled) {
-				a.setStatus("已取消打印")
+				a.setStatusMessage(i18n.Message{ID: "word.print.status.cancelled"}, feedbackInfo, notificationSuppressed)
 			} else if errors.Is(result.err, context.Canceled) {
-				a.setStatus("打印准备已取消")
+				a.setStatusMessage(i18n.Message{ID: "word.print.status.preparation_cancelled"}, feedbackInfo, notificationSuppressed)
 			} else {
-				a.setStatus("打印失败：" + result.err.Error())
+				a.setStatusErrorMessage(i18n.Message{ID: "word.print.error.failed"}, result.err, notificationToast)
 			}
 		}
 		return
@@ -312,32 +313,32 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 	}
 	if result.prepared {
 		if len(result.data) == 0 {
-			a.setStatus("打印页面为空，无法打印")
+			a.setStatusMessage(i18n.Message{ID: "word.print.error.empty"}, feedbackError, notificationToast)
 			return
 		}
 		pageCount := result.pageCount
 		if pageCount == 0 && state.wordLayoutResult != nil {
 			pageCount = len(state.wordLayoutResult.Pages)
 		}
-		message := fmt.Sprintf("共 %d 页。将使用当前打印布局生成的同一份页面内容。继续后打开系统打印面板，可在面板中选择打印机和份数。", pageCount)
+		message := i18n.Message{ID: "word.print.confirm.prepared", Args: i18n.Args{"PageCount": pageCount}}
 		printData := append([]byte(nil), result.data...)
-		a.showConfirmDialog("打印预览已准备", message, modalDialogPrintConfirmStyle, func(action string) {
+		a.modal.ShowConfirmMessage(dialogIDWordPrintPrepared, i18n.Message{ID: "word.print.confirm.prepared_title"}, message, modalDialogPrintConfirmStyle, func(action string) {
 			a.modal.Hide()
 			if action != "confirm" {
-				a.setStatus("已取消打印")
+				a.setStatusMessage(i18n.Message{ID: "word.print.status.cancelled"}, feedbackInfo, notificationSuppressed)
 				return
 			}
 			if !wordPreparedPrintStillCurrent(state, result.key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
-				a.setStatus("文档在确认期间已更改，请重新打印")
+				a.setStatusMessage(i18n.Message{ID: "word.print.error.changed_during_confirmation"}, feedbackWarning, notificationToast)
 				return
 			}
 			a.beginWordNativePrint(state, result.key, printData)
-		}, modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", Label: "打开打印面板", Style: modalDialogActionPrimary})
-		a.setStatus("等待确认打印页面")
+		}, modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}, Style: modalDialogActionSecondary}, modalDialogActionSpec{ID: "confirm", LabelRef: i18n.Message{ID: "common.action.open_print_panel"}, Style: modalDialogActionPrimary})
+		a.setStatusMessage(i18n.Message{ID: "word.print.status.waiting_confirmation"}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	if result.err == nil {
-		a.setStatus("已发送到系统打印队列")
+		a.setStatusMessage(i18n.Message{ID: "word.print.status.queued"}, feedbackSuccess, notificationToast)
 	}
 }
 

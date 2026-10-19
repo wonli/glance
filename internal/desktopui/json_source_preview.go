@@ -74,7 +74,7 @@ func (a *App) jsonDraftText() string {
 
 func (a *App) layoutJSONSourcePreview(gtx layout.Context, source string, segments []jsonSourceSegment, list *widget.List) layout.Dimensions {
 	if len(segments) == 0 {
-		return jsonLabel(gtx, a, "正在准备源码预览…", 13, mutedText, false, false)
+		return jsonLabel(gtx, a, a.textID("json.source_preview.preparing"), 13, mutedText, false, false)
 	}
 	return list.Layout(gtx, len(segments), func(gtx layout.Context, index int) layout.Dimensions {
 		segment := segments[index]

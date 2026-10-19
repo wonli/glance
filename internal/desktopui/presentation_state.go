@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"image"
 	"time"
 
@@ -215,7 +216,7 @@ func (a *App) syncPresentationNotesDraft(v *presentationViewState) {
 	}
 	if slide.Notes != v.notesEditorBase {
 		v.notesDraftConflict = true
-		a.setStatus("演讲者备注已被其他操作修改；请重新加载或明确保留本地草稿")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.speaker_notes_changed_in_another_operation_9711a6"}, feedbackInfo, notificationToast)
 	}
 }
 

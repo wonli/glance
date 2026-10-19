@@ -3,6 +3,7 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"glance/internal/i18n"
 
 	"glance/internal/application"
 )
@@ -13,16 +14,16 @@ func (a *App) showPresentationThemeOptions(view *presentationViewState) {
 		"forest":    "glance-forest",
 		"warm":      "glance-warm",
 	}
-	a.modal.Show("演示文稿主题", "将更新文档内所有主题的颜色和字体方案，保留母版、版式、主题效果、背景素材和对象的直接格式。", func(action string) {
+	a.modal.ShowMessage("presentation.theme", i18n.Message{ID: "presentation.theme.title"}, i18n.Message{ID: "presentation.theme.body"}, func(action string) {
 		a.modal.Hide()
 		if themeID := options[action]; themeID != "" {
 			a.startPresentationThemeMutation(view, "theme", themeID)
 		}
 	},
-		modalDialogActionSpec{ID: "corporate", Label: "企业蓝"},
-		modalDialogActionSpec{ID: "forest", Label: "林地绿"},
-		modalDialogActionSpec{ID: "warm", Label: "暖阳橙"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "corporate", LabelRef: i18n.Message{ID: "presentation.theme.option.corporate"}},
+		modalDialogActionSpec{ID: "forest", LabelRef: i18n.Message{ID: "presentation.theme.option.forest"}},
+		modalDialogActionSpec{ID: "warm", LabelRef: i18n.Message{ID: "presentation.theme.option.warm"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -33,17 +34,17 @@ func (a *App) showPresentationPaletteOptions(view *presentationViewState) {
 		"forest": "forest",
 		"warm":   "warm",
 	}
-	a.modal.Show("演示文稿配色", "只更新文档内所有主题的颜色方案；字体、效果、背景、版式和对象的直接格式保持不变。", func(action string) {
+	a.modal.ShowMessage("presentation.palette", i18n.Message{ID: "presentation.palette.title"}, i18n.Message{ID: "presentation.palette.body"}, func(action string) {
 		a.modal.Hide()
 		if paletteID := options[action]; paletteID != "" {
 			a.startPresentationThemeMutation(view, "palette", paletteID)
 		}
 	},
 		modalDialogActionSpec{ID: "office", Label: "Office"},
-		modalDialogActionSpec{ID: "ocean", Label: "海湾蓝"},
-		modalDialogActionSpec{ID: "forest", Label: "林地绿"},
-		modalDialogActionSpec{ID: "warm", Label: "暖阳橙"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "ocean", LabelRef: i18n.Message{ID: "presentation.palette.option.ocean"}},
+		modalDialogActionSpec{ID: "forest", LabelRef: i18n.Message{ID: "presentation.theme.option.forest"}},
+		modalDialogActionSpec{ID: "warm", LabelRef: i18n.Message{ID: "presentation.theme.option.warm"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }
 
@@ -58,11 +59,11 @@ type presentationthemePaletteIdArguments struct {
 func (a *App) startPresentationThemeMutation(view *presentationViewState, operation, value string) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("演示文稿能力尚未连接")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_capabilities_are_not_connecte_811cbe"}, feedbackInfo, notificationToast)
 		return true
 	}
 	if view.commandPending {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
@@ -73,7 +74,7 @@ func (a *App) startPresentationThemeMutation(view *presentationViewState, operat
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true
@@ -132,25 +133,25 @@ type presentationElementGroupSetArguments struct {
 func (a *App) startPresentationGroup(view *presentationViewState) bool {
 	state := a.documentSessionState
 	if view == nil || state == nil || state.pptxDoc == nil || !a.applicationSessionRegistered(state.documentID) {
-		a.setStatus("演示文稿能力尚未连接")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.presentation_capabilities_are_not_connecte_811cbe"}, feedbackInfo, notificationToast)
 		return true
 	}
 	if view.commandPending {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	selected := presentationSelectedIDs(view)
 	if len(selected) < 2 {
-		a.setStatus("按住 Shift 或 Command/Ctrl 选择至少两个对象后再组合")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.hold_shift_or_command_ctrl_and_select_at_l_64a1a2"}, feedbackInfo, notificationToast)
 		return true
 	}
 	if len(selected) > 100 {
-		a.setStatus("一次最多组合 100 个对象")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.you_can_group_up_to_100_objects_at_a_time_4dda04"}, feedbackInfo, notificationToast)
 		return true
 	}
 	slide := view.currentSlide()
 	if slide == nil {
-		a.setStatus("未找到当前幻灯片")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_current_slide_was_not_found_2b6179"}, feedbackWarning, notificationToast)
 		return true
 	}
 	if err := a.flushPresentationNotesDraft(view); err != nil {
@@ -162,14 +163,14 @@ func (a *App) startPresentationGroup(view *presentationViewState) bool {
 	elementIDs := make([]uint32, len(selected))
 	for index, id := range selected {
 		if id <= 0 || uint64(id) > uint64(^uint32(0)) {
-			a.setStatus("选中的对象 ID 无效")
+			a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.the_selected_object_id_is_invalid_5eeb22"}, feedbackError, notificationToast)
 			return true
 		}
 		elementIDs[index] = uint32(id)
 	}
 	token, ok := state.beginOperation(sessionOperationMutation)
 	if !ok {
-		a.setStatus("演示文稿正在处理其他操作")
+		a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.another_presentation_operation_is_in_progr_9641a9"}, feedbackWarning, notificationToast)
 		return true
 	}
 	view.commandPending = true

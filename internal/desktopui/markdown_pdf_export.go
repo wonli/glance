@@ -15,6 +15,7 @@ import (
 	"glance/internal/document"
 	"glance/internal/format/markdowndoc"
 	wordpdf "glance/internal/format/pdf"
+	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 )
 
@@ -131,13 +132,13 @@ func (a *App) requestMarkdownPDFExport() {
 		return
 	}
 	if markdownEditorComposing(&view.editor) {
-		a.setMarkdownExportStatus("请先完成输入法选字")
+		a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.error.finish_composition"}, feedbackWarning, notificationToast, "")
 		return
 	}
 	a.flushMarkdownDraft()
 	source := view.editor.Text()
 	if a.markdownDoc.Text() != source {
-		a.setMarkdownExportStatus("请先完成当前编辑操作")
+		a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.error.pending_edit"}, feedbackWarning, notificationToast, "")
 		return
 	}
 	result := markdownFileResult{state: state, source: source, sourcePath: a.path, revision: state.wordRevisionAtomic.Load(), draftEpoch: view.draftEpoch.Load(), preflight: true}
@@ -166,7 +167,7 @@ func (a *App) requestMarkdownPDFExport() {
 			if resources == nil {
 				resources, diagnostics = markdowndoc.PreviewResourcesContext(ctx, snapshot, result.sourcePath)
 			}
-			result.missingImages, result.warnings = markdownImageWarnings(snapshot, resources, diagnostics)
+			result.missingImages, result.warnings = markdownImageWarnings(snapshot, resources, diagnostics, a.text)
 			result.prepared, err = prepareMarkdownPDF(ctx, snapshot, resources, diagnostics)
 		}
 		result.err = err
@@ -178,25 +179,26 @@ func (a *App) requestMarkdownPDFExport() {
 		case <-shutdown:
 		}
 	})
-	a.setMarkdownExportStatus("正在检查 PDF 资源和排版…")
+	a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.status.checking"}, feedbackInfo, notificationSuppressed, "")
 }
 
 func (a *App) startMarkdownPDFPicker(result markdownFileResult) {
 	view := a.ensureMarkdownView()
 	if result.state != a.documentSessionState || result.state.closed.Load() || result.source != view.editor.Text() || result.revision != result.state.wordRevisionAtomic.Load() || result.draftEpoch != view.draftEpoch.Load() || result.sourcePath != a.path {
 		view.exportPending = false
-		a.setMarkdownExportStatus("文档已更改，请重新导出 PDF")
+		a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.error.document_changed"}, feedbackWarning, notificationToast, "")
 		return
 	}
 	result.preflight, result.picker = false, true
 	view.exportPending = true
 	runner, shutdown, window := a.fileCommandRunner, a.shutdown, a.window
+	pickerLabels := a.filePickerLabels()
 	a.launchManagedBackground(func() {
 		if runner != nil {
 			picked := runner(commandExportPDF, "pdf")
 			result.path, result.err = picked.path, picked.err
 		} else {
-			result.path, result.err = chooseSavePath("pdf")
+			result.path, result.err = chooseSavePath("pdf", pickerLabels)
 		}
 		select {
 		case view.exports <- result:
@@ -206,7 +208,7 @@ func (a *App) startMarkdownPDFPicker(result markdownFileResult) {
 		case <-shutdown:
 		}
 	})
-	a.setMarkdownExportStatus("选择 PDF 保存位置…")
+	a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.status.choose_path"}, feedbackInfo, notificationSuppressed, "")
 }
 
 func (a *App) pollMarkdownFileResults() {
@@ -227,17 +229,13 @@ func (a *App) pollMarkdownFileResults() {
 			return
 		}
 		if result.source != view.editor.Text() || result.revision != result.state.wordRevisionAtomic.Load() || result.draftEpoch != view.draftEpoch.Load() || result.sourcePath != a.path {
-			a.setMarkdownExportStatus("文档在 PDF 导出期间已更改，请重新导出")
+			a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.error.document_changed"}, feedbackWarning, notificationToast, "")
 			return
 		}
 		if result.err != nil && result.orientation == "" {
-			a.setMarkdownExportStatus("导出 PDF 失败：" + result.err.Error())
+			a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.error.failed"}, feedbackError, notificationToast, result.err.Error())
 			if result.preflight {
-				message := "当前内容无法安全导出 PDF：\n" + result.err.Error()
-				if result.warnings != "" {
-					message += "\n\n图片访问问题：\n" + result.warnings
-				}
-				a.modal.Show("PDF 导出检查未通过", message, func(string) { a.modal.Hide() }, modalDialogActionSpec{ID: "close", Label: "关闭"})
+				a.modal.ShowMessage("markdown.pdf.export.preflight_failed", i18n.Message{ID: "markdown.pdf.export.preflight_failed.title"}, i18n.Message{ID: "markdown.pdf.export.preflight_failed.body"}, func(string) { a.modal.Hide() }, modalDialogActionSpec{ID: "close", LabelRef: i18n.Message{ID: "common.action.close"}})
 			}
 			return
 		}
@@ -252,19 +250,19 @@ func (a *App) pollMarkdownFileResults() {
 		if !result.picker {
 			info, err := os.Stat(result.path)
 			if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
-				a.setMarkdownExportStatus("导出 PDF 失败：未找到生成的文件：" + result.path)
+				a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.error.output_missing"}, feedbackError, notificationToast, result.path)
 				return
 			}
 			view.lastPDFPath = result.path
-			message := "已导出 PDF：" + result.path
+			message := i18n.Message{ID: "markdown.pdf.export.status.exported", Args: i18n.Args{"Path": result.path}}
 			if result.missingImages > 0 {
-				message = fmt.Sprintf("PDF 已导出，%d 张图片不可用，已保留占位。%s", result.missingImages, result.path)
+				message = i18n.Message{ID: "markdown.pdf.export.status.exported_with_warnings", Args: i18n.Args{"Count": result.missingImages, "Path": result.path}}
 			}
-			a.setMarkdownExportStatus(message)
+			a.setMarkdownExportStatus(message, feedbackSuccess, notificationToast, "")
 			return
 		}
 		if result.path == "" {
-			a.setMarkdownExportStatus("已取消导出 PDF")
+			a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.status.cancelled"}, feedbackWarning, notificationSuppressed, "")
 			return
 		}
 		if strings.ToLower(filepath.Ext(result.path)) != ".pdf" {
@@ -272,12 +270,12 @@ func (a *App) pollMarkdownFileResults() {
 		}
 		absolute, err := filepath.Abs(result.path)
 		if err != nil {
-			a.setMarkdownExportStatus("导出 PDF 失败：" + err.Error())
+			a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.error.path"}, feedbackError, notificationToast, err.Error())
 			return
 		}
 		result.path = absolute
 		if markdownPDFSameFile(result.path, result.sourcePath) {
-			a.setMarkdownExportStatus("PDF 保存路径不能覆盖源 Markdown")
+			a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.error.overwrite_source"}, feedbackWarning, notificationToast, "")
 			return
 		}
 		view.exportPending = true
@@ -317,16 +315,20 @@ func (a *App) pollMarkdownFileResults() {
 			case <-shutdown:
 			}
 		})
-		a.setMarkdownExportStatus("正在生成 PDF…")
+		a.setMarkdownExportStatus(i18n.Message{ID: "markdown.pdf.export.status.generating"}, feedbackInfo, notificationSuppressed, "")
 	default:
 	}
 }
 
-func (a *App) setMarkdownExportStatus(message string) {
+func (a *App) setMarkdownExportStatus(message i18n.Message, kind feedbackKind, policy notificationPolicy, detail string) {
 	view := a.ensureMarkdownView()
 	view.exportMessage = message
-	if strings.HasPrefix(message, "导出 PDF 失败") {
+	if kind == feedbackError {
 		view.lastPDFPath = ""
 	}
-	a.setStatus(message)
+	if detail != "" {
+		a.setStatusDetailMessage(message, kind, policy, detail)
+	} else {
+		a.setStatusMessage(message, kind, policy)
+	}
 }

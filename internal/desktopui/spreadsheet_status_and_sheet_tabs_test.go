@@ -9,6 +9,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+	"glance/internal/i18n"
 )
 
 func TestSheetTabsTextVerticallyCentered(t *testing.T) {
@@ -78,7 +79,7 @@ func TestSpreadsheetStatusBarVerticallyCentered(t *testing.T) {
 	defer close(app.shutdown)
 	app.sheets = []string{"Sheet1"}
 	app.sheet = "Sheet1"
-	app.status = "就绪"
+	app.statusRef = i18n.Message{ID: "desktop.status.inline.ready_b796f2"}
 
 	size := image.Pt(800, 50)
 	var ops op.Ops
@@ -172,7 +173,8 @@ func TestSpreadsheetStatusBarShowsEndModeIndicator(t *testing.T) {
 	state := newDocumentSessionState("test.xlsx")
 	state.gridEndMode = true
 	app.documentSessionState = state
-	app.status = " "
+	app.statusRef = i18n.Message{}
+	app.initialStatus = i18n.Message{}
 	size := image.Pt(800, 50)
 	var ops op.Ops
 	gtx := layout.Context{
@@ -206,8 +208,8 @@ func TestSpreadsheetStatusBarShowsEndModeIndicator(t *testing.T) {
 	if ink == 0 {
 		t.Fatal("END mode indicator has no visible text in the status bar")
 	}
-	if app.status != " " {
-		t.Fatalf("rendering End mode changed the document status to %q", app.status)
+	if app.statusText() != " " {
+		t.Fatalf("rendering End mode changed the document status to %q", app.statusText())
 	}
 }
 
@@ -217,8 +219,8 @@ func TestSpreadsheetStatusBarZoomRightAlignmentStability(t *testing.T) {
 	app.sheets = []string{"Sheet1"}
 	app.sheet = "Sheet1"
 
-	findZoomValueMinX := func(status string) int {
-		app.status = status
+	findZoomValueMinX := func(status i18n.Message) int {
+		app.statusRef = status
 		size := image.Pt(800, 50)
 		var ops op.Ops
 		gtx := layout.Context{
@@ -253,8 +255,8 @@ func TestSpreadsheetStatusBarZoomRightAlignmentStability(t *testing.T) {
 		return -1
 	}
 
-	minXShort := findZoomValueMinX("就绪")
-	minXLong := findZoomValueMinX("正在执行复杂的数据透视和多表联合计算操作...")
+	minXShort := findZoomValueMinX(i18n.Message{ID: "desktop.status.inline.ready_b796f2"})
+	minXLong := findZoomValueMinX(i18n.Message{ID: "spreadsheet.replace.error.too_many_matches"})
 
 	if minXShort == -1 || minXLong == -1 {
 		t.Fatalf("failed to find zoom value: short=%d, long=%d", minXShort, minXLong)

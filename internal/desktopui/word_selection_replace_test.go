@@ -212,5 +212,5 @@ func waitWordReplaceCompletion(t *testing.T, app *App, state *documentSessionSta
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("Word selection replacement did not complete: intent=%+v formatRunning=%v flush=%v status=%q", state.wordSelectionEditIntent, state.formatRunning.Load(), state.wordFlushRequested.Load(), app.status)
+	t.Fatalf("Word selection replacement did not complete: intent=%+v formatRunning=%v flush=%v status=%q", state.wordSelectionEditIntent, state.formatRunning.Load(), state.wordFlushRequested.Load(), app.statusText())
 }

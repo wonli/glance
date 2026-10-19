@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 func (a *App) runSpreadsheetTableCommand(operation string, arguments any, edit func(document.SpreadsheetTableEditor) error) {
@@ -41,7 +42,7 @@ func (a *App) runSpreadsheetTableCommand(operation string, arguments any, edit f
 		}
 		a.completeSessionOperation(state, token, err, err == nil && changed && !commandRouted)
 		if err == nil {
-			a.setStatus("已创建表格")
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.table_created_c91cb4"}, feedbackSuccess, notificationToast)
 		}
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation, applied: changed}:
@@ -62,19 +63,18 @@ func (a *App) showSpreadsheetInsertTableDialog(styleName string) {
 		return
 	}
 	if !state.selectionSet {
-		a.setStatus("请先选择创建表格的单元格区域")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.select_the_cell_range_for_35f60f"}, feedbackWarning, notificationToast)
 		return
 	}
 	bounds := state.selection.Bounds()
 	if bounds.EndRow <= bounds.StartRow {
-		a.setStatus("表格选区至少需要 2 行（包含标题行与数据行）")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.select_at_least_two_rows_8cad65"}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	sheet := state.sheet
 	rangeRef := fmt.Sprintf("%s%d:%s%d", columnName(bounds.StartColumn), bounds.StartRow, columnName(bounds.EndColumn), bounds.EndRow)
 	rowCount := bounds.EndRow - bounds.StartRow + 1
 	colCount := bounds.EndColumn - bounds.StartColumn + 1
-	msg := fmt.Sprintf("将在选区 %s（共 %d 行 %d 列）创建格式化表格。\n表格将自动启用筛选与行列交替颜色。", rangeRef, rowCount, colCount)
 
 	createTable := func(style string) {
 		a.runSpreadsheetTableCommand("创建表格", showSpreadsheetInsertTableDialogArguments{Sheet: sheet, Bounds: bounds, StyleName: style}, func(ed document.SpreadsheetTableEditor) error {
@@ -91,7 +91,7 @@ func (a *App) showSpreadsheetInsertTableDialog(styleName string) {
 		return
 	}
 
-	a.modal.Show("创建表格", msg, func(action string) {
+	a.modal.ShowMessage("spreadsheet.table.create", i18n.Message{ID: "spreadsheet.table.dialog.title"}, i18n.Message{ID: "spreadsheet.table.dialog.body", Args: i18n.Args{"Range": rangeRef, "Rows": rowCount, "Columns": colCount}}, func(action string) {
 		a.modal.Hide()
 		switch action {
 		case "medium":
@@ -102,9 +102,9 @@ func (a *App) showSpreadsheetInsertTableDialog(styleName string) {
 			createTable("TableStyleDark1")
 		}
 	},
-		modalDialogActionSpec{ID: "medium", Label: "中等风格 (推荐)"},
-		modalDialogActionSpec{ID: "light", Label: "浅色风格"},
-		modalDialogActionSpec{ID: "dark", Label: "深色风格"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "medium", LabelRef: i18n.Message{ID: "spreadsheet.table.style.medium_recommended"}},
+		modalDialogActionSpec{ID: "light", LabelRef: i18n.Message{ID: "spreadsheet.table.style.light"}},
+		modalDialogActionSpec{ID: "dark", LabelRef: i18n.Message{ID: "spreadsheet.table.style.dark"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }

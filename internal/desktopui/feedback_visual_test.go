@@ -15,6 +15,7 @@ import (
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
+	"glance/internal/i18n"
 )
 
 func TestFeedbackVisualSnapshot(t *testing.T) {
@@ -26,15 +27,15 @@ func TestFeedbackVisualSnapshot(t *testing.T) {
 	paint.FillShape(&ops, color.NRGBA{R: 245, G: 247, B: 249, A: 255}, clip.Rect{Max: size}.Op())
 	for i, tc := range []struct {
 		kind    feedbackKind
-		message string
+		message i18n.Message
 	}{
-		{feedbackSuccess, "更改已同步到本地文件。"},
-		{feedbackWarning, "部分样式可能无法完整保留。"},
-		{feedbackError, "请检查文件权限后重试。"},
-		{feedbackInfo, "正在打开 data.json。"},
+		{feedbackSuccess, i18n.Message{ID: "spreadsheet.status.operation.completed"}},
+		{feedbackWarning, i18n.Message{ID: "spreadsheet.error.operation_failed"}},
+		{feedbackError, i18n.Message{ID: "common.feedback.operation_failed"}},
+		{feedbackInfo, i18n.Message{ID: "status.initial.open_document"}},
 	} {
 		a.feedback.kind = tc.kind
-		a.feedback.message = tc.message
+		a.feedback.messageRef = tc.message
 		shift := op.Offset(image.Pt(20, 20+i*108)).Push(&ops)
 		gtx := layout.Context{Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(390, 88))}
 		a.layoutFeedbackCard(gtx)

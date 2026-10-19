@@ -27,6 +27,14 @@ Office libraries and local filesystem
 - Do not hold Excelize, DOCX, OOXML, ZIP, or XML library objects in Gio widgets.
 - Keep rendering/layout helpers separate from event handling and file/session logic. Avoid growing one all-purpose `App` file; use focused view, interaction, and widget-state files as the UI grows.
 
+### Desktop UI localization (`internal/i18n`, `internal/systemlocale`, `internal/desktopui`)
+
+- The desktop ships embedded `en-US` and `zh-CN` JSON catalogs. UI messages use stable IDs and named arguments; the complete English catalog is the fallback for missing or unsupported text.
+- The stored `ui.language` selection is `system`, `zh-CN`, or `en-US`, persisted through the existing workspace preferences table without a schema migration. System language detection reads OS preferences and resolves Chinese to `zh-CN`, English to `en-US`, and unsupported, invalid, or unreadable values to `en-US`.
+- The desktop runtime owns the selected and resolved locale and shares its catalog across windows. Read preferences and platform language outside Gio layout. A language change replaces the in-memory catalog, preserves modal IDs and drafts, document sessions and widget state, then invalidates open windows so their message references render in the selected language.
+- Localize app-owned labels, dialogs, status and error summaries, and app-generated metadata formatting. Keep document contents, formulas, paths, file names, MCP identifiers/schemas, and model-generated conversation text as source data. Office cell and document value formatting remains owned by format adapters.
+- Basic Settings follows Pen node `l7WA9J` and exposes only the supported interface-language choice. Do not show unsupported settings as disabled controls.
+
 ### Application/session layer (`internal/application`, `internal/workspace`, `internal/desktopui`)
 
 - `internal/application.Runtime` owns live session identity, path, format, revision, capability registration, command execution, events, Agent workflows, and save/close lifecycle. A session adapter is the source of truth for committed document data.

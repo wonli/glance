@@ -10,20 +10,22 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
+
+	"glance/internal/i18n"
 )
 
 func (a *App) layoutCreateMenuOpenActions(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(unit.Dp(12))}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return a.layoutCreateMenuOpenAction(gtx, &a.actionOpenFile, "打开本地文件", "folder-open", "⌘ O", false)
+			return a.layoutCreateMenuOpenAction(gtx, &a.actionOpenFile, "打开本地文件", i18n.Message{ID: "home.action.open_file"}, "folder-open", "⌘ O", false)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return a.layoutCreateMenuOpenAction(gtx, &a.actionOpenFolder, "打开文件夹", "folder", "", true)
+			return a.layoutCreateMenuOpenAction(gtx, &a.actionOpenFolder, "打开文件夹", i18n.Message{ID: "home.create.open_folder"}, "folder", "", true)
 		}),
 	)
 }
 
-func (a *App) layoutCreateMenuOpenAction(gtx layout.Context, click *widget.Clickable, label, icon, shortcut string, folder bool) layout.Dimensions {
+func (a *App) layoutCreateMenuOpenAction(gtx layout.Context, click *widget.Clickable, label string, labelRef i18n.Message, icon, shortcut string, folder bool) layout.Dimensions {
 	if click.Clicked(gtx) {
 		a.showNewMenu = false
 		if folder {
@@ -34,6 +36,7 @@ func (a *App) layoutCreateMenuOpenAction(gtx layout.Context, click *widget.Click
 	}
 	height := gtx.Dp(unit.Dp(42))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+	label = a.messageText(labelRef, label)
 	return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx,
 			func(gtx layout.Context) layout.Dimensions {
@@ -91,16 +94,16 @@ func (a *App) layoutCreateMenuOpenAction(gtx layout.Context, click *widget.Click
 
 func (a *App) createActionItems() []createActionItem {
 	buttons := []createActionItem{
-		{click: &a.actionOpenFile, label: "打开本地文件", icon: "folder-open"},
-		{click: &a.actionOpenFolder, label: "打开文件夹", icon: "folder"},
+		{click: &a.actionOpenFile, label: "打开本地文件", labelRef: i18n.Message{ID: "home.action.open_file"}, icon: "folder-open"},
+		{click: &a.actionOpenFolder, label: "打开文件夹", labelRef: i18n.Message{ID: "home.create.open_folder"}, icon: "folder"},
 	}
 	buttons = append(buttons,
 		createActionItem{separator: true},
-		createActionItem{click: &a.actionNewDOCX, label: "文档", icon: "file-text"},
-		createActionItem{click: &a.actionNewXLSX, label: "表格", icon: "file-spreadsheet"},
-		createActionItem{click: &a.actionNewJSON, label: "JSON 数据", icon: "file-code"},
-		createActionItem{click: &a.actionNewMarkdown, label: "Markdown 文本", icon: "file-text"},
-		createActionItem{click: &a.actionNewPDF, label: "PDF 文档", icon: "file"},
+		createActionItem{click: &a.actionNewDOCX, label: "文档", labelRef: i18n.Message{ID: "home.create.format.docx"}, icon: "file-text"},
+		createActionItem{click: &a.actionNewXLSX, label: "表格", labelRef: i18n.Message{ID: "home.create.format.xlsx"}, icon: "file-spreadsheet"},
+		createActionItem{click: &a.actionNewJSON, label: "JSON 数据", labelRef: i18n.Message{ID: "home.create.format.json"}, icon: "file-code"},
+		createActionItem{click: &a.actionNewMarkdown, label: "Markdown 文本", labelRef: i18n.Message{ID: "home.create.format.markdown"}, icon: "file-text"},
+		createActionItem{click: &a.actionNewPDF, label: "PDF 文档", labelRef: i18n.Message{ID: "home.create.format.pdf"}, icon: "file"},
 	)
 	return buttons
 }
@@ -110,7 +113,7 @@ func (a *App) createActionLabels() []string {
 	labels := make([]string, 0, len(items))
 	for _, item := range items {
 		if !item.separator {
-			labels = append(labels, item.label)
+			labels = append(labels, a.messageText(item.labelRef, item.label))
 		}
 	}
 	return labels

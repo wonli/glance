@@ -212,7 +212,7 @@ func TestWordRulerIndentMarkersPersistParagraphWidthChanges(t *testing.T) {
 	dragMarker("拖动调整段落左缩进", 48, 20)
 	leftParagraph, ok := selectedWordParagraph(state.wordBlocks, paragraph.ID)
 	if !ok || leftParagraph.LeftIndentEMU < 48*wordEMUPerDP-100 {
-		t.Fatalf("left ruler drag produced paragraph indents %d/%d EMU; want at least %d left EMU (status %q, dirty %v)", leftParagraph.LeftIndentEMU, leftParagraph.RightIndentEMU, 48*wordEMUPerDP-100, app.status, state.word.Dirty())
+		t.Fatalf("left ruler drag produced paragraph indents %d/%d EMU; want at least %d left EMU (status %q, dirty %v)", leftParagraph.LeftIndentEMU, leftParagraph.RightIndentEMU, 48*wordEMUPerDP-100, app.statusText(), state.word.Dirty())
 	}
 	draftText += " after second ruler drag"
 	editor.SetText(draftText)

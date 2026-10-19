@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/i18n"
 )
 
 func (a *App) runSpreadsheetDuplicatesCommand(operation string, arguments any, edit func(document.SpreadsheetDuplicatesEditor) (document.SpreadsheetDuplicatesResult, error)) {
@@ -37,7 +38,7 @@ func (a *App) runSpreadsheetDuplicatesCommand(operation string, arguments any, e
 		}
 		a.completeSessionOperation(state, token, err, err == nil && res.RemovedCount > 0 && !commandRouted)
 		if err == nil {
-			a.setStatus(fmt.Sprintf("已删除 %d 个重复项，保留 %d 个唯一项", res.RemovedCount, res.RemainingCount))
+			a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.duplicates.removed", Args: i18n.Args{"Removed": res.RemovedCount, "Remaining": res.RemainingCount}}, feedbackSuccess, notificationToast)
 		}
 		select {
 		case a.formatResults <- spreadsheetFormatResult{state: state, token: token, revision: state.wordRevisionAtomic.Load(), generation: generation, sheet: sheet, window: window, err: err, operation: operation}:
@@ -58,13 +59,13 @@ func (a *App) showSpreadsheetRemoveDuplicatesDialog() {
 		return
 	}
 	if !state.selectionSet {
-		a.setStatus("请先选择包含数据的单元格区域")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.select_a_cell_range_containing_33d185"}, feedbackWarning, notificationToast)
 		return
 	}
 	bounds := state.selection.Bounds()
 	rowCount := bounds.EndRow - bounds.StartRow + 1
 	if rowCount <= 1 {
-		a.setStatus("选区至少需要 2 行才能执行删除重复项")
+		a.setStatusMessage(i18n.Message{ID: "spreadsheet.status.inline.select_at_least_two_rows_17c8ab"}, feedbackInfo, notificationSuppressed)
 		return
 	}
 	sheet := state.sheet
@@ -72,9 +73,7 @@ func (a *App) showSpreadsheetRemoveDuplicatesDialog() {
 	keyCol := state.selection.Active.Column + 1
 	activeColName := columnName(keyCol)
 
-	msg := fmt.Sprintf("将在选区 %s（共 %d 行）中查找并删除重复数据。\n默认按当前活动列（%s 列）排重，或按整行全部列排重。", rangeRef, rowCount, activeColName)
-
-	a.modal.Show("删除重复项", msg, func(action string) {
+	a.modal.ShowMessage("spreadsheet.duplicates", i18n.Message{ID: "spreadsheet.duplicates.dialog.title"}, i18n.Message{ID: "spreadsheet.duplicates.dialog.body", Args: i18n.Args{"Range": rangeRef, "Rows": rowCount, "Column": activeColName}}, func(action string) {
 		a.modal.Hide()
 		switch action {
 		case "col":
@@ -87,8 +86,8 @@ func (a *App) showSpreadsheetRemoveDuplicatesDialog() {
 			})
 		}
 	},
-		modalDialogActionSpec{ID: "col", Label: fmt.Sprintf("按 %s 列排重", activeColName)},
-		modalDialogActionSpec{ID: "all", Label: "按全部列排重"},
-		modalDialogActionSpec{ID: "cancel", Label: "取消"},
+		modalDialogActionSpec{ID: "col", LabelRef: i18n.Message{ID: "spreadsheet.duplicates.action.by_column", Args: i18n.Args{"Column": activeColName}}},
+		modalDialogActionSpec{ID: "all", LabelRef: i18n.Message{ID: "spreadsheet.duplicates.action.all_columns"}},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 	)
 }

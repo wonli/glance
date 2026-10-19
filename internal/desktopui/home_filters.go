@@ -1,11 +1,12 @@
 package desktopui
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"gioui.org/layout"
 	"gioui.org/unit"
+
+	"glance/internal/i18n"
 )
 
 func (a *App) layoutHomeFilters(gtx layout.Context) layout.Dimensions {
@@ -23,24 +24,17 @@ func (a *App) layoutHomeFilters(gtx layout.Context) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(44 * scale))
 	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
-	items := a.homeDisplayedRecents()
-	countText := "最近使用"
-	if a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
-		countText = filepath.Base(a.homeFolderDisplayPath(a.homeSelectedFolderID))
-	} else if a.homeSection == homeSectionFavorites {
-		countText = "收藏"
-	}
-	countText = fmt.Sprintf("%s  %d 个文件", countText, len(items))
+	countText := a.homeRecentCountText()
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return homeFilterGroup(gtx, a.theme, a.homeFilterButtons, &a.homeTypeFilter, scale, func(filter string) {
+			return homeFilterGroup(gtx, a, a.homeFilterButtons, &a.homeTypeFilter, scale, func(filter string) {
 				a.homeTypeFilter = filter
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = 0
 			return layout.Inset{Left: unit.Dp(18 * scale)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return homeSearchField(gtx, a.theme, &a.homeSearch, 240*scale, 44*scale)
+				return homeSearchField(gtx, a.theme, &a.homeSearch, a.homeSearchPlaceholder(), 240*scale, 44*scale)
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -73,20 +67,13 @@ func (a *App) layoutHomeFiltersCompact(gtx layout.Context, width int) layout.Dim
 	rowGap := gtx.Dp(unit.Dp(8))
 	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = rowHeight*2+rowGap, rowHeight*2+rowGap
-	items := a.homeDisplayedRecents()
-	countText := "最近使用"
-	if a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
-		countText = filepath.Base(a.homeFolderDisplayPath(a.homeSelectedFolderID))
-	} else if a.homeSection == homeSectionFavorites {
-		countText = "收藏"
-	}
-	countText = fmt.Sprintf("%s  %d 个文件", countText, len(items))
+	countText := a.homeRecentCountText()
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return homeFilterGroup(gtx, a.theme, a.homeFilterButtons, &a.homeTypeFilter, scale, func(filter string) {
+					return homeFilterGroup(gtx, a, a.homeFilterButtons, &a.homeTypeFilter, scale, func(filter string) {
 						a.homeTypeFilter = filter
 					})
 				}),
@@ -96,7 +83,7 @@ func (a *App) layoutHomeFiltersCompact(gtx layout.Context, width int) layout.Dim
 			return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return homeSearchField(gtx, a.theme, &a.homeSearch, 0, rowHeightDp)
+						return homeSearchField(gtx, a.theme, &a.homeSearch, a.homeSearchPlaceholder(), 0, rowHeightDp)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(10 * scale)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -116,4 +103,17 @@ func (a *App) layoutHomeFiltersCompact(gtx layout.Context, width int) layout.Dim
 			})
 		}),
 	)
+}
+
+func (a *App) homeRecentCountText() string {
+	label := a.text(i18n.Message{ID: "home.nav.recent"})
+	if a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
+		label = filepath.Base(a.homeFolderDisplayPath(a.homeSelectedFolderID))
+	} else if a.homeSection == homeSectionFavorites {
+		label = a.text(i18n.Message{ID: "home.nav.favorites"})
+	}
+	return a.text(i18n.Message{ID: "home.recent.count", Args: i18n.Args{
+		"Label": label,
+		"Count": len(a.homeDisplayedRecents()),
+	}})
 }

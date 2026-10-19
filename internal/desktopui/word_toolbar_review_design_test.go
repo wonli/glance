@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"glance/internal/format/docx"
+	"glance/internal/i18n"
 )
 
 func TestWordEditorRibbonUsesRegisteredReviewCapability(t *testing.T) {
@@ -21,16 +22,17 @@ func TestWordEditorRibbonUsesRegisteredReviewCapability(t *testing.T) {
 	desktop := newDesktopRuntime()
 	t.Cleanup(desktop.shutdown)
 	app := newAppWithRuntime(nil, desktop)
+	app.applyLocaleSelection(i18n.SelectionChinese)
 	if err := app.installDocument(loadedDocument{word: doc}); err != nil {
 		t.Fatalf("install Word document: %v", err)
 	}
 	app.showWordEditorDialog()
-	if !app.modal.Visible || !strings.Contains(app.modal.Message, "正在扫描") {
-		t.Fatalf("Word Editor Ribbon should return with a loading dialog before scanning completes: visible=%v message=%q", app.modal.Visible, app.modal.Message)
+	if !app.modal.Visible || !strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "正在扫描") {
+		t.Fatalf("Word Editor Ribbon should return with a loading dialog before scanning completes: visible=%v message=%q", app.modal.Visible, app.messageText(app.modal.MessageRef, app.modal.Message))
 	}
 	waitForWordEditorReviewResult(t, app)
-	if !strings.Contains(app.modal.Message, "连续重复的中文标点") || !strings.Contains(app.modal.Message, "词典拼写、语法或语义") {
-		t.Fatalf("Word Editor Ribbon did not show the registered structured review result: visible=%v message=%q", app.modal.Visible, app.modal.Message)
+	if !strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "连续重复的中文标点") || !strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "词典拼写、语法或语义") {
+		t.Fatalf("Word Editor Ribbon did not show the registered structured review result: visible=%v message=%q", app.modal.Visible, app.messageText(app.modal.MessageRef, app.modal.Message))
 	}
 }
 
@@ -41,13 +43,13 @@ func waitForWordEditorReviewResult(t *testing.T, app *App) {
 		if !app.modal.Visible {
 			t.Fatal("Word Editor review dialog was closed before the result arrived")
 		}
-		if !strings.Contains(app.modal.Message, "正在扫描") {
+		if !strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "正在扫描") {
 			return
 		}
 		app.processAsyncResults()
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for Word Editor review result: %q", app.modal.Message)
+	t.Fatalf("timed out waiting for Word Editor review result: %q", app.messageText(app.modal.MessageRef, app.modal.Message))
 }
 
 func TestWordReviewRestrictProtection(t *testing.T) {
@@ -84,8 +86,8 @@ func TestWordReviewRestrictProtection(t *testing.T) {
 
 	// 1. Show protection dialog -> Click "protect"
 	app.showWordDocumentProtectionDialog()
-	if !app.modal.Visible || app.modal.Title != "限制编辑" {
-		t.Fatalf("expected modal dialog for review-restrict, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != dialogIDWordProtection {
+		t.Fatalf("expected modal dialog for review-restrict, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 
 	app.modal.OnAction("protect")
@@ -114,8 +116,8 @@ func TestWordReviewRestrictProtection(t *testing.T) {
 
 	// 2. Show unprotect dialog -> Click "unprotect"
 	app.showWordDocumentProtectionDialog()
-	if !app.modal.Visible || app.modal.Title != "限制编辑" {
-		t.Fatalf("expected modal dialog for unprotect, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != dialogIDWordProtection {
+		t.Fatalf("expected modal dialog for unprotect, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 
 	app.modal.OnAction("unprotect")
@@ -210,8 +212,8 @@ func TestWordToolbar_WatermarkTrackRevisionsEditorAndLayout(t *testing.T) {
 
 	// 2. Test Watermark Dialog
 	app.showWordWatermarkDialog()
-	if !app.modal.Visible || app.modal.Title != "文档水印" {
-		t.Fatalf("expected 文档水印 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "文档水印" {
+		t.Fatalf("expected 文档水印 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("绝密文档")
 	app.modal.OnAction("set")
@@ -232,35 +234,36 @@ func TestWordToolbar_WatermarkTrackRevisionsEditorAndLayout(t *testing.T) {
 
 	// 4. Test Accept Revisions Dialog
 	app.acceptWordRevisions()
-	if !app.modal.Visible || app.modal.Title != "接受全部修订" {
-		t.Fatalf("expected 接受全部修订 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "接受全部修订" {
+		t.Fatalf("expected 接受全部修订 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("confirm")
 	waitAndProcessWordCommand("接受全部修订")
 
 	// 5. Test Reject Revisions Dialog
 	app.rejectWordRevisions()
-	if !app.modal.Visible || app.modal.Title != "拒绝全部修订" {
-		t.Fatalf("expected 拒绝全部修订 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "拒绝全部修订" {
+		t.Fatalf("expected 拒绝全部修订 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("confirm")
 	waitAndProcessWordCommand("拒绝全部修订")
 
 	// 6. Test Document Editor Dialog
 	app.showWordEditorDialog()
-	if !app.modal.Visible || app.modal.Title != "文档编辑器" {
-		t.Fatalf("expected 文档编辑器 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != dialogIDWordEditorReview {
+		t.Fatalf("expected 文档编辑器 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	waitForWordEditorReviewResult(t, app)
-	if !strings.Contains(app.modal.Message, "启发式评分") || !strings.Contains(app.modal.Message, "词典拼写、语法或语义") {
-		t.Fatalf("expected editor report to describe its heuristic scope, got: %q", app.modal.Message)
+	message := app.messageText(app.modal.MessageRef, app.modal.Message)
+	if !strings.Contains(message, "启发式评分") || !strings.Contains(message, "词典拼写、语法或语义") {
+		t.Fatalf("expected editor report to describe its heuristic scope, got: %q", message)
 	}
 	app.modal.OnAction("close")
 
 	// 7. Test Document Translate Dialog
 	app.showWordTranslateDialog()
-	if !app.modal.Visible || app.modal.Title != "翻译" {
-		t.Fatalf("expected 翻译 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "翻译" {
+		t.Fatalf("expected 翻译 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("Translated Text")
 	app.modal.OnAction("confirm")
@@ -268,18 +271,18 @@ func TestWordToolbar_WatermarkTrackRevisionsEditorAndLayout(t *testing.T) {
 
 	// 8. Test Document Compare Dialog
 	app.showWordCompareDialog()
-	if !app.modal.Visible || app.modal.Title != "文档比较" {
-		t.Fatalf("expected 文档比较 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "文档比较" {
+		t.Fatalf("expected 文档比较 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
-	if !strings.Contains(app.modal.Message, "版本") {
-		t.Fatalf("expected compare dialog to mention 版本, got: %q", app.modal.Message)
+	if !strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "版本") {
+		t.Fatalf("expected compare dialog to mention 版本, got: %q", app.messageText(app.modal.MessageRef, app.modal.Message))
 	}
 	app.modal.OnAction("close")
 
 	// 9. Test Layout Align Dialog
 	app.showWordLayoutAlignDialog()
-	if !app.modal.Visible || app.modal.Title != "排列对齐" {
-		t.Fatalf("expected 排列对齐 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "排列对齐" {
+		t.Fatalf("expected 排列对齐 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("center")
 	app.modal.OnAction("confirm")
@@ -289,7 +292,7 @@ func TestWordToolbar_WatermarkTrackRevisionsEditorAndLayout(t *testing.T) {
 	// Inline-image position is tested separately with an inline fixture.
 	app.showWordLayoutPositionDialog()
 	if app.modal.Visible {
-		t.Fatalf("floating image unexpectedly opened 对象位置 modal: %q", app.modal.Title)
+		t.Fatalf("floating image unexpectedly opened 对象位置 modal: %q", app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 }
 
@@ -332,8 +335,8 @@ func TestWordToolbarLayoutPositionUsesEditableInlineImage(t *testing.T) {
 		t.Fatal("layout-position should be enabled for an editable inline image")
 	}
 	app.showWordLayoutPositionDialog()
-	if !app.modal.Visible || app.modal.Title != "对象位置" {
-		t.Fatalf("expected 对象位置 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "对象位置" {
+		t.Fatalf("expected 对象位置 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("cancel")
 }
@@ -406,8 +409,8 @@ func TestWordToolbar_RemainingActionsBatch(t *testing.T) {
 
 	// 1. insert-wordart
 	app.executeWordToolbarAction("insert-wordart")
-	if !app.modal.Visible || app.modal.Title != "插入艺术字" {
-		t.Fatalf("expected 插入艺术字 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入艺术字" {
+		t.Fatalf("expected 插入艺术字 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("测试艺术字")
 	app.modal.OnAction("style_gold")
@@ -418,16 +421,16 @@ func TestWordToolbar_RemainingActionsBatch(t *testing.T) {
 
 	// 2. insert-equation
 	app.executeWordToolbarAction("insert-equation")
-	if !app.modal.Visible || app.modal.Title != "插入公式" {
-		t.Fatalf("expected 插入公式 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入公式" {
+		t.Fatalf("expected 插入公式 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("pythagorean")
 	waitAndProcessWordCommand("插入公式文本")
 
 	// 3. insert-shapes
 	app.executeWordToolbarAction("insert-shapes")
-	if !app.modal.Visible || app.modal.Title != "插入形状" {
-		t.Fatalf("expected 插入形状 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入形状" {
+		t.Fatalf("expected 插入形状 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("流程框说明")
 	app.modal.OnAction("flowchart")
@@ -435,16 +438,16 @@ func TestWordToolbar_RemainingActionsBatch(t *testing.T) {
 
 	// 4. insert-chart
 	app.executeWordToolbarAction("insert-chart")
-	if !app.modal.Visible || app.modal.Title != "插入图表" {
-		t.Fatalf("expected 插入图表 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "插入图表" {
+		t.Fatalf("expected 插入图表 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("column")
 	waitAndProcessWordCommand("插入图表基础数据表")
 
 	// 5. review-new-comment
 	app.executeWordToolbarAction("review-new-comment")
-	if !app.modal.Visible || app.modal.Title != "新建批注" {
-		t.Fatalf("expected 新建批注 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != "word.comment.add" {
+		t.Fatalf("expected 新建批注 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("核对数据")
 	app.modal.OnAction("confirm")
@@ -453,56 +456,56 @@ func TestWordToolbar_RemainingActionsBatch(t *testing.T) {
 	// 6. review-delete-comment
 	app.executeWordToolbarAction("review-delete-comment")
 	waitAndProcessWordCommand("读取 Word 批注")
-	if !app.modal.Visible || app.modal.Title != "删除批注" {
-		t.Fatalf("expected 删除批注 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != "word.comment.delete" {
+		t.Fatalf("expected 删除批注 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("confirm")
 	waitAndProcessWordCommand("删除批注")
 
 	// 7. design-themes
 	app.executeWordToolbarAction("design-themes")
-	if !app.modal.Visible || app.modal.Title != "文档主题" {
-		t.Fatalf("expected 文档主题 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "文档主题" {
+		t.Fatalf("expected 文档主题 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("theme_business")
 	waitAndProcessWordCommand("应用文档主题")
 
 	// 8. design-colors
 	app.executeWordToolbarAction("design-colors")
-	if !app.modal.Visible || app.modal.Title != "主题配色" {
-		t.Fatalf("expected 主题配色 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "主题配色" {
+		t.Fatalf("expected 主题配色 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("scheme_mint")
 	waitAndProcessWordCommand("应用主题配色")
 
 	// 9. design-fonts
 	app.executeWordToolbarAction("design-fonts")
-	if !app.modal.Visible || app.modal.Title != "主题字体" {
-		t.Fatalf("expected 主题字体 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "主题字体" {
+		t.Fatalf("expected 主题字体 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("font_yahei")
 	waitAndProcessWordCommand("设置主题字体")
 
 	// 10. design-effects
 	app.executeWordToolbarAction("design-effects")
-	if !app.modal.Visible || app.modal.Title != "主题效果" {
-		t.Fatalf("expected 主题效果 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "主题效果" {
+		t.Fatalf("expected 主题效果 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("moderate")
 	waitAndProcessWordCommand("设置主题效果")
 
 	// 11. designer
 	app.executeWordToolbarAction("designer")
-	if !app.modal.Visible || app.modal.Title != "设计器" {
-		t.Fatalf("expected 设计器 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "设计器" {
+		t.Fatalf("expected 设计器 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("scheme_gov")
 	waitAndProcessWordCommand("设计器应用版式")
 
 	// 12. dictate
 	app.executeWordToolbarAction("dictate")
-	if !app.modal.Visible || app.modal.Title != "语音听写" {
-		t.Fatalf("expected 语音听写 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "语音听写" {
+		t.Fatalf("expected 语音听写 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.Input.SetText("语音输入的一段话")
 	app.modal.OnAction("confirm")
@@ -510,23 +513,23 @@ func TestWordToolbar_RemainingActionsBatch(t *testing.T) {
 
 	// 13. add-ins
 	app.executeWordToolbarAction("add-ins")
-	if !app.modal.Visible || app.modal.Title != "加载项与扩展" {
-		t.Fatalf("expected 加载项与扩展 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.messageText(app.modal.TitleRef, app.modal.Title) != "加载项与扩展" {
+		t.Fatalf("expected 加载项与扩展 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	app.modal.OnAction("close")
 
 	// 14. view-macros
 	app.executeWordToolbarAction("view-macros")
-	if !app.modal.Visible || app.modal.Title != "宏与安全性" {
-		t.Fatalf("expected 宏与安全性 modal, got visible=%v title=%q", app.modal.Visible, app.modal.Title)
+	if !app.modal.Visible || app.modal.DialogID != dialogIDWordMacros {
+		t.Fatalf("expected 宏与安全性 modal, got visible=%v title=%q", app.modal.Visible, app.messageText(app.modal.TitleRef, app.modal.Title))
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && strings.Contains(app.modal.Message, "正在检查") {
+	for time.Now().Before(deadline) && strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "正在检查") {
 		app.processAsyncResults()
 		time.Sleep(time.Millisecond)
 	}
-	if strings.Contains(app.modal.Message, "正在检查") {
-		t.Fatalf("timed out waiting for macro inspection: %q", app.modal.Message)
+	if strings.Contains(app.messageText(app.modal.MessageRef, app.modal.Message), "正在检查") {
+		t.Fatalf("timed out waiting for macro inspection: %q", app.messageText(app.modal.MessageRef, app.modal.Message))
 	}
 	app.modal.OnAction("enable_alert")
 }

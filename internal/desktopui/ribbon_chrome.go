@@ -265,6 +265,7 @@ func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, labels 
 }
 
 const (
+	documentRibbonHeightDP    = 68
 	toolbarButtonWidth        = unit.Dp(44)
 	toolbarButtonHeight       = unit.Dp(48)
 	toolbarButtonCornerRadius = unit.Dp(5)

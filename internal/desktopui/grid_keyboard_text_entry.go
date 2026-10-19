@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"glance/internal/i18n"
 	"runtime"
 
 	"gioui.org/io/event"
@@ -137,7 +138,7 @@ func (a *App) syncSpreadsheetGridTextDraft() {
 
 func (a *App) commitSpreadsheetGridTextEntry(gtx layout.Context, v *gridViewport, direction key.Name) {
 	if err := a.commitGridCell(a.cellEditor.Text()); err != nil {
-		a.setStatus("修改失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "spreadsheet.error.operation_failed"}, err, notificationToast)
 		gtx.Execute(key.FocusCmd{Tag: &a.cellEditor})
 		if a.window != nil {
 			a.window.Invalidate()

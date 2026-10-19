@@ -9,6 +9,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"glance/internal/format/jsondoc"
+	"glance/internal/i18n"
 )
 
 func TestJSONTreeCollapseSearchAndSelection(t *testing.T) {
@@ -112,7 +113,7 @@ func TestJSONContainerInspectorDoesNotLayoutWholeDocument(t *testing.T) {
 func TestJSONConditionalMutationPreservesNewerSource(t *testing.T) {
 	app := newTestAppWithJSON(t, `{"name":"original"}`)
 	_ = app.jsonDoc.SetText(`{"name":"other window"}`)
-	if app.applyJSONTextMutationIfSource(`{"name":"stale transform"}`, "formatted", `{"name":"original"}`) {
+	if app.applyJSONTextMutationIfSource(`{"name":"stale transform"}`, i18n.Message{ID: "json.status.formatted"}, `{"name":"original"}`) {
 		t.Fatal("stale transformation accepted")
 	}
 	if app.jsonDoc.Text() != `{"name":"other window"}` {

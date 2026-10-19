@@ -1,7 +1,6 @@
 package desktopui
 
 import (
-	"fmt"
 	"math"
 	"time"
 
@@ -338,8 +337,4 @@ func clamp(x, min, max float64) float64 {
 		return max
 	}
 	return x
-}
-
-func gridWindowError(sheet string, err error) string {
-	return fmt.Sprintf("工作表「%s」读取失败：%v", sheet, err)
 }

@@ -151,8 +151,8 @@ func TestAIAssistantActiveConversation(t *testing.T) {
 	// Copy response button.
 	app.agentUI.copyResponseButton.Click()
 	layoutTestFrame(app, size)
-	if app.status != "已复制回答。" {
-		t.Fatalf("status after copy=%q, want '已复制回答。'", app.status)
+	if app.statusText() != "已复制回答。" {
+		t.Fatalf("status after copy=%q, want '已复制回答。'", app.statusText())
 	}
 }
 

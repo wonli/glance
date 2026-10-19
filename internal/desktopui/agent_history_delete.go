@@ -3,7 +3,7 @@ package desktopui
 import (
 	"context"
 	"errors"
-	"fmt"
+	"glance/internal/i18n"
 	"time"
 
 	"gioui.org/layout"
@@ -17,11 +17,12 @@ func (a *App) confirmAgentConversationDelete(item agent.ConversationSummary) {
 	doc := a.agentUI.conversationDocumentID
 	title := item.Title
 	if title == "" {
-		title = "新会话"
+		title = a.text(i18n.Message{ID: "agent.history.default_title"})
 	}
-	a.showConfirmDialog(
-		"删除这条会话？",
-		fmt.Sprintf("「%s」及其全部消息将被永久删除，无法恢复。文档内容不受影响。", title),
+	a.showConfirmMessage(
+		"agent.history.delete",
+		i18n.Message{ID: "agent.history.delete.dialog.title"},
+		i18n.Message{ID: "agent.history.delete.dialog.body", Args: i18n.Args{"Title": title}},
 		modalDialogDangerConfirmStyle,
 		func(action string) {
 			a.modal.Hide()
@@ -30,8 +31,8 @@ func (a *App) confirmAgentConversationDelete(item agent.ConversationSummary) {
 			}
 			a.deleteAgentConversation(doc, item.ID)
 		},
-		modalDialogActionSpec{ID: "cancel", Label: "取消", Style: modalDialogActionSecondary},
-		modalDialogActionSpec{ID: "delete", Label: "删除", Style: modalDialogActionDanger},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}, Style: modalDialogActionSecondary},
+		modalDialogActionSpec{ID: "delete", LabelRef: i18n.Message{ID: "common.action.delete"}, Style: modalDialogActionDanger},
 	)
 }
 
@@ -120,7 +121,7 @@ func (a *App) processAgentConversationDeletes() {
 				state.chatInput.SetText("")
 				state.conversationBusy = false
 				state.conversationInterrupted = false
-				state.chatStatus = ""
+				a.clearAgentChatStatus()
 				state.chatList.Position = layout.Position{}
 				state.activeReasoningLine = -1
 				state.activeAnswerStarted = false

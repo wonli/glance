@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
@@ -63,7 +64,7 @@ func (a *App) viewForTab(id string) *documentSessionState {
 		if meta, ok := a.tabMeta[id]; ok && meta.Title != "" {
 			title = meta.Title
 		}
-		a.setStatus("恢复 " + title + " 失败：" + err.Error())
+		a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.restore_tab", Args: i18n.Args{"Title": title}}, err, notificationToast)
 	}
 	return state
 }
