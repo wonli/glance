@@ -9,7 +9,9 @@ import (
 var ErrReadOnly = errors.New("document is read-only")
 
 type Cell struct {
-	Value              string
+	Value string
+	// ValueKind is the source value type used for display behavior such as General alignment.
+	ValueKind          CellValueKind `json:"value_kind,omitempty"`
 	Formula            string
 	FormulaType        string `json:"formula_type,omitempty"`
 	StyleID            int

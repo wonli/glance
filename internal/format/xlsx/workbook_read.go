@@ -45,6 +45,21 @@ func documentCellValueKind(cellType excelize.CellType) document.CellValueKind {
 	}
 }
 
+func documentCellDisplayValueKind(cellType excelize.CellType, value string) document.CellValueKind {
+	switch cellType {
+	case excelize.CellTypeInlineString, excelize.CellTypeSharedString, excelize.CellTypeFormula:
+		return document.CellValueText
+	case excelize.CellTypeNumber, excelize.CellTypeDate, excelize.CellTypeUnset:
+		if value != "" {
+			// In SpreadsheetML an omitted cell type means a numeric value.
+			return document.CellValueNumber
+		}
+	case excelize.CellTypeBool:
+		return document.CellValueBoolean
+	}
+	return ""
+}
+
 func (w *Workbook) SheetNames() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -638,12 +653,20 @@ func (w *Workbook) Range(sheet string, maxRows, maxColumns int) ([][]document.Ce
 				_ = rows.Close()
 				return nil, fmt.Errorf("read cell %s formula: %w", ref, err)
 			}
+			var cellType excelize.CellType
+			if value != "" || formula != "" {
+				cellType, err = w.file.GetCellType(sheet, ref)
+				if err != nil {
+					_ = rows.Close()
+					return nil, fmt.Errorf("read cell %s type: %w", ref, err)
+				}
+			}
 			if formula != "" {
 				if calculated, calcErr := w.file.CalcCellValue(sheet, ref); calcErr == nil {
 					value = calculated
 				}
 			}
-			previewRow[c] = document.Cell{Value: value, Formula: formula, StyleID: styleID}
+			previewRow[c] = document.Cell{Value: value, ValueKind: documentCellDisplayValueKind(cellType, value), Formula: formula, StyleID: styleID}
 		}
 		result = append(result, previewRow)
 	}
@@ -720,6 +743,13 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 			if err != nil {
 				return document.SheetWindow{}, fmt.Errorf("read cell %s formula: %w", cellRef, err)
 			}
+			var cellType excelize.CellType
+			if value != "" || formula != "" {
+				cellType, err = w.file.GetCellType(sheet, cellRef)
+				if err != nil {
+					return document.SheetWindow{}, fmt.Errorf("read cell %s type: %w", cellRef, err)
+				}
+			}
 			if formula != "" {
 				if calculated, calcErr := w.file.CalcCellValue(sheet, cellRef); calcErr == nil {
 					value = calculated
@@ -758,11 +788,12 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 				}
 			}
 			window.Cells[r][c] = document.Cell{
-				Value:    textintern.String(value),
-				Formula:  textintern.String(formula),
-				StyleID:  styleID,
-				Style:    style,
-				RichText: richRuns,
+				Value:     textintern.String(value),
+				ValueKind: documentCellDisplayValueKind(cellType, value),
+				Formula:   textintern.String(formula),
+				StyleID:   styleID,
+				Style:     style,
+				RichText:  richRuns,
 			}
 		}
 	}
@@ -811,6 +842,13 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 				value = calculated
 			}
 		}
+		var cellType excelize.CellType
+		if value != "" || formula != "" {
+			cellType, err = w.file.GetCellType(sheet, anchorRef)
+			if err != nil {
+				return document.SheetWindow{}, fmt.Errorf("read merged anchor %s type: %w", anchorRef, err)
+			}
+		}
 		styleID, err := w.file.GetCellStyle(sheet, anchorRef)
 		if err != nil {
 			return document.SheetWindow{}, fmt.Errorf("read merged anchor %s style: %w", anchorRef, err)
@@ -825,7 +863,7 @@ func (w *Workbook) Window(sheet string, startRow, startColumn, rowCount, columnC
 		}
 		window.Merges = append(window.Merges, document.MergeRegion{
 			Range:  document.CellRange{StartRow: anchorRow, StartColumn: anchorColumn, EndRow: endRow, EndColumn: endColumn},
-			Anchor: document.Cell{Value: textintern.String(value), Formula: textintern.String(formula), StyleID: styleID, Style: style},
+			Anchor: document.Cell{Value: textintern.String(value), ValueKind: documentCellDisplayValueKind(cellType, value), Formula: textintern.String(formula), StyleID: styleID, Style: style},
 		})
 	}
 	w.applyConditionalFormatDisplayLocked(sheet, &window)

@@ -83,7 +83,6 @@ func (a *App) focusInsertedWordParagraph(state *documentSessionState, paragraphI
 			editor := wordRunEditor(state, *inline.Text)
 			editor.SetCaret(0, 0)
 			state.wordListState.ScrollTo(max(0, len(wordBlocksForState(state))-1))
-			a.setStatusMessage(i18n.Message{ID: "word.status.inline.inserted_a_body_paragraph_you_0a0274"}, feedbackSuccess, notificationToast)
 			if a.window != nil {
 				a.window.Invalidate()
 			}

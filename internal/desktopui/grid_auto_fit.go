@@ -67,6 +67,7 @@ func (m *gridAutoFitMeasurer) columnWidth(cell document.Cell, value string, maxW
 		return 0
 	}
 	style := paintStyle(cell.Style)
+	style.ValueKind = cell.ValueKind
 	label := material.Body2(m.themeFor(cell.Style), value)
 	label.TextSize = cellTextSize(cell.Style, m.zoom)
 	label.Color = style.Font
@@ -77,7 +78,7 @@ func (m *gridAutoFitMeasurer) columnWidth(cell document.Cell, value string, maxW
 	if style.Italic {
 		label.Font.Style = font.Italic
 	}
-	label.Alignment = cellTextAlignment(style.Align)
+	label.Alignment = cellTextAlignmentForStyle(style)
 	if style.Wrap {
 		label.WrapPolicy = text.WrapWords
 	}

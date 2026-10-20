@@ -64,6 +64,13 @@ func (s *feedbackState) visible(now time.Time) bool {
 	return s.policy == notificationToast && s.messageRef.ID != "" && now.Before(s.until)
 }
 
+func (s *feedbackState) toastVisible(now time.Time) bool {
+	if !s.visible(now) {
+		return false
+	}
+	return s.kind == feedbackError || s.actionLabel != ""
+}
+
 func (s *feedbackState) dismiss() {
 	s.messageRef = i18n.Message{}
 	s.detail = ""
@@ -106,7 +113,7 @@ func (a *App) layoutFeedback(gtx layout.Context) layout.Dimensions {
 	if !s.visible(gtx.Now) && s.actionLabel != "" {
 		s.actionLabel = ""
 	}
-	if !s.visible(gtx.Now) || a.modal.Visible {
+	if !s.toastVisible(gtx.Now) || a.modal.Visible {
 		return layout.Dimensions{}
 	}
 	gtx.Execute(op.InvalidateCmd{At: s.until})

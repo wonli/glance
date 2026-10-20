@@ -86,11 +86,12 @@ func measureGridCellTextHeight(gtx layout.Context, theme *material.Theme, cell d
 		zoom = scale / float64(gtx.Metric.PxPerDp)
 	}
 	style := paintStyle(cell.Style)
+	style.ValueKind = cell.ValueKind
 	label := material.Body2(theme, value)
 	label.TextSize = cellTextSize(cell.Style, zoom)
 	label.Color = style.Font
 	label.Font.Typeface = cellTypeface(style)
-	label.Alignment = cellTextAlignment(style.Align)
+	label.Alignment = cellTextAlignmentForStyle(style)
 	if style.Bold {
 		label.Font.Weight = cellFontWeight(true)
 	}

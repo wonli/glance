@@ -24,6 +24,7 @@ type gridPaintStyle struct {
 	Fill, Font                    color.NRGBA
 	Bold, Italic, Underline, Wrap bool
 	Align, FontFamily             string
+	ValueKind                     document.CellValueKind
 	Vertical                      string
 	DataBarColor                  color.NRGBA
 	DataBarStart, DataBarEnd      float64
@@ -38,6 +39,7 @@ const (
 
 type cellPaintKey struct {
 	Value     string
+	ValueKind document.CellValueKind
 	Source    document.CellStyle
 	Display   document.CellConditionalDisplay
 	Style     gridPaintStyle
@@ -45,8 +47,17 @@ type cellPaintKey struct {
 	PxPerDp   float32
 	PxPerSp   float32
 	Gridlines bool
+	Mode      cellPaintMode
 	RichKey   string
 }
+
+type cellPaintMode uint8
+
+const (
+	cellPaintModeFull cellPaintMode = iota
+	cellPaintModeBackground
+	cellPaintModeTextOnly
+)
 
 type cellPaintEntry struct {
 	ops  op.Ops
@@ -59,6 +70,7 @@ func paintStyle(style document.CellStyle) gridPaintStyle {
 
 func paintCellStyle(cell document.Cell) gridPaintStyle {
 	style := paintStyle(cell.Style)
+	style.ValueKind = cell.ValueKind
 	display := cell.ConditionalDisplay
 	if display.FillColor != "" {
 		style.Fill = parseGridColor(display.FillColor, style.Fill)
@@ -254,7 +266,7 @@ func paintCellRichEditor(gtx layout.Context, theme *material.Theme, editor *widg
 	}
 	layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Min.Y = 0
-		return layout.Stack{Alignment: cellLayoutAlignment(style.Align, style.Vertical)}.Layout(gtx,
+		return layout.Stack{Alignment: cellLayoutAlignmentForStyle(style)}.Layout(gtx,
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
@@ -285,7 +297,7 @@ func paintActiveCellBorder(gtx layout.Context, rect image.Rectangle, selectionBo
 }
 
 func cellEditorStyle(theme *material.Theme, editor *widget.Editor, cellStyle document.CellStyle, style gridPaintStyle, zoom ...float64) material.EditorStyle {
-	editor.Alignment = cellTextAlignment(style.Align)
+	editor.Alignment = cellTextAlignmentForStyle(style)
 	editor.SingleLine = !cellStyle.WrapText && !strings.ContainsRune(editor.Text(), '\n')
 	result := material.Editor(theme, editor, "")
 	z := 1.0
@@ -322,8 +334,13 @@ func paintCachedCell(gtx layout.Context, v *gridViewport, theme *material.Theme,
 }
 
 func paintCachedCellWithGridlines(gtx layout.Context, v *gridViewport, theme *material.Theme, cell document.Cell, fullRect, visibleRect image.Rectangle, style gridPaintStyle, gridlines bool) {
+	paintCachedCellMode(gtx, v, theme, cell, fullRect, visibleRect, style, gridlines, cellPaintModeFull)
+}
+
+func paintCachedCellMode(gtx layout.Context, v *gridViewport, theme *material.Theme, cell document.Cell, fullRect, visibleRect image.Rectangle, style gridPaintStyle, gridlines bool, mode cellPaintMode) {
 	key := cellPaintKey{
 		Value:     cell.Value,
+		ValueKind: cell.ValueKind,
 		Source:    cell.Style,
 		Display:   cell.ConditionalDisplay,
 		Style:     style,
@@ -331,6 +348,7 @@ func paintCachedCellWithGridlines(gtx layout.Context, v *gridViewport, theme *ma
 		PxPerDp:   gtx.Metric.PxPerDp,
 		PxPerSp:   gtx.Metric.PxPerSp,
 		Gridlines: gridlines,
+		Mode:      mode,
 		RichKey:   richTextCacheKey(cell.RichText),
 	}
 	zoom := 1.0
@@ -344,7 +362,15 @@ func paintCachedCellWithGridlines(gtx layout.Context, v *gridViewport, theme *ma
 		recordGtx := gtx
 		recordGtx.Ops = &entry.ops
 		record := op.Record(recordGtx.Ops)
-		paintStyledCell(recordGtx, theme, cell, image.Rectangle{Max: fullRect.Size()}, style, gridlines, zoom)
+		localRect := image.Rectangle{Max: fullRect.Size()}
+		switch mode {
+		case cellPaintModeBackground:
+			paintStyledCellBackground(recordGtx, theme, cell, localRect, style, gridlines)
+		case cellPaintModeTextOnly:
+			paintStyledCellTextOnly(recordGtx, theme, cell, localRect, style, zoom)
+		default:
+			paintStyledCell(recordGtx, theme, cell, localRect, style, gridlines, zoom)
+		}
 		entry.call = record.Stop()
 	})
 	area := clip.Rect(visibleRect).Push(gtx.Ops)
@@ -413,15 +439,47 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 	defer transform.Pop()
 	size := rect.Size()
 	paintConditionalDataBar(gtx, size, style)
-	gtx.Constraints = layout.Constraints{Min: size, Max: size}
 	z := 1.0
 	if len(zoom) > 0 && zoom[0] > 0 {
 		z = zoom[0]
 	}
+	paintStyledCellText(gtx, theme, cell, size, size.X, style, z)
+	if len(cell.RichText) == 0 && style.Underline {
+		paintGridCellUnderline(gtx, size, style)
+	}
+	paintCellBorders(gtx, size, cell.Style.Borders)
+}
+
+func paintStyledCellBackground(gtx layout.Context, theme *material.Theme, cell document.Cell, rect image.Rectangle, style gridPaintStyle, gridlines bool) {
+	paintTextBoxWithGridlines(gtx, theme, "", rect, style.Font, style.Fill, false, gridlines)
+	clipOp := clip.Rect(rect).Push(gtx.Ops)
+	defer clipOp.Pop()
+	transform := op.Offset(rect.Min).Push(gtx.Ops)
+	defer transform.Pop()
+	size := rect.Size()
+	paintConditionalDataBar(gtx, size, style)
+	if len(cell.RichText) == 0 && style.Underline {
+		paintGridCellUnderline(gtx, size, style)
+	}
+}
+
+func paintStyledCellTextOnly(gtx layout.Context, theme *material.Theme, cell document.Cell, rect image.Rectangle, style gridPaintStyle, zoom float64) {
+	paintStyledCellText(gtx, theme, cell, rect.Size(), max(1<<20, rect.Dx()), style, zoom)
+}
+
+func paintStyledCellText(gtx layout.Context, theme *material.Theme, cell document.Cell, size image.Point, layoutWidth int, style gridPaintStyle, zoom float64) {
+	style.ValueKind = cell.ValueKind
+	style.Align = cellHorizontalAlignment(style.Align, cell.ValueKind)
+	contentSize := image.Pt(max(size.X, layoutWidth), size.Y)
+	gtx.Constraints = layout.Constraints{Min: contentSize, Max: contentSize}
+	z := zoom
+	if !finite(z) || z <= 0 {
+		z = 1
+	}
 	if len(cell.RichText) > 0 {
 		layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = 0
-			return layout.Stack{Alignment: cellLayoutAlignment(style.Align, style.Vertical)}.Layout(gtx,
+			return layout.Stack{Alignment: cellLayoutAlignmentForStyle(style)}.Layout(gtx,
 				layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
 				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 					return paintRichTextCell(gtx, theme, cell.RichText, cell.Style, style, z)
@@ -439,23 +497,23 @@ func paintStyledCell(gtx layout.Context, theme *material.Theme, cell document.Ce
 		if style.Italic {
 			label.Font.Style = font.Italic
 		}
-		label.Alignment = cellTextAlignment(style.Align)
+		label.Alignment = cellTextAlignmentForStyle(style)
 		if style.Wrap {
 			label.WrapPolicy = text.WrapWords
 		}
 		layout.Inset{Left: unit.Dp(5), Right: unit.Dp(4), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = 0
-			return layout.Stack{Alignment: cellLayoutAlignment(style.Align, style.Vertical)}.Layout(gtx,
+			return layout.Stack{Alignment: cellLayoutAlignmentForStyle(style)}.Layout(gtx,
 				layout.Expanded(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Max} }),
 				layout.Stacked(label.Layout),
 			)
 		})
-		if style.Underline {
-			lineY := size.Y - gtx.Dp(unit.Dp(3))
-			paint.FillShape(gtx.Ops, style.Font, clip.Rect{Min: image.Pt(gtx.Dp(unit.Dp(5)), lineY), Max: image.Pt(size.X-gtx.Dp(unit.Dp(4)), lineY+1)}.Op())
-		}
 	}
-	paintCellBorders(gtx, size, cell.Style.Borders)
+}
+
+func paintGridCellUnderline(gtx layout.Context, size image.Point, style gridPaintStyle) {
+	lineY := size.Y - gtx.Dp(unit.Dp(3))
+	paint.FillShape(gtx.Ops, style.Font, clip.Rect{Min: image.Pt(gtx.Dp(unit.Dp(5)), lineY), Max: image.Pt(size.X-gtx.Dp(unit.Dp(4)), lineY+1)}.Op())
 }
 
 func richTextCacheKey(runs []document.CellRichTextRun) string {
@@ -573,7 +631,7 @@ func paintRichTextCell(gtx layout.Context, theme *material.Theme, runs []documen
 	y := 0
 	for _, l := range lines {
 		x := 0
-		switch style.Align {
+		switch strings.ToLower(strings.TrimSpace(style.Align)) {
 		case "center":
 			if totalW > l.width {
 				x = (totalW - l.width) / 2
@@ -651,6 +709,27 @@ func cellLayoutAlignment(horizontal, vertical string) layout.Direction {
 		{layout.SW, layout.S, layout.SE},
 	}
 	return grid[row+1][column]
+}
+
+func cellHorizontalAlignment(alignment string, kind document.CellValueKind) string {
+	switch strings.ToLower(strings.TrimSpace(alignment)) {
+	case "", "general":
+		switch kind {
+		case document.CellValueNumber, document.CellValueBoolean:
+			return "right"
+		case document.CellValueText:
+			return "left"
+		}
+	}
+	return alignment
+}
+
+func cellTextAlignmentForStyle(style gridPaintStyle) text.Alignment {
+	return cellTextAlignment(cellHorizontalAlignment(style.Align, style.ValueKind))
+}
+
+func cellLayoutAlignmentForStyle(style gridPaintStyle) layout.Direction {
+	return cellLayoutAlignment(cellHorizontalAlignment(style.Align, style.ValueKind), style.Vertical)
 }
 
 func paintCellBorders(gtx layout.Context, size image.Point, borders [4]document.CellBorder) {

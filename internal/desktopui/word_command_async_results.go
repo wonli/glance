@@ -10,7 +10,7 @@ func (a *App) setWordCommandStatus(err error) {
 		a.setStatusDetailMessage(i18n.Message{ID: "word.command.status.failed"}, feedbackError, notificationToast, err.Error())
 		return
 	}
-	a.setStatusMessage(i18n.Message{ID: "word.command.status.completed"}, feedbackSuccess, notificationToast)
+	a.setStatusMessage(i18n.Message{ID: "word.command.status.completed"}, feedbackSuccess, notificationSuppressed)
 }
 
 func (a *App) processWordCommandAsyncResult() bool {
