@@ -19,7 +19,7 @@ func TestOfficeRibbonDropdownRecordingBoundary(t *testing.T) {
 			app.documentSessionState = state
 			state.wordToolbarTab = wordTabFile
 			state.toolbarTab = toolbarTabFile
-			state.officeRibbonMenu = officeRibbonDropdownState{kind: kind, wordAction: "new", sheetSlot: toolbarActionOpenFile}
+			state.officeRibbonMenu = officeRibbonDropdownState{kind: kind, wordAction: "print", sheetSlot: toolbarActionOpenFile}
 			var ops op.Ops
 			router := new(input.Router)
 			gtx := layout.Context{Ops: &ops, Source: router.Source(), Now: time.Now(), Metric: unit.Metric{PxPerDp: 2, PxPerSp: 2}, Constraints: layout.Constraints{Max: image.Pt(2560, 1600)}}
@@ -28,8 +28,12 @@ func TestOfficeRibbonDropdownRecordingBoundary(t *testing.T) {
 			if state.officeRibbonMenu.bounds.Empty() {
 				t.Fatal("open dropdown has no bounds")
 			}
-			if state.officeRibbonMenu.bounds.Min.X != gtx.Dp(12) {
-				t.Errorf("first File menu x=%d; want 12dp", state.officeRibbonMenu.bounds.Min.X)
+			wantX := gtx.Dp(12)
+			if kind == officeRibbonMenuWord {
+				wantX = gtx.Dp(12 + 84*6)
+			}
+			if state.officeRibbonMenu.bounds.Min.X != wantX {
+				t.Errorf("File menu x=%d; want %d", state.officeRibbonMenu.bounds.Min.X, wantX)
 			}
 		})
 	}

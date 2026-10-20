@@ -6,10 +6,6 @@ func wordOfficeRibbonMenu(actionID string) officeRibbonMenuDefinition {
 	}
 	disabled := func(label string) officeRibbonMenuOption { return option(label, "", false) }
 	switch actionID {
-	case "new":
-		return officeRibbonMenuDefinition{"新建", []officeRibbonMenuOption{option("空白文档", "new", true), disabled("从模板新建"), disabled("最近使用的模板"), disabled("在线模板")}}
-	case "save":
-		return officeRibbonMenuDefinition{"保存", []officeRibbonMenuOption{option("保存", "save", true), option("另存为…", "save-as", true), option("导出 PDF…", "export-pdf", true), option("自动保存设置", "autosave", true)}}
 	case "print":
 		return officeRibbonMenuDefinition{"打印", []officeRibbonMenuOption{option("打印…", "print", true), option("快速打印", "print", true), option("打印预览", "view-print-layout", true), option("页面设置…", "layout-margins", true)}}
 	case "doc-info":

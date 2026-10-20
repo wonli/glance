@@ -69,11 +69,17 @@ func (a *App) startSaveForReason(reason wordSaveReason) {
 			return
 		}
 	}
-	if !a.isDirty() && !a.documentSessionState.spreadsheetZoomNeedsSave() {
-		return
-	}
 	state := a.documentSessionState
 	if state == nil {
+		return
+	}
+	if state.word != nil && sessionPath(state) == "" {
+		if reason != wordSaveAuto {
+			a.startSaveAsPicker("docx")
+		}
+		return
+	}
+	if !a.isDirty() && !state.spreadsheetZoomNeedsSave() {
 		return
 	}
 	if state.book != nil && state.path == "" && state.spreadsheetZoomNeedsSave() {

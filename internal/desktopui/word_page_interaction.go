@@ -61,14 +61,15 @@ type wordPageTextSelection struct {
 }
 
 type wordPageSelectionDrag struct {
-	pageIndex   int
-	anchor      wordPageCaretPosition
-	pointerID   pointer.ID
-	tag         *wordPageInteractionTag
-	panning     bool
-	startX      float32
-	startScroll float64
-	scrollLimit int
+	pageIndex          int
+	anchor             wordPageCaretPosition
+	pointerID          pointer.ID
+	tag                *wordPageInteractionTag
+	panning            bool
+	focusLastOnRelease bool
+	startX             float32
+	startScroll        float64
+	scrollLimit        int
 }
 
 type wordPageHit struct {
@@ -214,13 +215,7 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 				tag.lastTextPressParagraphID = ""
 				if state.selectedWordImageID != "" {
 					clearWordImageSelection(state)
-					state.selectedWordRunID = ""
-					state.selectedWordParagraphID = ""
 					state.wordPageSelectionDrag = nil
-					if a.window != nil {
-						a.window.Invalidate()
-					}
-					continue
 				}
 				if isWordPageBottomBlank(page, pagePoint) && !state.wordReadingMode && !state.wordProtected && !state.wordInsertionRunning && !state.formatRunning.Load() && !a.isSaving() {
 					state.selectedWordRunID = ""
@@ -233,15 +228,18 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 				if horizontalOverflow > 0 {
 					state.wordPageSelectionDrag = &wordPageSelectionDrag{
 						pageIndex: pageIndex, pointerID: event.PointerID, tag: tag,
-						panning: true, startX: viewportPoint.X, startScroll: state.wordPageScrollX, scrollLimit: horizontalOverflow,
+						panning: true, focusLastOnRelease: true, startX: viewportPoint.X, startScroll: state.wordPageScrollX, scrollLimit: horizontalOverflow,
 					}
 					gtx.Execute(pointer.GrabCmd{Tag: tag, ID: event.PointerID})
+					continue
+				}
+				state.wordPageSelectionDrag = nil
+				if a.focusLastEditableWordRun(gtx, state) {
 					continue
 				}
 				state.selectedWordRunID = ""
 				state.selectedWordParagraphID = ""
 				clearWordImageSelection(state)
-				state.wordPageSelectionDrag = nil
 				continue
 			}
 
@@ -277,6 +275,9 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 			}
 			if drag.panning {
 				state.wordPageScrollX = math.Max(0, math.Min(float64(drag.scrollLimit), drag.startScroll-float64(viewportPoint.X-drag.startX)))
+				if event.Kind == pointer.Release && drag.focusLastOnRelease {
+					a.focusLastEditableWordRun(gtx, state)
+				}
 				continue
 			}
 			// The release can carry a newer position than the last move (or

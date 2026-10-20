@@ -237,13 +237,14 @@ func (a *App) layoutWordCanvas(gtx layout.Context, state *documentSessionState, 
 		},
 	)
 	for event, ok := state.wordCanvasBlankClick.Update(gtx.Source); ok; event, ok = state.wordCanvasBlankClick.Update(gtx.Source) {
-		if event.Kind != gesture.KindClick || state.selectedWordImageID == "" || state.wordCanvasContentClickHandled {
+		if event.Kind != gesture.KindClick || state.wordCanvasContentClickHandled || state.wordReadingMode || state.wordProtected || state.wordInsertionRunning || state.formatRunning.Load() || a.isSaving() {
 			continue
 		}
-		clearWordImageSelection(state)
-		gtx.Execute(key.FocusCmd{Tag: &state.wordCanvasBlankClick})
-		if a.window != nil {
-			a.window.Invalidate()
+		if state.selectedWordImageID != "" {
+			clearWordImageSelection(state)
+		}
+		if !a.focusLastEditableWordRun(gtx, state) {
+			gtx.Execute(key.FocusCmd{Tag: &state.wordCanvasBlankClick})
 		}
 	}
 	return dimensions

@@ -221,9 +221,16 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 			selection = new(textEditorParagraphSelection)
 			state.wordParagraphSelections[paragraph.ID] = selection
 		}
-		dims := selection.layoutWithDoubleClick(gtx, editor, func(gtx layout.Context) layout.Dimensions { return layoutWordRunEditor(gtx, a, style, run.ID) }, func(caret int) bool {
+		dims := selection.layoutWithDoubleClickAtTextSize(gtx, editor, func(gtx layout.Context) layout.Dimensions { return layoutWordRunEditor(gtx, a, style, run.ID) }, func(caret int) bool {
 			return a.selectWordPageTextSegment(gtx, state, run.ID, caret)
-		})
+		}, label.TextSize)
+		if selection.clicked && selection.clickedOnText {
+			state.wordCanvasContentClickHandled = true
+		} else if selection.clicked && !state.wordCanvasContentClickHandled {
+			if a.focusLastEditableWordRun(gtx, state) {
+				state.wordCanvasContentClickHandled = true
+			}
+		}
 		if selection.paragraphSelected {
 			paragraphSelected = true
 			gtx.Execute(op.InvalidateCmd{})
@@ -243,7 +250,6 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 	}
 	pendingImageFocus := state.selectedWordImageID != "" && state.wordImageFocusRequestID == state.selectedWordImageID
 	if gtx.Focused(editor) && run.Editable && !focusTargetPending && !pendingImageFocus && !documentSelectionHandled && !wordPageTextSelectionActive(state.wordPageTextSelection) {
-		state.wordCanvasContentClickHandled = true
 		if state.selectedWordRunID != "" && state.selectedWordRunID != run.ID && state.wordPendingFocusRunID != run.ID {
 			state.wordPreferredVerticalXSet = false
 		}

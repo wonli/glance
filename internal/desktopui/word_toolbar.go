@@ -381,7 +381,10 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		_, ok := any(state.word).(document.WordDocumentProtectionEditor)
 		return ok && !state.formatRunning.Load() && !a.isSaving()
 	case "save":
-		return (sessionDirty(state) || wordHasPendingTextDrafts(state) || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil) && sessionPath(state) != ""
+		if sessionPath(state) == "" {
+			return true
+		}
+		return sessionDirty(state) || wordHasPendingTextDrafts(state) || state.wordParagraphSplitIntent != nil || state.wordParagraphJoinIntent != nil
 	case "insert-image":
 		_, editable := any(state.word).(document.WordImageEditor)
 		_, ok := selectedWordParagraph(wordBlocksForState(state), state.selectedWordParagraphID)

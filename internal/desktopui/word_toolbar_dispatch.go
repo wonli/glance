@@ -30,6 +30,14 @@ func (a *App) executeWordToolbarAction(actionID string) {
 		}
 		if err := a.installDocument(loadedDocument{word: word}); err != nil {
 			a.setWordCommandStatus(err)
+			return
+		}
+		state = a.documentSessionState
+		if run, _, ok := findFirstEditableWordRun(wordBlocksForState(state)); ok && requestWordRunFocus(state, run.ID, 0, 0) {
+			state.wordListState.List.ScrollTo(0)
+			if a.window != nil {
+				a.window.Invalidate()
+			}
 		}
 	case "open":
 		a.startOpenFilePicker()

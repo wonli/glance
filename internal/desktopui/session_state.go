@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"glance/internal/document"
 
@@ -56,6 +57,9 @@ type documentSessionState struct {
 	wordPageSelectionDrag               *wordPageSelectionDrag
 	wordPageTextSelection               *wordPageTextSelection
 	wordPagePendingScrollRunID          string
+	wordPageCaretBlinkRunID             string
+	wordPageCaretBlinkOffset            int
+	wordPageCaretBlinkStart             time.Time
 	wordPageFocusedMetaRunID            string
 	wordPageFocusedMetaRevision         uint64
 	wordPageFocusedParagraph            document.WordParagraph

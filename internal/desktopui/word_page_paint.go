@@ -6,11 +6,15 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"time"
 
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 )
+
+const wordPageCaretBlinkPeriod = time.Second
 
 func (a *App) drawWordPageSearchHighlights(gtx layout.Context, state *documentSessionState, page wordlayout.PageScene, origin image.Point, pixelsPerPoint float64) {
 	if state == nil || !a.modal.Visible || !a.modal.SearchReplace || state.wordSearchHighlightQuery == "" || a.modal.Input.Text() != state.wordSearchHighlightQuery {
@@ -99,6 +103,9 @@ func drawWordPageCaret(gtx layout.Context, state *documentSessionState, result *
 	if !ok || position.PageIndex != pageIndex {
 		return
 	}
+	if !wordPageCaretVisible(gtx, state, state.selectedWordRunID, end) {
+		return
+	}
 	fontSize := wordlayout.DefaultFontSizePT
 	for _, fragment := range result.Pages[pageIndex].Text {
 		if fragment.RunID == state.selectedWordRunID {
@@ -110,6 +117,29 @@ func drawWordPageCaret(gtx layout.Context, state *documentSessionState, result *
 	top := origin.Y + int(math.Round((position.YPT-fontSize*0.86)*pixelsPerPoint))
 	bottom := origin.Y + int(math.Round((position.YPT+fontSize*0.22)*pixelsPerPoint))
 	paint.FillShape(gtx.Ops, wordPageCaretColor, clip.Rect{Min: image.Pt(x, top), Max: image.Pt(x+max(1, int(math.Ceil(pixelsPerPoint))), max(top+1, bottom))}.Op())
+}
+
+func wordPageCaretVisible(gtx layout.Context, state *documentSessionState, runID string, offset int) bool {
+	if state.wordPageCaretBlinkRunID != runID || state.wordPageCaretBlinkOffset != offset || state.wordPageCaretBlinkStart.IsZero() {
+		state.wordPageCaretBlinkRunID = runID
+		state.wordPageCaretBlinkOffset = offset
+		state.wordPageCaretBlinkStart = gtx.Now
+	}
+	elapsed := gtx.Now.Sub(state.wordPageCaretBlinkStart)
+	if elapsed < 0 {
+		state.wordPageCaretBlinkStart = gtx.Now
+		elapsed = 0
+	}
+	phase := elapsed % wordPageCaretBlinkPeriod
+	visibleDuration := wordPageCaretBlinkPeriod / 2
+	var untilNext time.Duration
+	if phase < visibleDuration {
+		untilNext = visibleDuration - phase
+	} else {
+		untilNext = wordPageCaretBlinkPeriod - phase
+	}
+	gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(untilNext)})
+	return phase < visibleDuration
 }
 
 var (

@@ -5,6 +5,7 @@ import (
 	"glance/internal/wordlayout"
 	"image"
 	"strings"
+	"time"
 
 	"gioui.org/f32"
 	"gioui.org/layout"
@@ -12,11 +13,19 @@ import (
 )
 
 func (a *App) focusWordPageRun(gtx layout.Context, state *documentSessionState, runID string, start, end int) {
-	run, paragraph, ok := findEditableWordRunInState(state, runID)
-	if !ok || !run.Editable {
+	if !requestWordRunFocus(state, runID, start, end) {
 		return
 	}
+	gtx.Execute(op.InvalidateCmd{})
+}
+
+func requestWordRunFocus(state *documentSessionState, runID string, start, end int) bool {
+	run, paragraph, ok := findEditableWordRunInState(state, runID)
+	if !ok || !run.Editable {
+		return false
+	}
 	state.wordPageTextSelection = nil
+	state.wordPageCaretBlinkStart = time.Time{}
 	state.wordPageFocusedMetaRunID = runID
 	state.wordPageFocusedMetaRevision = state.wordRevisionAtomic.Load()
 	state.wordPageFocusedParagraph = paragraph
@@ -53,7 +62,31 @@ func (a *App) focusWordPageRun(gtx layout.Context, state *documentSessionState, 
 	if state.wordToolbarTab == wordTabPicture {
 		state.wordToolbarTab = wordTabHome
 	}
+	return true
+}
+
+func (a *App) focusLastEditableWordRun(gtx layout.Context, state *documentSessionState) bool {
+	if state == nil || state.word == nil || state.wordReadingMode || state.wordProtected || state.wordInsertionRunning || state.formatRunning.Load() || a.isSaving() {
+		return false
+	}
+	runs := wordNavigationRuns(wordBlocksForState(state))
+	if len(runs) == 0 {
+		return false
+	}
+	target := runs[len(runs)-1]
+	editor := wordRunEditor(state, target.run)
+	if editor == nil || !requestWordRunFocus(state, target.run.ID, editor.Len(), editor.Len()) {
+		return false
+	}
+	state.wordPreferredVerticalXSet = false
+	state.wordPagePreferredVerticalXSet = false
+	if state.wordViewMode == wordViewPrintLayout {
+		requestWordPageScrollForKeyboardCaret(state, target.run.ID, editor.Len())
+	} else {
+		state.wordListState.List.ScrollTo(target.blockIndex)
+	}
 	gtx.Execute(op.InvalidateCmd{})
+	return true
 }
 
 func requestWordPageScrollForKeyboardCaret(state *documentSessionState, runID string, runeOffset int) {

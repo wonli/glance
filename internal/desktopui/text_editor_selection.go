@@ -8,6 +8,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
+	"gioui.org/unit"
 	"gioui.org/widget"
 )
 
@@ -17,6 +18,8 @@ import (
 type textEditorParagraphSelection struct {
 	click             gesture.Click
 	paragraphSelected bool
+	clicked           bool
+	clickedOnText     bool
 }
 
 func (s *textEditorParagraphSelection) layout(gtx layout.Context, editor *widget.Editor, content layout.Widget) layout.Dimensions {
@@ -24,7 +27,13 @@ func (s *textEditorParagraphSelection) layout(gtx layout.Context, editor *widget
 }
 
 func (s *textEditorParagraphSelection) layoutWithDoubleClick(gtx layout.Context, editor *widget.Editor, content layout.Widget, onDoubleClick func(int) bool) layout.Dimensions {
+	return s.layoutWithDoubleClickAtTextSize(gtx, editor, content, onDoubleClick, 0)
+}
+
+func (s *textEditorParagraphSelection) layoutWithDoubleClickAtTextSize(gtx layout.Context, editor *widget.Editor, content layout.Widget, onDoubleClick func(int) bool, textSize unit.Sp) layout.Dimensions {
 	s.paragraphSelected = false
+	s.clicked = false
+	s.clickedOnText = false
 	pass := pointer.PassOp{}.Push(gtx.Ops)
 	dims := content(gtx)
 	area := clip.Rect(image.Rectangle{Max: dims.Size}).Push(gtx.Ops)
@@ -32,6 +41,10 @@ func (s *textEditorParagraphSelection) layoutWithDoubleClick(gtx layout.Context,
 	area.Pop()
 	pass.Pop()
 	for ev, ok := s.click.Update(gtx.Source); ok; ev, ok = s.click.Update(gtx.Source) {
+		if ev.Kind == gesture.KindPress || ev.Kind == gesture.KindClick {
+			s.clicked = true
+			s.clickedOnText = clickNearEditorText(gtx, editor, ev.Position, textSize)
+		}
 		if ev.Source != pointer.Mouse || ev.Kind != gesture.KindPress || ev.NumClicks != 2 {
 			continue
 		}
@@ -56,4 +69,23 @@ func (s *textEditorParagraphSelection) layoutWithDoubleClick(gtx layout.Context,
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	return dims
+}
+
+func clickNearEditorText(gtx layout.Context, editor *widget.Editor, position image.Point, textSize unit.Sp) bool {
+	if editor == nil || editor.Len() == 0 {
+		return false
+	}
+	caret := editor.CaretCoords()
+	dx := float32(position.X) - caret.X
+	if dx < 0 {
+		dx = -dx
+	}
+	dy := float32(position.Y) - caret.Y
+	if dy < 0 {
+		dy = -dy
+	}
+	fontPixels := gtx.Sp(textSize)
+	toleranceX := max(gtx.Dp(unit.Dp(8)), int(float32(fontPixels)*0.55))
+	toleranceY := max(gtx.Dp(unit.Dp(8)), fontPixels)
+	return dx <= float32(toleranceX) && dy <= float32(toleranceY)
 }
