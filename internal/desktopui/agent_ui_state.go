@@ -88,37 +88,38 @@ type agentChatGroupHeightEntry struct {
 }
 
 type agentUIState struct {
-	providerInput      widget.Editor
-	baseURLInput       widget.Editor
-	modelInput         widget.Editor
-	apiKeyInput        widget.Editor
-	settingsInfo       string
-	settingsError      string
-	settingsInfoRef    i18n.Message
-	settingsErrorRef   i18n.Message
-	settings           agentsettings.ModelSettings
-	settingsLoading    bool
-	settingsPageTab    string
-	settingsPageTabs   map[string]*widget.Clickable
-	languageMenuOpen   bool
-	languageSelector   widget.Clickable
-	languageOptions    [3]widget.Clickable
-	settingsTab        string
-	settingsTabButtons map[string]*widget.Clickable
-	settingsKeyLink    widget.Clickable
-	saving             bool
-	returnToChat       bool
-	settingsDone       chan agentSettingsResult
-	settingsTest       widget.Clickable
-	settingsSave       widget.Clickable
-	settingsKeyToggle  widget.Clickable
-	settingsKeyPreview agentSettingsKeyPreview
-	modelLookup        agentModelLookupState
-	applicationEvents  chan application.Event
-	confirmationList   widget.List
-	confirmations      map[string]*agentConfirmationCard
-	confirmationOrder  []string
-	permissionGrants   map[string]bool
+	providerInput        widget.Editor
+	baseURLInput         widget.Editor
+	modelInput           widget.Editor
+	apiKeyInput          widget.Editor
+	settingsInfo         string
+	settingsError        string
+	settingsInfoRef      i18n.Message
+	settingsErrorRef     i18n.Message
+	settings             agentsettings.ModelSettings
+	settingsLoading      bool
+	settingsPageTab      string
+	settingsPageTabs     map[string]*widget.Clickable
+	languageMenuOpen     bool
+	languageSelector     widget.Clickable
+	languageOptions      [3]widget.Clickable
+	settingsTab          string
+	settingsTabButtons   map[string]*widget.Clickable
+	settingsKeyLink      widget.Clickable
+	apiKeyClearRequested bool
+	saving               bool
+	returnToChat         bool
+	settingsDone         chan agentSettingsResult
+	settingsTest         widget.Clickable
+	settingsSave         widget.Clickable
+	settingsKeyToggle    widget.Clickable
+	settingsKeyPreview   agentSettingsKeyPreview
+	modelLookup          agentModelLookupState
+	applicationEvents    chan application.Event
+	confirmationList     widget.List
+	confirmations        map[string]*agentConfirmationCard
+	confirmationOrder    []string
+	permissionGrants     map[string]bool
 
 	chatInput                        widget.Editor
 	chatList                         widget.List

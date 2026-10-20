@@ -93,6 +93,7 @@ func (a *App) selectSettingsPageTab(id string) {
 	}
 	if id != "providers" {
 		a.cancelAgentModelLookup(true)
+		a.captureEditedAgentSettingsKeyPreview()
 		a.clearAgentSettingsKeyPreview()
 		a.agentUI.apiKeyInput.Mask = '•'
 	}
@@ -144,6 +145,7 @@ func (a *App) selectSettingsProvider(id string) {
 		a.agentUI.apiKeyInput.Mask = '•'
 		a.agentUI.modelInput.SetText("")
 		a.agentUI.apiKeyInput.SetText("")
+		a.agentUI.apiKeyClearRequested = false
 	}
 	a.agentUI.providerInput.SetText(providerID)
 	a.agentUI.baseURLInput.SetText(baseURL)
@@ -449,7 +451,8 @@ func (a *App) layoutAgentSettingsPageFields(gtx layout.Context) layout.Dimension
 		strings.TrimRight(savedBaseURL, "/") == strings.TrimRight(currentBaseURL, "/") &&
 		(a.agentUI.settings.CredentialRef != "" || a.agentUI.settings.ProviderID == "ollama")
 	statusMessage, statusFG, statusBG := i18n.Message{ID: "settings.provider.status.unconfigured"}, settingsBlack, homeHoverFill
-	if configured && strings.TrimSpace(a.agentUI.apiKeyInput.Text()) == "" {
+	apiKeyDraft, clearAPIKey := a.agentSettingsAPIKeyDraft()
+	if configured && strings.TrimSpace(apiKeyDraft) == "" && !clearAPIKey {
 		statusMessage, statusFG, statusBG = i18n.Message{ID: "settings.provider.status.saved"}, settingsBlack, color.NRGBA{R: 232, G: 246, B: 238, A: 255}
 	} else if strings.TrimSpace(a.agentUI.providerInput.Text()) != "" {
 		statusMessage = i18n.Message{ID: "settings.provider.status.unverified"}

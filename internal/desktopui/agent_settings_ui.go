@@ -68,6 +68,7 @@ func (a *App) prepareAgentSettings(returnToChat bool) {
 	a.agentUI.baseURLInput.SetText(settings.BaseURL)
 	a.agentUI.modelInput.SetText(settings.Model)
 	a.agentUI.apiKeyInput.SetText("")
+	a.agentUI.apiKeyClearRequested = false
 	a.agentUI.saving = false
 }
 
@@ -87,7 +88,7 @@ func (a *App) handleAgentSettingsAction(action string) {
 			tab := settingsTabFor(settings.ProviderID, settings.BaseURL)
 			settings.Model = defaultAgentModelForTab(tab)
 		}
-		apiKey := a.agentUI.apiKeyInput.Text()
+		apiKey, _ := a.agentSettingsAPIKeyDraft()
 		if settings.ProviderID == "openai-compatible" && strings.TrimSpace(settings.BaseURL) == "" {
 			a.setAgentSettingsError(i18n.Message{ID: "settings.provider.api_url_required"})
 			a.agentUI.settingsInfo, a.agentUI.settingsInfoRef = "", i18n.Message{}
@@ -122,13 +123,13 @@ func (a *App) handleAgentSettingsAction(action string) {
 			tab := settingsTabFor(settings.ProviderID, settings.BaseURL)
 			settings.Model = defaultAgentModelForTab(tab)
 		}
-		apiKey := a.agentUI.apiKeyInput.Text()
+		apiKey, clearKey := a.agentSettingsAPIKeyDraft()
 		if settings.ProviderID == "openai-compatible" && strings.TrimSpace(settings.BaseURL) == "" {
 			a.setAgentSettingsError(i18n.Message{ID: "settings.provider.api_url_required"})
 			a.agentUI.settingsInfo, a.agentUI.settingsInfoRef = "", i18n.Message{}
 			return
 		}
-		if a.settingsEndpointChanged(settings, apiKey) {
+		if a.settingsEndpointChanged(settings, apiKey) && !clearKey {
 			a.setAgentSettingsError(i18n.Message{ID: "settings.provider.api_key_changed_save"})
 			a.agentUI.settingsInfo, a.agentUI.settingsInfoRef = "", i18n.Message{}
 			return
@@ -137,10 +138,16 @@ func (a *App) handleAgentSettingsAction(action string) {
 		a.agentUI.settingsError, a.agentUI.settingsErrorRef = "", i18n.Message{}
 		a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.saving_connecting"})
 		a.runAgentSettingsOperation("save", func(ctx context.Context) (agentsettings.ModelSettings, error) {
-			if err := a.ensureDesktopRuntime().saveAgentSettings(ctx, settings, apiKey); err != nil {
+			runtime := a.ensureDesktopRuntime()
+			if err := runtime.saveAgentSettings(ctx, settings, apiKey); err != nil {
 				return settings, err
 			}
-			saved, err := a.ensureDesktopRuntime().loadAgentSettings(ctx)
+			if clearKey && strings.TrimSpace(apiKey) == "" {
+				if err := runtime.clearAgentAPIKey(ctx); err != nil {
+					return settings, err
+				}
+			}
+			saved, err := runtime.loadAgentSettings(ctx)
 			return saved, err
 		})
 	case "clear-key":
@@ -299,6 +306,7 @@ func (a *App) processAgentSettingsResult() {
 		a.agentUI.settings = result.settings
 		a.agentUI.settingsError, a.agentUI.settingsErrorRef = "", i18n.Message{}
 		a.agentUI.apiKeyInput.SetText("")
+		a.agentUI.apiKeyClearRequested = false
 		switch result.operation {
 		case "test":
 			a.setAgentSettingsInfo(i18n.Message{ID: "settings.provider.probe_success"})

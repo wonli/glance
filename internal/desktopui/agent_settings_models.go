@@ -72,7 +72,8 @@ func (a *App) observeAgentModelLookup() {
 		BaseURL:    strings.TrimSpace(a.agentUI.baseURLInput.Text()),
 		Model:      strings.TrimSpace(a.agentUI.modelInput.Text()),
 	}
-	apiKey := strings.TrimSpace(a.agentUI.apiKeyInput.Text())
+	apiKey, _ := a.agentSettingsAPIKeyDraft()
+	apiKey = strings.TrimSpace(apiKey)
 	fingerprint := agentModelLookupFingerprint(settings.ProviderID, settings.BaseURL, apiKey)
 	lookup := &a.agentUI.modelLookup
 	if lookup.fingerprint == fingerprint {
@@ -144,7 +145,8 @@ func (a *App) processAgentModelLookupResult() {
 	}
 	select {
 	case result := <-lookup.results:
-		currentFingerprint := agentModelLookupFingerprint(a.agentUI.providerInput.Text(), a.agentUI.baseURLInput.Text(), a.agentUI.apiKeyInput.Text())
+		apiKey, _ := a.agentSettingsAPIKeyDraft()
+		currentFingerprint := agentModelLookupFingerprint(a.agentUI.providerInput.Text(), a.agentUI.baseURLInput.Text(), apiKey)
 		if !agentModelLookupResultIsCurrent(result.generation, result.fingerprint, lookup.generation, lookup.fingerprint) ||
 			result.fingerprint != currentFingerprint || !a.agentSettingsVisible() {
 			return
