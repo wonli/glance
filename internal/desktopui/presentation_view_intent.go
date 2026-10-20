@@ -53,7 +53,7 @@ func (a *App) applyPresentationViewIntent(action string, raw json.RawMessage) (j
 	if err := json.Unmarshal(raw, &input); err != nil {
 		return nil, application.ErrInvalidViewIntent
 	}
-	v.snapshot = state.pptxDoc.Snapshot()
+	v.refreshSnapshot(state.pptxDoc)
 	oldSlide, oldZoom, oldFit, oldNotes, oldRuler, oldSlideshow, oldPresenter, oldSorter := v.activeSlide, v.zoom, v.fitMode, v.notesExpanded, v.rulerVisible, v.slideshowMode, v.presenterMode, v.sorterMode
 	oldRehearsalRunning := v.rehearsalRunning()
 	oldRehearsalElapsed := v.rehearsalDuration(time.Now())

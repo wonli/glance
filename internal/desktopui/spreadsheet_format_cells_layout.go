@@ -405,6 +405,7 @@ func (a *App) layoutSpreadsheetFormatCellsColorChoice(gtx layout.Context, choice
 		gtx.Constraints = layout.Exact(image.Pt(width, height))
 		bounds := image.Rectangle{Max: gtx.Constraints.Max}
 		colors := a.tokens().Colors
+		colors = officeAccentTokens(colors, colors.OfficeAccent.Spreadsheet)
 		bg := colors.Surface.Surface
 		if selected {
 			bg = colors.Toolbar.ActiveBackground
@@ -464,6 +465,7 @@ func (a *App) layoutSpreadsheetFormatCellsButton(gtx layout.Context, button *wid
 func (a *App) layoutSpreadsheetFormatCellsButtonFace(gtx layout.Context, label string, selected bool) layout.Dimensions {
 	bounds := image.Rectangle{Max: gtx.Constraints.Max}
 	colors := a.tokens().Colors
+	colors = officeAccentTokens(colors, colors.OfficeAccent.Spreadsheet)
 	bg := colors.Surface.Surface
 	if selected {
 		bg = colors.Toolbar.ActiveBackground

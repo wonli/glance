@@ -10,6 +10,12 @@ import (
 	"gioui.org/widget"
 )
 
+func officeAssistantIconColors(colors ToolbarColors, palette OfficeAccentPalette) ToolbarColors {
+	colors.AccentAI = palette.Accent
+	colors.AccentAISecondary = palette.AssistantSecondary
+	return colors
+}
+
 // These three layers are exported from Pen component DwuIp. Keeping each layer
 // tintable preserves its exact geometry while all colors come from theme tokens.
 func layoutBrandAssistantIcon(gtx layout.Context, size unit.Dp, colors ToolbarColors) layout.Dimensions {

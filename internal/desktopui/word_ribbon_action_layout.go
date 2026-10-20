@@ -79,12 +79,16 @@ func (a *App) layoutWordRibbonIconButtonAt(gtx layout.Context, state *documentSe
 	button := wordToolbarButton(state, action.id)
 	description := a.wordToolbarActionDescription(action)
 	active := enabled && wordToolbarActionActive(state, action)
-	background := a.tokens().Colors.Surface.Surface
+	colors := officeAccentTokens(a.tokens().Colors, a.tokens().Colors.OfficeAccent.Word)
+	background := colors.Surface.Surface
 	if active {
-		background = a.tokens().Colors.Toolbar.ActiveBackground
+		background = colors.Toolbar.ActiveBackground
 	}
 	icon, _ := a.themedWordToolbarActionIcon(action, enabled)
-	toolbarIconButtonWithColors(buttonGtx, a.theme, button, icon, toolbarIconSize, action.label, description, enabled, false, background, a.tokens().Colors)
+	if active {
+		icon, _ = wordToolbarActionIconWithTint(action, colors.Toolbar.ActiveGlyph)
+	}
+	toolbarIconButtonWithColors(buttonGtx, a.theme, button, icon, toolbarIconSize, action.label, description, enabled, false, background, colors)
 }
 
 func (a *App) layoutWordRibbonPasteButtonAt(gtx layout.Context, state *documentSessionState, action ribbonAction, xDP, yDP int) {

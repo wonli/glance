@@ -88,7 +88,7 @@ func (a *App) flushPresentationTextDraft() error {
 		}
 		a.completeSessionOperation(state, token, nil, true)
 	}
-	v.snapshot = a.pptxDoc.Snapshot()
+	v.refreshSnapshot(a.pptxDoc)
 	v.shapeDraftText = text
 	if state != nil {
 		state.setPresentationDraftDirty(a.windowID, presentationTextDraft, false)
@@ -174,7 +174,7 @@ func (a *App) commitPresentationNotesDraft(v *presentationViewState, slideID uin
 	if state != nil && state.pptxDoc == a.pptxDoc {
 		state.setPresentationDraftDirty(a.windowID, presentationNotesDraft, false)
 	}
-	v.snapshot = a.pptxDoc.Snapshot()
+	v.refreshSnapshot(a.pptxDoc)
 	a.resetPresentationNotesEditor(v, v.currentSlide())
 	return nil
 }

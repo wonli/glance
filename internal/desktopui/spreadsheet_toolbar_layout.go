@@ -47,7 +47,9 @@ func (a *App) layoutSpreadsheetToolbar(gtx layout.Context) layout.Dimensions {
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layoutRibbonCategoryTabs(gtx, a.theme, a.localizedSpreadsheetToolbarCategoryLabels(state), state.toolbarTabs[:], int(state.toolbarTab), a.tokens().Colors)
+					colors := a.tokens().Colors
+					colors = officeAccentTokens(colors, colors.OfficeAccent.Spreadsheet)
+					return layoutRibbonCategoryTabs(gtx, a.theme, a.localizedSpreadsheetToolbarCategoryLabels(state), state.toolbarTabs[:], int(state.toolbarTab), colors)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					stripHeight := gtx.Dp(unit.Dp(wordRibbonCommandHeightDP))
@@ -282,6 +284,7 @@ func (a *App) layoutSpreadsheetRibbonAction(gtx layout.Context, state *documentS
 		semantic.EnabledOp(enabled).Add(gtx.Ops)
 		bounds.Pop()
 		colors := a.tokens().Colors
+		colors = officeAccentTokens(colors, colors.OfficeAccent.Spreadsheet)
 		paintRibbonControlState(gtx, image.Pt(width, height), enabled && active, mixed, enabled && (button.Hovered() || gtx.Focused(button)), colors.Toolbar)
 		if mode == spreadsheetRibbonActionField {
 			value := a.spreadsheetRibbonActionDisplayLabel(action)
@@ -496,7 +499,7 @@ func (a *App) layoutToolbarPickerPanel(gtx layout.Context, options []string) lay
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(6), Top: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				rows := make([]layout.FlexChild, 0, (len(options)+1)/2+2)
-			title := material.Body2(a.theme, a.textID(toolbarPickerTitleMessageID(a.documentSessionState.toolbarPicker)))
+				title := material.Body2(a.theme, a.textID(toolbarPickerTitleMessageID(a.documentSessionState.toolbarPicker)))
 				title.Color = colors.Text.PureBlack
 				rows = append(rows, layout.Rigid(title.Layout))
 				rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -532,7 +535,7 @@ func (a *App) layoutToolbarPickerPanel(gtx layout.Context, options []string) lay
 												return layout.Dimensions{Size: image.Pt(width, height)}
 											},
 											func(gtx layout.Context) layout.Dimensions {
-											style := material.Body2(a.theme, a.textID(toolbarPickerOptionMessageID(a.documentSessionState.toolbarPicker, index)))
+												style := material.Body2(a.theme, a.textID(toolbarPickerOptionMessageID(a.documentSessionState.toolbarPicker, index)))
 												style.TextSize = unit.Sp(12)
 												style.Color = colors.Text.PureBlack
 												gtx.Constraints.Min = image.Point{}

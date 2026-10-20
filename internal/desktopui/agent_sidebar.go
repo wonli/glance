@@ -46,6 +46,16 @@ func (a *App) toggleAgentSidebar() {
 }
 
 func (a *App) layoutAgentRibbonEntry(gtx layout.Context) layout.Dimensions {
+	return a.layoutAgentRibbonEntryWithIconColors(gtx, a.tokens().Colors.Toolbar)
+}
+
+func (a *App) layoutPresentationRibbonAIEntry(gtx layout.Context) layout.Dimensions {
+	tokens := a.tokens().Colors
+	iconColors := officeAssistantIconColors(tokens.Toolbar, tokens.OfficeAccent.Presentation)
+	return a.layoutAgentRibbonEntryWithIconColors(gtx, iconColors)
+}
+
+func (a *App) layoutAgentRibbonEntryWithIconColors(gtx layout.Context, iconColors ToolbarColors) layout.Dimensions {
 	button := &a.agentUI.ribbonEntryButton
 	if !a.modal.Visible && button.Clicked(gtx) {
 		a.toggleAgentSidebar()
@@ -72,7 +82,7 @@ func (a *App) layoutAgentRibbonEntry(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = 0
 			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layoutBrandAssistantIcon(gtx, 20, colors)
+					return layoutBrandAssistantIcon(gtx, 20, iconColors)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(3)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -87,6 +97,16 @@ func (a *App) layoutAgentRibbonEntry(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutOfficeRibbonAIEntry(gtx layout.Context, widthDP unit.Dp) layout.Dimensions {
+	return a.layoutOfficeRibbonAIEntryWithIconColors(gtx, widthDP, a.tokens().Colors.Toolbar)
+}
+
+func (a *App) layoutSpreadsheetRibbonAIEntry(gtx layout.Context, widthDP unit.Dp) layout.Dimensions {
+	tokens := a.tokens().Colors
+	iconColors := officeAssistantIconColors(tokens.Toolbar, tokens.OfficeAccent.Spreadsheet)
+	return a.layoutOfficeRibbonAIEntryWithIconColors(gtx, widthDP, iconColors)
+}
+
+func (a *App) layoutOfficeRibbonAIEntryWithIconColors(gtx layout.Context, widthDP unit.Dp, iconColors ToolbarColors) layout.Dimensions {
 	button := &a.agentUI.ribbonEntryButton
 	if !a.modal.Visible && button.Clicked(gtx) {
 		a.toggleAgentSidebar()
@@ -112,7 +132,7 @@ func (a *App) layoutOfficeRibbonAIEntry(gtx layout.Context, widthDP unit.Dp) lay
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(11)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layoutBrandAssistantIcon(gtx, 20, colors.Toolbar)
+					return layoutBrandAssistantIcon(gtx, 20, iconColors)
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {

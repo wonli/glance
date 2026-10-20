@@ -189,7 +189,7 @@ func (a *App) layoutWordRibbonCategories(gtx layout.Context, state *documentSess
 	for index, tab := range tabs {
 		label := a.text(wordToolbarTabMessage(tab))
 		width := wordRibbonCategoryTabWidth(gtx, a.theme, label)
-		a.layoutWordRibbonCategoryTabAt(gtx, state, index, x, 2, width, label, tab == state.wordToolbarTab)
+		a.layoutWordRibbonCategoryTabAt(gtx, state, index, x, 3, width, label, tab == state.wordToolbarTab)
 		x += width + wordRibbonCategoryTabGapDP
 	}
 	return layout.Dimensions{Size: gtx.Constraints.Max}
@@ -222,6 +222,9 @@ func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentS
 		style := material.Body2(a.theme, label)
 		style.TextSize = unit.Sp(13)
 		style.Color = a.tokens().Colors.Text.PureBlack
+		if selected {
+			style.Color = a.tokens().Colors.OfficeAccent.Word.Accent
+		}
 		shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
 		layout.Center.Layout(gtx, style.Layout)
 		shift.Pop()
@@ -229,9 +232,9 @@ func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentS
 	})
 	transform.Pop()
 	if selected {
-		lineX, lineY := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(yDP+wordRibbonCategoryTabHeightDP-1))
+		lineX, lineY := gtx.Dp(unit.Dp(xDP)), gtx.Dp(unit.Dp(yDP+wordRibbonCategoryTabHeightDP-ribbonCategoryUnderlineHeightDP))
 		line := op.Offset(image.Pt(lineX, lineY)).Push(gtx.Ops)
-		paint.FillShape(gtx.Ops, a.tokens().Colors.Text.Brand, clip.Rect{Max: image.Pt(width, gtx.Dp(unit.Dp(1)))}.Op())
+		paint.FillShape(gtx.Ops, a.tokens().Colors.OfficeAccent.Word.Accent, clip.Rect{Max: image.Pt(width, gtx.Dp(unit.Dp(ribbonCategoryUnderlineHeightDP)))}.Op())
 		line.Pop()
 	}
 }

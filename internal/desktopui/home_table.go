@@ -453,7 +453,7 @@ func extensionForPath(path string) string {
 func homeFileColor(path string) color.NRGBA {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".xlsx", ".xls", ".csv":
-		return color.NRGBA{R: 79, G: 166, B: 107, A: 255}
+		return officeSpreadsheetAccent
 	case ".pptx", ".ppt":
 		return color.NRGBA{R: 226, G: 59, B: 39, A: 255}
 	case ".pdf":
@@ -465,7 +465,7 @@ func homeFileColor(path string) color.NRGBA {
 	case ".html", ".htm":
 		return color.NRGBA{R: 18, G: 162, B: 161, A: 255}
 	default:
-		return color.NRGBA{R: 52, G: 120, B: 209, A: 255}
+		return officeWordAccent
 	}
 }
 

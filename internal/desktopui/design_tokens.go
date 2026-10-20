@@ -159,18 +159,81 @@ type GridColors struct {
 	SelectionBorder color.NRGBA // Active cell and selected range outline
 }
 
+// OfficeAccentPalette keeps selected Ribbon controls aligned with the document format.
+type OfficeAccentPalette struct {
+	Accent             color.NRGBA
+	ActiveBackground   color.NRGBA
+	ActiveBorder       color.NRGBA
+	ActiveGlyph        color.NRGBA
+	AssistantSecondary color.NRGBA
+}
+
+type OfficeAccentColors struct {
+	Word         OfficeAccentPalette
+	Spreadsheet  OfficeAccentPalette
+	Presentation OfficeAccentPalette
+}
+
+func officeAccentTokens(colors ColorTokens, palette OfficeAccentPalette) ColorTokens {
+	colors.Text.Brand = palette.Accent
+	if toolbarActivePaletteIsDefault(colors.Toolbar) {
+		colors.Toolbar.ActiveBackground = palette.ActiveBackground
+		colors.Toolbar.ActiveBorder = palette.ActiveBorder
+		colors.Toolbar.ActiveGlyph = palette.ActiveGlyph
+	}
+	return colors
+}
+
+func toolbarActivePaletteIsDefault(toolbar ToolbarColors) bool {
+	activePaletteMatches := func(reference ToolbarColors) bool {
+		return toolbar.ActiveBackground == reference.ActiveBackground &&
+			toolbar.ActiveBorder == reference.ActiveBorder &&
+			toolbar.ActiveGlyph == reference.ActiveGlyph
+	}
+	return activePaletteMatches(LightColorTokens.Toolbar) || activePaletteMatches(DarkColorTokens.Toolbar)
+}
+
+var (
+	officeWordAccent        = color.NRGBA{R: 40, G: 110, B: 240, A: 255} // Pen Clpgm Word accent #286EF0
+	officeSpreadsheetAccent = color.NRGBA{R: 79, G: 166, B: 107, A: 255} // Home Excel icon #4FA66B
+)
+
 // ColorTokens encapsulates text and surface colors for a complete visual theme.
 type ColorTokens struct {
-	Text    TextColors
-	Surface SurfaceColors
-	Menu    MenuColors
-	Toolbar ToolbarColors
-	Grid    GridColors
+	Text         TextColors
+	Surface      SurfaceColors
+	Menu         MenuColors
+	Toolbar      ToolbarColors
+	Grid         GridColors
+	OfficeAccent OfficeAccentColors
 }
 
 // LightColorTokens provides the baseline light palette matching production UI.
 var LightColorTokens = ColorTokens{
-	Grid: GridColors{SelectionBorder: logoBlue},
+	Grid: GridColors{SelectionBorder: officeSpreadsheetAccent},
+	OfficeAccent: OfficeAccentColors{
+		Word: OfficeAccentPalette{
+			Accent:             officeWordAccent,
+			ActiveBackground:   color.NRGBA{R: 232, G: 240, B: 255, A: 255}, // #E8F0FF
+			ActiveBorder:       color.NRGBA{R: 169, G: 197, B: 255, A: 255}, // #A9C5FF
+			ActiveGlyph:        officeWordAccent,
+			AssistantSecondary: color.NRGBA{R: 168, G: 195, B: 250, A: 255}, // #A8C3FA (Pen Clpgm)
+		},
+		Spreadsheet: OfficeAccentPalette{
+			Accent:             officeSpreadsheetAccent,
+			ActiveBackground:   color.NRGBA{R: 233, G: 243, B: 236, A: 255}, // #E9F3EC
+			ActiveBorder:       color.NRGBA{R: 165, G: 204, B: 180, A: 255}, // #A5CCB4
+			ActiveGlyph:        officeSpreadsheetAccent,
+			AssistantSecondary: color.NRGBA{R: 169, G: 223, B: 193, A: 255}, // #A9DFC1 (Pen bi8Au)
+		},
+		Presentation: OfficeAccentPalette{
+			Accent:             color.NRGBA{R: 99, G: 91, B: 255, A: 255},   // #635BFF
+			ActiveBackground:   color.NRGBA{R: 239, G: 238, B: 255, A: 255}, // #EFEEFF
+			ActiveBorder:       color.NRGBA{R: 198, G: 194, B: 255, A: 255}, // #C6C2FF
+			ActiveGlyph:        color.NRGBA{R: 99, G: 91, B: 255, A: 255},
+			AssistantSecondary: color.NRGBA{R: 198, G: 194, B: 255, A: 255}, // #C6C2FF
+		},
+	},
 	Text: TextColors{
 		Primary:   color.NRGBA{R: 52, G: 59, B: 69, A: 255},    // #343B45
 		Secondary: color.NRGBA{R: 89, G: 98, B: 109, A: 255},   // #59626D
@@ -222,7 +285,30 @@ var LightColorTokens = ColorTokens{
 
 // DarkColorTokens provides an accessible dark palette for dark-mode shell chrome.
 var DarkColorTokens = ColorTokens{
-	Grid: GridColors{SelectionBorder: logoBlue},
+	Grid: GridColors{SelectionBorder: officeSpreadsheetAccent},
+	OfficeAccent: OfficeAccentColors{
+		Word: OfficeAccentPalette{
+			Accent:             officeWordAccent,
+			ActiveBackground:   color.NRGBA{R: 45, G: 52, B: 62, A: 255},    // #2D343E
+			ActiveBorder:       color.NRGBA{R: 83, G: 120, B: 171, A: 255},  // #5378AB
+			ActiveGlyph:        color.NRGBA{R: 168, G: 195, B: 250, A: 255}, // #A8C3FA
+			AssistantSecondary: color.NRGBA{R: 168, G: 195, B: 250, A: 255}, // #A8C3FA (Pen Clpgm)
+		},
+		Spreadsheet: OfficeAccentPalette{
+			Accent:             officeSpreadsheetAccent,
+			ActiveBackground:   color.NRGBA{R: 39, G: 59, B: 47, A: 255},    // #273B2F
+			ActiveBorder:       color.NRGBA{R: 61, G: 120, B: 86, A: 255},   // #3D7856
+			ActiveGlyph:        color.NRGBA{R: 83, G: 184, B: 128, A: 255},  // #53B880
+			AssistantSecondary: color.NRGBA{R: 169, G: 223, B: 193, A: 255}, // #A9DFC1
+		},
+		Presentation: OfficeAccentPalette{
+			Accent:             color.NRGBA{R: 99, G: 91, B: 255, A: 255}, // #635BFF
+			ActiveBackground:   color.NRGBA{R: 48, G: 45, B: 75, A: 255},  // #302D4B
+			ActiveBorder:       color.NRGBA{R: 99, G: 91, B: 255, A: 255}, // #635BFF
+			ActiveGlyph:        color.NRGBA{R: 99, G: 91, B: 255, A: 255},
+			AssistantSecondary: color.NRGBA{R: 198, G: 194, B: 255, A: 255}, // #C6C2FF
+		},
+	},
 	Text: TextColors{
 		Primary:   color.NRGBA{R: 235, G: 240, B: 245, A: 255}, // #EBF0F5
 		Secondary: color.NRGBA{R: 178, G: 186, B: 196, A: 255}, // #B2BAC4

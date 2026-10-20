@@ -6,14 +6,12 @@ import (
 	"glance/internal/document"
 	"glance/internal/i18n"
 	"image"
-	"image/color"
 
-	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
-	"gioui.org/widget/material"
+	"gioui.org/widget"
 )
 
 // layoutPresentationDocument is the top-level presentation editor layout matching Pen frame C2TtCZ.
@@ -69,9 +67,6 @@ func (a *App) layoutPresentationCategoryBar(gtx layout.Context, v *presentationV
 	height := gtx.Dp(unit.Dp(pptxCategoryHeightDP))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
-	paint.FillShape(gtx.Ops, pptxBorderColor, clip.Rect{Min: image.Pt(0, height-1), Max: gtx.Constraints.Max}.Op())
-
 	tabs := a.localizedPresentationRibbonTabs(v)
 	if v.activeRibbonTab == "picture" {
 		if _, _, ok := presentationSelectedEditablePicture(v); !ok {
@@ -84,47 +79,31 @@ func (a *App) layoutPresentationCategoryBar(gtx layout.Context, v *presentationV
 		}
 	}
 
-	return layout.Inset{Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		var children []layout.FlexChild
-		for _, tab := range tabs {
-			t := tab
-			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				btn := v.ribbonBtn("tab_" + t.id)
-				if btn.Clicked(gtx) {
-					if v.pictureCrop.active && t.id != "picture" {
-						a.cancelPresentationPictureCrop(v)
-					}
-					v.activeRibbonTab = t.id
-				}
-				selected := v.activeRibbonTab == t.id
-
-				return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10), Top: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						textColor := pptxTextSecondary
-						if selected {
-							textColor = pptxAccentColor
-						}
-						lbl := material.Label(a.theme, unit.Sp(13), t.label)
-						lbl.Color = textColor
-						if selected {
-							lbl.Font.Weight = font.SemiBold
-						}
-						dims := lbl.Layout(gtx)
-
-						if selected {
-							barH := gtx.Dp(unit.Dp(2))
-							paint.FillShape(gtx.Ops, pptxAccentColor, clip.Rect{
-								Min: image.Pt(0, dims.Size.Y+gtx.Dp(unit.Dp(4))),
-								Max: image.Pt(dims.Size.X, dims.Size.Y+gtx.Dp(unit.Dp(4))+barH),
-							}.Op())
-						}
-						return dims
-					})
-				})
-			}))
+	labels := make([]string, len(tabs))
+	buttons := make([]*widget.Clickable, len(tabs))
+	selected := -1
+	for index, tab := range tabs {
+		labels[index] = tab.label
+		button := v.ribbonBtn("tab_" + tab.id)
+		buttons[index] = button
+		if button.Clicked(gtx) {
+			if v.pictureCrop.active && tab.id != "picture" {
+				a.cancelPresentationPictureCrop(v)
+			}
+			v.activeRibbonTab = tab.id
 		}
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(unit.Dp(4))}.Layout(gtx, children...)
-	})
+		if v.activeRibbonTab == tab.id {
+			selected = index
+		}
+	}
+	colors := a.tokens().Colors
+	colors = officeAccentTokens(colors, colors.OfficeAccent.Presentation)
+	dimensions := layoutRibbonCategoryTabsWithButtons(gtx, a.theme, labels, buttons, selected, colors)
+	paint.FillShape(gtx.Ops, pptxBorderColor, clip.Rect{
+		Min: image.Pt(0, height-gtx.Dp(unit.Dp(1))),
+		Max: image.Pt(gtx.Constraints.Max.X, height),
+	}.Op())
+	return dimensions
 }
 
 // layoutPresentationRibbon renders the 68dp command bar referencing Excel's ribbon icon implementation.
@@ -142,7 +121,7 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 
 	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Rigid(a.layoutAgentRibbonEntry),
+			layout.Rigid(a.layoutPresentationRibbonAIEntry),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layoutHorizontalRibbonList(gtx, &v.ribbonActionScroll, &v.ribbonActionList, len(actions), func(gtx layout.Context, index int) layout.Dimensions {
 					action := actions[index]
@@ -162,9 +141,14 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 					}
 
 					active := a.isPresentationActionActive(v, action.id)
-					iconColor, background := toolbarIconColor(enabled), contentSurface
+					colors := officeAccentTokens(a.tokens().Colors, a.tokens().Colors.OfficeAccent.Presentation)
+					iconColor, background := colors.Toolbar.Glyph, colors.Surface.Surface
+					if !enabled {
+						iconColor = colors.Toolbar.DisabledText
+					}
 					if active {
-						background = toolbarActiveBackground
+						iconColor = colors.Toolbar.ActiveGlyph
+						background = colors.Toolbar.ActiveBackground
 					}
 					icon, _ := pptxToolbarIcon(action.icon, iconColor)
 
@@ -172,7 +156,7 @@ func (a *App) layoutPresentationRibbon(gtx layout.Context, v *presentationViewSt
 						btnGtx := gtx
 						btnGtx.Constraints.Min = image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight))
 						btnGtx.Constraints.Max = btnGtx.Constraints.Min
-						return toolbarIconButton(btnGtx, a.theme, button, icon, iconSize, localizedAction.label, localizedAction.label, enabled, false, background)
+						return toolbarIconButtonWithColors(btnGtx, a.theme, button, icon, iconSize, localizedAction.label, localizedAction.label, enabled, false, background, colors)
 					})
 				})
 			}),

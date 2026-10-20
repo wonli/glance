@@ -59,8 +59,8 @@ type homeAction struct {
 }
 
 var homeActions = []homeAction{
-	{id: "docx", label: "AI Docs", extension: ".docx", icon: "file-text", iconColor: color.NRGBA{R: 52, G: 120, B: 209, A: 255}, titleSize: 16, ai: true},
-	{id: "xlsx", label: "AI Sheets", extension: ".xlsx", icon: "file-spreadsheet", iconColor: color.NRGBA{R: 79, G: 166, B: 107, A: 255}, titleSize: 16, ai: true},
+	{id: "docx", label: "AI Docs", extension: ".docx", icon: "file-text", iconColor: officeWordAccent, titleSize: 16, ai: true},
+	{id: "xlsx", label: "AI Sheets", extension: ".xlsx", icon: "file-spreadsheet", iconColor: officeSpreadsheetAccent, titleSize: 16, ai: true},
 	{id: "pptx", label: "AI Slides", extension: ".pptx", icon: "presentation", iconColor: color.NRGBA{R: 226, G: 59, B: 39, A: 255}, titleSize: 16, ai: true},
 	{id: "md", label: "AI Markdown", extension: ".md", icon: "file-code", iconColor: color.NRGBA{R: 133, G: 88, B: 232, A: 255}, titleSize: 13, ai: true},
 	{id: "json", label: "JSON", extension: ".json", icon: "braces", iconColor: color.NRGBA{R: 214, G: 154, B: 45, A: 255}, titleSize: 16},

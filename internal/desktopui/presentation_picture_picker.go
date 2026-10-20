@@ -356,7 +356,7 @@ func (a *App) applyPresentationPictureCommandResult(result presentationPictureCo
 		return
 	}
 	if v := a.pptxView; v != nil {
-		v.snapshot = result.snapshot
+		v.setSnapshot(result.doc, result.snapshot)
 		if result.operation == "裁剪图片" && v.pictureCrop.active && v.pictureCrop.shapeID == result.shapeID && v.pictureCrop.slideIndex == result.slideIndex {
 			v.pictureCrop = presentationPictureCropState{}
 			a.markPresentationCropDraft(v, false)

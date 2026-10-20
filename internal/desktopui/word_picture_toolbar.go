@@ -108,7 +108,7 @@ func (a *App) layoutWordToolbarColorPicker(gtx layout.Context) layout.Dimensions
 								}
 								if selectedIndex == index {
 									border := clip.UniformRRect(bounds, gtx.Dp(unit.Dp(5)))
-									paint.FillShape(gtx.Ops, a.tokens().Colors.Text.Brand, clip.Stroke{Path: border.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+									paint.FillShape(gtx.Ops, a.tokens().Colors.OfficeAccent.Word.Accent, clip.Stroke{Path: border.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
 								}
 								semantic.Button.Add(gtx.Ops)
 								semantic.DescriptionOp(item.label).Add(gtx.Ops)

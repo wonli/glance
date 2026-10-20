@@ -74,7 +74,7 @@ func (a *App) layoutSpreadsheetHomeRibbon(gtx layout.Context, state *documentSes
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return a.layoutOfficeRibbonAIEntry(gtx, unit.Dp(64))
+							return a.layoutSpreadsheetRibbonAIEntry(gtx, unit.Dp(64))
 						})
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {

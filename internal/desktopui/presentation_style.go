@@ -158,11 +158,11 @@ func (a *App) applyPresentationStylePatch(v *presentationViewState, patch docume
 	} else if state == nil || state.pptxDoc != a.pptxDoc {
 		err = a.pptxDoc.UpdateSlideElementStyleByID(slide.ID, elem.ID, patch)
 	} else {
-		before := a.pptxDoc.Snapshot().Revision
+		before := a.pptxDoc.Revision()
 		unlock := lockSessionAdapterWrite(state)
 		err = a.pptxDoc.UpdateSlideElementStyleByID(slide.ID, elem.ID, patch)
 		unlock()
-		if err == nil && a.pptxDoc.Snapshot().Revision != before {
+		if err == nil && a.pptxDoc.Revision() != before {
 			a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load()+1)
 		}
 	}
@@ -170,7 +170,7 @@ func (a *App) applyPresentationStylePatch(v *presentationViewState, patch docume
 		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return false
 	}
-	v.snapshot = a.pptxDoc.Snapshot()
+	v.refreshSnapshot(a.pptxDoc)
 	if v.editingShape == elem.ID {
 		v.shapeDraftText = v.shapeEditor.Text()
 	}
@@ -311,6 +311,7 @@ func (a *App) layoutPresentationStylePopover(gtx layout.Context, v *presentation
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 250, G: 251, B: 253, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	paint.FillShape(gtx.Ops, pptxBorderColor, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, 1)}.Op())
 	options := a.presentationStyleOptions(v)
+	colors := officeAccentTokens(a.tokens().Colors, a.tokens().Colors.OfficeAccent.Presentation)
 	return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10), Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return v.styleOptionList.Layout(gtx, len(options), func(gtx layout.Context, index int) layout.Dimensions {
 			option := options[index]
@@ -319,7 +320,7 @@ func (a *App) layoutPresentationStylePopover(gtx layout.Context, v *presentation
 			style.Background = color.NRGBA{R: 240, G: 242, B: 246, A: 255}
 			style.Color = pptxTextDark
 			if _, elem, ok := presentationSelectedStyleElement(v); ok && presentationStyleOptionMatches(elem, option.patch) {
-				style.Background = toolbarActiveBackground
+				style.Background = colors.Toolbar.ActiveBackground
 			}
 			if button.Clicked(gtx) {
 				if option.id == "custom" {

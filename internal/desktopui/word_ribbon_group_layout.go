@@ -280,17 +280,18 @@ func (a *App) layoutWordRibbonAction(gtx layout.Context, state *documentSessionS
 		semantic.EnabledOp(enabled).Add(gtx.Ops)
 		semantics.Pop()
 		active := enabled && wordToolbarActionActive(state, action)
-		paintRibbonControlState(gtx, image.Pt(width, height), active, false, enabled && (button.Hovered() || gtx.Focused(button)), a.tokens().Colors.Toolbar)
+		colors := officeAccentTokens(a.tokens().Colors, a.tokens().Colors.OfficeAccent.Word)
+		paintRibbonControlState(gtx, image.Pt(width, height), active, false, enabled && (button.Hovered() || gtx.Focused(button)), colors.Toolbar)
 		if action.id == "font-family" || action.id == "font-size" {
 			value := a.fontPickerDisplayFamilyName(a.localizedSelectedWordFontFamilyName(state))
 			if action.id == "font-size" {
 				value = a.localizedSelectedWordFontSizeDisplay(state)
 			}
-			return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value, enabled, a.tokens().Colors)
+			return drawWordRibbonDropdown(gtx, a.theme, action, width, height, value, enabled, colors)
 		}
 		icon, _ := a.themedWordToolbarActionIcon(action, enabled)
 		if active {
-			icon, _ = wordToolbarActionIconWithTint(action, a.tokens().Colors.Toolbar.ActiveGlyph)
+			icon, _ = wordToolbarActionIconWithTint(action, colors.Toolbar.ActiveGlyph)
 		}
 		if showLabel {
 			label := action.label
@@ -354,13 +355,14 @@ func (a *App) layoutWordStyleGallery(gtx layout.Context, state *documentSessionS
 			draw := func(gtx layout.Context) layout.Dimensions {
 				cardBounds := image.Rectangle{Max: image.Pt(width, height)}
 				active := enabled && wordToolbarActionActive(state, action)
-				borderColor := a.tokens().Colors.Surface.Border
-				background := a.tokens().Colors.Surface.Surface
+				colors := officeAccentTokens(a.tokens().Colors, a.tokens().Colors.OfficeAccent.Word)
+				borderColor := colors.Surface.Border
+				background := colors.Surface.Surface
 				if active {
-					borderColor = a.tokens().Colors.Toolbar.ActiveBorder
-					background = a.tokens().Colors.Toolbar.ActiveBackground
+					borderColor = colors.Toolbar.ActiveBorder
+					background = colors.Toolbar.ActiveBackground
 				} else if enabled && (button.Hovered() || gtx.Focused(button)) {
-					background = a.tokens().Colors.Toolbar.HoverBackground
+					background = colors.Toolbar.HoverBackground
 				}
 				paint.FillShape(gtx.Ops, borderColor, clip.UniformRRect(cardBounds, gtx.Dp(unit.Dp(3))).Op(gtx.Ops))
 				inner := cardBounds.Inset(gtx.Dp(unit.Dp(1)))

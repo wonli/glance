@@ -9,6 +9,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"glance/internal/document"
+	"glance/internal/format/pptx"
 )
 
 type presentationShapeHitArea struct {
@@ -20,6 +21,7 @@ type presentationShapeHitArea struct {
 
 type presentationViewState struct {
 	snapshot                document.PresentationSnapshot
+	snapshotDocument        *pptx.Document
 	activeSlide             int
 	commandPending          bool
 	commandResults          chan presentationCommandResult
@@ -152,7 +154,7 @@ func (a *App) ensurePresentationView() *presentationViewState {
 	}
 	a.pollPresentationCommandResult(a.pptxView)
 	if a.pptxDoc != nil {
-		a.pptxView.snapshot = a.pptxDoc.Snapshot()
+		a.pptxView.refreshSnapshot(a.pptxDoc)
 		if a.pptxView.activeSlide >= a.pptxView.snapshot.SlideCount && a.pptxView.snapshot.SlideCount > 0 {
 			a.pptxView.activeSlide = a.pptxView.snapshot.SlideCount - 1
 		}
@@ -163,6 +165,24 @@ func (a *App) ensurePresentationView() *presentationViewState {
 	}
 	a.syncPresentationNotesDraft(a.pptxView)
 	return a.pptxView
+}
+
+func (v *presentationViewState) refreshSnapshot(doc *pptx.Document) {
+	if v == nil || doc == nil {
+		return
+	}
+	if v.snapshotDocument == doc && v.snapshot.Revision == doc.Revision() {
+		return
+	}
+	v.setSnapshot(doc, doc.Snapshot())
+}
+
+func (v *presentationViewState) setSnapshot(doc *pptx.Document, snapshot document.PresentationSnapshot) {
+	if v == nil || doc == nil {
+		return
+	}
+	v.snapshot = snapshot
+	v.snapshotDocument = doc
 }
 
 func (a *App) resetPresentationNotesEditor(v *presentationViewState, slide *document.PresentationSlide) {

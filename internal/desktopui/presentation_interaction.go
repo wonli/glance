@@ -206,11 +206,11 @@ func (a *App) commitPresentationTransformGesture(v *presentationViewState, gestu
 	} else if state == nil || state.pptxDoc != a.pptxDoc {
 		err = a.pptxDoc.UpdateSlideElementTransformByID(slide.ID, gestureState.shapeID, gestureState.preview.Bounds, gestureState.preview.RotationDeg)
 	} else {
-		before := a.pptxDoc.Snapshot().Revision
+		before := a.pptxDoc.Revision()
 		unlock := lockSessionAdapterWrite(state)
 		err = a.pptxDoc.UpdateSlideElementTransformByID(slide.ID, gestureState.shapeID, gestureState.preview.Bounds, gestureState.preview.RotationDeg)
 		unlock()
-		if err == nil && a.pptxDoc.Snapshot().Revision != before {
+		if err == nil && a.pptxDoc.Revision() != before {
 			a.ensureDesktopRuntime().publishSessionRevision(state.documentID, state.wordRevisionAtomic.Load()+1)
 		}
 	}
@@ -218,7 +218,7 @@ func (a *App) commitPresentationTransformGesture(v *presentationViewState, gestu
 		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
-	v.snapshot = a.pptxDoc.Snapshot()
+	v.refreshSnapshot(a.pptxDoc)
 	v.selectedShape = gestureState.shapeID
 	a.setStatusMessage(i18n.Message{ID: "presentation.status.inline.object_position_or_size_changed_save_to_wr_700963"}, feedbackSuccess, notificationToast)
 }

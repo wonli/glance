@@ -235,6 +235,14 @@ var (
 )
 
 func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, labels []string, buttons []widget.Clickable, selected int, colors ColorTokens) layout.Dimensions {
+	buttonPointers := make([]*widget.Clickable, len(buttons))
+	for index := range buttons {
+		buttonPointers[index] = &buttons[index]
+	}
+	return layoutRibbonCategoryTabsWithButtons(gtx, theme, labels, buttonPointers, selected, colors)
+}
+
+func layoutRibbonCategoryTabsWithButtons(gtx layout.Context, theme *material.Theme, labels []string, buttons []*widget.Clickable, selected int, colors ColorTokens) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(34))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	gtx.Constraints.Min.X = gtx.Constraints.Max.X
@@ -242,8 +250,11 @@ func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, labels 
 	for index, label := range labels {
 		index, label := index, label
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if index >= len(buttons) || buttons[index] == nil {
+				return layout.Dimensions{}
+			}
 			return layout.Inset{Right: unit.Dp(28)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return toolbarTabButtonWithColors(gtx, theme, &buttons[index], label, index == selected, colors)
+				return toolbarTabButtonWithColors(gtx, theme, buttons[index], label, index == selected, colors)
 			})
 		}))
 	}
@@ -253,6 +264,8 @@ func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, labels 
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
+			shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(1)))).Push(gtx.Ops)
+			defer shift.Pop()
 			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				gtx.Constraints.Min.Y = 0
@@ -265,12 +278,13 @@ func layoutRibbonCategoryTabs(gtx layout.Context, theme *material.Theme, labels 
 }
 
 const (
-	documentRibbonHeightDP    = 68
-	toolbarButtonWidth        = unit.Dp(44)
-	toolbarButtonHeight       = unit.Dp(48)
-	toolbarButtonCornerRadius = unit.Dp(5)
-	toolbarIconSize           = unit.Dp(18)
-	toolbarItemGap            = unit.Dp(6)
+	documentRibbonHeightDP          = 68
+	ribbonCategoryUnderlineHeightDP = 2
+	toolbarButtonWidth              = unit.Dp(44)
+	toolbarButtonHeight             = unit.Dp(48)
+	toolbarButtonCornerRadius       = unit.Dp(5)
+	toolbarIconSize                 = unit.Dp(18)
+	toolbarItemGap                  = unit.Dp(6)
 
 	excelToolbarButtonWidth   = unit.Dp(48)
 	excelToolbarButtonHeight  = unit.Dp(48)
@@ -349,10 +363,18 @@ func toolbarIconButtonWithColors(gtx layout.Context, theme *material.Theme, butt
 		bounds.Pop()
 
 		buttonBackground := background
-		if button != nil && enabled && (button.Hovered() || gtx.Focused(button)) && !mixed {
+		active := background == colors.Toolbar.ActiveBackground
+		if button != nil && enabled && (button.Hovered() || gtx.Focused(button)) && !mixed && !active {
 			buttonBackground = colors.Toolbar.HoverBackground
 		}
-		paint.FillShape(gtx.Ops, buttonBackground, clip.UniformRRect(image.Rectangle{Max: image.Pt(width, height)}, gtx.Dp(toolbarButtonCornerRadius)).Op(gtx.Ops))
+		activeBounds := image.Rectangle{Max: image.Pt(width, height)}
+		radius := gtx.Dp(toolbarButtonCornerRadius)
+		if active {
+			paint.FillShape(gtx.Ops, colors.Toolbar.ActiveBorder, clip.UniformRRect(activeBounds, radius).Op(gtx.Ops))
+			activeBounds = activeBounds.Inset(gtx.Dp(unit.Dp(1)))
+			radius = gtx.Dp(unit.Dp(4))
+		}
+		paint.FillShape(gtx.Ops, buttonBackground, clip.UniformRRect(activeBounds, radius).Op(gtx.Ops))
 		layout.Flex{
 			Axis:      layout.Vertical,
 			Alignment: layout.Middle,
@@ -419,6 +441,9 @@ func toolbarTabButtonWithColors(gtx layout.Context, theme *material.Theme, butto
 		style := material.Body2(theme, label)
 		style.TextSize = unit.Sp(13)
 		style.Color = colors.Text.PureBlack
+		if selected {
+			style.Color = colors.Text.Brand
+		}
 		dims := layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
 			dims := layout.Center.Layout(gtx, style.Layout)
@@ -426,7 +451,8 @@ func toolbarTabButtonWithColors(gtx layout.Context, theme *material.Theme, butto
 			return dims
 		})
 		if selected {
-			lineY := height - gtx.Dp(unit.Dp(1))
+			lineHeight := gtx.Dp(unit.Dp(ribbonCategoryUnderlineHeightDP))
+			lineY := height - lineHeight
 			paint.FillShape(gtx.Ops, colors.Text.Brand, clip.Rect{Min: image.Pt(0, lineY), Max: image.Pt(dims.Size.X, height)}.Op())
 		}
 		dims.Size.Y = height

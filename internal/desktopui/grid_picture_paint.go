@@ -106,11 +106,11 @@ func paintGridPictureSelection(gtx layout.Context, a *App, v *gridViewport) {
 		return
 	}
 	line := max(1, gtx.Dp(unit.Dp(1)))
-	blue := color.NRGBA{R: 38, G: 119, B: 211, A: 255}
+	selectionBorder := a.tokens().Colors.Grid.SelectionBorder
 	for _, edge := range selectionBorderRects(bounds, line) {
 		edge = edge.Intersect(viewport)
 		if !edge.Empty() {
-			paint.FillShape(gtx.Ops, blue, clip.Rect(edge).Op())
+			paint.FillShape(gtx.Ops, selectionBorder, clip.Rect(edge).Op())
 		}
 	}
 	if selected.Editable {
@@ -120,7 +120,7 @@ func paintGridPictureSelection(gtx layout.Context, a *App, v *gridViewport) {
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect(handle).Op())
 			inner := handle.Inset(max(1, line))
 			if !inner.Empty() {
-				paint.FillShape(gtx.Ops, blue, clip.Rect(inner).Op())
+				paint.FillShape(gtx.Ops, selectionBorder, clip.Rect(inner).Op())
 			}
 		}
 	}

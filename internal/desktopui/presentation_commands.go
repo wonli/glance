@@ -25,7 +25,7 @@ func (a *App) handlePresentationAddSlide(v *presentationViewState) {
 		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
-	v.snapshot = a.pptxDoc.Snapshot()
+	v.refreshSnapshot(a.pptxDoc)
 	v.activeSlide = v.snapshot.SlideCount - 1
 	clearPresentationSelection(v)
 	if v.activeRibbonTab == "picture" {
@@ -304,7 +304,7 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 			return
 		}
 		if result.presentationCommentMutation != "" {
-			v.snapshot = result.state.pptxDoc.Snapshot()
+			v.refreshSnapshot(result.state.pptxDoc)
 			a.persistActiveSession()
 			if result.presentationCommentMutation == "add" {
 				if result.presentationCommentChanged {
@@ -332,7 +332,7 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 			return
 		}
 		if result.clipboardPaste {
-			v.snapshot = result.state.pptxDoc.Snapshot()
+			v.refreshSnapshot(result.state.pptxDoc)
 			if v.editingShape == result.clipboardElementID {
 				v.shapeEditor.SetText(result.clipboardText)
 				v.shapeDraftText = result.clipboardText
@@ -347,7 +347,7 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 			return
 		}
 		if result.presentationTheme {
-			v.snapshot = result.state.pptxDoc.Snapshot()
+			v.refreshSnapshot(result.state.pptxDoc)
 			a.persistActiveSession()
 			if result.presentationThemeChanged {
 				if result.presentationThemeOperation == "palette" {
@@ -361,7 +361,7 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 			return
 		}
 		if result.presentationGroup {
-			v.snapshot = result.state.pptxDoc.Snapshot()
+			v.refreshSnapshot(result.state.pptxDoc)
 			a.persistActiveSession()
 			if result.presentationGroupChanged {
 				a.setStatusMessage(i18n.Message{ID: "presentation.group.status.created", Args: i18n.Args{"Count": len(result.presentationGroupElementIDs), "ID": result.presentationGroupID}}, feedbackSuccess, notificationToast)
@@ -370,7 +370,7 @@ func (a *App) pollPresentationCommandResult(v *presentationViewState) {
 			}
 			return
 		}
-		v.snapshot = result.state.pptxDoc.Snapshot()
+		v.refreshSnapshot(result.state.pptxDoc)
 		if result.presentationLayoutSet {
 			a.persistActiveSession()
 			if result.presentationLayoutChanged {
@@ -653,7 +653,7 @@ func (a *App) handlePresentationDeleteSlide(v *presentationViewState) {
 		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
-	v.snapshot = a.pptxDoc.Snapshot()
+	v.refreshSnapshot(a.pptxDoc)
 	v.activeSlide = min(deletedIndex, v.snapshot.SlideCount-1)
 	clearPresentationSelection(v)
 	if v.activeRibbonTab == "picture" {
@@ -751,7 +751,7 @@ func (a *App) addPresentationTextBoxAt(v *presentationViewState, slideID uint32,
 		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
-	v.snapshot = a.pptxDoc.Snapshot()
+	v.refreshSnapshot(a.pptxDoc)
 	for index, slide := range v.snapshot.Slides {
 		if slide.ID == slideID {
 			v.activeSlide = index
@@ -849,7 +849,7 @@ func (a *App) addPresentationShapeAt(v *presentationViewState, slideID uint32, b
 		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
-	v.snapshot = a.pptxDoc.Snapshot()
+	v.refreshSnapshot(a.pptxDoc)
 	for index, slide := range v.snapshot.Slides {
 		if slide.ID == slideID {
 			v.activeSlide = index
@@ -930,7 +930,7 @@ func (a *App) addPresentationPictureAt(v *presentationViewState, slideID uint32,
 		a.setStatusErrorMessage(i18n.Message{ID: "presentation.error.operation_failed"}, err, notificationToast)
 		return
 	}
-	v.snapshot = a.pptxDoc.Snapshot()
+	v.refreshSnapshot(a.pptxDoc)
 	for index, slide := range v.snapshot.Slides {
 		if slide.ID == slideID {
 			v.activeSlide = index

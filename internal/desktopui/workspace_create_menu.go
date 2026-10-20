@@ -277,8 +277,8 @@ type createMenuFormat struct {
 // File-type glyphs are SVG exports of the matching icon nodes in Pen frame XGCJN.
 func (a *App) createMenuFormats() []createMenuFormat {
 	return []createMenuFormat{
-		{click: &a.actionNewDOCX, id: "docx", label: "文档", labelRef: i18n.Message{ID: "home.create.format.docx"}, extension: "DOCX", icon: "docx", accent: color.NRGBA{R: 52, G: 120, B: 209, A: 255}, enabled: true},
-		{click: &a.actionNewXLSX, id: "xlsx", label: "表格", labelRef: i18n.Message{ID: "home.create.format.xlsx"}, extension: "XLSX", icon: "xlsx", accent: color.NRGBA{R: 79, G: 166, B: 107, A: 255}, enabled: true},
+		{click: &a.actionNewDOCX, id: "docx", label: "文档", labelRef: i18n.Message{ID: "home.create.format.docx"}, extension: "DOCX", icon: "docx", accent: a.tokens().Colors.OfficeAccent.Word.Accent, enabled: true},
+		{click: &a.actionNewXLSX, id: "xlsx", label: "表格", labelRef: i18n.Message{ID: "home.create.format.xlsx"}, extension: "XLSX", icon: "xlsx", accent: a.tokens().Colors.OfficeAccent.Spreadsheet.Accent, enabled: true},
 		{click: &a.actionNewPPTX, id: "pptx", label: "演示文稿", labelRef: i18n.Message{ID: "home.create.format.pptx"}, extension: "PPTX", icon: "pptx", accent: color.NRGBA{R: 228, G: 130, B: 60, A: 255}, enabled: true},
 		{click: &a.actionNewMarkdown, enabled: true, id: "markdown", label: "Markdown", labelRef: i18n.Message{ID: "home.create.format.markdown"}, extension: "MD", icon: "markdown", accent: color.NRGBA{R: 138, G: 90, B: 194, A: 255}},
 		{click: &a.actionNewJSON, id: "json", label: "JSON 数据", labelRef: i18n.Message{ID: "home.create.format.json"}, extension: "JSON", icon: "json", accent: color.NRGBA{R: 43, G: 157, B: 152, A: 255}, enabled: true},
