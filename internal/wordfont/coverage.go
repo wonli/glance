@@ -1,7 +1,6 @@
 package wordfont
 
 import (
-	"bytes"
 	"fmt"
 
 	"github.com/go-text/typesetting/font"
@@ -16,11 +15,12 @@ import (
 func (s *Shaper) catalogFontContains(location fontscan.Location, r rune) (bool, error) {
 	cmap := s.coverage[location]
 	if cmap == nil {
-		data, err := s.readFontBytes(location)
+		resource, err := s.snapshot.OpenFaceResource(s.resourceIDs[location])
 		if err != nil {
 			return false, err
 		}
-		loaders, err := opentype.NewLoaders(bytes.NewReader(data))
+		defer resource.Close()
+		loaders, err := opentype.NewLoaders(resource)
 		if err != nil {
 			return false, err
 		}

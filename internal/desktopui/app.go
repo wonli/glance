@@ -87,6 +87,10 @@ type App struct {
 	windowCloseButton             widget.Clickable
 	windowOpenResults             chan error
 	windowOpenSource              *App
+	workspacePDFRestoreResults    chan pdfWorkspaceRestoreResult
+	workspacePDFRestoreGeneration uint64
+	pendingPDFRestoreTabID        string
+	pendingPDFRestoreSaveOnReady  bool
 	primaryPromotionPending       atomic.Bool
 	windowMinimizeButton          widget.Clickable
 	windowMaximizeButton          widget.Clickable
@@ -310,6 +314,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		xlsxImagePickerResults:        make(chan spreadsheetImagePickerResult, 1),
 		saveResults:                   make(chan saveResult, 1),
 		openResults:                   make(chan openResult, 1),
+		workspacePDFRestoreResults:    make(chan pdfWorkspaceRestoreResult, 8),
 		fileCommandResults:            make(chan fileCommandResult, 1),
 		wordPDFExportResults:          make(chan wordPDFExportResult, 1),
 		spreadsheetPDFExportResults:   make(chan spreadsheetPDFExportResult, 1),

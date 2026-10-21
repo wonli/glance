@@ -3,11 +3,13 @@ package desktopui
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"path/filepath"
+	"strings"
+
 	"glance/internal/application"
 	"glance/internal/i18n"
 	"glance/internal/workspace"
-	"path/filepath"
-	"strings"
 )
 
 func snapshotState(state *documentSessionState) ([]byte, error) {
@@ -57,6 +59,17 @@ func sessionPath(state *documentSessionState) string {
 
 func (a *App) viewStateBytes() []byte {
 	view := sessionViewSnapshot{Sheet: a.sheet, SelectedCell: a.selectedCell, SelectedBlock: a.selectedBlock, WordFirst: a.wordListState.Position.First, WordAutoSave: a.wordAutoSave}
+	if state := a.documentSessionState; state != nil && state.pdfDoc != nil && state.pdfView != nil {
+		pdfView := state.pdfView
+		view.PDFPageNumber = max(1, pdfView.page+1)
+		view.PDFZoomPercent = int(math.Round(pdfView.zoom * 100))
+		view.PDFFitMode = pdfView.fit
+		view.PDFMode = pdfView.mode
+		view.PDFTool = pdfView.tool
+		view.PDFThumbnails = new(bool)
+		*view.PDFThumbnails = pdfView.thumbnails
+		view.PDFSearchVisible = pdfView.showSearch
+	}
 	if state := a.documentSessionState; state != nil && state.word != nil {
 		view.WordViewMode = state.wordViewMode
 		view.WordPageFitMode = state.wordPageFitMode
@@ -98,6 +111,7 @@ func (a *App) processPrimaryPromotion() {
 	if a == nil || !a.primaryPromotionPending.Swap(false) {
 		return
 	}
+	a.invalidatePDFWorkspaceRestore()
 	runtime := a.ensureDesktopRuntime()
 	if !runtime.isPrimaryWindow(a.windowID) {
 		return
@@ -108,7 +122,7 @@ func (a *App) processPrimaryPromotion() {
 			activeTabID = workspace.RecentTabID
 		}
 		if activeTabID != workspace.RecentTabID {
-			if _, exists := a.collection.Get(activeTabID); !exists {
+			if _, exists := a.collection.GetMetadata(activeTabID); !exists {
 				activeTabID = workspace.RecentTabID
 			}
 		}
@@ -131,7 +145,7 @@ func (a *App) persistViewState() {
 	if a.collection == nil || a.activeTabID == "" || a.activeTabID == workspace.RecentTabID {
 		return
 	}
-	if _, exists := a.collection.Get(a.activeTabID); !exists && a.documentSessionState != nil && a.documentSessionState.sourceFormat == application.FormatXLS {
+	if _, exists := a.collection.GetMetadata(a.activeTabID); !exists && a.documentSessionState != nil && a.documentSessionState.sourceFormat == application.FormatXLS {
 		// Imported XLS tabs stay local until Save As creates a durable XLSX
 		// workspace entry. Their view state already lives in this session.
 		return
@@ -158,13 +172,19 @@ func (a *App) updatePersistedTab(meta workspace.Tab) {
 		a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.save_state"}, err, notificationToast)
 		return
 	}
-	job := workspaceWriteJob{documentID: meta.DocumentID, format: format, state: state, viewState: a.viewStateBytesForState(state)}
+	job := workspaceWriteJob{tabID: meta.ID, documentID: meta.DocumentID, format: format, state: state, viewState: a.viewStateBytesForState(state)}
 	if a.workspaceWriteJobs != nil {
 		a.workspaceWriteJobs <- job
 	} else {
-		payload, err := snapshotState(state)
-		if err == nil {
-			err = a.collection.Update(meta.ID, payload, job.viewState, sessionDirty(state))
+		var err error
+		if format == "pdf" {
+			err = runtime.persistPDFWorkspaceSnapshot(a.collection, state, job.tabID, job.viewState)
+		} else {
+			var payload []byte
+			payload, err = snapshotState(state)
+			if err == nil {
+				err = a.collection.Update(meta.ID, payload, job.viewState, sessionDirty(state))
+			}
 		}
 		if err != nil {
 			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.save_state"}, err, notificationToast)

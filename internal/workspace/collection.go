@@ -1,8 +1,10 @@
 package workspace
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,13 +14,15 @@ import (
 
 // Session is a format-neutral live document and its serializable UI state.
 type Session struct {
-	Tab       Tab
-	Format    string
-	Payload   []byte
-	ViewState []byte
-	Dirty     bool
-	UpdatedAt time.Time
-	Available bool
+	Tab             Tab
+	Format          string
+	Payload         []byte
+	PayloadSize     int64
+	SnapshotPresent bool
+	ViewState       []byte
+	Dirty           bool
+	UpdatedAt       time.Time
+	Available       bool
 }
 
 // Collection owns the durable ordering and activation state for document sessions.
@@ -54,6 +58,8 @@ func OpenCollection(store *Store) (*Collection, error) {
 		session := &Session{Tab: tab, Available: found || tab.SourcePath == ""}
 		if found {
 			session.Format, session.ViewState, session.Dirty, session.UpdatedAt = doc.Format, doc.ViewState, doc.Dirty, doc.UpdatedAt
+			session.PayloadSize = doc.PayloadSize
+			session.SnapshotPresent = true
 		} else {
 			session.Format = inferDraftFormat(tab)
 			if session.Format == "" && tab.SourcePath != "" {
@@ -138,6 +144,38 @@ func (c *Collection) Get(id string) (*Session, bool) {
 	}
 	c.ensurePayloadLocked(session)
 	return cloneSession(session), true
+}
+
+// GetMetadata returns a session without hydrating its durable payload.
+func (c *Collection) GetMetadata(id string) (*Session, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	session := c.getLocked(id)
+	if session == nil {
+		return nil, false
+	}
+	return cloneSession(session), true
+}
+
+// StreamPayload writes a tab's durable document payload without holding the
+// collection lock while SQLite reads it.
+func (c *Collection) StreamPayload(tabID string, dst io.Writer) (int64, error) {
+	if c == nil {
+		return 0, errors.New("workspace collection is unavailable")
+	}
+	c.mu.RLock()
+	session := c.getLocked(tabID)
+	if session == nil {
+		c.mu.RUnlock()
+		return 0, fmt.Errorf("workspace tab %q does not exist", tabID)
+	}
+	documentID := session.Tab.DocumentID
+	store := c.store
+	c.mu.RUnlock()
+	if store == nil {
+		return 0, errors.New("workspace store is unavailable")
+	}
+	return store.StreamDocumentPayload(documentID, dst)
 }
 
 func (c *Collection) Version() uint64 {
@@ -298,9 +336,11 @@ func (c *Collection) putLocked(session Session, activate bool) error {
 		c.active = session.Tab.ID
 	}
 	if session.Payload != nil {
+		session.PayloadSize = int64(len(session.Payload))
 		if err := c.store.SaveDocument(Document{ID: session.Tab.DocumentID, Format: session.Format, Payload: session.Payload, ViewState: session.ViewState, Dirty: session.Dirty, UpdatedAt: session.UpdatedAt}); err != nil {
 			return err
 		}
+		session.SnapshotPresent = true
 	}
 	if err := c.persist(); err != nil {
 		c.active = oldActive
@@ -321,9 +361,66 @@ func (c *Collection) Update(id string, payload, viewState []byte, dirty bool) er
 		return err
 	}
 	s.Payload = doc.Payload
+	s.PayloadSize = int64(len(doc.Payload))
+	s.SnapshotPresent = true
 	s.ViewState = doc.ViewState
 	s.Dirty = dirty
 	s.UpdatedAt = doc.UpdatedAt
+	return nil
+}
+
+// UpdatePDFSnapshot stores a new PDF revision and drops the collection's
+// in-memory payload cache after the durable write succeeds.
+func (c *Collection) UpdatePDFSnapshot(tabID string, payload, viewState []byte, dirty bool) error {
+	return c.UpdatePDFSnapshotStream(tabID, bytes.NewReader(payload), int64(len(payload)), viewState, dirty)
+}
+
+// UpdatePDFSnapshotStream atomically stores a complete PDF payload from a
+// bounded reader and drops the collection's in-memory payload cache only after
+// the durable write succeeds.
+func (c *Collection) UpdatePDFSnapshotStream(tabID string, payload io.Reader, payloadSize int64, viewState []byte, dirty bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	session := c.getLocked(tabID)
+	if session == nil {
+		return fmt.Errorf("workspace tab %q does not exist", tabID)
+	}
+	if c.store == nil {
+		return errors.New("workspace store is unavailable")
+	}
+	updatedAt := time.Now().UTC()
+	if err := c.store.SaveDocumentStream(Document{ID: session.Tab.DocumentID, Format: session.Format, ViewState: viewState, Dirty: dirty, UpdatedAt: updatedAt}, payload, payloadSize); err != nil {
+		return err
+	}
+	session.Payload = nil
+	session.PayloadSize = payloadSize
+	session.SnapshotPresent = true
+	session.ViewState = append(session.ViewState[:0], viewState...)
+	session.Dirty = dirty
+	session.UpdatedAt = updatedAt
+	return nil
+}
+
+// UpdatePDFMetadata writes PDF view/dirty metadata without reading or
+// rewriting the stored payload.
+func (c *Collection) UpdatePDFMetadata(tabID string, viewState []byte, dirty bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	session := c.getLocked(tabID)
+	if session == nil {
+		return fmt.Errorf("workspace tab %q does not exist", tabID)
+	}
+	if c.store == nil {
+		return errors.New("workspace store is unavailable")
+	}
+	updatedAt := time.Now().UTC()
+	if err := c.store.UpdateDocumentMetadata(session.Tab.DocumentID, viewState, dirty, updatedAt); err != nil {
+		return err
+	}
+	session.Payload = nil
+	session.ViewState = append(session.ViewState[:0], viewState...)
+	session.Dirty = dirty
+	session.UpdatedAt = updatedAt
 	return nil
 }
 

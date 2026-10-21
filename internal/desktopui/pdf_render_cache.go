@@ -119,10 +119,8 @@ func pdfCanvasDPI(scale float64) float64 {
 		return 72
 	}
 	// scale is already expressed in physical output pixels per PDF point.
-	// Rendering above that density only creates pixels that the canvas will
-	// immediately downsample, which is especially expensive for embedded scans.
-	dpi := math.Max(24, math.Min(192, scale*72))
-	return math.Min(192, math.Ceil(dpi/12)*12)
+	dpi := math.Max(24, scale*72)
+	return math.Ceil(dpi/12) * 12
 }
 
 func pdfImageBytes(img image.Image) int64 {

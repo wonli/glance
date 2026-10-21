@@ -52,6 +52,9 @@ type liveDocumentState struct {
 type sharedDocumentSession struct {
 	liveDocumentState
 	operationMu                  sync.Mutex
+	pdfPersistenceMu             sync.Mutex
+	pdfSnapshotPresent           bool
+	pdfPersistedRevision         uint64
 	wordLayoutCancelMu           sync.Mutex
 	wordBlocksMu                 sync.RWMutex
 	wordDraftMu                  sync.RWMutex

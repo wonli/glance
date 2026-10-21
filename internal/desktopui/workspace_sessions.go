@@ -58,6 +58,13 @@ type sessionViewSnapshot struct {
 	SelectedWordSelectionStart int            `json:"selected_word_selection_start"`
 	SelectedWordSelectionEnd   int            `json:"selected_word_selection_end"`
 	WordPageFirst              int            `json:"word_page_first"`
+	PDFPageNumber              int            `json:"pdf_page_number,omitempty"`
+	PDFZoomPercent             int            `json:"pdf_zoom_percent,omitempty"`
+	PDFFitMode                 string         `json:"pdf_fit_mode,omitempty"`
+	PDFMode                    string         `json:"pdf_mode,omitempty"`
+	PDFTool                    string         `json:"pdf_tool,omitempty"`
+	PDFThumbnails              *bool          `json:"pdf_thumbnails,omitempty"`
+	PDFSearchVisible           bool           `json:"pdf_search_visible,omitempty"`
 }
 
 func workspaceSessionID(path string) string {
@@ -156,7 +163,19 @@ func (a *App) initializeWorkspace() {
 	a.documentSessionState = newDocumentSessionState("")
 	if primaryWindow {
 		if resumeActiveTabID != "" && resumeActiveTabID != workspace.RecentTabID {
-			if state, err := a.viewForTabWithError(resumeActiveTabID); err == nil && state != nil {
+			if record, ok := collection.GetMetadata(resumeActiveTabID); ok && strings.EqualFold(record.Format, "pdf") {
+				if _, shared := runtime.session(record.Tab.DocumentID); shared {
+					if state, err := a.viewForTabWithError(resumeActiveTabID); err == nil && state != nil {
+						a.activateSession(resumeActiveTabID, state)
+					} else {
+						a.setStatusErrorMessage(workspaceRestoreTabMessage(record.Tab.Title), err, notificationToast)
+					}
+				} else if !a.startWorkspacePDFRestore(*record) {
+					if err := collection.Activate(workspace.RecentTabID); err != nil {
+						a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.activate_document"}, err, notificationToast)
+					}
+				}
+			} else if state, err := a.viewForTabWithError(resumeActiveTabID); err == nil && state != nil {
 				a.activateSession(resumeActiveTabID, state)
 			} else if err := collection.Activate(workspace.RecentTabID); err != nil {
 				a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.activate_document"}, err, notificationToast)
@@ -334,6 +353,10 @@ func (a *App) restoreSessionStateWithPDFSnapshotOwnership(record workspace.Sessi
 		d.SetSourcePath(record.Tab.SourcePath)
 		d.SetDirty(record.Dirty)
 		state.pdfDoc = d
+		state.pdfSnapshotPresent = record.SnapshotPresent
+		if record.SnapshotPresent {
+			state.pdfPersistedRevision = d.Info().Revision
+		}
 	case "md", "markdown":
 		var d *markdowndoc.Document
 		var err error
@@ -442,6 +465,9 @@ func (a *App) restoreSessionStateWithPDFSnapshotOwnership(record workspace.Sessi
 	} else {
 		state.nameBox.SetText("")
 	}
+	if state.pdfDoc != nil {
+		restorePDFWorkspaceViewState(state, record.ViewState)
+	}
 	return state, nil
 }
 
@@ -502,6 +528,7 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 	if state == nil || state.closed.Load() {
 		return
 	}
+	a.invalidatePDFWorkspaceRestore()
 	if a.documentSessionState != state {
 		a.prepareMarkdownDeparture()
 	}
@@ -520,8 +547,12 @@ func (a *App) activateSession(id string, state *documentSessionState) {
 	state.windowID = a.windowID
 	state.sharedDocumentSession.attachView(a.windowID, state)
 	a.activeTabID = id
-	a.setActiveSessionID(id)
-	state.documentID = id
+	documentID := id
+	if meta, ok := a.tabMeta[id]; ok && meta.DocumentID != "" {
+		documentID = meta.DocumentID
+	}
+	a.setActiveSessionID(documentID)
+	state.documentID = documentID
 	a.releaseIdleEngines()
 	if a.collection != nil && runtime.isPrimaryWindow(a.windowID) {
 		if err := a.collection.Activate(id); err != nil {
@@ -579,9 +610,16 @@ func (a *App) persistActiveSession() {
 	state := a.documentSessionState
 	meta := a.tabMeta[a.activeTabID]
 	format := sessionFormat(meta, state)
-	job := workspaceWriteJob{documentID: meta.DocumentID, format: format, state: state, viewState: a.viewStateBytes()}
+	job := workspaceWriteJob{tabID: a.activeTabID, documentID: meta.DocumentID, format: format, state: state, viewState: a.viewStateBytes()}
 	if a.workspaceWriteJobs != nil {
 		a.workspaceWriteJobs <- job
+		return
+	}
+	if format == "pdf" {
+		err := runtime.persistPDFWorkspaceSnapshot(a.collection, state, job.tabID, job.viewState)
+		if err != nil {
+			a.setStatusErrorMessage(i18n.Message{ID: "workspace.error.save_state"}, err, notificationToast)
+		}
 		return
 	}
 	payload, err := snapshotState(state)

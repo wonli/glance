@@ -1,5 +1,11 @@
 # Repository Guidance
 
+## Worktree Policy
+
+- Do not create, add, move, or relocate a Git worktree unless the user explicitly authorizes that action for the task. Without explicit authorization, continue in the current authorized workspace.
+- Before editing, inspect the current working directory and existing worktrees. If the user or task context specifies a worktree, perform all edits, builds, tests, and launches in that worktree.
+- Never silently switch to another checkout, edit the primary checkout while working in a designated worktree, or copy, patch, restore, or clean changes across checkouts. Do not remove a worktree or alter its existing changes unless explicitly authorized.
+
 ## Architecture
 
 - Follow [docs/architecture.md](docs/architecture.md): Gio UI -> session/controller -> neutral document model -> format adapters -> local files.

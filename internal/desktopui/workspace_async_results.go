@@ -8,6 +8,7 @@ import (
 
 func (a *App) processAsyncResults() {
 	a.ensureDesktopRuntime()
+	a.processPDFWorkspaceRestoreResults()
 	a.pollFontResults()
 	a.processAgentSettingsResult()
 	a.processAgentModelLookupResult()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -134,6 +135,9 @@ func (r *desktopRuntime) writeWorkspaceSnapshot(job workspaceWriteJob) error {
 		return nil
 	}
 	defer state.finishOperation(token)
+	if job.format == "pdf" {
+		return r.persistPDFWorkspaceSnapshot(r.collection, state, job.tabID, job.viewState)
+	}
 	payload, err := snapshotState(state)
 	if err != nil {
 		return err
@@ -147,6 +151,69 @@ func (r *desktopRuntime) writeWorkspaceSnapshot(job workspaceWriteJob) error {
 		return nil
 	}
 	return r.workspaceStore.SaveDocument(workspace.Document{ID: job.documentID, Format: job.format, Payload: payload, ViewState: job.viewState, Dirty: sessionDirty(state), UpdatedAt: time.Now().UTC()})
+}
+
+// persistPDFWorkspaceSnapshot serializes checkpoints for the shared PDF model.
+// It captures a changed immutable revision reader while the adapter is
+// read-locked, then releases that lock before SQLite I/O. The reader leases any
+// mapped backing until the write finishes. The per-session mutex remains held
+// through the database update so windows cannot commit checkpoints out of order.
+func (r *desktopRuntime) persistPDFWorkspaceSnapshot(collection *workspace.Collection, state *documentSessionState, tabID string, viewState []byte) (err error) {
+	if r == nil || collection == nil || state == nil || state.sharedDocumentSession == nil {
+		return fmt.Errorf("工作区数据库不可用")
+	}
+	if state.closed.Load() {
+		return nil
+	}
+	if r.workspaceStore == nil {
+		return fmt.Errorf("工作区数据库不可用")
+	}
+	shared := state.sharedDocumentSession
+	shared.pdfPersistenceMu.Lock()
+	defer shared.pdfPersistenceMu.Unlock()
+
+	var payload io.ReadCloser
+	defer func() {
+		if payload != nil {
+			err = errors.Join(err, payload.Close())
+		}
+	}()
+	var payloadSize int64
+	var revision uint64
+	var dirty bool
+	writeSnapshot := false
+	unlockAdapter := lockSessionAdapterRead(state)
+	if state.pdfDoc == nil {
+		unlockAdapter()
+		return fmt.Errorf("PDF 文档不可用")
+	}
+	info := state.pdfDoc.Info()
+	dirty = info.Dirty
+	if !shared.pdfSnapshotPresent || shared.pdfPersistedRevision != info.Revision {
+		var err error
+		payload, payloadSize, revision, dirty, err = state.pdfDoc.SnapshotReaderWithRevision()
+		if err != nil {
+			unlockAdapter()
+			return err
+		}
+		writeSnapshot = true
+	}
+	unlockAdapter()
+
+	r.workspaceDBMu.Lock()
+	defer r.workspaceDBMu.Unlock()
+	if state.closed.Load() {
+		return nil
+	}
+	if writeSnapshot {
+		if err := collection.UpdatePDFSnapshotStream(tabID, payload, payloadSize, viewState, dirty); err != nil {
+			return err
+		}
+		shared.pdfSnapshotPresent = true
+		shared.pdfPersistedRevision = revision
+		return nil
+	}
+	return collection.UpdatePDFMetadata(tabID, viewState, dirty)
 }
 
 func (r *desktopRuntime) writeHomeFolderSnapshot(snapshot workspace.HomeFolderSnapshot) error {

@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"runtime"
 	"sort"
+	"strings"
 
 	"gioui.org/app"
 	"gioui.org/io/event"
@@ -225,8 +226,16 @@ func (a *App) revealActiveWorkspaceTab(gtx layout.Context, ids []string) {
 	a.revealActiveWorkspaceTabInList(gtx, ids, true)
 }
 
+func (a *App) workspaceSelectedTabID() string {
+	if a.pendingPDFRestoreTabID != "" {
+		return a.pendingPDFRestoreTabID
+	}
+	return a.activeTabID
+}
+
 func (a *App) revealActiveWindowsWorkspaceTab(gtx layout.Context, ids []string) {
-	if a.activeTabID == workspace.RecentTabID {
+	selectedTabID := a.workspaceSelectedTabID()
+	if selectedTabID == workspace.RecentTabID {
 		// The home tab is pinned outside the list. Clear the cached reveal so
 		// returning to a document will reveal it even if the user scrolled away.
 		a.workspaceTabsRevealedActiveID = ""
@@ -239,14 +248,15 @@ func (a *App) revealActiveWindowsWorkspaceTab(gtx layout.Context, ids []string) 
 func (a *App) revealActiveWorkspaceTabInList(gtx layout.Context, ids []string, includeRecent bool) {
 	index := -1
 	itemOffset := 0
-	if includeRecent && a.activeTabID == workspace.RecentTabID {
+	selectedTabID := a.workspaceSelectedTabID()
+	if includeRecent && selectedTabID == workspace.RecentTabID {
 		index = 0
 	} else {
 		if includeRecent {
 			itemOffset = 1
 		}
 		for i, id := range ids {
-			if id == a.activeTabID {
+			if id == selectedTabID {
 				index = i + itemOffset
 				break
 			}
@@ -255,7 +265,7 @@ func (a *App) revealActiveWorkspaceTabInList(gtx layout.Context, ids []string, i
 	if index < 0 {
 		return
 	}
-	if a.workspaceTabsRevealedActiveID == a.activeTabID && a.workspaceTabsRevealedIndex == index {
+	if a.workspaceTabsRevealedActiveID == selectedTabID && a.workspaceTabsRevealedIndex == index {
 		return
 	}
 	viewportWidth := gtx.Constraints.Max.X
@@ -292,7 +302,7 @@ func (a *App) revealActiveWorkspaceTabInList(gtx layout.Context, ids []string, i
 		position.BeforeEnd = true
 		a.workspaceTabsList.Position = position
 	}
-	a.workspaceTabsRevealedActiveID = a.activeTabID
+	a.workspaceTabsRevealedActiveID = selectedTabID
 	a.workspaceTabsRevealedIndex = index
 }
 
@@ -488,7 +498,7 @@ func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
 		a.persistActiveSession()
 		a.activateRecent()
 	}
-	active := a.activeTabID == workspace.RecentTabID
+	active := a.workspaceSelectedTabID() == workspace.RecentTabID
 	tab := func(gtx layout.Context) layout.Dimensions {
 		return a.paintTab(gtx, &a.recentTabButton, "⌂  Glance", active)
 	}
@@ -541,23 +551,27 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 	}
 	// Keep this frame's widgets alive even if the close click removed the
 	// tab and its widget map entries above.
-	return a.paintDocumentTab(gtx, tabButton, closeButton, label, id == a.activeTabID)
+	return a.paintDocumentTab(gtx, tabButton, closeButton, label, id == a.workspaceSelectedTabID())
 }
 
 func (a *App) activateWorkspaceTab(id string) {
+	a.invalidatePDFWorkspaceRestore()
 	a.persistActiveSession()
 	a.ensureDesktopRuntime().drainWorkspaceWriter()
 	a.evictInactiveSessionsExcept(id)
-	// A snapshotless tab has a SourcePath but no saved Payload. Restore it
-	// asynchronously via startOpen so the UI stays responsive and the user
-	// sees a "reopening" status rather than a synchronous open that could
-	// block the frame loop.
 	if a.collection != nil {
-		if record, ok := a.collection.Get(id); ok && len(record.Payload) == 0 && record.Tab.SourcePath != "" {
-			// No snapshot available – open the source file asynchronously.
-			a.setStatusMessage(i18n.Message{ID: "workspace.status.restore_from_source", Args: i18n.Args{"Path": record.Tab.SourcePath}}, feedbackInfo, notificationSuppressed)
-			a.startOpen(record.Tab.SourcePath)
-			return
+		if record, ok := a.collection.GetMetadata(id); ok {
+			if strings.EqualFold(record.Format, "pdf") {
+				if _, found := a.ensureDesktopRuntime().session(record.Tab.DocumentID); !found {
+					a.startWorkspacePDFRestore(*record)
+					return
+				}
+			} else if !record.SnapshotPresent && record.Tab.SourcePath != "" {
+				// Restore a source file asynchronously when no workspace snapshot exists.
+				a.setStatusMessage(i18n.Message{ID: "workspace.status.restore_from_source", Args: i18n.Args{"Path": record.Tab.SourcePath}}, feedbackInfo, notificationSuppressed)
+				a.startOpen(record.Tab.SourcePath)
+				return
+			}
 		}
 	}
 	state, err := a.viewForTabWithError(id)

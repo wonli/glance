@@ -17,6 +17,7 @@ const RecentTabID = "recent"
 
 type Store struct {
 	db                *sql.DB
+	path              string
 	wordVersionPolicy wordVersionPolicy
 }
 
@@ -36,12 +37,13 @@ type Recent struct {
 }
 
 type Document struct {
-	ID        string
-	Format    string
-	Payload   []byte
-	ViewState []byte
-	Dirty     bool
-	UpdatedAt time.Time
+	ID          string
+	Format      string
+	Payload     []byte
+	PayloadSize int64
+	ViewState   []byte
+	Dirty       bool
+	UpdatedAt   time.Time
 }
 
 type Snapshot struct {
@@ -56,6 +58,14 @@ func Open(path string) (*Store, error) {
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create workspace database directory: %w", err)
+	}
+	filePath := ""
+	if path != ":memory:" && !strings.HasPrefix(strings.ToLower(path), "file:") {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("resolve workspace database path: %w", err)
+		}
+		filePath = absPath
 	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -72,7 +82,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("initialize workspace database: %w", err)
 	}
-	return &Store{db: db, wordVersionPolicy: defaultWordVersionPolicy()}, nil
+	return &Store{db: db, path: filePath, wordVersionPolicy: defaultWordVersionPolicy()}, nil
 }
 
 // DefaultDatabasePath returns the per-user location used for durable workspace state.
@@ -445,6 +455,7 @@ func (s *Store) LoadDocument(id string) (Document, bool, error) {
 		return doc, false, err
 	}
 	doc.Dirty = dirty != 0
+	doc.PayloadSize = int64(len(doc.Payload))
 	doc.UpdatedAt = time.Unix(0, updated).UTC()
 	return doc, true, nil
 }
@@ -453,7 +464,7 @@ func (s *Store) LoadDocumentMetadata(id string) (Document, bool, error) {
 	var doc Document
 	var dirty int
 	var updated int64
-	err := s.db.QueryRow(`SELECT id,format,dirty,updated_at,view_state FROM documents WHERE id=?`, id).Scan(&doc.ID, &doc.Format, &dirty, &updated, &doc.ViewState)
+	err := s.db.QueryRow(`SELECT id,format,length(payload),dirty,updated_at,view_state FROM documents WHERE id=?`, id).Scan(&doc.ID, &doc.Format, &doc.PayloadSize, &dirty, &updated, &doc.ViewState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return doc, false, nil
 	}
@@ -487,6 +498,30 @@ func (s *Store) SaveViewState(id string, state []byte) error {
 		state = []byte{}
 	}
 	result, err := s.db.Exec(`UPDATE documents SET view_state=? WHERE id=?`, state, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return fmt.Errorf("workspace document %q does not exist", id)
+	}
+	return nil
+}
+
+func (s *Store) UpdateDocumentMetadata(id string, state []byte, dirty bool, updatedAt time.Time) error {
+	if id == "" {
+		return errors.New("workspace document id is required")
+	}
+	if state == nil {
+		state = []byte{}
+	}
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	dirtyInt := 0
+	if dirty {
+		dirtyInt = 1
+	}
+	result, err := s.db.Exec(`UPDATE documents SET view_state=?,dirty=?,updated_at=? WHERE id=?`, state, dirtyInt, updatedAt.UTC().UnixNano(), id)
 	if err != nil {
 		return err
 	}

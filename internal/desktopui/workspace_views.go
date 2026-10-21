@@ -82,28 +82,25 @@ func (a *App) viewForTabWithError(id string) (*documentSessionState, error) {
 		}
 		return nil, fmt.Errorf("工作区尚未初始化")
 	}
-	record, ok := a.collection.Get(id)
+	metadata, ok := a.collection.GetMetadata(id)
 	if !ok {
 		return nil, fmt.Errorf("工作区标签记录 %q 不存在", id)
 	}
 	runtime := a.ensureDesktopRuntime()
-	shared, found := runtime.session(record.Tab.DocumentID)
+	shared, found := runtime.session(metadata.Tab.DocumentID)
+	if !found && strings.EqualFold(metadata.Format, "pdf") {
+		return nil, fmt.Errorf("%w: tab %q", errPDFWorkspaceRestoreRequired, id)
+	}
 	if !found {
-		var state *documentSessionState
-		var err error
-		if strings.EqualFold(record.Format, "pdf") && len(record.Payload) > 0 {
-			// The collection returned a borrowed snapshot slice. Drop its cached
-			// reference, then transfer the bytes directly to pdfdoc instead of
-			// cloning a second full-sized copy while restoring the document.
-			a.collection.ReleasePayload(id)
-			state, err = a.restoreSessionStateTakingPDFSnapshot(*record)
-		} else {
-			state, err = a.restoreSessionState(*record)
+		record, exists := a.collection.Get(id)
+		if !exists {
+			return nil, fmt.Errorf("工作区标签记录 %q 不存在", id)
 		}
+		state, err := a.restoreSessionState(*record)
 		if err != nil {
 			return nil, fmt.Errorf("恢复快照失败：%w", err)
 		}
-		state.documentID = record.Tab.DocumentID
+		state.documentID = metadata.Tab.DocumentID
 		registered := runtime.registerSession(state.sharedDocumentSession)
 		if registered == state.sharedDocumentSession {
 			state.windowID = a.windowID
@@ -115,7 +112,7 @@ func (a *App) viewForTabWithError(id string) (*documentSessionState, error) {
 		shared = registered
 	}
 	state := newDocumentSessionView(shared, a.windowID)
-	state.documentID = record.Tab.DocumentID
+	state.documentID = metadata.Tab.DocumentID
 	a.sessions[id] = state
 	return state, nil
 }

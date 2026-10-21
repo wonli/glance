@@ -117,7 +117,6 @@ func TestFailedSaveAndInvalidEditPreserveModel(t *testing.T) {
 		t.Fatal("failed save cleared dirty")
 	}
 }
-
 func TestAnnotationsInkRotationRenderRoundTrip(t *testing.T) {
 	d, err := OpenSnapshot(fixture(t))
 	if err != nil {
@@ -168,5 +167,31 @@ func TestAnnotationsInkRotationRenderRoundTrip(t *testing.T) {
 	}
 	if p.Rotation != 90 || rotated.Bounds().Dx() != rendered.Bounds().Dy() {
 		t.Fatalf("rotation failed: %+v %v", p, rotated.Bounds())
+	}
+}
+
+func TestRenderUsesAvailableDPIWithinRasterPixelBudget(t *testing.T) {
+	d, err := OpenSnapshot(fixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+
+	img, page, _, err := d.Render(0, 320)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img == nil {
+		t.Fatal("Render returned no image")
+	}
+	if img.Bounds().Dx() <= int(page.Width*192/72) {
+		t.Fatalf("render width %d did not exceed the old 192 DPI ceiling for page width %.2f", img.Bounds().Dx(), page.Width)
+	}
+	pixels := int64(img.Bounds().Dx()) * int64(img.Bounds().Dy())
+	if pixels > 8_000_000 {
+		t.Fatalf("rendered raster has %d pixels, exceeds the 8,000,000 pixel budget", pixels)
+	}
+	if pixels < 7_500_000 {
+		t.Fatalf("rendered raster has only %d pixels, want it to use the available budget for this A4 fixture", pixels)
 	}
 }

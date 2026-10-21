@@ -51,7 +51,7 @@ func (r *desktopRuntime) openDocumentWindow(documentID string, snapshot windowVi
 	if collection == nil {
 		return fmt.Errorf("工作区尚未初始化，无法创建文档窗口")
 	}
-	if _, ok := collection.Get(documentID); !ok {
+	if _, ok := collection.GetMetadata(documentID); !ok {
 		return fmt.Errorf("工作区标签已关闭，请重新打开文档")
 	}
 	window := new(app.Window)

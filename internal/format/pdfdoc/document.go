@@ -6,12 +6,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/SalvioniDigitalSolutions/gopdf"
-	"glance/internal/document"
+	"io"
 	"math"
 	"os"
 	"sync"
 	"sync/atomic"
+
+	"github.com/SalvioniDigitalSolutions/gopdf"
+	"glance/internal/document"
 )
 
 type Document struct {
@@ -20,6 +22,7 @@ type Document struct {
 	mu                  sync.Mutex
 	data, saved         []byte
 	reader              *gopdf.Reader
+	backing             *snapshotBacking
 	path                string
 	revision            uint64
 	undo, redo          [][]byte
@@ -43,16 +46,85 @@ func NewBlank() (*Document, error) {
 }
 
 func Open(path string) (*Document, error) {
-	b, e := os.ReadFile(path)
+	source, e := os.Open(path)
 	if e != nil {
 		return nil, e
 	}
-	d, e := openSnapshotOwned(b)
+	defer source.Close()
+	d, e := OpenSnapshotStream(func(w io.Writer) error {
+		_, err := io.Copy(w, source)
+		return err
+	})
 	if e == nil {
 		d.path = path
 	}
 	return d, e
 }
+
+// OpenSnapshotStream writes a stable PDF snapshot to a private temporary file
+// and opens it with a read-only file mapping where the platform supports mmap.
+func OpenSnapshotStream(write func(io.Writer) error) (*Document, error) {
+	if write == nil {
+		return nil, errors.New("PDF snapshot writer is required")
+	}
+	file, err := os.CreateTemp("", "glance-pdf-snapshot-*.pdf")
+	if err != nil {
+		return nil, fmt.Errorf("create PDF snapshot backing: %w", err)
+	}
+	path := file.Name()
+	cleanup := func(cause error) error {
+		closeErr := file.Close()
+		removeErr := removeSnapshotPath(path)
+		return errors.Join(cause, closeErr, removeErr)
+	}
+	if err := write(file); err != nil {
+		return nil, cleanup(fmt.Errorf("write PDF snapshot backing: %w", err))
+	}
+	if err := file.Close(); err != nil {
+		return nil, errors.Join(fmt.Errorf("close PDF snapshot backing: %w", err), removeSnapshotPath(path))
+	}
+
+	readFile, err := os.Open(path)
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("open PDF snapshot backing: %w", err), removeSnapshotPath(path))
+	}
+	info, err := readFile.Stat()
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("stat PDF snapshot backing: %w", err), readFile.Close(), removeSnapshotPath(path))
+	}
+	if info.Size() <= 0 {
+		return nil, errors.Join(errors.New("PDF snapshot is empty"), readFile.Close(), removeSnapshotPath(path))
+	}
+	if info.Size() > int64(int(^uint(0)>>1)) {
+		return nil, errors.Join(errors.New("PDF snapshot exceeds the current process addressable slice size"), readFile.Close(), removeSnapshotPath(path))
+	}
+	backing, err := mapSnapshotFile(readFile, info.Size())
+	closeErr := readFile.Close()
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("map PDF snapshot backing: %w", err), closeErr, removeSnapshotPath(path))
+	}
+	if closeErr != nil {
+		return nil, errors.Join(fmt.Errorf("close mapped PDF snapshot file: %w", closeErr), backing.Close(), removeSnapshotPath(path))
+	}
+	if err := removeSnapshotPath(path); err != nil {
+		return nil, errors.Join(fmt.Errorf("unlink PDF snapshot backing: %w", err), backing.Close(), removeSnapshotPath(path))
+	}
+	doc, err := openSnapshotOwned(backing.data)
+	if err != nil {
+		return nil, errors.Join(err, backing.Close())
+	}
+	doc.backing = backing
+	return doc, nil
+}
+
+func removeSnapshotPath(path string) error {
+	err := os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 func OpenSnapshot(b []byte) (*Document, error) {
 	return openSnapshotOwned(bytes.Clone(b))
 }
@@ -92,6 +164,40 @@ func (d *Document) Snapshot() ([]byte, error) {
 	}
 	return bytes.Clone(d.data), nil
 }
+
+// SnapshotWithRevision returns an independent byte copy and the revision and
+// dirty state captured under the same document lock.
+func (d *Document) SnapshotWithRevision() ([]byte, uint64, bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed {
+		return nil, 0, false, errors.New("PDF 已关闭")
+	}
+	return bytes.Clone(d.data), d.revision, d.dirty(), nil
+}
+
+// SnapshotReaderWithRevision returns a reader over the captured immutable PDF
+// revision without cloning its bytes. PDF edits and history changes publish a
+// new backing slice instead of mutating an existing revision, so the reader
+// remains stable after this method releases the document lock. Callers must
+// close the reader when finished so a mapped backing can be released.
+func (d *Document) SnapshotReaderWithRevision() (io.ReadCloser, int64, uint64, bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed {
+		return nil, 0, 0, false, errors.New("PDF 已关闭")
+	}
+	var release func() error
+	if d.backing != nil {
+		var err error
+		release, err = d.backing.acquire()
+		if err != nil {
+			return nil, 0, 0, false, err
+		}
+	}
+	return &revisionReader{reader: bytes.NewReader(d.data), release: release}, int64(len(d.data)), d.revision, d.dirty(), nil
+}
+
 func (d *Document) Info() document.PDFInfo { return d.published.Load().(document.PDFInfo) }
 func (d *Document) publishInfo() {
 	d.published.Store(document.PDFInfo{Pages: d.reader.NumPages(), Bytes: len(d.data), Revision: d.revision, Dirty: d.dirty(), CanUndo: len(d.undo) > 0, CanRedo: len(d.redo) > 0})
@@ -118,6 +224,12 @@ func (d *Document) Close() error {
 	d.reader = nil
 	d.undo = nil
 	d.redo = nil
+	if d.backing != nil {
+		if err := d.backing.Close(); err != nil {
+			return err
+		}
+		d.backing = nil
+	}
 	return nil
 }
 func (d *Document) Page(index int) (document.PDFPage, error) {

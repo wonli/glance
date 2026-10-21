@@ -12,6 +12,7 @@ import (
 
 type workspaceWriteJob struct {
 	documentID, format string
+	tabID              string
 	state              *documentSessionState
 	viewState          []byte
 	homeFolderSnapshot *workspace.HomeFolderSnapshot

@@ -218,6 +218,7 @@ func loadDocument(path string) (loadedDocument, error) {
 }
 
 func (a *App) installDocument(loaded loadedDocument) error {
+	a.invalidatePDFWorkspaceRestore()
 	if loaded.book != nil {
 		if _, ok := loaded.book.(document.GridReader); !ok {
 			closeLoadedDocument(loaded)
@@ -354,7 +355,7 @@ func (a *App) installDocument(loaded loadedDocument) error {
 	a.sessions[id] = state
 	if a.collection != nil {
 		if format != "xls" {
-			if _, exists := a.collection.Get(meta.ID); !exists {
+			if _, exists := a.collection.GetMetadata(meta.ID); !exists {
 				var err error
 				if loaded.path == "" {
 					var payload []byte

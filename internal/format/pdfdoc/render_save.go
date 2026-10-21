@@ -63,13 +63,10 @@ func (d *Document) render(index int, dpi float64) (image.Image, document.PDFPage
 }
 
 func (d *Document) renderPixels(index int, p document.PDFPage, dpi float64, includeText bool) (image.Image, string, error) {
-	dpi = math.Max(24, math.Min(192, dpi))
 	if p.Width <= 0 || p.Height <= 0 || math.IsNaN(p.Width*p.Height) || math.IsInf(p.Width*p.Height, 0) {
 		return nil, "", errors.New("无效页面尺寸")
 	}
-	if pixels := p.Width * p.Height * dpi * dpi / (72 * 72); pixels > 8e6 {
-		dpi *= math.Sqrt(8e6 / pixels)
-	}
+	dpi = clampRasterDPI(dpi, p.Width, p.Height)
 	// The Go renderer currently ignores JPEG 2000 image decode errors. Detect
 	// images actually painted on this page before rendering so macOS can use
 	// CoreGraphics instead of silently publishing an empty or incomplete page.
@@ -91,6 +88,25 @@ func (d *Document) renderPixels(index int, p document.PDFPage, dpi float64, incl
 		warning = fmt.Sprintf("此页 %d 个字形无法显示", report.Missing)
 	}
 	return img, warning, err
+}
+
+func clampRasterDPI(dpi, pageWidth, pageHeight float64) float64 {
+	if dpi <= 0 || math.IsNaN(dpi) || math.IsInf(dpi, 0) {
+		dpi = 72
+	}
+	dpi = math.Max(24, dpi)
+	rasterPixels := func() float64 {
+		width := math.Ceil(pageWidth * dpi / 72)
+		height := math.Ceil(pageHeight * dpi / 72)
+		return width * height
+	}
+	if pixels := rasterPixels(); pixels > 8e6 {
+		dpi *= math.Sqrt(8e6 / pixels)
+		for rasterPixels() > 8e6 {
+			dpi *= 0.999
+		}
+	}
+	return dpi
 }
 
 func pageHasJPEG2000Image(reader *gopdf.Reader, index int) bool {

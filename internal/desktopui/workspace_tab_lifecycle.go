@@ -1,12 +1,15 @@
 package desktopui
 
 import (
+	"strings"
+
 	"glance/internal/application"
 	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
 
 func (a *App) activateRecent() {
+	a.invalidatePDFWorkspaceRestore()
 	runtime := a.ensureDesktopRuntime()
 	a.persistActiveSession()
 	runtime.drainWorkspaceWriter()
@@ -82,12 +85,36 @@ func (a *App) evictInactiveSessions() {
 }
 
 func (a *App) closeWorkspaceTab(id string) {
+	if a.pendingPDFRestoreTabID == id {
+		a.invalidatePDFWorkspaceRestore()
+	}
 	if id == a.activeTabID {
 		a.flushMarkdownDraft()
 	}
 	a.ensureDesktopRuntime()
 	if a.modal.Visible {
 		return
+	}
+	if a.collection != nil {
+		state := a.sessions[id]
+		if state == nil || state.closed.Load() {
+			if record, ok := a.collection.GetMetadata(id); ok && strings.EqualFold(record.Format, "pdf") {
+				if _, shared := a.ensureDesktopRuntime().session(record.Tab.DocumentID); !shared {
+					if record.Dirty || record.Tab.SourcePath == "" {
+						title := i18n.Message{ID: "workspace.close.confirm.title_changes"}
+						message := i18n.Message{ID: "workspace.close.confirm.body_changes"}
+						if record.Tab.SourcePath == "" {
+							title = i18n.Message{ID: "workspace.close.confirm.title_new"}
+							message = i18n.Message{ID: "workspace.close.confirm.body_new"}
+						}
+						a.showCloseConfirmationMessage(id, title, message)
+						return
+					}
+					a.closeUnopenedPDFTabNow(id, *record)
+					return
+				}
+			}
+		}
 	}
 	state, err := a.viewForTabWithError(id)
 	if err != nil {
@@ -118,6 +145,16 @@ func (a *App) showCloseConfirmationMessage(id string, title, message i18n.Messag
 
 func (a *App) closeWorkspaceTabNow(id string) {
 	runtime := a.ensureDesktopRuntime()
+	if state := a.sessions[id]; state == nil || state.closed.Load() {
+		if a.collection != nil {
+			if record, ok := a.collection.GetMetadata(id); ok && strings.EqualFold(record.Format, "pdf") {
+				if _, shared := runtime.session(record.Tab.DocumentID); !shared {
+					a.closeUnopenedPDFTabNow(id, *record)
+					return
+				}
+			}
+		}
+	}
 	state, err := a.viewForTabWithError(id)
 	if err != nil {
 		a.closeWorkspaceTabWithoutSession(id, err)
@@ -142,7 +179,7 @@ func (a *App) closeWorkspaceTabNow(id string) {
 	state.closed.Store(true)
 	state.wordExportCommitMu.Unlock()
 	if a.collection != nil {
-		if _, persisted := a.collection.Get(id); persisted {
+		if _, persisted := a.collection.GetMetadata(id); persisted {
 			a.workspaceDBMu.Lock()
 			if err := a.collection.CloseTab(id); err != nil {
 				a.workspaceDBMu.Unlock()
@@ -181,6 +218,59 @@ func (a *App) closeWorkspaceTabNow(id string) {
 	}
 }
 
+func (a *App) closeUnopenedPDFTabNow(id string, record workspace.Session) {
+	runtime := a.ensureDesktopRuntime()
+	if a.pendingPDFRestoreTabID == id {
+		a.invalidatePDFWorkspaceRestore()
+	}
+	documentID := record.Tab.DocumentID
+	var closeErr error
+	var snapshotCleanupErr error
+	if a.collection != nil {
+		if latest, exists := a.collection.GetMetadata(id); exists {
+			if latest.Tab.DocumentID != "" {
+				documentID = latest.Tab.DocumentID
+			}
+			a.workspaceDBMu.Lock()
+			closeErr = a.collection.CloseTab(id)
+			a.workspaceDBMu.Unlock()
+			if _, stillOpen := a.collection.GetMetadata(id); !stillOpen {
+				snapshotCleanupErr = closeErr
+				closeErr = nil
+			}
+		}
+	}
+	if closeErr != nil {
+		a.showWorkspaceTabCloseFailure(i18n.Message{ID: "workspace.close.error.remove_failed"}, closeErr)
+		return
+	}
+	runtime.removeSession(documentID)
+	delete(a.sessions, id)
+	delete(a.tabMeta, id)
+	delete(a.tabButtons, id)
+	delete(a.tabCloseButtons, id)
+	a.workspaceTabsListPendingReset = true
+	if a.activeTabID == id {
+		a.activeTabID = ""
+		a.setActiveSessionID("")
+		a.activateRecent()
+	}
+	a.reconcileWorkspaceTabs()
+	a.releaseIdleEngines()
+	requestMemoryRelease()
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+	if snapshotCleanupErr != nil {
+		a.setStatusErrorMessage(i18n.Message{ID: "workspace.close.error.snapshot_cleanup"}, snapshotCleanupErr, notificationToast)
+		a.modal.ShowMessage("workspace.close.snapshot_cleanup",
+			i18n.Message{ID: "workspace.close.error.title"},
+			i18n.Message{ID: "workspace.close.error.snapshot_cleanup"}, func(string) {
+				a.modal.Hide()
+			}, modalDialogActionSpec{ID: "ok", LabelRef: i18n.Message{ID: "common.action.ok"}})
+	}
+}
+
 func (a *App) hasActiveWordDocument() bool {
 	return a.activeTabID != "" && a.activeTabID != workspace.RecentTabID && a.word != nil
 }
@@ -203,7 +293,7 @@ func (a *App) closeWorkspaceTabWithoutSession(id string, cause error) {
 	var closeErr error
 	var snapshotCleanupErr error
 	if a.collection != nil {
-		if record, exists := a.collection.Get(id); exists {
+		if record, exists := a.collection.GetMetadata(id); exists {
 			if record.Tab.DocumentID != "" {
 				documentID = record.Tab.DocumentID
 			}
@@ -212,7 +302,7 @@ func (a *App) closeWorkspaceTabWithoutSession(id string, cause error) {
 			a.workspaceDBMu.Unlock()
 			// CloseTab persists tab removal before deleting its snapshot. If the
 			// tab is gone, close succeeded even if snapshot cleanup needs attention.
-			if _, stillOpen := a.collection.Get(id); !stillOpen {
+			if _, stillOpen := a.collection.GetMetadata(id); !stillOpen {
 				snapshotCleanupErr = closeErr
 				closeErr = nil
 			}
@@ -282,6 +372,7 @@ func (a *App) handleCloseConfirmation(action string) {
 	case "cancel":
 		a.modal.Hide()
 		a.pendingCloseTabID = ""
+		a.pendingPDFRestoreSaveOnReady = false
 	case "discard":
 		a.modal.Hide()
 		a.pendingCloseTabID = ""
@@ -289,6 +380,17 @@ func (a *App) handleCloseConfirmation(action string) {
 	case "save":
 		state := a.sessions[id]
 		if state == nil {
+			if a.collection != nil {
+				if record, exists := a.collection.GetMetadata(id); exists && strings.EqualFold(record.Format, "pdf") {
+					a.modal.Hide()
+					if a.startWorkspacePDFRestore(*record) {
+						a.pendingCloseTabID = id
+						a.pendingPDFRestoreSaveOnReady = true
+						return
+					}
+					a.pendingCloseTabID = ""
+				}
+			}
 			a.modal.Hide()
 			a.pendingCloseTabID = ""
 			a.showWorkspaceTabCloseFailure(i18n.Message{ID: "workspace.close.error.session_missing"}, nil)
@@ -344,6 +446,8 @@ func closeSessionState(s *documentSessionState) {
 }
 
 func (a *App) closeWorkspace() {
+	a.invalidatePDFWorkspaceRestore()
+	a.discardPDFWorkspaceRestoreResults()
 	a.completeQueuedWordSplitsOnClose()
 	runtime := a.ensureDesktopRuntime()
 	// A promoted window can be destroyed before its next frame. Apply the
