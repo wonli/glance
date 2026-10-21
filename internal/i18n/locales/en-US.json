@@ -1976,6 +1976,8 @@
   "pdf.text_edit.hint": "Click text or drag to select · Edit mode lets you change text",
   "pdf.annotations.current_page_count": "Annotations on this page · {{.Count}}",
   "pdf.annotations.page_kind": "Page {{.Page}} · {{.Kind}}",
+  "pdf.accessibility.page_scrollbar": "PDF page scrollbar",
+  "pdf.scrollbar.page_indicator": "{{.Page}} / {{.Pages}}",
   "pdf.status.page_size": "{{.Page}} / {{.Pages}} pages · {{.Size}} MB",
   "presentation.canvas.empty": "No slide content",
   "presentation.preview.generating": "Generating preview…",

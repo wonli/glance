@@ -185,6 +185,16 @@ func (c *Collection) ReleaseInactivePayloads(activeDocumentID string) {
 	}
 }
 
+// ReleasePayload drops the collection's in-memory copy of a document snapshot.
+// The durable snapshot remains in the store and can be loaded again on demand.
+func (c *Collection) ReleasePayload(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if session := c.getLocked(id); session != nil {
+		session.Payload = nil
+	}
+}
+
 func (c *Collection) Recents() []Recent {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

@@ -1976,6 +1976,8 @@
   "pdf.text_edit.hint": "点击文字或拖选 · 编辑模式可修改文字",
   "pdf.annotations.current_page_count": "当前页批注 · {{.Count}}",
   "pdf.annotations.page_kind": "第 {{.Page}} 页 · {{.Kind}}",
+  "pdf.accessibility.page_scrollbar": "PDF 页面滚动条",
+  "pdf.scrollbar.page_indicator": "{{.Page}} / {{.Pages}} 页",
   "pdf.status.page_size": "{{.Page}} / {{.Pages}} 页 · {{.Size}} MB",
   "presentation.canvas.empty": "暂无幻灯片内容",
   "presentation.preview.generating": "正在生成预览…",

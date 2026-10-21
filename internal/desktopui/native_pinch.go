@@ -169,6 +169,19 @@ func (a *App) applyNativePinch(gtx layout.Context, point f32.Point, magnificatio
 			headerX, headerY := gtx.Dp(gridRowHeader), gtx.Dp(gridColumnHeader)
 			state.virtualGrid.zoomAt(float64(gtx.Metric.PxPerDp)*zoom, float64(point.X)-float64(headerX), float64(point.Y)-float64(headerY), float64(gtx.Constraints.Max.X-headerX), float64(gtx.Constraints.Max.Y-headerY))
 		}
+	} else if state.pdfDoc != nil {
+		v := state.pdfView
+		if v == nil {
+			return
+		}
+		zoom, remainder, changed := zoomFromPinch(clampPDFZoom(v.currentZoom(gtx.Metric)), magnification, a.pinchRemainder, pdfZoomMinimum, pdfZoomMaximum)
+		a.pinchRemainder = remainder
+		if changed {
+			a.setPDFZoomAt(gtx, v, zoom, point)
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		}
 	} else if state.word != nil {
 		zoom, remainder, changed := zoomFromPinch(wordStatusZoomClamp(state.wordLayoutZoom), magnification, a.pinchRemainder, wordStatusZoomMinimum, wordStatusZoomMaximum)
 		a.pinchRemainder = remainder

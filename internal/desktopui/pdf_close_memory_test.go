@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"gioui.org/op/paint"
 	"image"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestClosedPDFViewDropsDocumentResources(t *testing.T) {
 		page:   document.PDFPage{Index: 0},
 		pixels: image.NewRGBA(image.Rect(0, 0, 800, 1000)),
 	}
-	v.thumbCache[0] = image.NewRGBA(image.Rect(0, 0, 100, 140))
+	v.thumbCache[0] = paint.NewImageOp(image.NewRGBA(image.Rect(0, 0, 100, 140)))
 
 	state := a.documentSessionState
 	if state.pdfView == nil {
@@ -61,7 +62,7 @@ func TestPDFWorkerCancellationOnClose(t *testing.T) {
 	v := &pdfViewState{
 		info:       document.PDFInfo{Pages: 4},
 		cache:      map[int]pdfPageResult{},
-		thumbCache: map[int]image.Image{},
+		thumbCache: map[int]paint.ImageOp{},
 		results:    make(chan pdfPageResult, 1),
 	}
 	signal := v.workerSignal()

@@ -105,7 +105,11 @@ func (a *App) applyPDFViewIntent(action string, raw json.RawMessage) (json.RawMe
 	if oldPage != v.page {
 		v.canvas.Position.First = v.page
 		v.canvas.Position.Offset = 0
+		v.canvas.Position.OffsetLast = 0
+		v.canvas.Position.BeforeEnd = false
+		v.followPDFThumbnailPage(v.page)
 		v.clearSelection()
+		v.trimCacheWindow()
 	}
 	if changed {
 		a.window.Invalidate()

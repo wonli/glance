@@ -105,19 +105,7 @@ func (a *App) layoutPDFDocument(gtx layout.Context) layout.Dimensions {
 
 func (a *App) updatePDFScale(gtx layout.Context) {
 	v := a.ensurePDFView()
-	refW, refH := 595.0, 842.0
-	if r, ok := v.cache[v.page]; ok && r.page.Width > 0 {
-		refW = r.page.Width
-		refH = r.page.Height
-	} else {
-		for _, cached := range v.cache {
-			if cached.page.Width > 0 {
-				refW = cached.page.Width
-				refH = cached.page.Height
-				break
-			}
-		}
-	}
+	refW, refH := pdfReferencePageSize(v)
 
 	wide := gtx.Constraints.Max.X >= gtx.Dp(1000)
 	thumbW := 0
@@ -128,7 +116,7 @@ func (a *App) updatePDFScale(gtx layout.Context) {
 		}
 	}
 	notesW := 0
-	if wide || v.mode != "read" || v.showSearch {
+	if v.mode != "read" || v.showSearch {
 		notesW = gtx.Dp(220)
 		if wide {
 			notesW = gtx.Dp(300)

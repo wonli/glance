@@ -6,6 +6,7 @@ import (
 	"gioui.org/gpu/headless"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"github.com/SalvioniDigitalSolutions/gopdf"
 	"glance/internal/document"
@@ -77,7 +78,7 @@ func TestPDFWorkspaceRecoveryAndSharedModel(t *testing.T) {
 	}
 }
 func TestPDFStaleSceneCannotReplaceEditedRevision(t *testing.T) {
-	v := &pdfViewState{info: document.PDFInfo{Revision: 3}, cache: map[int]pdfPageResult{}, thumbCache: map[int]image.Image{}}
+	v := &pdfViewState{info: document.PDFInfo{Revision: 3}, cache: map[int]pdfPageResult{}, thumbCache: map[int]paint.ImageOp{}}
 	v.accept(pdfPageResult{info: document.PDFInfo{Revision: 2}, page: document.PDFPage{Revision: 2}, pixels: image.NewRGBA(image.Rect(0, 0, 10, 10))})
 	if v.info.Revision != 3 || len(v.cache) != 0 {
 		t.Fatal("old scene replaced current model")
@@ -166,7 +167,7 @@ func TestPDFSharedRevisionAndSaveRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v := &pdfViewState{info: d.Info(), cache: map[int]pdfPageResult{0: {}}, thumbCache: map[int]image.Image{}, selected: 0}
+	v := &pdfViewState{info: d.Info(), cache: map[int]pdfPageResult{0: {}}, thumbCache: map[int]paint.ImageOp{}, selected: 0}
 	if err := d.Apply(document.PDFCommand{Kind: "note", Page: 0, Revision: d.Info().Revision, Text: "shared", X: 40, Y: 40}); err != nil {
 		t.Fatal(err)
 	}

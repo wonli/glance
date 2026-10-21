@@ -185,6 +185,14 @@ func isEmptyDraftWithoutSnapshot(record workspace.Session) bool {
 }
 
 func (a *App) restoreSessionState(record workspace.Session) (*documentSessionState, error) {
+	return a.restoreSessionStateWithPDFSnapshotOwnership(record, false)
+}
+
+func (a *App) restoreSessionStateTakingPDFSnapshot(record workspace.Session) (*documentSessionState, error) {
+	return a.restoreSessionStateWithPDFSnapshotOwnership(record, true)
+}
+
+func (a *App) restoreSessionStateWithPDFSnapshotOwnership(record workspace.Session, takesPDFSnapshotOwnership bool) (*documentSessionState, error) {
 	state := newDocumentSessionState(record.Tab.SourcePath)
 	state.documentID = record.Tab.DocumentID
 	switch strings.ToLower(record.Format) {
@@ -315,6 +323,8 @@ func (a *App) restoreSessionState(record workspace.Session) (*documentSessionSta
 			d, err = pdfdoc.NewBlank()
 		} else if len(record.Payload) == 0 && record.Tab.SourcePath != "" {
 			d, err = pdfdoc.Open(record.Tab.SourcePath)
+		} else if takesPDFSnapshotOwnership {
+			d, err = pdfdoc.OpenSnapshotOwned(record.Payload)
 		} else {
 			d, err = pdfdoc.OpenSnapshot(record.Payload)
 		}

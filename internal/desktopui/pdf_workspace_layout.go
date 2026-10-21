@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"gioui.org/io/event"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -38,7 +39,7 @@ func (a *App) layoutPDFWorkspace(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Flexed(1, a.layoutPDFCanvas),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if !wide && v.mode == "read" && !v.showSearch {
+			if v.mode == "read" && !v.showSearch {
 				return layout.Dimensions{}
 			}
 			w := gtx.Dp(300)
@@ -55,7 +56,7 @@ func (a *App) layoutPDFWorkspace(gtx layout.Context) layout.Dimensions {
 func (a *App) layoutPDFThumbnails(gtx layout.Context) layout.Dimensions {
 	v := a.ensurePDFView()
 	paint.FillShape(gtx.Ops, pageBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+	dimensions := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.UniformInset(16).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return material.Label(a.theme, 12, a.textArgs("pdf.thumbnails.page_count", i18n.Args{"Pages": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(v.info.Pages))})).Layout(gtx)
@@ -72,8 +73,8 @@ func (a *App) layoutPDFThumbnails(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									gtx.Constraints = layout.Exact(image.Pt(min(gtx.Constraints.Max.X, gtx.Dp(110)), gtx.Dp(124)))
-									if img := v.thumbCache[i]; img != nil {
-										return widget.Image{Src: paint.NewImageOp(img), Fit: widget.Contain}.Layout(gtx)
+									if img := v.thumbCache[i]; img.Size().X > 0 {
+										return widget.Image{Src: img, Fit: widget.Contain}.Layout(gtx)
 									}
 									paint.FillShape(gtx.Ops, contentSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
 									return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -92,31 +93,20 @@ func (a *App) layoutPDFThumbnails(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 	)
+	v.trimThumbnailCacheWindow()
+	return dimensions
 }
 
 func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 	v := a.ensurePDFView()
+	recordNativePinchSurface(gtx)
+	a.handlePDFCanvasScroll(gtx, v)
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 231, G: 236, B: 240, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	totalPages := max(1, v.info.Pages)
-	if v.canvas.Position.First >= 0 && v.canvas.Position.First < totalPages && v.page != v.canvas.Position.First {
-		v.page = v.canvas.Position.First
-		if r, ok := v.cache[v.page]; ok {
-			v.scene = r.page
-		}
+	if v.syncPageFromCanvas() {
+		gtx.Execute(op.InvalidateCmd{})
 	}
-	refW, refH := 595.0, 842.0
-	if r, ok := v.cache[v.page]; ok && r.page.Width > 0 {
-		refW = r.page.Width
-		refH = r.page.Height
-	} else {
-		for _, cached := range v.cache {
-			if cached.page.Width > 0 {
-				refW = cached.page.Width
-				refH = cached.page.Height
-				break
-			}
-		}
-	}
+	refW, refH := pdfReferencePageSize(v)
 	width, height := gtx.Constraints.Max.X-gtx.Dp(48), gtx.Constraints.Max.Y-gtx.Dp(48)
 	baseScale := float64(gtx.Metric.PxPerDp) * 4 / 3
 	scale := baseScale * v.zoom
@@ -133,9 +123,10 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	v.scale = scale
+	dpi := pdfCanvasDPI(scale)
 	viewport := gtx.Constraints.Max
 	contentWidth := max(viewport.X, int(refW*scale)+gtx.Dp(48))
-	return v.horizontal.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+	dimensions := v.horizontal.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		gtx.Constraints = layout.Exact(image.Pt(contentWidth, viewport.Y))
 		return v.canvas.Layout(gtx, totalPages, func(gtx layout.Context, pageIdx int) layout.Dimensions {
 			pageW, pageH := refW, refH
@@ -160,10 +151,15 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 						event.Op(gtx.Ops, &v.tag)
 					}
 
-					if ok && r.pixels != nil {
-						widget.Image{Src: paint.NewImageOp(r.pixels), Fit: widget.Fill}.Layout(gtx)
+					// Gio's List also lays out an invisible sentinel row on each
+					// side. Rendering those rows can churn when the byte budget
+					// immediately evicts them, so only visible rows request here.
+					if v.pageVisible(pageIdx) && (!ok || (r.err == nil && r.hasImage() && r.dpi < dpi)) {
+						a.requestPDFPage(pageIdx, dpi)
+					}
+					if ok && r.hasImage() {
+						widget.Image{Src: r.imageOp, Fit: widget.Fill}.Layout(gtx)
 					} else {
-						a.requestPDFPage(pageIdx)
 						layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							msg := a.textArgs("pdf.canvas.loading_page", i18n.Args{"Page": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(pageIdx+1))})
 							if r.err != nil {
@@ -204,6 +200,13 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 			})
 		})
 	})
+	a.layoutPDFPageScrollbar(gtx, v, totalPages)
+	pass := pointer.PassOp{}.Push(gtx.Ops)
+	area := clip.Rect{Max: viewport}.Push(gtx.Ops)
+	v.zoomScroll.Add(gtx.Ops)
+	area.Pop()
+	pass.Pop()
+	return dimensions
 }
 
 func (a *App) layoutPDFNotes(gtx layout.Context) layout.Dimensions {

@@ -21,20 +21,35 @@ var substitute func(gopdf.FontRequest) []byte
 // Render returns pixels and hit data derived under the same revision lock.
 func (d *Document) Render(index int, dpi float64) (image.Image, document.PDFPage, string, error) {
 	d.mu.Lock()
-	if d.closed {
-		d.mu.Unlock()
+	defer d.mu.Unlock()
+	if d.closed || d.reader == nil {
 		return nil, document.PDFPage{}, "", errors.New("PDF 已关闭")
 	}
-	data, revision := d.data, d.revision
-	d.mu.Unlock()
-	// Rendering uses an immutable revision snapshot, never blocks the UI's dirty checks.
-	local, err := OpenSnapshot(data)
-	if err != nil {
-		return nil, document.PDFPage{}, "", err
-	}
-	local.revision = revision
-	return local.render(index, dpi)
+	// Reader operations populate internal caches. Serialize rendering with page
+	// reads and mutations, and reuse the already parsed immutable revision.
+	return d.render(index, dpi)
 }
+
+// RenderThumbnail renders only page pixels and geometry. It skips text-fragment
+// extraction because thumbnails do not need hit data.
+func (d *Document) RenderThumbnail(index int, dpi float64) (image.Image, document.PDFPage, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed || d.reader == nil {
+		return nil, document.PDFPage{}, errors.New("PDF 已关闭")
+	}
+	size, err := d.reader.PageSize(index)
+	if err != nil {
+		return nil, document.PDFPage{}, err
+	}
+	page := document.PDFPage{
+		Index: index, Revision: d.revision, Width: size.W, Height: size.H,
+		Rotation: rotation(d.reader, index),
+	}
+	pixels, _, err := d.renderPixels(index, page, dpi, false)
+	return pixels, page, err
+}
+
 func (d *Document) render(index int, dpi float64) (image.Image, document.PDFPage, string, error) {
 	p, e := d.page(index)
 	if e != nil {
@@ -43,9 +58,14 @@ func (d *Document) render(index int, dpi float64) (image.Image, document.PDFPage
 	if d.closed {
 		return nil, p, "", errors.New("PDF 已关闭")
 	}
+	img, warning, err := d.renderPixels(index, p, dpi, true)
+	return img, p, warning, err
+}
+
+func (d *Document) renderPixels(index int, p document.PDFPage, dpi float64, includeText bool) (image.Image, string, error) {
 	dpi = math.Max(24, math.Min(192, dpi))
 	if p.Width <= 0 || p.Height <= 0 || math.IsNaN(p.Width*p.Height) || math.IsInf(p.Width*p.Height, 0) {
-		return nil, p, "", errors.New("无效页面尺寸")
+		return nil, "", errors.New("无效页面尺寸")
 	}
 	if pixels := p.Width * p.Height * dpi * dpi / (72 * 72); pixels > 8e6 {
 		dpi *= math.Sqrt(8e6 / pixels)
@@ -55,22 +75,22 @@ func (d *Document) render(index int, dpi float64) (image.Image, document.PDFPage
 	// CoreGraphics instead of silently publishing an empty or incomplete page.
 	if pageHasJPEG2000Image(d.reader, index) {
 		img, warning, err := d.renderNativePage(index, p, dpi, true)
-		return img, p, warning, err
+		return img, warning, err
 	}
 	// Native rendering also consumes this revision snapshot, not the original file.
 	// Keep gopdf for annotation appearances: CoreGraphics omits annotation overlays.
 	substituteOnce.Do(func() { substitute = gopdf.SystemFonts() })
-	img, report, e := d.reader.RenderPageDetail(index, gopdf.RenderOpts{DPI: dpi, IncludeText: true, IncludeVector: true, IncludeRasterImages: true, IncludeAnnotations: true, SubstituteFont: substitute})
-	if report.Missing > 0 || e != nil {
+	img, report, err := d.reader.RenderPageDetail(index, gopdf.RenderOpts{DPI: dpi, IncludeText: includeText, IncludeVector: true, IncludeRasterImages: true, IncludeAnnotations: true, SubstituteFont: substitute})
+	if report.Missing > 0 || err != nil {
 		if native, warning, nativeErr := d.renderNativePage(index, p, dpi, false); native != nil || nativeErr != nil {
-			return native, p, warning, nativeErr
+			return native, warning, nativeErr
 		}
 	}
 	warning := ""
 	if report.Missing > 0 {
 		warning = fmt.Sprintf("此页 %d 个字形无法显示", report.Missing)
 	}
-	return img, p, warning, e
+	return img, warning, err
 }
 
 func pageHasJPEG2000Image(reader *gopdf.Reader, index int) bool {
@@ -146,7 +166,7 @@ func (d *Document) save(path string) error {
 		return e
 	}
 	d.path = path
-	d.saved = append([]byte(nil), d.data...)
+	d.saved = d.data
 	d.forcedDirty = false
 	d.modified = false
 	d.publishInfo()

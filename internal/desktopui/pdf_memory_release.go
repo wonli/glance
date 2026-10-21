@@ -16,6 +16,8 @@ func (state *documentSessionState) releasePDFViewResources() {
 		v.cancelWorkers()
 		v.cache = nil
 		v.thumbCache = nil
+		v.thumbErrors = nil
+		v.renderPending = false
 		v.buttons = nil
 		state.pdfView = nil
 	}

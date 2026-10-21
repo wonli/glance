@@ -99,22 +99,38 @@ func (a *App) handlePDFEvents(gtx layout.Context) {
 	if a.modal.Visible {
 		return
 	}
-	a.requestPDFPage(v.page)
-	// Prefetch visible canvas pages for continuous scrolling.
-	if !v.pending {
-		first := max(0, v.canvas.Position.First)
-		for i := first; i < min(v.info.Pages, first+3); i++ {
-			if _, ok := v.cache[i]; !ok {
-				a.requestPDFPage(i)
+	if v.scale > 0 {
+		a.requestPDFPage(v.page, pdfCanvasDPI(v.scale))
+	}
+	// Keep the independently scrolling thumbnail strip ahead of lower-priority
+	// canvas prefetches. The current page request above always gets first access
+	// to the shared render slot.
+	if v.thumbnails && !v.pending && !v.renderPending {
+		first := max(0, v.thumbList.Position.First)
+		for i := first; i < min(v.info.Pages, first+pdfThumbnailVisiblePrefetch); i++ {
+			if !pdfThumbnailInCacheWindow(i, first) {
+				continue
+			}
+			if v.thumbCache[i].Size().X == 0 && v.thumbErrors[i] == "" {
+				a.requestPDFThumbnail(i)
 				break
 			}
 		}
 	}
-	// Prefetch only the visible thumbnail strip. All requests share one worker slot.
-	if v.thumbnails && !v.pending {
-		for i := max(0, v.thumbList.Position.First); i < min(v.info.Pages, v.thumbList.Position.First+5); i++ {
-			if v.thumbCache[i] == nil {
-				a.requestPDFPage(i)
+	// Prefetch nearby canvas pages after the current page and visible thumbnails.
+	if v.scale > 0 && !v.pending && !v.renderPending {
+		first := max(0, v.canvas.Position.First)
+		dpi := pdfCanvasDPI(v.scale)
+		for i := first; i < min(v.info.Pages, first+2); i++ {
+			if !v.pageInCacheWindow(i) {
+				continue
+			}
+			if !v.canPrefetchPage(i, dpi) {
+				break
+			}
+			cached, ok := v.cache[i]
+			if !ok || (cached.err == nil && cached.dpi < dpi) {
+				a.requestPDFPage(i, dpi)
 				break
 			}
 		}

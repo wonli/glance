@@ -89,7 +89,17 @@ func (a *App) viewForTabWithError(id string) (*documentSessionState, error) {
 	runtime := a.ensureDesktopRuntime()
 	shared, found := runtime.session(record.Tab.DocumentID)
 	if !found {
-		state, err := a.restoreSessionState(*record)
+		var state *documentSessionState
+		var err error
+		if strings.EqualFold(record.Format, "pdf") && len(record.Payload) > 0 {
+			// The collection returned a borrowed snapshot slice. Drop its cached
+			// reference, then transfer the bytes directly to pdfdoc instead of
+			// cloning a second full-sized copy while restoring the document.
+			a.collection.ReleasePayload(id)
+			state, err = a.restoreSessionStateTakingPDFSnapshot(*record)
+		} else {
+			state, err = a.restoreSessionState(*record)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("恢复快照失败：%w", err)
 		}

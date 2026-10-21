@@ -47,14 +47,26 @@ func Open(path string) (*Document, error) {
 	if e != nil {
 		return nil, e
 	}
-	d, e := OpenSnapshot(b)
+	d, e := openSnapshotOwned(b)
 	if e == nil {
 		d.path = path
 	}
 	return d, e
 }
 func OpenSnapshot(b []byte) (*Document, error) {
-	b = bytes.Clone(b)
+	return openSnapshotOwned(bytes.Clone(b))
+}
+
+// OpenSnapshotOwned takes ownership of b as the immutable PDF package backing
+// the document. Callers must not mutate or reuse b after a successful open.
+// Use OpenSnapshot when that ownership transfer cannot be guaranteed.
+func OpenSnapshotOwned(b []byte) (*Document, error) {
+	return openSnapshotOwned(b)
+}
+
+// openSnapshotOwned takes ownership of b. PDF revisions are immutable, so the
+// current data and clean baseline can share the same backing bytes.
+func openSnapshotOwned(b []byte) (*Document, error) {
 	r, e := gopdf.NewReader(b)
 	if e != nil {
 		return nil, e
@@ -68,7 +80,7 @@ func OpenSnapshot(b []byte) (*Document, error) {
 	if r.NumPages() == 0 {
 		return nil, errors.New("PDF 没有页面")
 	}
-	d := &Document{data: b, saved: bytes.Clone(b), reader: r, revision: 1}
+	d := &Document{data: b, saved: b, reader: r, revision: 1}
 	d.publishInfo()
 	return d, nil
 }
@@ -92,7 +104,7 @@ func (d *Document) SetDirty(v bool) {
 	defer d.publishInfo()
 	d.forcedDirty = v
 	if !v {
-		d.saved = bytes.Clone(d.data)
+		d.saved = d.data
 		d.modified = false
 	}
 }
