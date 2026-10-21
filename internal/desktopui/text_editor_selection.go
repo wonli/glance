@@ -4,6 +4,7 @@ import (
 	"image"
 
 	"gioui.org/gesture"
+	"gioui.org/io/event"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -31,6 +32,10 @@ func (s *textEditorParagraphSelection) layoutWithDoubleClick(gtx layout.Context,
 }
 
 func (s *textEditorParagraphSelection) layoutWithDoubleClickAtTextSize(gtx layout.Context, editor *widget.Editor, content layout.Widget, onDoubleClick func(int) bool, textSize unit.Sp) layout.Dimensions {
+	return s.layoutWithDoubleClickAtTextSizeAndPointer(gtx, editor, content, onDoubleClick, textSize, nil, nil)
+}
+
+func (s *textEditorParagraphSelection) layoutWithDoubleClickAtTextSizeAndPointer(gtx layout.Context, editor *widget.Editor, content layout.Widget, onDoubleClick func(int) bool, textSize unit.Sp, pointerTag event.Tag, onPointerEvent func(layout.Context, pointer.Event)) layout.Dimensions {
 	s.paragraphSelected = false
 	s.clicked = false
 	s.clickedOnText = false
@@ -38,6 +43,15 @@ func (s *textEditorParagraphSelection) layoutWithDoubleClickAtTextSize(gtx layou
 	dims := content(gtx)
 	area := clip.Rect(image.Rectangle{Max: dims.Size}).Push(gtx.Ops)
 	s.click.Add(gtx.Ops)
+	if pointerTag != nil && onPointerEvent != nil {
+		event.Op(gtx.Ops, pointerTag)
+		kinds := pointer.Press | pointer.Enter | pointer.Leave | pointer.Move
+		for value, ok := gtx.Event(pointer.Filter{Target: pointerTag, Kinds: kinds}); ok; value, ok = gtx.Event(pointer.Filter{Target: pointerTag, Kinds: kinds}) {
+			if press, ok := value.(pointer.Event); ok {
+				onPointerEvent(gtx, press)
+			}
+		}
+	}
 	area.Pop()
 	pass.Pop()
 	for ev, ok := s.click.Update(gtx.Source); ok; ev, ok = s.click.Update(gtx.Source) {

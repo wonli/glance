@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"gioui.org/io/key"
+	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -132,6 +133,9 @@ func wordListMarkerWidthDP(paragraph document.WordParagraph) int {
 
 func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParagraph, run document.WordTextRun) layout.Dimensions {
 	state := a.documentSessionState
+	if run.HyperlinkTarget != "" {
+		observeWordHyperlinkShortcutKeys(gtx, state)
+	}
 	editor := wordRunEditor(state, run)
 	selectionStart, selectionEnd, selectedText := wordPageTextSelectionRange(state.wordPageTextSelection, wordlayout.TextFragment{RunID: run.ID, RuneEnd: editor.Len()})
 	if selectedText {
@@ -221,9 +225,31 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 			selection = new(textEditorParagraphSelection)
 			state.wordParagraphSelections[paragraph.ID] = selection
 		}
-		dims := selection.layoutWithDoubleClickAtTextSize(gtx, editor, func(gtx layout.Context) layout.Dimensions { return layoutWordRunEditor(gtx, a, style, run.ID) }, func(caret int) bool {
+		content := func(gtx layout.Context) layout.Dimensions {
+			dimensions := layoutWordRunEditor(gtx, a, style, run.ID)
+			if run.HyperlinkTarget != "" && state.wordHyperlinkShortcutDown {
+				cursorArea := clip.Rect{Max: dimensions.Size}.Push(gtx.Ops)
+				pointer.CursorPointer.Add(gtx.Ops)
+				cursorArea.Pop()
+			}
+			return dimensions
+		}
+		onDoubleClick := func(caret int) bool {
 			return a.selectWordPageTextSegment(gtx, state, run.ID, caret)
-		}, label.TextSize)
+		}
+		onHyperlinkPointerEvent := func(gtx layout.Context, event pointer.Event) {
+			observeWordHyperlinkPointer(gtx, state, event)
+			if run.HyperlinkTarget == "" || event.Kind != pointer.Press || event.Source != pointer.Mouse || event.Buttons&pointer.ButtonPrimary == 0 || !wordHyperlinkActivationShortcut(event.Modifiers) {
+				return
+			}
+			a.activateWordHyperlink(gtx, state, run.HyperlinkTarget)
+		}
+		var dims layout.Dimensions
+		if run.HyperlinkTarget == "" {
+			dims = selection.layoutWithDoubleClickAtTextSize(gtx, editor, content, onDoubleClick, label.TextSize)
+		} else {
+			dims = selection.layoutWithDoubleClickAtTextSizeAndPointer(gtx, editor, content, onDoubleClick, label.TextSize, wordHyperlinkClickTagForRun(state, run.ID, run.HyperlinkTarget), onHyperlinkPointerEvent)
+		}
 		if selection.clicked && selection.clickedOnText {
 			state.wordCanvasContentClickHandled = true
 		} else if selection.clicked && !state.wordCanvasContentClickHandled {

@@ -54,6 +54,9 @@ type documentSessionState struct {
 	wordPageVisibleInteractionsNext     []wordVisiblePageInteraction
 	wordPageInteractionTags             map[int]*wordPageInteractionTag
 	wordPageInteractionTagsNext         map[int]*wordPageInteractionTag
+	wordHyperlinkShortcutDown           bool
+	wordHyperlinkRunTargets             map[string]string
+	wordHyperlinkRunTargetsRevision     uint64
 	wordPageSelectionDrag               *wordPageSelectionDrag
 	wordPageTextSelection               *wordPageTextSelection
 	wordPagePendingScrollRunID          string
@@ -148,6 +151,7 @@ type documentSessionState struct {
 	wordSelectionEditIntent             *wordSelectionEditIntent
 	wordSelectionInputDraft             *wordSelectionInputDraft
 	wordParagraphSelections             map[string]*textEditorParagraphSelection
+	wordHyperlinkClickTags              map[string]*wordHyperlinkClickTag
 	wordParagraphSplitIntent            *wordParagraphSplitIntent
 	wordParagraphJoinIntent             *wordParagraphJoinIntent
 	wordPageBreakIntent                 *wordPageBreakIntent

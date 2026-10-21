@@ -27,15 +27,16 @@ import (
 var preferredSystemTypeface = font.Typeface(fontfallback.PreferredTypeface())
 
 type App struct {
-	wordPointer         wordPointerState
-	nativePinch         *nativePinchState
-	nativePinchMonitor  nativePinchMonitor
-	pinchGestureSession *documentSessionState
-	pinchFrameSession   *documentSessionState
-	pinchFrameSize      image.Point
-	pinchFrameMetric    unit.Metric
-	pinchRemainder      float64
-	fontPicker          fontPickerState
+	wordPointer           wordPointerState
+	wordHyperlinkLauncher func(string) error
+	nativePinch           *nativePinchState
+	nativePinchMonitor    nativePinchMonitor
+	pinchGestureSession   *documentSessionState
+	pinchFrameSession     *documentSessionState
+	pinchFrameSize        image.Point
+	pinchFrameMetric      unit.Metric
+	pinchRemainder        float64
+	fontPicker            fontPickerState
 	*documentSessionState
 	*desktopRuntime
 	windowID             uint64

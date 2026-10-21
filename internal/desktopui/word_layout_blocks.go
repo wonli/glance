@@ -16,16 +16,32 @@ import (
 
 func (a *App) layoutWordList(gtx layout.Context, state *documentSessionState, blocks []document.WordBlock) layout.Dimensions {
 	state.wordListState.List.Axis = layout.Vertical
+	position := &state.wordListState.Position
+	if position.First > len(blocks) {
+		// Structural edits may leave the old scroll position past the append row.
+		position.First = len(blocks)
+		position.Offset = 0
+		position.OffsetLast = 0
+		position.Count = 0
+	}
 	return state.wordListState.List.Layout(gtx, len(blocks)+1, func(gtx layout.Context, index int) layout.Dimensions {
-		if index == len(blocks) {
-			return a.layoutWordAppendTarget(gtx, state)
-		}
-		if blocks[index].Kind == document.WordParagraphBlock && blocks[index].Paragraph != nil {
-			border, hasBorder := wordContinuousParagraphBottomBorder(blocks, index)
-			return a.layoutWordParagraphWithBottomBorder(gtx, *blocks[index].Paragraph, false, border, hasBorder)
-		}
-		return a.layoutWordBlock(gtx, blocks[index])
+		return a.layoutWordListItem(gtx, state, blocks, index)
 	})
+}
+
+func (a *App) layoutWordListItem(gtx layout.Context, state *documentSessionState, blocks []document.WordBlock, index int) layout.Dimensions {
+	if index < 0 || index > len(blocks) {
+		// Keep a stale List callback index from escaping this document snapshot.
+		return layout.Dimensions{}
+	}
+	if index == len(blocks) {
+		return a.layoutWordAppendTarget(gtx, state)
+	}
+	if blocks[index].Kind == document.WordParagraphBlock && blocks[index].Paragraph != nil {
+		border, hasBorder := wordContinuousParagraphBottomBorder(blocks, index)
+		return a.layoutWordParagraphWithBottomBorder(gtx, *blocks[index].Paragraph, false, border, hasBorder)
+	}
+	return a.layoutWordBlock(gtx, blocks[index])
 }
 
 func wordContinuousParagraphBottomBorder(blocks []document.WordBlock, index int) (document.WordParagraphBorder, bool) {

@@ -148,6 +148,10 @@ func (a *App) finishWordPageInteractions(state *documentSessionState) {
 }
 
 func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessionState, page wordlayout.PageScene, pageIndex int, pageRect image.Rectangle, pageScale float64, horizontalOverflow int) {
+	hasHyperlinks := wordPageHasHyperlinks(state, page)
+	if hasHyperlinks {
+		observeWordHyperlinkShortcutKeys(gtx, state)
+	}
 	tag := state.wordPageInteractionTags[pageIndex]
 	if tag == nil {
 		tag = state.wordPageInteractionTagsNext[pageIndex]
@@ -164,10 +168,20 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 		interaction = previous
 	}
 
-	for eventValue, ok := gtx.Event(pointer.Filter{Target: tag, Kinds: pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel}); ok; eventValue, ok = gtx.Event(pointer.Filter{Target: tag, Kinds: pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel}) {
+	kinds := pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel
+	if hasHyperlinks {
+		kinds |= pointer.Move | pointer.Enter | pointer.Leave
+	}
+	for eventValue, ok := gtx.Event(pointer.Filter{Target: tag, Kinds: kinds}); ok; eventValue, ok = gtx.Event(pointer.Filter{Target: tag, Kinds: kinds}) {
 		event, ok := eventValue.(pointer.Event)
 		if !ok {
 			continue
+		}
+		if hasHyperlinks && (event.Kind == pointer.Move || event.Kind == pointer.Enter || event.Kind == pointer.Leave || event.Kind == pointer.Press) {
+			observeWordHyperlinkPointer(gtx, state, event)
+			if event.Kind != pointer.Press {
+				continue
+			}
 		}
 		// Convert tag-local pixels (or the Windows native drag snapshot) to
 		// viewport pixels before inverting the page paint transform.
@@ -241,6 +255,14 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 				state.selectedWordParagraphID = ""
 				clearWordImageSelection(state)
 				continue
+			}
+			if event.Source == pointer.Mouse && wordHyperlinkActivationShortcut(event.Modifiers) {
+				if target := wordHyperlinkTargetForRun(state, hit.runID); target != "" {
+					tag.lastTextPressParagraphID = ""
+					state.wordPageSelectionDrag = nil
+					a.activateWordHyperlink(gtx, state, target)
+					continue
+				}
 			}
 
 			distance := viewportPoint.Sub(tag.lastTextPressPosition)
@@ -330,6 +352,9 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 	pageClip := clip.Rect{Max: pageRect.Size()}.Push(gtx.Ops)
 	event.Op(gtx.Ops, tag)
 	pointer.CursorText.Add(gtx.Ops)
+	if hasHyperlinks && state.wordHyperlinkShortcutDown {
+		addWordPageHyperlinkCursorOps(gtx, state, page, pageScale)
+	}
 	pageClip.Pop()
 	pageOffset.Pop()
 }

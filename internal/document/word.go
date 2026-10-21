@@ -54,6 +54,7 @@ type WordBlock struct {
 // WordParagraph preserves the ordered inline contents of one paragraph.
 type WordParagraph struct {
 	ID             string
+	BookmarkNames  []string
 	PreviewWarning string
 	Style          string
 	Alignment      WordAlignment
@@ -122,12 +123,13 @@ type WordFieldCode struct {
 
 // WordTextRun exposes supported text and the formatting applied by its source run.
 type WordTextRun struct {
-	ID             string
-	Text           string
-	Style          WordTextStyle
-	StyleSet       WordTextStyleMask
-	CharacterStyle string
-	Editable       bool
+	ID              string
+	Text            string
+	HyperlinkTarget string
+	Style           WordTextStyle
+	StyleSet        WordTextStyleMask
+	CharacterStyle  string
+	Editable        bool
 }
 
 // WordTextStyle is the format-neutral text style subset rendered by the UI.

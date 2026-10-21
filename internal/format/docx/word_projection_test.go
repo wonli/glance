@@ -140,6 +140,80 @@ func TestDOCXProjectionPreservesBodyAndTableInlineOrderAndStyles(t *testing.T) {
 	}
 }
 
+func TestDOCXProjectionPreservesHyperlinkTargetsAndFieldEditability(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<w:body>
+ <w:p><w:bookmarkStart w:id="1" w:name="SectionOne"/><w:r><w:t>before </w:t></w:r><w:hyperlink r:id="rIdExternal"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>external link</w:t></w:r></w:hyperlink><w:hyperlink w:anchor="SectionOne"><w:r><w:t>internal link</w:t></w:r></w:hyperlink><w:bookmarkEnd w:id="1"/></w:p>
+ <w:p><w:r><w:t>before field </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> HYPERLINK "https://field.example/path" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>field link</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> after field</w:t></w:r></w:p>
+ <w:p><w:r><w:t>before page </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>42</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> after page</w:t></w:r></w:p>
+ <w:p><w:fldSimple w:instr=' HYPERLINK "https://simple.example/path" '><w:r><w:t>simple field link</w:t></w:r></w:fldSimple></w:p>
+ <w:p><w:fldSimple w:instr=' HYPERLINK \l "SectionOne" '><w:r><w:t>bookmark field link</w:t></w:r></w:fldSimple></w:p>
+ <w:sectPr/>
+</w:body></w:document>`
+	relationships := `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.test/a?x=1&amp;y=two" TargetMode="External"/></Relationships>`
+	doc := projectionFixture(t, documentXML, relationships, nil)
+	blocks := requireWordContentReader(t, doc).WordBlocks()
+	if len(blocks) != 5 {
+		t.Fatalf("projected block count = %d; want 5", len(blocks))
+	}
+
+	findRun := func(paragraph *document.WordParagraph, value string) *document.WordTextRun {
+		t.Helper()
+		for _, inline := range paragraph.Inlines {
+			if inline.Text != nil && inline.Text.Text == value {
+				return inline.Text
+			}
+		}
+		return nil
+	}
+	first := blocks[0].Paragraph
+	if first == nil || len(first.BookmarkNames) != 1 || first.BookmarkNames[0] != "SectionOne" {
+		t.Fatalf("bookmark names = %#v; want SectionOne", first)
+	}
+	for _, want := range []struct{ text, target string }{
+		{"external link", "https://example.test/a?x=1&y=two"},
+		{"internal link", "#SectionOne"},
+	} {
+		run := findRun(first, want.text)
+		if run == nil || !run.Editable || run.HyperlinkTarget != want.target {
+			t.Errorf("run %q = %#v; want editable hyperlink target %q", want.text, run, want.target)
+		}
+	}
+
+	fieldParagraph := blocks[1].Paragraph
+	for _, want := range []struct{ text, target string }{
+		{"before field ", ""},
+		{"field link", "https://field.example/path"},
+		{" after field", ""},
+	} {
+		run := findRun(fieldParagraph, want.text)
+		if run == nil || !run.Editable || run.HyperlinkTarget != want.target {
+			t.Errorf("complex field run %q = %#v; want editable target %q", want.text, run, want.target)
+		}
+	}
+
+	pageParagraph := blocks[2].Paragraph
+	if run := findRun(pageParagraph, "42"); run == nil || run.Editable {
+		t.Errorf("generic PAGE field result = %#v; want read-only", run)
+	}
+	for _, value := range []string{"before page ", " after page"} {
+		if run := findRun(pageParagraph, value); run == nil || !run.Editable {
+			t.Errorf("text outside PAGE field %q = %#v; want editable", value, run)
+		}
+	}
+	for _, want := range []struct {
+		block  int
+		text   string
+		target string
+	}{{3, "simple field link", "https://simple.example/path"}, {4, "bookmark field link", "#SectionOne"}} {
+		run := findRun(blocks[want.block].Paragraph, want.text)
+		if run == nil || !run.Editable || run.HyperlinkTarget != want.target {
+			t.Errorf("simple field run %q = %#v; want editable target %q", want.text, run, want.target)
+		}
+	}
+}
+
 func TestDOCXProjectionResolvesImageBytesAndKeepsFloatingObjectsReadOnly(t *testing.T) {
 	doc, imageBytes := mixedContentProjectionFixture(t)
 	reader := requireWordContentReader(t, doc)

@@ -170,6 +170,24 @@ func TestWordFlowLayoutRendersWithStableVerticalListAndRibbon(t *testing.T) {
 	}
 }
 
+func TestWordListItemIgnoresIndexBeyondBlockSnapshot(t *testing.T) {
+	state := newDocumentSessionState("sample.docx")
+	app := &App{documentSessionState: state, theme: material.NewTheme()}
+	var ops op.Ops
+	gtx := layout.Context{
+		Ops:         &ops,
+		Constraints: layout.Constraints{Max: image.Pt(800, 600)},
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+	}
+	blocks := make([]document.WordBlock, 2997)
+
+	got := app.layoutWordListItem(gtx, state, blocks, 3004)
+
+	if got.Size != (image.Point{}) {
+		t.Fatalf("out-of-range Word list item dimensions = %v; want empty dimensions", got.Size)
+	}
+}
+
 func TestWordFlowLayoutRemainsResponsiveAtNarrowWidth(t *testing.T) {
 	word, err := docx.NewBlank()
 	if err != nil {

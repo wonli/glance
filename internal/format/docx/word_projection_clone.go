@@ -39,6 +39,7 @@ func cloneWordBlocks(blocks []document.WordBlock) []document.WordBlock {
 
 func cloneWordParagraph(paragraph document.WordParagraph) document.WordParagraph {
 	clone := paragraph
+	clone.BookmarkNames = append([]string(nil), paragraph.BookmarkNames...)
 	clone.Inlines = make([]document.WordInline, len(paragraph.Inlines))
 	for i, inline := range paragraph.Inlines {
 		clone.Inlines[i] = inline

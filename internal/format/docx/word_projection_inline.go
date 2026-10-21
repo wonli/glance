@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, paragraphNode, run *wordXMLNode, inlineIndex *int) {
+func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, paragraphNode, run *wordXMLNode, inlineIndex *int, hyperlinkTarget string, fieldText map[*wordXMLNode]wordFieldTextProjection) {
 	runProperties := firstChild(run, "rPr")
 	style := parseWordTextStyle(runProperties)
 	styleSet := parseWordTextStyleSet(runProperties)
@@ -18,9 +18,32 @@ func (p *wordProjector) appendRunInlines(paragraph *document.WordParagraph, para
 		case "rPr", "lastRenderedPageBreak":
 			continue
 		case "t":
-			text := &document.WordTextRun{ID: id, Text: child.text, Style: style, StyleSet: styleSet, CharacterStyle: characterStyle, Editable: true}
-			p.textTargets[id] = wordTextTarget{text: child, run: run, paragraph: paragraphNode, paragraphID: paragraph.ID}
+			target := hyperlinkTarget
+			editable := true
+			if field, inField := fieldText[child]; inField {
+				editable = field.editable
+				if field.hyperlinkTarget != "" {
+					target = field.hyperlinkTarget
+				}
+			}
+			if target != "" {
+				if styleSet&document.WordTextFontColorSet == 0 {
+					style.FontColor = "0563C1"
+					styleSet |= document.WordTextFontColorSet
+				}
+				if styleSet&document.WordTextUnderlineSet == 0 {
+					style.Underline = true
+					styleSet |= document.WordTextUnderlineSet
+				}
+			}
+			text := &document.WordTextRun{ID: id, Text: child.text, HyperlinkTarget: target, Style: style, StyleSet: styleSet, CharacterStyle: characterStyle, Editable: editable}
+			if editable {
+				p.textTargets[id] = wordTextTarget{text: child, run: run, paragraph: paragraphNode, paragraphID: paragraph.ID}
+			}
 			p.appendProjectedInline(paragraph, id, document.WordInline{Kind: document.WordTextInline, Text: text}, child, run)
+			if !editable {
+				delete(p.inlineTargets, id)
+			}
 			*inlineIndex++
 		case "drawing":
 			inline, projectedID := p.drawingInline(child, id, paragraph.ID)

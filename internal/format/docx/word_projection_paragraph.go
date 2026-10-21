@@ -35,34 +35,51 @@ func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordPar
 	}
 	inlineIndex := 0
 	p.paragraphInlines[id] = nil
+	fieldText := wordFieldTextProjections(node)
 	for _, child := range node.children {
 		switch child.name.Local {
-		case "pPr", "bookmarkStart", "bookmarkEnd", "proofErr", "commentRangeStart", "commentRangeEnd", "permStart", "permEnd", "lastRenderedPageBreak":
+		case "pPr", "bookmarkEnd", "proofErr", "commentRangeStart", "commentRangeEnd", "permStart", "permEnd", "lastRenderedPageBreak":
 			continue
+		case "bookmarkStart":
+			if name := attrValue(child, "name"); name != "" {
+				paragraph.BookmarkNames = append(paragraph.BookmarkNames, name)
+			}
 		case "r":
-			p.appendRunInlines(&paragraph, node, child, &inlineIndex)
+			p.appendRunInlines(&paragraph, node, child, &inlineIndex, "", fieldText)
 		case "ins":
 			for _, linked := range child.children {
 				if linked.name.Local == "r" {
-					p.appendRunInlines(&paragraph, node, linked, &inlineIndex)
+					p.appendRunInlines(&paragraph, node, linked, &inlineIndex, "", fieldText)
 				}
 			}
 		case "smartTag", "customXml":
 			for _, linked := range child.children {
 				if linked.name.Local == "r" {
-					p.appendRunInlines(&paragraph, node, linked, &inlineIndex)
+					p.appendRunInlines(&paragraph, node, linked, &inlineIndex, "", fieldText)
+				}
+			}
+		case "fldSimple":
+			target := wordHyperlinkFieldTarget(attrValue(child, "instr"))
+			for _, linked := range child.children {
+				if linked.name.Local == "r" {
+					p.appendRunInlines(&paragraph, node, linked, &inlineIndex, target, fieldText)
+				} else if !isWordRangeMarker(linked.name.Local) {
+					inlineID := fmt.Sprintf("%s.i%d", id, inlineIndex)
+					p.appendProjectedInline(&paragraph, inlineID, unsupportedInline(inlineID, "Unsupported simple field content: "+linked.name.Local), linked, nil)
+					inlineIndex++
 				}
 			}
 		case "del":
 			// In standard preview mode, deleted text is omitted.
 			continue
 		case "hyperlink":
+			target := p.wordHyperlinkTarget(child)
 			for _, linked := range child.children {
 				if isWordRangeMarker(linked.name.Local) {
 					continue
 				}
 				if linked.name.Local == "r" {
-					p.appendRunInlines(&paragraph, node, linked, &inlineIndex)
+					p.appendRunInlines(&paragraph, node, linked, &inlineIndex, target, fieldText)
 				} else {
 					inlineID := fmt.Sprintf("%s.i%d", id, inlineIndex)
 					p.appendProjectedInline(&paragraph, inlineID, unsupportedInline(inlineID, "Unsupported hyperlink content: "+linked.name.Local), linked, nil)
@@ -78,19 +95,18 @@ func (p *wordProjector) paragraph(node *wordXMLNode, id string) document.WordPar
 			inlineIndex++
 		}
 	}
-	fieldContent := containsNode(node, "fldChar") || containsNode(node, "instrText")
-	if fieldContent {
-		for index := range paragraph.Inlines {
-			text := paragraph.Inlines[index].Text
-			if text == nil {
-				continue
-			}
-			text.Editable = false
-			delete(p.textTargets, text.ID)
-			delete(p.inlineTargets, text.ID)
-		}
-	}
 	return paragraph
+}
+
+func (p *wordProjector) wordHyperlinkTarget(node *wordXMLNode) string {
+	if anchor := attrValue(node, "anchor"); anchor != "" {
+		return "#" + anchor
+	}
+	relationship := p.relationships[attrValue(node, "id")]
+	if relationship.hyperlink {
+		return relationship.target
+	}
+	return ""
 }
 
 func (p *wordProjector) paragraphList(node *wordXMLNode) (document.WordListKind, int, string) {

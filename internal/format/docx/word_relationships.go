@@ -17,6 +17,7 @@ type wordRelationship struct {
 	comments  bool
 	footnotes bool
 	endnotes  bool
+	hyperlink bool
 	external  bool
 }
 
@@ -52,8 +53,13 @@ func readDocumentRelationships(parts []part, partIndexes map[string]int) map[str
 			continue
 		}
 		external := strings.EqualFold(attrValue(node, "TargetMode"), "External")
+		resolvedTarget := resolveDocumentTarget(target)
+		hyperlink := strings.HasSuffix(relationType, "/hyperlink")
+		if external && hyperlink {
+			resolvedTarget = target
+		}
 		result[id] = wordRelationship{
-			target:    resolveDocumentTarget(target),
+			target:    resolvedTarget,
 			image:     strings.HasSuffix(relationType, "/image"),
 			numbering: strings.HasSuffix(relationType, "/numbering"),
 			styles:    strings.HasSuffix(relationType, "/styles"),
@@ -62,6 +68,7 @@ func readDocumentRelationships(parts []part, partIndexes map[string]int) map[str
 			comments:  strings.HasSuffix(relationType, "/comments"),
 			footnotes: strings.HasSuffix(relationType, "/footnotes"),
 			endnotes:  strings.HasSuffix(relationType, "/endnotes"),
+			hyperlink: hyperlink,
 			external:  external,
 		}
 	}
