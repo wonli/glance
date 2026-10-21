@@ -172,7 +172,7 @@ func TestAgentPermissionConfirmationModal_LayoutAndDecisions(t *testing.T) {
 	}
 }
 
-func TestAgentPermissionConfirmationModal_AlwaysAllowRemembersGrant(t *testing.T) {
+func TestAgentPermissionConfirmationModal_AllowsOnlyThisRequest(t *testing.T) {
 	app := newTestConfirmationApp(t)
 	card := stageTestConfirmation(app, application.ConfirmationInfo{
 		ConfirmationID: "conf-perm-2",
@@ -192,14 +192,14 @@ func TestAgentPermissionConfirmationModal_AlwaysAllowRemembersGrant(t *testing.T
 
 	app.layoutAgentConfirmationModal(gtx)
 
-	// Click 始终允许
-	card.alwaysAllow.Click()
+	// The only approval action applies to this request.
+	card.allowOnce.Click()
 	app.layoutAgentConfirmationModal(gtx)
 	if app.activeAgentConfirmation() != nil {
-		t.Fatal("alwaysAllow should dismiss active modal")
+		t.Fatal("allowOnce should dismiss active modal")
 	}
-	if !app.agentUI.permissionGrants["folder.read"] {
-		t.Fatal("expected permission to be remembered in permissionGrants")
+	if card.info.Status != application.ConfirmationRunning {
+		t.Fatalf("expected one-request approval status %v, got %v", application.ConfirmationRunning, card.info.Status)
 	}
 }
 

@@ -16,6 +16,25 @@ func TestSystemPromptIncludesViewContext(t *testing.T) {
 	}
 }
 
+func TestSystemPromptExplainsLocalAccessAuthorization(t *testing.T) {
+	got, err := System(SystemData{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"local.request_directory_access",
+		"允许本次",
+		"scope_id",
+		"拒绝、取消目录选择",
+		"不要再次请求授权",
+		"不要通过 shell",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("system prompt omitted local-access rule %q", want)
+		}
+	}
+}
+
 func TestConversationTitlePromptTreatsUserMessageAsLiteralData(t *testing.T) {
 	message := "总结 {{.ViewContext}} 并检查 A1"
 	got, err := ConversationTitle(TitleData{UserMessage: message})

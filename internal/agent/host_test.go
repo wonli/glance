@@ -108,6 +108,93 @@ func TestAgentHostUsesInProcessMCPWithViewDefaults(t *testing.T) {
 	}
 }
 
+func TestAgentHostTurnMetadataIsTrustedAndReleased(t *testing.T) {
+	ctx := context.Background()
+	runtime, err := application.NewRuntime(ctx, application.RuntimeOptions{})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(ctx) })
+	metadataSeen := make(chan application.CapabilityContext, 1)
+	inputSchema := json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)
+	if err := runtime.Catalog().Register(application.CapabilityRegistration{
+		Descriptor: application.CapabilityDescriptor{
+			ID: "test.metadata.capture", Name: "metadata capture", Description: "capture trusted turn metadata",
+			Category: application.CapabilityQuery, Risk: application.RiskLow,
+			InputSchema: inputSchema, OutputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":true}`),
+		},
+		Handler: func(_ context.Context, capability application.CapabilityContext, _ json.RawMessage) (application.CapabilityResult, error) {
+			metadataSeen <- capability
+			return application.CapabilityResult{Data: json.RawMessage(`{}`)}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register metadata capability: %v", err)
+	}
+	client, err := ConnectMCP(ctx, runtime)
+	if err != nil {
+		t.Fatalf("ConnectMCP: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	userRequest := strings.Repeat("请总结本地工作🙂", 40)
+	ended := make(chan string, 2)
+	var endedMu sync.Mutex
+	var endedIDs []string
+	providerModel := &scriptedProvider{t: t, steps: []func(provider.ModelRequest) []provider.ModelEvent{
+		func(provider.ModelRequest) []provider.ModelEvent { return nil },
+		func(provider.ModelRequest) []provider.ModelEvent {
+			return []provider.ModelEvent{{ToolCallDelta: &provider.ToolCallDelta{
+				Index: 0, ID: "capture-meta", Type: "function", Name: "test.metadata.capture", ArgumentsDelta: `{}`,
+			}}}
+		},
+		func(provider.ModelRequest) []provider.ModelEvent {
+			return []provider.ModelEvent{{TextDelta: "完成。", Done: true}}
+		},
+	}, stepErrors: []error{errors.New("simulated interrupted model stream"), nil, nil}}
+	host, err := NewHost(ctx, providerModel, client.Session, HostOptions{
+		Model: "metadata-test",
+		OnTurnEnded: func(turnID string) {
+			ended <- turnID
+			endedMu.Lock()
+			endedIDs = append(endedIDs, turnID)
+			endedMu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewHost: %v", err)
+	}
+	t.Cleanup(host.Close)
+	view := application.ViewContext{WindowID: 91}
+	if err := host.Send(ctx, "metadata-turn", userRequest, view); err == nil {
+		t.Fatal("Send unexpectedly succeeded despite the simulated model interruption")
+	}
+	if err := host.ResumeConversation(ctx, "metadata-turn", view); err != nil {
+		t.Fatalf("ResumeConversation: %v", err)
+	}
+	select {
+	case capability := <-metadataSeen:
+		if capability.AgentTurnID == "" || capability.AgentWindowID != view.WindowID {
+			t.Fatalf("MCP capability metadata = turn %q window %d; want a turn ID and window %d", capability.AgentTurnID, capability.AgentWindowID, view.WindowID)
+		}
+		wantExcerpt := string([]rune(userRequest)[:240])
+		if capability.UserRequestExcerpt != wantExcerpt {
+			t.Fatalf("user request excerpt rune length=%d value=%q; want first 240 runes %q", len([]rune(capability.UserRequestExcerpt)), capability.UserRequestExcerpt, wantExcerpt)
+		}
+		endedMu.Lock()
+		defer endedMu.Unlock()
+		if len(endedIDs) != 2 || endedIDs[0] == endedIDs[1] || capability.AgentTurnID != endedIDs[1] {
+			t.Fatalf("ended turn IDs=%v and tool metadata turn=%q; want two distinct IDs and the resumed turn", endedIDs, capability.AgentTurnID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("MCP capability did not receive the resumed turn metadata")
+	}
+	select {
+	case <-ended:
+	default:
+		t.Fatal("OnTurnEnded was not called for the failed and resumed turns")
+	}
+}
+
 func TestAgentHostRejectsWriteWhenCapturedViewRevisionBecomesStale(t *testing.T) {
 	ctx := context.Background()
 	runtime, err := application.NewRuntime(ctx, application.RuntimeOptions{})

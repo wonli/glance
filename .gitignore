@@ -10,6 +10,7 @@ config.yaml
 trashDir
 *.csv
 go.work*
+my-video/**
 
 .superpowers/sdd/
 /artifacts/render-run/

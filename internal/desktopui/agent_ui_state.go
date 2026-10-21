@@ -71,12 +71,11 @@ type agentModelLookupState struct {
 }
 
 type agentConfirmationCard struct {
-	info        application.ConfirmationInfo
-	approve     widget.Clickable
-	reject      widget.Clickable
-	alwaysAllow widget.Clickable
-	allowOnce   widget.Clickable
-	scrim       widget.Clickable
+	info      application.ConfirmationInfo
+	approve   widget.Clickable
+	reject    widget.Clickable
+	allowOnce widget.Clickable
+	scrim     widget.Clickable
 }
 
 type agentChatGroupHeightEntry struct {
@@ -119,7 +118,7 @@ type agentUIState struct {
 	confirmationList     widget.List
 	confirmations        map[string]*agentConfirmationCard
 	confirmationOrder    []string
-	permissionGrants     map[string]bool
+	localAccess          agentLocalAccessUIState
 
 	chatInput                        widget.Editor
 	chatList                         widget.List
@@ -186,6 +185,7 @@ func newAgentUIState() agentUIState {
 		applicationEvents:                make(chan application.Event, 128),
 		confirmationList:                 widget.List{List: layout.List{Axis: layout.Vertical}},
 		confirmations:                    make(map[string]*agentConfirmationCard),
+		localAccess:                      newAgentLocalAccessUIState(),
 		chatEvents:                       make(chan agent.AgentEvent, 512),
 		conversationHistoryButtons:       make(map[agent.ConversationID]*widget.Clickable),
 		conversationHistoryDeleteButtons: make(map[agent.ConversationID]*widget.Clickable),

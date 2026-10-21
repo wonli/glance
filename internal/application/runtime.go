@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"glance/internal/localaccess"
 	"glance/internal/workspace"
 )
 
@@ -79,9 +80,10 @@ type FormatFactory interface {
 }
 
 type RuntimeOptions struct {
-	WorkspaceDBPath string
-	Factories       []FormatFactory
-	PrintService    PrintService
+	WorkspaceDBPath   string
+	Factories         []FormatFactory
+	PrintService      PrintService
+	LocalAccessBroker *localaccess.Broker
 }
 
 type DocumentInfo struct {
@@ -111,24 +113,25 @@ type openingDocument struct {
 // Runtime owns live document adapters and their stable session identities.
 // Gio window state remains outside this package.
 type Runtime struct {
-	mu               sync.Mutex
-	closed           bool
-	catalog          *Catalog
-	events           *EventBus
-	commands         *CommandBus
-	confirmations    *confirmationService
-	documentPlans    *documentPlanService
-	workspaceDBPath  string
-	printService     PrintService
-	workspaceMu      sync.Mutex
-	workspaceStore   *workspace.Store
-	factories        map[Format]FormatFactory
-	sessions         map[string]*runtimeSession
-	paths            map[string]string
-	pathReservations map[string]string
-	opening          map[string]*openingDocument
-	viewHandlers     map[uint64]viewIntentRegistration
-	nextViewHandler  uint64
+	mu                sync.Mutex
+	closed            bool
+	catalog           *Catalog
+	events            *EventBus
+	commands          *CommandBus
+	confirmations     *confirmationService
+	documentPlans     *documentPlanService
+	workspaceDBPath   string
+	printService      PrintService
+	localAccessBroker *localaccess.Broker
+	workspaceMu       sync.Mutex
+	workspaceStore    *workspace.Store
+	factories         map[Format]FormatFactory
+	sessions          map[string]*runtimeSession
+	paths             map[string]string
+	pathReservations  map[string]string
+	opening           map[string]*openingDocument
+	viewHandlers      map[uint64]viewIntentRegistration
+	nextViewHandler   uint64
 }
 
 // Queries returns the read-only query facade for live Runtime sessions.
@@ -143,14 +146,15 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		factories = defaultFormatFactories()
 	}
 	runtime := &Runtime{
-		workspaceDBPath:  options.WorkspaceDBPath,
-		printService:     options.PrintService,
-		factories:        make(map[Format]FormatFactory, len(factories)),
-		sessions:         make(map[string]*runtimeSession),
-		paths:            make(map[string]string),
-		pathReservations: make(map[string]string),
-		opening:          make(map[string]*openingDocument),
-		viewHandlers:     make(map[uint64]viewIntentRegistration),
+		workspaceDBPath:   options.WorkspaceDBPath,
+		printService:      options.PrintService,
+		localAccessBroker: options.LocalAccessBroker,
+		factories:         make(map[Format]FormatFactory, len(factories)),
+		sessions:          make(map[string]*runtimeSession),
+		paths:             make(map[string]string),
+		pathReservations:  make(map[string]string),
+		opening:           make(map[string]*openingDocument),
+		viewHandlers:      make(map[uint64]viewIntentRegistration),
 	}
 	runtime.catalog = NewCatalog()
 	runtime.events = newEventBus()
@@ -384,6 +388,9 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		return nil, err
 	}
 	if err := registerAgentWorkflowCapabilities(runtime.catalog); err != nil {
+		return nil, err
+	}
+	if err := registerLocalAccessCapabilities(runtime.catalog); err != nil {
 		return nil, err
 	}
 	if options.WorkspaceDBPath != "" {
@@ -993,6 +1000,9 @@ func (r *Runtime) Close(ctx context.Context) error {
 		sessions = append(sessions, session)
 	}
 	r.mu.Unlock()
+	if r.localAccessBroker != nil {
+		r.localAccessBroker.Close()
+	}
 	if r.confirmations != nil {
 		r.confirmations.close()
 	}
@@ -1025,6 +1035,15 @@ func (r *Runtime) Close(ctx context.Context) error {
 		r.events.close()
 	}
 	return closeErr
+}
+
+// ReleaseAgentTurn revokes the in-memory local directory scopes for one
+// built-in Agent request.
+func (r *Runtime) ReleaseAgentTurn(turnID string) {
+	if r == nil || r.localAccessBroker == nil {
+		return
+	}
+	r.localAccessBroker.ReleaseTurn(turnID)
 }
 
 func (r *Runtime) session(documentID string) (*runtimeSession, error) {

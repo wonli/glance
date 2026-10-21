@@ -207,28 +207,32 @@ func agentSidebarResumeButton(gtx layout.Context, app *App, button *widget.Click
 }
 
 var agentKnownToolNames = map[string]string{
-	"document.list":                "agent.tool.name.document_list",
-	"document.inspect":             "agent.tool.name.document_inspect",
-	"document.create":              "agent.tool.name.document_create",
-	"document.open":                "agent.tool.name.document_open",
-	"document.save":                "agent.tool.name.document_save",
-	"document.save_as":             "agent.tool.name.document_save_as",
-	"document.close":               "agent.tool.name.document_close",
-	"confirmation.get":             "agent.tool.name.confirmation_get",
-	"workbook.audit":               "agent.tool.name.workbook_audit",
-	"spreadsheet.cell.set":         "agent.tool.name.spreadsheet_cell_set",
-	"spreadsheet.range.copy":       "agent.tool.name.spreadsheet_range_copy",
-	"spreadsheet.range.clear":      "agent.tool.name.spreadsheet_range_clear",
-	"word.paragraph.append":        "agent.tool.name.word_paragraph_append",
-	"word.text_range.replace":      "agent.tool.name.word_text_range_replace",
-	"word.text_range.copy":         "agent.tool.name.word_text_range_copy",
-	"word.text_range.cut":          "agent.tool.name.word_text_range_cut",
-	"word.text.search":             "agent.tool.name.word_text_search",
-	"word.text.statistics":         "agent.tool.name.word_text_statistics",
-	"word.table.insert":            "agent.tool.name.word_table_insert",
-	"word.image.insert":            "agent.tool.name.word_image_insert",
-	"word.document.properties.get": "agent.tool.name.word_document_properties_get",
-	"word.document.properties.set": "agent.tool.name.word_document_properties_set",
+	"document.list":                  "agent.tool.name.document_list",
+	"document.inspect":               "agent.tool.name.document_inspect",
+	"document.create":                "agent.tool.name.document_create",
+	"document.open":                  "agent.tool.name.document_open",
+	"document.save":                  "agent.tool.name.document_save",
+	"document.save_as":               "agent.tool.name.document_save_as",
+	"document.close":                 "agent.tool.name.document_close",
+	"confirmation.get":               "agent.tool.name.confirmation_get",
+	"workbook.audit":                 "agent.tool.name.workbook_audit",
+	"spreadsheet.cell.set":           "agent.tool.name.spreadsheet_cell_set",
+	"spreadsheet.range.copy":         "agent.tool.name.spreadsheet_range_copy",
+	"spreadsheet.range.clear":        "agent.tool.name.spreadsheet_range_clear",
+	"word.paragraph.append":          "agent.tool.name.word_paragraph_append",
+	"word.text_range.replace":        "agent.tool.name.word_text_range_replace",
+	"word.text_range.copy":           "agent.tool.name.word_text_range_copy",
+	"word.text_range.cut":            "agent.tool.name.word_text_range_cut",
+	"word.text.search":               "agent.tool.name.word_text_search",
+	"word.text.statistics":           "agent.tool.name.word_text_statistics",
+	"word.table.insert":              "agent.tool.name.word_table_insert",
+	"word.image.insert":              "agent.tool.name.word_image_insert",
+	"word.document.properties.get":   "agent.tool.name.word_document_properties_get",
+	"word.document.properties.set":   "agent.tool.name.word_document_properties_set",
+	"local.request_directory_access": "agent.tool.name.local_request_directory_access",
+	"local.list_directory":           "agent.tool.name.local_list_directory",
+	"local.read_text_file":           "agent.tool.name.local_read_text_file",
+	"local.list_git_commits":         "agent.tool.name.local_list_git_commits",
 }
 
 func (a *App) agentToolDisplayName(name string) string {
@@ -315,6 +319,20 @@ func agentToolResultNeedsConfirmation(raw []byte) bool {
 }
 
 func agentToolResultSummaryReference(toolName string, raw []byte, isError bool) (i18n.Message, string) {
+	if strings.HasPrefix(toolName, "local.") && isError {
+		var payload struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(raw, &payload)
+		switch payload.Error {
+		case "directory_access_denied", "directory_selection_cancelled":
+			return i18n.Message{ID: "agent.tool.result.local_access_denied"}, ""
+		case "interactive_authorization_unavailable":
+			return i18n.Message{ID: "agent.tool.result.local_access_unavailable"}, ""
+		default:
+			return i18n.Message{ID: "agent.tool.result.local_access_failed"}, ""
+		}
+	}
 	if isError {
 		if agentToolResultNeedsConfirmation(raw) {
 			return i18n.Message{ID: "agent.tool.result.confirmation_required"}, ""
@@ -341,10 +359,22 @@ func agentToolResultSummaryReference(toolName string, raw []byte, isError bool) 
 			CellsScanned int    `json:"cells_scanned"`
 			Documents    []any  `json:"documents"`
 			SourcePath   string `json:"source_path"`
+			FolderName   string `json:"folder_name"`
+			Entries      []any  `json:"entries"`
+			RelativePath string `json:"relative_path"`
+			Commits      []any  `json:"commits"`
 		} `json:"data"`
 	}
 	if len(raw) > 0 && json.Unmarshal(raw, &payload) == nil {
 		switch toolName {
+		case "local.request_directory_access":
+			return i18n.Message{ID: "agent.tool.result.local_access_allowed", Args: i18n.Args{"Name": payload.Data.FolderName}}, ""
+		case "local.list_directory":
+			return i18n.Message{ID: "agent.tool.result.local_entries_listed", Args: i18n.Args{"Count": len(payload.Data.Entries)}}, ""
+		case "local.read_text_file":
+			return i18n.Message{ID: "agent.tool.result.local_file_read", Args: i18n.Args{"Path": payload.Data.RelativePath}}, ""
+		case "local.list_git_commits":
+			return i18n.Message{ID: "agent.tool.result.local_commits_listed", Args: i18n.Args{"Count": len(payload.Data.Commits)}}, ""
 		case "document.list":
 			if len(payload.Data.Documents) > 0 {
 				return i18n.Message{ID: "agent.tool.result.documents_found", Args: i18n.Args{"Count": len(payload.Data.Documents)}}, ""

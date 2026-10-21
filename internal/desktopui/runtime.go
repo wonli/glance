@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"glance/internal/agent"
@@ -17,6 +18,7 @@ import (
 	"glance/internal/agentsettings"
 	"glance/internal/application"
 	"glance/internal/fontdownload"
+	"glance/internal/localaccess"
 	"glance/internal/mcpserver"
 	"glance/internal/printservice"
 	"glance/internal/workspace"
@@ -31,6 +33,7 @@ type desktopRuntime struct {
 	fontProvider            fontdownload.Provider
 	applicationRuntime      *application.Runtime
 	applicationRuntimeErr   error
+	localAccessSeq          atomic.Uint64
 	nativePrinter           printservice.Printer
 	agentSettings           *agentsettings.Store
 	agentSettingsErr        error
@@ -41,6 +44,7 @@ type desktopRuntime struct {
 	agentMu                 sync.RWMutex
 	agentConfigMu           sync.Mutex
 	applicationEventCancel  func()
+	localAccessPickerLock   chan struct{}
 	mcpIPC                  *mcpserver.DesktopIPCServer
 	mcpIPCErr               error
 	mcpIPCOptions           mcpserver.DesktopIPCOptions
@@ -201,11 +205,13 @@ func newDesktopRuntimeWithPrinter(printer printservice.Printer) *desktopRuntime 
 		openingPaths:            make(map[string]chan struct{}),
 		windows:                 make(map[uint64]*App),
 		windowAttachmentOrder:   make(map[uint64]uint64),
+		localAccessPickerLock:   make(chan struct{}, 1),
 		nativePrinter:           printer,
 	}
 	runtime.agentSettings, runtime.agentSettingsErr = agentsettings.NewDefaultStore(agentsettings.SystemCredentialStore{})
 	applicationRuntime, err := application.NewRuntime(context.Background(), application.RuntimeOptions{
 		Factories: desktopApplicationFactories(runtime), PrintService: desktopPrintService{printer: printer},
+		LocalAccessBroker: localaccess.NewBroker(runtime),
 	})
 	runtime.applicationRuntime = applicationRuntime
 	runtime.applicationRuntimeErr = err
@@ -450,6 +456,7 @@ func (r *desktopRuntime) installAgentHost(ctx context.Context, saved agentsettin
 		}
 		newHost, err = agent.NewHost(ctx, modelProvider, newClient.Session, agent.HostOptions{
 			Model: saved.Model, ConversationStore: workspaceAgentConversationStore{runtime: r}, LazyTools: true,
+			OnTurnEnded: applicationRuntime.ReleaseAgentTurn,
 		})
 		if err != nil {
 			_ = newClient.Close()

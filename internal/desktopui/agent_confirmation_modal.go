@@ -48,8 +48,6 @@ var (
 	agentPermissionFolderPathFg = color.NRGBA{R: 116, G: 128, B: 145, A: 255} // #748091
 	agentPermissionBadgeFg      = color.NRGBA{R: 72, G: 101, B: 129, A: 255}  // #486581
 	agentPermissionRejectBdr    = color.NRGBA{R: 220, G: 225, B: 231, A: 255} // #DCE1E7
-	agentPermissionAlwaysBg     = color.NRGBA{R: 240, G: 243, B: 246, A: 255} // #F0F3F6
-	agentPermissionAlwaysFg     = color.NRGBA{R: 62, G: 74, B: 88, A: 255}    // #3E4A58
 	agentPermissionOnceBg       = color.NRGBA{R: 52, G: 59, B: 69, A: 255}    // #343B45
 	agentPermissionNoticeFg     = color.NRGBA{R: 122, G: 135, B: 151, A: 255} // #7A8797
 )
@@ -77,24 +75,10 @@ func isPermissionConfirmation(info application.ConfirmationInfo) bool {
 		strings.Contains(lowerID, "access")
 }
 
-func (a *App) resolveAgentPermissionConfirmation(card *agentConfirmationCard, approved bool, remember bool) {
-	if a == nil || card == nil || card.info.Status != application.ConfirmationPending {
-		return
-	}
-	if remember && approved {
-		if a.agentUI.permissionGrants == nil {
-			a.agentUI.permissionGrants = make(map[string]bool)
-		}
-		key := card.info.CapabilityID
-		if key == "" {
-			key = card.info.CapabilityName
-		}
-		a.agentUI.permissionGrants[key] = true
-	}
-	a.resolveAgentConfirmation(card, approved)
-}
-
 func (a *App) layoutAgentConfirmationModal(gtx layout.Context) layout.Dimensions {
+	if a.activeAgentLocalAccessConsent() != nil {
+		return a.layoutAgentLocalAccessModal(gtx)
+	}
 	card := a.activeAgentConfirmation()
 	if card == nil {
 		return layout.Dimensions{}
@@ -285,21 +269,17 @@ func (a *App) agentConfirmationActionLabel(info application.ConfirmationInfo) st
 // - 居中悬浮卡片 (560dp)
 // - 权限安全图标、标题、用途说明
 // - 授权范围（文件夹图标、名称、路径、只读标签）
-// - 决策按钮：拒绝、始终允许、仅允许本次
-// - 可撤销提示
+// - 决策按钮：拒绝、仅允许本次
+// - 当前操作结束后授权失效
 func (a *App) layoutAgentPermissionConfirmModal(gtx layout.Context, card *agentConfirmationCard) layout.Dimensions {
 	for card.scrim.Clicked(gtx) {
 	}
 	if card.reject.Clicked(gtx) {
-		a.resolveAgentPermissionConfirmation(card, false, false)
-		return layout.Dimensions{}
-	}
-	if card.alwaysAllow.Clicked(gtx) {
-		a.resolveAgentPermissionConfirmation(card, true, true)
+		a.resolveAgentConfirmation(card, false)
 		return layout.Dimensions{}
 	}
 	if card.allowOnce.Clicked(gtx) {
-		a.resolveAgentPermissionConfirmation(card, true, false)
+		a.resolveAgentConfirmation(card, true)
 		return layout.Dimensions{}
 	}
 
@@ -436,20 +416,13 @@ func (a *App) layoutAgentPermissionConfirmCard(gtx layout.Context, card *agentCo
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Dimensions{Size: image.Pt(0, gtx.Dp(20))}
 			}),
-			// 4. 权限决策按钮 (3 等宽列)
+			// 4. 权限决策按钮 (2 等宽列)
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				btnHeight := unit.Dp(40)
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return layoutModalActionButton(gtx, a.theme, &card.reject, a.textID("agent.confirmation.action.reject"), 0, btnHeight,
 							color.NRGBA{R: 255, G: 255, B: 255, A: 255}, agentPermissionRejectBdr, agentLightweightRejectFg, "")
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(10)), 0)}
-					}),
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return layoutModalActionButton(gtx, a.theme, &card.alwaysAllow, a.textID("agent.confirmation.action.always_allow"), 0, btnHeight,
-							agentPermissionAlwaysBg, agentPermissionAlwaysBg, agentPermissionAlwaysFg, "")
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(10)), 0)}
@@ -467,7 +440,7 @@ func (a *App) layoutAgentPermissionConfirmCard(gtx layout.Context, card *agentCo
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := homeLabelStyle(a.theme, a.textID("agent.confirmation.permission.revoke_notice"), unit.Sp(11), agentPermissionNoticeFg, font.Normal)
+					lbl := homeLabelStyle(a.theme, a.textID("agent.confirmation.permission.session_notice"), unit.Sp(11), agentPermissionNoticeFg, font.Normal)
 					return lbl.Layout(gtx)
 				})
 			}),

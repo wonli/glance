@@ -95,10 +95,9 @@ func (a *App) sendAgentChatMessage() {
 		if strings.TrimSpace(a.agentUI.chatInput.Text()) == a.textID("common.action.continue") {
 			a.agentUI.chatInput.SetText("")
 			a.resumeAgentChatConversation()
-		} else {
-			a.clearAgentChatStatus()
+			return
 		}
-		return
+		a.clearAgentChatStatus()
 	}
 	message := strings.TrimSpace(a.agentUI.chatInput.Text())
 	if message == "" || a.agentUI.conversationBusy {

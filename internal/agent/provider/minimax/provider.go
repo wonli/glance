@@ -111,7 +111,10 @@ func (c *Client) Stream(ctx context.Context, request provider.ModelRequest, emit
 	}
 	defer func() { c.remove(request.RequestID); cancel() }()
 
-	body := minimaxChatRequest{Model: model, Messages: minimaxMessages(request.Messages), Tools: request.Tools, Stream: true, Temperature: request.Temperature}
+	body := minimaxChatRequest{
+		Model: model, Messages: minimaxMessages(request.Messages), Tools: request.Tools,
+		Stream: true, Temperature: request.Temperature, ReasoningSplit: true,
+	}
 	body.StreamOptions.IncludeUsage = true
 	handler := &chatRequest{url: minimaxChatURL(c.config.BaseURL), apiKey: c.config.APIKey, body: body, emit: emit, cancel: cancel}
 	handler.OnEvent(handler.receive)
@@ -178,12 +181,13 @@ func (a *modelsRequest) Headers() apic.Params        { return minimaxHeaders(a.a
 func (a *modelsRequest) Debug() bool                 { return false }
 
 type minimaxChatRequest struct {
-	Model         string               `json:"model"`
-	Messages      []minimaxMessage     `json:"messages"`
-	Tools         []provider.ModelTool `json:"tools,omitempty"`
-	Stream        bool                 `json:"stream"`
-	Temperature   *float64             `json:"temperature,omitempty"`
-	StreamOptions struct {
+	Model          string               `json:"model"`
+	Messages       []minimaxMessage     `json:"messages"`
+	Tools          []provider.ModelTool `json:"tools,omitempty"`
+	Stream         bool                 `json:"stream"`
+	Temperature    *float64             `json:"temperature,omitempty"`
+	ReasoningSplit bool                 `json:"reasoning_split"`
+	StreamOptions  struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
 }

@@ -54,6 +54,41 @@ func TestAgentSidebarReasoningUsesCompactDisclosure(t *testing.T) {
 	}
 }
 
+func TestAgentToolLocalAccessNamesAndSummaries(t *testing.T) {
+	a := New(nil, "")
+	for _, tool := range []struct {
+		name     string
+		nameID   string
+		result   string
+		resultID string
+		contains string
+	}{
+		{"local.request_directory_access", "agent.tool.name.local_request_directory_access", `{"data":{"scope_id":"opaque-scope","folder_name":"repo"}}`, "agent.tool.result.local_access_allowed", "repo"},
+		{"local.list_directory", "agent.tool.name.local_list_directory", `{"data":{"entries":[{},{}]}}`, "agent.tool.result.local_entries_listed", "2"},
+		{"local.read_text_file", "agent.tool.name.local_read_text_file", `{"data":{"relative_path":"docs/notes.md","content":"PRIVATE_FILE_TEXT"}}`, "agent.tool.result.local_file_read", "docs/notes.md"},
+		{"local.list_git_commits", "agent.tool.name.local_list_git_commits", `{"data":{"commits":[{},{}]}}`, "agent.tool.result.local_commits_listed", "2"},
+	} {
+		if got := a.agentToolDisplayName(tool.name); got == tool.name || got == tool.nameID {
+			t.Errorf("tool %q display name was not localized: %q", tool.name, got)
+		}
+		ref, summary := agentToolResultSummaryReference(tool.name, []byte(tool.result), false)
+		if ref.ID != tool.resultID || summary != "" {
+			t.Errorf("tool %q summary reference=%+v summary=%q, want %q", tool.name, ref, summary, tool.resultID)
+		}
+		rendered := a.text(ref)
+		if !strings.Contains(rendered, tool.contains) {
+			t.Errorf("tool %q rendered summary %q does not contain %q", tool.name, rendered, tool.contains)
+		}
+		if strings.Contains(rendered, "PRIVATE_FILE_TEXT") {
+			t.Errorf("tool %q summary exposed local file content: %q", tool.name, rendered)
+		}
+	}
+	ref, summary := agentToolResultSummaryReference("local.request_directory_access", []byte(`{"error":"directory_access_denied","message":"directory access was denied"}`), true)
+	if ref.ID != "agent.tool.result.local_access_denied" || summary != "" {
+		t.Fatalf("denied local access summary = %+v / %q", ref, summary)
+	}
+}
+
 func TestAgentSidebarUnifiedProcessEntryFoldsReasoningAndToolsBeforeEachAnswer(t *testing.T) {
 	a := New(nil, "")
 	reasoning := newAgentReasoningLine("已阅读当前文档，归纳出品牌、渠道与复盘三个核心目标。", true)

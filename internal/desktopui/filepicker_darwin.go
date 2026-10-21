@@ -4,6 +4,7 @@ package desktopui
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os/exec"
 	"strings"
@@ -30,11 +31,18 @@ POSIX path of pickedFile`
 }
 
 func chooseOfficeFolder(labels filePickerLabels) (string, error) {
-	cmd := exec.Command("osascript", "-e", `set pickedFolder to choose folder with prompt `+appleScriptString(labels.OpenFolder)+"\n"+`POSIX path of pickedFolder`)
+	return chooseOfficeFolderContext(context.Background(), labels)
+}
+
+func chooseOfficeFolderContext(ctx context.Context, labels filePickerLabels) (string, error) {
+	cmd := exec.CommandContext(ctx, "osascript", "-e", `set pickedFolder to choose folder with prompt `+appleScriptString(labels.OpenFolder)+"\n"+`POSIX path of pickedFolder`)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		if strings.Contains(stderr.String(), "User canceled") {
 			return "", nil
 		}

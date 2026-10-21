@@ -8,10 +8,13 @@ import (
 	"io"
 	"net"
 	"sort"
+	"strconv"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"glance/internal/application"
 	"glance/internal/jsonschema"
+	"glance/internal/localaccess"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -189,9 +192,11 @@ func (s *Server) toolHandler(descriptor application.CapabilityDescriptor) mcp.To
 		if sessionID != "" {
 			requestID = sessionID + "/" + requestID
 		}
+		turnID, windowID, userRequestExcerpt := trustedAgentMetadata(s.operatorKind, request.Params.Meta)
 		result, err := s.runtime.InvokeCapability(ctx, application.CapabilityRequest{
 			RequestID: requestID, IdempotencyKey: idempotencyKey, DocumentID: documentID,
 			CapabilityID: descriptor.ID, ExpectedRevision: expectedRevision,
+			AgentTurnID: turnID, AgentWindowID: windowID, UserRequestExcerpt: userRequestExcerpt,
 			Operator: application.Operator{ID: clientID, Kind: s.operatorKind},
 			View:     view, Arguments: arguments,
 		})
@@ -210,6 +215,46 @@ func (s *Server) toolHandler(descriptor application.CapabilityDescriptor) mcp.To
 			Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}, StructuredContent: structured,
 		}, nil
 	}
+}
+
+func trustedAgentMetadata(kind application.OperatorKind, metadata mcp.Meta) (string, uint64, string) {
+	if kind != application.OperatorBuiltInAgent || metadata == nil {
+		return "", 0, ""
+	}
+	turnID, _ := metadata[application.CapabilityMetaAgentTurnID].(string)
+	requestExcerpt, _ := metadata[application.CapabilityMetaUserRequestExcerpt].(string)
+	if utf8.RuneCountInString(requestExcerpt) > 240 {
+		runes := []rune(requestExcerpt)
+		requestExcerpt = string(runes[:240])
+	}
+	return turnID, metadataWindowID(metadata[application.CapabilityMetaAgentWindowID]), requestExcerpt
+}
+
+func metadataWindowID(value any) uint64 {
+	switch number := value.(type) {
+	case uint64:
+		return number
+	case uint:
+		return uint64(number)
+	case int:
+		if number >= 0 {
+			return uint64(number)
+		}
+	case int64:
+		if number >= 0 {
+			return uint64(number)
+		}
+	case float64:
+		if number >= 0 && number <= float64(^uint64(0)>>1) && number == float64(uint64(number)) {
+			return uint64(number)
+		}
+	case json.Number:
+		parsed, err := strconv.ParseUint(string(number), 10, 64)
+		if err == nil {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func toolError(err error) *mcp.CallToolResult {
@@ -262,6 +307,32 @@ func errorCode(err error) string {
 		return "invalid_view_intent"
 	case errors.Is(err, application.ErrCapabilityNotFound):
 		return "capability_not_found"
+	case errors.Is(err, localaccess.ErrInteractiveAuthorizationUnavailable):
+		return "interactive_authorization_unavailable"
+	case errors.Is(err, localaccess.ErrDirectorySelectionCancelled):
+		return "directory_selection_cancelled"
+	case errors.Is(err, localaccess.ErrAccessDenied):
+		return "directory_access_denied"
+	case errors.Is(err, localaccess.ErrTurnExpired):
+		return "agent_turn_expired"
+	case errors.Is(err, localaccess.ErrPathOutsideScope):
+		return "path_outside_scope"
+	case errors.Is(err, localaccess.ErrInvalidRelativePath):
+		return "invalid_relative_path"
+	case errors.Is(err, localaccess.ErrSensitiveFile):
+		return "sensitive_file_blocked"
+	case errors.Is(err, localaccess.ErrFileTooLarge), errors.Is(err, localaccess.ErrGitOutputTooLarge), errors.Is(err, application.ErrLocalAccessResultTooLarge):
+		return "local_access_result_too_large"
+	case errors.Is(err, localaccess.ErrInvalidGitLimit), errors.Is(err, localaccess.ErrDirectoryEntryLimit):
+		return "local_access_limit_exceeded"
+	case errors.Is(err, localaccess.ErrInvalidDateRange):
+		return "invalid_date_range"
+	case errors.Is(err, localaccess.ErrNotGitRepository):
+		return "not_git_repository"
+	case errors.Is(err, localaccess.ErrUnsupportedFile):
+		return "unsupported_file"
+	case errors.Is(err, localaccess.ErrInvalidPurpose):
+		return "invalid_local_access_purpose"
 	case errors.Is(err, application.ErrPendingEditorDraft):
 		return "pending_editor_draft"
 	default:

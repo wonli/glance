@@ -13,6 +13,7 @@ func (a *App) processAsyncResults() {
 	a.processAgentModelLookupResult()
 	a.processAgentChatHistoryResults()
 	a.processAgentSettingsKeyPreviewResult()
+	a.processAgentLocalAccessUI()
 	a.processAgentApplicationEvents()
 	a.processAgentChatEvents()
 	a.processPrimaryPromotion()

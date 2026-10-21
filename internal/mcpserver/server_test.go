@@ -58,6 +58,71 @@ func TestMCPToolsExactlyMatchCatalog(t *testing.T) {
 	}
 }
 
+func TestMCPServerIgnoresLocalAccessMetadataForExternalAgent(t *testing.T) {
+	assertMCPServerLocalAccessMetadata(t, application.OperatorExternalAgent, false)
+}
+
+func TestMCPServerPassesLocalAccessMetadataForBuiltInAgent(t *testing.T) {
+	assertMCPServerLocalAccessMetadata(t, application.OperatorBuiltInAgent, true)
+}
+
+func assertMCPServerLocalAccessMetadata(t *testing.T, kind application.OperatorKind, wantMetadata bool) {
+	t.Helper()
+	ctx := context.Background()
+	runtime, err := application.NewRuntime(ctx, application.RuntimeOptions{})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(ctx) })
+	capabilitySeen := make(chan application.CapabilityContext, 1)
+	if err := runtime.Catalog().Register(application.CapabilityRegistration{
+		Descriptor: application.CapabilityDescriptor{
+			ID: "test.metadata.capture", Name: "metadata capture", Description: "capture MCP metadata",
+			Category: application.CapabilityQuery, Risk: application.RiskLow,
+			InputSchema:  json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+			OutputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":true}`),
+		},
+		Handler: func(_ context.Context, capability application.CapabilityContext, _ json.RawMessage) (application.CapabilityResult, error) {
+			capabilitySeen <- capability
+			return application.CapabilityResult{Data: json.RawMessage(`{}`)}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register metadata capability: %v", err)
+	}
+	server, err := NewWithOperator(runtime, kind)
+	if err != nil {
+		t.Fatalf("NewWithOperator: %v", err)
+	}
+	session, closeSession, err := server.ConnectInMemory(ctx)
+	if err != nil {
+		t.Fatalf("ConnectInMemory: %v", err)
+	}
+	t.Cleanup(func() { _ = closeSession() })
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "test.metadata.capture", Arguments: map[string]any{},
+		Meta: mcp.Meta{
+			"glance/agent_turn_id":        "forged-turn",
+			"glance/window_id":            float64(42),
+			"glance/user_request_excerpt": "forged excerpt",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	select {
+	case got := <-capabilitySeen:
+		if wantMetadata {
+			if got.AgentTurnID != "forged-turn" || got.AgentWindowID != 42 || got.UserRequestExcerpt != "forged excerpt" {
+				t.Fatalf("built-in capability metadata = %#v; want all three fields", got)
+			}
+		} else if got.AgentTurnID != "" || got.AgentWindowID != 0 || got.UserRequestExcerpt != "" {
+			t.Fatalf("external operator metadata was trusted: %#v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("capability handler did not receive MCP call")
+	}
+}
+
 type testMcpServerDocumentIdExpectedRevisionArguments struct {
 	DocumentId       string `json:"document_id"`
 	ExpectedRevision uint64 `json:"expected_revision"`

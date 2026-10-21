@@ -10,12 +10,21 @@ import (
 
 var ErrNonCommandCapabilityChangedDocument = errors.New("non-command capability attempted to change document content")
 
+const (
+	CapabilityMetaAgentTurnID        = "glance/agent_turn_id"
+	CapabilityMetaAgentWindowID      = "glance/window_id"
+	CapabilityMetaUserRequestExcerpt = "glance/user_request_excerpt"
+)
+
 type CapabilityRequest struct {
 	RequestID           string          `json:"request_id"`
 	IdempotencyKey      string          `json:"idempotency_key,omitempty"`
 	DocumentID          string          `json:"document_id,omitempty"`
 	CapabilityID        string          `json:"capability_id"`
 	ExpectedRevision    uint64          `json:"expected_revision,omitempty"`
+	AgentTurnID         string          `json:"-"`
+	AgentWindowID       uint64          `json:"-"`
+	UserRequestExcerpt  string          `json:"-"`
 	Operator            Operator        `json:"operator"`
 	View                ViewContext     `json:"view,omitempty"`
 	Arguments           json.RawMessage `json:"arguments"`
@@ -133,6 +142,8 @@ func (r *Runtime) invokeCapability(ctx context.Context, request CapabilityReques
 	outcome, err := registration.handler(ctx, CapabilityContext{
 		RequestID: request.RequestID, Runtime: r, Document: info, Adapter: adapter,
 		Operator: request.Operator, View: cloneViewContext(request.View),
+		AgentTurnID: request.AgentTurnID, AgentWindowID: request.AgentWindowID,
+		UserRequestExcerpt: request.UserRequestExcerpt,
 	}, append(json.RawMessage(nil), request.Arguments...))
 	if err != nil {
 		return CapabilityInvocationResult{}, err

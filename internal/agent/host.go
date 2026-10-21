@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"glance/internal/agent/prompts"
 	"glance/internal/agent/provider"
@@ -20,6 +21,8 @@ import (
 )
 
 var (
+	nextAgentHostID atomic.Uint64
+
 	ErrHostClosed                   = errors.New("Agent Host is closed")
 	ErrConversationBusy             = errors.New("conversation already has an active turn")
 	ErrInvalidConversation          = errors.New("conversation ID is required")
@@ -52,6 +55,7 @@ type HostOptions struct {
 	MaxMessageBytes       int
 	MaxToolArgumentsBytes int
 	MaxToolResultBytes    int
+	OnTurnEnded           func(turnID string)
 }
 
 type ConversationSnapshot struct {
@@ -106,6 +110,7 @@ type AgentHost struct {
 	closeDone            chan struct{}
 	conversations        map[ConversationID]*conversationState
 	deletedConversations map[ConversationID]struct{}
+	hostID               uint64
 	subscribers          map[uint64]*agentSubscriber
 	nextSubID            atomic.Uint64
 	nextRequestID        atomic.Uint64
@@ -133,7 +138,7 @@ func NewHost(ctx context.Context, modelProvider provider.ModelProvider, client *
 		provider: modelProvider, client: client, model: strings.TrimSpace(options.Model), options: options,
 		store: options.ConversationStore,
 		tools: tools, conversations: make(map[ConversationID]*conversationState),
-		subscribers: make(map[uint64]*agentSubscriber), closeDone: make(chan struct{}),
+		hostID: nextAgentHostID.Add(1), subscribers: make(map[uint64]*agentSubscriber), closeDone: make(chan struct{}),
 	}, nil
 }
 
@@ -160,6 +165,10 @@ func normalizeHostOptions(options HostOptions) HostOptions {
 		options.MaxToolResultBytes = 1 << 20
 	}
 	return options
+}
+
+func (h *AgentHost) newTurnID() string {
+	return fmt.Sprintf("agent-turn-%d-%d", h.hostID, h.nextRequestID.Add(1))
 }
 
 // Publish a successful immutable catalog once. Failed/canceled loads can retry;
@@ -290,7 +299,7 @@ func (h *AgentHost) Send(ctx context.Context, conversationID ConversationID, mes
 	h.turns.Add(1)
 
 	turnCtx, cancel := context.WithCancel(ctx)
-	requestID := fmt.Sprintf("agent-turn-%d", h.nextRequestID.Add(1))
+	requestID := h.newTurnID()
 	state.mu.Lock()
 	if h.store != nil && state.documentID != view.DocumentID {
 		state.mu.Unlock()
@@ -329,6 +338,9 @@ func (h *AgentHost) Send(ctx context.Context, conversationID ConversationID, mes
 		}
 		state.busy, state.cancel, state.requestID = false, nil, ""
 		state.mu.Unlock()
+		if h.options.OnTurnEnded != nil {
+			h.options.OnTurnEnded(requestID)
+		}
 		return fmt.Errorf("save user message before model request: %w", err)
 	}
 	return h.completeTurn(turnCtx, cancel, conversationID, state, view, requestID)
@@ -379,7 +391,7 @@ func (h *AgentHost) ResumeConversation(ctx context.Context, conversationID Conve
 	}
 	h.turns.Add(1)
 	turnCtx, cancel := context.WithCancel(ctx)
-	requestID := fmt.Sprintf("agent-turn-%d", h.nextRequestID.Add(1))
+	requestID := h.newTurnID()
 	state.mu.Lock()
 	if h.store != nil && state.documentID != view.DocumentID {
 		state.mu.Unlock()
@@ -413,6 +425,9 @@ func (h *AgentHost) ResumeConversation(ctx context.Context, conversationID Conve
 }
 
 func (h *AgentHost) completeTurn(ctx context.Context, cancel context.CancelFunc, conversationID ConversationID, state *conversationState, view application.ViewContext, requestID string) error {
+	if h.options.OnTurnEnded != nil {
+		defer h.options.OnTurnEnded(requestID)
+	}
 	err := h.ensureConversationTitle(ctx, conversationID, state, requestID)
 	if err == nil {
 		err = h.repairInterruptedToolCalls(ctx, conversationID, state)
@@ -439,6 +454,7 @@ func (h *AgentHost) runTurn(ctx context.Context, conversationID ConversationID, 
 	if err := h.ensureTools(ctx); err != nil {
 		return err
 	}
+	userRequestExcerpt := currentUserRequestExcerpt(state)
 	totalCalls := 0
 	for round := 0; round <= h.options.MaxToolRounds; round++ {
 		messages, reasoningByMessage, err := h.requestMessages(state, view)
@@ -563,7 +579,7 @@ func (h *AgentHost) runTurn(ctx context.Context, conversationID ConversationID, 
 				}
 				return ctx.Err()
 			}
-			if err := h.executeToolCall(ctx, conversationID, state, call, view); err != nil {
+			if err := h.executeToolCall(ctx, conversationID, state, call, view, requestID, userRequestExcerpt); err != nil {
 				return err
 			}
 			view = h.updatedViewFromLastToolResult(state, view)
@@ -642,9 +658,9 @@ func orderedToolCalls(calls map[int]*toolCallAccumulator) []*toolCallAccumulator
 	return ordered
 }
 
-func (h *AgentHost) executeToolCall(ctx context.Context, conversationID ConversationID, state *conversationState, call *toolCallAccumulator, view application.ViewContext) error {
+func (h *AgentHost) executeToolCall(ctx context.Context, conversationID ConversationID, state *conversationState, call *toolCallAccumulator, view application.ViewContext, turnID, userRequestExcerpt string) error {
 	h.publish(AgentEvent{ConversationID: conversationID, Type: EventToolStarted, ToolName: call.name, ToolCallID: call.id})
-	resultContent, isError, _ := h.invokeTool(ctx, call, view)
+	resultContent, isError, _ := h.invokeTool(ctx, call, view, turnID, userRequestExcerpt)
 	if len(resultContent) > h.options.MaxToolResultBytes {
 		resultContent, _ = json.Marshal(map[string]string{"error": "tool_result_too_large", "message": ErrToolResultTooLarge.Error()})
 		isError = true
@@ -662,7 +678,7 @@ func (h *AgentHost) executeToolCall(ctx context.Context, conversationID Conversa
 	return nil
 }
 
-func (h *AgentHost) invokeTool(ctx context.Context, call *toolCallAccumulator, view application.ViewContext) ([]byte, bool, application.ViewContext) {
+func (h *AgentHost) invokeTool(ctx context.Context, call *toolCallAccumulator, view application.ViewContext, turnID, userRequestExcerpt string) ([]byte, bool, application.ViewContext) {
 	tool, registered := h.tools[call.name]
 	if !registered {
 		result, _ := json.Marshal(map[string]string{"error": "unknown_tool", "message": "该工具未发布在 Glance 能力目录中。"})
@@ -683,7 +699,11 @@ func (h *AgentHost) invokeTool(ctx context.Context, call *toolCallAccumulator, v
 		result, _ := json.Marshal(map[string]string{"error": "invalid_arguments", "message": "工具参数无法编码为 JSON。"})
 		return result, true, view
 	}
-	params, err := newCallToolParams(call.name, encodedArguments)
+	params, err := newCallToolParams(call.name, encodedArguments, mcp.Meta{
+		application.CapabilityMetaAgentTurnID:        turnID,
+		application.CapabilityMetaAgentWindowID:      view.WindowID,
+		application.CapabilityMetaUserRequestExcerpt: userRequestExcerpt,
+	})
 	if err != nil {
 		result, _ := json.Marshal(map[string]string{"error": "invalid_arguments", "message": "工具参数必须是 JSON 对象。"})
 		return result, true, view
@@ -698,14 +718,33 @@ func (h *AgentHost) invokeTool(ctx context.Context, call *toolCallAccumulator, v
 	return content, result.IsError, updatedView
 }
 
-func newCallToolParams(name string, arguments json.RawMessage) (*mcp.CallToolParams, error) {
-	params := &mcp.CallToolParams{Name: name}
+func newCallToolParams(name string, arguments json.RawMessage, metadata mcp.Meta) (*mcp.CallToolParams, error) {
+	params := &mcp.CallToolParams{Name: name, Meta: metadata}
 	decoder := json.NewDecoder(bytes.NewReader(arguments))
 	decoder.UseNumber()
 	if err := decoder.Decode(&params.Arguments); err != nil || params.Arguments == nil {
 		return nil, errors.New("MCP arguments must be a JSON object")
 	}
 	return params, nil
+}
+
+func currentUserRequestExcerpt(state *conversationState) string {
+	if state == nil {
+		return ""
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	for index := len(state.messages) - 1; index >= 0; index-- {
+		if state.messages[index].Role != "user" {
+			continue
+		}
+		message := state.messages[index].Content
+		if utf8.RuneCountInString(message) <= 240 {
+			return message
+		}
+		return string([]rune(message)[:240])
+	}
+	return ""
 }
 
 func injectViewDefaults(arguments map[string]json.RawMessage, schema map[string]json.RawMessage, view application.ViewContext) map[string]json.RawMessage {
@@ -931,7 +970,7 @@ func (h *AgentHost) ensureConversationTitle(ctx context.Context, conversationID 
 	firstMessage := ""
 	for _, message := range state.messages {
 		if message.Role == "user" {
-			firstMessage = message.Content
+			firstMessage = strings.TrimSpace(message.Content)
 			break
 		}
 	}
@@ -969,7 +1008,7 @@ func (h *AgentHost) ensureConversationTitle(ctx context.Context, conversationID 
 	}
 	generated := strings.Trim(strings.TrimSpace(title.String()), "\"'“”‘’#*` \r\n\t")
 	if generated == "" {
-		return errors.New("model returned an empty conversation title")
+		generated = fallbackConversationTitle(firstMessage)
 	}
 	if len([]rune(generated)) > 32 {
 		return errors.New("model returned a conversation title that is too long")
@@ -987,6 +1026,14 @@ func (h *AgentHost) ensureConversationTitle(ctx context.Context, conversationID 
 	}
 	h.publish(AgentEvent{ConversationID: conversationID, Type: EventConversationTitle, Title: generated})
 	return nil
+}
+
+func fallbackConversationTitle(message string) string {
+	runes := []rune(strings.Join(strings.Fields(message), " "))
+	if len(runes) > 32 {
+		runes = runes[:32]
+	}
+	return string(runes)
 }
 
 func (h *AgentHost) persistConversation(ctx context.Context, id ConversationID, state *conversationState) error {

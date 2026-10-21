@@ -3,6 +3,7 @@
 package desktopui
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -23,8 +24,15 @@ func chooseOfficeFile(labels filePickerLabels) (string, error) {
 }
 
 func chooseOfficeFolder(labels filePickerLabels) (string, error) {
-	output, err := exec.Command("zenity", "--file-selection", "--directory", "--title="+labels.OpenFolder).Output()
+	return chooseOfficeFolderContext(context.Background(), labels)
+}
+
+func chooseOfficeFolderContext(ctx context.Context, labels filePickerLabels) (string, error) {
+	output, err := exec.CommandContext(ctx, "zenity", "--file-selection", "--directory", "--title="+labels.OpenFolder).Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		if _, ok := err.(*exec.ExitError); ok {
 			return "", nil
 		}

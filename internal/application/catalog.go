@@ -101,12 +101,15 @@ type SelectionContext struct {
 }
 
 type CapabilityContext struct {
-	RequestID string
-	Runtime   *Runtime
-	Document  DocumentInfo
-	Adapter   DocumentAdapter
-	Operator  Operator
-	View      ViewContext
+	RequestID          string
+	Runtime            *Runtime
+	Document           DocumentInfo
+	Adapter            DocumentAdapter
+	Operator           Operator
+	View               ViewContext
+	AgentTurnID        string
+	AgentWindowID      uint64
+	UserRequestExcerpt string
 }
 
 type CapabilityResult struct {

@@ -352,22 +352,23 @@ func (a *App) handleOverlayEscape(gtx layout.Context) bool {
 	if a == nil {
 		return false
 	}
+	localAccess := a.activeAgentLocalAccessConsent()
 	confirmation := a.activeAgentConfirmation()
 	state := a.documentSessionState
 	hasRibbonPopup := state != nil && (state.officeRibbonMenu.kind != officeRibbonMenuClosed || state.toolbarPicker != pickerNone)
 	hasWordColorPicker := state != nil && (state.wordToolbarColorPicker || state.wordToolbarHighlightPicker)
 	hasAgentHistorySurface := a.aiHistoryDrawerOpen || a.agentUI.conversationHistoryVisible
 	hasPresentationStylePopover := state != nil && state.pptxView != nil && state.pptxView.stylePopover != ""
-	if confirmation == nil && !a.modal.Visible && !a.wordSymbolPickerVisible && !a.wordVersionHistoryVisible && !a.showNewMenu && !a.fontPicker.open && !hasRibbonPopup && !hasWordColorPicker && !hasAgentHistorySurface && !hasPresentationStylePopover {
+	if localAccess == nil && confirmation == nil && !a.modal.Visible && !a.wordSymbolPickerVisible && !a.wordVersionHistoryVisible && !a.showNewMenu && !a.fontPicker.open && !hasRibbonPopup && !hasWordColorPicker && !hasAgentHistorySurface && !hasPresentationStylePopover {
 		return false
 	}
-	if confirmation == nil && a.modal.Visible && a.modal.hasActiveComposition() {
+	if localAccess == nil && confirmation == nil && a.modal.Visible && a.modal.hasActiveComposition() {
 		return false
 	}
-	if confirmation == nil && !a.modal.Visible && hasAgentHistorySurface && editorHasActiveComposition(&a.agentUI.historySearch) {
+	if localAccess == nil && confirmation == nil && !a.modal.Visible && hasAgentHistorySurface && editorHasActiveComposition(&a.agentUI.historySearch) {
 		return false
 	}
-	if confirmation == nil && !a.modal.Visible && !a.wordSymbolPickerVisible && !a.wordVersionHistoryVisible && !a.showNewMenu && a.fontPicker.open {
+	if localAccess == nil && confirmation == nil && !a.modal.Visible && !a.wordSymbolPickerVisible && !a.wordVersionHistoryVisible && !a.showNewMenu && a.fontPicker.open {
 		return false
 	}
 	event, ok := gtx.Event(key.Filter{Name: key.NameEscape})
@@ -379,6 +380,8 @@ func (a *App) handleOverlayEscape(gtx layout.Context) bool {
 		return true
 	}
 	switch {
+	case localAccess != nil:
+		a.resolveAgentLocalAccessConsent(localAccess, false)
 	case confirmation != nil:
 		a.resolveAgentConfirmation(confirmation, false)
 	case a.modal.Visible:
