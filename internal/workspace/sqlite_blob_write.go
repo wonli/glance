@@ -37,7 +37,10 @@ func (s *Store) SaveDocumentStream(doc Document, payload io.Reader, payloadSize 
 	if doc.ViewState == nil {
 		doc.ViewState = []byte{}
 	}
+	return s.saveDocumentStreamPlatform(doc, payload, payloadSize)
+}
 
+func (s *Store) saveDocumentStreamTranslated(doc Document, payload io.Reader, payloadSize int64) (err error) {
 	writer, err := openSQLiteBlobWriter(s.path)
 	if err != nil {
 		return err
