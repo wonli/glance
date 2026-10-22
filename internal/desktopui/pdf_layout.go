@@ -248,6 +248,7 @@ func (a *App) layoutPDFRibbon(gtx layout.Context) layout.Dimensions {
 						})
 					})
 				}),
+				layout.Rigid(a.layoutPDFProofreadingEntry),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: 8, Right: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
@@ -275,6 +276,29 @@ func (a *App) layoutPDFRibbon(gtx layout.Context) layout.Dimensions {
 				}),
 			)
 		})
+	})
+}
+
+func (a *App) layoutPDFProofreadingEntry(gtx layout.Context) layout.Dimensions {
+	v := a.ensurePDFView()
+	return layout.Inset{Left: 14, Right: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(1), gtx.Dp(24)))
+				paint.FillShape(gtx.Ops, color.NRGBA{R: 224, G: 228, B: 232, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+				return layout.Dimensions{Size: gtx.Constraints.Max}
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Dimensions{Size: image.Pt(gtx.Dp(13), 0)}
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				enabled := !a.isSaving()
+				icon, _ := pdfToolbarIcon("spell-check-2", toolbarIconColor(enabled))
+				label := a.textID("pdf.ribbon.action.proofread")
+				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(excelToolbarButtonWidth), gtx.Dp(excelToolbarButtonHeight)))
+				return toolbarIconButton(gtx, a.theme, v.button("proofread"), icon, toolbarIconSize, label, label, enabled, false, contentSurface)
+			}),
+		)
 	})
 }
 

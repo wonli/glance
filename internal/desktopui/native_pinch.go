@@ -128,7 +128,10 @@ func (a *App) processNativePinch(frame app.FrameEvent) {
 	if len(events) == 0 {
 		return
 	}
-	valid := a.pinchFrameSession == a.documentSessionState && a.documentSessionState != nil && a.pinchFrameSize == frame.Size && a.pinchFrameMetric == frame.Metric && a.activeTabID != "recent" && !a.modal.Visible && !a.showNewMenu && !a.wordSymbolPickerVisible && !a.fontPicker.open && a.documentSessionState.officeRibbonMenu.kind == officeRibbonMenuClosed && a.activeAgentConfirmation() == nil
+	validDocument := a.documentSessionState != nil || (a.proofreading != nil && a.pdfDoc != nil)
+	proofreadingWindow := a.proofreading != nil && a.pdfDoc != nil
+	activeDocument := proofreadingWindow || a.activeTabID != "recent"
+	valid := a.pinchFrameSession == a.documentSessionState && validDocument && a.pinchFrameSize == frame.Size && a.pinchFrameMetric == frame.Metric && activeDocument && !a.modal.Visible && !a.showNewMenu && !a.wordSymbolPickerVisible && !a.fontPicker.open && (a.documentSessionState == nil || a.documentSessionState.officeRibbonMenu.kind == officeRibbonMenuClosed) && a.activeAgentConfirmation() == nil
 	var nodes []input.SemanticNode
 	if valid {
 		var router input.Router
@@ -139,18 +142,23 @@ func (a *App) processNativePinch(frame app.FrameEvent) {
 		bounds, inside := findNativePinchSurface(nodes, image.Pt(int(e.Position.X), int(e.Position.Y)))
 		if e.Begin {
 			a.pinchGestureSession = nil
+			a.pinchGestureActive = false
 			a.pinchRemainder = 0
 			if valid && inside {
 				a.pinchGestureSession = a.documentSessionState
+				a.pinchGestureActive = true
 			}
 		}
-		if valid && inside && a.pinchGestureSession == a.documentSessionState {
+		gestureMatchesDocument := a.pinchGestureSession == a.documentSessionState
+		gestureStarted := a.documentSessionState != nil || a.pinchGestureActive
+		if valid && inside && gestureMatchesDocument && gestureStarted {
 			point := e.Position.Sub(f32.Pt(float32(bounds.Min.X), float32(bounds.Min.Y)))
 			gtx := layout.Context{Metric: frame.Metric, Constraints: layout.Constraints{Max: bounds.Size()}}
 			a.applyNativePinch(gtx, point, e.Magnification)
 		}
 		if e.End {
 			a.pinchGestureSession = nil
+			a.pinchGestureActive = false
 			a.pinchRemainder = 0
 		}
 	}
@@ -159,6 +167,18 @@ func (a *App) processNativePinch(frame app.FrameEvent) {
 func (a *App) applyNativePinch(gtx layout.Context, point f32.Point, magnification float64) {
 	state := a.documentSessionState
 	if state == nil {
+		if a.proofreading == nil || a.pdfDoc == nil {
+			return
+		}
+		v := a.ensurePDFView()
+		zoom, remainder, changed := zoomFromPinch(clampPDFZoom(v.currentZoom(gtx.Metric)), magnification, a.pinchRemainder, pdfZoomMinimum, pdfZoomMaximum)
+		a.pinchRemainder = remainder
+		if changed {
+			a.setPDFZoomAt(gtx, v, zoom, point)
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+		}
 		return
 	}
 	if state.book != nil && state.virtualGrid != nil {

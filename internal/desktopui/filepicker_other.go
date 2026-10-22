@@ -13,7 +13,7 @@ func chooseOfficeFile(labels filePickerLabels) (string, error) {
 	if _, err := exec.LookPath("zenity"); err != nil {
 		return "", fmt.Errorf("%s", labels.InstallPickerNotice)
 	}
-	output, err := exec.Command("zenity", "--file-selection", "--title="+labels.OpenDocument, "--file-filter="+labels.DocumentFilter+" | *.xlsx *.xls *.docx *.json *.md *.markdown *.pdf *.csv").Output()
+	output, err := exec.Command("zenity", "--file-selection", "--title="+labels.OpenDocument, "--file-filter="+labels.DocumentFilter+" | "+labels.officeFileGlobs(" ")).Output()
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return "", nil

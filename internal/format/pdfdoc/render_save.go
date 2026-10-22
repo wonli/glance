@@ -30,9 +30,9 @@ func (d *Document) Render(index int, dpi float64) (image.Image, document.PDFPage
 	return d.render(index, dpi)
 }
 
-// RenderThumbnail renders only page pixels and geometry. It skips text-fragment
-// extraction because thumbnails do not need hit data.
-func (d *Document) RenderThumbnail(index int, dpi float64) (image.Image, document.PDFPage, error) {
+// RenderVisualPage renders page pixels and dimensions without extracting text
+// runs or annotations. It is used by visual-only source views.
+func (d *Document) RenderVisualPage(index int, dpi float64) (image.Image, document.PDFPage, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.closed || d.reader == nil {
@@ -46,8 +46,13 @@ func (d *Document) RenderThumbnail(index int, dpi float64) (image.Image, documen
 		Index: index, Revision: d.revision, Width: size.W, Height: size.H,
 		Rotation: rotation(d.reader, index),
 	}
-	pixels, _, err := d.renderPixels(index, page, dpi, false)
+	pixels, _, err := d.renderPixels(index, page, dpi, true)
 	return pixels, page, err
+}
+
+// RenderThumbnail is the low-resolution visual-only page path used for strips.
+func (d *Document) RenderThumbnail(index int, dpi float64) (image.Image, document.PDFPage, error) {
+	return d.RenderVisualPage(index, dpi)
 }
 
 func (d *Document) render(index int, dpi float64) (image.Image, document.PDFPage, string, error) {

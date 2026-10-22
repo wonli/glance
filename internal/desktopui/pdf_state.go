@@ -44,6 +44,7 @@ type pdfViewState struct {
 	fit                               string
 	mode, tool                        string
 	thumbnails, showSearch            bool
+	visualOnly                        bool
 	toolbar, thumbList, canvas, notes widget.List
 	horizontal                        widget.List
 	buttons                           map[string]*widget.Clickable
@@ -230,7 +231,7 @@ func (v *pdfViewState) accept(r pdfPageResult) {
 	if r.render == pdfRenderPage && !v.pageInCacheWindow(r.page.Index) {
 		return
 	}
-	if r.render == pdfRenderThumbnail && !pdfThumbnailInCacheWindow(r.page.Index, v.thumbList.Position.First) {
+	if r.render == pdfRenderThumbnail && !v.thumbnailInCacheWindow(r.page.Index, v.thumbList.Position.First) {
 		return
 	}
 	if r.err != nil && r.render != pdfRenderThumbnail {
@@ -314,8 +315,17 @@ func (a *App) requestPDFPage(index int, dpi float64) {
 	window := a.window
 	shutdown := a.shutdown
 	done := v.workerSignal()
+	visualOnly := v.visualOnly
 	a.launchManagedBackground(func() {
-		pixels, p, w, e := d.Render(index, dpi)
+		var pixels image.Image
+		var p document.PDFPage
+		var w string
+		var e error
+		if visualOnly {
+			pixels, p, e = d.RenderVisualPage(index, dpi)
+		} else {
+			pixels, p, w, e = d.Render(index, dpi)
+		}
 		p.Index = index
 		r := pdfPageResult{page: p, warning: w, err: e, info: d.Info(), render: pdfRenderPage, dpi: dpi}
 		r.setImage(pixels)
@@ -332,7 +342,7 @@ func (a *App) requestPDFPage(index int, dpi float64) {
 
 func (a *App) requestPDFThumbnail(index int) {
 	v := a.ensurePDFView()
-	if v.pending || v.renderPending || index < 0 || index >= v.info.Pages || !pdfThumbnailInCacheWindow(index, v.thumbList.Position.First) || v.thumbCache[index].Size().X > 0 || v.thumbErrors[index] != "" {
+	if v.pending || v.renderPending || index < 0 || index >= v.info.Pages || !v.thumbnailInCacheWindow(index, v.thumbList.Position.First) || v.thumbCache[index].Size().X > 0 || v.thumbErrors[index] != "" {
 		return
 	}
 	v.renderPending = true

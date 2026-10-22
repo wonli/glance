@@ -110,8 +110,24 @@ type pdfHistoryApplyPayload struct {
 }
 
 type pdfInkAnnotationPayload struct {
-	PageNumber int                 `json:"page_number"`
-	Points     []document.PDFPoint `json:"points"`
+	PageNumber int                     `json:"page_number"`
+	Points     []pdfInkAnnotationPoint `json:"points"`
+}
+
+type pdfInkAnnotationPoint struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+func pdfInkAnnotationPoints(points []document.PDFPoint) []pdfInkAnnotationPoint {
+	if len(points) == 0 {
+		return nil
+	}
+	result := make([]pdfInkAnnotationPoint, len(points))
+	for i, point := range points {
+		result[i] = pdfInkAnnotationPoint{X: point.X, Y: point.Y}
+	}
+	return result
 }
 
 type pdfAnnotationBounds struct {
@@ -155,7 +171,7 @@ func pdfCommandCapability(command document.PDFCommand) (string, any, error) {
 	case "highlight":
 		return "pdf.annotation.highlight", pdfHighlightAnnotationPayload{PageNumber: command.Page + 1, Bounds: pdfAnnotationBounds{X: command.X, Y: command.Y, W: command.W, H: command.H}, Text: command.Text}, nil
 	case "ink":
-		return "pdf.annotation.ink", pdfInkAnnotationPayload{PageNumber: command.Page + 1, Points: command.Points}, nil
+		return "pdf.annotation.ink", pdfInkAnnotationPayload{PageNumber: command.Page + 1, Points: pdfInkAnnotationPoints(command.Points)}, nil
 	case "undo", "redo":
 		return "pdf.history.apply", pdfHistoryApplyPayload{Operation: command.Kind}, nil
 	default:
@@ -275,6 +291,10 @@ func (a *App) handlePDFAction(gtx layout.Context, id string) {
 		return
 	}
 	switch id {
+	case "proofread":
+		if err := a.openProofreadingWindow(); err != nil {
+			a.setStatusErrorMessage(i18n.Message{ID: "pdf.error.operation_failed"}, err, notificationToast)
+		}
 	case "open":
 		a.startOpenFilePicker()
 	case "close":

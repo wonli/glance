@@ -1,8 +1,13 @@
 package desktopui
 
+import (
+	"strings"
+)
+
 type filePickerLabels struct {
 	OpenDocument        string
 	DocumentFilter      string
+	AllowedExtensions   []string
 	OpenFolder          string
 	SaveAs              string
 	UntitledFile        string
@@ -16,6 +21,26 @@ type filePickerLabels struct {
 	InstallPickerNotice string
 	ImagePickerNotice   string
 	MediaPickerNotice   string
+}
+
+func (l filePickerLabels) officeFileExtensions() []string {
+	if len(l.AllowedExtensions) > 0 {
+		return l.AllowedExtensions
+	}
+	return []string{"xlsx", "xls", "doc", "docx", "json", "md", "markdown", "pdf", "csv"}
+}
+
+func (l filePickerLabels) officeFileGlobs(separator string) string {
+	patterns := make([]string, 0, len(l.officeFileExtensions()))
+	for _, extension := range l.officeFileExtensions() {
+		patterns = append(patterns, "*."+strings.TrimPrefix(extension, "."))
+	}
+	return strings.Join(patterns, separator)
+}
+
+func (l filePickerLabels) windowsOfficeFileFilter() string {
+	patterns := l.officeFileGlobs(";")
+	return l.DocumentFilter + " (" + patterns + ")|" + patterns
 }
 
 func (a *App) filePickerLabels() filePickerLabels {

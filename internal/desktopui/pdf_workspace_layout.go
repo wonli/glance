@@ -101,7 +101,11 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 	v := a.ensurePDFView()
 	recordNativePinchSurface(gtx)
 	a.handlePDFCanvasScroll(gtx, v)
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 231, G: 236, B: 240, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+	canvasBackground := color.NRGBA{R: 231, G: 236, B: 240, A: 255}
+	if a.proofreading != nil {
+		canvasBackground = proofreadSourceCanvas
+	}
+	paint.FillShape(gtx.Ops, canvasBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	totalPages := max(1, v.info.Pages)
 	if v.syncPageFromCanvas() {
 		gtx.Execute(op.InvalidateCmd{})
@@ -131,6 +135,11 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 		return v.canvas.Layout(gtx, totalPages, func(gtx layout.Context, pageIdx int) layout.Dimensions {
 			pageW, pageH := refW, refH
 			r, ok := v.cache[pageIdx]
+			if a.proofreading != nil {
+				if geometryW, geometryH, available := a.proofreading.pageSize(pageIdx); available {
+					pageW, pageH = geometryW, geometryH
+				}
+			}
 			if ok && r.page.Width > 0 {
 				pageW = r.page.Width
 				pageH = r.page.Height
@@ -193,6 +202,9 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 							}
 							paint.FillShape(gtx.Ops, color.NRGBA{R: 43, G: 108, B: 176, A: 255}, clip.Stroke{Path: path.End(), Width: float32(1.5 * scale)}.Op())
 						}
+					}
+					if a.proofreading != nil {
+						proofreadingPageBorder(gtx, size)
 					}
 
 					return layout.Dimensions{Size: size}

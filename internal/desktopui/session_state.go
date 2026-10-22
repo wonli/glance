@@ -62,6 +62,7 @@ type documentSessionState struct {
 	wordTableSelection                  *wordTableSelection
 	wordTableSelectionDrag              *wordTableSelectionDrag
 	wordTableSelectionDeleteIntent      *wordTableSelectionDeleteIntent
+	wordTableCaretRestore               *wordTableCaretSnapshot
 	wordTablePointerTags                map[string]map[string]*wordTablePointerTag
 	wordPagePendingScrollRunID          string
 	wordPageCaretBlinkRunID             string

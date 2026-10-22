@@ -64,6 +64,24 @@ func (r *desktopRuntime) openDocumentWindow(documentID string, snapshot windowVi
 	return nil
 }
 
+func (r *desktopRuntime) openProofreadingWindow(request proofreadingWindowRequest) error {
+	if request.sourceSnapshot == nil {
+		return fmt.Errorf("无法读取当前 PDF 快照")
+	}
+	if r == nil {
+		_ = request.sourceSnapshot.Close()
+		return fmt.Errorf("桌面窗口运行时不可用")
+	}
+	if !supportsMultipleDesktopWindows() {
+		_ = request.sourceSnapshot.Close()
+		return fmt.Errorf("当前平台不支持多个桌面窗口")
+	}
+	window := new(app.Window)
+	configureDesktopWindow(window)
+	go r.runProofreadingWindow(window, request)
+	return nil
+}
+
 func (r *desktopRuntime) runWindow(windowID uint64, window *app.Window, initialDocumentID string, snapshot windowViewSnapshot) {
 	r.runWindowFrom(windowID, window, initialDocumentID, snapshot, nil)
 }
@@ -122,9 +140,13 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 					}
 				}
 			}
+			if a.proofreading != nil && a.proofreading.modelLayoutCancel != nil {
+				a.proofreading.modelLayoutCancel()
+			}
 			a.shutdownOnce.Do(func() { close(a.shutdown) })
 			a.closeAgentSubscription()
 			a.stopAndWaitManagedBackground()
+			a.closeProofreadingDraft()
 			a.closeWorkspace()
 			return
 		case app.ConfigEvent:

@@ -53,6 +53,10 @@ func (a *App) startOpenFilePicker() {
 }
 
 func (a *App) startProofreadingSourcePicker() {
+	if a.proofreading == nil || a.proofreading.draftLoading || a.fileCommandRunning {
+		return
+	}
+	a.proofreading.choosingDraft = true
 	a.startFileCommand(commandOpenProofreadingSource, "")
 }
 
@@ -94,6 +98,8 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 	pickerLabels := a.filePickerLabels()
 	if kind == commandOpenProofreadingSource {
 		pickerLabels.OpenDocument = a.textID("pdf.proofread.choose_source")
+		pickerLabels.DocumentFilter = a.textID("proofread.picker.filter")
+		pickerLabels.AllowedExtensions = []string{"md", "markdown", "txt", "doc", "docx"}
 	}
 	a.launchManagedBackground(func() {
 		result := fileCommandResult{kind: kind}

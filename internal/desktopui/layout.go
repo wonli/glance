@@ -23,6 +23,16 @@ var (
 
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	a.ensureDesktopRuntime()
+	if a.proofreading != nil {
+		a.handleOverlayEscape(gtx)
+		a.processAsyncResults()
+		a.processProofreadingResults()
+		gtx.Constraints.Min = gtx.Constraints.Max
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions { return fill(gtx, pageBackground) },
+			func(gtx layout.Context) layout.Dimensions { return a.layoutProofreadingWorkspace(gtx) },
+		)
+	}
 	a.handleOverlayEscape(gtx)
 	if a.markdownDoc != nil && !a.modal.Visible {
 		a.updateMarkdownInput(gtx)

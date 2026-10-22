@@ -195,3 +195,30 @@ func TestRenderUsesAvailableDPIWithinRasterPixelBudget(t *testing.T) {
 		t.Fatalf("rendered raster has only %d pixels, want it to use the available budget for this A4 fixture", pixels)
 	}
 }
+
+func TestVisualPagePaintsTextWithoutExtractingRuns(t *testing.T) {
+	d, err := OpenSnapshot(fixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	img, page, err := d.RenderVisualPage(0, 72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Text) > 0 {
+		t.Fatal("visual source extracted text runs")
+	}
+	dark := 0
+	for y := 40; y < 70; y++ {
+		for x := 35; x < 120; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			if r < 0x9000 && g < 0x9000 && b < 0x9000 {
+				dark++
+			}
+		}
+	}
+	if dark < 10 {
+		t.Fatal("visual source omitted painted PDF text")
+	}
+}

@@ -87,6 +87,23 @@ func pdfThumbnailInCacheWindow(index, firstVisible int) bool {
 	return index >= start && index < end
 }
 
+func (v *pdfViewState) thumbnailPrefetchCount() int {
+	if v == nil {
+		return pdfThumbnailVisiblePrefetch
+	}
+	return max(pdfThumbnailVisiblePrefetch, v.thumbList.Position.Count)
+}
+
+func (v *pdfViewState) thumbnailInCacheWindow(index, firstVisible int) bool {
+	if v == nil {
+		return pdfThumbnailInCacheWindow(index, firstVisible)
+	}
+	first := max(0, firstVisible)
+	start := max(0, first-pdfThumbnailCacheOverscan)
+	end := first + v.thumbnailPrefetchCount() + pdfThumbnailCacheOverscan
+	return index >= start && index < end
+}
+
 func (v *pdfViewState) trimCacheWindow() {
 	if v == nil {
 		return
@@ -103,12 +120,12 @@ func (v *pdfViewState) trimThumbnailCacheWindow() {
 		return
 	}
 	for index := range v.thumbCache {
-		if !pdfThumbnailInCacheWindow(index, v.thumbList.Position.First) {
+		if !v.thumbnailInCacheWindow(index, v.thumbList.Position.First) {
 			delete(v.thumbCache, index)
 		}
 	}
 	for index := range v.thumbErrors {
-		if !pdfThumbnailInCacheWindow(index, v.thumbList.Position.First) {
+		if !v.thumbnailInCacheWindow(index, v.thumbList.Position.First) {
 			delete(v.thumbErrors, index)
 		}
 	}
@@ -217,7 +234,7 @@ func farthestPDFPage(cache map[int]pdfPageResult, current, visibleFirst, visible
 }
 
 func (v *pdfViewState) cacheThumbnail(index int, imageOp paint.ImageOp) {
-	if imageOp.Size().X == 0 || !pdfThumbnailInCacheWindow(index, v.thumbList.Position.First) {
+	if imageOp.Size().X == 0 || !v.thumbnailInCacheWindow(index, v.thumbList.Position.First) {
 		return
 	}
 	if v.thumbCache == nil {
@@ -225,8 +242,9 @@ func (v *pdfViewState) cacheThumbnail(index int, imageOp paint.ImageOp) {
 	}
 	v.thumbCache[index] = imageOp
 	delete(v.thumbErrors, index)
-	for len(v.thumbCache) > pdfThumbnailCacheMaxEntries || pdfThumbnailCacheBytes(v.thumbCache) > pdfThumbnailCacheBudgetBytes {
-		victim := farthestPDFThumbnail(v.thumbCache, v.thumbList.Position.First)
+	maxEntries := max(pdfThumbnailCacheMaxEntries, v.thumbnailPrefetchCount()+pdfThumbnailCacheOverscan*2)
+	for len(v.thumbCache) > maxEntries || pdfThumbnailCacheBytes(v.thumbCache) > pdfThumbnailCacheBudgetBytes {
+		victim := farthestPDFThumbnailInWindow(v.thumbCache, v.thumbList.Position.First, v.thumbnailPrefetchCount())
 		if victim < 0 {
 			break
 		}
@@ -243,7 +261,11 @@ func pdfThumbnailCacheBytes(cache map[int]paint.ImageOp) int64 {
 }
 
 func farthestPDFThumbnail(cache map[int]paint.ImageOp, firstVisible int) int {
-	start, end := max(0, firstVisible), max(0, firstVisible)+pdfThumbnailVisiblePrefetch
+	return farthestPDFThumbnailInWindow(cache, firstVisible, pdfThumbnailVisiblePrefetch)
+}
+
+func farthestPDFThumbnailInWindow(cache map[int]paint.ImageOp, firstVisible, visibleCount int) int {
+	start, end := max(0, firstVisible), max(0, firstVisible)+max(1, visibleCount)
 	victim, maxDistance := -1, -1
 	for index := range cache {
 		distance := 0
@@ -260,14 +282,15 @@ func farthestPDFThumbnail(cache map[int]paint.ImageOp, firstVisible int) int {
 }
 
 func (v *pdfViewState) rememberThumbnailError(index int, message string) {
-	if !pdfThumbnailInCacheWindow(index, v.thumbList.Position.First) {
+	if !v.thumbnailInCacheWindow(index, v.thumbList.Position.First) {
 		return
 	}
 	if v.thumbErrors == nil {
 		v.thumbErrors = make(map[int]string)
 	}
 	v.thumbErrors[index] = message
-	for len(v.thumbErrors) > pdfThumbnailErrorMaxEntries {
+	maxEntries := max(pdfThumbnailErrorMaxEntries, v.thumbnailPrefetchCount()+pdfThumbnailCacheOverscan*2)
+	for len(v.thumbErrors) > maxEntries {
 		for old := range v.thumbErrors {
 			delete(v.thumbErrors, old)
 			break

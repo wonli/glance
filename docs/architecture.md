@@ -57,6 +57,14 @@ Office libraries and local filesystem
 - The Recent tab is permanent. Closing a dirty document tab is blocked until it is saved; window-close confirmation is unavailable because Gio reports destruction after the native window has closed. Persist committed edits and drafts to the recovery store.
 - File dialogs, document package opens/saves, and adapter serialization must not run in Gio layout callbacks. Do not serialize an entire workbook merely because the user selected a cell or scrolled; persist view state separately.
 
+### Proofreading A/X workspace (`internal/proofreading`, `internal/application`, `internal/desktopui`)
+
+- `internal/proofreading` owns stable character identities, ordering, unique page ownership, page states, and undo/redo. `internal/application` owns format-neutral editing, layout mapping, grapheme- and line-based ownership adjustment, and the versioned copy model. The desktop UI only projects A's visual page geometry and edits the independent B copy on X.
+- Do not extract A's text or run OCR for ordinary proofreading. A supplies the visible reference and page geometry; the internal text layout engine shapes B into the X page boxes.
+- A-area scrolling moves A and X together. The source reading line, one third down the viewport, selects the adjustment target. The 54dp text strip (Pen `K8IiR0`) collects/returns one extended grapheme cluster per accumulated 16dp of wheel travel, without acceleration; Shift uses shaped lines and waits for revision-matched geometry. Target changes clear queued input and fractional travel. Inside an X paper page, its scrollbar and wheel only browse that page. X exterior scrolling mirrors A/X and never changes ownership. No manual lock action is required.
+- Explicitly adjusted pages retain a persistent `Manual` boundary and protect their original/newly typed text. Only acquired suffixes can be returned; historical return destinations are clamped to preserve document order if later pages have reflowed. Manual, legacy locked, and reviewed pages are flow barriers. Reviewed pages remain locally editable but cannot receive or release characters through adjustment or pagination. The legacy `Locked` field is retained for saved-copy compatibility; its menu action is removed. Every character remains in exactly one page, including whitespace and line breaks. Each wheel threshold step has its own shared undo transaction.
+- Keep native editors bounded to the visible text window so long locked pages do not submit the full document to Gio/Metal. The model and saved copy still retain the full character sequence; background shaping and persistence publish only revision-matched results.
+
 ### Neutral document model (`internal/document` or `internal/docmodel`)
 
 - Define product-facing DTOs for workbook sheets/cells/ranges and Word blocks such as paragraphs, text runs, tables, and image references.

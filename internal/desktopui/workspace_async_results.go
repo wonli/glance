@@ -110,6 +110,10 @@ func (a *App) processAsyncResults() {
 	case result := <-a.fileCommandResults:
 		a.fileCommandRunning = false
 		if result.err != nil {
+			if result.kind == commandOpenProofreadingSource && a.proofreading != nil {
+				a.proofreading.choosingDraft = false
+				a.proofreading.draftError = result.err.Error()
+			}
 			a.setStatusErrorMessage(fileCommandFailureMessage(result.kind), result.err, notificationToast)
 			if result.kind == commandExportPDF {
 				a.wordPDFPickerRequest = nil
@@ -135,8 +139,11 @@ func (a *App) processAsyncResults() {
 				}
 			case commandOpenProofreadingSource:
 				if result.path != "" {
-					a.startOpen(result.path)
+					a.startProofreadingDraftLoad(result.path)
 				} else {
+					if a.proofreading != nil {
+						a.proofreading.choosingDraft = false
+					}
 					a.setStatusMessage(i18n.Message{ID: "pdf.proofread.source_cancelled"}, feedbackInfo, notificationSuppressed)
 				}
 			case commandOpenFolder:

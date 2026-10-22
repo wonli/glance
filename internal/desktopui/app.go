@@ -32,6 +32,7 @@ type App struct {
 	nativePinch           *nativePinchState
 	nativePinchMonitor    nativePinchMonitor
 	pinchGestureSession   *documentSessionState
+	pinchGestureActive    bool
 	pinchFrameSession     *documentSessionState
 	pinchFrameSize        image.Point
 	pinchFrameMetric      unit.Metric
@@ -88,6 +89,7 @@ type App struct {
 	windowCloseButton             widget.Clickable
 	windowOpenResults             chan error
 	windowOpenSource              *App
+	proofreading                  *proofreadingWorkspace
 	workspacePDFRestoreResults    chan pdfWorkspaceRestoreResult
 	workspacePDFRestoreGeneration uint64
 	pendingPDFRestoreTabID        string

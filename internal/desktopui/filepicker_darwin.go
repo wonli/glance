@@ -11,7 +11,11 @@ import (
 )
 
 func chooseOfficeFile(labels filePickerLabels) (string, error) {
-	script := `set pickedFile to choose file with prompt ` + appleScriptString(labels.OpenDocument) + ` of type {"xlsx", "xls", "doc", "docx", "json", "md", "markdown", "pdf", "csv"}
+	types := make([]string, 0, len(labels.officeFileExtensions()))
+	for _, extension := range labels.officeFileExtensions() {
+		types = append(types, appleScriptString(strings.TrimPrefix(extension, ".")))
+	}
+	script := `set pickedFile to choose file with prompt ` + appleScriptString(labels.OpenDocument) + ` of type {` + strings.Join(types, ", ") + `}
 POSIX path of pickedFile`
 	cmd := exec.Command("osascript", "-e", script)
 	var stderr bytes.Buffer

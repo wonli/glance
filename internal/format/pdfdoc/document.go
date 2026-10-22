@@ -239,6 +239,21 @@ func (d *Document) Page(index int) (document.PDFPage, error) {
 	return p, err
 }
 
+// PageDimensions returns only the page frame, without extracting text runs or
+// annotations. Projection views use it when the source page is read by a human.
+func (d *Document) PageDimensions(index int) (width, height float64, err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed || d.reader == nil {
+		return 0, 0, errors.New("PDF 已关闭")
+	}
+	size, err := d.reader.PageSize(index)
+	if err != nil {
+		return 0, 0, err
+	}
+	return size.W, size.H, nil
+}
+
 // PageWindow returns bounded page text and annotation data for Agent queries.
 // The boolean reports whether any text runs or annotations were omitted.
 func (d *Document) PageWindow(index, start, limit int) (document.PDFPage, bool, error) {

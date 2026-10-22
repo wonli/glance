@@ -58,6 +58,7 @@ func (a *App) closeNativePinch() {
 	a.nativePinchMonitor = nativePinchMonitor{}
 	a.nativePinch = nil
 	a.pinchGestureSession = nil
+	a.pinchGestureActive = false
 }
 
 //export glance_onPinch

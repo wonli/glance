@@ -107,8 +107,9 @@ func (a *App) handlePDFEvents(gtx layout.Context) {
 	// to the shared render slot.
 	if v.thumbnails && !v.pending && !v.renderPending {
 		first := max(0, v.thumbList.Position.First)
-		for i := first; i < min(v.info.Pages, first+pdfThumbnailVisiblePrefetch); i++ {
-			if !pdfThumbnailInCacheWindow(i, first) {
+		visibleCount := v.thumbnailPrefetchCount()
+		for i := first; i < min(v.info.Pages, first+visibleCount); i++ {
+			if !v.thumbnailInCacheWindow(i, first) {
 				continue
 			}
 			if v.thumbCache[i].Size().X == 0 && v.thumbErrors[i] == "" {
