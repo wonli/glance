@@ -7,7 +7,7 @@ import (
 )
 
 func (p *wordProjector) table(node *wordXMLNode, id string) document.WordTable {
-	table := document.WordTable{}
+	table := document.WordTable{HasLegacyHorizontalMerge: containsNode(node, "hMerge")}
 	table.Layout.FillColor = wordShadingFill(firstChild(node, "tblPr"))
 	rowIndex := 0
 	for _, child := range node.children {

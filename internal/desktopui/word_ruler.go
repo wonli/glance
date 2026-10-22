@@ -69,15 +69,15 @@ func (a *App) layoutWordHorizontalRuler(gtx layout.Context, state *documentSessi
 	bar := image.Rectangle{Max: gtx.Constraints.Max}
 	barClip := clip.Rect(bar).Push(gtx.Ops)
 	paint.FillShape(gtx.Ops, wordRulerBackground, clip.Rect(bar).Op())
-	for _, r := range []image.Rectangle{image.Rect(0, 0, g.textLeft, height), image.Rect(g.textRight, 0, bar.Max.X, height)} {
+	for _, r := range []image.Rectangle{image.Rect(0, 0, g.trackLeft, height), image.Rect(g.trackRight, 0, bar.Max.X, height)} {
 		paint.FillShape(gtx.Ops, wordRulerMargin, clip.Rect(r).Op())
 	}
 	baseline := height - gtx.Dp(1)
 	// Quarter-centimetre subdivisions use document units, independently of viewport width.
-	start := int(math.Ceil(float64(g.emu(float64(max(0, g.pageLeft)-g.textLeft))) / float64(wordEMUPerCM/4)))
-	end := int(math.Floor(float64(g.emu(float64(min(gtx.Constraints.Max.X, g.pageRight)-g.textLeft))) / float64(wordEMUPerCM/4)))
+	start := int(math.Ceil(float64(g.emu(float64(max(0, g.pageLeft)-g.trackLeft))) / float64(wordEMUPerCM/4)))
+	end := int(math.Floor(float64(g.emu(float64(min(gtx.Constraints.Max.X, g.pageRight)-g.trackLeft))) / float64(wordEMUPerCM/4)))
 	for quarter := start; quarter <= end; quarter++ {
-		x := g.textLeft + g.pixels(int64(quarter)*wordEMUPerCM/4)
+		x := g.trackLeft + g.pixels(int64(quarter)*wordEMUPerCM/4)
 		tick := 4
 		c := wordRulerMinor
 		if quarter%4 == 0 {
@@ -87,7 +87,7 @@ func (a *App) layoutWordHorizontalRuler(gtx layout.Context, state *documentSessi
 			tick = 6
 		}
 		paint.FillShape(gtx.Ops, c, clip.Rect(image.Rect(x, baseline-gtx.Dp(unit.Dp(tick)), x+max(1, gtx.Dp(1)), baseline)).Op())
-		if quarter%4 == 0 && x >= g.textLeft && x <= g.textRight {
+		if quarter%4 == 0 && x >= g.trackLeft && x <= g.trackRight {
 			a.layoutWordRulerText(gtx, strconv.Itoa(quarter/4), image.Pt(x, gtx.Dp(2)), true, 10)
 		}
 	}
@@ -99,7 +99,7 @@ func (a *App) layoutWordHorizontalRuler(gtx layout.Context, state *documentSessi
 	for _, x := range []int{g.pageLeft, g.pageRight} {
 		paint.FillShape(gtx.Ops, color.NRGBA{R: 184, G: 193, B: 206, A: 255}, clip.Rect(image.Rect(x, 0, x+max(1, gtx.Dp(1)), height)).Op())
 	}
-	for _, x := range []int{g.textLeft, g.textRight} {
+	for _, x := range []int{g.trackLeft, g.trackRight} {
 		paint.FillShape(gtx.Ops, color.NRGBA{R: 154, G: 169, B: 189, A: 255}, clip.Rect(image.Rect(x, 0, x+max(1, gtx.Dp(1)), height)).Op())
 	}
 	if selected {

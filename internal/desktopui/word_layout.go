@@ -240,6 +240,8 @@ func (a *App) layoutWordCanvas(gtx layout.Context, state *documentSessionState, 
 		if event.Kind != gesture.KindClick || state.wordCanvasContentClickHandled || state.wordReadingMode || state.wordProtected || state.wordInsertionRunning || state.formatRunning.Load() || a.isSaving() {
 			continue
 		}
+		state.wordTableSelection = nil
+		state.wordTableSelectionDrag = nil
 		if state.selectedWordImageID != "" {
 			clearWordImageSelection(state)
 		}

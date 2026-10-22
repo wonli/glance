@@ -147,7 +147,8 @@ func wordTableCellHasContent(cell *wordXMLNode) bool {
 			if node.text != "" {
 				return true
 			}
-		case "drawing", "pict", "object", "tab", "br", "sym", "fldChar", "noBreakHyphen", "softHyphen":
+		case "drawing", "pict", "object", "tab", "br", "sym", "fldChar", "noBreakHyphen", "softHyphen",
+			"footnoteReference", "endnoteReference", "commentReference", "commentRangeStart", "commentRangeEnd":
 			return true
 		}
 		for _, child := range node.children {

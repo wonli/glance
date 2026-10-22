@@ -112,6 +112,10 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 	if wordSelectionCutShortcut {
 		_, wordSelectionCutShortcut = any(state.word).(document.WordTextSelectionEditor)
 	}
+	wordTableSelectionShortcut := state.word != nil && state.wordTableSelection != nil
+	if wordTableSelectionShortcut {
+		filters = append(filters, key.Filter{Name: key.Name("C"), Required: key.ModShortcut}, key.Filter{Name: key.Name("X"), Required: key.ModShortcut}, key.Filter{Name: key.NameDeleteForward})
+	}
 	if spreadsheetCopyShortcut {
 		filters = append(filters, key.Filter{Name: key.Name("C"), Required: key.ModShortcut})
 	}
@@ -241,17 +245,29 @@ func (a *App) handleOfficeShortcuts(gtx layout.Context) {
 				a.applyHistory(false)
 			}
 		case key.Name("C"):
-			if spreadsheetCopyShortcut {
+			if wordTableSelectionShortcut {
+				a.updateFocusedWordEditorBeforeCommandWithSubmit(gtx, state, false)
+				a.writeWordTableSelectionToClipboard(gtx, state)
+			} else if spreadsheetCopyShortcut {
 				a.writeSpreadsheetSelectionToClipboard(gtx, false)
 			}
 		case key.Name("X"):
 			if spreadsheetCutShortcut {
 				a.writeSpreadsheetSelectionToClipboard(gtx, true)
+			} else if wordTableSelectionShortcut {
+				a.updateFocusedWordEditorBeforeCommandWithSubmit(gtx, state, false)
+				a.writeWordTableSelectionToClipboard(gtx, state)
+				a.queueWordTableSelectionDelete(state)
 			} else if wordSelectionCutShortcut {
 				a.updateFocusedWordEditorBeforeCommand(gtx, state)
 				if state.wordParagraphSplitIntent == nil {
 					a.cutSelectedWordText(gtx, state)
 				}
+			}
+		case key.NameDeleteForward:
+			if wordTableSelectionShortcut {
+				a.updateFocusedWordEditorBeforeCommandWithSubmit(gtx, state, false)
+				a.queueWordTableSelectionDelete(state)
 			}
 		case key.Name("V"):
 			if spreadsheetPasteShortcut {

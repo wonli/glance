@@ -54,6 +54,11 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 		if !a.wordToolbarActionEnabled(action) {
 			continue
 		}
+		if action.id == "cut" && state.wordTableSelection != nil {
+			a.writeWordTableSelectionToClipboard(gtx, state)
+			a.queueWordTableSelectionDelete(state)
+			continue
+		}
 		if action.id == "view-new-window" {
 			a.executeWordToolbarAction(action.id)
 			continue
@@ -105,6 +110,9 @@ func (a *App) handleWordToolbarEvents(gtx layout.Context) {
 				continue
 			}
 			if action.id == "copy" {
+				if a.writeWordTableSelectionToClipboard(gtx, state) {
+					continue
+				}
 				if selected, ok := wordPageSelectedText(state); ok {
 					gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(selected))})
 					continue

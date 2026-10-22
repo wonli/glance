@@ -66,6 +66,14 @@ func (a *App) layoutWordPageFocusedEditor(gtx layout.Context, state *documentSes
 	}
 	documentSelectionHandled := false
 	selectionInputPending := false
+	if state.wordTableSelection != nil {
+		for event, ok := gtx.Event(key.Filter{Focus: editor, Name: "C", Required: key.ModShortcut}); ok; event, ok = gtx.Event(key.Filter{Focus: editor, Name: "C", Required: key.ModShortcut}) {
+			keyEvent, ok := event.(key.Event)
+			if ok && keyEvent.State == key.Press {
+				a.writeWordTableSelectionToClipboard(gtx, state)
+			}
+		}
+	}
 	if !editor.ReadOnly {
 		if a.handleWordSelectionDeleteKey(gtx, state, editor) {
 			editor.ReadOnly = true

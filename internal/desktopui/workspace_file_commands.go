@@ -32,6 +32,7 @@ type fileCommandKind uint8
 
 const (
 	commandOpenFile fileCommandKind = iota + 1
+	commandOpenProofreadingSource
 	commandOpenFolder
 	commandRegisterHomeFolder
 	commandSaveAs
@@ -49,6 +50,10 @@ type fileCommandResult struct {
 
 func (a *App) startOpenFilePicker() {
 	a.startFileCommand(commandOpenFile, "")
+}
+
+func (a *App) startProofreadingSourcePicker() {
+	a.startFileCommand(commandOpenProofreadingSource, "")
 }
 
 func (a *App) startFolderPicker() {
@@ -87,6 +92,9 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 	}
 	runner := a.fileCommandRunner
 	pickerLabels := a.filePickerLabels()
+	if kind == commandOpenProofreadingSource {
+		pickerLabels.OpenDocument = a.textID("pdf.proofread.choose_source")
+	}
 	a.launchManagedBackground(func() {
 		result := fileCommandResult{kind: kind}
 		if runner != nil {
@@ -97,7 +105,7 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 			}
 		} else {
 			switch kind {
-			case commandOpenFile:
+			case commandOpenFile, commandOpenProofreadingSource:
 				result.path, result.err = chooseOfficeFile(pickerLabels)
 			case commandOpenFolder:
 				result.path, result.err = chooseOfficeFolder(pickerLabels)
@@ -130,6 +138,8 @@ func fileCommandStartMessage(kind fileCommandKind, format string) i18n.Message {
 	switch kind {
 	case commandOpenFile:
 		return i18n.Message{ID: "file.command.choose_open_file"}
+	case commandOpenProofreadingSource:
+		return i18n.Message{ID: "pdf.proofread.choose_source"}
 	case commandOpenFolder:
 		return i18n.Message{ID: "file.command.choose_open_folder"}
 	case commandRegisterHomeFolder:
@@ -152,7 +162,7 @@ func fileCommandStartMessage(kind fileCommandKind, format string) i18n.Message {
 
 func fileCommandFailureMessage(kind fileCommandKind) i18n.Message {
 	switch kind {
-	case commandOpenFile:
+	case commandOpenFile, commandOpenProofreadingSource:
 		return i18n.Message{ID: "file.command.open_file_failed"}
 	case commandOpenFolder:
 		return i18n.Message{ID: "file.command.open_folder_failed"}

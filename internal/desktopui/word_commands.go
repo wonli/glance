@@ -117,61 +117,65 @@ func (a *App) rotateSelectedWordImage(delta float64) {
 }
 
 type wordCommandResult struct {
-	state                 *documentSessionState
-	operationToken        sessionOperationToken
-	revision              uint64
-	blocks                []document.WordBlock
-	selectInsertedImage   bool
-	generation            uint64
-	operation             string
-	err                   error
-	clearImageSelection   bool
-	imageID               string
-	undo                  bool
-	history               bool
-	applied               bool
-	textDraft             bool
-	applicationCommand    bool
-	viewOnly              bool
-	skipOperationTracking bool
-	confirmationPending   bool
-	wordTrackRevisions    *bool
-	selectionEdit         bool
-	selectionEditResult   document.WordTextSelectionEditResult
-	selectionFormatResult document.WordTextSelectionFormatResult
-	paragraphSplit        bool
-	paragraphJoin         bool
-	runID                 string
-	runText               string
-	splitSourceRunID      string
-	splitPrefix           string
-	splitParagraphID      string
-	splitRunID            string
-	splitRunText          string
-	joinParagraphID       string
-	joinRunID             string
-	joinCaret             int
-	insertedParagraphID   string
-	bodyParagraphInsert   bool
-	wordRangeReplacement  bool
-	wordRangeRunIDs       []string
-	wordRangeInputTexts   map[string]string
-	replaceCaret          int
-	wordSymbolInsertion   bool
-	wordCommentList       bool
-	wordComments          []document.WordComment
-	wordCommentTotal      int
-	pageBreak             bool
-	wordReplaceAll        *wordReplaceAllResult
-	replaceRunID          string
-	replaceParagraphID    string
-	replaceStart          int
-	replaceText           string
-	replaceQuery          string
-	insertedSymbol        string
-	pageBreakSourcePrefix string
-	pageBreakParagraphID  string
-	pageBreakCaretRunID   string
+	state                     *documentSessionState
+	operationToken            sessionOperationToken
+	revision                  uint64
+	blocks                    []document.WordBlock
+	selectInsertedImage       bool
+	generation                uint64
+	operation                 string
+	err                       error
+	clearImageSelection       bool
+	imageID                   string
+	undo                      bool
+	history                   bool
+	applied                   bool
+	textDraft                 bool
+	applicationCommand        bool
+	viewOnly                  bool
+	skipOperationTracking     bool
+	confirmationPending       bool
+	wordTrackRevisions        *bool
+	selectionEdit             bool
+	selectionEditResult       document.WordTextSelectionEditResult
+	selectionFormatResult     document.WordTextSelectionFormatResult
+	tableSelectionEdit        bool
+	tableSelectionEditOutcome document.WordTableSelectionEditResult
+	tableSelectionTableID     string
+	noDocumentChange          bool
+	paragraphSplit            bool
+	paragraphJoin             bool
+	runID                     string
+	runText                   string
+	splitSourceRunID          string
+	splitPrefix               string
+	splitParagraphID          string
+	splitRunID                string
+	splitRunText              string
+	joinParagraphID           string
+	joinRunID                 string
+	joinCaret                 int
+	insertedParagraphID       string
+	bodyParagraphInsert       bool
+	wordRangeReplacement      bool
+	wordRangeRunIDs           []string
+	wordRangeInputTexts       map[string]string
+	replaceCaret              int
+	wordSymbolInsertion       bool
+	wordCommentList           bool
+	wordComments              []document.WordComment
+	wordCommentTotal          int
+	pageBreak                 bool
+	wordReplaceAll            *wordReplaceAllResult
+	replaceRunID              string
+	replaceParagraphID        string
+	replaceStart              int
+	replaceText               string
+	replaceQuery              string
+	insertedSymbol            string
+	pageBreakSourcePrefix     string
+	pageBreakParagraphID      string
+	pageBreakCaretRunID       string
 }
 
 func (a *App) publishWordCommand(result wordCommandResult) {
@@ -188,12 +192,17 @@ func (a *App) publishWordCommand(result wordCommandResult) {
 				result.revision = result.state.wordRevisionAtomic.Load()
 			}
 		} else {
-			if result.err == nil && (!result.history || result.applied) {
+			if result.noDocumentChange {
+				result.blocks = nil
+				result.revision = result.operationToken.revision
+			} else if result.err == nil && (!result.history || result.applied) {
 				if result.blocks != nil {
 					if result.selectionEdit {
 						// Formatting and replacement can renumber inline IDs. Publish
 						// their text baseline with the new blocks, so another frame or
 						// window cannot interpret old editor text as a new draft.
+						result.state.setWordBlocksAndTextState(result.blocks, true)
+					} else if result.tableSelectionEdit {
 						result.state.setWordBlocksAndTextState(result.blocks, true)
 					} else if result.history {
 						result.state.setWordBlocksAndTextState(result.blocks, false)

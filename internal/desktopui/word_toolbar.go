@@ -254,6 +254,10 @@ func (a *App) wordToolbarActionEnabled(action ribbonAction) bool {
 		}
 		return history.CanRedo()
 	case "cut", "copy", "paste":
+		if state.wordTableSelection != nil && (action.id == "copy" || action.id == "cut") {
+			_, supported := any(state.word).(document.WordTableSelectionEditor)
+			return supported
+		}
 		run, ok := selectedWordFormattingRun(state, state.selectedWordRunID)
 		return ok && (action.id == "copy" || run.Editable)
 	case "style-body", "style-heading", "style-heading-2":

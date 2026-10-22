@@ -4,7 +4,9 @@ import (
 	"glance/internal/document"
 	"image/color"
 
+	"gioui.org/io/event"
 	"gioui.org/io/key"
+	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -15,6 +17,15 @@ import (
 )
 
 func (a *App) layoutWordList(gtx layout.Context, state *documentSessionState, blocks []document.WordBlock) layout.Dimensions {
+	if state.wordTableSelection != nil || state.wordTableSelectionDrag != nil {
+		for value, ok := gtx.Event(key.Filter{Name: key.NameEscape}); ok; value, ok = gtx.Event(key.Filter{Name: key.NameEscape}) {
+			if keyEvent, ok := value.(key.Event); ok && keyEvent.State == key.Press {
+				state.wordTableSelection = nil
+				state.wordTableSelectionDrag = nil
+				break
+			}
+		}
+	}
 	state.wordListState.List.Axis = layout.Vertical
 	position := &state.wordListState.Position
 	if position.First > len(blocks) {
@@ -41,7 +52,7 @@ func (a *App) layoutWordListItem(gtx layout.Context, state *documentSessionState
 		border, hasBorder := wordContinuousParagraphBottomBorder(blocks, index)
 		return a.layoutWordParagraphWithBottomBorder(gtx, *blocks[index].Paragraph, false, border, hasBorder)
 	}
-	return a.layoutWordBlock(gtx, blocks[index])
+	return a.layoutWordBlock(gtx, state, blocks[index])
 }
 
 func wordContinuousParagraphBottomBorder(blocks []document.WordBlock, index int) (document.WordParagraphBorder, bool) {
@@ -133,7 +144,7 @@ func (a *App) layoutWordAppendTarget(gtx layout.Context, state *documentSessionS
 	})
 }
 
-func (a *App) layoutWordBlock(gtx layout.Context, block document.WordBlock) layout.Dimensions {
+func (a *App) layoutWordBlock(gtx layout.Context, state *documentSessionState, block document.WordBlock) layout.Dimensions {
 	switch block.Kind {
 	case document.WordParagraphBlock:
 		if block.Paragraph != nil {
@@ -141,7 +152,7 @@ func (a *App) layoutWordBlock(gtx layout.Context, block document.WordBlock) layo
 		}
 	case document.WordTableBlock:
 		if block.Table != nil {
-			return a.layoutWordTable(gtx, *block.Table)
+			return a.layoutWordTable(gtx, state, block.ID, *block.Table)
 		}
 	case document.WordUnsupportedBlock:
 		if block.Unsupported != nil {
@@ -151,20 +162,35 @@ func (a *App) layoutWordBlock(gtx layout.Context, block document.WordBlock) layo
 	return layout.Dimensions{}
 }
 
-func (a *App) layoutWordTable(gtx layout.Context, table document.WordTable) layout.Dimensions {
+func (a *App) layoutWordTable(gtx layout.Context, state *documentSessionState, tableID string, table document.WordTable) layout.Dimensions {
 	columnWidths := wordTableColumnWidths(table)
+	selectedOwners := make(map[string]struct{})
+	if state != nil && state.wordTableSelection != nil && state.wordTableSelection.tableID == tableID {
+		if selectedIDs, _, ok := wordTableSelectionCellIDs(state); ok {
+			for _, id := range selectedIDs {
+				selectedOwners[id] = struct{}{}
+			}
+		}
+	}
+	grid, gridErr := buildWordTableGrid(table)
 	rows := make([]layout.FlexChild, 0, len(table.Rows))
 	for _, row := range table.Rows {
 		row := row
 		cells := make([]layout.FlexChild, 0, len(row.Cells))
 		for cellIndex, cell := range row.Cells {
 			cell := cell
+			selected := false
+			if gridErr == nil {
+				if ownerID := grid.ownerByID[cell.ID]; ownerID != "" {
+					_, selected = selectedOwners[ownerID]
+				}
+			}
 			weight := 1.0
 			if cellIndex < len(columnWidths) {
 				weight = columnWidths[cellIndex]
 			}
 			cells = append(cells, layout.Flexed(float32(weight), func(gtx layout.Context) layout.Dimensions {
-				return a.layoutWordTableCell(gtx, cell)
+				return a.layoutWordTableCell(gtx, state, tableID, cell, selected)
 			}))
 		}
 		rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -182,7 +208,7 @@ func (a *App) layoutWordTable(gtx layout.Context, table document.WordTable) layo
 	})
 }
 
-func (a *App) layoutWordTableCell(gtx layout.Context, cell document.WordTableCell) layout.Dimensions {
+func (a *App) layoutWordTableCell(gtx layout.Context, state *documentSessionState, tableID string, cell document.WordTableCell, selected bool) layout.Dimensions {
 	children := make([]layout.FlexChild, 0, len(cell.Paragraphs))
 	for _, paragraph := range cell.Paragraphs {
 		paragraph := paragraph
@@ -194,11 +220,33 @@ func (a *App) layoutWordTableCell(gtx layout.Context, cell document.WordTableCel
 	if cellFill, ok := parseWordRunColor(cell.FillColor); ok {
 		fill = cellFill
 	}
-	return wordMeasuredBackground(gtx, fill, func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5), Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
-		})
+	var tag *wordTablePointerTag
+	if state != nil && state.wordViewMode == wordViewWebLayout && tableID != "" {
+		tag = wordTablePointerTagForCell(state, tableID, cell.ID)
+		a.handleWordTableCellPointerEvents(gtx, state, tableID, cell.ID, tag)
+	}
+	recorder := op.Record(gtx.Ops)
+	pass := pointer.PassOp{}.Push(gtx.Ops)
+	dimensions := layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5), Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	})
+	if tag != nil {
+		area := clip.Rect{Max: dimensions.Size}.Push(gtx.Ops)
+		event.Op(gtx.Ops, tag)
+		area.Pop()
+	}
+	if state != nil && state.wordTableCaretRestore != nil {
+		restoreWordTableCaretSnapshot(gtx, state, state.wordTableCaretRestore)
+		state.wordTableCaretRestore = nil
+	}
+	pass.Pop()
+	call := recorder.Stop()
+	paint.FillShape(gtx.Ops, fill, clip.Rect{Max: dimensions.Size}.Op())
+	if selected {
+		paint.FillShape(gtx.Ops, wordTableSelectionColor, clip.Rect{Max: dimensions.Size}.Op())
+	}
+	call.Add(gtx.Ops)
+	return dimensions
 }
 
 func wordTableColumnWidths(table document.WordTable) []float64 {

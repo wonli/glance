@@ -70,8 +70,9 @@ type WordParagraph struct {
 
 // WordTable contains rows and cells in their source order.
 type WordTable struct {
-	Layout WordTableLayout
-	Rows   []WordTableRow
+	Layout                   WordTableLayout
+	Rows                     []WordTableRow
+	HasLegacyHorizontalMerge bool
 }
 
 type WordTableRow struct {
@@ -477,6 +478,23 @@ type WordPageBackgroundEditor interface {
 // WordTableInsertEditor exposes inserting a basic table into the document body.
 type WordTableInsertEditor interface {
 	InsertTable(afterParagraphID string, rows, cols int) (tableID string, err error)
+}
+
+// WordTableSelectionEditResult reports the result of deleting a selected
+// range of table cells. Deleting an already-empty table removes the table;
+// otherwise the selected cells are cleared while preserving their structure.
+type WordTableSelectionEditResult uint8
+
+const (
+	WordTableSelectionNoChange WordTableSelectionEditResult = iota
+	WordTableSelectionCellsCleared
+	WordTableSelectionTableDeleted
+)
+
+// WordTableSelectionEditor exposes an atomic table-range deletion operation.
+// Implementations must validate the full selection before applying a change.
+type WordTableSelectionEditor interface {
+	DeleteWordTableSelection(tableID string, cellIDs []string) (WordTableSelectionEditResult, error)
 }
 
 // WordCoverPageEditor provides inserting a standard cover page into the document.

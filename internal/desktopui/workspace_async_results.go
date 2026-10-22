@@ -133,6 +133,12 @@ func (a *App) processAsyncResults() {
 				} else {
 					a.setStatusMessage(i18n.Message{ID: "file.command.open_cancelled"}, feedbackInfo, notificationSuppressed)
 				}
+			case commandOpenProofreadingSource:
+				if result.path != "" {
+					a.startOpen(result.path)
+				} else {
+					a.setStatusMessage(i18n.Message{ID: "pdf.proofread.source_cancelled"}, feedbackInfo, notificationSuppressed)
+				}
 			case commandOpenFolder:
 				if result.path == "" {
 					a.setStatusMessage(i18n.Message{ID: "file.command.folder_cancelled"}, feedbackInfo, notificationSuppressed)

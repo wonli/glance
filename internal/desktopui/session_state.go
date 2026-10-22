@@ -59,6 +59,10 @@ type documentSessionState struct {
 	wordHyperlinkRunTargetsRevision     uint64
 	wordPageSelectionDrag               *wordPageSelectionDrag
 	wordPageTextSelection               *wordPageTextSelection
+	wordTableSelection                  *wordTableSelection
+	wordTableSelectionDrag              *wordTableSelectionDrag
+	wordTableSelectionDeleteIntent      *wordTableSelectionDeleteIntent
+	wordTablePointerTags                map[string]map[string]*wordTablePointerTag
 	wordPagePendingScrollRunID          string
 	wordPageCaretBlinkRunID             string
 	wordPageCaretBlinkOffset            int

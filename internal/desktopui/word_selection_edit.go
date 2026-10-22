@@ -165,6 +165,17 @@ func restoreWordSelectionReplacementDraft(state *documentSessionState, intent wo
 }
 
 func (a *App) handleWordSelectionDeleteKey(gtx layout.Context, state *documentSessionState, editor *widget.Editor) bool {
+	if state != nil && state.wordTableSelection != nil {
+		value, ok := gtx.Event(key.Filter{Focus: editor, Name: key.NameDeleteForward})
+		if !ok {
+			return false
+		}
+		pressed, ok := value.(key.Event)
+		if ok && pressed.State == key.Press {
+			a.queueWordTableSelectionDelete(state)
+		}
+		return true
+	}
 	if !wordPageTextSelectionActive(state.wordPageTextSelection) {
 		return false
 	}

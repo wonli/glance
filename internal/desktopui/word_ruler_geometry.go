@@ -17,6 +17,7 @@ type wordRulerGeometry struct {
 	cellLimited                              bool
 	minimumLeftEMU, minimumRightEMU          int64
 	pageLeft, pageRight, textLeft, textRight int
+	trackLeft, trackRight                    int
 	pixelsPerEMU                             float64
 	canonical                                bool
 }
@@ -61,15 +62,15 @@ func wordRulerGeometryForState(gtx layout.Context, state *documentSessionState) 
 			scale = wordScenePixelsPerPoint(gtx, page, state.wordLayoutZoom)
 			pageWidth = int(math.Ceil(page.Clip.WidthPT * scale))
 		}
-		area := page.Content
+		markerArea := page.Content
 		cellBounds, inCell := wordRulerSelectedCellBounds(state, page)
 		if inCell {
-			area = wordlayout.TableCellTextArea(cellBounds)
+			markerArea = wordlayout.TableCellTextArea(cellBounds)
 		} else {
 			matched := false
 			for _, fragment := range page.Text {
 				if fragment.RunID == active.RunID && fragment.RuneStart <= active.RuneOffset && active.RuneOffset < fragment.RuneEnd && fragment.ParagraphArea.WidthPT > 0 {
-					area = fragment.ParagraphArea
+					markerArea = fragment.ParagraphArea
 					matched = true
 					break
 				}
@@ -77,7 +78,7 @@ func wordRulerGeometryForState(gtx layout.Context, state *documentSessionState) 
 			if !matched {
 				for _, fragment := range page.Text {
 					if fragment.RunID == active.RunID && fragment.RuneStart <= active.RuneOffset && active.RuneOffset <= fragment.RuneEnd && fragment.ParagraphArea.WidthPT > 0 {
-						area = fragment.ParagraphArea
+						markerArea = fragment.ParagraphArea
 						matched = true
 						break
 					}
@@ -91,7 +92,7 @@ func wordRulerGeometryForState(gtx layout.Context, state *documentSessionState) 
 						}
 						for _, fragment := range page.Text {
 							if fragment.RunID == inline.Text.ID && fragment.ParagraphArea.WidthPT > 0 {
-								area = fragment.ParagraphArea
+								markerArea = fragment.ParagraphArea
 								matched = true
 								break
 							}
@@ -103,11 +104,18 @@ func wordRulerGeometryForState(gtx layout.Context, state *documentSessionState) 
 				}
 			}
 		}
-		g := wordRulerGeometry{pageLeft: left, pageRight: left + pageWidth, textLeft: left + int(math.Round(area.XPT*scale)), textRight: left + int(math.Round((area.XPT+area.WidthPT)*scale)), pixelsPerEMU: scale / 12700, canonical: true}
+		g := wordRulerGeometry{
+			pageLeft: left, pageRight: left + pageWidth,
+			textLeft:     left + int(math.Round(markerArea.XPT*scale)),
+			textRight:    left + int(math.Round((markerArea.XPT+markerArea.WidthPT)*scale)),
+			trackLeft:    left + int(math.Round(page.Content.XPT*scale)),
+			trackRight:   left + int(math.Round((page.Content.XPT+page.Content.WidthPT)*scale)),
+			pixelsPerEMU: scale / 12700, canonical: true,
+		}
 		if inCell {
 			g.cellLimited = true
-			g.minimumLeftEMU = int64(math.Round((cellBounds.XPT - area.XPT) * 12700))
-			g.minimumRightEMU = int64(math.Round((area.XPT + area.WidthPT - cellBounds.XPT - cellBounds.WidthPT) * 12700))
+			g.minimumLeftEMU = int64(math.Round((cellBounds.XPT - markerArea.XPT) * 12700))
+			g.minimumRightEMU = int64(math.Round((markerArea.XPT + markerArea.WidthPT - cellBounds.XPT - cellBounds.WidthPT) * 12700))
 		}
 		return g
 	}
@@ -117,7 +125,9 @@ func wordRulerGeometryForState(gtx layout.Context, state *documentSessionState) 
 	}
 	pageWidth, left := wordPageGeometry(width, gtx.Dp(unit.Dp(canvasWidth)))
 	ml, mr, _ := wordCanvasPageMarginsDP(gtx, state)
-	return wordRulerGeometry{pageLeft: left, pageRight: left + pageWidth, textLeft: left + wordPageHorizontalMargin(pageWidth, gtx.Dp(unit.Dp(ml))), textRight: left + pageWidth - wordPageHorizontalMargin(pageWidth, gtx.Dp(unit.Dp(mr))), pixelsPerEMU: float64(max32(.1, gtx.Metric.PxPerDp)) / float64(wordEMUPerDP)}
+	textLeft := left + wordPageHorizontalMargin(pageWidth, gtx.Dp(unit.Dp(ml)))
+	textRight := left + pageWidth - wordPageHorizontalMargin(pageWidth, gtx.Dp(unit.Dp(mr)))
+	return wordRulerGeometry{pageLeft: left, pageRight: left + pageWidth, textLeft: textLeft, textRight: textRight, trackLeft: textLeft, trackRight: textRight, pixelsPerEMU: float64(max32(.1, gtx.Metric.PxPerDp)) / float64(wordEMUPerDP)}
 }
 
 func (g wordRulerGeometry) pixels(emu int64) int {

@@ -314,6 +314,10 @@ func (a *App) finishWordTextFlush(state *documentSessionState) {
 		}
 		return
 	}
+	if state.wordTableSelectionDeleteIntent != nil {
+		a.startWordTableSelectionDelete(state)
+		return
+	}
 	if state.wordSelectionEditIntent != nil {
 		a.startWordSelectionEdit(state)
 		return

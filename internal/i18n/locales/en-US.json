@@ -773,6 +773,8 @@
   "word.status.inline.finish_the_current_word_operation_a24d6f": "Finish the current Word operation before restoring a previous version.",
   "word.status.inline.finish_chinese_input_composition_before_e3b0d1": "Finish Chinese input composition before pasting text.",
   "word.status.inline.finish_chinese_input_composition_before_297909": "Finish Chinese input composition before pasting the selected text.",
+  "word.status.inline.table_cell_deletion_is_not_supported_8d2263": "This document format does not support table cell deletion.",
+  "word.status.inline.table_selection_is_no_longer_available_67d3a1": "The selected table cells are no longer available.",
   "word.status.inline.place_the_caret_in_the_f286e3": "Place the caret in the Word document body before pasting.",
   "word.status.inline.place_the_caret_in_an_75475b": "Place the caret in an editable Word paragraph first.",
   "word.status.inline.place_the_caret_in_editable_ce48f1": "Place the caret in editable body text first.",

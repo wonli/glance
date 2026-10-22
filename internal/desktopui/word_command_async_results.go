@@ -31,6 +31,41 @@ func (a *App) processWordCommandAsyncResult() bool {
 			}
 		}
 		activeResult := result.generation == a.documentGeneration && result.state == a.documentSessionState
+		if result.textDraft && result.err != nil && result.state.wordTableSelectionDeleteIntent != nil {
+			result.state.wordTableSelectionDeleteIntent = nil
+			result.state.wordFlushRequested.Store(false)
+			result.state.wordFlushAllDrafts.Store(false)
+			result.state.wordForceDraftFlush.Store(false)
+		}
+		if result.tableSelectionEdit {
+			result.state.wordTableSelectionDeleteIntent = nil
+			if result.err != nil {
+				if activeResult {
+					a.setWordCommandStatus(result.err)
+				}
+			} else if !result.noDocumentChange {
+				reconcileWordSelection(result.state, false)
+				pruneWordTableEditViewState(result.state)
+				result.state.wordTableSelection = nil
+				result.state.wordTableSelectionDrag = nil
+				result.state.wordPageTextSelection = nil
+				result.state.wordPageSelectionDrag = nil
+				if result.tableSelectionEditOutcome == document.WordTableSelectionTableDeleted && result.operationToken.documentID == result.state.documentID {
+					delete(result.state.wordTablePointerTags, result.tableSelectionTableID)
+				}
+				if activeResult {
+					a.setWordCommandStatus(nil)
+					a.persistActiveSession()
+					if !result.state.formatRunning.Load() && !result.state.wordFlushRequested.Load() {
+						a.maybeAutoSaveWord(result.state)
+					}
+				}
+			}
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+			return false
+		}
 		if result.wordReplaceAll != nil {
 			a.completeWordTextReplaceAll(result, activeResult)
 			return false
@@ -212,7 +247,7 @@ func (a *App) processWordCommandAsyncResult() bool {
 				finishWordImagePreviewCommand(result.state, result.imageID)
 			}
 			if result.state.wordFlushRequested.Load() && !result.state.formatRunning.Load() {
-				a.startNextWordTextCommit()
+				a.startNextWordTextCommitFor(result.state)
 			}
 			if activeResult && !result.viewOnly && result.err == nil && !result.confirmationPending && !result.state.formatRunning.Load() && !result.state.wordFlushRequested.Load() {
 				a.maybeAutoSaveWord(result.state)

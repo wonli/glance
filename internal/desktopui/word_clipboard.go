@@ -122,6 +122,27 @@ func (a *App) cutSelectedWordText(gtx layout.Context, state *documentSessionStat
 	return true
 }
 
+func (a *App) writeWordTableSelectionToClipboard(gtx layout.Context, state *documentSessionState) bool {
+	if state == nil || state.wordTableSelection == nil {
+		return false
+	}
+	cellIDs, table, ok := wordTableSelectionCellIDs(state)
+	if !ok {
+		a.setStatusMessage(i18n.Message{ID: "word.status.inline.table_selection_is_no_longer_available_67d3a1"}, feedbackWarning, notificationToast)
+		return true
+	}
+	for runID, editor := range state.wordRunEditors {
+		captureWordEditorDraft(state, runID, editor.Text())
+	}
+	text, err := wordTableSelectionTSV(table, cellIDs, state.wordDraftSnapshot())
+	if err != nil {
+		a.setWordCommandStatus(err)
+		return true
+	}
+	gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})
+	return true
+}
+
 func (a *App) handleWordClipboardEvents(gtx layout.Context) {
 	state := a.documentSessionState
 	if state == nil || state.word == nil {

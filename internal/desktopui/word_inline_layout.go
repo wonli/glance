@@ -281,6 +281,56 @@ func wordTextHighlightRects(gtx layout.Context, shaper *text.Shaper, label mater
 	return rects
 }
 
+func wordTextUnderlineRects(gtx layout.Context, shaper *text.Shaper, label material.LabelStyle, value string) []image.Rectangle {
+	width := gtx.Constraints.Max.X
+	if shaper == nil || value == "" || width <= 0 {
+		return nil
+	}
+	shaper.LayoutString(text.Parameters{
+		Font:             label.Font,
+		Alignment:        label.Alignment,
+		PxPerEm:          fixed.I(gtx.Sp(label.TextSize)),
+		MaxWidth:         width,
+		MinWidth:         gtx.Constraints.Min.X,
+		WrapPolicy:       label.WrapPolicy,
+		LineHeight:       fixed.I(gtx.Sp(label.LineHeight)),
+		LineHeightScale:  label.LineHeightScale,
+		Locale:           gtx.Locale,
+		DisableSpaceTrim: true,
+	}, value)
+	var rects []image.Rectangle
+	lineLeft, lineRight, lineBaseline := 0, 0, 0
+	lineHasGlyph := false
+	flushLine := func() {
+		if lineHasGlyph && lineRight > lineLeft {
+			rects = append(rects, image.Rect(lineLeft, lineBaseline, lineRight, lineBaseline+1))
+		}
+		lineLeft, lineRight, lineBaseline = 0, 0, 0
+		lineHasGlyph = false
+	}
+	for glyph, ok := shaper.NextGlyph(); ok; glyph, ok = shaper.NextGlyph() {
+		if glyph.Flags&(text.FlagParagraphBreak|text.FlagTruncator) == 0 {
+			left := glyph.X.Floor()
+			right := (glyph.X + glyph.Advance).Ceil()
+			if right > left {
+				if !lineHasGlyph {
+					lineLeft, lineRight, lineBaseline = left, right, int(glyph.Y)
+					lineHasGlyph = true
+				} else {
+					lineLeft = min(lineLeft, left)
+					lineRight = max(lineRight, right)
+					lineBaseline = max(lineBaseline, int(glyph.Y))
+				}
+			}
+		}
+		if glyph.Flags&(text.FlagLineBreak|text.FlagParagraphBreak) != 0 {
+			flushLine()
+		}
+	}
+	flushLine()
+	return rects
+}
+
 func wordTextRangeHighlightRects(gtx layout.Context, shaper *text.Shaper, label material.LabelStyle, value string, ranges []wordSearchTextRange) []image.Rectangle {
 	width := gtx.Constraints.Max.X
 	if shaper == nil || value == "" || width <= 0 || len(ranges) == 0 {

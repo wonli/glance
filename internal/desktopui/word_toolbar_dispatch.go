@@ -100,6 +100,10 @@ func (a *App) executeWordToolbarAction(actionID string) {
 	case "redo":
 		a.applyWordHistory(false)
 	case "cut":
+		if state.wordTableSelection != nil {
+			a.queueWordTableSelectionDelete(state)
+			return
+		}
 		if wordPageTextSelectionActive(state.wordPageTextSelection) {
 			if start, end, ok := wordPageOrderedSelection(state.wordPageTextSelection); ok {
 				a.queueWordSelectionDeletion(state, start, end)

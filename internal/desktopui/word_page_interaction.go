@@ -9,6 +9,7 @@ import (
 
 	"gioui.org/f32"
 	"gioui.org/io/event"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -148,6 +149,15 @@ func (a *App) finishWordPageInteractions(state *documentSessionState) {
 }
 
 func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessionState, page wordlayout.PageScene, pageIndex int, pageRect image.Rectangle, pageScale float64, horizontalOverflow int) {
+	if state.wordTableSelection != nil || state.wordTableSelectionDrag != nil {
+		for value, ok := gtx.Event(key.Filter{Name: key.NameEscape}); ok; value, ok = gtx.Event(key.Filter{Name: key.NameEscape}) {
+			if keyEvent, ok := value.(key.Event); ok && keyEvent.State == key.Press {
+				state.wordTableSelection = nil
+				state.wordTableSelectionDrag = nil
+				break
+			}
+		}
+	}
 	hasHyperlinks := wordPageHasHyperlinks(state, page)
 	if hasHyperlinks {
 		observeWordHyperlinkShortcutKeys(gtx, state)
@@ -206,7 +216,6 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 				continue
 			}
 			state.wordCanvasContentClickHandled = true
-			state.wordPageTextSelection = nil
 			hit := wordPageHitTestWithTolerance(page, pagePoint, wordPageDevicePixelTolerance(interaction.Transform.PixelsPerPoint))
 			currentEditor := state.wordRunEditors[state.selectedWordRunID]
 			currentStart, currentEnd, currentLength := wordDebugEditorSelection(currentEditor)
@@ -214,6 +223,30 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 				state.wordRevisionAtomic.Load(), wordDebugLayoutRevision(state), pageIndex, interaction.Transform.PixelsPerPoint,
 				float64(viewportPoint.X), float64(viewportPoint.Y), float64(pagePoint.X), float64(pagePoint.Y), hit.found, hit.runID, hit.runeOffset, hit.imageID,
 				state.selectedWordRunID, currentStart, currentEnd, currentLength)
+			tableID, cellID, inTable := wordTableCellAtPagePoint(page, pagePoint)
+			hyperlinkShortcut := hit.runID != "" && event.Source == pointer.Mouse && wordHyperlinkActivationShortcut(event.Modifiers) && wordHyperlinkTargetForRun(state, hit.runID) != ""
+			if inTable && hit.imageID == "" && !hyperlinkShortcut {
+				if event.Modifiers.Contain(key.ModShift) {
+					anchor := cellID
+					if selection := state.wordTableSelection; selection != nil && selection.documentID == state.documentID && selection.tableID == tableID {
+						anchor = selection.anchorCellID
+					}
+					setWordTableSelection(state, tableID, anchor, cellID)
+					state.wordTableSelectionDrag = nil
+					continue
+				}
+				state.wordTableSelection = nil
+				state.wordTableSelectionDrag = &wordTableSelectionDrag{
+					pointerID: event.PointerID, viewMode: state.wordViewMode, pageIndex: pageIndex,
+					documentID: state.documentID, tableID: tableID, anchorCellID: cellID,
+					startCellID: cellID, origin: pagePoint, caret: captureWordTableCaretSnapshot(gtx, state),
+				}
+				gtx.Execute(pointer.GrabCmd{Tag: tag, ID: event.PointerID})
+			} else if !hyperlinkShortcut {
+				state.wordTableSelection = nil
+				state.wordTableSelectionDrag = nil
+			}
+			state.wordPageTextSelection = nil
 			if hit.imageID != "" {
 				tag.lastTextPressParagraphID = ""
 				clearWordImageSelection(state)
@@ -227,6 +260,10 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 			}
 			if hit.runID == "" {
 				tag.lastTextPressParagraphID = ""
+				if inTable {
+					state.wordPageSelectionDrag = nil
+					continue
+				}
 				if state.selectedWordImageID != "" {
 					clearWordImageSelection(state)
 					state.wordPageSelectionDrag = nil
@@ -285,6 +322,27 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 			state.wordPagePreferredVerticalXSet = false
 			gtx.Execute(pointer.GrabCmd{Tag: tag, ID: event.PointerID})
 		case pointer.Drag, pointer.Release:
+			tableDrag := state.wordTableSelectionDrag
+			if tableDrag != nil && tableDrag.pointerID == event.PointerID && tableDrag.documentID == state.documentID && tableDrag.viewMode == state.wordViewMode {
+				if targetTable, targetCell, _, found := wordTableCellAtViewportPoint(state, viewportPoint); found && targetTable == tableDrag.tableID {
+					if targetCell == tableDrag.startCellID && tableDrag.startedRange {
+						state.wordTableSelection = nil
+					} else if targetCell != tableDrag.startCellID && setWordTableSelection(state, tableDrag.tableID, tableDrag.anchorCellID, targetCell) {
+						tableDrag.startedRange = true
+						state.wordPageTextSelection = nil
+						state.wordPageSelectionDrag = nil
+						state.wordCanvasContentClickHandled = true
+						restoreWordTableCaretSnapshot(gtx, state, tableDrag.caret)
+						tableDrag.caret = nil
+					}
+				}
+				if event.Kind == pointer.Release {
+					state.wordTableSelectionDrag = nil
+				}
+				if tableDrag.startedRange {
+					continue
+				}
+			}
 			drag := state.wordPageSelectionDrag
 			if drag == nil || drag.pointerID != event.PointerID {
 				continue
@@ -336,6 +394,9 @@ func (a *App) layoutWordPageInteraction(gtx layout.Context, state *documentSessi
 			}
 		case pointer.Cancel:
 			tag.lastTextPressParagraphID = ""
+			if tableDrag := state.wordTableSelectionDrag; tableDrag != nil && tableDrag.pointerID == event.PointerID {
+				state.wordTableSelectionDrag = nil
+			}
 			if drag := state.wordPageSelectionDrag; drag != nil && drag.pointerID == event.PointerID {
 				state.wordPageSelectionDrag = nil
 				if !wordPageTextSelectionActive(state.wordPageTextSelection) {

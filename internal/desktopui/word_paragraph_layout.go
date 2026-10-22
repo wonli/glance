@@ -250,6 +250,10 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 		} else {
 			dims = selection.layoutWithDoubleClickAtTextSizeAndPointer(gtx, editor, content, onDoubleClick, label.TextSize, wordHyperlinkClickTagForRun(state, run.ID, run.HyperlinkTarget), onHyperlinkPointerEvent)
 		}
+		if selection.clicked && state.wordTableSelection != nil && !wordTableParagraphIDInTable(state, paragraph.ID) {
+			state.wordTableSelection = nil
+			state.wordTableSelectionDrag = nil
+		}
 		if selection.clicked && selection.clickedOnText {
 			state.wordCanvasContentClickHandled = true
 		} else if selection.clicked && !state.wordCanvasContentClickHandled {
@@ -262,9 +266,9 @@ func (a *App) layoutWordTextRun(gtx layout.Context, paragraph document.WordParag
 			gtx.Execute(op.InvalidateCmd{})
 		}
 		if run.Style.Underline && dims.Size.X > 0 && dims.Size.Y > 0 {
-			y := max(0, dims.Baseline)
-			thickness := max(1, gtx.Dp(unit.Dp(1)))
-			paint.FillShape(gtx.Ops, label.Color, clip.Rect{Min: image.Pt(0, y), Max: image.Pt(dims.Size.X, y+thickness)}.Op())
+			for _, underline := range wordTextUnderlineRects(gtx, a.theme.Shaper, label, editor.Text()) {
+				paint.FillShape(gtx.Ops, label.Color, clip.Rect(underline).Op())
+			}
 		}
 		return dims
 	})

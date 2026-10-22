@@ -773,6 +773,8 @@
   "word.status.inline.finish_the_current_word_operation_a24d6f": "请先完成当前 Word 操作，再恢复历史版本",
   "word.status.inline.finish_chinese_input_composition_before_e3b0d1": "请先完成当前中文输入，再粘贴文字",
   "word.status.inline.finish_chinese_input_composition_before_297909": "请先完成当前中文输入，再粘贴选区文字",
+  "word.status.inline.table_cell_deletion_is_not_supported_8d2263": "当前文档格式暂不支持删除表格单元格",
+  "word.status.inline.table_selection_is_no_longer_available_67d3a1": "所选表格单元格已失效，请重新选择",
   "word.status.inline.place_the_caret_in_the_f286e3": "请先将光标放到 Word 正文中再粘贴",
   "word.status.inline.place_the_caret_in_an_75475b": "请先将光标放在可编辑的 Word 段落中",
   "word.status.inline.place_the_caret_in_editable_ce48f1": "请先将光标放在可编辑的正文文字中",

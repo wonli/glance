@@ -75,6 +75,7 @@ func (a *App) drawWordPageScene(gtx layout.Context, state *documentSessionState,
 	for _, cell := range page.TableCells {
 		drawWordPageCellBackground(gtx, origin, cell, pixelsPerPoint)
 	}
+	drawWordPageTableSelection(gtx, state, page, origin, pixelsPerPoint)
 	for _, cell := range page.TableCells {
 		drawWordPageCellBorder(gtx, origin, cell, pixelsPerPoint)
 	}
@@ -160,6 +161,32 @@ func drawWordPageCellBackground(gtx layout.Context, origin image.Point, cell wor
 	width := max(1, int(math.Ceil(cell.Bounds.WidthPT*pixelsPerPoint)))
 	height := max(1, int(math.Ceil(cell.Bounds.HeightPT*pixelsPerPoint)))
 	paint.FillShape(gtx.Ops, fill, clip.Rect{Min: image.Pt(x, y), Max: image.Pt(x+width, y+height)}.Op())
+}
+
+func drawWordPageTableSelection(gtx layout.Context, state *documentSessionState, page wordlayout.PageScene, origin image.Point, pixelsPerPoint float64) {
+	ids, _, ok := wordTableSelectionCellIDs(state)
+	if !ok {
+		return
+	}
+	selected := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		selected[id] = struct{}{}
+	}
+	selection := state.wordTableSelection
+	for _, cell := range page.TableCells {
+		if selection.tableID != cell.TableID {
+			continue
+		}
+		if _, ok := selected[cell.CellID]; !ok {
+			continue
+		}
+		bounds := cell.Bounds
+		x := origin.X + int(math.Round(bounds.XPT*pixelsPerPoint))
+		y := origin.Y + int(math.Round(bounds.YPT*pixelsPerPoint))
+		width := max(1, int(math.Ceil(bounds.WidthPT*pixelsPerPoint)))
+		height := max(1, int(math.Ceil(bounds.HeightPT*pixelsPerPoint)))
+		paint.FillShape(gtx.Ops, wordTableSelectionColor, clip.Rect{Min: image.Pt(x, y), Max: image.Pt(x+width, y+height)}.Op())
+	}
 }
 
 func drawWordPageParagraphBorder(gtx layout.Context, origin image.Point, border wordlayout.ParagraphBorderPlacement, pixelsPerPoint float64) {
