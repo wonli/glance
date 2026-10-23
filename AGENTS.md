@@ -6,6 +6,14 @@
 - Before editing, inspect the current working directory and existing worktrees. If the user or task context specifies a worktree, perform all edits, builds, tests, and launches in that worktree.
 - Never silently switch to another checkout, edit the primary checkout while working in a designated worktree, or copy, patch, restore, or clean changes across checkouts. Do not remove a worktree or alter its existing changes unless explicitly authorized.
 
+## 验证目录与磁盘占用（强制）
+
+- 所有测试、构建、启动和验证必须直接在当前授权代码目录 `/Users/mima1234/project/glance-go` 中执行；不得为验证新建 worktree、复制仓库或切换其他 checkout。
+- 验证不得产生额外的持久磁盘占用：禁止创建独立的 `GOCACHE`、`GOMODCACHE`、构建目录、应用副本或重复依赖缓存；复用现有工具链和缓存，只运行必要的针对性检查，禁止反复全量构建。
+- 优先使用用户指定的启动命令 `GLANCE_PPROF_ADDR=127.0.0.1:6060 go run ./cmd/glance`。确需临时验证产物时，仅在当前代码目录内生成最少内容并在验证结束后清除；不得遗留二进制、截图、日志或临时测试文件，不得清理用户已有文件或缓存。
+- 实际应用验证前，若发现已经启动的 Glance，直接 kill 现有 Glance 进程，再在本代码目录用上述命令启动最新版；不得复用旧进程、让单实例激活机制接管验证，或以旧窗口证明新代码生效。此操作已获用户明确授权，无需重复确认。
+- 不得将单元测试通过、跳过或编译成功表述为实际界面渲染通过；必须如实说明实际验证结果和未验证部分。
+
 ## Architecture
 
 - Follow [docs/architecture.md](docs/architecture.md): Gio UI -> session/controller -> neutral document model -> format adapters -> local files.

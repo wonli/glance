@@ -73,7 +73,7 @@ func TestLoadImageRejectsHTTPFailures(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, want string
 		status           int
-	}{{"404", "missing", "HTTP 404", 404}, {"svg", "<svg></svg>", "PNG、JPEG 或 GIF", 200}, {"invalid", "not an image", "PNG、JPEG 或 GIF", 200}} {
+	}{{"404", "missing", "HTTP 404", 404}, {"invalid", "not an image", "PNG、JPEG、GIF 或 SVG", 200}} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(tc.status); w.Write([]byte(tc.body)) }))
 			defer server.Close()

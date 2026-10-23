@@ -8,6 +8,8 @@ require (
 	github.com/F31/go-pptx/v2 v2.1.0
 	github.com/SalvioniDigitalSolutions/gopdf v0.0.0-20260922202729-55a8f5fed5f5
 	github.com/alecthomas/chroma/v2 v2.27.0
+	github.com/chromedp/cdproto v0.157.8
+	github.com/chromedp/chromedp v0.21.0
 	github.com/extrame/ole2 v0.0.0-20160812065207-d69429661ad7
 	github.com/extrame/xls v0.0.1
 	github.com/gin-gonic/gin v1.12.0
@@ -53,6 +55,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.16 // indirect
 	github.com/gin-contrib/sse v1.1.2 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260213210345-44df1a37e875 // indirect
 	github.com/go-playground/locales v0.14.2 // indirect
 	github.com/go-playground/universal-translator v0.18.2 // indirect
 	github.com/go-playground/validator/v10 v10.30.5 // indirect

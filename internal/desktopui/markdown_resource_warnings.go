@@ -23,7 +23,7 @@ func markdownImageWarnings(snapshot document.MarkdownSnapshot, resources map[str
 	visit := func(spans []document.MarkdownSpan) {
 		for _, span := range spans {
 			key := markdowndoc.ResourceKey(span)
-			if span.Kind != "image" || resources[key] != nil {
+			if (span.Kind != "image" && span.Kind != "diagram") || resources[key] != nil {
 				continue
 			}
 			count++
@@ -50,6 +50,9 @@ func markdownImageWarnings(snapshot document.MarkdownSnapshot, resources map[str
 		}
 	}
 	for _, block := range snapshot.Blocks {
+		if block.Kind == "diagram" {
+			visit([]document.MarkdownSpan{markdowndoc.DiagramSpan(block)})
+		}
 		visit(block.Spans)
 		for _, row := range block.TableSpans {
 			for _, cell := range row {

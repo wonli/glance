@@ -10,6 +10,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,12 +18,185 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/SalvioniDigitalSolutions/gopdf"
+	"glance/internal/document"
 	"glance/internal/format/markdowndoc"
 	wordpdf "glance/internal/format/pdf"
+	"glance/internal/nativewebview"
 	"glance/internal/wordlayout"
 )
+
+func TestMarkdownVegaPDFUsesSettledInteractiveSnapshot(t *testing.T) {
+	source := "```vega\n{\"mark\":\"point\"}\n```\n"
+	snapshot, err := markdowndoc.Parse(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	span := markdowndoc.DiagramSpan(snapshot.Blocks[0])
+	resourceKey := markdowndoc.ResourceKey(span)
+	initial := image.NewUniform(color.NRGBA{R: 20, A: 255})
+	settled := image.NewRGBA(image.Rect(0, 0, 400, 200))
+	settled.Set(30, 40, color.NRGBA{G: 220, A: 255})
+	order := make(chan string, 4)
+	session := &markdownChartTestSession{events: make(chan nativewebview.PointerEvent, 4), closed: make(chan struct{}), image: settled, order: order}
+	view := newMarkdownView(source)
+	view.snapshot = snapshot
+	view.parseGeneration = 1
+	state := &markdownChartState{key: markdownChartIdentity(span), resourceKey: resourceKey, sourceStart: span.SourceStart, source: source, generation: 1, image: initial, logicalSize: image.Pt(200, 100), session: session, ctx: context.Background(), events: []nativewebview.PointerEvent{{Kind: nativewebview.PointerDown}, {Kind: nativewebview.PointerUp}}}
+	view.charts[state.key] = state
+	resources := map[string]image.Image{resourceKey: initial}
+	frozen, err := freezeMarkdownChartResources(context.Background(), view, source, 1, resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resources[resourceKey] != initial {
+		t.Fatal("freezing mutated the preview resource map")
+	}
+	if frozen[resourceKey] == initial || document.ResourceLogicalSize(frozen[resourceKey]) != image.Pt(200, 100) {
+		t.Fatal("PDF resources did not receive the settled chart snapshot and logical dimensions")
+	}
+	if got := []string{<-order, <-order, <-order, <-order}; strings.Join(got, ",") != "dispatch,dispatch,dispatch,snapshot" {
+		t.Fatalf("chart export sequence = %v; want queued input, pointer leave, then snapshot", got)
+	}
+	for _, want := range []nativewebview.PointerEventKind{nativewebview.PointerDown, nativewebview.PointerUp, nativewebview.PointerLeave} {
+		if got := <-session.events; got.Kind != want {
+			t.Fatalf("chart export event = %+v; want %q", got, want)
+		}
+	}
+	prepared, err := prepareMarkdownPDF(context.Background(), snapshot, frozen, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := wordpdf.WriteWordPDF(context.Background(), io.Discard, prepared.scene, prepared.shaper, prepared.images); err != nil {
+		t.Fatalf("prepared PDF still depended on the closed chart session: %v", err)
+	}
+}
+
+func TestMarkdownPDFKeepsDuplicateVegaSnapshotsSeparate(t *testing.T) {
+	spec := `{"mark":"point"}`
+	source := "```vega\n" + spec + "\n```\n\n```vega\n" + spec + "\n```\n"
+	snapshot, err := markdowndoc.Parse(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstSpan := markdowndoc.DiagramSpan(snapshot.Blocks[0])
+	secondSpan := markdowndoc.DiagramSpan(snapshot.Blocks[1])
+	firstKey := markdowndoc.ResourceKey(firstSpan)
+	secondKey := markdowndoc.ResourceKey(secondSpan)
+	if firstKey == secondKey {
+		t.Fatalf("identical chart occurrences share PDF resource key %q", firstKey)
+	}
+	firstSettled := image.NewUniform(color.NRGBA{R: 220, A: 255})
+	secondSettled := image.NewUniform(color.NRGBA{B: 220, A: 255})
+	view := newMarkdownView(source)
+	view.snapshot = snapshot
+	view.parseGeneration = 1
+	view.charts[markdownChartIdentity(firstSpan)] = &markdownChartState{
+		key: markdownChartIdentity(firstSpan), resourceKey: firstKey, sourceStart: firstSpan.SourceStart,
+		source: source, generation: 1, session: &markdownChartTestSession{image: firstSettled}, ctx: context.Background(),
+	}
+	view.charts[markdownChartIdentity(secondSpan)] = &markdownChartState{
+		key: markdownChartIdentity(secondSpan), resourceKey: secondKey, sourceStart: secondSpan.SourceStart,
+		source: source, generation: 1, session: &markdownChartTestSession{image: secondSettled}, ctx: context.Background(),
+	}
+	frozen, err := freezeMarkdownChartResources(context.Background(), view, source, 1, map[string]image.Image{
+		firstKey: image.NewUniform(color.Black), secondKey: image.NewUniform(color.Black),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frozen[firstKey] == frozen[secondKey] {
+		t.Fatal("duplicate chart occurrences were collapsed to one PDF snapshot")
+	}
+	if got := color.NRGBAModel.Convert(frozen[firstKey].At(0, 0)).(color.NRGBA); got.R < 200 || got.B != 0 {
+		t.Fatalf("first chart snapshot = %v, want red", got)
+	}
+	if got := color.NRGBAModel.Convert(frozen[secondKey].At(0, 0)).(color.NRGBA); got.B < 200 || got.R != 0 {
+		t.Fatalf("second chart snapshot = %v, want blue", got)
+	}
+}
+
+func TestMarkdownVegaPDFKeepsStaticSnapshotForUnopenedChart(t *testing.T) {
+	source := "```vega-lite\n{\"mark\":\"bar\"}\n```\n"
+	snapshot, err := markdowndoc.Parse(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	span := markdowndoc.DiagramSpan(snapshot.Blocks[0])
+	resourceKey := markdowndoc.ResourceKey(span)
+	initial := image.NewUniform(color.NRGBA{B: 180, A: 255})
+	resources := map[string]image.Image{resourceKey: initial}
+	view := newMarkdownView(source)
+	view.charts["stale"] = &markdownChartState{key: "stale", resourceKey: resourceKey, source: source, generation: 1, image: image.NewUniform(color.NRGBA{R: 255, A: 255})}
+	frozen, err := freezeMarkdownChartResources(context.Background(), view, source, 0, resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frozen[resourceKey] != initial {
+		t.Fatal("unopened chart did not retain its offline static resource image")
+	}
+}
+
+func TestMarkdownPDFPreflightFreezesChartSession(t *testing.T) {
+	a := markdownTestApp(t)
+	view := a.markdownView
+	source := "```vega\n{\"mark\":\"point\"}\n```\n"
+	parsed, err := markdowndoc.Parse(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	span := markdowndoc.DiagramSpan(parsed.Blocks[0])
+	resourceKey := markdowndoc.ResourceKey(span)
+	initial := image.NewUniform(color.NRGBA{R: 30, A: 255})
+	settled := image.NewRGBA(image.Rect(0, 0, 400, 200))
+	settled.Set(30, 40, color.NRGBA{G: 220, A: 255})
+	session := &markdownChartTestSession{events: make(chan nativewebview.PointerEvent, 2), closed: make(chan struct{}), image: settled}
+	state := &markdownChartState{key: markdownChartIdentity(span), resourceKey: resourceKey, sourceStart: span.SourceStart, source: source, generation: 1, image: initial, logicalSize: image.Pt(200, 100), session: session, ctx: context.Background()}
+	view.editor.SetText(source)
+	a.flushMarkdownDraft()
+	view.snapshot = parsed
+	view.parseGeneration = 1
+	view.parsedPath = a.path
+	view.images = map[string]image.Image{resourceKey: initial}
+	view.errors = map[string]string{}
+	view.charts[state.key] = state
+	a.requestMarkdownPDFExport()
+	var result markdownFileResult
+	select {
+	case result = <-view.exports:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Markdown PDF preflight timed out")
+	}
+	if result.err != nil || result.prepared == nil {
+		t.Fatalf("Markdown PDF preflight result=%v", result.err)
+	}
+	data, ok := result.prepared.images[resourceKey]
+	if !ok {
+		t.Fatal("preflight did not carry the chart snapshot into frozen PDF images")
+	}
+	frozen, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := color.NRGBAModel.Convert(frozen.At(30, 40)).(color.NRGBA); got.G < 200 {
+		t.Fatalf("preflight encoded the static chart image instead of the settled frame: %v", got)
+	}
+	if got := <-session.events; got.Kind != nativewebview.PointerLeave {
+		t.Fatalf("PDF preflight did not clear chart hover: %+v", got)
+	}
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := wordpdf.WriteWordPDF(context.Background(), io.Discard, result.prepared.scene, result.prepared.shaper, result.prepared.images); err != nil {
+		t.Fatalf("frozen preflight depended on the closed chart session: %v", err)
+	}
+	a.stopAndWaitManagedBackground()
+}
 
 func TestMarkdownPDFExport(t *testing.T) {
 	dir := t.TempDir()
@@ -101,6 +275,51 @@ func TestMarkdownPDFExport(t *testing.T) {
 		if err := os.WriteFile(capture, data, 0600); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestMarkdownPDFExportUsesBundledBitmapFallbacks(t *testing.T) {
+	snapshot, err := markdowndoc.Parse("Check ✓, ✅, 🙂 and 📊. Sequences 👩🏽‍💻 👨‍👩‍👧‍👦 🇨🇳 1️⃣ ⚠️\n\n| Symbol | Emoji |\n| --- | --- |\n| ☑ | 🧠 |\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := prepareMarkdownPDF(context.Background(), snapshot, nil, nil)
+	if err != nil {
+		t.Fatalf("prepare Markdown PDF with unsupported system glyphs: %v", err)
+	}
+	if len(prepared.images) < 6 {
+		t.Fatalf("embedded bitmap resources=%d; want at least 6", len(prepared.images))
+	}
+	placements := 0
+	for _, page := range prepared.scene.Pages {
+		placements += len(page.Images)
+	}
+	if placements < 6 {
+		t.Fatalf("PDF image placements=%d; want at least 6", placements)
+	}
+	var output bytes.Buffer
+	if err := wordpdf.WriteWordPDF(context.Background(), &output, prepared.scene, prepared.shaper, prepared.images); err != nil {
+		t.Fatalf("serialize Markdown PDF with bundled emoji: %v", err)
+	}
+	reader, err := gopdf.NewReader(output.Bytes())
+	if err != nil || reader.NumPages() == 0 || reader.Repaired() {
+		t.Fatalf("invalid emoji PDF: reader=%v err=%v", reader, err)
+	}
+	rendered, _, err := reader.RenderPageDetail(0, gopdf.RenderOpts{DPI: 96, IncludeRasterImages: true, IncludeVector: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	colored := 0
+	for y := rendered.Bounds().Min.Y; y < rendered.Bounds().Max.Y; y++ {
+		for x := rendered.Bounds().Min.X; x < rendered.Bounds().Max.X; x++ {
+			pixel := color.NRGBAModel.Convert(rendered.At(x, y)).(color.NRGBA)
+			if max(pixel.R, pixel.G, pixel.B)-min(pixel.R, pixel.G, pixel.B) > 50 {
+				colored++
+			}
+		}
+	}
+	if colored < 100 {
+		t.Fatalf("rendered color-glyph pixels=%d; bundled emoji images are not visible", colored)
 	}
 }
 

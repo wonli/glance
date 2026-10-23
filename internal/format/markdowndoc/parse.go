@@ -3,6 +3,7 @@ package markdowndoc
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -12,6 +13,7 @@ import (
 	"github.com/yuin/goldmark/text"
 	"glance/internal/document"
 	"html"
+	"net/url"
 	"sort"
 	"strings"
 	"unicode"
@@ -26,7 +28,11 @@ func Parse(source string) (document.MarkdownSnapshot, error) {
 	if len(source) > 32<<20 {
 		return p, fmt.Errorf("Markdown preview exceeds 32 MiB")
 	}
-	raw := []byte(strings.TrimPrefix(source, "\ufeff"))
+	parseText := source
+	if strings.Contains(source, "这是一个文本绘图") || strings.Contains(source, `\begin`) {
+		parseText = normalizeYuque(source)
+	}
+	raw := []byte(strings.TrimPrefix(parseText, "\ufeff"))
 	baseRune := 0
 	if strings.HasPrefix(source, "\ufeff") {
 		baseRune = 1
@@ -96,6 +102,21 @@ func Parse(source string) (document.MarkdownSnapshot, error) {
 				b.Kind = "code"
 				b.Text = string(v.Lines().Value(raw))
 				b.Language = string(v.Language(raw))
+				diagramLanguage := ""
+				switch strings.ToLower(strings.TrimSpace(b.Language)) {
+				case "mermaid", "vega", "vega-lite":
+					diagramLanguage = strings.ToLower(strings.TrimSpace(b.Language))
+				case "plain":
+					diagramLanguage = vegaLanguageFromSchema(b.Text)
+				}
+				if diagramLanguage != "" {
+					b.Kind = "diagram"
+					b.Language = diagramLanguage
+					if v.Lines().Len() > 0 {
+						b.SourceStart = byteRuneOffset(v.Lines().At(0).Start)
+						b.SourceEnd = byteRuneOffset(v.Lines().At(v.Lines().Len() - 1).Stop)
+					}
+				}
 			case *ast.CodeBlock:
 				b.Kind = "code"
 				b.Text = string(v.Lines().Value(raw))
@@ -173,6 +194,42 @@ func Parse(source string) (document.MarkdownSnapshot, error) {
 	}
 	p.ReadingMinutes = max(1, (p.Words+299)/300)
 	return p, nil
+}
+
+func vegaLanguageFromSchema(source string) string {
+	var spec struct {
+		Schema string `json:"$schema"`
+	}
+	if err := json.Unmarshal([]byte(source), &spec); err != nil {
+		return ""
+	}
+	u, err := url.Parse(spec.Schema)
+	if err != nil || u.Scheme != "https" || u.Host != "vega.github.io" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) != 3 || parts[0] != "schema" || (parts[1] != "vega" && parts[1] != "vega-lite") {
+		return ""
+	}
+	version := strings.TrimSuffix(parts[2], ".json")
+	if !strings.HasPrefix(version, "v") || len(version) == 1 || strings.HasSuffix(version, ".") {
+		return ""
+	}
+	lastWasDot := true
+	for _, r := range version[1:] {
+		switch {
+		case r >= '0' && r <= '9':
+			lastWasDot = false
+		case r == '.' && !lastWasDot:
+			lastWasDot = true
+		default:
+			return ""
+		}
+	}
+	if lastWasDot {
+		return ""
+	}
+	return parts[1]
 }
 func plain(spans []document.MarkdownSpan) string {
 	var b strings.Builder
@@ -285,10 +342,6 @@ func splitMarkdownMath(span document.MarkdownSpan) []document.MarkdownSpan {
 		if i+1 >= len(value) || value[i+1] == '$' {
 			continue
 		}
-		next, _ := utf8.DecodeRuneInString(value[i+1:])
-		if unicode.IsSpace(next) {
-			continue
-		}
 		end := -1
 		for j := i + 1; j < len(value); j++ {
 			if value[j] == '\n' {
@@ -297,12 +350,12 @@ func splitMarkdownMath(span document.MarkdownSpan) []document.MarkdownSpan {
 			if value[j] != '$' || escapedMarkdownDollar(value, j) {
 				continue
 			}
-			previous, _ := utf8.DecodeLastRuneInString(value[i+1 : j])
-			if unicode.IsSpace(previous) || j == i+1 {
-				break
-			}
 			// "$5 and $10" is currency, not a mathematical expression.
 			if j+1 < len(value) && value[j+1] >= '0' && value[j+1] <= '9' {
+				break
+			}
+			inner := strings.TrimSpace(value[i+1 : j])
+			if inner == "" {
 				break
 			}
 			end = j
@@ -311,13 +364,17 @@ func splitMarkdownMath(span document.MarkdownSpan) []document.MarkdownSpan {
 		if end < 0 {
 			continue
 		}
+		inner := strings.TrimSpace(value[i+1 : end])
+		if i+1 < len(value) && value[i+1] >= '0' && value[i+1] <= '9' && !strings.ContainsAny(inner, "=+-*/\\^_{}()") {
+			continue
+		}
 		if i > plainStart {
 			s := span
 			s.Text = markdownPlainText(value[plainStart:i])
 			out = append(out, s)
 		}
 		s := span
-		s.Kind, s.Text = "math", value[i+1:end]
+		s.Kind, s.Text = "math", inner
 		s.SourceStart = span.SourceStart + utf8.RuneCountInString(value[:i])
 		s.SourceEnd = span.SourceStart + utf8.RuneCountInString(value[:end+1])
 		out = append(out, s)

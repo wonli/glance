@@ -81,7 +81,7 @@ func (a *App) prepareFontRendering() {
 	}
 	if !a.launchManagedBackground(func() {
 		collection := fontCollectionForRendering(snapshot, sorted, cache)
-		result := fontRenderResult{key: key, shaper: text.NewShaper(text.WithCollection(collection))}
+		result := fontRenderResult{key: key, shaper: newTextShaper(collection)}
 		select {
 		case p.renderResults <- result:
 		case <-a.shutdown:

@@ -217,6 +217,9 @@ func (a *App) handleMarkdownAction(gtx layout.Context, id string) {
 			return
 		}
 		v.mode = map[string]int{"edit": 0, "preview": 1, "split": 2}[mode]
+		if v.mode == 0 {
+			a.closeMarkdownCharts(v)
+		}
 		v.focus = v.mode != 1
 		a.persistActiveSession()
 	case "outline":

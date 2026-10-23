@@ -1,0 +1,20 @@
+{
+  "version": "156.0.8078.47",
+  "targets": {
+    "darwin-arm64": {
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/mac-arm64/chrome-headless-shell-mac-arm64.zip",
+      "sha256": "2fd1c09a3e1ebde9e69e6aba92f1dd3f21ad247b55d9bf66e39213ff4205436d",
+      "platform": "mac-arm64"
+    },
+    "darwin-amd64": {
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/mac-x64/chrome-headless-shell-mac-x64.zip",
+      "sha256": "5e230044c6ac989597f4a4e301a0a710d257e07d6f7754754da2bf62ea3d272c",
+      "platform": "mac-x64"
+    },
+    "windows-amd64": {
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/win64/chrome-headless-shell-win64.zip",
+      "sha256": "e0af9b23f8051cca4f37ca49cd425e8055701bfc0383c198d67f8d5cc5884249",
+      "platform": "win64"
+    }
+  }
+}

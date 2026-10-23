@@ -98,6 +98,11 @@ macos-app:
 	GOOS=darwin GOARCH=$(MACOS_ARCH) CGO_ENABLED=1 go build -ldflags "$(MACOS_LINKER_FLAGS)" -trimpath -tags netgo -o "$(MACOS_APP_OUTPUT)/Contents/MacOS/Glance" .
 	cp packaging/macos/Info.plist "$(MACOS_APP_OUTPUT)/Contents/Info.plist"
 	bash packaging/macos/build-icon.sh "$(MACOS_DOCK_ICON)" "$(MACOS_APP_OUTPUT)/Contents/Resources/Glance.icns" "$(MACOS_ICONSET)"
+	$(MAKE) render-runtime RENDER_RUNTIME_TARGET=darwin-$(MACOS_ARCH)
+	rm -rf "$(MACOS_APP_OUTPUT)/Contents/Resources/render-runtime"
+	cp -R "$(BUILD_PATH)/.render-runtime/darwin-$(MACOS_ARCH)" "$(MACOS_APP_OUTPUT)/Contents/Resources/render-runtime"
+	go run ./packaging/render-runtime -check -target darwin-$(MACOS_ARCH) -output "$(MACOS_APP_OUTPUT)/Contents/Resources/render-runtime"
+	cp packaging/notices/THIRD_PARTY_NOTICES.md "$(MACOS_APP_OUTPUT)/Contents/Resources/THIRD_PARTY_NOTICES.md"
 
 macos-portable: macos-app
 	ditto -c -k --sequesterRsrc --keepParent "$(MACOS_APP_OUTPUT)" "$(BUILD_PATH)/Glance-macos-$(MACOS_ARCH)-portable.zip"
@@ -109,3 +114,5 @@ macos-portable-arm64:
 macos-portable-amd64:
 	$(MAKE) macos-app MACOS_ARCH=amd64 MACOS_APP_OUTPUT=$(BUILD_PATH)/.macos-stage/amd64/Glance.app
 	ditto -c -k --sequesterRsrc --keepParent "$(BUILD_PATH)/.macos-stage/amd64/Glance.app" "$(BUILD_PATH)/Glance-macos-amd64-portable.zip"
+
+include packaging/render-runtime/runtime.mk

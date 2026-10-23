@@ -1,9 +1,10 @@
 package markdowndoc
 
 import (
-	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"glance/internal/diagramrender"
 	"glance/internal/document"
 	"image"
 	_ "image/gif"
@@ -26,6 +27,16 @@ func PreviewResources(p document.MarkdownSnapshot, path string) (map[string]imag
 
 // ResourceKey distinguishes display math from inline math at the cache boundary.
 func ResourceKey(span document.MarkdownSpan) string {
+	if span.Kind == "diagram" {
+		language := strings.ToLower(span.Language)
+		if language == "" {
+			language = "mermaid"
+		}
+		if language == "vega" || language == "vega-lite" {
+			return fmt.Sprintf("diagram:%s:%d:%d:%x", language, span.SourceStart, span.SourceEnd, sha256.Sum256([]byte(span.Text)))
+		}
+		return fmt.Sprintf("diagram:%s:%x", language, sha256.Sum256([]byte(span.Text)))
+	}
 	if span.Kind == "image" {
 		return "image:" + span.Destination
 	}
@@ -38,6 +49,10 @@ func ResourceKey(span document.MarkdownSpan) string {
 // PreviewResourcesContext bounds network concurrency and the whole resource job.
 // Callers run it outside Gio frame callbacks and cancel superseded snapshots.
 func PreviewResourcesContext(ctx context.Context, p document.MarkdownSnapshot, path string) (map[string]image.Image, map[string]string) {
+	return defaultResourceLoader.PreviewResources(ctx, p, path)
+}
+
+func (l *ResourceLoader) PreviewResources(ctx context.Context, p document.MarkdownSnapshot, path string) (map[string]image.Image, map[string]string) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	images := map[string]image.Image{}
@@ -57,6 +72,9 @@ func PreviewResourcesContext(ctx context.Context, p document.MarkdownSnapshot, p
 		spans = append(spans, s)
 	}
 	for _, b := range p.Blocks {
+		if b.Kind == "diagram" {
+			collect(DiagramSpan(b))
+		}
 		if b.Kind == "math" {
 			collect(document.MarkdownSpan{Kind: "math", Text: b.Text, DisplayMath: true})
 		}
@@ -81,29 +99,60 @@ func PreviewResourcesContext(ctx context.Context, p document.MarkdownSnapshot, p
 		err error
 	}
 	jobs := make(chan document.MarkdownSpan, len(spans))
-	results := make(chan decodedResource)
+	results := make(chan decodedResource, len(spans))
+	var batchSpans []document.MarkdownSpan
+	var requests []diagramrender.Request
 	for _, span := range spans {
-		jobs <- span
+		if span.Kind == "diagram" || span.Kind == "math" {
+			kind := span.Language
+			if span.Kind == "math" {
+				kind = "math"
+				if !span.DisplayMath {
+					kind = "math-inline"
+				}
+			} else if kind == "" {
+				kind = "mermaid"
+			}
+			batchSpans = append(batchSpans, span)
+			requests = append(requests, diagramrender.Request{Kind: kind, Source: []byte(span.Text), Density: 2})
+		} else {
+			jobs <- span
+		}
 	}
 	close(jobs)
-	for range min(4, len(spans)) {
+	if len(requests) > 0 {
+		go func() {
+			renderer, err := l.renderer()
+			if err != nil {
+				for _, span := range batchSpans {
+					results <- decodedResource{key: ResourceKey(span), err: err}
+				}
+				return
+			}
+			rendered := renderer.RenderBatch(ctx, requests)
+			for i, result := range rendered {
+				resource := decodedResource{key: ResourceKey(batchSpans[i]), err: result.Err}
+				if result.Err == nil {
+					resource.img = document.ResourceImage{Image: result.Result.Image, Size: result.Result.LogicalSize}
+				}
+				results <- resource
+			}
+		}()
+	}
+	for range min(4, len(jobs)) {
 		go func() {
 			for span := range jobs {
-				result := decodedResource{key: ResourceKey(span), err: ctx.Err()}
-				if result.err == nil {
-					if span.Kind == "math" {
-						result.img, result.err = RenderMath(span.Text, span.DisplayMath)
-					} else {
-						result.img, result.err = LoadImage(ctx, span.Destination, path)
-					}
-				}
-				results <- result
+				img, err := l.LoadImage(ctx, span.Destination, path)
+				results <- decodedResource{key: ResourceKey(span), img: img, err: err}
 			}
 		}()
 	}
 	used := int64(0)
 	for range spans {
 		result := <-results
+		if result.err == nil {
+			result.err = ctx.Err()
+		}
 		if result.err != nil {
 			errors[result.key] = result.err.Error()
 			continue
@@ -137,6 +186,9 @@ var markdownImageHTTPClient = &http.Client{
 // LoadImage resolves local paths or retrieves HTTP/HTTPS raster images.
 // It validates actual bytes and decoded dimensions rather than trusting suffixes.
 func LoadImage(ctx context.Context, destination, sourcePath string) (image.Image, error) {
+	return defaultResourceLoader.LoadImage(ctx, destination, sourcePath)
+}
+func (l *ResourceLoader) LoadImage(ctx context.Context, destination, sourcePath string) (image.Image, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -146,18 +198,20 @@ func LoadImage(ctx context.Context, destination, sourcePath string) (image.Image
 	}
 	if strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https") {
 		u.Scheme = strings.ToLower(u.Scheme)
-		return loadHTTPImage(ctx, u.String(), markdownImageHTTPClient)
+		return l.loadHTTP(ctx, u.String(), markdownImageHTTPClient)
 	}
-	return LoadLocalImage(destination, sourcePath)
+	return l.loadLocal(ctx, destination, sourcePath)
 }
-
 func loadHTTPImage(ctx context.Context, destination string, client *http.Client) (image.Image, error) {
+	return defaultResourceLoader.loadHTTP(ctx, destination, client)
+}
+func (l *ResourceLoader) loadHTTP(ctx context.Context, destination string, client *http.Client) (image.Image, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, destination, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "Glance Markdown Image Preview")
-	req.Header.Set("Accept", "image/png,image/jpeg,image/gif")
+	req.Header.Set("Accept", "image/png,image/jpeg,image/gif,image/svg+xml")
 	response, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("加载远程图片：%w", err)
@@ -171,31 +225,14 @@ func loadHTTPImage(ctx context.Context, destination string, client *http.Client)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, markdownImageByteLimit+1))
 	if err != nil {
-		return nil, fmt.Errorf("读取远程图片：%w", err)
-	}
-	if int64(len(data)) > markdownImageByteLimit {
-		return nil, fmt.Errorf("图片超过 32 MiB")
-	}
-	config, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("图片格式不支持或数据无效，仅支持 PNG、JPEG 或 GIF：%w", err)
-	}
-	if format != "png" && format != "jpeg" && format != "gif" {
-		return nil, fmt.Errorf("图片格式不支持，仅支持 PNG、JPEG 或 GIF")
-	}
-	if config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > 16<<20 {
-		return nil, fmt.Errorf("图片尺寸过大")
-	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("图片数据无效：%w", err)
-	}
-	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return img, nil
+	return l.decode(ctx, data)
 }
 func LoadLocalImage(destination, sourcePath string) (image.Image, error) {
+	return defaultResourceLoader.loadLocal(context.Background(), destination, sourcePath)
+}
+func (l *ResourceLoader) loadLocal(ctx context.Context, destination, sourcePath string) (image.Image, error) {
 	if len(destination) > 2 && destination[1] == ':' && (destination[2] == '\\' || destination[2] == '/') {
 		destination = "file:///" + strings.ReplaceAll(destination, "\\", "/")
 	}
@@ -222,38 +259,36 @@ func LoadLocalImage(destination, sourcePath string) (image.Image, error) {
 		}
 		path = filepath.Join(filepath.Dir(sourcePath), path)
 	}
-	metadata, err := os.Stat(path)
+	// Check before opening: opening a FIFO for reading can block indefinitely,
+	// so a post-open regular-file check is too late for untrusted Markdown paths.
+	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
 	}
-	if !metadata.Mode().IsRegular() {
+	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("图片必须是普通文件")
-	}
-	if metadata.Size() > 32<<20 {
-		return nil, fmt.Errorf("图片超过 32 MiB")
 	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	info, err := f.Stat()
+	info, err = f.Stat()
 	if err != nil {
 		return nil, err
 	}
-	if info.Size() > 32<<20 {
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("图片必须是普通文件")
+	}
+	if info.Size() > markdownImageByteLimit {
 		return nil, fmt.Errorf("图片超过 32 MiB")
 	}
-	config, _, err := image.DecodeConfig(f)
+	data, err := io.ReadAll(io.LimitReader(f, markdownImageByteLimit+1))
 	if err != nil {
 		return nil, err
 	}
-	if config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > 16<<20 {
-		return nil, fmt.Errorf("图片尺寸过大")
-	}
-	if _, err = f.Seek(0, 0); err != nil {
-		return nil, err
-	}
-	img, _, err := image.Decode(f)
-	return img, err
+	return l.decode(ctx, data)
+}
+func DiagramSpan(b document.MarkdownBlock) document.MarkdownSpan {
+	return document.MarkdownSpan{Kind: "diagram", Language: b.Language, Text: b.Text, SourceStart: b.SourceStart, SourceEnd: b.SourceEnd}
 }

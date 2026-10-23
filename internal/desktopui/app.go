@@ -13,7 +13,6 @@ import (
 	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/op"
-	"gioui.org/text"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
@@ -390,7 +389,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 	if err := prepareWordFontScanner(); err != nil {
 		log.Printf("prepare Word/system font scanner: %v", err)
 	}
-	a.theme.Shaper = text.NewShaper()
+	a.theme.Shaper = newTextShaper(nil)
 	if window != nil {
 		a.startFontService()
 	}

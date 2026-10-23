@@ -69,6 +69,7 @@ func (a *App) prepareMarkdownDeparture() {
 	}
 	a.flushMarkdownDraft()
 	v := a.markdownView
+	a.closeMarkdownCharts(v)
 	if v.parseCancel != nil {
 		v.parseCancel()
 	}

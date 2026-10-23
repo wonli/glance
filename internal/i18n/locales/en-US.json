@@ -2510,5 +2510,6 @@
   "proofread.navigator.reviewed": "Reviewed",
   "proofread.navigator.boundary": "At limit",
   "proofread.navigator.unit": " chars",
-  "proofread.navigator.shift": "Shift\nby line"
+  "proofread.navigator.shift": "Shift\nby line",
+  "markdown.diagram.error": "Diagram could not be rendered: {{.Reason}}"
 }

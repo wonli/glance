@@ -1,0 +1,37 @@
+{
+  "mermaidVersion": "12.2.0",
+  "url": "https://registry.npmjs.org/mermaid/-/mermaid-12.2.0.tgz",
+  "sha256": "071914164d0f6d53e5c26a10a220230d4ae8d37ed0f2263fbf072266f0af3a0a",
+  "jsSHA256": "a8a6a6f805b074a8261a2825c86f99c8054acb3b35f50bb7e24a4f9f2c3c3b9f",
+  "vega": {
+    "version": "6.4.0",
+    "url": "https://registry.npmjs.org/vega/-/vega-6.4.0.tgz",
+    "sourcePackageSHA256": "3521fb6ff68a94a40323954f0ba4484ba4014b157bfd37f89a3b063082320c42",
+    "sha256": "8f6a3587cf8d4f42c7e08120e3eb05d067e746d554e39d2dcf52acc0bd5ba28f"
+  },
+  "vegaLite": {
+    "version": "6.5.0",
+    "url": "https://registry.npmjs.org/vega-lite/-/vega-lite-6.5.0.tgz",
+    "sourcePackageSHA256": "811230a6bfd2cdbfc359d0c38f624a90df86657b7f251b67be88bcc4eee32b7f",
+    "sha256": "83e215e84e308ee8688fa6503ba0f1cf8a3c05c0d61df2841a0b92bf86809e00"
+  },
+  "vegaEmbed": {
+    "version": "7.3.0",
+    "url": "https://registry.npmjs.org/vega-embed/-/vega-embed-7.3.0.tgz",
+    "sourcePackageSHA256": "d9a958ced3240f0418df7d5e12e97dba6e63cecda15b8403e47a0db7eb6ea859",
+    "sha256": "b1455caba2fb1a72fb46025ba0ba1316e2dbc7f0dd40a3f6040172bf9c08ba91"
+  },
+  "vegaInterpreter": {
+    "version": "2.3.2",
+    "url": "https://registry.npmjs.org/vega-interpreter/-/vega-interpreter-2.3.2.tgz",
+    "sourcePackageSHA256": "b83489633c1320e9d6f839781f0c84c661a5ca2666fe38cb83f7c52a531fffec",
+    "sha256": "946e6486837ef276bda31b9044e1f032b5233c8bf0ecd6d130787799def04f6b",
+    "build": "esbuild 0.25.11 iife; bundles vega-util 2.1.3",
+    "dependency": {
+      "name": "vega-util",
+      "version": "2.1.3",
+      "url": "https://registry.npmjs.org/vega-util/-/vega-util-2.1.3.tgz",
+      "sourcePackageSHA256": "5f3de4cddc2b16926f7d6ef742aedaeb6aeeb6268576c0c29759778fcb08a1d7"
+    }
+  }
+}

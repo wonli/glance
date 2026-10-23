@@ -111,7 +111,7 @@ func missingImageWarnings(snapshot document.MarkdownSnapshot, resources map[stri
 	warnings := make([]string, 0, min(8, maxReturnedResourceErrors))
 	visit := func(spans []document.MarkdownSpan) {
 		for _, span := range spans {
-			if span.Kind != "image" || resources[markdowndoc.ResourceKey(span)] != nil {
+			if (span.Kind != "image" && span.Kind != "diagram") || resources[markdowndoc.ResourceKey(span)] != nil {
 				continue
 			}
 			count++
@@ -126,6 +126,9 @@ func missingImageWarnings(snapshot document.MarkdownSnapshot, resources map[stri
 		}
 	}
 	for _, block := range snapshot.Blocks {
+		if block.Kind == "diagram" {
+			visit([]document.MarkdownSpan{markdowndoc.DiagramSpan(block)})
+		}
 		visit(block.Spans)
 		for _, row := range block.TableSpans {
 			for _, cell := range row {

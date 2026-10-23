@@ -19,7 +19,7 @@ func reflowProofreadingForEditor(ctx context.Context, snapshot proofreading.Snap
 }
 
 func newProofreadingEditorLineShaper() application.ProofreadingLineShaper {
-	shaper := text.NewShaper()
+	shaper := newTextShaper(nil)
 	shape := func(ctx context.Context, value string, width float64, style application.ProofreadingTextStyle) ([]application.ProofreadingLine, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err

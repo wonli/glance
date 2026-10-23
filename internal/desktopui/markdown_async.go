@@ -10,6 +10,9 @@ func (a *App) requestMarkdownParse() {
 	v := a.ensureMarkdownView()
 	source, path := v.text(), a.path
 	unchanged := v.requested == source && v.requestedPath == path
+	if !unchanged {
+		a.closeMarkdownCharts(v)
+	}
 	v.requested, v.requestedPath = source, path
 	if (v.pending && unchanged) || (!v.pending && v.snapshot.Source == source && v.images != nil && v.parsedPath == path) {
 		return

@@ -39,7 +39,7 @@ func MarkdownWordBlocks(snapshot document.MarkdownSnapshot, resources map[string
 	if len(diagnostics) > 0 {
 		keys := make([]string, 0, len(diagnostics))
 		for k := range diagnostics {
-			if !strings.HasPrefix(k, "image:") {
+			if !strings.HasPrefix(k, "image:") && !strings.HasPrefix(k, "diagram:") {
 				keys = append(keys, k)
 			}
 		}
@@ -65,11 +65,11 @@ func MarkdownWordBlocks(snapshot document.MarkdownSnapshot, resources map[string
 				inlines = append(inlines, textInline(runID, marker, base))
 				continue
 			}
-			if span.Kind == "image" || span.Kind == "math" {
+			if span.Kind == "image" || span.Kind == "math" || span.Kind == "diagram" {
 				key := markdowndoc.ResourceKey(span)
 				img := resources[key]
 				if img == nil {
-					if span.Kind == "image" {
+					if span.Kind == "image" || span.Kind == "diagram" {
 						reason := diagnostics[key]
 						if reason == "" {
 							reason = "图片未加载"
@@ -86,12 +86,12 @@ func MarkdownWordBlocks(snapshot document.MarkdownSnapshot, resources map[string
 					}
 					return nil, fmt.Errorf("Markdown resource %q is missing", key)
 				}
-				bounds := img.Bounds()
+				logical := document.ResourceLogicalSize(img)
 				pointsPerPixel := 0.75
 				if span.Kind == "math" {
 					pointsPerPixel = 0.5
 				}
-				w, h := float64(bounds.Dx())*pointsPerPixel, float64(bounds.Dy())*pointsPerPixel
+				w, h := float64(logical.X)*pointsPerPixel, float64(logical.Y)*pointsPerPixel
 				if w <= 0 || h <= 0 {
 					return nil, fmt.Errorf("Markdown resource %q has empty bounds", key)
 				}
@@ -186,7 +186,7 @@ func MarkdownWordBlocks(snapshot document.MarkdownSnapshot, resources map[string
 			size = float64(26 - min(6, max(1, b.Level))*2)
 			p.Layout.KeepWithNext = true
 			p.Layout.Set |= document.WordParagraphKeepWithNextSet
-		case "paragraph", "list", "quote", "code", "math":
+		case "paragraph", "list", "quote", "code", "math", "diagram":
 		case "rule":
 			p.Layout.BottomBorder = document.WordParagraphBorder{Style: "single", SizePT: 0.5, Color: "cccccc"}
 			p.Layout.Set |= document.WordParagraphBottomBorderSet
@@ -194,7 +194,9 @@ func MarkdownWordBlocks(snapshot document.MarkdownSnapshot, resources map[string
 			return nil, nil, fmt.Errorf("unsupported Markdown block %q", b.Kind)
 		}
 		spans := b.Spans
-		if b.Kind == "math" {
+		if b.Kind == "diagram" {
+			spans = []document.MarkdownSpan{markdowndoc.DiagramSpan(b)}
+		} else if b.Kind == "math" {
 			spans = []document.MarkdownSpan{{Kind: "math", Text: b.Text, DisplayMath: true}}
 		} else if b.Kind == "code" {
 			spans = []document.MarkdownSpan{{Text: b.Text}}

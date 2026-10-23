@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"context"
+	"glance/internal/diagramrender"
 	"glance/internal/i18n"
 	"os"
 	"path/filepath"
@@ -70,6 +71,19 @@ func (a *App) pollFontResults() {
 			p.event = event
 			if event.Snapshot.Version != p.snapshot.Version {
 				p.snapshot = event.Snapshot
+				diagramrender.SetFontVersion(p.snapshot.Version)
+				for _, state := range a.sessions {
+					if state != nil && state.markdownView != nil {
+						v := state.markdownView
+						if v.parseCancel != nil {
+							v.parseCancel()
+						}
+						v.parseGeneration++
+						v.pending = false
+						v.images = nil
+						v.requested = ""
+					}
+				}
 				p.rowsDirty = true
 				p.resolvedFaceCacheValid = false
 				p.renderAccepted = ""

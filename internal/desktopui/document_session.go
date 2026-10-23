@@ -301,8 +301,8 @@ func (state *documentSessionState) releaseViewResources() {
 	state.releaseSpreadsheetViewResources()
 	state.releaseWordViewResources()
 	state.releasePDFViewResources()
+	state.releaseMarkdownViewResources()
 	state.pptxView = nil
-	state.markdownView = nil
 }
 
 func (state *sharedDocumentSession) cancelWordLayout() {

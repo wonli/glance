@@ -268,6 +268,7 @@ func (a *App) closeDocument() error {
 		err = a.markdownDoc.Close()
 		a.markdownDoc = nil
 	}
+	a.releaseMarkdownViewResources()
 	if a.jsonDoc != nil {
 		if closeErr := a.jsonDoc.Close(); err == nil {
 			err = closeErr

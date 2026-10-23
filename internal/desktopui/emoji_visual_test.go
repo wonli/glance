@@ -2,10 +2,12 @@ package desktopui
 
 import (
 	"fmt"
+	"gioui.org/font"
 	"gioui.org/gpu/headless"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"glance/internal/document"
 	"image"
@@ -24,6 +26,19 @@ func TestMarkdownEmojiVisual(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	a := markdownTestApp(t)
+	testMarkdownEmojiPixels(t, a)
+}
+
+func TestWindowsEmojiVisual(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	a := markdownTestApp(t)
+	a.theme.Shaper = newTextShaperForOS("windows", nil, text.NoSystemFonts())
+	a.theme.Face = font.Typeface("Glance Color Emoji")
+	testMarkdownEmojiPixels(t, a)
+}
+
+func testMarkdownEmojiPixels(t *testing.T, a *App) {
 	for _, scale := range []float32{1, 2} {
 		for _, kind := range []string{"normal", "heading", "code"} {
 			for _, emoji := range "🚀📑🎨📊🧮📈🎮🔖✨✅" {

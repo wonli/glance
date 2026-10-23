@@ -9,13 +9,16 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"glance/internal/document"
 	"glance/internal/format/markdowndoc"
 	wordpdf "glance/internal/format/pdf"
 	"glance/internal/i18n"
+	"glance/internal/nativewebview"
 	"glance/internal/wordlayout"
 )
 
@@ -48,6 +51,9 @@ func prepareMarkdownPDF(ctx context.Context, snapshot document.MarkdownSnapshot,
 	if err != nil {
 		return nil, err
 	}
+	if err := markdownPDFFallbackBitmapGlyphs(blocks, images, shaper); err != nil {
+		return nil, err
+	}
 	scene, err := wordlayout.NewEngine(shaper).Layout(ctx, wordlayout.Input{DocumentID: "markdown-pdf", Blocks: blocks, DefaultPageSetup: defaultWordPageSetup})
 	if err != nil {
 		return nil, err
@@ -62,6 +68,160 @@ func prepareMarkdownPDF(ctx context.Context, snapshot document.MarkdownSnapshot,
 		return nil, err
 	}
 	return &markdownPDFPrepared{blocks: blocks, scene: scene, shaper: shaper, images: images}, nil
+}
+
+// freezeMarkdownChartResources copies the preview resource map and replaces
+// any chart image with its latest settled snapshot. Live sessions first drain
+// their queued input, receive pointer-leave to clear transient hover state, and
+// then publish a final immutable image for PDF layout.
+func freezeMarkdownChartResources(ctx context.Context, view *markdownViewState, source string, generation uint64, resources map[string]image.Image) (map[string]image.Image, error) {
+	frozen := maps.Clone(resources)
+	if frozen == nil {
+		frozen = make(map[string]image.Image)
+	}
+	if view == nil {
+		return frozen, nil
+	}
+	view.chartsMu.Lock()
+	states := make([]*markdownChartState, 0, len(view.charts))
+	for _, state := range view.charts {
+		states = append(states, state)
+	}
+	view.chartsMu.Unlock()
+	sort.Slice(states, func(i, j int) bool {
+		return states[i].sourceStart < states[j].sourceStart
+	})
+
+	exporting := make([]*markdownChartState, 0, len(states))
+	defer func() {
+		for _, state := range exporting {
+			state.mu.Lock()
+			state.exporting = false
+			state.mu.Unlock()
+		}
+	}()
+
+	for _, state := range states {
+		state.mu.Lock()
+		if state.closed || state.source != source || state.generation != generation || state.resourceKey == "" {
+			state.mu.Unlock()
+			continue
+		}
+		state.exporting = true
+		exporting = append(exporting, state)
+		resourceKey := state.resourceKey
+		chartImage := state.image
+		session := state.session
+		settleErr := state.settleErr
+		var queuedEvents []nativewebview.PointerEvent
+		if session != nil && len(state.events) > 0 && !state.worker {
+			queuedEvents = append(queuedEvents, state.events...)
+			state.events = nil
+		}
+		if session == nil && state.opening {
+			state.attempt++
+			state.opening = false
+			if state.cancel != nil {
+				state.cancel()
+				state.cancel = nil
+				state.ctx = nil
+			}
+		}
+		state.mu.Unlock()
+		if session == nil && settleErr != "" {
+			return nil, fmt.Errorf("Markdown PDF chart settle: %s", settleErr)
+		}
+		if session != nil {
+			waitCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			for _, event := range queuedEvents {
+				if _, err := session.Dispatch(waitCtx, event); err != nil {
+					cancel()
+					return nil, fmt.Errorf("Markdown PDF chart input: %w", err)
+				}
+			}
+			ticker := time.NewTicker(2 * time.Millisecond)
+			settledWhileHidden := false
+			for {
+				state.mu.Lock()
+				valid := !state.closed && state.source == source && state.generation == generation
+				current := valid && state.session == session
+				idle := !state.worker && len(state.events) == 0
+				hiddenSettleErr := ""
+				if !current && valid && state.session == nil && state.hidden && state.image != nil {
+					if state.settleErr != "" {
+						hiddenSettleErr = state.settleErr
+					} else {
+						chartImage = state.image
+						session = nil
+						settledWhileHidden = true
+					}
+				}
+				state.mu.Unlock()
+				if hiddenSettleErr != "" {
+					ticker.Stop()
+					cancel()
+					return nil, fmt.Errorf("Markdown PDF chart settle: %s", hiddenSettleErr)
+				}
+				if !current && !settledWhileHidden {
+					ticker.Stop()
+					cancel()
+					return nil, context.Canceled
+				}
+				if settledWhileHidden {
+					cancel()
+					break
+				}
+				if idle {
+					break
+				}
+				select {
+				case <-waitCtx.Done():
+					ticker.Stop()
+					cancel()
+					return nil, waitCtx.Err()
+				case <-ticker.C:
+				}
+			}
+			ticker.Stop()
+			if session != nil {
+				leave := nativewebview.PointerEvent{Kind: nativewebview.PointerLeave}
+				leaveResult, err := session.Dispatch(waitCtx, leave)
+				if err != nil {
+					cancel()
+					return nil, fmt.Errorf("Markdown PDF chart pointer-leave: %w", err)
+				}
+				result, snapshotErr := session.Snapshot(waitCtx)
+				cancel()
+				if snapshotErr != nil || result.Image == nil {
+					if leaveResult.Image != nil {
+						result = leaveResult
+					} else if snapshotErr != nil {
+						return nil, fmt.Errorf("Markdown PDF chart snapshot: %w", snapshotErr)
+					} else {
+						return nil, fmt.Errorf("Markdown PDF chart snapshot returned no image")
+					}
+				}
+				if result.Image != nil {
+					chartImage = document.ResourceImage{Image: result.Image, Size: result.LogicalSize}
+					state.mu.Lock()
+					if !state.closed && state.session == session && state.source == source && state.generation == generation {
+						state.image = chartImage
+						state.logicalSize = result.LogicalSize
+						state.lastSnapshot = time.Now()
+						state.err = ""
+					} else {
+						state.mu.Unlock()
+						return nil, context.Canceled
+					}
+					state.mu.Unlock()
+				}
+			}
+		}
+		if chartImage != nil {
+			frozen[resourceKey] = chartImage
+		}
+	}
+	return frozen, nil
 }
 
 var markdownPDFDestinations = struct {
@@ -142,6 +302,7 @@ func (a *App) requestMarkdownPDFExport() {
 		return
 	}
 	result := markdownFileResult{state: state, source: source, sourcePath: a.path, revision: state.wordRevisionAtomic.Load(), draftEpoch: view.draftEpoch.Load(), preflight: true}
+	chartGeneration := view.parseGeneration
 	view.exportPending = true
 	view.lastPDFPath = ""
 	shutdown, window := a.shutdown, a.window
@@ -167,8 +328,11 @@ func (a *App) requestMarkdownPDFExport() {
 			if resources == nil {
 				resources, diagnostics = markdowndoc.PreviewResourcesContext(ctx, snapshot, result.sourcePath)
 			}
-			result.missingImages, result.warnings = markdownImageWarnings(snapshot, resources, diagnostics, a.text)
-			result.prepared, err = prepareMarkdownPDF(ctx, snapshot, resources, diagnostics)
+			resources, err = freezeMarkdownChartResources(ctx, view, source, chartGeneration, resources)
+			if err == nil {
+				result.missingImages, result.warnings = markdownImageWarnings(snapshot, resources, diagnostics, a.text)
+				result.prepared, err = prepareMarkdownPDF(ctx, snapshot, resources, diagnostics)
+			}
 		}
 		result.err = err
 		select {

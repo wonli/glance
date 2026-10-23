@@ -8,9 +8,11 @@ import (
 
 // CJKFamilies returns the preferred CJK families for this operating system,
 // followed by shared fallbacks for systems where the preferred fonts are absent.
-func CJKFamilies() []string {
+func CJKFamilies() []string { return cjkFamiliesForOS(runtime.GOOS) }
+
+func cjkFamiliesForOS(goos string) []string {
 	var platform []string
-	switch runtime.GOOS {
+	switch goos {
 	case "windows":
 		platform = []string{"Microsoft YaHei"}
 	case "darwin":
@@ -42,11 +44,17 @@ func CJKFamilies() []string {
 
 // PreferredTypeface keeps Inter first for Latin UI text, then adds platform
 // CJK families, shared fallbacks and explicit color emoji families.
-func PreferredTypeface() string {
-	families := append([]string{"Inter"}, CJKFamilies()...)
+func PreferredTypeface() string { return PreferredTypefaceForOS(runtime.GOOS) }
+
+// PreferredTypefaceForOS selects platform rendering fallbacks without installing fonts.
+func PreferredTypefaceForOS(goos string) string {
+	families := append([]string{"Inter"}, cjkFamiliesForOS(goos)...)
 	// Gio's resolver does not forward the segment script to fontscan. Its
 	// script-only fallback can therefore miss emoji, particularly at non-normal
 	// weights. Explicit families let fontscan choose their available face.
+	if goos == "windows" {
+		families = append(families, "Glance Color Emoji")
+	}
 	families = append(families, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "emoji")
 	return strings.Join(families, ", ")
 }

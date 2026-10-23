@@ -48,10 +48,11 @@ func (m *gridAutoFitMeasurer) themeFor(style document.CellStyle) *material.Theme
 		return theme
 	}
 	theme := material.NewTheme()
+	theme.Shaper = newTextShaper(nil)
 	if family != "" {
 		faces := fontCollectionWithCache(m.fonts, []string{family, string(preferredSystemTypeface)}, m.fontCache)
 		if len(faces) != 0 {
-			theme.Shaper = text.NewShaper(text.WithCollection(faces))
+			theme.Shaper = newTextShaper(faces)
 		}
 	}
 	m.themes[family] = theme

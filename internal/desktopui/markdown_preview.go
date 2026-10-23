@@ -10,6 +10,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"glance/internal/document"
+	"glance/internal/format/markdowndoc"
 	"glance/internal/i18n"
 	"image"
 	"image/color"
@@ -36,10 +37,19 @@ func (a *App) layoutMarkdownPreview(gtx layout.Context) layout.Dimensions {
 					return jsonLabel(gtx, a, a.text(i18n.Message{ID: "markdown.preview.images_unavailable", Args: i18n.Args{"Count": count}}), 14, color.NRGBA{R: 128, G: 91, B: 36, A: 255}, false, false)
 				})
 			}), layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return v.preview.Layout(gtx, len(v.snapshot.Blocks), func(gtx layout.Context, index int) layout.Dimensions {
+				beforeScroll := v.preview.Position
+				v.consumeChartScroll = false
+				v.visibleCharts = make(map[string]struct{})
+				dims := v.preview.Layout(gtx, len(v.snapshot.Blocks), func(gtx layout.Context, index int) layout.Dimensions {
 					b := v.snapshot.Blocks[index]
 					return layout.Inset{Bottom: 18}.Layout(gtx, func(gtx layout.Context) layout.Dimensions { return a.layoutMarkdownBlock(gtx, b, index) })
 				})
+				if v.consumeChartScroll {
+					v.preview.Position = beforeScroll
+				} else {
+					a.closeHiddenMarkdownCharts(v, v.visibleCharts)
+				}
+				return dims
 			}))
 		})
 	})
@@ -75,6 +85,8 @@ func (a *App) layoutMarkdownBlock(gtx layout.Context, b document.MarkdownBlock, 
 				return style.Layout(gtx)
 			})
 		})
+	case "diagram":
+		return a.layoutMarkdownAsset(gtx, markdowndoc.DiagramSpan(b), false)
 	case "math":
 		return a.layoutMarkdownAsset(gtx, document.MarkdownSpan{Kind: "math", Text: b.Text, SourceStart: b.SourceStart, SourceEnd: b.SourceEnd}, true)
 	case "table":
@@ -121,6 +133,9 @@ func (a *App) layoutMarkdownAsset(gtx layout.Context, s document.MarkdownSpan, d
 		}
 		if err := v.errors[key]; err != "" {
 			label = "图片无法加载：" + label + "（" + err + "）"
+			if s.Kind == "diagram" {
+				label = a.text(i18n.Message{ID: "markdown.diagram.error", Args: i18n.Args{"Reason": err}}) + "\n" + s.Text
+			}
 			if s.Kind == "math" {
 				label = "公式无法渲染：" + s.Text + "（" + err + "）"
 			}
@@ -129,8 +144,23 @@ func (a *App) layoutMarkdownAsset(gtx layout.Context, s document.MarkdownSpan, d
 		style.MaxLines = 0
 		return a.layoutMarkdownFormulaTarget(gtx, s, style.Layout)
 	}
-	width, height := img.Bounds().Dx(), img.Bounds().Dy()
-	if s.Kind == "math" {
+	logical := document.ResourceLogicalSize(img)
+	var chart *markdownChartState
+	if markdownChartIsVega(s) {
+		chart = a.ensureMarkdownChart(s, img)
+		if v.visibleCharts == nil {
+			v.visibleCharts = make(map[string]struct{})
+		}
+		v.visibleCharts[chart.key] = struct{}{}
+		if current, currentSize, _ := markdownChartSnapshot(chart); current != nil {
+			img = current
+			logical = currentSize
+		}
+	}
+	width, height := logical.X, logical.Y
+	if _, ok := img.(document.ResourceImage); ok {
+		width, height = gtx.Dp(unit.Dp(width)), gtx.Dp(unit.Dp(height))
+	} else if s.Kind == "math" {
 		width, height = gtx.Sp(unit.Sp(width)/2), gtx.Sp(unit.Sp(height)/2)
 	} else {
 		width, height = gtx.Dp(unit.Dp(width)), gtx.Dp(unit.Dp(height))
@@ -140,9 +170,31 @@ func (a *App) layoutMarkdownAsset(gtx layout.Context, s document.MarkdownSpan, d
 		height = height * maxWidth / width
 		width = maxWidth
 	}
-	gtx.Constraints = layout.Exact(image.Pt(width, height))
+	outerConstraints := gtx.Constraints
+	chartSize := image.Pt(width, height)
+	gtx.Constraints = layout.Exact(chartSize)
 	draw := func(gtx layout.Context) layout.Dimensions {
 		return widget.Image{Src: paint.NewImageOp(img), Fit: widget.Contain, Position: layout.Center}.Layout(gtx)
+	}
+	if chart != nil {
+		chartDraw := func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints = layout.Exact(chartSize)
+			return a.layoutMarkdownChartPointer(gtx, v, chart, logical, draw)
+		}
+		if _, _, chartErr := markdownChartSnapshot(chart); chartErr != "" {
+			gtx.Constraints = outerConstraints
+			gtx.Constraints.Min.Y = 0
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(chartDraw),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					message := a.text(i18n.Message{ID: "markdown.diagram.error", Args: i18n.Args{"Reason": chartErr}})
+					return layout.Inset{Top: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return jsonLabel(gtx, a, message, 12, mutedText, false, false)
+					})
+				}),
+			)
+		}
+		return a.layoutMarkdownFormulaTarget(gtx, s, chartDraw)
 	}
 	return a.layoutMarkdownFormulaTarget(gtx, s, draw)
 }

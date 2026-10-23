@@ -124,3 +124,68 @@ func TestMarkdownDraftIdentityAndSaveAs(t *testing.T) {
 		t.Fatal("wrong extension accepted")
 	}
 }
+
+func TestMarkdownTabCloseReleasesResources(t *testing.T) {
+	store, err := workspace.Open(filepath.Join(t.TempDir(), "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	a := New(nil, "")
+	defer close(a.shutdown)
+	a.desktopRuntime.workspaceStore = store
+	a.initializeWorkspace()
+
+	// Create a new markdown tab
+	a.showNewMenu = true
+	a.actionNewMarkdown.Click()
+	for i := 0; i < 2; i++ {
+		var ops op.Ops
+		gtx := layout.Context{Ops: &ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(1440, 900))}
+		a.layout(gtx)
+	}
+
+	tabID := a.activeTabID
+	if tabID == "" || tabID == workspace.RecentTabID {
+		t.Fatalf("expected active markdown tab, got %q", tabID)
+	}
+
+	session := a.sessions[tabID]
+	if session == nil || session.markdownDoc == nil {
+		t.Fatalf("expected active markdown session with doc")
+	}
+
+	v := a.ensureMarkdownView()
+	v.images = map[string]image.Image{
+		"test": image.NewRGBA(image.Rect(0, 0, 100, 100)),
+	}
+
+	shaperBefore := a.theme.Shaper
+
+	if !a.hasActiveMarkdownDocument() {
+		t.Fatal("expected hasActiveMarkdownDocument to be true")
+	}
+
+	// Close the tab
+	a.closeWorkspaceTabNow(tabID)
+
+	if a.sessions[tabID] != nil {
+		t.Fatal("expected session to be removed from a.sessions")
+	}
+	if session.markdownView != nil {
+		t.Fatal("expected session.markdownView to be nil after close")
+	}
+	if session.markdownDoc != nil {
+		t.Fatal("expected session.markdownDoc to be nil after close")
+	}
+	if a.markdownDoc != nil {
+		t.Fatal("expected a.markdownDoc to be nil after close")
+	}
+	if a.hasActiveMarkdownDocument() {
+		t.Fatal("expected hasActiveMarkdownDocument to be false after close")
+	}
+	if a.theme.Shaper == shaperBefore {
+		t.Fatal("expected theme.Shaper to be refreshed after closing all tabs")
+	}
+}

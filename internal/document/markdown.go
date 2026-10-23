@@ -4,6 +4,7 @@ package document
 type MarkdownSpan struct {
 	Text, Destination, Kind string
 	LinkDestination         string
+	Language                string
 	CodeColor               string
 	Bold, Italic            bool
 	Strike, DisplayMath     bool

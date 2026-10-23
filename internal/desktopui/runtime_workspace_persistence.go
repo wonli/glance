@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"glance/internal/diagramrender"
 	"io"
 	"log"
 	"time"
@@ -236,6 +237,7 @@ func (r *desktopRuntime) shutdown() {
 		return
 	}
 	r.shutdownOnce.Do(func() {
+		defer diagramrender.CloseDefault()
 		r.mu.Lock()
 		r.shuttingDown = true
 		r.quitRequested = true

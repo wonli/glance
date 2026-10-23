@@ -11,7 +11,10 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
+
+	"glance/internal/diagramrender"
 )
 
 type markdownParseResult struct {
@@ -74,10 +77,16 @@ type markdownViewState struct {
 	focus                                  bool
 	draftPending                           atomic.Bool
 	compositionPending                     atomic.Bool
+	chartsMu                               sync.Mutex
+	charts                                 map[string]*markdownChartState
+	visibleCharts                          map[string]struct{}
+	openChart                              func(context.Context, diagramrender.Request) (diagramrender.ChartSession, error)
+	closeChartSessions                     func([]diagramrender.ChartSession)
+	consumeChartScroll                     bool
 }
 
 func newMarkdownView(source string) *markdownViewState {
-	v := &markdownViewState{sourceSynced: source, observedDraft: source, buttons: map[string]*widget.Clickable{}, links: map[string]string{}, results: make(chan markdownParseResult, 1), exports: make(chan markdownFileResult, 1), editResults: make(chan markdownEditResult, 1), toolbar: widget.List{List: layout.List{Axis: layout.Horizontal}}, outline: widget.List{List: layout.List{Axis: layout.Vertical}}, preview: widget.List{List: layout.List{Axis: layout.Vertical}}}
+	v := &markdownViewState{sourceSynced: source, observedDraft: source, buttons: map[string]*widget.Clickable{}, links: map[string]string{}, charts: map[string]*markdownChartState{}, results: make(chan markdownParseResult, 1), exports: make(chan markdownFileResult, 1), editResults: make(chan markdownEditResult, 1), toolbar: widget.List{List: layout.List{Axis: layout.Horizontal}}, outline: widget.List{List: layout.List{Axis: layout.Vertical}}, preview: widget.List{List: layout.List{Axis: layout.Vertical}}}
 	v.tasks = map[string]int{}
 	v.formulas = map[string]document.MarkdownSpan{}
 	v.imagePicks = make(chan markdownImagePickResult, 1)
@@ -89,6 +98,16 @@ func newMarkdownView(source string) *markdownViewState {
 func (a *App) ensureMarkdownView() *markdownViewState {
 	if a.markdownView == nil {
 		a.markdownView = newMarkdownView(a.markdownDoc.Text())
+	}
+	a.markdownView.closeChartSessions = func(sessions []diagramrender.ChartSession) {
+		closeSessions := func() {
+			for _, session := range sessions {
+				_ = session.Close()
+			}
+		}
+		if !a.launchManagedBackground(closeSessions) {
+			go closeSessions()
+		}
 	}
 	return a.markdownView
 }

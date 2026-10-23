@@ -2510,5 +2510,6 @@
   "proofread.navigator.reviewed": "已校对",
   "proofread.navigator.boundary": "到边界了",
   "proofread.navigator.unit": "字",
-  "proofread.navigator.shift": "Shift\n按行调节"
+  "proofread.navigator.shift": "Shift\n按行调节",
+  "markdown.diagram.error": "图表无法渲染：{{.Reason}}"
 }

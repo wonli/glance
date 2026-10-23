@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"glance/internal/application"
+	"glance/internal/diagramrender"
 	"glance/internal/i18n"
 	"glance/internal/workspace"
 )
@@ -275,10 +276,42 @@ func (a *App) hasActiveWordDocument() bool {
 	return a.activeTabID != "" && a.activeTabID != workspace.RecentTabID && a.word != nil
 }
 
+func (a *App) hasActiveMarkdownDocument() bool {
+	if a.markdownDoc != nil {
+		return true
+	}
+	for _, state := range a.sessions {
+		if state != nil && !state.closed.Load() && state.markdownDoc != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) hasActiveDocument() bool {
+	if a.activeTabID != "" && a.activeTabID != workspace.RecentTabID {
+		return true
+	}
+	for id, s := range a.sessions {
+		if id != "" && id != workspace.RecentTabID && s != nil && !s.closed.Load() {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) releaseIdleEngines() {
 	if !a.hasActiveWordDocument() {
 		a.wordLayoutEngine = nil
 		a.wordPDFFontSource = nil
+	}
+	if !a.hasActiveMarkdownDocument() {
+		a.launchManagedBackground(diagramrender.IdleCleanup())
+	}
+	if !a.hasActiveDocument() {
+		if a.theme != nil {
+			a.theme.Shaper = newTextShaper(nil)
+		}
 	}
 }
 
@@ -476,8 +509,4 @@ func (a *App) closeWorkspace() {
 	if !runtime.hasWindows() && !runtime.shouldKeepAlive() {
 		runtime.shutdown()
 	}
-}
-
-func (a *App) hasActiveDocument() bool {
-	return a.book != nil || a.word != nil || a.jsonDoc != nil || a.markdownDoc != nil || a.pdfDoc != nil
 }
