@@ -10,20 +10,18 @@ import (
 	"time"
 
 	"gioui.org/app"
-	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
-	"glance/internal/fontmanager/fontfallback"
 	wordpdf "glance/internal/format/pdf"
 	"glance/internal/i18n"
 	"glance/internal/printservice"
 	"glance/internal/workspace"
 )
 
-var preferredSystemTypeface = font.Typeface(fontfallback.PreferredTypeface())
+var preferredSystemTypeface = desktopPreferredTypeface()
 
 type App struct {
 	wordPointer           wordPointerState

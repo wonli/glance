@@ -6,7 +6,6 @@ import (
 
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
-	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/text"
@@ -264,8 +263,6 @@ func layoutRibbonCategoryTabsWithButtons(gtx layout.Context, theme *material.The
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(1)))).Push(gtx.Ops)
-			defer shift.Pop()
 			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				gtx.Constraints.Min.Y = 0
@@ -445,10 +442,7 @@ func toolbarTabButtonWithColors(gtx layout.Context, theme *material.Theme, butto
 			style.Color = colors.Text.Brand
 		}
 		dims := layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
-			dims := layout.Center.Layout(gtx, style.Layout)
-			shift.Pop()
-			return dims
+			return layout.Center.Layout(gtx, style.Layout)
 		})
 		if selected {
 			lineHeight := gtx.Dp(unit.Dp(ribbonCategoryUnderlineHeightDP))

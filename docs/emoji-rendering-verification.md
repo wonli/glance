@@ -12,6 +12,12 @@ The existing `TestMarkdownAcceptanceVisualSnapshot` was also run against the sup
 
 The Gio fix covers editor and preview text. Markdown PDF uses a separate outline-font pipeline, so bitmap emoji could still fail with `no system font is available to shape Word text` (and a system collection could report a glyph that its PDF-extracted face did not map). Markdown PDF now shapes supported emoji grapheme clusters with the bundled Noto Color Emoji font and embeds the resulting PNG as an inline image; the common text checkmark `✓` uses the bundled `✔` glyph. This keeps emoji visible without requiring an installed emoji font. `TestMarkdownPDFExportUsesBundledBitmapFallbacks` verifies serialized output and rendered color pixels for single emoji and the tested skin-tone, family, flag, keycap and variation-selector sequences. These emoji are images, so they are not searchable PDF text. This is specific to Markdown PDF; Word PDF still uses system vector-font coverage, and other unsupported glyphs are not silently dropped.
 
+## Process-wide font manager follow-up (2026-10-23)
+
+Production desktop windows now shape with an explicit manager-backed collection and disable Gio's platform font discovery. The existing `TestMarkdownEmojiVisual` helper constructs a windowless App, which intentionally uses `newSystemTextShaper`; that visual check therefore did not cover the production collection path. Desktop shapers now also append the bundled Noto Color Emoji face, and the private family is included after the existing platform family chain on macOS. This preserves Apple Color Emoji as the first macOS choice while providing a bundled fallback when it is absent from the manager snapshot.
+
+The updated application compiled and started with a temporary Markdown emoji fixture. Native window pixels could not be inspected through the available computer-use surface, so this follow-up has not been visually verified in the live window.
+
 ## Final checks
 
 All 60 per-glyph GPU cases passed (10 glyphs × 3 text styles × 2 scales). The supplied-file acceptance screenshot passed. `git diff --check` passed.

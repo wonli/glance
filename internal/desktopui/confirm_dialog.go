@@ -477,7 +477,7 @@ func layoutConfirmDialogActionAtWidth(gtx layout.Context, theme *material.Theme,
 			paint.FillShape(gtx.Ops, border, clip.Stroke{Path: shape.Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
 		}
 
-		labelOffsetY := (size.Y-labelDims.Size.Y)/2 + gtx.Dp(unit.Dp(3))
+		labelOffsetY := (size.Y - labelDims.Size.Y) / 2
 		labelOffset := op.Offset(image.Pt((size.X-labelDims.Size.X)/2, labelOffsetY)).Push(gtx.Ops)
 		labelCall.Add(gtx.Ops)
 		labelOffset.Pop()

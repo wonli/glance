@@ -38,13 +38,13 @@ const (
 )
 
 // Keep platform selection in the app adapter; reusable ui controls receive
-// resolved offsets. Windows uses no optical correction for home navigation,
-// folders, file rows, filter chips, or the search field.
+// resolved offsets. Every optical correction is zero for the current baseline
+// comparison; layout spacing remains owned by the individual controls.
 var shellOpticalProfiles = map[string]shellOpticalProfile{
-	"darwin":  {homeNav: 3, settingsNav: 3, settingsField: 3, confirmationButton: 3, homeFolderTextInset: 6, homeFileListTextInset: 6, homeFilterTextInset: 6, homeSearchTextInset: 6, homeTabIconOffset: -3},
-	"windows": {homeNav: 0, settingsNav: 0, settingsField: 3, confirmationButton: 3, homeFolderTextInset: 0, homeFileListTextInset: 0, homeFilterTextInset: 0, homeSearchTextInset: 0, homeTabIconOffset: 0},
-	"linux":   {homeNav: 3, settingsNav: 3, settingsField: 3, confirmationButton: 3, homeFolderTextInset: 6, homeFileListTextInset: 6, homeFilterTextInset: 6, homeSearchTextInset: 6, homeTabIconOffset: -3},
-	"default": {homeNav: 3, settingsNav: 3, settingsField: 3, confirmationButton: 3, homeFolderTextInset: 6, homeFileListTextInset: 6, homeFilterTextInset: 6, homeSearchTextInset: 6, homeTabIconOffset: -3},
+	"darwin":  {},
+	"windows": {},
+	"linux":   {},
+	"default": {},
 }
 
 func currentShellOpticalProfile() shellOpticalProfile {

@@ -250,11 +250,7 @@ func (a *App) layoutCreateMenuHeader(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 						return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							// The × glyph's visible ink sits above the text line box center.
-							shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(4)))).Push(gtx.Ops)
-							dims := homeTextLabel(gtx, a.theme, "×", 17, color.NRGBA{R: 104, G: 113, B: 124, A: 255}, false)
-							shift.Pop()
-							return dims
+							return homeIcon(gtx, "x", 16, color.NRGBA{R: 104, G: 113, B: 124, A: 255})
 						})
 					}),
 				)
@@ -410,7 +406,7 @@ func (a *App) layoutCreateMenuFormatCardVisual(gtx layout.Context, item createMe
 						if !item.enabled {
 							fg = color.NRGBA{R: 210, G: 214, B: 218, A: 255}
 						}
-						return homeTextLabel(gtx, a.theme, "›", 18, fg, false)
+						return homeIcon(gtx, "chevron-right", 16, fg)
 					}),
 				)
 			})

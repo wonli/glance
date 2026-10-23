@@ -17,7 +17,7 @@ import (
 	"glance/internal/document"
 )
 
-const formulaEditorOpticalCenterTopInset unit.Dp = 4
+const formulaEditorOpticalCenterTopInset unit.Dp = 0
 
 func (a *App) layoutGridControls(gtx layout.Context) layout.Dimensions {
 	for ev, ok := a.nameBox.Update(gtx); ok; ev, ok = a.nameBox.Update(gtx) {

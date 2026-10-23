@@ -22,8 +22,8 @@ var fontPickerInk = color.NRGBA{R: 52, G: 59, B: 69, A: 255}
 var fontPickerMuted = color.NRGBA{R: 122, G: 130, B: 141, A: 255}
 
 const (
-	fontPickerSearchTextOpticalTopInset  unit.Dp = 5
-	fontPickerRefreshTextOpticalTopInset unit.Dp = 5
+	fontPickerSearchTextOpticalTopInset  unit.Dp = 0
+	fontPickerRefreshTextOpticalTopInset unit.Dp = 0
 )
 
 func (a *App) fontPickerLabel(gtx layout.Context, value string, size unit.Sp, fg color.NRGBA) layout.Dimensions {

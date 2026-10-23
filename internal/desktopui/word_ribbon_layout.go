@@ -225,9 +225,7 @@ func (a *App) layoutWordRibbonCategoryTabAt(gtx layout.Context, state *documentS
 		if selected {
 			style.Color = a.tokens().Colors.OfficeAccent.Word.Accent
 		}
-		shift := op.Offset(image.Pt(0, gtx.Dp(unit.Dp(3)))).Push(gtx.Ops)
 		layout.Center.Layout(gtx, style.Layout)
-		shift.Pop()
 		return layout.Dimensions{Size: image.Pt(width, height)}
 	})
 	transform.Pop()

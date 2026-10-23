@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"gioui.org/layout"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -385,7 +387,10 @@ func (a *App) layoutSettingsProviderTabs(gtx layout.Context) layout.Dimensions {
 									dotColor = color.NRGBA{R: 91, G: 155, B: 116, A: 255}
 								}
 								return layout.Inset{Right: unit.Dp(9)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return homeTextLabel(gtx, a.theme, "•", 11, dotColor, true)
+									size := gtx.Dp(unit.Dp(5))
+									bounds := image.Rectangle{Max: image.Pt(size, size)}
+									paint.FillShape(gtx.Ops, dotColor, clip.Ellipse(bounds).Op(gtx.Ops))
+									return layout.Dimensions{Size: bounds.Max}
 								})
 							}),
 						)

@@ -93,9 +93,7 @@ var homeFilters = []homeFilter{
 	{id: homeFilterJSON, message: i18n.Message{ID: "home.filter.json"}},
 }
 
-const (
-	homeTextOpticalCenterTopInset unit.Dp = 6
-)
+const homeTextOpticalCenterTopInset unit.Dp = 0
 
 var (
 	homeCanvas         = color.NRGBA{R: 251, G: 251, B: 252, A: 255}
