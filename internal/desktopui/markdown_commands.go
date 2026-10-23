@@ -368,7 +368,7 @@ func markdownAnchorForms(value string) map[string]string {
 	separatorPending, githubSeparatorPending, goldmarkSeparatorPending := false, false, false
 	for _, r := range value {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			if separatorPending && separated.Len() > 0 {
+			if separatorPending {
 				separated.WriteByte('-')
 			}
 			if githubSeparatorPending && stripped.Len() > 0 {
@@ -399,7 +399,7 @@ func markdownAnchorForms(value string) map[string]string {
 		"github":    stripped.String(),
 		"goldmark":  goldmark.String(),
 	} {
-		form = strings.Trim(form, "-")
+		form = strings.TrimRight(form, "-")
 		if form != "" {
 			forms[convention] = form
 		}

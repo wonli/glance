@@ -45,6 +45,7 @@ func (a *App) handleMarkdownEvents(gtx layout.Context) {
 	if a.modal.Visible {
 		return
 	}
+	a.updateMarkdownSplitDrag(gtx, v)
 	if v.mode != 1 && v.pageClick.Clicked(gtx) {
 		v.focus = true
 	}
@@ -85,7 +86,21 @@ func (a *App) layoutMarkdownWorkspace(gtx layout.Context) layout.Dimensions {
 				return a.layoutMarkdownPreview(gtx)
 			}
 			if v.mode == 2 {
-				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, layout.Flexed(1, a.layoutMarkdownEditor), layout.Flexed(1, a.layoutMarkdownPreview))
+				handleWidth := gtx.Dp(markdownSplitHandleWidth)
+				v.splitAvailableWidthPx = max(0, gtx.Constraints.Max.X-handleWidth)
+				ratio := markdownConstrainedSplitRatio(gtx, v.splitRatio, v.splitAvailableWidthPx)
+				// Flex rounds the first weighted child to the nearest pixel.
+				// Keep the drag event's local origin convertible to pane coordinates.
+				v.splitHandleOriginPx = int(float32(v.splitAvailableWidthPx)*ratio + .5)
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+					layout.Flexed(ratio, a.layoutMarkdownEditor),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return a.layoutMarkdownSplitHandle(gtx, v, handleWidth)
+					}),
+					layout.Flexed(1-ratio, func(gtx layout.Context) layout.Dimensions {
+						return a.layoutMarkdownPreviewWithBorder(gtx, false)
+					}),
+				)
 			}
 			return a.layoutMarkdownEditor(gtx)
 		}),

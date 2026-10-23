@@ -20,8 +20,12 @@ import (
 )
 
 func (a *App) layoutMarkdownPreview(gtx layout.Context) layout.Dimensions {
+	return a.layoutMarkdownPreviewWithBorder(gtx, true)
+}
+
+func (a *App) layoutMarkdownPreviewWithBorder(gtx layout.Context, leftBorder bool) layout.Dimensions {
 	v := a.ensureMarkdownView()
-	return jsonPanel(gtx, contentSurface, true, false, func(gtx layout.Context) layout.Dimensions {
+	return jsonPanel(gtx, contentSurface, leftBorder, false, func(gtx layout.Context) layout.Dimensions {
 		return markdownColumn(gtx, func(gtx layout.Context) layout.Dimensions {
 			if v.err != nil {
 				return jsonLabel(gtx, a, a.text(i18n.Message{ID: "markdown.error.parse_failed"}), 14, mutedText, false, false)

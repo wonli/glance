@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"context"
+	"gioui.org/gesture"
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"glance/internal/document"
@@ -63,6 +64,13 @@ type markdownViewState struct {
 	links                                  map[string]string
 	mode                                   int
 	collapsed, pending                     bool
+	splitRatio                             float32
+	splitDrag                              gesture.Drag
+	splitDragStartX                        float32
+	splitDragStartRatio                    float32
+	splitAvailableWidthPx                  int
+	splitHandleOriginPx                    int
+	splitDragging                          bool
 	sourceSynced, requested, requestedPath string
 	snapshot                               document.MarkdownSnapshot
 	images                                 map[string]image.Image
@@ -86,7 +94,7 @@ type markdownViewState struct {
 }
 
 func newMarkdownView(source string) *markdownViewState {
-	v := &markdownViewState{sourceSynced: source, observedDraft: source, buttons: map[string]*widget.Clickable{}, links: map[string]string{}, charts: map[string]*markdownChartState{}, results: make(chan markdownParseResult, 1), exports: make(chan markdownFileResult, 1), editResults: make(chan markdownEditResult, 1), toolbar: widget.List{List: layout.List{Axis: layout.Horizontal}}, outline: widget.List{List: layout.List{Axis: layout.Vertical}}, preview: widget.List{List: layout.List{Axis: layout.Vertical}}}
+	v := &markdownViewState{sourceSynced: source, observedDraft: source, splitRatio: .5, buttons: map[string]*widget.Clickable{}, links: map[string]string{}, charts: map[string]*markdownChartState{}, results: make(chan markdownParseResult, 1), exports: make(chan markdownFileResult, 1), editResults: make(chan markdownEditResult, 1), toolbar: widget.List{List: layout.List{Axis: layout.Horizontal}}, outline: widget.List{List: layout.List{Axis: layout.Vertical}}, preview: widget.List{List: layout.List{Axis: layout.Vertical}}}
 	v.tasks = map[string]int{}
 	v.formulas = map[string]document.MarkdownSpan{}
 	v.imagePicks = make(chan markdownImagePickResult, 1)
