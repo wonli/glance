@@ -41,7 +41,12 @@ func CJKFamilies() []string {
 }
 
 // PreferredTypeface keeps Inter first for Latin UI text, then adds platform
-// CJK families and shared fallbacks.
+// CJK families, shared fallbacks and explicit color emoji families.
 func PreferredTypeface() string {
-	return strings.Join(append([]string{"Inter"}, CJKFamilies()...), ", ")
+	families := append([]string{"Inter"}, CJKFamilies()...)
+	// Gio's resolver does not forward the segment script to fontscan. Its
+	// script-only fallback can therefore miss emoji, particularly at non-normal
+	// weights. Explicit families let fontscan choose their available face.
+	families = append(families, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "emoji")
+	return strings.Join(families, ", ")
 }
