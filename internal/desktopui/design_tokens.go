@@ -37,6 +37,10 @@ type Typography struct {
 	// Body: 14sp - Default body text, form field labels, editors, tab labels, tree nodes
 	Body unit.Sp
 
+	// BodyLineHeightScale is the unitless baseline spacing for body text.
+	// It is currently applied to Markdown source and preview text first.
+	BodyLineHeightScale float32
+
 	// SettingsBody: 16sp - Primary text and fields on settings pages
 	SettingsBody unit.Sp
 
@@ -58,17 +62,18 @@ type Typography struct {
 
 // DefaultTypography is the baseline typographic scale matching current production layout.
 var DefaultTypography = Typography{
-	Display:           unit.Sp(34),
-	Heading:           unit.Sp(17),
-	Nav:               unit.Sp(15),
-	Title:             unit.Sp(14),
-	Body:              unit.Sp(14),
-	SettingsBody:      unit.Sp(16),
-	SettingsSecondary: unit.Sp(14),
-	Secondary:         unit.Sp(12),
-	Caption:           unit.Sp(11),
-	Micro10:           unit.Sp(10),
-	Micro:             unit.Sp(9),
+	Display:             unit.Sp(34),
+	Heading:             unit.Sp(17),
+	Nav:                 unit.Sp(15),
+	Title:               unit.Sp(14),
+	Body:                unit.Sp(14),
+	BodyLineHeightScale: 1.5,
+	SettingsBody:        unit.Sp(16),
+	SettingsSecondary:   unit.Sp(14),
+	Secondary:           unit.Sp(12),
+	Caption:             unit.Sp(11),
+	Micro10:             unit.Sp(10),
+	Micro:               unit.Sp(9),
 }
 
 // TextColors defines semantic font colors for the desktop shell UI.
@@ -387,13 +392,20 @@ func ResolveDesignTokens(mode ThemeMode, typo Typography) DesignTokens {
 	}
 
 	if typo.Body == 0 {
+		lineHeight := typo.BodyLineHeightScale
 		typo = DefaultTypography
+		if lineHeight != 0 {
+			typo.BodyLineHeightScale = lineHeight
+		}
 	}
 	if typo.SettingsBody == 0 {
 		typo.SettingsBody = DefaultTypography.SettingsBody
 	}
 	if typo.SettingsSecondary == 0 {
 		typo.SettingsSecondary = DefaultTypography.SettingsSecondary
+	}
+	if typo.BodyLineHeightScale == 0 {
+		typo.BodyLineHeightScale = DefaultTypography.BodyLineHeightScale
 	}
 
 	return DesignTokens{

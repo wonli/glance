@@ -26,7 +26,7 @@ Office libraries and local filesystem
 - Draw from a stable session snapshot and turn user events into controller calls.
 - Do not hold Excelize, DOCX, OOXML, ZIP, or XML library objects in Gio widgets.
 - Keep rendering/layout helpers separate from event handling and file/session logic. Avoid growing one all-purpose `App` file; use focused view, interaction, and widget-state files as the UI grows.
-- `desktopRuntime` owns one process-wide `fontmanager.Manager` and shares it with all windows and `application.Runtime`. Window startup waits for the manager's first filesystem verification before drawing text. Gio shapers are built from manager snapshots plus the bundled emoji fallback, with platform font discovery disabled in the renderer; font collection parsing stays on managed workers.
+- `desktopRuntime` owns one process-wide `fontmanager.Manager` and shares it with all windows and `application.Runtime`. Window startup waits for the manager's first filesystem verification before drawing text. Gio shapers are built from manager snapshots plus the bundled emoji fallback exposed by `fontmanager/emojifont`; the normalized emoji bytes and family identity belong to `fontmanager/builtin`. Platform font discovery is disabled in the renderer; font collection parsing stays on managed workers.
 - Shell, settings, editors, Word canvas, spreadsheet cells, presentation canvas, Markdown/JSON/CSV views, and proofreading layout use collections built from that manager catalog. The existing family order and typography settings remain UI-owned and unchanged.
 
 ### Reusable Gio controls (`ui`)

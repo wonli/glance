@@ -14,7 +14,7 @@
 
 - Keep all edits and any builds or launches in `/Users/mima1234/project/glance-go`; do not create or switch worktrees.
 - Keep current UI family order, typeface values, typography tokens, sizes, weights, line metrics, spacing, and control geometry.
-- Keep the font manager subtree free of Glance application, document, workspace, and Gio imports; inject paths, locale, and providers from the host.
+- Keep the font manager core free of Glance application, document, workspace, and Gio imports; host-specific configuration stays injected. The optional `fontmanager/emojifont` adapter may depend on Gio while consuming manager-owned `builtin` resources.
 - Use one captured immutable manager snapshot for each layout, measurement, preview, print, and export task.
 - `fontdownload` remains an independent implementation package nested under `fontmanager`; only the manager coordinates fetch, validation, publication, and registration.
 - Do not add or run tests in this implementation pass. Use formatting, focused package compilation, diff checks, and a fresh-process UI smoke check where available.
@@ -54,9 +54,9 @@
 - [x] Move the three existing font subpackages under `internal/fontmanager` and rewrite imports to sibling paths.
 - [x] Move the existing font lifecycle implementation into `fontmanager.Manager`; keep cache, refresh ordering, registration, preference, event, and close behavior.
 - [x] Add cancellable first-scan readiness; font-dependent startup and operations wait for filesystem verification even when a cache is present, then use the verified snapshot (or the last known good cached snapshot if verification fails).
-- [x] Move bundled emoji bytes into `fontmanager/builtin`; change `internal/emojifont` to build Gio faces and bitmap output from manager-owned bytes.
+- [x] Move bundled emoji bytes into `fontmanager/builtin`; keep the Gio face and bitmap adapter at `fontmanager/emojifont`, backed by the manager's normalized resource bytes.
 - [x] Add manager-owned `ListOnline` and `FetchAndRegister`; the UI must not call downloader/provider implementations directly.
-- [x] Add package README with copy requirements and verify no imports from `glance/internal/application`, `desktopui`, `document`, `workspace`, or Gio exist under `internal/fontmanager`.
+- [x] Add package README with copy requirements and verify no imports from `glance/internal/application`, `desktopui`, `document`, or `workspace` exist under `internal/fontmanager`; Gio remains limited to the optional emoji adapter.
 
 ### Task 2: Give each Glance process one manager
 

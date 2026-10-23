@@ -2,11 +2,9 @@ package emojifont
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/json"
-	"fmt"
 	fontapi "github.com/go-text/typesetting/font"
 	"image/png"
+	"reflect"
 	"testing"
 )
 
@@ -67,27 +65,17 @@ func TestBundledEmojiSharesFontButNotFaces(t *testing.T) {
 	}
 }
 
-func TestBundledEmojiProvenance(t *testing.T) {
-	raw, err := assets.ReadFile("assets/manifest.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var m struct {
-		Files map[string]struct {
-			SHA256 string `json:"sha256"`
-		}
-	}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"NotoColorEmoji.ttf", "OFL.txt"} {
-		data, err := assets.ReadFile("assets/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sum := fmt.Sprintf("%x", sha256.Sum256(data))
-		if sum != m.Files[name].SHA256 {
-			t.Fatalf("digest mismatch for %s", name)
+func TestSplitTextKeepsEmojiPresentationClustersIntact(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want []TextRun
+	}{
+		{text: "plain ⚠ text", want: []TextRun{{Text: "plain ⚠ text"}}},
+		{text: "before ⚠️ after", want: []TextRun{{Text: "before "}, {Text: "⚠️", ColorEmoji: true}, {Text: " after"}}},
+		{text: "x👩🏽‍💻y", want: []TextRun{{Text: "x"}, {Text: "👩🏽‍💻", ColorEmoji: true}, {Text: "y"}}},
+	} {
+		if got := SplitText(tc.text); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("SplitText(%q)=%+v, want %+v", tc.text, got, tc.want)
 		}
 	}
 }

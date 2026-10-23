@@ -23,6 +23,9 @@ func TestTypographyScale(t *testing.T) {
 	if typo.Body != unit.Sp(14) {
 		t.Errorf("Body: got %v, want 14sp", typo.Body)
 	}
+	if typo.BodyLineHeightScale != 1.5 {
+		t.Errorf("BodyLineHeightScale: got %v, want 1.5", typo.BodyLineHeightScale)
+	}
 	if typo.Secondary != unit.Sp(12) {
 		t.Errorf("Secondary: got %v, want 12sp", typo.Secondary)
 	}
@@ -88,8 +91,21 @@ func TestDesignTokensResolution(t *testing.T) {
 		if tokens.Typography.Body != unit.Sp(14) {
 			t.Errorf("expected fallback to DefaultTypography, got Body=%v", tokens.Typography.Body)
 		}
+		if tokens.Typography.BodyLineHeightScale != 1.5 {
+			t.Errorf("expected body line-height fallback 1.5, got %v", tokens.Typography.BodyLineHeightScale)
+		}
 		if tokens.Mode != ThemeModeSystem {
 			t.Errorf("expected Mode=system, got %v", tokens.Mode)
+		}
+	})
+
+	t.Run("custom line height with default body size", func(t *testing.T) {
+		tokens := ResolveDesignTokens(ThemeModeLight, Typography{BodyLineHeightScale: 1.7})
+		if tokens.Typography.Body != DefaultTypography.Body {
+			t.Errorf("body size=%v, want default %v", tokens.Typography.Body, DefaultTypography.Body)
+		}
+		if tokens.Typography.BodyLineHeightScale != 1.7 {
+			t.Errorf("body line-height scale=%v, want supplied value 1.7", tokens.Typography.BodyLineHeightScale)
 		}
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/layout"
 	"glance/internal/application"
+	"glance/internal/document"
 	"glance/internal/format/markdowndoc"
 	"glance/internal/i18n"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode"
 )
 
 func (a *App) flushMarkdownDraft() {
@@ -286,18 +288,18 @@ func (a *App) handleMarkdownAction(gtx layout.Context, id string) {
 }
 func (a *App) openMarkdownLink(destination string) {
 	if strings.HasPrefix(destination, "#") {
-		needle := strings.TrimPrefix(destination, "#")
+		needle, err := url.PathUnescape(strings.TrimPrefix(destination, "#"))
+		if err != nil {
+			needle = strings.TrimPrefix(destination, "#")
+		}
 		for i, b := range a.markdownView.snapshot.Blocks {
 			if b.Anchor == needle {
 				a.markdownView.preview.ScrollTo(i)
 				return
 			}
 		}
-		for _, h := range a.markdownView.snapshot.Headings {
-			if strings.ReplaceAll(strings.ToLower(h.Title), " ", "-") == needle {
-				a.markdownView.preview.ScrollTo(h.Block)
-				return
-			}
+		if block, ok := markdownHeadingBlockForAnchor(a.markdownView.snapshot.Headings, needle); ok {
+			a.markdownView.preview.ScrollTo(block)
 		}
 		return
 	}
@@ -322,6 +324,87 @@ func (a *App) openMarkdownLink(destination string) {
 		}
 		_ = cmd.Run()
 	})
+}
+
+func markdownHeadingBlockForAnchor(headings []document.MarkdownHeading, fragment string) (int, bool) {
+	needle := strings.ToLower(strings.TrimSpace(fragment))
+	if needle == "" {
+		return 0, false
+	}
+
+	seen := make(map[string]int)
+	for _, heading := range headings {
+		for convention, form := range markdownAnchorForms(heading.Title) {
+			key := convention + ":" + form
+			occurrence := seen[key]
+			seen[key] = occurrence + 1
+			if needle == form {
+				return heading.Block, true
+			}
+			if occurrence > 0 && needle == fmt.Sprintf("%s-%d", form, occurrence) {
+				return heading.Block, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// Markdown tools use several heading-fragment conventions. Accept the
+// original text form plus common punctuation-stripping and punctuation-
+// separating slugs, while retaining Unicode letters and numbers.
+func markdownAnchorForms(value string) map[string]string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return nil
+	}
+
+	forms := make(map[string]string, 4)
+	legacy := strings.Join(strings.Fields(value), "-")
+	if legacy != "" {
+		forms["legacy"] = legacy
+	}
+
+	var separated, stripped, goldmark strings.Builder
+	separatorPending, githubSeparatorPending, goldmarkSeparatorPending := false, false, false
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if separatorPending && separated.Len() > 0 {
+				separated.WriteByte('-')
+			}
+			if githubSeparatorPending && stripped.Len() > 0 {
+				stripped.WriteByte('-')
+			}
+			if goldmarkSeparatorPending && goldmark.Len() > 0 {
+				goldmark.WriteByte('-')
+			}
+			separated.WriteRune(r)
+			stripped.WriteRune(r)
+			if r < 128 {
+				goldmark.WriteRune(r)
+			}
+			separatorPending = false
+			goldmarkSeparatorPending = false
+			githubSeparatorPending = false
+			continue
+		}
+
+		separatorPending = true
+		if r == '-' || r == '_' || unicode.IsSpace(r) {
+			githubSeparatorPending = true
+			goldmarkSeparatorPending = true
+		}
+	}
+	for convention, form := range map[string]string{
+		"separated": separated.String(),
+		"github":    stripped.String(),
+		"goldmark":  goldmark.String(),
+	} {
+		form = strings.Trim(form, "-")
+		if form != "" {
+			forms[convention] = form
+		}
+	}
+	return forms
 }
 
 func markdownLinkTarget(destination, sourcePath string) (string, bool, error) {

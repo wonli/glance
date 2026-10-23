@@ -10,6 +10,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"glance/internal/document"
+	"glance/internal/fontmanager/emojifont"
 	"glance/internal/format/markdowndoc"
 	"glance/internal/i18n"
 	"image"
@@ -81,6 +82,7 @@ func (a *App) layoutMarkdownBlock(gtx layout.Context, b document.MarkdownBlock, 
 				}
 				style := homeLabelStyle(a.theme, strings.TrimSuffix(b.Text, "\n"), 13, homeText, font.Normal)
 				style.Font.Typeface = jsonMonoFace
+				style.LineHeightScale = a.tokens().Typography.BodyLineHeightScale
 				style.MaxLines = 0
 				return style.Layout(gtx)
 			})
@@ -141,6 +143,7 @@ func (a *App) layoutMarkdownAsset(gtx layout.Context, s document.MarkdownSpan, d
 			}
 		}
 		style := homeLabelStyle(a.theme, label, 14, mutedText, font.Normal)
+		style.LineHeightScale = a.tokens().Typography.BodyLineHeightScale
 		style.MaxLines = 0
 		return a.layoutMarkdownFormulaTarget(gtx, s, style.Layout)
 	}
@@ -189,7 +192,9 @@ func (a *App) layoutMarkdownAsset(gtx layout.Context, s document.MarkdownSpan, d
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					message := a.text(i18n.Message{ID: "markdown.diagram.error", Args: i18n.Args{"Reason": chartErr}})
 					return layout.Inset{Top: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return jsonLabel(gtx, a, message, 12, mutedText, false, false)
+						style := homeLabelStyle(a.theme, message, 12, mutedText, font.Normal)
+						style.LineHeightScale = a.tokens().Typography.BodyLineHeightScale
+						return style.Layout(gtx)
 					})
 				}),
 			)
@@ -204,7 +209,8 @@ func (a *App) layoutMarkdownAsset(gtx layout.Context, s document.MarkdownSpan, d
 func (a *App) layoutMarkdownSpans(gtx layout.Context, spans []document.MarkdownSpan, size unit.Sp, fg color.NRGBA, bold bool, block any) layout.Dimensions {
 	v := a.ensureMarkdownView()
 	width := gtx.Constraints.Max.X
-	x, y, rowHeight := 0, 0, gtx.Sp(size)*3/2
+	lineHeight := gtx.Sp(unit.Sp(float32(size) * a.tokens().Typography.BodyLineHeightScale))
+	x, y, rowHeight := 0, 0, lineHeight
 	maxX := 0
 	for index, s := range spans {
 		if s.Kind == "task" {
@@ -212,7 +218,7 @@ func (a *App) layoutMarkdownSpans(gtx layout.Context, spans []document.MarkdownS
 			if x > 0 && x+dimsSize > width {
 				y += rowHeight
 				x = 0
-				rowHeight = gtx.Sp(size) * 3 / 2
+				rowHeight = lineHeight
 			}
 			push := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
 			taskGtx := gtx
@@ -234,7 +240,7 @@ func (a *App) layoutMarkdownSpans(gtx layout.Context, spans []document.MarkdownS
 			if x > 0 && (s.Kind == "image" || x+dims.Size.X > width) {
 				y += rowHeight
 				x = 0
-				rowHeight = gtx.Sp(size) * 3 / 2
+				rowHeight = lineHeight
 			}
 			push := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
 			if s.LinkDestination != "" {
@@ -262,59 +268,84 @@ func (a *App) layoutMarkdownSpans(gtx layout.Context, spans []document.MarkdownS
 			if word == "\n" {
 				y += rowHeight
 				x = 0
-				rowHeight = gtx.Sp(size) * 3 / 2
+				rowHeight = lineHeight
 				continue
 			}
-			record := op.Record(gtx.Ops)
 			measure := gtx
 			measure.Constraints = layout.Constraints{Max: image.Pt(max(1, width), 1<<20)}
-			style := homeLabelStyle(a.theme, word, size, fg, font.Normal)
-			style.MaxLines = 0
-			if bold || s.Bold {
-				style.Font.Weight = font.SemiBold
-			}
-			if s.Italic {
-				style.Font.Style = font.Italic
-			}
+			textRuns := []emojifont.TextRun{{Text: word}}
 			if s.Kind == "code" {
-				style.Font.Typeface = jsonMonoFace
-				style.Color = jsonKeyColor
-				if c, ok := parseWordRunColor(s.CodeColor); ok {
-					style.Color = c
+				textRuns = emojifont.SplitText(word)
+			}
+			type measuredMarkdownRun struct {
+				call op.CallOp
+				dims layout.Dimensions
+			}
+			measuredRuns := make([]measuredMarkdownRun, 0, len(textRuns))
+			totalWidth, totalHeight := 0, 0
+			for _, textRun := range textRuns {
+				record := op.Record(gtx.Ops)
+				style := homeLabelStyle(a.theme, textRun.Text, size, fg, font.Normal)
+				style.MaxLines = 0
+				if bold || s.Bold {
+					style.Font.Weight = font.SemiBold
 				}
+				if s.Italic {
+					style.Font.Style = font.Italic
+				}
+				if s.Kind == "code" {
+					style.Font.Typeface = jsonMonoFace
+					if textRun.ColorEmoji {
+						style.Font.Typeface = font.Typeface(emojifont.Family)
+					}
+					style.Color = jsonKeyColor
+					if c, ok := parseWordRunColor(s.CodeColor); ok {
+						style.Color = c
+					}
+				}
+				if s.Destination != "" {
+					style.Color = jsonBlue
+				}
+				dims := style.Layout(measure)
+				if s.Strike {
+					lineY := max(0, dims.Size.Y-dims.Baseline-gtx.Sp(size)*3/10)
+					paint.FillShape(gtx.Ops, style.Color, clip.Rect{Min: image.Pt(0, lineY), Max: image.Pt(dims.Size.X, lineY+max(1, gtx.Dp(1)))}.Op())
+				}
+				measuredRuns = append(measuredRuns, measuredMarkdownRun{call: record.Stop(), dims: dims})
+				totalWidth += dims.Size.X
+				totalHeight = max(totalHeight, dims.Size.Y)
 			}
-			if s.Destination != "" {
-				style.Color = jsonBlue
-			}
-			dims := style.Layout(measure)
-			if s.Strike {
-				lineY := max(0, dims.Size.Y-dims.Baseline-gtx.Sp(size)*3/10)
-				paint.FillShape(gtx.Ops, style.Color, clip.Rect{Min: image.Pt(0, lineY), Max: image.Pt(dims.Size.X, lineY+max(1, gtx.Dp(1)))}.Op())
-			}
-			call := record.Stop()
-			if x > 0 && x+dims.Size.X > width {
+			if x > 0 && x+totalWidth > width {
 				y += rowHeight
 				x = 0
-				rowHeight = gtx.Sp(size) * 3 / 2
+				rowHeight = lineHeight
 			}
-			push := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
-			if s.Destination != "" {
-				id := fmt.Sprintf("link-%v-%d-%d", block, index, token)
-				v.links[id] = s.Destination
-				clickGtx := gtx
-				clickGtx.Constraints = layout.Exact(dims.Size)
-				v.button(id).Layout(clickGtx, func(gtx layout.Context) layout.Dimensions { call.Add(gtx.Ops); return dims })
-			} else {
-				call.Add(gtx.Ops)
+			runX := 0
+			for runIndex, run := range measuredRuns {
+				push := op.Offset(image.Pt(x+runX, y)).Push(gtx.Ops)
+				if s.Destination != "" {
+					id := fmt.Sprintf("link-%v-%d-%d", block, index, token)
+					if runIndex > 0 {
+						id += fmt.Sprintf("-%d", runIndex)
+					}
+					v.links[id] = s.Destination
+					clickGtx := gtx
+					clickGtx.Constraints = layout.Exact(run.dims.Size)
+					v.button(id).Layout(clickGtx, func(gtx layout.Context) layout.Dimensions { run.call.Add(gtx.Ops); return run.dims })
+				} else {
+					run.call.Add(gtx.Ops)
+				}
+				push.Pop()
+				runX += run.dims.Size.X
 			}
-			push.Pop()
-			x += dims.Size.X
+			x += totalWidth
 			maxX = max(maxX, x)
-			rowHeight = max(rowHeight, dims.Size.Y)
+			rowHeight = max(rowHeight, totalHeight)
 		}
 	}
 	return layout.Dimensions{Size: image.Pt(min(width, maxX), y+rowHeight)}
 }
+
 func markdownWrapTokens(value string) []string {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	out := []string{}

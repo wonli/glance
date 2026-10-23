@@ -109,6 +109,7 @@ func (a *App) layoutMarkdownEditor(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
 				style := material.Editor(a.theme, &v.editor, a.textID("markdown.editor.placeholder"))
 				style.TextSize = 16
+				style.LineHeightScale = a.tokens().Typography.BodyLineHeightScale
 				style.Color = homeText
 				return style.Layout(gtx)
 			})

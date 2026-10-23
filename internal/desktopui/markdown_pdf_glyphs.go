@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-text/typesetting/segmenter"
 	"glance/internal/document"
-	"glance/internal/emojifont"
+	"glance/internal/fontmanager/emojifont"
 	wordpdf "glance/internal/format/pdf"
 	"glance/internal/wordlayout"
 )

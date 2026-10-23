@@ -7,7 +7,7 @@ import (
 
 	"gioui.org/font"
 	"gioui.org/text"
-	"glance/internal/emojifont"
+	"glance/internal/fontmanager/emojifont"
 	"glance/internal/fontmanager/fontfallback"
 )
 

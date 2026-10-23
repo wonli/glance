@@ -1,4 +1,4 @@
-// Package emojifont owns the application-private bitmap emoji fallback.
+// Package emojifont adapts fontmanager's bundled color emoji resource to Gio.
 package emojifont
 
 import (

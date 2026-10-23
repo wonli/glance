@@ -3,7 +3,7 @@ package desktopui
 import (
 	"gioui.org/font"
 	"gioui.org/text"
-	"glance/internal/emojifont"
+	"glance/internal/fontmanager/emojifont"
 	"golang.org/x/image/math/fixed"
 	"testing"
 )

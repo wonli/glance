@@ -8,6 +8,8 @@ import (
 	"glance/internal/document"
 	"glance/internal/format/markdowndoc"
 	"image"
+	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -74,6 +76,103 @@ func TestMarkdownPreviewNaturalHeightAndInlineMath(t *testing.T) {
 	dims = a.layoutMarkdownBlock(gtx, document.MarkdownBlock{Kind: "table", Rows: [][]string{{"名称", "值"}, {"中文", "42"}}}, 1)
 	if dims.Size.Y > 120 {
 		t.Fatalf("two-row table height %d", dims.Size.Y)
+	}
+}
+
+func TestMarkdownEditorUsesBodyLineHeightAndSelectionRowsDoNotOverlap(t *testing.T) {
+	a := markdownTestApp(t)
+	source := "第一行 ⚠️ 安全提示\n第二行 English text"
+	a.markdownView.editor.SetText(source)
+	a.markdownView.editor.SetCaret(0, len([]rune(source)))
+
+	var ops op.Ops
+	var router input.Router
+	gtx := layout.Context{
+		Ops:         &ops,
+		Source:      router.Source(),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Exact(image.Pt(1200, 700)),
+	}
+	a.layoutMarkdownEditor(gtx)
+
+	wantScale := a.tokens().Typography.BodyLineHeightScale
+	if got := a.markdownView.editor.LineHeightScale; got != wantScale {
+		t.Fatalf("Markdown editor line-height scale=%v, want shared body token %v", got, wantScale)
+	}
+	regions := a.markdownView.editor.Regions(0, a.markdownView.editor.Len(), nil)
+	if len(regions) < 2 {
+		t.Fatalf("selected Markdown text produced %d regions, want at least two", len(regions))
+	}
+	sort.Slice(regions, func(i, j int) bool {
+		if regions[i].Bounds.Min.Y == regions[j].Bounds.Min.Y {
+			return regions[i].Bounds.Min.X < regions[j].Bounds.Min.X
+		}
+		return regions[i].Bounds.Min.Y < regions[j].Bounds.Min.Y
+	})
+	var rows []image.Rectangle
+	for _, region := range regions {
+		if len(rows) == 0 || rows[len(rows)-1].Min.Y != region.Bounds.Min.Y || rows[len(rows)-1].Max.Y != region.Bounds.Max.Y {
+			rows = append(rows, region.Bounds)
+		}
+	}
+	for i := 1; i < len(rows); i++ {
+		if rows[i-1].Max.Y > rows[i].Min.Y {
+			t.Fatalf("selection rows overlap: previous=%v next=%v", rows[i-1], rows[i])
+		}
+	}
+}
+
+func TestMarkdownPreviewUsesBodyLineHeightForTextRows(t *testing.T) {
+	a := markdownTestApp(t)
+	var ops op.Ops
+	gtx := layout.Context{
+		Ops:         &ops,
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(600, 300)},
+	}
+	dims := a.layoutMarkdownSpans(gtx, []document.MarkdownSpan{{Text: "first\nsecond"}}, 16, homeText, false, "line-height")
+	wantHeight := 2 * gtx.Sp(unit.Sp(16*a.tokens().Typography.BodyLineHeightScale))
+	if dims.Size.Y < wantHeight {
+		t.Fatalf("two-row Markdown preview height=%d, want at least %d from body line-height token", dims.Size.Y, wantHeight)
+	}
+}
+
+func TestMarkdownWrapTokensPreservesEmojiWithinNormalTextRuns(t *testing.T) {
+	for _, source := range []struct {
+		text string
+		want []string
+	}{
+		{text: "🚀 Markdown", want: []string{"🚀 ", "Markdown"}},
+		{text: "⚠️ 安全", want: []string{"⚠️ ", "安", "全"}},
+		{text: "👩🏽‍💻 editor", want: []string{"👩🏽‍💻 ", "editor"}},
+		{text: "🇺🇸 flag", want: []string{"🇺🇸 ", "flag"}},
+		{text: "⚠️Title", want: []string{"⚠️Title"}},
+	} {
+		if got := markdownWrapTokens(source.text); !reflect.DeepEqual(got, source.want) {
+			t.Errorf("markdownWrapTokens(%q)=%q, want %q", source.text, got, source.want)
+		}
+	}
+}
+
+func TestMarkdownAssetErrorTextUsesBodyLineHeight(t *testing.T) {
+	a := markdownTestApp(t)
+	span := document.MarkdownSpan{Kind: "diagram", Language: "mermaid", Text: "graph TD; A-->B"}
+	v := a.ensureMarkdownView()
+	if v.errors == nil {
+		v.errors = make(map[string]string)
+	}
+	v.errors[markdownAssetKey(span)] = "test error"
+
+	var ops op.Ops
+	gtx := layout.Context{
+		Ops:         &ops,
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(700, 300)},
+	}
+	dims := a.layoutMarkdownAsset(gtx, span, false)
+	wantMinHeight := 2 * gtx.Sp(unit.Sp(14*a.tokens().Typography.BodyLineHeightScale))
+	if dims.Size.Y < wantMinHeight {
+		t.Fatalf("multiline diagram error height=%d, want at least %d from body line-height token", dims.Size.Y, wantMinHeight)
 	}
 }
 
