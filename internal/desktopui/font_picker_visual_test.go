@@ -15,8 +15,8 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
-	"glance/internal/fontcatalog"
-	"glance/internal/fontdownload"
+	"glance/internal/fontmanager/fontcatalog"
+	"glance/internal/fontmanager/fontdownload"
 	"glance/internal/format/docx"
 )
 

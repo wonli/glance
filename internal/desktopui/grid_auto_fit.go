@@ -15,7 +15,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget/material"
 	"glance/internal/document"
-	"glance/internal/fontcatalog"
+	"glance/internal/fontmanager/fontcatalog"
 )
 
 type gridAutoFitMeasurer struct {
@@ -48,13 +48,7 @@ func (m *gridAutoFitMeasurer) themeFor(style document.CellStyle) *material.Theme
 		return theme
 	}
 	theme := material.NewTheme()
-	theme.Shaper = newTextShaper(nil)
-	if family != "" {
-		faces := fontCollectionWithCache(m.fonts, []string{family, string(preferredSystemTypeface)}, m.fontCache)
-		if len(faces) != 0 {
-			theme.Shaper = newTextShaper(faces)
-		}
-	}
+	theme.Shaper = newTextShaper(fontCollectionForRendering(m.fonts, []string{family}, m.fontCache))
 	m.themes[family] = theme
 	return theme
 }
@@ -167,10 +161,7 @@ func (a *App) startSpreadsheetAutoFitDimensionRange(gtx layout.Context, row bool
 	}
 	sheet, generation, window := state.sheet, a.documentGeneration, v
 	metric, scale := gtx.Metric, v.Scale
-	fonts := fontcatalog.Default()
-	if a.desktopRuntime != nil && a.desktopRuntime.fonts != nil {
-		fonts = a.desktopRuntime.fonts.Snapshot()
-	}
+	fonts := a.currentFontSnapshot()
 	if !a.launchManagedBackground(func() {
 		measurer := newGridAutoFitMeasurer(metric, scale, fonts)
 		type dimensionMeasurement struct {

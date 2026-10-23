@@ -1,34 +1,27 @@
 package desktopui
 
 import (
+	"strings"
+
 	giofont "gioui.org/font"
-	"glance/internal/fontcatalog"
-	"glance/internal/fontfallback"
+	"glance/internal/fontmanager/fontcatalog"
+	"glance/internal/fontmanager/fontfallback"
 )
 
-// uiFontFaces selects the normal and semibold faces used by shell text. Loading
-// every weight/italic of a CJK family would cost more than the sharing saves.
-// This only selects metadata; the builder below decides which faces to parse.
+// uiFontFaces selects the normal and semibold faces for the existing shell,
+// code-editor, CJK, and emoji family chains. The family order matches the
+// current theme; the builder below decides which faces to parse.
 func uiFontFaces(snapshot fontcatalog.Snapshot, cache *fontCollectionCache) []fontcatalog.Face {
-	var families []fontcatalog.Family
-	if matches := cache.familiesFor(snapshot, "Inter"); len(matches) > 0 {
-		families = append(families, matches...)
-	}
-	for _, name := range fontfallback.CJKFamilies() {
-		matches := cache.familiesFor(snapshot, name)
-		usable := false
-		for _, family := range matches {
-			for _, face := range family.Faces {
-				if face.Unavailable == "" && !face.Italic {
-					usable = true
-					break
-				}
-			}
+	names := append(fontfallback.PreferredFamilies(), fontfallback.MonospaceFamilies()...)
+	families := make([]fontcatalog.Family, 0, len(names))
+	seenFamilies := map[string]bool{}
+	for _, name := range names {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if key == "" || seenFamilies[key] {
+			continue
 		}
-		if usable {
-			families = append(families, matches...)
-			break
-		}
+		seenFamilies[key] = true
+		families = append(families, cache.familiesFor(snapshot, name)...)
 	}
 	var selected []fontcatalog.Face
 	seen := map[fontcatalog.ResourceID]bool{}
@@ -87,14 +80,24 @@ func fontCollectionForRendering(snapshot fontcatalog.Snapshot, names []string, c
 	// Preserve requested document/private fonts before optional UI preloads.
 	builder.addFamilies(names)
 	for _, face := range uiFontFaces(snapshot, cache) {
-		// Gio registers collection fonts with stretch zero, but system faces use
-		// normal stretch. Its matcher therefore loads the system face anyway.
-		// Avoid a redundant UI parse until that upstream mismatch is fixed;
-		// keep private/online UI sources and explicit document requests intact.
-		if face.Source != fontcatalog.System {
-			builder.add(face, append([]string{face.Family}, face.Aliases...))
-		}
+		builder.add(face, append([]string{face.Family}, face.Aliases...))
 	}
 	cache.retainParsed(builder.loaded)
 	return builder.collection
+}
+
+func hasUsableUIFontCollection(collection []giofont.FontFace) bool {
+	preferred := fontfallback.PreferredFamilies()
+	for _, face := range collection {
+		family := strings.TrimSpace(string(face.Font.Typeface))
+		if family == "" || strings.Contains(strings.ToLower(family), "emoji") {
+			continue
+		}
+		for _, name := range preferred {
+			if strings.EqualFold(family, name) {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	giofont "gioui.org/font"
 	"gioui.org/font/opentype"
-	"glance/internal/fontcatalog"
-	"glance/internal/fontfallback"
+	"glance/internal/fontmanager/fontcatalog"
+	"glance/internal/fontmanager/fontfallback"
 	"golang.org/x/image/font/gofont/goregular"
 	"testing"
 )

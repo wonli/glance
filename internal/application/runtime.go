@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 
+	"glance/internal/fontmanager"
+	"glance/internal/fontmanager/fontcatalog"
 	"glance/internal/localaccess"
 	"glance/internal/workspace"
 )
@@ -84,6 +86,7 @@ type RuntimeOptions struct {
 	Factories         []FormatFactory
 	PrintService      PrintService
 	LocalAccessBroker *localaccess.Broker
+	FontManager       *fontmanager.Manager
 }
 
 type DocumentInfo struct {
@@ -122,6 +125,8 @@ type Runtime struct {
 	documentPlans     *documentPlanService
 	workspaceDBPath   string
 	printService      PrintService
+	fontManager       *fontmanager.Manager
+	ownsFontManager   bool
 	localAccessBroker *localaccess.Broker
 	workspaceMu       sync.Mutex
 	workspaceStore    *workspace.Store
@@ -149,6 +154,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		workspaceDBPath:   options.WorkspaceDBPath,
 		printService:      options.PrintService,
 		localAccessBroker: options.LocalAccessBroker,
+		fontManager:       options.FontManager,
 		factories:         make(map[Format]FormatFactory, len(factories)),
 		sessions:          make(map[string]*runtimeSession),
 		paths:             make(map[string]string),
@@ -398,7 +404,19 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 			return nil, err
 		}
 	}
+	if runtime.fontManager == nil {
+		runtime.fontManager = fontmanager.New(fontmanager.Options{Scanner: fontcatalog.Scanner{DiscoverSystem: true}})
+		runtime.ownsFontManager = true
+	}
 	return runtime, nil
+}
+
+// FontSnapshot captures the ready process/runtime snapshot for one operation.
+func (r *Runtime) FontSnapshot(ctx context.Context) (fontcatalog.Snapshot, error) {
+	if r == nil || r.fontManager == nil {
+		return fontcatalog.Snapshot{}, errors.New("font manager is unavailable")
+	}
+	return r.fontManager.Ready(ctx)
 }
 
 // OpenWorkspace opens the Runtime-owned workspace store once. A desktop may
@@ -1033,6 +1051,11 @@ func (r *Runtime) Close(ctx context.Context) error {
 	}
 	if r.events != nil {
 		r.events.close()
+	}
+	if r.ownsFontManager && r.fontManager != nil {
+		if err := r.fontManager.Close(); err != nil && closeErr == nil {
+			closeErr = err
+		}
 	}
 	return closeErr
 }

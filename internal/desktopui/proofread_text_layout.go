@@ -7,6 +7,7 @@ import (
 	"gioui.org/font"
 	"gioui.org/text"
 	"glance/internal/application"
+	"glance/internal/fontmanager/fontcatalog"
 	"glance/internal/proofreading"
 	"golang.org/x/image/math/fixed"
 )
@@ -14,12 +15,16 @@ import (
 // Shape on a worker-owned Gio shaper, with the same document-coordinate
 // parameters as the native editor. Sharing the UI shaper across goroutines
 // would race its mutable glyph iterator and caches.
-func reflowProofreadingForEditor(ctx context.Context, snapshot proofreading.Snapshot, geometry []application.ProofreadingPageGeometry, style application.ProofreadingTextStyle, initial bool) (application.ProofreadingLayoutSnapshot, error) {
-	return application.ReflowProofreadingLines(ctx, snapshot, geometry, style, newProofreadingEditorLineShaper(), initial)
+func reflowProofreadingForEditor(ctx context.Context, snapshot proofreading.Snapshot, geometry []application.ProofreadingPageGeometry, style application.ProofreadingTextStyle, initial bool, fontSnapshots ...fontcatalog.Snapshot) (application.ProofreadingLayoutSnapshot, error) {
+	return application.ReflowProofreadingLines(ctx, snapshot, geometry, style, newProofreadingEditorLineShaper(fontSnapshots...), initial)
 }
 
-func newProofreadingEditorLineShaper() application.ProofreadingLineShaper {
-	shaper := newTextShaper(nil)
+func newProofreadingEditorLineShaper(fontSnapshots ...fontcatalog.Snapshot) application.ProofreadingLineShaper {
+	var collection []font.FontFace
+	if len(fontSnapshots) > 0 {
+		collection = fontCollectionForRendering(fontSnapshots[0], nil, newFontCollectionCache())
+	}
+	shaper := newTextShaper(collection)
 	shape := func(ctx context.Context, value string, width float64, style application.ProofreadingTextStyle) ([]application.ProofreadingLine, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err

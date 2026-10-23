@@ -12,7 +12,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
-	"glance/internal/fontfallback"
+	"glance/internal/fontmanager/fontfallback"
 	"golang.org/x/image/math/fixed"
 	"image"
 	"image/color"

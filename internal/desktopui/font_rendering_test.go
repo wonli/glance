@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	giofont "gioui.org/font"
-	"glance/internal/fontcatalog"
+	"glance/internal/fontmanager/fontcatalog"
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/goregular"
 )

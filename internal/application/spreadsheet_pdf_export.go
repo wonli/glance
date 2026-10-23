@@ -56,8 +56,12 @@ func registerSpreadsheetPDFExportCapability(catalog *Catalog) error {
 			if err != nil {
 				return CapabilityResult{}, err
 			}
+			fonts, err := capability.Runtime.FontSnapshot(ctx)
+			if err != nil {
+				return CapabilityResult{}, err
+			}
 			images := spreadsheetPDFImageSource{ctx: ctx, controller: controller}
-			result, err := sheetpdf.ExportWindow(ctx, path, input.Sheet, window, input.Orientation, images, func() (func(), error) {
+			result, err := sheetpdf.ExportWindowWithFontSnapshot(ctx, path, input.Sheet, window, input.Orientation, images, fonts, func() (func(), error) {
 				return capability.Runtime.lockDocumentRevision(ctx, capability.Document.DocumentID, capability.Document.Revision)
 			})
 			if err != nil {

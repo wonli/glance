@@ -68,7 +68,11 @@ func registerSpreadsheetPrintCapability(catalog *Catalog, printer PrintService) 
 			defer os.RemoveAll(temporaryDirectory)
 			pdfPath := filepath.Join(temporaryDirectory, "print.pdf")
 			images := spreadsheetPDFImageSource{ctx: ctx, controller: controller}
-			export, err := sheetpdf.ExportWindow(ctx, pdfPath, input.Sheet, window, input.Orientation, images, nil)
+			fonts, err := capability.Runtime.FontSnapshot(ctx)
+			if err != nil {
+				return CapabilityResult{}, err
+			}
+			export, err := sheetpdf.ExportWindowWithFontSnapshot(ctx, pdfPath, input.Sheet, window, input.Orientation, images, fonts, nil)
 			if err != nil {
 				return CapabilityResult{}, err
 			}

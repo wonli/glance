@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"glance/internal/document"
+	"glance/internal/fontmanager/fontcatalog"
 	"glance/internal/format/docx"
 	pdfformat "glance/internal/format/pdf"
 	"glance/internal/wordfont"
@@ -46,6 +47,24 @@ func (s imageSource) ImageBytes(imageID string) ([]byte, error) {
 // ExportSnapshot renders a complete DOCX snapshot, validates the generated
 // PDF, and creates path without replacing an existing file.
 func ExportSnapshot(ctx context.Context, path string, snapshot []byte, documentID string, revision uint64, orientation string, guard CommitGuard) (Result, error) {
+	shaper, err := wordfont.NewSystem()
+	if err != nil {
+		return Result{}, err
+	}
+	return exportSnapshotWithShaper(ctx, path, snapshot, documentID, revision, orientation, guard, shaper)
+}
+
+// ExportSnapshotWithFontSnapshot renders the complete document snapshot using
+// the exact font catalog snapshot captured by the owning runtime.
+func ExportSnapshotWithFontSnapshot(ctx context.Context, path string, snapshot []byte, documentID string, revision uint64, orientation string, fonts fontcatalog.Snapshot, guard CommitGuard) (Result, error) {
+	shaper, err := wordfont.NewWithSnapshot(fonts)
+	if err != nil {
+		return Result{}, err
+	}
+	return exportSnapshotWithShaper(ctx, path, snapshot, documentID, revision, orientation, guard, shaper)
+}
+
+func exportSnapshotWithShaper(ctx context.Context, path string, snapshot []byte, documentID string, revision uint64, orientation string, guard CommitGuard, shaper *wordfont.Shaper) (Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -65,14 +84,6 @@ func ExportSnapshot(ctx context.Context, path string, snapshot []byte, documentI
 	}
 	defer word.Close()
 
-	systemShaper := struct {
-		shaper *wordfont.Shaper
-		err    error
-	}{}
-	systemShaper.shaper, systemShaper.err = wordfont.NewSystem()
-	if systemShaper.err != nil {
-		return Result{}, systemShaper.err
-	}
 	blocks := word.WordBlocks()
 	layoutData := word.WordLayoutData()
 	defaultPageSetup := wordlayout.DefaultPageSetup()
@@ -83,7 +94,7 @@ func ExportSnapshot(ctx context.Context, path string, snapshot []byte, documentI
 			return Result{}, fmt.Errorf("unsupported Word PDF orientation %q", orientation)
 		}
 	}
-	layout, err := wordlayout.NewEngine(systemShaper.shaper).Layout(ctx, wordlayout.Input{
+	layout, err := wordlayout.NewEngine(shaper).Layout(ctx, wordlayout.Input{
 		DocumentID: documentID, Revision: revision, Blocks: blocks,
 		Layout: layoutData, DefaultPageSetup: defaultPageSetup,
 	})
@@ -91,7 +102,7 @@ func ExportSnapshot(ctx context.Context, path string, snapshot []byte, documentI
 		return Result{}, fmt.Errorf("lay out Word snapshot for PDF export: %w", err)
 	}
 
-	return ExportScene(ctx, path, layout, systemShaper.shaper, imageSource{document: word}, guard)
+	return ExportScene(ctx, path, layout, shaper, imageSource{document: word}, guard)
 }
 
 // ExportScene validates a prepared page scene and atomically creates a new

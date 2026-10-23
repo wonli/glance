@@ -2,30 +2,80 @@ package desktopui
 
 import (
 	"context"
-	"glance/internal/diagramrender"
-	"glance/internal/i18n"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
-	"glance/internal/application"
-	"glance/internal/fontcatalog"
-	"glance/internal/fontdownload"
+	"glance/internal/diagramrender"
+	"glance/internal/fontmanager"
+	"glance/internal/fontmanager/fontcatalog"
+	"glance/internal/fontmanager/fontdownload"
+	"glance/internal/i18n"
 )
+
+func (a *App) currentFontSnapshot() fontcatalog.Snapshot {
+	if a == nil {
+		return fontcatalog.Snapshot{}
+	}
+	if a.desktopRuntime != nil && a.desktopRuntime.fonts != nil {
+		return a.desktopRuntime.fonts.Snapshot()
+	}
+	// Windowless App values are used by tests and offline utilities. A real
+	// desktop window always has a process manager and never uses this fallback.
+	if a.window == nil {
+		return fontcatalog.Default()
+	}
+	return fontcatalog.Snapshot{}
+}
+
+func (a *App) fontVersion() uint64 { return a.currentFontSnapshot().Version }
+
+func newDesktopFontManager() *fontmanager.Manager {
+	cache, cacheErr := os.UserCacheDir()
+	if cacheErr != nil {
+		cache = ""
+	}
+	data, dataErr := os.UserConfigDir()
+	if dataErr != nil {
+		data = ""
+	}
+	root, objects := "", ""
+	if data != "" {
+		root = filepath.Join(data, "glance", "fonts")
+		objects = filepath.Join(root, "objects")
+		_ = os.MkdirAll(objects, 0700)
+	}
+	var privateDirectories []string
+	if objects != "" {
+		privateDirectories = []string{objects}
+	}
+	cachePath := ""
+	if cache != "" {
+		cachePath = filepath.Join(cache, "glance", "fonts", "catalog-v1.json")
+	}
+	return fontmanager.New(fontmanager.Options{
+		Scanner:     fontcatalog.Scanner{DiscoverSystem: true, PrivateDirectories: privateDirectories},
+		CachePath:   cachePath,
+		PrivateRoot: root,
+		Provider:    fontdownload.DefaultManifest(),
+	})
+}
 
 func (a *App) startFontService() {
 	a.initFontPicker()
 	r := a.ensureDesktopRuntime()
 	r.fontInit.Do(func() {
-		cache, _ := os.UserCacheDir()
-		data, _ := os.UserConfigDir()
-		root := filepath.Join(data, "glance", "fonts")
-		objects := filepath.Join(root, "objects")
-
-		os.MkdirAll(objects, 0700)
-		r.fonts = application.NewFontService(application.FontOptions{Publish: fontcatalog.SetDefault, Scanner: fontcatalog.Scanner{DiscoverSystem: true, PrivateDirectories: []string{objects}}, CachePath: filepath.Join(cache, "glance", "fonts", "catalog-v1.json")})
-		r.fontDownloads = fontdownload.New(root, nil)
-		r.fontProvider = fontdownload.DefaultManifest()
-		a.launchManagedBackground(func() { r.fontDownloads.CleanStaging(); r.fonts.Initialize(context.Background()) })
+		if r.fonts == nil {
+			r.fonts = newDesktopFontManager()
+		}
+		manager := r.fonts
+		a.launchManagedBackground(func() {
+			_ = manager.CleanStaging()
+			if err := manager.Initialize(context.Background()); err != nil && manager.Snapshot().Version == 0 {
+				log.Printf("initialize font manager: %v", err)
+			}
+		})
 	})
 	if r.fonts == nil {
 		return
@@ -60,6 +110,28 @@ func (a *App) startFontService() {
 		}
 	})
 }
+
+func (a *App) prepareInitialFontTheme() error {
+	if a == nil || a.fonts == nil || a.theme == nil {
+		return fmt.Errorf("font manager is unavailable")
+	}
+	snapshot, err := a.fonts.Ready(context.Background())
+	if err != nil {
+		return fmt.Errorf("wait for initial font catalog: %w", err)
+	}
+	cache := newFontCollectionCache()
+	collection := fontCollectionForRendering(snapshot, nil, cache)
+	if !hasUsableUIFontCollection(collection) {
+		return fmt.Errorf("initial font catalog contains no usable Glance UI font faces")
+	}
+	a.theme.Shaper = newTextShaper(collection)
+	a.fontPicker.snapshot = snapshot
+	a.fontPicker.event = fontmanager.Event{Snapshot: snapshot}
+	a.fontPicker.renderCache = cache
+	a.fontPicker.renderAccepted = fmt.Sprintf("%d:", snapshot.Version)
+	return nil
+}
+
 func (a *App) pollFontResults() {
 	p := &a.fontPicker
 	if !p.initialized {
@@ -90,6 +162,7 @@ func (a *App) pollFontResults() {
 				p.renderPending = ""
 				p.renderInputKey = ""
 				a.wordLayoutEngine = nil
+				a.wordLayoutEngineFontVersion = 0
 				a.wordPDFFontSource = nil
 				for _, s := range a.sessions {
 					if s == nil {
@@ -129,7 +202,9 @@ func (a *App) pollFontResults() {
 		case result := <-p.renderResults:
 			if result.key == p.renderPending {
 				p.renderPending = ""
-				if result.shaper != nil {
+				if result.err != nil {
+					a.setStatusErrorMessage(i18n.Message{ID: "common.feedback.operation_failed"}, result.err, notificationToast)
+				} else if result.shaper != nil {
 					a.theme.Shaper = result.shaper
 					p.renderAccepted = result.key
 					if a.virtualGrid != nil {

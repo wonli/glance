@@ -247,14 +247,15 @@ func (a *App) startProofreadingModelLayoutForPages(fullLayout bool, only []proof
 		geometry[i] = application.ProofreadingPageGeometry{Page: proofreading.PageID(i + 1), Width: max(1, p.Width-2*marginX), Height: max(1, p.Height-2*marginY)}
 	}
 	style := application.ProofreadingTextStyle{Size: 12 * proofreadingXTextScale(s.xTextSizeStep), Family: string(a.theme.Face), Revision: s.xTextSizeStep}
+	fontSnapshot := a.currentFontSnapshot()
 	results, window := s.modelLayoutResults, a.window
 	if !a.launchManagedBackground(func() {
 		var result application.ProofreadingLayoutSnapshot
 		var err error
 		if initial {
-			result, err = reflowProofreadingForEditor(ctx, snap, geometry, style, initial)
+			result, err = reflowProofreadingForEditor(ctx, snap, geometry, style, initial, fontSnapshot)
 		} else {
-			result, err = application.LayoutProofreadingOwnedPages(ctx, snap, geometry, style, previous, dirty, newProofreadingEditorLineShaper())
+			result, err = application.LayoutProofreadingOwnedPages(ctx, snap, geometry, style, previous, dirty, newProofreadingEditorLineShaper(fontSnapshot))
 		}
 		if ctx.Err() != nil {
 			return

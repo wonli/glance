@@ -4,7 +4,7 @@ import (
 	"container/list"
 	"github.com/go-text/typesetting/font"
 	"github.com/go-text/typesetting/fontscan"
-	"glance/internal/fontcatalog"
+	"glance/internal/fontmanager/fontcatalog"
 )
 
 func NewWithSnapshot(snapshot fontcatalog.Snapshot) (*Shaper, error) {

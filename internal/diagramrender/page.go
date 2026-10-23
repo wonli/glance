@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"glance/internal/fontmanager/fontfallback"
 	"io"
 	"net/url"
 	"strings"
@@ -293,7 +294,7 @@ func renderScript(q Request) string {
 		return renderVegaScript(q)
 	}
 	source, _ := json.Marshal(string(q.Source))
-	return `(async()=>{const output=document.getElementById('output');output.replaceChildren();mermaid.initialize({startOnLoad:false,securityLevel:'strict',maxTextSize:65536,maxEdges:500,suppressErrorRendering:true,theme:'default',fontFamily:'Arial,Microsoft YaHei,PingFang SC,sans-serif',secure:['secure','securityLevel','startOnLoad','maxTextSize','maxEdges','themeCSS','fontFamily','htmlLabels','flowchart'],flowchart:{htmlLabels:false,useMaxWidth:false}});const result=await mermaid.render('diagram',` + string(source) + `);output.innerHTML=result.svg;await document.fonts.ready;const svg=output.querySelector('svg');if(!svg)throw new Error('Mermaid produced no SVG');const view=svg.viewBox.baseVal;const width=Math.ceil(view.width||svg.getBoundingClientRect().width),height=Math.ceil(view.height||svg.getBoundingClientRect().height);if(width<=0||height<=0||width*height*4>16777216)throw new Error('diagram exceeds 16 megapixels');svg.setAttribute('width',width);svg.setAttribute('height',height);svg.style.maxWidth='none';return {width,height};})()`
+	return `(async()=>{const output=document.getElementById('output');output.replaceChildren();mermaid.initialize({startOnLoad:false,securityLevel:'strict',maxTextSize:65536,maxEdges:500,suppressErrorRendering:true,theme:'default',fontFamily:'` + fontfallback.WebViewTypeface() + `',secure:['secure','securityLevel','startOnLoad','maxTextSize','maxEdges','themeCSS','fontFamily','htmlLabels','flowchart'],flowchart:{htmlLabels:false,useMaxWidth:false}});const result=await mermaid.render('diagram',` + string(source) + `);output.innerHTML=result.svg;await document.fonts.ready;const svg=output.querySelector('svg');if(!svg)throw new Error('Mermaid produced no SVG');const view=svg.viewBox.baseVal;const width=Math.ceil(view.width||svg.getBoundingClientRect().width),height=Math.ceil(view.height||svg.getBoundingClientRect().height);if(width<=0||height<=0||width*height*4>16777216)throw new Error('diagram exceeds 16 megapixels');svg.setAttribute('width',width);svg.setAttribute('height',height);svg.style.maxWidth='none';return {width,height};})()`
 }
 
 func renderVegaScript(q Request) string {
@@ -313,7 +314,7 @@ func renderVegaScript(q Request) string {
 			ast:true,
 			expr:vegaExpressionInterpreter,
 			loader,
-			config:{background:'transparent',view:{stroke:'transparent'},axis:{labelFont:'Arial,Microsoft YaHei,PingFang SC,sans-serif',titleFont:'Arial,Microsoft YaHei,PingFang SC,sans-serif'}}
+			config:{background:'transparent',view:{stroke:'transparent'},axis:{labelFont:'` + fontfallback.WebViewTypeface() + `',titleFont:'` + fontfallback.WebViewTypeface() + `'}}
 		});
 		window.__glanceVegaView=result.view;
 		window.__glanceVegaFinalize=result.finalize;

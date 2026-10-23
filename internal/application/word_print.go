@@ -78,7 +78,11 @@ func registerWordPrintCapability(catalog *Catalog, printer PrintService) error {
 			}
 			defer os.RemoveAll(temporaryDirectory)
 			pdfPath := filepath.Join(temporaryDirectory, "print.pdf")
-			export, err := wordpdf.ExportSnapshot(ctx, pdfPath, snapshot, capability.Document.DocumentID, capability.Document.Revision, "document", nil)
+			fonts, err := capability.Runtime.FontSnapshot(ctx)
+			if err != nil {
+				return CapabilityResult{}, err
+			}
+			export, err := wordpdf.ExportSnapshotWithFontSnapshot(ctx, pdfPath, snapshot, capability.Document.DocumentID, capability.Document.Revision, "document", fonts, nil)
 			if err != nil {
 				return CapabilityResult{}, err
 			}

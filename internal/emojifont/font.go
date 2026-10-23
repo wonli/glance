@@ -2,7 +2,6 @@
 package emojifont
 
 import (
-	"embed"
 	"sync"
 
 	"gioui.org/font"
@@ -11,13 +10,12 @@ import (
 	fontapi "github.com/go-text/typesetting/font"
 	"github.com/go-text/typesetting/language"
 	"github.com/go-text/typesetting/shaping"
+	"glance/internal/fontmanager/builtin"
 	"golang.org/x/image/math/fixed"
 )
 
-const Family = "Glance Color Emoji"
+const Family = builtin.EmojiFamily
 
-//go:embed assets/NotoColorEmoji.ttf assets/OFL.txt assets/manifest.json
-var assets embed.FS
 var once sync.Once
 var face opentype.Face
 var loadErr error
@@ -26,7 +24,7 @@ var loadErr error
 // outside layout/frame callbacks. Each Face() call retains independent state.
 func Preload() error {
 	once.Do(func() {
-		data, err := assets.ReadFile("assets/NotoColorEmoji.ttf")
+		data, err := builtin.EmojiFont()
 		if err != nil {
 			loadErr = err
 			return

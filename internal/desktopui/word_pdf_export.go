@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"glance/internal/document"
-	"glance/internal/fontcatalog"
 	"glance/internal/format/docx"
 	"glance/internal/format/wordpdf"
 	"glance/internal/i18n"
@@ -64,7 +63,7 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 		a.startNextWordTextCommit()
 		return
 	}
-	key, _, ok := currentWordLayoutKey(state)
+	key, _, ok := currentWordLayoutKey(state, a.fontVersion())
 	if !ok {
 		a.setStatusMessage(i18n.Message{ID: "word.export.error.pagination_unavailable"}, feedbackWarning, notificationToast)
 		return
@@ -103,7 +102,7 @@ func (a *App) beginWordPDFExport(state *documentSessionState) {
 			a.setStatusMessage(i18n.Message{ID: "word.export.status.cancelled"}, feedbackInfo, notificationSuppressed)
 			return
 		}
-		if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) {
+		if !wordPDFLayoutStillCurrent(state, key, a.fontVersion()) || wordHasPendingTextDrafts(state) {
 			a.setStatusMessage(i18n.Message{ID: "word.export.error.changed_during_confirmation"}, feedbackWarning, notificationToast)
 			return
 		}
@@ -163,6 +162,7 @@ func (a *App) layoutWordForExport(state *documentSessionState, key wordLayoutKey
 		if ts, ok := a.wordPDFFontSource.(wordlayout.TextShaper); ok {
 			engine = wordlayout.NewEngine(ts)
 			a.wordLayoutEngine = engine
+			a.wordLayoutEngineFontVersion = key.FontVersion
 		}
 	}
 	if engine != nil {
@@ -189,7 +189,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		a.setStatusMessage(i18n.Message{ID: "word.export.error.expired"}, feedbackWarning, notificationToast)
 		return
 	}
-	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
+	if !wordPDFLayoutStillCurrent(state, key, a.fontVersion()) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
 		a.setStatusMessage(i18n.Message{ID: "word.export.error.changed_before_save"}, feedbackWarning, notificationToast)
 		return
 	}
@@ -205,7 +205,7 @@ func (a *App) startWordPDFFileExport(state *documentSessionState, key wordLayout
 		return
 	}
 	if a.wordPDFFontSource == nil {
-		shaper, err := newWordTextShaper()
+		shaper, err := newWordTextShaper(a.currentFontSnapshot())
 		if err != nil {
 			a.setStatusErrorMessage(i18n.Message{ID: "word.export.error.font_service"}, err, notificationToast)
 			return
@@ -321,7 +321,7 @@ func (a *App) applyWordPDFExportResult(result wordPDFExportResult) {
 	}
 }
 
-func currentWordLayoutKey(state *documentSessionState) (wordLayoutKey, document.WordLayoutData, bool) {
+func currentWordLayoutKey(state *documentSessionState, fontVersions ...uint64) (wordLayoutKey, document.WordLayoutData, bool) {
 	if state == nil || state.word == nil {
 		return wordLayoutKey{}, document.WordLayoutData{}, false
 	}
@@ -329,14 +329,22 @@ func currentWordLayoutKey(state *documentSessionState) (wordLayoutKey, document.
 	if !ok {
 		return wordLayoutKey{}, document.WordLayoutData{}, false
 	}
+	fontVersion := uint64(0)
+	if len(fontVersions) > 0 {
+		fontVersion = fontVersions[0]
+	}
 	return wordLayoutKey{
 		DocumentID: state.documentID, Revision: state.wordRevisionAtomic.Load(),
-		DraftEpoch: state.wordDraftEpoch.Load(), PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup), FontVersion: fontcatalog.Default().Version,
+		DraftEpoch: state.wordDraftEpoch.Load(), PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup), FontVersion: fontVersion,
 	}, data, true
 }
 
-func wordPDFLayoutStillCurrent(state *documentSessionState, key wordLayoutKey) bool {
-	current, _, ok := currentWordLayoutKey(state)
+func wordPDFLayoutStillCurrent(state *documentSessionState, key wordLayoutKey, currentFontVersions ...uint64) bool {
+	fontVersion := key.FontVersion
+	if len(currentFontVersions) > 0 {
+		fontVersion = currentFontVersions[0]
+	}
+	current, _, ok := currentWordLayoutKey(state, fontVersion)
 	return ok && current == key && state.wordLayoutAcceptedKey != nil && *state.wordLayoutAcceptedKey == key && state.wordLayoutResult != nil
 }
 

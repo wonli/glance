@@ -61,7 +61,7 @@ func (a *App) beginWordPrint(state *documentSessionState) {
 		return
 	}
 	state.wordViewMode = wordViewPrintLayout
-	key, _, ok := currentWordLayoutKey(state)
+	key, _, ok := currentWordLayoutKey(state, a.fontVersion())
 	if !ok {
 		a.setStatusMessage(i18n.Message{ID: "word.print.error.pagination_unavailable"}, feedbackWarning, notificationToast)
 		return
@@ -80,7 +80,7 @@ func (a *App) beginWordPrint(state *documentSessionState) {
 		a.setStatusMessage(a.wordBlockingLayoutMessage(*state.wordLayoutResult), feedbackError, notificationToast)
 		return
 	}
-	if !wordPDFLayoutStillCurrent(state, key) {
+	if !wordPDFLayoutStillCurrent(state, key, a.fontVersion()) {
 		a.setStatusMessage(i18n.Message{ID: "word.print.error.layout_changed"}, feedbackWarning, notificationToast)
 		return
 	}
@@ -96,7 +96,7 @@ func (a *App) beginWordPrint(state *documentSessionState) {
 			a.setStatusMessage(i18n.Message{ID: "word.print.status.cancelled"}, feedbackInfo, notificationSuppressed)
 			return
 		}
-		if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
+		if !wordPDFLayoutStillCurrent(state, key, a.fontVersion()) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() {
 			a.setStatusMessage(i18n.Message{ID: "word.print.error.changed_during_confirmation"}, feedbackWarning, notificationToast)
 			return
 		}
@@ -109,12 +109,12 @@ func (a *App) startWordPrintPreparation(state *documentSessionState, key wordLay
 	if state == nil || state.word == nil || state.closed.Load() || a.documentSessionState != state {
 		return
 	}
-	if !wordPDFLayoutStillCurrent(state, key) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
+	if !wordPDFLayoutStillCurrent(state, key, a.fontVersion()) || wordHasPendingTextDrafts(state) || state.wordFlushRequested.Load() || state.formatRunning.Load() {
 		a.setStatusMessage(i18n.Message{ID: "word.print.error.changed_before_prepare"}, feedbackWarning, notificationToast)
 		return
 	}
 	if a.wordPDFFontSource == nil {
-		shaper, err := newWordTextShaper()
+		shaper, err := newWordTextShaper(a.currentFontSnapshot())
 		if err != nil {
 			a.setStatusErrorMessage(i18n.Message{ID: "word.print.error.font_service"}, err, notificationToast)
 			return
@@ -344,7 +344,6 @@ func (a *App) applyWordPrintResult(result wordPrintResult) {
 
 // Prepared PDF bytes retain their font snapshot. Only document changes invalidate them.
 func wordPreparedPrintStillCurrent(state *documentSessionState, key wordLayoutKey) bool {
-	current, _, ok := currentWordLayoutKey(state)
-	current.FontVersion = key.FontVersion
+	current, _, ok := currentWordLayoutKey(state, key.FontVersion)
 	return ok && current == key
 }

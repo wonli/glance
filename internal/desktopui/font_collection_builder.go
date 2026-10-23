@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	giofont "gioui.org/font"
-	"glance/internal/fontcatalog"
+	"glance/internal/fontmanager/fontcatalog"
 )
 
 // A single builder accounts for both shell and document fonts. TTC weights share

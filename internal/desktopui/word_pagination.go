@@ -8,7 +8,6 @@ import (
 	"reflect"
 
 	"glance/internal/document"
-	"glance/internal/fontcatalog"
 	"glance/internal/i18n"
 	"glance/internal/wordlayout"
 )
@@ -289,12 +288,13 @@ func (a *App) startWordPagination(state *documentSessionState) {
 	// document blocks on every Gio frame.
 	revision := state.wordRevisionAtomic.Load()
 	draftEpoch := state.wordDraftEpoch.Load()
+	fonts := a.currentFontSnapshot()
 	key := wordLayoutKey{
 		DocumentID:   state.documentID,
 		Revision:     revision,
 		DraftEpoch:   draftEpoch,
 		PageSetupKey: wordLayoutPageSetupKey(data, defaultWordPageSetup),
-		FontVersion:  fontcatalog.Default().Version,
+		FontVersion:  fonts.Version,
 	}
 	sameKey := func(existing *wordLayoutKey) bool {
 		if existing == nil {
@@ -328,8 +328,24 @@ func (a *App) startWordPagination(state *documentSessionState) {
 		TargetPage: state.wordTargetRestorePage,
 	}
 	engine := a.wordLayoutEngine
+	managedFonts := a.desktopRuntime != nil && a.desktopRuntime.fonts != nil
+	if engine != nil && managedFonts && a.wordLayoutEngineFontVersion != fonts.Version {
+		// A layout key carries the captured manager version. Rebuild the engine
+		// from that same snapshot so the cached pagination and its PDF font source
+		// cannot silently describe different font catalogs.
+		engine = nil
+		a.wordLayoutEngine = nil
+		a.wordLayoutEngineFontVersion = 0
+		a.wordPDFFontSource = nil
+	}
 	if engine == nil {
-		shaper, err := newWordTextShaper()
+		var shaper *wordTextShaper
+		var err error
+		if fonts.Version == 0 && a.window == nil {
+			shaper, err = newWordTextShaper()
+		} else {
+			shaper, err = newWordTextShaper(fonts)
+		}
 		if err != nil {
 			state.cancelWordLayout()
 			state.wordLayoutError = err.Error()
@@ -338,6 +354,7 @@ func (a *App) startWordPagination(state *documentSessionState) {
 		}
 		engine = wordlayout.NewEngine(shaper)
 		a.wordLayoutEngine = engine
+		a.wordLayoutEngineFontVersion = fonts.Version
 		a.wordPDFFontSource = shaper
 	}
 	ctx, cancel := context.WithCancel(context.Background())

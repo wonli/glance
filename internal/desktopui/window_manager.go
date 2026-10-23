@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"gioui.org/app"
+	"gioui.org/io/system"
 	"gioui.org/unit"
 )
 
@@ -107,6 +108,30 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 		return
 	}
 	defer a.closeNativePinch()
+	var startupFontErr error
+	if err := a.prepareInitialFontTheme(); err != nil {
+		startupFontErr = err
+		log.Printf("prepare process font theme: %v", err)
+		runtime := a.ensureDesktopRuntime()
+		runtime.mu.Lock()
+		reportStartupError := runtime.startupErrorReporter
+		runtime.mu.Unlock()
+		if reportStartupError != nil {
+			reportStartupError(err)
+		}
+		if source := a.windowOpenSource; source != nil {
+			select {
+			case source.windowOpenResults <- err:
+			default:
+			}
+			if source.window != nil {
+				source.window.Invalidate()
+			}
+		}
+		// The UI shaper intentionally has no OS-font fallback. Do not show a
+		// normal window with missing text when the shared catalog is unavailable.
+		a.window.Perform(system.ActionClose)
+	}
 	var unregisterView func()
 	if applicationRuntime := a.ensureDesktopRuntime().applicationRuntime; applicationRuntime != nil {
 		unregisterView = applicationRuntime.RegisterViewIntentHandler(a.windowID, a)
@@ -116,13 +141,18 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 	}
 	for {
 		e := a.window.Event()
+		if startupFontErr != nil {
+			if _, destroyed := e.(app.DestroyEvent); !destroyed {
+				continue
+			}
+		}
 		switch e := e.(type) {
 		case app.DestroyEvent:
 			runtime := a.ensureDesktopRuntime()
 			runtime.markWindowClosing(a.windowID)
 			if e.Err != nil {
 				log.Printf("desktop window destroyed: %v", e.Err)
-				if !a.renderedFrame {
+				if !a.renderedFrame && startupFontErr == nil {
 					runtime.mu.Lock()
 					reportStartupError := runtime.startupErrorReporter
 					runtime.mu.Unlock()
@@ -130,7 +160,7 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 						reportStartupError(e.Err)
 					}
 				}
-				if source := a.windowOpenSource; source != nil {
+				if source := a.windowOpenSource; source != nil && startupFontErr == nil {
 					select {
 					case source.windowOpenResults <- e.Err:
 					default:

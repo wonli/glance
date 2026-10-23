@@ -55,7 +55,11 @@ func registerMarkdownPDFExportCapability(catalog *Catalog) error {
 			if err != nil {
 				return CapabilityResult{}, err
 			}
-			result, err := markdownpdf.ExportSnapshot(ctx, path, snapshot, capability.Document.SourcePath, capability.Document.DocumentID, capability.Document.Revision, input.Orientation, func() (func(), error) {
+			fonts, err := capability.Runtime.FontSnapshot(ctx)
+			if err != nil {
+				return CapabilityResult{}, err
+			}
+			result, err := markdownpdf.ExportSnapshotWithFontSnapshot(ctx, path, snapshot, capability.Document.SourcePath, capability.Document.DocumentID, capability.Document.Revision, input.Orientation, fonts, func() (func(), error) {
 				return capability.Runtime.lockDocumentRevision(ctx, capability.Document.DocumentID, capability.Document.Revision)
 			})
 			if err != nil {

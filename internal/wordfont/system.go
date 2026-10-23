@@ -21,9 +21,9 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	"glance/internal/document"
-	"glance/internal/fontcatalog"
 	"glance/internal/fontdiag"
-	"glance/internal/fontfallback"
+	"glance/internal/fontmanager/fontcatalog"
+	"glance/internal/fontmanager/fontfallback"
 	"glance/internal/wordlayout"
 )
 
@@ -319,7 +319,10 @@ func (s *Shaper) orderedFonts(style document.WordTextStyle) []fontscan.Footprint
 	s.buildFontIndex()
 
 	families := wordFontFamilyCandidates(style.FontFamily)
-	families = append(families, FallbackFamilies()...)
+	// Keep the renderer's fallback order aligned with the process-wide Gio
+	// collection so Markdown, Word, spreadsheet, and presentation text resolve
+	// the same family from one captured catalog.
+	families = append(families, fontfallback.PreferredFamilies()...)
 	seen := make(map[fontscan.Location]bool)
 	ordered := make([]fontscan.Footprint, 0, len(s.fonts))
 	for _, family := range families {

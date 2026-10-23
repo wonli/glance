@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"glance/internal/fontcatalog"
+	"glance/internal/fontmanager/fontcatalog"
 )
 
 type downloadJob struct {

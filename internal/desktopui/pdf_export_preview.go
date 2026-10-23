@@ -306,13 +306,18 @@ func (a *App) updateWordPreviewOrientation(orientation string) error {
 	result := wordPDFPreviewResult{state: prev.wordState, key: prev.wordKey, orientation: orientation}
 	blocks := prev.wordBlocks
 	fonts := a.wordPDFFontSource
+	fontSnapshot := a.currentFontSnapshot()
 	results, shutdown, appWindow := a.wordPDFPreviewResults, a.shutdown, a.window
 	a.launchManagedBackground(func() {
 		var shaper wordlayout.TextShaper
 		if existing, ok := fonts.(wordlayout.TextShaper); ok {
 			shaper = existing
 		} else {
-			shaper, result.err = newWordTextShaper()
+			if fontSnapshot.Version == 0 && a.window == nil {
+				shaper, result.err = newWordTextShaper()
+			} else {
+				shaper, result.err = newWordTextShaper(fontSnapshot)
+			}
 		}
 		if result.err == nil {
 			engine := wordlayout.NewEngine(shaper)

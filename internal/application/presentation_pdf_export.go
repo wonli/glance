@@ -66,7 +66,11 @@ func registerPresentationPDFExportCapability(catalog *Catalog) error {
 			if input.Orientation == "" {
 				input.Orientation = presentationpdf.DefaultOrientation(snapshot)
 			}
-			result, err := presentationpdf.ExportSnapshot(ctx, path, snapshot, input.Orientation, func() (func(), error) {
+			fonts, err := capability.Runtime.FontSnapshot(ctx)
+			if err != nil {
+				return CapabilityResult{}, err
+			}
+			result, err := presentationpdf.ExportSnapshotWithFontSnapshot(ctx, path, snapshot, input.Orientation, fonts, func() (func(), error) {
 				return capability.Runtime.lockDocumentRevision(ctx, capability.Document.DocumentID, capability.Document.Revision)
 			})
 			if err != nil {

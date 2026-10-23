@@ -22,6 +22,10 @@ func newTextShaperForOS(goos string, collection []font.FontFace, options ...text
 		}
 		collection = append(append([]font.FontFace(nil), collection...), emoji...)
 	}
-	options = append(options, text.WithCollection(collection))
+	options = append(options, text.NoSystemFonts(), text.WithCollection(collection))
 	return text.NewShaper(options...)
 }
+
+// newSystemTextShaper is reserved for windowless test and utility App values.
+// Desktop windows use newTextShaper with an explicit manager collection.
+func newSystemTextShaper() *text.Shaper { return text.NewShaper() }

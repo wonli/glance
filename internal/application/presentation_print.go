@@ -69,7 +69,11 @@ func registerPresentationPrintCapability(catalog *Catalog, printer PrintService)
 			}
 			defer os.RemoveAll(temporaryDirectory)
 			pdfPath := filepath.Join(temporaryDirectory, "print.pdf")
-			export, err := presentationpdf.ExportSnapshot(ctx, pdfPath, snapshot, input.Orientation, nil)
+			fonts, err := capability.Runtime.FontSnapshot(ctx)
+			if err != nil {
+				return CapabilityResult{}, err
+			}
+			export, err := presentationpdf.ExportSnapshotWithFontSnapshot(ctx, pdfPath, snapshot, input.Orientation, fonts, nil)
 			if err != nil {
 				return CapabilityResult{}, err
 			}

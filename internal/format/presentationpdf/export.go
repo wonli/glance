@@ -14,6 +14,7 @@ import (
 	"github.com/SalvioniDigitalSolutions/gopdf"
 
 	"glance/internal/document"
+	"glance/internal/fontmanager/fontcatalog"
 	pdfformat "glance/internal/format/pdf"
 	"glance/internal/wordfont"
 )
@@ -31,12 +32,11 @@ type Result struct {
 }
 
 func textSource() (*wordfont.Shaper, error) {
-	systemFonts := struct {
-		shaper *wordfont.Shaper
-		err    error
-	}{}
-	systemFonts.shaper, systemFonts.err = wordfont.NewSystem()
-	return systemFonts.shaper, systemFonts.err
+	return wordfont.NewSystem()
+}
+
+func textSourceWithFontSnapshot(fonts fontcatalog.Snapshot) (*wordfont.Shaper, error) {
+	return wordfont.NewWithSnapshot(fonts)
 }
 
 func DefaultOrientation(snapshot document.PresentationSnapshot) string {
@@ -59,6 +59,24 @@ func DefaultOrientation(snapshot document.PresentationSnapshot) string {
 // creates path. Existing destinations survive every failure and are never
 // replaced by this operation.
 func ExportSnapshot(ctx context.Context, path string, snapshot document.PresentationSnapshot, orientation string, guard CommitGuard) (Result, error) {
+	shaper, err := textSource()
+	if err != nil {
+		return Result{}, err
+	}
+	return exportSnapshotWithShaper(ctx, path, snapshot, orientation, guard, shaper)
+}
+
+// ExportSnapshotWithFontSnapshot uses font resources captured from the owning
+// runtime's immutable catalog snapshot.
+func ExportSnapshotWithFontSnapshot(ctx context.Context, path string, snapshot document.PresentationSnapshot, orientation string, fonts fontcatalog.Snapshot, guard CommitGuard) (Result, error) {
+	shaper, err := textSourceWithFontSnapshot(fonts)
+	if err != nil {
+		return Result{}, err
+	}
+	return exportSnapshotWithShaper(ctx, path, snapshot, orientation, guard, shaper)
+}
+
+func exportSnapshotWithShaper(ctx context.Context, path string, snapshot document.PresentationSnapshot, orientation string, guard CommitGuard, shaper *wordfont.Shaper) (Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -69,10 +87,6 @@ func ExportSnapshot(ctx context.Context, path string, snapshot document.Presenta
 		return Result{}, fmt.Errorf("presentation snapshot has %d projected slides for %d total slides", len(snapshot.Slides), snapshot.SlideCount)
 	}
 	if err := ctx.Err(); err != nil {
-		return Result{}, err
-	}
-	shaper, err := textSource()
-	if err != nil {
 		return Result{}, err
 	}
 	directory := filepath.Dir(path)
@@ -148,6 +162,14 @@ func ExportSnapshot(ctx context.Context, path string, snapshot document.Presenta
 // the requested page for the interactive preview.
 func RenderSlidePreview(ctx context.Context, snapshot document.PresentationSnapshot, slideIndex int, orientation string) (image.Image, error) {
 	shaper, err := textSource()
+	if err != nil {
+		return nil, err
+	}
+	return pdfformat.RenderPresentationSlidePreview(ctx, snapshot, slideIndex, orientation, shaper)
+}
+
+func RenderSlidePreviewWithFontSnapshot(ctx context.Context, snapshot document.PresentationSnapshot, slideIndex int, orientation string, fonts fontcatalog.Snapshot) (image.Image, error) {
+	shaper, err := textSourceWithFontSnapshot(fonts)
 	if err != nil {
 		return nil, err
 	}

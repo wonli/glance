@@ -2,7 +2,7 @@ package desktopui
 
 import (
 	"glance/internal/application"
-	"glance/internal/fontcatalog"
+	"glance/internal/fontmanager/fontcatalog"
 	"testing"
 )
 

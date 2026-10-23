@@ -9,8 +9,8 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/layout"
 	"glance/internal/document"
-	"glance/internal/fontcatalog"
-	"glance/internal/fontdownload"
+	"glance/internal/fontmanager/fontcatalog"
+	"glance/internal/fontmanager/fontdownload"
 )
 
 func (a *App) openFontPicker(target fontPickerTarget) {
@@ -40,8 +40,8 @@ func (a *App) openFontPicker(target fontPickerTarget) {
 	}
 	p.providerGeneration++
 	generation := p.providerGeneration
-	if a.desktopRuntime != nil && a.fontProvider != nil {
-		provider := a.fontProvider
+	if a.desktopRuntime != nil && a.fonts != nil {
+		manager := a.fonts
 		ctx, cancel := context.WithCancel(context.Background())
 		p.providerCancel = cancel
 		a.launchManagedBackground(func() {
@@ -53,7 +53,7 @@ func (a *App) openFontPicker(target fontPickerTarget) {
 		})
 		a.launchManagedBackground(func() {
 			defer cancel()
-			entries, err := provider.List(ctx)
+			entries, err := manager.ListOnline(ctx)
 			result := fontProviderResult{entries: entries, err: err, generation: generation}
 			select {
 			case p.providerResults <- result:
@@ -218,7 +218,7 @@ func fontRowKey(row fontPickerRow) string {
 }
 func (a *App) downloadFont(entry fontdownload.Entry) {
 	p := &a.fontPicker
-	if a.desktopRuntime == nil || a.fontDownloads == nil || a.fonts == nil {
+	if a.desktopRuntime == nil || a.fonts == nil {
 		return
 	}
 	if old := p.downloads[entry.ID]; old.running {
@@ -238,7 +238,7 @@ func (a *App) downloadFont(entry fontdownload.Entry) {
 	})
 	a.launchManagedBackground(func() {
 		defer cancel()
-		resource, err := a.fontDownloads.Fetch(ctx, entry, func(progress fontdownload.Progress) {
+		err := a.fonts.FetchAndRegister(ctx, entry.ID, func(progress fontdownload.Progress) {
 			select {
 			case p.downloadResults <- fontDownloadResult{entry.ID, fontDownloadState{running: true, received: progress.Received, total: progress.Total, cancel: cancel}}:
 			default:
@@ -247,9 +247,6 @@ func (a *App) downloadFont(entry fontdownload.Entry) {
 				a.window.Invalidate()
 			}
 		})
-		if err == nil {
-			err = a.fonts.Register(ctx, resource)
-		}
 		state := fontDownloadState{}
 		if err != nil {
 			state.err = err.Error()

@@ -16,7 +16,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
-	"glance/internal/fontfallback"
+	"glance/internal/fontmanager/fontfallback"
 	wordpdf "glance/internal/format/pdf"
 	"glance/internal/i18n"
 	"glance/internal/printservice"
@@ -236,6 +236,7 @@ type App struct {
 	wordMacrosInspectionRequest   uint64
 	wordLayoutResults             chan wordLayoutResult
 	wordLayoutEngine              wordLayoutEngine
+	wordLayoutEngineFontVersion   uint64
 	wordPDFExportResults          chan wordPDFExportResult
 	wordPDFPickerRequest          *wordPDFPickerRequest
 	spreadsheetPDFExportResults   chan spreadsheetPDFExportResult
@@ -386,10 +387,16 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 	}
 	a.setActiveSessionID("")
 	a.homeSearch.SingleLine = true
-	if err := prepareWordFontScanner(); err != nil {
-		log.Printf("prepare Word/system font scanner: %v", err)
+	if window == nil {
+		if err := prepareWordFontScanner(); err != nil {
+			log.Printf("prepare test utility Word/system font scanner: %v", err)
+		}
 	}
-	a.theme.Shaper = newTextShaper(nil)
+	if window == nil {
+		a.theme.Shaper = newSystemTextShaper()
+	} else {
+		a.theme.Shaper = newTextShaper(nil)
+	}
 	if window != nil {
 		a.startFontService()
 	}

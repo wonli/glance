@@ -303,15 +303,11 @@ func (a *App) hasActiveDocument() bool {
 func (a *App) releaseIdleEngines() {
 	if !a.hasActiveWordDocument() {
 		a.wordLayoutEngine = nil
+		a.wordLayoutEngineFontVersion = 0
 		a.wordPDFFontSource = nil
 	}
 	if !a.hasActiveMarkdownDocument() {
 		a.launchManagedBackground(diagramrender.IdleCleanup())
-	}
-	if !a.hasActiveDocument() {
-		if a.theme != nil {
-			a.theme.Shaper = newTextShaper(nil)
-		}
 	}
 }
 

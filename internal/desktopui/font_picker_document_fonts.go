@@ -19,6 +19,11 @@ func documentFontNames(state *documentSessionState) ([]string, error) {
 		}
 	}
 	if state.word != nil {
+		addStyle := func(style document.WordTextStyle) {
+			for _, name := range []string{style.FontFamily, style.FontFamilyASCII, style.FontFamilyHighANSI, style.FontFamilyEastAsia, style.FontFamilyComplexScript} {
+				add(name)
+			}
+		}
 		paragraph := func(p document.WordParagraph) {
 			for _, inline := range p.Inlines {
 				if inline.Text == nil {
@@ -29,6 +34,13 @@ func documentFontNames(state *documentSessionState) ([]string, error) {
 					add(n)
 				}
 			}
+		}
+		unlock := lockSessionAdapterRead(state)
+		data := state.word.WordLayoutData()
+		unlock()
+		addStyle(data.Defaults.Text)
+		for _, style := range data.Styles {
+			addStyle(style.Text)
 		}
 		for _, b := range wordBlocksForState(state) {
 			if b.Paragraph != nil {
@@ -47,13 +59,31 @@ func documentFontNames(state *documentSessionState) ([]string, error) {
 	}
 	if state.book != nil {
 		if reader, ok := state.book.(interface{ FontFamilies() ([]string, error) }); ok {
+			unlock := lockSessionAdapterRead(state)
 			values, err := reader.FontFamilies()
+			unlock()
 			if err != nil {
 				return nil, err
 			}
 			for _, n := range values {
 				add(n)
 			}
+		}
+	}
+	if state.pptxDoc != nil {
+		snapshot := state.pptxDoc.Snapshot()
+		addPresentationFonts := func(elements []document.PresentationElement) {
+			for _, element := range elements {
+				for _, paragraph := range element.Paragraphs {
+					for _, run := range paragraph.Runs {
+						add(run.Font)
+					}
+				}
+			}
+		}
+		for _, slide := range snapshot.Slides {
+			addPresentationFonts(slide.Elements)
+			addPresentationFonts(slide.InheritedElements)
 		}
 	}
 	out := make([]string, 0, len(names))

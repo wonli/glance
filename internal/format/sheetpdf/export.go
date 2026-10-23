@@ -12,6 +12,7 @@ import (
 	"github.com/SalvioniDigitalSolutions/gopdf"
 
 	"glance/internal/document"
+	"glance/internal/fontmanager/fontcatalog"
 	pdfformat "glance/internal/format/pdf"
 	"glance/internal/wordfont"
 )
@@ -38,6 +39,20 @@ type ImageSource interface {
 // ExportWindow renders an explicit bounded sheet window and atomically creates
 // a new PDF path. It never replaces an existing destination.
 func ExportWindow(ctx context.Context, path string, sheet string, window document.SheetWindow, orientation string, images ImageSource, guard CommitGuard) (Result, error) {
+	return exportWindow(ctx, path, sheet, window, orientation, images, guard, nil)
+}
+
+// ExportWindowWithFontSnapshot captures font resources from the owning
+// runtime's immutable catalog snapshot.
+func ExportWindowWithFontSnapshot(ctx context.Context, path string, sheet string, window document.SheetWindow, orientation string, images ImageSource, fonts fontcatalog.Snapshot, guard CommitGuard) (Result, error) {
+	shaper, err := wordfont.NewWithSnapshot(fonts)
+	if err != nil {
+		return Result{}, err
+	}
+	return exportWindow(ctx, path, sheet, window, orientation, images, guard, shaper)
+}
+
+func exportWindow(ctx context.Context, path string, sheet string, window document.SheetWindow, orientation string, images ImageSource, guard CommitGuard, shaper *wordfont.Shaper) (Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -65,13 +80,12 @@ func ExportWindow(ctx context.Context, path string, sheet string, window documen
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	systemFont := struct {
-		shaper *wordfont.Shaper
-		err    error
-	}{}
-	systemFont.shaper, systemFont.err = wordfont.NewSystem()
-	if systemFont.err != nil {
-		return Result{}, fmt.Errorf("load spreadsheet PDF fonts: %w", systemFont.err)
+	if shaper == nil {
+		var err error
+		shaper, err = wordfont.NewSystem()
+		if err != nil {
+			return Result{}, fmt.Errorf("load spreadsheet PDF fonts: %w", err)
+		}
 	}
 
 	directory := filepath.Dir(path)
@@ -89,7 +103,7 @@ func ExportWindow(ctx context.Context, path string, sheet string, window documen
 	options := pdfformat.SpreadsheetPDFOptions{
 		SheetName: sheet, Orientation: orientation, FitToPageWidth: true,
 	}
-	if err := pdfformat.ExportSpreadsheetPDFFile(ctx, stagePath, window, options, systemFont.shaper, images); err != nil {
+	if err := pdfformat.ExportSpreadsheetPDFFile(ctx, stagePath, window, options, shaper, images); err != nil {
 		return Result{}, err
 	}
 	reader, err := gopdf.Open(stagePath)

@@ -7,7 +7,7 @@ import (
 	"gioui.org/widget/material"
 	"glance/internal/document"
 
-	"glance/internal/fontcatalog"
+	"glance/internal/fontmanager/fontcatalog"
 	"glance/internal/format/docx"
 	"glance/internal/wordlayout"
 )

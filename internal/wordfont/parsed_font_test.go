@@ -6,7 +6,7 @@ import (
 	"github.com/go-text/typesetting/font/opentype"
 	"github.com/go-text/typesetting/fontscan"
 	"glance/internal/document"
-	"glance/internal/fontcatalog"
+	"glance/internal/fontmanager/fontcatalog"
 	"os"
 	"path/filepath"
 	"runtime"

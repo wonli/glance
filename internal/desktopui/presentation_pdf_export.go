@@ -88,6 +88,7 @@ func (a *App) requestPresentationPDFPreview(printMode bool) {
 		return
 	}
 	stateCopy := state
+	fontSnapshot := a.currentFontSnapshot()
 	a.launchManagedBackground(func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -108,7 +109,7 @@ func (a *App) requestPresentationPDFPreview(printMode bool) {
 			result.err = fmt.Errorf("演示文稿快照不完整，无法导出")
 		} else {
 			result.orientation = presentationpdf.DefaultOrientation(result.snapshot)
-			result.image, result.err = presentationpdf.RenderSlidePreview(ctx, result.snapshot, 0, result.orientation)
+			result.image, result.err = presentationpdf.RenderSlidePreviewWithFontSnapshot(ctx, result.snapshot, 0, result.orientation, fontSnapshot)
 		}
 		stateCopy.finishOperation(token)
 		select {
@@ -218,6 +219,7 @@ func (a *App) requestPresentationPDFPreviewPage(index int, orientation string) {
 	generation := a.presentationPDFPreviewGen
 	prev.presentationPreviewGen = generation
 	state, snapshot, printMode := prev.presentationState, prev.presentationSnapshot, prev.presentationPrintMode
+	fontSnapshot := a.currentFontSnapshot()
 	results, shutdown, window := a.presentationPDFPreviewResults, a.shutdown, a.window
 	a.launchManagedBackground(func() {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -231,7 +233,7 @@ func (a *App) requestPresentationPDFPreviewPage(index int, orientation string) {
 			case <-finished:
 			}
 		})
-		image, err := presentationpdf.RenderSlidePreview(ctx, snapshot, index, orientation)
+		image, err := presentationpdf.RenderSlidePreviewWithFontSnapshot(ctx, snapshot, index, orientation, fontSnapshot)
 		result := presentationPDFPreviewResult{state: state, image: image, index: index, orientation: orientation, generation: generation, printMode: printMode, err: err}
 		select {
 		case results <- result:

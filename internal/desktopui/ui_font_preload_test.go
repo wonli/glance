@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"glance/internal/fontcatalog"
-	"glance/internal/fontfallback"
+	"glance/internal/fontmanager/fontcatalog"
+	"glance/internal/fontmanager/fontfallback"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

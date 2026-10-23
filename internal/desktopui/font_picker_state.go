@@ -3,10 +3,10 @@ package desktopui
 import (
 	"gioui.org/layout"
 	"gioui.org/widget"
-	"glance/internal/application"
 
-	"glance/internal/fontcatalog"
-	"glance/internal/fontdownload"
+	"glance/internal/fontmanager"
+	"glance/internal/fontmanager/fontcatalog"
+	"glance/internal/fontmanager/fontdownload"
 	"image"
 )
 
@@ -47,8 +47,8 @@ type fontPickerState struct {
 	resolvedFaceFamily                         string
 	resolvedFaceVersion                        uint64
 	resolvedFaceCacheValid                     bool
-	event                                      application.FontEvent
-	events                                     chan application.FontEvent
+	event                                      fontmanager.Event
+	events                                     chan fontmanager.Event
 	documents                                  chan fontDocumentFonts
 	documentNames                              []string
 	entries                                    []fontdownload.Entry
@@ -151,7 +151,7 @@ func (a *App) initFontPicker() {
 	p.list.List.Axis = layout.Vertical
 	p.buttons = map[string]*fontPickerButton{}
 	p.documents = make(chan fontDocumentFonts, 4)
-	p.events = make(chan application.FontEvent, 1)
+	p.events = make(chan fontmanager.Event, 1)
 	p.downloadResults = make(chan fontDownloadResult, 16)
 	p.renderResults = make(chan fontRenderResult, 2)
 	p.downloads = map[string]fontDownloadState{}

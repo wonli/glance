@@ -8,8 +8,8 @@ import (
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 
-	"glance/internal/fontcatalog"
-	"glance/internal/fontdownload"
+	"glance/internal/fontmanager/fontcatalog"
+	"glance/internal/fontmanager/fontdownload"
 )
 
 type fontPickerRow struct {
@@ -228,8 +228,10 @@ func (a *App) fontPickerDisplayFamilyName(name string) string {
 	}
 
 	snapshot := a.fontPicker.snapshot
-	if current := fontcatalog.Default(); current.Version > snapshot.Version {
-		snapshot = current
+	if a.fonts != nil {
+		if current := a.fonts.Snapshot(); current.Version > snapshot.Version {
+			snapshot = current
+		}
 	}
 	if snapshot.Version == 0 {
 		return name

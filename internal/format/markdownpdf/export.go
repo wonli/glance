@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"glance/internal/document"
+	"glance/internal/fontmanager/fontcatalog"
 	"glance/internal/format/markdowndoc"
 	pdfformat "glance/internal/format/pdf"
 	"glance/internal/format/wordpdf"
@@ -38,6 +39,24 @@ type CommitGuard = wordpdf.CommitGuard
 // from the supplied exact Markdown source. Unavailable images become explicit
 // placeholders and are reported in the result.
 func ExportSnapshot(ctx context.Context, path string, source []byte, sourcePath, documentID string, revision uint64, orientation string, guard CommitGuard) (Result, error) {
+	shaper, err := wordfont.NewSystem()
+	if err != nil {
+		return Result{}, err
+	}
+	return exportSnapshotWithShaper(ctx, path, source, sourcePath, documentID, revision, orientation, guard, shaper)
+}
+
+// ExportSnapshotWithFontSnapshot uses the runtime's captured font catalog for
+// Markdown parsing, layout, and PDF text resources.
+func ExportSnapshotWithFontSnapshot(ctx context.Context, path string, source []byte, sourcePath, documentID string, revision uint64, orientation string, fonts fontcatalog.Snapshot, guard CommitGuard) (Result, error) {
+	shaper, err := wordfont.NewWithSnapshot(fonts)
+	if err != nil {
+		return Result{}, err
+	}
+	return exportSnapshotWithShaper(ctx, path, source, sourcePath, documentID, revision, orientation, guard, shaper)
+}
+
+func exportSnapshotWithShaper(ctx context.Context, path string, source []byte, sourcePath, documentID string, revision uint64, orientation string, guard CommitGuard, shaper *wordfont.Shaper) (Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -65,14 +84,6 @@ func ExportSnapshot(ctx context.Context, path string, source []byte, sourcePath,
 	}
 	missingImages, warnings := missingImageWarnings(snapshot, resources)
 
-	systemShaper := struct {
-		shaper *wordfont.Shaper
-		err    error
-	}{}
-	systemShaper.shaper, systemShaper.err = wordfont.NewSystem()
-	if systemShaper.err != nil {
-		return Result{}, systemShaper.err
-	}
 	pageSetup := wordlayout.DefaultPageSetup()
 	switch strings.ToLower(strings.TrimSpace(orientation)) {
 	case "", "portrait":
@@ -83,7 +94,7 @@ func ExportSnapshot(ctx context.Context, path string, source []byte, sourcePath,
 	default:
 		return Result{}, fmt.Errorf("unsupported Markdown PDF orientation %q", orientation)
 	}
-	layout, err := wordlayout.NewEngine(systemShaper.shaper).Layout(ctx, wordlayout.Input{
+	layout, err := wordlayout.NewEngine(shaper).Layout(ctx, wordlayout.Input{
 		DocumentID: documentID, Revision: revision, Blocks: blocks, DefaultPageSetup: pageSetup,
 	})
 	if err != nil {
@@ -94,7 +105,7 @@ func ExportSnapshot(ctx context.Context, path string, source []byte, sourcePath,
 			return Result{}, fmt.Errorf("Markdown PDF: %s", diagnostic.Detail)
 		}
 	}
-	pdfResult, err := wordpdf.ExportScene(ctx, path, layout, systemShaper.shaper, images, guard)
+	pdfResult, err := wordpdf.ExportScene(ctx, path, layout, shaper, images, guard)
 	if err != nil {
 		return Result{}, err
 	}

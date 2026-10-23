@@ -4,8 +4,8 @@ import (
 	"container/list"
 	"fmt"
 	"glance/internal/document"
-	"glance/internal/fontcatalog"
 	"glance/internal/fontdiag"
+	"glance/internal/fontmanager/fontcatalog"
 	"glance/internal/wordfont"
 	"sort"
 	"strings"
@@ -20,6 +20,20 @@ import (
 type fontRenderResult struct {
 	key    string
 	shaper *text.Shaper
+	err    error
+}
+
+func compactFontNames(names []string) []string {
+	if len(names) < 2 {
+		return names
+	}
+	out := names[:1]
+	for _, name := range names[1:] {
+		if !strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(out[len(out)-1])) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 func (a *App) prepareFontRendering() {
@@ -68,20 +82,30 @@ func (a *App) prepareFontRendering() {
 		}
 	}
 	sort.Strings(sorted)
-	key := fmt.Sprintf("%d:%s", p.snapshot.Version, strings.Join(sorted, "\x00"))
+	key := fmt.Sprintf("%d:%s", p.snapshot.Version, inputKey)
 	if key == p.renderAccepted {
 		return
 	}
 	p.renderPending = key
 	snapshot := p.snapshot
 	cache := p.renderCache
+	state := a.documentSessionState
 	if cache == nil {
 		cache = newFontCollectionCache()
 		p.renderCache = cache
 	}
 	if !a.launchManagedBackground(func() {
-		collection := fontCollectionForRendering(snapshot, sorted, cache)
-		result := fontRenderResult{key: key, shaper: newTextShaper(collection)}
+		documentNames, _ := documentFontNames(state)
+		allNames := append(documentNames, sorted...)
+		sort.Strings(allNames)
+		allNames = compactFontNames(allNames)
+		collection := fontCollectionForRendering(snapshot, allNames, cache)
+		result := fontRenderResult{key: key}
+		if !hasUsableUIFontCollection(collection) {
+			result.err = fmt.Errorf("font catalog contains no usable Glance UI font faces")
+		} else {
+			result.shaper = newTextShaper(collection)
+		}
 		select {
 		case p.renderResults <- result:
 		case <-a.shutdown:

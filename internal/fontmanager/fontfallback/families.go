@@ -46,15 +46,39 @@ func cjkFamiliesForOS(goos string) []string {
 // CJK families, shared fallbacks and explicit color emoji families.
 func PreferredTypeface() string { return PreferredTypefaceForOS(runtime.GOOS) }
 
-// PreferredTypefaceForOS selects platform rendering fallbacks without installing fonts.
-func PreferredTypefaceForOS(goos string) string {
+// PreferredFamilies returns the exact ordered family list used by Glance's
+// existing UI theme and document fallback chain.
+func PreferredFamilies() []string { return PreferredFamiliesForOS(runtime.GOOS) }
+
+func PreferredFamiliesForOS(goos string) []string {
 	families := append([]string{"Inter"}, cjkFamiliesForOS(goos)...)
-	// Gio's resolver does not forward the segment script to fontscan. Its
-	// script-only fallback can therefore miss emoji, particularly at non-normal
-	// weights. Explicit families let fontscan choose their available face.
 	if goos == "windows" {
 		families = append(families, "Glance Color Emoji")
 	}
 	families = append(families, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "emoji")
-	return strings.Join(families, ", ")
+	return families
+}
+
+// PreferredTypefaceForOS selects platform rendering fallbacks without installing fonts.
+func PreferredTypefaceForOS(goos string) string {
+	return strings.Join(PreferredFamiliesForOS(goos), ", ")
+}
+
+// WebViewTypeface preserves the existing diagram renderer's family order.
+// Keep browser-backed SVG text policy here rather than in a renderer.
+func WebViewTypeface() string { return "Arial,Microsoft YaHei,PingFang SC,sans-serif" }
+
+// MonospaceFamilies keeps code-editor text on Glance's existing preferred
+// monospace chain while allowing the manager to preload those faces.
+func MonospaceFamilies() []string { return MonospaceFamiliesForOS(runtime.GOOS) }
+
+func MonospaceFamiliesForOS(goos string) []string {
+	platform := "DejaVu Sans Mono"
+	switch goos {
+	case "windows":
+		platform = "Consolas"
+	case "darwin":
+		platform = "Menlo"
+	}
+	return []string{"JetBrains Mono", platform, "Liberation Mono", "Courier New", "monospace"}
 }

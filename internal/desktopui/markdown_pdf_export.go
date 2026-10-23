@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"glance/internal/document"
+	"glance/internal/fontmanager/fontcatalog"
 	"glance/internal/format/markdowndoc"
 	wordpdf "glance/internal/format/pdf"
 	"glance/internal/i18n"
@@ -42,12 +43,17 @@ type markdownPDFPrepared struct {
 	images wordpdf.MarkdownImages
 }
 
-func prepareMarkdownPDF(ctx context.Context, snapshot document.MarkdownSnapshot, resources map[string]image.Image, diagnostics map[string]string) (*markdownPDFPrepared, error) {
+func prepareMarkdownPDF(ctx context.Context, snapshot document.MarkdownSnapshot, resources map[string]image.Image, diagnostics map[string]string, fontSnapshots ...fontcatalog.Snapshot) (*markdownPDFPrepared, error) {
 	blocks, images, err := wordpdf.MarkdownWordBlocks(snapshot, resources, diagnostics)
 	if err != nil {
 		return nil, err
 	}
-	shaper, err := newWordTextShaper()
+	var shaper *wordTextShaper
+	if len(fontSnapshots) > 0 {
+		shaper, err = newWordTextShaper(fontSnapshots[0])
+	} else {
+		shaper, err = newWordTextShaper()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -311,6 +317,7 @@ func (a *App) requestMarkdownPDFExport() {
 	if !view.pending && view.snapshot.Source == source && view.parsedPath == a.path && view.images != nil {
 		resources, diagnostics = maps.Clone(view.images), maps.Clone(view.errors)
 	}
+	fontSnapshot := a.currentFontSnapshot()
 	a.launchManagedBackground(func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -331,7 +338,7 @@ func (a *App) requestMarkdownPDFExport() {
 			resources, err = freezeMarkdownChartResources(ctx, view, source, chartGeneration, resources)
 			if err == nil {
 				result.missingImages, result.warnings = markdownImageWarnings(snapshot, resources, diagnostics, a.text)
-				result.prepared, err = prepareMarkdownPDF(ctx, snapshot, resources, diagnostics)
+				result.prepared, err = prepareMarkdownPDF(ctx, snapshot, resources, diagnostics, fontSnapshot)
 			}
 		}
 		result.err = err

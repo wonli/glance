@@ -17,7 +17,7 @@ import (
 	"glance/internal/agent/provider"
 	"glance/internal/agentsettings"
 	"glance/internal/application"
-	"glance/internal/fontdownload"
+	"glance/internal/fontmanager"
 	"glance/internal/localaccess"
 	"glance/internal/mcpserver"
 	"glance/internal/printservice"
@@ -28,9 +28,7 @@ import (
 // document sessions, and the set of live windows.
 type desktopRuntime struct {
 	fontInit                sync.Once
-	fonts                   *application.FontService
-	fontDownloads           *fontdownload.Downloader
-	fontProvider            fontdownload.Provider
+	fonts                   *fontmanager.Manager
 	applicationRuntime      *application.Runtime
 	applicationRuntimeErr   error
 	localAccessSeq          atomic.Uint64
@@ -208,9 +206,10 @@ func newDesktopRuntimeWithPrinter(printer printservice.Printer) *desktopRuntime 
 		localAccessPickerLock:   make(chan struct{}, 1),
 		nativePrinter:           printer,
 	}
+	runtime.fonts = newDesktopFontManager()
 	runtime.agentSettings, runtime.agentSettingsErr = agentsettings.NewDefaultStore(agentsettings.SystemCredentialStore{})
 	applicationRuntime, err := application.NewRuntime(context.Background(), application.RuntimeOptions{
-		Factories: desktopApplicationFactories(runtime), PrintService: desktopPrintService{printer: printer},
+		Factories: desktopApplicationFactories(runtime), PrintService: desktopPrintService{printer: printer}, FontManager: runtime.fonts,
 		LocalAccessBroker: localaccess.NewBroker(runtime),
 	})
 	runtime.applicationRuntime = applicationRuntime

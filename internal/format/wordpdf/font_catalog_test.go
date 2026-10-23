@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"glance/internal/fontcatalog"
+	"glance/internal/fontmanager/fontcatalog"
 	"glance/internal/format/docx"
 	"glance/internal/wordfont"
 	"glance/internal/wordlayout"
