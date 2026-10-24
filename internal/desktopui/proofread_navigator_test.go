@@ -36,19 +36,19 @@ func TestProofreadingNavigatorWheelFineTargetAndOuterIsolation(t *testing.T) {
 			frame()
 		}
 		frame()
-		scroll(4)
+		scroll(0.25)
 		if s.controller.Model.Text(1) != "abcd" {
 			t.Fatal("tiny touch moved a character")
 		}
-		scroll(12)
+		scroll(0.75)
 		if s.controller.Model.Text(1) != "abcde" || s.controller.Model.Text(2) != "fgh" {
 			t.Fatal("fine wheel did not move exactly one character", s.xPages)
 		}
-		scroll(-16)
+		scroll(-1)
 		if s.controller.Model.Text(1) != "abcd" {
 			t.Fatal("one reverse step did not return one character")
 		}
-		scroll(48)
+		scroll(3)
 		if s.controller.Model.Text(1) != "abcdefg" {
 			t.Fatal("accumulated steps lost")
 		}
@@ -64,8 +64,8 @@ func TestProofreadingNavigatorWheelFineTargetAndOuterIsolation(t *testing.T) {
 		view.canvas.Position.First = 1
 		view.canvas.Position.Offset = 0
 		frame()
-		scroll(16)
-		if s.controller.Model.Text(1) != "abcd" || s.controller.Model.Text(2) != "efghi" {
+		scroll(1)
+		if s.controller.Model.Text(1) != "abc" || s.controller.Model.Text(2) != "defgh" {
 			t.Fatal("A page selection did not choose page 2", s.xPages)
 		}
 	}
@@ -118,13 +118,20 @@ func TestProofreadingNavigatorCoarseWaitsAndTargetChangeDiscardsPending(t *testi
 	}
 	router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(575, 200), Scroll: f32.Pt(0, 16), Modifiers: key.ModShift})
 	frame()
-	if len(s.navigator.pending) != 1 {
-		t.Fatal("coarse step should wait for new revision")
+	if s.controller.Model.Text(1) != "abcdefgh" || len(s.navigator.pending) != 0 {
+		t.Fatal("coarse input waited despite valid current pair geometry", s.controller.Model.Text(1), s.navigator.pending)
 	}
+	router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(575, 200), Scroll: f32.Pt(0, 16), Modifiers: key.ModShift})
+	frame()
+	if len(s.navigator.pending) != 1 {
+		t.Fatal("exhausted geometry should await fresh lookahead")
+	}
+
 	a.undoProofreadingPagination()
-	if len(s.navigator.pending) != 0 || s.controller.Model.Text(1) != "abcd" {
+	if len(s.navigator.pending) != 0 || s.controller.Model.Text(1) != "abcdef" {
 		t.Fatal("undo left queued coarse input that could replay")
 	}
+	s.controller.Layout.Pages = nil
 	router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(575, 200), Scroll: f32.Pt(0, 16), Modifiers: key.ModShift})
 	frame()
 	if len(s.navigator.pending) != 1 {
@@ -132,7 +139,7 @@ func TestProofreadingNavigatorCoarseWaitsAndTargetChangeDiscardsPending(t *testi
 	}
 	view.canvas.Position.First = 1
 	frame()
-	if len(s.navigator.pending) != 0 || s.controller.Model.Text(2) != "efgh" {
+	if len(s.navigator.pending) != 0 || s.controller.Model.Text(2) != "gh" {
 		t.Fatal("old target's pending input leaked into new target")
 	}
 }
@@ -201,5 +208,39 @@ func TestProofreadingNavigatorRevealsBoundaryAfterBackgroundLayout(t *testing.T)
 	}
 	if s.xEditorWindows[0].End != len([]rune(s.controller.Model.Text(1))) {
 		t.Fatal("visible editor window did not include new tail")
+	}
+}
+
+func TestProofreadingNavigatorRefillBatchKeepsSuffixFresh(t *testing.T) {
+	a, s := proofreadingModelFixture(t)
+	// Refill happens on the first intent, followed by a normal two-box intent
+	// in the same frame. Publishing must retain the earlier suffix changes.
+	if err := s.controller.Model.AdjustBoundary(1, 3); err != nil {
+		t.Fatal(err)
+	}
+	a.proofreadingBoundaryChanged(0)
+	s.navigator.page = 0
+	s.navigator.pending = []proofreadingNavigatorIntent{{steps: 1}, {steps: 1}}
+	var ops op.Ops
+	gtx := layout.Context{Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(600, 700))}
+	a.processProofreadingNavigatorEvents(gtx)
+	if s.controller.Model.Text(1) != "abcdefghi" || s.controller.Model.Text(2) != "jkl" {
+		t.Fatal(s.controller.Model.Snapshot())
+	}
+	for i, p := range s.xPages {
+		if p.Content != s.controller.Model.Text(proofreading.PageID(i+1)) {
+			t.Fatal("stale suffix in batched scroll", i, p.Content)
+		}
+	}
+	if s.xPages[2].Content != "" || !s.modelDirtyPages[3] {
+		t.Fatal("refill not published", s.xPages, s.modelDirtyPages)
+	}
+	a.undoProofreadingPagination()
+	if s.controller.Model.Text(1) != "abcdefgh" || s.controller.Model.Text(2) != "ijkl" {
+		t.Fatal("last character undo", s.controller.Model.Snapshot())
+	}
+	a.undoProofreadingPagination()
+	if s.controller.Model.Text(1) != "abcdefg" || s.controller.Model.Text(2) != "h" || s.controller.Model.Text(3) != "ijkl" {
+		t.Fatal("refill undo", s.controller.Model.Snapshot())
 	}
 }

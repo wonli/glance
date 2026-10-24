@@ -32,7 +32,7 @@ func (a *App) splitProofreadingPage(up bool) {
 		return
 	}
 	id := proofreading.PageID(i + 1)
-	snapshot := s.controller.Model.Snapshot()
+	snapshot := s.controller.Model.PageSnapshot(id)
 	at, _ := s.xPageEditors[i].Selection()
 	at += s.xEditorWindows[i].Start
 	if caret := s.xEditorCarets[i]; caret.Valid {

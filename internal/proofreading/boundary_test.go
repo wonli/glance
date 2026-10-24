@@ -1,6 +1,9 @@
 package proofreading
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestAdjacentBoundaryReviewedBoxOwnsLocalEditsAfterReopen(t *testing.T) {
 	m, _ := New("甲乙丙丁戊己", []PageID{1, 2, 3})
@@ -20,5 +23,41 @@ func TestAdjacentBoundaryReviewedBoxOwnsLocalEditsAfterReopen(t *testing.T) {
 	}
 	if n.AdjustBoundary(2, 1) == nil {
 		t.Fatal("finalized box allowed cross-box adjustment")
+	}
+}
+
+func TestBoundaryRefillPreservesIdentityAndReviewedBarrier(t *testing.T) {
+	for _, reviewed := range []bool{false, true} {
+		m, _ := New("abcdefghij", []PageID{6, 7, 8, 9, 10})
+		must(t, m.AssignInitial([]int{2, 4, 6, 8, 10}))
+		if reviewed {
+			must(t, m.Review(9, true))
+		}
+		before := m.Snapshot()
+		ids := m.IDs(8)
+		must(t, m.AdjustBoundary(6, 2))
+		if m.Text(6) != "abcd" || m.Text(7) != "ef" || !reflect.DeepEqual(m.IDs(7), ids) {
+			t.Fatal("refill lost content or identity", m.Snapshot())
+		}
+		if reviewed {
+			if m.Text(8) != "" || m.Text(9) != "gh" || m.Text(10) != "ij" {
+				t.Fatal("crossed reviewed barrier", m.Snapshot())
+			}
+		} else if m.Text(8) != "gh" || m.Text(9) != "ij" || m.Text(10) != "" {
+			t.Fatal("suffix not shifted", m.Snapshot())
+		}
+		encoded, err := Encode(m.Snapshot())
+		must(t, err)
+		restored, err := Decode(encoded)
+		must(t, err)
+		if !reflect.DeepEqual(restored.Runs, m.Snapshot().Runs) {
+			t.Fatal("refill did not persist")
+		}
+		if !m.Undo() || !reflect.DeepEqual(m.Snapshot().Runs, before.Runs) || !reflect.DeepEqual(m.Snapshot().Pages, before.Pages) {
+			t.Fatal("undo failed")
+		}
+		if !m.Redo() || m.Text(7) != "ef" {
+			t.Fatal("redo failed")
+		}
 	}
 }

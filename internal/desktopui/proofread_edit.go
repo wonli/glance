@@ -437,9 +437,8 @@ func (a *App) queueProofreadingDraftPersistence() {
 	if state.controller == nil {
 		return
 	}
-	modelSnapshot := state.controller.Model.Snapshot()
+	captured := state.controller.Model.Capture()
 	draft := proofreadingPersistedDraft{
-		Model:   &modelSnapshot,
 		Version: 2, SourceAHash: state.aSourceHash, SourceBHash: state.sourceBHash, Text: state.bDraftText,
 
 		TextSizeStep: state.xTextSizeStep,
@@ -451,6 +450,8 @@ func (a *App) queueProofreadingDraftPersistence() {
 			state.draftFileMu.Unlock()
 			return
 		}
+		modelSnapshot := captured.Snapshot()
+		draft.Model = &modelSnapshot
 		err := writeProofreadingDraftFile(path, draft)
 		state.draftFileMu.Unlock()
 		if state.draftPersistGen.Load() != generation {

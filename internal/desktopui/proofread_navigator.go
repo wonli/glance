@@ -26,7 +26,8 @@ import (
 
 // Wheel distance is accumulated in logical dp, independent of paper zoom and
 // display density. Fine input never accelerates or converts distance to lines.
-const proofreadingNavigatorStepDP = 16
+const proofreadingNavigatorStepDP = 1
+const proofreadingNavigatorLineStepDP = 16
 
 type proofreadingNavigatorIntent struct {
 	steps int
@@ -36,6 +37,7 @@ type proofreadingNavigator struct {
 	tag                          struct{}
 	initialized                  bool
 	page                         int
+	leading                      bool
 	remainder                    float64
 	coarse                       bool
 	hover                        bool
@@ -122,6 +124,7 @@ func (a *App) processProofreadingNavigatorEvents(gtx layout.Context) {
 			if coarse != n.coarse {
 				n.remainder = 0
 				n.coarse = coarse
+				n.pending = nil
 			}
 			delta := float64(e.Scroll.Y)
 			// Some platforms turn Shift+wheel into horizontal deltas.
@@ -132,21 +135,31 @@ func (a *App) processProofreadingNavigatorEvents(gtx layout.Context) {
 			if math.IsNaN(delta) || math.IsInf(delta, 0) {
 				continue
 			}
+			leading := a.proofreadingNavigatorUsesLeadingBoundary()
+			if leading != n.leading {
+				n.leading = leading
+				n.pending = nil
+				n.remainder = 0
+			}
 			if delta*n.remainder < 0 {
 				n.remainder = 0
 			}
+			if len(n.pending) > 0 && delta*float64(n.pending[len(n.pending)-1].steps) < 0 {
+				n.pending = nil
+				n.remainder = 0
+			}
 			n.remainder += delta
-			steps := int(n.remainder / proofreadingNavigatorStepDP)
-			n.remainder -= float64(steps * proofreadingNavigatorStepDP)
+			threshold := float64(proofreadingNavigatorStepDP)
+			if coarse {
+				threshold = proofreadingNavigatorLineStepDP
+			}
+			steps := int(n.remainder / threshold)
+			n.remainder -= float64(steps) * threshold
 			if steps != 0 {
-				steps = max(-256, min(256, steps))
-				step := 1
-				if steps < 0 {
-					step = -1
-					steps = -steps
-				}
-				for range steps {
-					n.pending = append(n.pending, proofreadingNavigatorIntent{steps: step, lines: coarse})
+				if last := len(n.pending) - 1; last >= 0 && n.pending[last].lines == coarse && n.pending[last].steps*steps > 0 {
+					n.pending[last].steps += steps
+				} else {
+					n.pending = append(n.pending, proofreadingNavigatorIntent{steps: steps, lines: coarse})
 				}
 			}
 		}
@@ -155,82 +168,138 @@ func (a *App) processProofreadingNavigatorEvents(gtx layout.Context) {
 		n.pending = nil
 		return
 	}
+	if len(n.pending) == 0 {
+		return
+	}
+	boundaryPage := n.page
+	if n.leading {
+		boundaryPage--
+	}
+	beforeText := s.controller.Model.Text(proofreading.PageID(n.page + 1))
+	totalMoved := 0
 	changedModel := false
+	var affected []proofreading.PageID
 	started := time.Now()
 	defer func() {
 		if changedModel {
-			a.proofreadingBoundaryChanged(n.page)
+			a.proofreadingBoundaryChanged(boundaryPage, affected...)
+			a.updateProofreadingNavigatorFeedback(gtx, beforeText, totalMoved)
 			gtx.Execute(op.InvalidateCmd{})
 		}
 	}()
 	for processed := 0; len(n.pending) > 0; processed++ {
-		if processed == 4 || processed > 0 && time.Since(started) > 6*time.Millisecond {
+		if processed == 2048 || processed > 0 && time.Since(started) > 4*time.Millisecond {
 			gtx.Execute(op.InvalidateCmd{})
 			break
 		}
 		intent := n.pending[0]
-		if intent.lines && (s.controller.Layout.StyleRevision != s.xTextSizeStep || s.modelLayoutPending) {
+		if intent.lines && s.controller.Layout.StyleRevision != s.xTextSizeStep {
 			return
 		}
-		before := s.controller.Model.Text(proofreading.PageID(n.page + 1))
-		moved, err := s.controller.AdjustPageUnits(proofreading.PageID(n.page+1), intent.steps, intent.lines)
+		step := 1
+		if intent.steps < 0 {
+			step = -1
+		}
+		var moved int
+		var err error
+		if n.leading {
+			moved, err = s.controller.AdjustPageHeadUnits(proofreading.PageID(n.page+1), step, intent.lines)
+		} else {
+			moved, err = s.controller.AdjustPageUnits(proofreading.PageID(n.page+1), step, intent.lines)
+		}
 		if errors.Is(err, application.ErrProofreadingLayoutPending) {
 			if !s.modelLayoutPending {
-				a.startProofreadingModelLayoutForPages(false, []proofreading.PageID{proofreading.PageID(n.page + 1)})
+				a.startProofreadingModelLayoutForPages(false, []proofreading.PageID{proofreading.PageID(boundaryPage + 1), proofreading.PageID(n.page + 1)})
 			}
 			return
 		}
-		n.pending = n.pending[1:]
+		n.pending[0].steps -= step
+		if n.pending[0].steps == 0 {
+			n.pending = n.pending[1:]
+		}
 		if err != nil {
 			n.feedbackKey = "proofread.navigator.reviewed"
+			n.pending = nil
 			continue
 		}
 		if moved == 0 {
 			n.feedbackKey = "proofread.navigator.boundary"
+			n.pending = nil
 			n.remainder = 0
 			continue
 		}
-		after := s.controller.Model.Text(proofreading.PageID(n.page + 1))
-		changed := strings.TrimPrefix(after, before)
-		if moved < 0 {
-			changed = strings.TrimPrefix(before, after)
-		}
-		var changedSegments segmenter.Segmenter
-		changedSegments.Init([]rune(changed))
-		changedIt := changedSegments.GraphemeIterator()
-		for changedIt.Next() {
-			n.sample = string(changedIt.Grapheme().Text)
-		}
-		n.sample = strings.ReplaceAll(strings.ReplaceAll(n.sample, "\n", "↵"), " ", "␣")
-		if gtx.Now.Sub(n.feedbackAt) > 500*time.Millisecond || n.feedback*moved < 0 {
-			n.feedback = 0
-		}
-		n.feedback += moved
-		n.feedbackAt = gtx.Now
-		n.feedbackKey = ""
-		n.reveal = true
-		var sg segmenter.Segmenter
-		sg.Init([]rune(after))
-		it := sg.GraphemeIterator()
-		n.highlightStart, n.highlightEnd = 0, 0
-		for it.Next() {
-			g := it.Grapheme()
-			n.highlightStart = g.Offset
-			n.highlightEnd = g.Offset + len(g.Text)
-		}
+		totalMoved += moved
+		affected = append(affected, s.controller.Model.BoundaryAffectedPages()...)
 		changedModel = true
+	}
+}
+
+// The viewed edge selects the adjacent boundary; wheel direction only selects
+// transfer direction. At the head, down pulls from the previous box and up
+// sends the current prefix back. Never infer a different edge from direction.
+func (a *App) proofreadingNavigatorUsesLeadingBoundary() bool {
+	s := a.proofreading
+	n := &s.navigator
+	return n.page > 0 && n.page < len(s.xPages) && s.xPageScrollOffsets[n.page] <= 0.01
+}
+
+func (a *App) updateProofreadingNavigatorFeedback(gtx layout.Context, before string, moved int) {
+	s := a.proofreading
+	n := &s.navigator
+	after := s.controller.Model.Text(proofreading.PageID(n.page + 1))
+	changed := strings.TrimPrefix(after, before)
+	if moved < 0 {
+		changed = strings.TrimPrefix(before, after)
+	}
+	if n.leading {
+		changed = strings.TrimSuffix(after, before)
+		if moved < 0 {
+			changed = strings.TrimSuffix(before, after)
+		}
+	}
+	var changedSegments segmenter.Segmenter
+	changedSegments.Init([]rune(changed))
+	changedIt := changedSegments.GraphemeIterator()
+	for changedIt.Next() {
+		n.sample = string(changedIt.Grapheme().Text)
+	}
+	n.sample = strings.ReplaceAll(strings.ReplaceAll(n.sample, "\n", "↵"), " ", "␣")
+	if gtx.Now.Sub(n.feedbackAt) > 500*time.Millisecond || n.feedback*moved < 0 {
+		n.feedback = 0
+	}
+	n.feedback += moved
+	n.feedbackAt = gtx.Now
+	n.feedbackKey = ""
+	n.reveal = true
+	var sg segmenter.Segmenter
+	sg.Init([]rune(after))
+	it := sg.GraphemeIterator()
+	n.highlightStart, n.highlightEnd = 0, 0
+	for it.Next() {
+		g := it.Grapheme()
+		n.highlightStart = g.Offset
+		n.highlightEnd = g.Offset + len(g.Text)
+		if n.leading {
+			break
+		}
 	}
 }
 
 func (a *App) revealProofreadingNavigatorBoundary() {
 	s := a.proofreading
 	n := &s.navigator
-	if !n.reveal || n.page < 0 || n.page >= len(s.xPages) || s.controller.Layout.Revision != s.controller.Model.Revision() {
+	if !n.reveal || n.page < 0 || n.page >= len(s.xPages) {
+		return
+	}
+	if n.leading {
+		s.xPageScrollOffsets[n.page] = 0
+		s.xRevealCaret[n.page] = false
+		n.reveal = false
 		return
 	}
 	p := s.xPages[n.page]
 	shaped, ok := s.controller.Layout.Pages[proofreading.PageID(n.page+1)]
-	if !ok {
+	if !ok || s.controller.Layout.StyleRevision != s.xTextSizeStep || !strings.HasPrefix(shaped.Text, p.Content) {
 		return
 	}
 	_, margin := proofreadingTextMargins(p.Width, p.Height)

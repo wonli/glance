@@ -101,7 +101,7 @@ func (a *App) scrollProofreadingPageView(gtx layout.Context, view *pdfViewState,
 	page := s.xPages[index]
 	size := proofreadingXPagePixelSize(gtx, view, s, index)
 	scale := float64(size.X) / max(1, page.Width)
-	if s.controller.Layout.Revision != s.controller.Model.Revision() || s.controller.Layout.StyleRevision != s.xTextSizeStep {
+	if s.controller.Layout.StyleRevision != s.xTextSizeStep {
 		if s.pendingXPageWheel == nil {
 			s.pendingXPageWheel = map[int]float64{}
 		}
@@ -134,7 +134,7 @@ func (a *App) layoutProofreadingXPageScrollbar(gtx layout.Context, page proofrea
 		return
 	}
 	pageID := proofreading.PageID(page.PageIndex + 1)
-	if s.controller.Layout.Revision != s.controller.Model.Revision() || s.controller.Layout.StyleRevision != s.xTextSizeStep {
+	if s.controller.Layout.StyleRevision != s.xTextSizeStep {
 		return
 	}
 	shaped, ok := s.controller.Layout.Pages[pageID]

@@ -61,7 +61,7 @@ func OffsetAt(s Snapshot, page PageID, anchor Anchor) (int, error) {
 	return 0, errors.New("caret characters are no longer in page")
 }
 func (m *Model) SplitAt(page PageID, anchor Anchor, up bool) error {
-	at, err := OffsetAt(m.s, page, anchor)
+	at, err := OffsetAt(m.PageSnapshot(page), page, anchor)
 	if err != nil {
 		return err
 	}
@@ -69,11 +69,11 @@ func (m *Model) SplitAt(page PageID, anchor Anchor, up bool) error {
 }
 
 func (m *Model) ReplaceRange(page PageID, start, end Anchor, text string) error {
-	a, err := OffsetAt(m.s, page, start)
+	a, err := OffsetAt(m.PageSnapshot(page), page, start)
 	if err != nil {
 		return err
 	}
-	b, err := OffsetAt(m.s, page, end)
+	b, err := OffsetAt(m.PageSnapshot(page), page, end)
 	if err != nil {
 		return err
 	}

@@ -41,7 +41,7 @@ func TestProofreadingNavigatorVisual(t *testing.T) {
 			router.Frame(&ops)
 		}
 		frame()
-		router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(575*scale, 200*scale), Scroll: f32.Pt(0, 16*scale)})
+		router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(575*scale, 200*scale), Scroll: f32.Pt(0, 1*scale)})
 		frame()
 		frame()
 		if s.controller.Model.Text(1) != "abcde" {

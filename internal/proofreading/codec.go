@@ -6,9 +6,18 @@ import (
 )
 
 func Restore(s Snapshot) (*Model, error) {
-	m := &Model{s: clone(s)}
-	if err := m.Validate(); err != nil {
+	l := &legacyModel{s: s}
+	if err := l.Validate(); err != nil {
 		return nil, err
+	}
+	m := &Model{next: s.Next, revision: s.Revision, pageIndex: make(map[PageID]int, len(s.Pages))}
+	for i, p := range s.Pages {
+		m.pageIndex[p.ID] = i
+		m.boxes = append(m.boxes, box{page: p})
+	}
+	for _, r := range s.Runs {
+		i := m.index(r.Page)
+		m.boxes[i].root = pieceConcat(m.boxes[i].root, pieceFromRun(r))
 	}
 	return m, nil
 }
@@ -32,10 +41,36 @@ func Decode(data []byte) (Snapshot, error) {
 
 // ReflowDerived is part of the preceding content operation, not a separate undo step.
 func (m *Model) ReflowDerived(ends map[PageID]int) error {
-	undo, redo := m.undo, m.redo
+	count := len(m.undo)
+	redo := m.redo
 	if err := m.Reflow(ends); err != nil {
 		return err
 	}
-	m.undo, m.redo = undo, redo
+	if len(m.undo) == count {
+		return nil
+	}
+	derived := m.undo[len(m.undo)-1]
+	m.undo[len(m.undo)-1] = modelEdit{}
+	m.undo = m.undo[:count]
+	if count > 0 {
+		previous := m.undo[count-1]
+		changes := append([]boxChange(nil), previous.changes...)
+		positions := make(map[int]int, len(changes))
+		for i, c := range changes {
+			positions[c.index] = i
+		}
+		for _, c := range derived.changes {
+			if at, ok := positions[c.index]; ok {
+				changes[at].after = c.after
+			} else {
+				positions[c.index] = len(changes)
+				changes = append(changes, c)
+			}
+		}
+		previous.changes = changes
+		previous.afterNext = derived.afterNext
+		m.undo[count-1] = previous
+	}
+	m.redo = redo
 	return nil
 }

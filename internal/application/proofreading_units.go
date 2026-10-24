@@ -3,7 +3,6 @@ package application
 import (
 	"errors"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/go-text/typesetting/segmenter"
 	"glance/internal/proofreading"
@@ -13,51 +12,27 @@ import (
 // shaped lines for coarse input. No font/layout result is needed for fine input.
 // The returned count is the signed number of visible characters transferred.
 func (c *ProofreadingController) AdjustPageUnits(page proofreading.PageID, steps int, lines bool) (int, error) {
-	snap := c.Model.Snapshot()
-	index := -1
-	for i, p := range snap.Pages {
-		if p.ID == page {
-			index = i
-			break
-		}
-	}
-	if index < 0 || snap.Pages[index].Reviewed {
+	current, ok := c.Model.Page(page)
+	if !ok || current.Reviewed {
 		return 0, errors.New("page cannot be adjusted")
 	}
 	if steps == 0 {
 		return 0, nil
 	}
 	steps = max(-4096, min(4096, steps))
+	if !lines {
+		return c.adjustFineCached(page, steps)
+	}
 	owned := c.Model.Text(page)
-	count := utf8.RuneCountInString(owned)
+	count := c.Model.RuneCount(page)
 	var preview strings.Builder
 	preview.WriteString(owned)
 	truncated := false
 	if steps > 0 || lines {
-		eligible := map[proofreading.PageID]bool{}
-		if index+1 < len(snap.Pages) && !snap.Pages[index+1].Reviewed {
-			eligible[snap.Pages[index+1].ID] = true
-		}
-		// Fine input must not segment an entire remaining book on the UI thread.
-		// Keep lookahead bounded and exclude its artificial final boundary below.
-		remaining := 32768
-		for _, run := range snap.Runs {
-			if !eligible[run.Page] {
-				continue
-			}
-			end := len(run.Text)
-			for at := range run.Text {
-				if remaining == 0 {
-					end = at
-					truncated = true
-					break
-				}
-				remaining--
-			}
-			preview.WriteString(run.Text[:end])
-			if truncated {
-				break
-			}
+		if neighbor, ok := c.Model.NextPage(page); ok && !neighbor.Reviewed {
+			text, clipped := c.Model.PagePrefix(neighbor.ID, 32768)
+			preview.WriteString(text)
+			truncated = clipped
 		}
 	}
 	var sg segmenter.Segmenter
@@ -74,7 +49,7 @@ func (c *ProofreadingController) AdjustPageUnits(page proofreading.PageID, steps
 	end := count
 	if lines {
 		shaped, ok := c.Layout.Pages[page]
-		if !ok || c.Layout.Revision != snap.Revision || !strings.HasPrefix(shaped.Text, owned) || !strings.HasPrefix(preview.String(), shaped.Text) {
+		if !ok || !strings.HasPrefix(shaped.Text, owned) || !strings.HasPrefix(preview.String(), shaped.Text) {
 			return 0, ErrProofreadingLayoutPending
 		}
 		for range absProofreadingSteps(steps) {
@@ -141,10 +116,15 @@ func (c *ProofreadingController) AdjustPageUnits(page proofreading.PageID, steps
 			}
 		}
 	}
+	if lines && steps > 0 && end == count {
+		if next, ok := c.Model.NextPage(page); ok && !next.Reviewed && c.Model.RuneCount(next.ID) > 0 {
+			return 0, ErrProofreadingLayoutPending
+		}
+	}
 	if err := c.Model.AdjustBoundary(page, end-count); err != nil {
 		return 0, err
 	}
-	after := utf8.RuneCountInString(c.Model.Text(page))
+	after := c.Model.RuneCount(page)
 	actual := 0
 	for _, b := range boundaries {
 		if b > min(count, after) && b <= max(count, after) {

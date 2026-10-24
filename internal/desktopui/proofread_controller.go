@@ -167,18 +167,24 @@ func (a *App) proofreadingModelChanged(reflow bool) {
 	}
 }
 
-// Boundary motion preserves the complete text stream and all other page ranges.
-// Publish only the two boxes; bDraftText does not need rebuilding for ownership.
-func (a *App) proofreadingBoundaryChanged(index int) {
+// Boundary motion preserves the complete text stream. Publish the adjacent
+// boxes plus any refilled suffix; bDraftText is unchanged by ownership moves.
+func (a *App) proofreadingBoundaryChanged(index int, affected ...proofreading.PageID) {
 	s := a.proofreading
 	if index < 0 || index >= len(s.xPages) {
 		return
 	}
 	start := s.xPages[index].ContentStart
-	snap := s.controller.Model.Snapshot()
-	for i := index; i <= index+1 && i < len(s.xPages); i++ {
+	last := min(index+1, len(s.xPages)-1)
+	affected = append(affected, s.controller.Model.BoundaryAffectedPages()...)
+	for _, id := range affected {
+		last = max(last, int(id)-1)
+	}
+	last = min(last, len(s.xPages)-1)
+	for i := index; i <= last; i++ {
 		p := &s.xPages[i]
 		value := s.controller.Model.Text(proofreading.PageID(i + 1))
+		state, _ := s.controller.Model.Page(proofreading.PageID(i + 1))
 		if p.Content != value {
 			if s.modelDirtyPages == nil {
 				s.modelDirtyPages = map[proofreading.PageID]bool{}
@@ -187,18 +193,18 @@ func (a *App) proofreadingBoundaryChanged(index int) {
 		}
 		p.Content = value
 		p.ContentStart = start
-		p.ContentEnd = start + utf8.RuneCountInString(value)
+		p.ContentEnd = start + s.controller.Model.RuneCount(proofreading.PageID(i+1))
 		owned := &s.pageOwnership[i]
 		owned.Start = p.ContentStart
 		owned.End = p.ContentEnd
-		owned.Locked = snap.Pages[i].Locked
-		owned.Reviewed = snap.Pages[i].Reviewed
+		owned.Locked = state.Locked
+		owned.Reviewed = state.Reviewed
 		start = p.ContentEnd
 	}
 	s.bDraftDirty = true
 	pages := []proofreading.PageID{proofreading.PageID(index + 1)}
-	if index+1 < len(s.xPages) {
-		pages = append(pages, proofreading.PageID(index+2))
+	for i := index + 1; i <= last; i++ {
+		pages = append(pages, proofreading.PageID(i+1))
 	}
 	a.startProofreadingModelLayoutForPages(false, pages)
 	a.queueProofreadingDraftPersistence()
@@ -222,7 +228,8 @@ func (a *App) startProofreadingModelLayoutForPages(fullLayout bool, only []proof
 	ctx, cancel := context.WithCancel(context.Background())
 	s.modelLayoutCancel = cancel
 	s.modelLayoutPending = true
-	snap := s.controller.Model.Snapshot()
+	captured := s.controller.Model.Capture()
+	modelPages := captured.Pages()
 	initial := !s.modelInitialAssigned
 	full := only == nil && (fullLayout || initial || s.modelLayoutNeedsFull || s.controller.Layout.Pages == nil || s.controller.Layout.StyleRevision != s.xTextSizeStep)
 	s.modelLayoutNeedsFull = full
@@ -232,12 +239,53 @@ func (a *App) startProofreadingModelLayoutForPages(fullLayout bool, only []proof
 	}
 	var dirty []proofreading.PageID
 	if only != nil {
-		dirty = append(dirty, only...)
+		// Replacing a worker must not discard suffix pages still awaiting layout
+		// after a refill in an earlier scroll frame.
+		requested := make(map[proofreading.PageID]bool, len(only)+len(s.modelDirtyPages))
+		for _, id := range only {
+			requested[id] = true
+		}
+		for _, p := range modelPages {
+			if requested[p.ID] || s.modelDirtyPages[p.ID] {
+				dirty = append(dirty, p.ID)
+			}
+		}
 	} else {
-		for _, p := range snap.Pages {
+		for _, p := range modelPages {
 			if full || s.modelDirtyPages[p.ID] {
 				dirty = append(dirty, p.ID)
 			}
+		}
+	}
+	// During interactive ownership changes, shape the current pair and visible
+	// boxes first. Offscreen roots already have correct ownership; keep them dirty
+	// until they are visible rather than blocking feedback on the whole suffix.
+	if !initial && only != nil && len(s.visibleEditorPages) > 0 {
+		visible := map[proofreading.PageID]bool{}
+		for _, index := range s.visibleEditorPages {
+			visible[proofreading.PageID(index+1)] = true
+		}
+		for _, id := range only {
+			if len(only) <= 2 {
+				visible[id] = true
+			}
+		}
+		if s.navigator.initialized {
+			edge := s.navigator.page
+			if s.navigator.leading {
+				edge--
+			}
+			visible[proofreading.PageID(edge+1)] = true
+			visible[proofreading.PageID(edge+2)] = true
+		}
+		selected := dirty[:0]
+		for _, id := range dirty {
+			if visible[id] {
+				selected = append(selected, id)
+			}
+		}
+		if len(selected) > 0 {
+			dirty = selected
 		}
 	}
 	s.modelLayoutActivePages = dirty
@@ -250,6 +298,7 @@ func (a *App) startProofreadingModelLayoutForPages(fullLayout bool, only []proof
 	fontSnapshot := a.currentFontSnapshot()
 	results, window := s.modelLayoutResults, a.window
 	if !a.launchManagedBackground(func() {
+		snap := captured.Snapshot()
 		var result application.ProofreadingLayoutSnapshot
 		var err error
 		if initial {
@@ -319,7 +368,13 @@ func (a *App) acceptProofreadingModelLayout() {
 				a.refreshProofreadingModelView()
 				a.queueProofreadingDraftPersistence()
 			}
-			s.modelDirtyPages = nil
+			if r.reflow {
+				s.modelDirtyPages = nil
+			} else {
+				for _, id := range s.modelLayoutActivePages {
+					delete(s.modelDirtyPages, id)
+				}
+			}
 		default:
 			return
 		}

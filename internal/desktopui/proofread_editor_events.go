@@ -52,7 +52,7 @@ func (a *App) processProofreadingEditorEvents(gtx layout.Context) {
 			}
 			s.xEditorTexts[i] = value
 			w.End = w.Start + len([]rune(value))
-			snap := s.controller.Model.Snapshot()
+			snap := s.controller.Model.PageSnapshot(id)
 			w.StartAnchor, _ = proofreading.AnchorAt(snap, id, w.Start)
 			w.EndAnchor, _ = proofreading.AnchorAt(snap, id, w.End)
 			s.xEditorWindows[i] = w
@@ -60,7 +60,7 @@ func (a *App) processProofreadingEditorEvents(gtx layout.Context) {
 		}
 		if changed || selected {
 			start, end := editor.Selection()
-			snap := s.controller.Model.Snapshot()
+			snap := s.controller.Model.PageSnapshot(id)
 			w := s.xEditorWindows[i]
 			left, e1 := proofreading.AnchorAt(snap, id, w.Start+start)
 			right, e2 := proofreading.AnchorAt(snap, id, w.Start+end)
@@ -76,9 +76,11 @@ func (a *App) syncProofreadingEditors() {
 	if s.controller == nil {
 		return
 	}
-	nextSnapshot := s.controller.Model.Snapshot()
+	var nextSnapshot proofreading.Snapshot
 	for i := range s.xPages {
-		a.syncProofreadingEditor(i, nextSnapshot)
+		page := s.controller.Model.PageSnapshot(proofreading.PageID(i + 1))
+		a.syncProofreadingEditor(i, page)
+		nextSnapshot.Runs = append(nextSnapshot.Runs, page.Runs...)
 	}
 	s.xEditorsSnapshot = nextSnapshot
 }

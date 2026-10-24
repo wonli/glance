@@ -51,9 +51,7 @@ func (a *App) layoutProofreadingXPageList(gtx layout.Context, view *pdfViewState
 	state.xViewport = gtx.Constraints.Max
 	a.handleProofreadingXCanvasScroll(gtx, view)
 	var snapshot proofreading.Snapshot
-	if state.controller != nil {
-		snapshot = state.controller.Model.Snapshot()
-	}
+
 	state.visibleEditorPages = state.visibleEditorPages[:0]
 	dimensions := state.xCanvas.Layout(gtx, pageCount, func(gtx layout.Context, pageIndex int) layout.Dimensions {
 		if state.controller != nil && pageIndex < len(state.xPages) {
@@ -61,7 +59,9 @@ func (a *App) layoutProofreadingXPageList(gtx layout.Context, view *pdfViewState
 				state.modelRequestedPages = append(state.modelRequestedPages, proofreading.PageID(pageIndex+1))
 				gtx.Execute(op.InvalidateCmd{})
 			}
-			a.syncProofreadingEditor(pageIndex, snapshot)
+			pageSnapshot := state.controller.Model.PageSnapshot(proofreading.PageID(pageIndex + 1))
+			a.syncProofreadingEditor(pageIndex, pageSnapshot)
+			snapshot.Runs = append(snapshot.Runs, pageSnapshot.Runs...)
 			state.visibleEditorPages = append(state.visibleEditorPages, pageIndex)
 		}
 		// A list row must occupy the pane's width; otherwise Center shrink-wraps

@@ -32,7 +32,7 @@ func (a *App) proofreadingVisibleEditorWindow(index int, text string) proofreadi
 	}
 	id := proofreading.PageID(index + 1)
 	shaped, ok := s.controller.Layout.Pages[id]
-	ready := ok && s.controller.Layout.Revision == s.controller.Model.Revision() && strings.HasPrefix(shaped.Text, text) && s.controller.Layout.StyleRevision == s.xTextSizeStep
+	ready := ok && strings.HasPrefix(shaped.Text, text) && s.controller.Layout.StyleRevision == s.xTextSizeStep
 	if ready {
 		scale := s.xPageRenderScales[index]
 		if scale <= 0 {
@@ -47,7 +47,7 @@ func (a *App) proofreadingVisibleEditorWindow(index int, text string) proofreadi
 		top := s.xPageScrollOffsets[index]
 		top = clampProofreadingScrollTop(top, height, contentHeight)
 		if s.xRevealCaret[index] && s.xEditorCarets[index].Valid {
-			if caret, err := proofreading.OffsetAt(s.controller.Model.Snapshot(), id, s.xEditorCarets[index].Start); err == nil {
+			if caret, err := proofreading.OffsetAt(s.controller.Model.PageSnapshot(id), id, s.xEditorCarets[index].Start); err == nil {
 				for _, line := range shaped.Lines {
 					if caret >= line.Start && caret <= line.End {
 						if line.Top < top {

@@ -35,6 +35,7 @@ type ProofreadingTextStyle struct {
 	Revision int
 }
 type ProofreadingController struct {
+	fine   proofreadingFineCache
 	Model  *proofreading.Model
 	Layout ProofreadingLayoutSnapshot
 }
@@ -46,7 +47,7 @@ func (c *ProofreadingController) Replace(p proofreading.PageID, text string, rev
 	return c.Model.ReplaceAtRevision(p, text, revision)
 }
 func (c *ProofreadingController) AcceptLayout(l ProofreadingLayoutSnapshot) bool {
-	if l.Revision != c.Model.Snapshot().Revision {
+	if l.Revision != c.Model.Revision() {
 		return false
 	}
 	c.Layout = l

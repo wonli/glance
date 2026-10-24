@@ -25,6 +25,12 @@ func newProofreadingEditorLineShaper(fontSnapshots ...fontcatalog.Snapshot) appl
 		collection = fontCollectionForRendering(fontSnapshots[0], nil, newFontCollectionCache())
 	}
 	shaper := newTextShaper(collection)
+	// The no-snapshot helper is used by windowless/offline callers, whose
+	// editor uses newSystemTextShaper. Live windows always pass a managed font
+	// snapshot and continue using the isolated collection above.
+	if len(fontSnapshots) == 0 {
+		shaper = newSystemTextShaper()
+	}
 	shape := func(ctx context.Context, value string, width float64, style application.ProofreadingTextStyle) ([]application.ProofreadingLine, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err

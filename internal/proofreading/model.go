@@ -3,7 +3,6 @@ package proofreading
 
 import (
 	"errors"
-	"fmt"
 	"slices"
 	"unicode/utf8"
 )
@@ -35,212 +34,228 @@ type Snapshot struct {
 	Runs     []Run       `json:"runs"`
 	Pages    []Page      `json:"pages"`
 }
+
+// box stores one fixed page's state and its immutable text root.
+type box struct {
+	page Page
+	root *pieceTree
+}
+type boxChange struct {
+	index         int
+	before, after box
+}
+type modelEdit struct {
+	changes               []boxChange
+	beforeNext, afterNext CharacterID
+}
 type Model struct {
-	s          Snapshot
-	undo, redo []Snapshot
-	pageIndex  map[PageID]int
+	boxes            []box
+	pageIndex        map[PageID]int
+	next             CharacterID
+	revision         uint64
+	undo, redo       []modelEdit
+	boundaryAffected []PageID
 }
 
 func New(text string, pages []PageID) (*Model, error) {
-	if len(pages) == 0 || !utf8.ValidString(text) {
-		return nil, errors.New("invalid proofreading input")
-	}
-	m := &Model{s: Snapshot{Version: 2, Next: CharacterID(utf8.RuneCountInString(text)) + 1}}
+	s := Snapshot{Version: 2, Next: CharacterID(utf8.RuneCountInString(text)) + 1}
 	for _, id := range pages {
-		m.s.Pages = append(m.s.Pages, Page{ID: id})
+		s.Pages = append(s.Pages, Page{ID: id})
 	}
-	if text != "" {
-		m.s.Runs = []Run{{First: 1, Text: text, Page: pages[0]}}
+	if text != "" && len(pages) > 0 {
+		s.Runs = []Run{{First: 1, Text: text, Page: pages[0]}}
 	}
-	return m, m.Validate()
+	return Restore(s)
 }
-func clone(s Snapshot) Snapshot {
-	s.Runs = append([]Run(nil), s.Runs...)
-	s.Pages = append([]Page(nil), s.Pages...)
+
+// Capture shares immutable pieces and copies only the fixed box reference table.
+// Workers can expand it after later UI edits without reading mutable Model state.
+type View struct {
+	boxes    []box
+	revision uint64
+	next     CharacterID
+}
+
+func (m *Model) Capture() View {
+	return View{boxes: append([]box(nil), m.boxes...), revision: m.revision, next: m.next}
+}
+func (v View) Pages() []Page {
+	pages := make([]Page, len(v.boxes))
+	for i, b := range v.boxes {
+		pages[i] = b.page
+	}
+	return pages
+}
+func (v View) Snapshot() Snapshot   { return snapshotBoxes(v.boxes, v.revision, v.next) }
+func (m *Model) Snapshot() Snapshot { return snapshotBoxes(m.boxes, m.revision, m.next) }
+func snapshotBoxes(boxes []box, revision uint64, next CharacterID) Snapshot {
+	s := Snapshot{Version: 2, Revision: revision, Next: next}
+	for _, b := range boxes {
+		s.Pages = append(s.Pages, b.page)
+		pieceVisit(b.root, func(r Run) { r.Page = b.page.ID; s.Runs = append(s.Runs, r) })
+	}
 	return s
 }
-func (m *Model) Snapshot() Snapshot { return clone(m.s) }
-func (m *Model) Revision() uint64   { return m.s.Revision }
-func (m *Model) Text(page PageID) string {
-	b := []byte{}
-	for _, r := range m.s.Runs {
-		if r.Page == page {
-			b = append(b, r.Text...)
-		}
-	}
-	return string(b)
-}
-func (m *Model) IDs(page PageID) []CharacterID {
-	var ids []CharacterID
-	for _, r := range m.s.Runs {
-		if r.Page == page {
-			for i := range utf8.RuneCountInString(r.Text) {
-				ids = append(ids, r.First+CharacterID(i))
-			}
-		}
-	}
-	return ids
-}
+func (m *Model) Revision() uint64 { return m.revision }
 func (m *Model) index(id PageID) int {
-	if m.pageIndex == nil {
-		m.pageIndex = make(map[PageID]int, len(m.s.Pages))
-		for i, p := range m.s.Pages {
-			m.pageIndex[p.ID] = i
-		}
-	}
 	if i, ok := m.pageIndex[id]; ok {
 		return i
 	}
 	return -1
 }
-func (m *Model) transaction(f func() error) error {
-	before := clone(m.s)
-	if err := f(); err != nil {
-		m.s = before
-		return err
+func (m *Model) Page(id PageID) (Page, bool) {
+	i := m.index(id)
+	if i < 0 {
+		return Page{}, false
 	}
-	if err := m.Validate(); err != nil {
-		m.s = before
-		return err
+	return m.boxes[i].page, true
+}
+func (m *Model) NextPage(id PageID) (Page, bool) {
+	i := m.index(id)
+	if i < 0 || i+1 >= len(m.boxes) {
+		return Page{}, false
 	}
-	if slices.Equal(before.Runs, m.s.Runs) && slices.Equal(before.Pages, m.s.Pages) {
+	return m.boxes[i+1].page, true
+}
+func (m *Model) Text(id PageID) string {
+	i := m.index(id)
+	if i < 0 {
+		return ""
+	}
+	return pieceString(m.boxes[i].root)
+}
+func (m *Model) RuneCount(id PageID) int {
+	i := m.index(id)
+	if i < 0 {
+		return 0
+	}
+	return pieceLen(m.boxes[i].root)
+}
+func (m *Model) IDs(id PageID) []CharacterID {
+	i := m.index(id)
+	if i < 0 {
 		return nil
 	}
-	m.undo = append(m.undo, before)
+	var ids []CharacterID
+	pieceVisit(m.boxes[i].root, func(r Run) {
+		n := utf8.RuneCountInString(r.Text)
+		for j := 0; j < n; j++ {
+			ids = append(ids, r.First+CharacterID(j))
+		}
+	})
+	return ids
+}
+func (m *Model) commit(changes []boxChange, next CharacterID) {
+	filtered := changes[:0]
+	for _, c := range changes {
+		if c.before != c.after {
+			filtered = append(filtered, c)
+		}
+	}
+	changes = filtered
+	if len(changes) == 0 {
+		return
+	}
+	m.undo = append(m.undo, modelEdit{changes: changes, beforeNext: m.next, afterNext: next})
 	m.redo = nil
-	m.s.Revision++
-	return nil
+	for _, c := range changes {
+		m.boxes[c.index] = c.after
+	}
+	m.next = next
+	m.revision++
 }
 func (m *Model) Undo() bool {
 	if len(m.undo) == 0 {
 		return false
 	}
-	m.redo = append(m.redo, clone(m.s))
-	r := m.s.Revision + 1
-	m.s = m.undo[len(m.undo)-1]
+	e := m.undo[len(m.undo)-1]
+	m.undo[len(m.undo)-1] = modelEdit{}
 	m.undo = m.undo[:len(m.undo)-1]
-	m.s.Revision = r
+	for _, c := range e.changes {
+		m.boxes[c.index] = c.before
+	}
+	m.next = e.beforeNext
+	m.revision++
+	m.redo = append(m.redo, e)
 	return true
 }
 func (m *Model) Redo() bool {
 	if len(m.redo) == 0 {
 		return false
 	}
-	m.undo = append(m.undo, clone(m.s))
-	r := m.s.Revision + 1
-	m.s = m.redo[len(m.redo)-1]
+	e := m.redo[len(m.redo)-1]
+	m.redo[len(m.redo)-1] = modelEdit{}
 	m.redo = m.redo[:len(m.redo)-1]
-	m.s.Revision = r
+	for _, c := range e.changes {
+		m.boxes[c.index] = c.after
+	}
+	m.next = e.afterNext
+	m.revision++
+	m.undo = append(m.undo, e)
 	return true
 }
-func (m *Model) CanUndo() bool { return len(m.undo) > 0 }
-func (m *Model) CanRedo() bool { return len(m.redo) > 0 }
-func (m *Model) Validate() error {
-	if m.s.Version != 2 || m.s.Next == 0 || len(m.s.Pages) == 0 {
-		return errors.New("invalid proofreading version/identity")
-	}
-	seen := map[PageID]bool{}
-	for _, p := range m.s.Pages {
-		if p.ID == 0 || seen[p.ID] {
-			return errors.New("duplicate page")
-		}
-		seen[p.ID] = true
-	}
-	intervals := make([][2]CharacterID, 0, len(m.s.Runs))
-	last := -1
-	for _, r := range m.s.Runs {
-		n := utf8.RuneCountInString(r.Text)
-		i := m.index(r.Page)
-		if n == 0 || !utf8.ValidString(r.Text) || r.First == 0 || r.First+CharacterID(n) < r.First || r.First+CharacterID(n) > m.s.Next || i < last || i < 0 {
-			return fmt.Errorf("invalid character run for page %d", r.Page)
-		}
-		if r.Origin != 0 && !seen[r.Origin] {
-			return errors.New("invalid origin page")
-		}
-		last = i
-		intervals = append(intervals, [2]CharacterID{r.First, r.First + CharacterID(n)})
-	}
-	// IDs may be out of numerical order after insertion; uniqueness is independent of text order.
-	sortIntervals(intervals)
-	for i := 1; i < len(intervals); i++ {
-		if intervals[i][0] < intervals[i-1][1] {
-			return errors.New("duplicate character identity")
-		}
-	}
-	return nil
-}
-func (m *Model) cut(offset int) int {
-	pos := 0
-	for i, r := range m.s.Runs {
-		n := utf8.RuneCountInString(r.Text)
-		if offset == pos {
-			return i
-		}
-		if offset > pos && offset < pos+n {
-			rs := []rune(r.Text)
-			left, right := r, r
-			left.Text = string(rs[:offset-pos])
-			right.Text = string(rs[offset-pos:])
-			right.First += CharacterID(offset - pos)
-			m.s.Runs = append(m.s.Runs, nilRun)
-			copy(m.s.Runs[i+2:], m.s.Runs[i+1:])
-			m.s.Runs[i] = left
-			m.s.Runs[i+1] = right
-			return i + 1
-		}
-		pos += n
-	}
-	return len(m.s.Runs)
-}
+func (m *Model) CanUndo() bool   { return len(m.undo) > 0 }
+func (m *Model) CanRedo() bool   { return len(m.redo) > 0 }
+func (m *Model) Validate() error { l := &legacyModel{s: m.Snapshot()}; return l.Validate() }
 
-var nilRun Run
-
-func (m *Model) bounds(page PageID) (start, end int) {
-	idx := m.index(page)
-	for _, r := range m.s.Runs {
-		i := m.index(r.Page)
-		if i > idx {
-			break
-		}
-		n := utf8.RuneCountInString(r.Text)
-		if i < idx {
-			start += n
-			end += n
-		} else if i == idx {
-			end += n
-		}
-	}
-	return
-}
-func (m *Model) AssignInitial(ends []int) error {
-	if len(ends) != len(m.s.Pages) || len(m.undo) > 0 {
-		return errors.New("invalid initial assignment")
-	}
-	before := clone(m.s)
-	total := 0
-	for _, r := range m.s.Runs {
-		total += utf8.RuneCountInString(r.Text)
-	}
-	start := 0
-	for i, p := range m.s.Pages {
-		end := ends[i]
-		if i == len(ends)-1 {
-			end = total
-		}
-		if end < start || end > total {
-			m.s = before
-			return errors.New("invalid initial boundary")
-		}
-		a := m.cut(start)
-		b := m.cut(end)
-		for j := a; j < b; j++ {
-			m.s.Runs[j].Page = p.ID
-		}
-		start = end
-	}
-	if err := m.Validate(); err != nil {
-		m.s = before
+// legacy converts only at the obsolete API boundary, never on the fine-scroll path.
+func (m *Model) legacy(f func(*legacyModel) error, history bool) error {
+	before := m.Snapshot()
+	l := &legacyModel{s: clone(before)}
+	if err := f(l); err != nil {
 		return err
 	}
+	if slices.Equal(before.Runs, l.s.Runs) && slices.Equal(before.Pages, l.s.Pages) {
+		return nil
+	}
+	next, err := Restore(l.s)
+	if err != nil {
+		return err
+	}
+	var changes []boxChange
+	for i, b := range next.boxes {
+		changes = append(changes, boxChange{i, m.boxes[i], b})
+	}
+	if history {
+		m.commit(changes, next.next)
+	} else {
+		m.boxes = next.boxes
+		m.next = next.next
+	}
 	return nil
+}
+func (m *Model) AssignInitial(ends []int) error {
+	if len(m.undo) > 0 {
+		return errors.New("invalid initial assignment")
+	}
+	return m.legacy(func(l *legacyModel) error { return l.AssignInitial(ends) }, false)
+}
+
+// PageSnapshot exposes only one box for text anchors and visible editors.
+func (m *Model) PageSnapshot(id PageID) Snapshot {
+	i := m.index(id)
+	if i < 0 {
+		return Snapshot{Version: 2, Revision: m.revision, Next: m.next}
+	}
+	return snapshotBoxes(m.boxes[i:i+1], m.revision, m.next)
+}
+
+// ContentToken is an opaque comparable identity for one immutable box root.
+// It lets derived caches detect edits without flattening text or the book.
+type ContentToken struct{ root *pieceTree }
+
+func (m *Model) ContentToken(id PageID) ContentToken {
+	i := m.index(id)
+	if i < 0 {
+		return ContentToken{}
+	}
+	return ContentToken{root: m.boxes[i].root}
+}
+
+func (m *Model) PreviousPage(id PageID) (Page, bool) {
+	i := m.index(id)
+	if i <= 0 {
+		return Page{}, false
+	}
+	return m.boxes[i-1].page, true
 }
