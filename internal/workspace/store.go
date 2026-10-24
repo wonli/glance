@@ -690,3 +690,68 @@ func (s *Store) SaveHomeFolderSnapshot(snapshot HomeFolderSnapshot) error {
 	}
 	return tx.Commit()
 }
+
+// StoreDiagnostics captures durable database geometry and metrics for profiling.
+type StoreDiagnostics struct {
+	Path                      string `json:"path"`
+	FileSizeBytes             int64  `json:"file_size_bytes"`
+	WALSizeBytes              int64  `json:"wal_size_bytes"`
+	PageSize                  int64  `json:"page_size"`
+	PageCount                 int64  `json:"page_count"`
+	FreelistCount             int64  `json:"freelist_count"`
+	DocumentsCount            int    `json:"documents_count"`
+	DocumentsPayloadBytes     int64  `json:"documents_payload_bytes"`
+	WordVersionsCount         int    `json:"word_versions_count"`
+	WordVersionsSnapshotBytes int64  `json:"word_versions_snapshot_bytes"`
+	RecentsCount              int    `json:"recents_count"`
+	OpenConnections           int    `json:"open_connections"`
+}
+
+// Diagnostics gathers database file sizes, SQLite pragma metrics, and document table counts.
+func (s *Store) Diagnostics() (StoreDiagnostics, error) {
+	if s == nil || s.db == nil {
+		return StoreDiagnostics{}, errors.New("workspace store is not open")
+	}
+	var diag StoreDiagnostics
+	diag.Path = s.path
+	if s.path != "" && s.path != ":memory:" {
+		if fi, err := os.Stat(s.path); err == nil {
+			diag.FileSizeBytes = fi.Size()
+		}
+		if fi, err := os.Stat(s.path + "-wal"); err == nil {
+			diag.WALSizeBytes = fi.Size()
+		}
+	}
+	_ = s.db.QueryRow(`PRAGMA page_size`).Scan(&diag.PageSize)
+	_ = s.db.QueryRow(`PRAGMA page_count`).Scan(&diag.PageCount)
+	_ = s.db.QueryRow(`PRAGMA freelist_count`).Scan(&diag.FreelistCount)
+	_ = s.db.QueryRow(`SELECT count(*), coalesce(sum(length(payload)), 0) FROM documents`).Scan(&diag.DocumentsCount, &diag.DocumentsPayloadBytes)
+	var tableCount int
+	_ = s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='word_versions'`).Scan(&tableCount)
+	if tableCount > 0 {
+		_ = s.db.QueryRow(`SELECT count(*), coalesce(sum(length(snapshot)), 0) FROM word_versions`).Scan(&diag.WordVersionsCount, &diag.WordVersionsSnapshotBytes)
+	}
+	_ = s.db.QueryRow(`SELECT count(*) FROM recents`).Scan(&diag.RecentsCount)
+	diag.OpenConnections = s.db.Stats().OpenConnections
+	return diag, nil
+}
+
+// ShrinkMemory advises SQLite to release freed memory back to the allocator.
+func (s *Store) ShrinkMemory() error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	_, err := s.db.Exec(`PRAGMA shrink_memory`)
+	return err
+}
+
+// Vacuum reorganizes the database file to reclaim free space from deleted rows.
+func (s *Store) Vacuum() error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	_, err := s.db.Exec(`VACUUM`)
+	return err
+}
+
+

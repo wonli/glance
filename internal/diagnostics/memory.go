@@ -75,6 +75,8 @@ func registerMemoryHandlers(mux *http.ServeMux) {
 		defer releaseMu.Unlock()
 		before := readMemorySnapshot()
 		start := time.Now()
+		// Free workspace SQLite memory before OS memory reclamation.
+		invokeWorkspaceShrinker()
 		// FreeOSMemory already performs a GC, then returns idle heap pages to the OS.
 		// The HTTP worker runs this, never the Gio frame/event loop.
 		debug.FreeOSMemory()

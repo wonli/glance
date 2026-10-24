@@ -569,3 +569,60 @@ func cloneSession(session *Session) *Session {
 	copy := *session
 	return &copy
 }
+
+// TabDiagnostics contains in-memory tab state and whether payload bytes are cached.
+type TabDiagnostics struct {
+	ID                   string `json:"id"`
+	DocumentID           string `json:"document_id"`
+	Title                string `json:"title"`
+	Kind                 string `json:"kind"`
+	Format               string `json:"format"`
+	Position             int    `json:"position"`
+	SourcePath           string `json:"source_path"`
+	Dirty                bool   `json:"dirty"`
+	SnapshotPresent      bool   `json:"snapshot_present"`
+	PayloadSize          int64  `json:"payload_size"`
+	PayloadInMemory      bool   `json:"payload_in_memory"`
+	PayloadInMemoryBytes int    `json:"payload_in_memory_bytes"`
+}
+
+// CollectionDiagnostics summarizes the in-memory tab collection state.
+type CollectionDiagnostics struct {
+	ActiveTabID string           `json:"active_tab_id"`
+	Version     uint64           `json:"version"`
+	TabCount    int              `json:"tab_count"`
+	Tabs        []TabDiagnostics `json:"tabs"`
+}
+
+// Diagnostics gathers the active tab and snapshot cache state of all tabs.
+func (c *Collection) Diagnostics() CollectionDiagnostics {
+	if c == nil {
+		return CollectionDiagnostics{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	diag := CollectionDiagnostics{
+		ActiveTabID: c.active,
+		Version:     c.version,
+		TabCount:    len(c.tabs),
+		Tabs:        make([]TabDiagnostics, len(c.tabs)),
+	}
+	for i, s := range c.tabs {
+		diag.Tabs[i] = TabDiagnostics{
+			ID:                   s.Tab.ID,
+			DocumentID:           s.Tab.DocumentID,
+			Title:                s.Tab.Title,
+			Kind:                 s.Tab.Kind,
+			Format:               s.Format,
+			Position:             s.Tab.Position,
+			SourcePath:           s.Tab.SourcePath,
+			Dirty:                s.Dirty,
+			SnapshotPresent:      s.SnapshotPresent,
+			PayloadSize:          s.PayloadSize,
+			PayloadInMemory:      s.Payload != nil,
+			PayloadInMemoryBytes: len(s.Payload),
+		}
+	}
+	return diag
+}
+

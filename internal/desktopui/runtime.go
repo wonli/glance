@@ -230,6 +230,7 @@ func newDesktopRuntimeWithPrinter(printer printservice.Printer) *desktopRuntime 
 			},
 		}, runtime.routeApplicationEvent)
 	}
+	runtime.registerDiagnostics()
 	return runtime
 }
 

@@ -27,6 +27,7 @@ func StartProfiling(addr string) (*http.Server, error) {
 	mux := http.NewServeMux()
 	registerMemoryHandlers(mux)
 	registerWordSelectionHandlers(mux)
+	registerWorkspaceHandlers(mux)
 	mux.HandleFunc("/debug/pprof/window-latency", serveWindowLatency)
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
