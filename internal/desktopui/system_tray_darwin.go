@@ -45,7 +45,11 @@ func (a *App) hideMainWindowToTray() bool {
 		return false
 	}
 	a.persistActiveSession()
-	return C.glance_tray_hide_active_window() != 0
+	hidden := C.glance_tray_hide_active_window() != 0
+	if hidden {
+		a.handleHiddenToTray()
+	}
+	return hidden
 }
 
 func raiseActiveWindow() {

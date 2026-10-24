@@ -955,12 +955,53 @@ func (r *desktopRuntime) isSessionActiveInAnyWindow(documentID string) bool {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.isSessionActiveInAnyWindowLocked(documentID)
+}
+
+func (r *desktopRuntime) isSessionActiveInAnyWindowLocked(documentID string) bool {
 	for _, app := range r.windows {
 		if app != nil && (app.activeSessionID() == documentID || app.activeTabID == documentID) {
 			return true
 		}
 	}
 	return false
+}
+
+func (r *desktopRuntime) evictOrphanSessions() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	var orphans []string
+	for docID, session := range r.sessions {
+		if session == nil {
+			orphans = append(orphans, docID)
+			continue
+		}
+		if r.isSessionActiveInAnyWindowLocked(docID) {
+			continue
+		}
+		session.viewsMu.RLock()
+		viewCount := len(session.views)
+		session.viewsMu.RUnlock()
+		if viewCount == 0 {
+			activeInSession := false
+			for _, app := range r.windows {
+				if app != nil && app.sessions[docID] != nil {
+					activeInSession = true
+					break
+				}
+			}
+			if !activeInSession {
+				orphans = append(orphans, docID)
+			}
+		}
+	}
+	r.mu.Unlock()
+
+	for _, docID := range orphans {
+		r.removeSession(docID)
+	}
 }
 
 func (r *desktopRuntime) removeSession(documentID string) {

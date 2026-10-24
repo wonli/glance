@@ -29,7 +29,8 @@ type DocumentSessionDiagnostics struct {
 type WindowDiagnostics struct {
 	WindowID             uint64 `json:"window_id"`
 	ActiveTabID          string `json:"active_tab_id"`
-	SessionCount         int    `json:"session_count"`
+	SessionCount         int      `json:"session_count"`
+	SessionTabIDs        []string `json:"session_tab_ids,omitempty"`
 	HasWordLayoutEngine  bool   `json:"has_word_layout_engine"`
 	HasWordPDFFontSource bool   `json:"has_word_pdf_font_source"`
 	ActiveWordPageCount  int    `json:"active_word_page_count,omitempty"`
@@ -109,6 +110,12 @@ func (r *desktopRuntime) handleWorkspaceAction(action string) (any, error) {
 			return nil, err
 		}
 		return map[string]any{"status": "saved"}, nil
+	case "shrink":
+		if err := r.shrinkWorkspace(); err != nil {
+			return nil, err
+		}
+		requestMemoryRelease()
+		return map[string]any{"status": "shrunk"}, nil
 	default:
 		if strings.HasPrefix(action, "open:") {
 			targetPath := strings.TrimPrefix(action, "open:")
@@ -142,6 +149,7 @@ func (r *desktopRuntime) shrinkWorkspace() error {
 	if r == nil {
 		return nil
 	}
+	r.evictOrphanSessions()
 	r.workspaceDBMu.Lock()
 	defer r.workspaceDBMu.Unlock()
 	if r.workspaceStore != nil {
@@ -201,10 +209,15 @@ func (r *desktopRuntime) diagnoseWorkspace() any {
 		if app == nil {
 			continue
 		}
+		sessionTabIDs := make([]string, 0, len(app.sessions))
+		for tabID := range app.sessions {
+			sessionTabIDs = append(sessionTabIDs, tabID)
+		}
 		wDiag := WindowDiagnostics{
 			WindowID:             winID,
 			ActiveTabID:          app.activeTabID,
 			SessionCount:         len(app.sessions),
+			SessionTabIDs:        sessionTabIDs,
 			HasWordLayoutEngine:  app.wordLayoutEngine != nil,
 			HasWordPDFFontSource: app.wordPDFFontSource != nil,
 		}

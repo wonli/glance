@@ -1,7 +1,10 @@
 package desktopui
 
 import (
+	"path/filepath"
 	"testing"
+
+	"glance/internal/workspace"
 )
 
 func TestAppWindowIDPersistenceAcrossWorkspaceInitialization(t *testing.T) {
@@ -106,4 +109,71 @@ func TestTrayShowMainWindowStateHandling(t *testing.T) {
 	runtime.mu.Lock()
 	runtime.pendingMainWindowShow = false
 	runtime.mu.Unlock()
+}
+
+func TestTrayOrphanSessionEvictionOnDetachAndHide(t *testing.T) {
+	dir := t.TempDir()
+	store, err := workspace.Open(filepath.Join(dir, "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	col, err := workspace.OpenCollection(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runtime := newDesktopRuntime()
+	runtime.trayReady = true
+	runtime.collection = col
+
+	app1 := newAppWithRuntimeAndWindowID(nil, "", runtime, 1)
+	app1.collection = col
+	runtime.attachWindow(app1.windowID, app1)
+
+	app2 := newAppWithRuntimeAndWindowID(nil, "", runtime, 2)
+	app2.collection = col
+	runtime.attachWindow(app2.windowID, app2)
+
+	// Simulate document open in app1
+	shared1 := newSharedDocumentSession("/path/to/doc1.pdf")
+	shared1.documentID = "doc-orphan-1"
+	runtime.registerSession(shared1)
+	state1 := newDocumentSessionView(shared1, app1.windowID)
+	app1.sessions["doc-orphan-1"] = state1
+
+	// Simulate document open in app2
+	shared2 := newSharedDocumentSession("/path/to/doc2.pdf")
+	shared2.documentID = "doc-orphan-2"
+	runtime.registerSession(shared2)
+	state2 := newDocumentSessionView(shared2, app2.windowID)
+	app2.sessions["doc-orphan-2"] = state2
+
+	if len(runtime.sessions) != 2 {
+		t.Fatalf("expected 2 runtime sessions, got %d", len(runtime.sessions))
+	}
+
+	// Window 1 detaches (closes)
+	runtime.detachWindow(app1.windowID)
+
+	// doc-orphan-1 had views only in window 1, so it must be evicted from runtime.sessions
+	if runtime.sessions["doc-orphan-1"] != nil {
+		t.Fatal("expected doc-orphan-1 to be evicted after window 1 detached")
+	}
+	// doc-orphan-2 is still in window 2
+	if runtime.sessions["doc-orphan-2"] == nil {
+		t.Fatal("expected doc-orphan-2 to remain while window 2 is alive")
+	}
+
+	// Window 2 switches to recent and hides to tray
+	app2.activateRecent()
+	app2.handleHiddenToTray()
+
+	// doc-orphan-2 must now also be evicted from runtime.sessions
+	if runtime.sessions["doc-orphan-2"] != nil {
+		t.Fatal("expected doc-orphan-2 to be evicted after app2 hides to tray with recent active")
+	}
+	if len(runtime.sessions) != 0 {
+		t.Fatalf("expected 0 runtime sessions in tray, got %d", len(runtime.sessions))
+	}
 }

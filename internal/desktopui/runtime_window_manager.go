@@ -92,6 +92,8 @@ func (r *desktopRuntime) detachWindow(windowID uint64) {
 	if wasPrimary {
 		r.promotePrimaryWindow()
 	}
+	r.evictOrphanSessions()
+	requestMemoryRelease()
 }
 
 func (r *desktopRuntime) markWindowClosing(windowID uint64) {

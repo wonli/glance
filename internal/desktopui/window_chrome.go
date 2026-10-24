@@ -1,6 +1,8 @@
 package desktopui
 
 import (
+	runtimelib "runtime"
+	"runtime/debug"
 	"time"
 
 	"gioui.org/app"
@@ -58,11 +60,42 @@ func (a *App) reclaimBackgroundMemory() {
 	}
 	// 1. Evict inactive document sessions (retains only the active document)
 	a.evictInactiveSessions()
-	// 2. Release Word layout engine and font source while idle in the background.
+	// 2. Evict any orphan sessions in runtime
+	runtime := a.ensureDesktopRuntime()
+	runtime.evictOrphanSessions()
+	// 3. Release Word layout engine and font source while idle in the background.
 	// They will be lazily re-instantiated on demand when the user returns to edit or repaginate.
 	a.releaseIdleEnginesForBackground()
-	// 3. Request debounced memory release (calls SQLite PRAGMA shrink_memory, runtime.GC, debug.FreeOSMemory)
+	// 4. Request debounced memory release (calls SQLite PRAGMA shrink_memory, runtime.GC, debug.FreeOSMemory)
 	requestMemoryRelease()
+}
+
+func (a *App) handleHiddenToTray() {
+	if a == nil {
+		return
+	}
+	a.windowFocused = false
+	a.backgroundReclaimMu.Lock()
+	if a.backgroundReclaimTimer != nil {
+		a.backgroundReclaimTimer.Stop()
+		a.backgroundReclaimTimer = nil
+	}
+	a.backgroundReclaimMu.Unlock()
+
+	// When hidden to tray, window is not visible to the user.
+	// 1. Evict inactive document sessions
+	a.evictInactiveSessions()
+	// 2. Evict any orphan sessions across all windows
+	runtime := a.ensureDesktopRuntime()
+	runtime.evictOrphanSessions()
+	// 3. Release idle engines and font sources
+	a.releaseIdleEnginesForBackground()
+	// 4. Force immediate SQLite shrink and OS memory reclamation off the event loop
+	go func() {
+		_ = runtime.shrinkWorkspace()
+		runtimelib.GC()
+		debug.FreeOSMemory()
+	}()
 }
 
 func (a *App) releaseIdleEnginesForBackground() {
