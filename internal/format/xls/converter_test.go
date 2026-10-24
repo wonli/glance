@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
+	"glance/internal/fileutil"
 	"glance/internal/format/xlsx"
 )
 
@@ -501,7 +501,7 @@ func TestConvertXLSResourceBudgetRejectsWithoutTruncating(t *testing.T) {
 
 func legacyImportTempDirs(t *testing.T) map[string]struct{} {
 	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "glance-xls-import-*"))
+	matches, err := filepath.Glob(filepath.Join(fileutil.DefaultTempDir(), "glance-xls-import-*"))
 	if err != nil {
 		t.Fatal(err)
 	}

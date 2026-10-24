@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,6 +31,9 @@ func TestJobLifecycle(t *testing.T) {
 				}
 				if r.Method == "POST" {
 					if local {
+						if r.ContentLength <= int64(len("synthetic PDF")) {
+							t.Errorf("multipart Content-Length=%d; expected file and framing", r.ContentLength)
+						}
 						if err := r.ParseMultipartForm(1 << 20); err != nil {
 							t.Fatal(err)
 						}
@@ -38,10 +42,14 @@ func TestJobLifecycle(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						f.Close()
 						if h.Filename != "sample.pdf" {
 							t.Error(h.Filename)
 						}
+						fileData, readErr := io.ReadAll(f)
+						if readErr != nil || string(fileData) != "synthetic PDF" {
+							t.Errorf("multipart file=%q, err=%v", fileData, readErr)
+						}
+						f.Close()
 						if r.FormValue("model") != DefaultModel {
 							t.Error("model")
 						}
@@ -64,7 +72,7 @@ func TestJobLifecycle(t *testing.T) {
 			c := Client{Token: "synthetic-token", Endpoint: server.URL + "/jobs", PollInterval: time.Millisecond}
 			src := Source{URL: "https://example.com/a.pdf"}
 			if local {
-				src = Source{Name: "sample.pdf", Reader: strings.NewReader("synthetic PDF")}
+				src = Source{Name: "sample.pdf", Reader: strings.NewReader("synthetic PDF"), Size: int64(len("synthetic PDF"))}
 			}
 			job, err := c.Submit(context.Background(), src, Options{})
 			if err != nil {

@@ -42,6 +42,9 @@ type Source struct {
 	URL    string
 	Name   string
 	Reader io.Reader
+	// Size is an optional file length. Positive values let streamed multipart
+	// requests carry Content-Length; zero leaves transport framing to net/http.
+	Size int64
 }
 
 type Progress struct {
@@ -84,13 +87,23 @@ func (c *Client) httpClient() *http.Client {
 	if c.HTTPClient != nil {
 		return c.HTTPClient
 	}
-	return &http.Client{Timeout: 2 * time.Minute}
+	return &http.Client{Timeout: 30 * time.Minute}
 }
 
 func (c *Client) request(ctx context.Context, method, target, contentType string, body io.Reader, auth bool) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, body)
 	if err != nil {
+		if upload, ok := body.(*streamingUploadBody); ok {
+			_ = upload.Close()
+			_ = upload.wait()
+		}
 		return nil, errors.New("ocr: invalid request")
+	}
+	if sized, ok := body.(interface{ ContentLength() int64 }); ok {
+		req.ContentLength = sized.ContentLength()
+	}
+	if closer, ok := body.(io.ReadCloser); ok {
+		req.Body = closer
 	}
 	if auth {
 		if strings.TrimSpace(c.Token) == "" {
@@ -105,6 +118,16 @@ func (c *Client) request(ctx context.Context, method, target, contentType string
 	hc := *c.httpClient()
 	hc.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := hc.Do(req)
+	if upload, ok := body.(*streamingUploadBody); ok {
+		if err != nil {
+			_ = upload.Close()
+		}
+		uploadErr := upload.wait()
+		if err == nil && uploadErr != nil {
+			resp.Body.Close()
+			return nil, errors.New("ocr: reading source failed")
+		}
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -130,6 +153,9 @@ func decodeJob(resp *http.Response) (Job, error) {
 }
 
 func (c *Client) Submit(ctx context.Context, source Source, options Options) (Job, error) {
+	if strings.TrimSpace(c.Token) == "" {
+		return Job{}, errors.New("ocr: missing API token")
+	}
 	if (source.URL != "") == (source.Reader != nil) {
 		return Job{}, errors.New("ocr: specify exactly one URL or file reader")
 	}
@@ -149,25 +175,21 @@ func (c *Client) Submit(ctx context.Context, source Source, options Options) (Jo
 		if source.Name == "" {
 			return Job{}, errors.New("ocr: file name required")
 		}
-		w := multipart.NewWriter(&body)
-		if err := w.WriteField("model", c.model()); err != nil {
-			return Job{}, err
-		}
-		opts, _ := json.Marshal(options)
-		if err := w.WriteField("optionalPayload", string(opts)); err != nil {
-			return Job{}, err
-		}
-		part, err := w.CreateFormFile("file", filepath.Base(source.Name))
+		var upload *streamingUploadBody
+		var err error
+		upload, contentType, err = newStreamingUpload(source, c.model(), options)
 		if err != nil {
 			return Job{}, err
 		}
-		if _, err = io.Copy(part, source.Reader); err != nil {
-			return Job{}, errors.New("ocr: reading source failed")
-		}
-		if err = w.Close(); err != nil {
+		resp, err := c.request(ctx, http.MethodPost, c.endpoint(), contentType, upload, true)
+		if err != nil {
 			return Job{}, err
 		}
-		contentType = w.FormDataContentType()
+		job, err := decodeJob(resp)
+		if err == nil && job.ID == "" {
+			err = errors.New("ocr: submission returned no job ID")
+		}
+		return job, err
 	}
 	resp, err := c.request(ctx, http.MethodPost, c.endpoint(), contentType, &body, true)
 	if err != nil {
@@ -178,6 +200,67 @@ func (c *Client) Submit(ctx context.Context, source Source, options Options) (Jo
 		err = errors.New("ocr: submission returned no job ID")
 	}
 	return job, err
+}
+
+type streamingUploadBody struct {
+	*io.PipeReader
+	length int64
+	done   chan error
+}
+
+func (b *streamingUploadBody) ContentLength() int64 { return b.length }
+func (b *streamingUploadBody) wait() error          { return <-b.done }
+
+func newStreamingUpload(source Source, model string, options Options) (*streamingUploadBody, string, error) {
+	var encoded bytes.Buffer
+	writer := multipart.NewWriter(&encoded)
+	if err := writer.WriteField("model", model); err != nil {
+		return nil, "", err
+	}
+	optional, err := json.Marshal(options)
+	if err != nil {
+		return nil, "", err
+	}
+	if err = writer.WriteField("optionalPayload", string(optional)); err != nil {
+		return nil, "", err
+	}
+	if _, err = writer.CreateFormFile("file", filepath.Base(source.Name)); err != nil {
+		return nil, "", err
+	}
+	fileStart := encoded.Len()
+	if err = writer.Close(); err != nil {
+		return nil, "", err
+	}
+	payload := append([]byte(nil), encoded.Bytes()[:fileStart]...)
+	suffix := append([]byte(nil), encoded.Bytes()[fileStart:]...)
+	contentType := writer.FormDataContentType()
+	length := int64(-1)
+	if source.Size > 0 {
+		length = int64(len(payload)) + source.Size + int64(len(suffix))
+	}
+
+	reader, pipe := io.Pipe()
+	body := &streamingUploadBody{PipeReader: reader, length: length, done: make(chan error, 1)}
+	go func() {
+		if _, writeErr := pipe.Write(payload); writeErr != nil {
+			pipe.CloseWithError(writeErr)
+			body.done <- writeErr
+			return
+		}
+		if _, writeErr := io.Copy(pipe, source.Reader); writeErr != nil {
+			pipe.CloseWithError(writeErr)
+			body.done <- errors.New("ocr: reading source failed")
+			return
+		}
+		if _, writeErr := pipe.Write(suffix); writeErr != nil {
+			pipe.CloseWithError(writeErr)
+			body.done <- writeErr
+			return
+		}
+		pipe.Close()
+		body.done <- nil
+	}()
+	return body, contentType, nil
 }
 
 func (c *Client) Status(ctx context.Context, id string) (Job, error) {

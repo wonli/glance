@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"glance/internal/fileutil"
 	"glance/internal/format/docx"
 )
 
@@ -55,7 +56,7 @@ func convertToTempDOCX(ctx context.Context, sourcePath string) (*TempDOCX, error
 	if _, err := os.Stat(textutilPath); err != nil {
 		return nil, fmt.Errorf("macOS textutil is unavailable for legacy DOC import: %w", err)
 	}
-	directory, err := os.MkdirTemp("", "glance-doc-import-*")
+	directory, err := os.MkdirTemp(fileutil.DefaultTempDir(), "glance-doc-import-*")
 	if err != nil {
 		return nil, fmt.Errorf("create private DOC import directory: %w", err)
 	}

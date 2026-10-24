@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"glance/internal/fileutil"
 )
 
 func makeLegacyDOC(t *testing.T, output string) {
@@ -21,7 +23,8 @@ func makeLegacyDOC(t *testing.T, output string) {
 
 func TestConvertDOCToPrivateDOCXAndCleanup(t *testing.T) {
 	tmpRoot := t.TempDir()
-	t.Setenv("TMPDIR", tmpRoot)
+	fileutil.SetDefaultTempDir(tmpRoot)
+	defer fileutil.SetDefaultTempDir("")
 	source := filepath.Join(t.TempDir(), "source.doc")
 	makeLegacyDOC(t, source)
 
@@ -54,7 +57,8 @@ func TestConvertDOCToPrivateDOCXAndCleanup(t *testing.T) {
 
 func TestConvertMalformedDOCRemovesStagingDirectory(t *testing.T) {
 	tmpRoot := t.TempDir()
-	t.Setenv("TMPDIR", tmpRoot)
+	fileutil.SetDefaultTempDir(tmpRoot)
+	defer fileutil.SetDefaultTempDir("")
 	source := filepath.Join(tmpRoot, "broken.doc")
 	if err := os.WriteFile(source, []byte("not a Word document"), 0o600); err != nil {
 		t.Fatal(err)
