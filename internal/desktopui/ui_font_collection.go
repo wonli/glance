@@ -12,17 +12,7 @@ import (
 // code-editor, CJK, and emoji family chains. The family order matches the
 // current theme; the builder below decides which faces to parse.
 func uiFontFaces(snapshot fontcatalog.Snapshot, cache *fontCollectionCache) []fontcatalog.Face {
-	names := append(fontfallback.PreferredFamilies(), fontfallback.MonospaceFamilies()...)
-	families := make([]fontcatalog.Family, 0, len(names))
-	seenFamilies := map[string]bool{}
-	for _, name := range names {
-		key := strings.ToLower(strings.TrimSpace(name))
-		if key == "" || seenFamilies[key] {
-			continue
-		}
-		seenFamilies[key] = true
-		families = append(families, cache.familiesFor(snapshot, name)...)
-	}
+	families := uiTargetFamilies(snapshot, cache)
 	var selected []fontcatalog.Face
 	seen := map[fontcatalog.ResourceID]bool{}
 	for _, weight := range []int{400, 600} {
@@ -44,6 +34,49 @@ func uiFontFaces(snapshot fontcatalog.Snapshot, cache *fontCollectionCache) []fo
 		}
 	}
 	return selected
+}
+
+func uiTargetFamilies(snapshot fontcatalog.Snapshot, cache *fontCollectionCache) []fontcatalog.Family {
+	// Pick the first available family for each functional typography role:
+	// 1. UI Sans (Inter, Arial, Helvetica, sans-serif)
+	// 2. CJK (PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, ...)
+	// 3. Monospace (Menlo, Monaco, Consolas, Courier New, ...)
+	roles := [][]string{
+		{"Inter", "Arial", "Helvetica", "sans-serif"},
+		fontfallback.CJKFamilies(),
+		fontfallback.MonospaceFamilies(),
+	}
+	var families []fontcatalog.Family
+	seenFamilies := map[string]bool{}
+
+	for _, role := range roles {
+		for _, name := range role {
+			matches := cache.familiesFor(snapshot, name)
+			if len(matches) > 0 {
+				for _, family := range matches {
+					key := strings.ToLower(strings.TrimSpace(family.Name))
+					if !seenFamilies[key] {
+						seenFamilies[key] = true
+						families = append(families, family)
+					}
+				}
+				break
+			}
+		}
+	}
+
+	if len(families) == 0 {
+		names := append(fontfallback.PreferredFamilies(), fontfallback.MonospaceFamilies()...)
+		for _, name := range names {
+			key := strings.ToLower(strings.TrimSpace(name))
+			if key == "" || seenFamilies[key] {
+				continue
+			}
+			seenFamilies[key] = true
+			families = append(families, cache.familiesFor(snapshot, name)...)
+		}
+	}
+	return families
 }
 
 // Use Gio/fontscan's CSS search direction, rather than absolute distance.
