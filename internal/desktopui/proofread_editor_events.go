@@ -149,6 +149,11 @@ func (a *App) processProofreadingMenuEvents(gtx layout.Context) {
 			return
 		}
 	}
+	if a.ensureProofreadingWorkbench().button("page-history-menu").Clicked(gtx) {
+		s.xPageMenuOpen = false
+		a.openProofreadingHistory(a.proofreadingProjectMetadata(), uint64(s.xPageMenuPage+1))
+		return
+	}
 	if s.xInsertPageBreak.Clicked(gtx) {
 		a.splitProofreadingPage(false)
 	}

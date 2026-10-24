@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"glance/internal/proofreading"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -330,6 +331,41 @@ func (a *App) startProofreadingDraftRestore() {
 	if state == nil || state.projectDocumentID == "" {
 		return
 	}
+	if state.resume != nil {
+		var payload proofreadingProjectPayload
+		var err error
+		if state.resumePayload != nil {
+			payload = *state.resumePayload
+			state.resumePayload = nil
+		} else {
+			err = fmt.Errorf("missing decoded proofreading recovery state")
+		}
+		if err == nil {
+			err = validateProofreadingDraftForRestore(payload.Draft, state.aSourceHash, state.sourceBHash)
+		}
+		if err != nil {
+			state.draftRestoreFailed = true
+			state.draftError = err.Error()
+			return
+		}
+		state.draftFilePath = filepath.Join(state.resume.Directory, "proofreading-copy.md")
+		state.page = max(0, payload.Page)
+		state.restoredXOffsets = payload.XOffsets
+		state.history.confirmed = payload.Confirmed
+		state.restoredConfirmedCurrent = payload.ConfirmedCurrent
+		state.history.snapshots = payload.Snapshots
+		state.history.pushed = payload.Pushed
+		state.history.head = payload.Head
+		view := a.ensurePDFView()
+		view.page = state.page
+		view.canvas.Position.First = state.page
+		view.canvas.Position.Offset = payload.Offset
+		state.draftRestoreGen++
+		state.draftRestoring = true
+		state.draftRestoreResults <- proofreadingDraftRestoreResult{generation: state.draftRestoreGen, draft: &payload.Draft, found: true}
+		state.resume = nil
+		return
+	}
 	if state.draftFilePath == "" {
 		path, err := proofreadingDraftFilePath(state.bDocument.Path, state.projectDocumentID)
 		if err != nil {
@@ -444,15 +480,34 @@ func (a *App) queueProofreadingDraftPersistence() {
 		TextSizeStep: state.xTextSizeStep,
 	}
 	results, path, window := state.draftSaveResults, state.draftFilePath, a.window
+	store := a.proofreadingStore()
+	project := a.proofreadingProjectMetadata()
+	view := a.ensurePDFView()
+	projectData := proofreadingProjectPayload{Head: state.history.head, Page: view.page, Offset: view.canvas.Position.Offset, XOffsets: append([]float64(nil), state.xPageScrollOffsets...), Confirmed: cloneProofreadingHashes(state.history.confirmed), Snapshots: cloneProofreadingHashes(state.history.snapshots), Pushed: state.history.pushed}
+	bPath := state.bDocument.Path
+	var source io.ReadCloser
+	if store != nil && a.pdfDoc != nil {
+		source, _, _, _, _ = a.pdfDoc.SnapshotReaderWithRevision()
+	}
+
 	if !a.launchManagedBackground(func() {
 		state.draftFileMu.Lock()
 		if state.draftPersistGen.Load() != generation {
 			state.draftFileMu.Unlock()
+			if source != nil {
+				source.Close()
+			}
 			return
 		}
 		modelSnapshot := captured.Snapshot()
 		draft.Model = &modelSnapshot
 		err := writeProofreadingDraftFile(path, draft)
+		projectData.Draft = draft
+		if err == nil {
+			err = persistProofreadingProject(store, project, projectData, source, bPath)
+		} else if source != nil {
+			source.Close()
+		}
 		state.draftFileMu.Unlock()
 		if state.draftPersistGen.Load() != generation {
 			return
@@ -467,6 +522,9 @@ func (a *App) queueProofreadingDraftPersistence() {
 		}
 	}) {
 		state.draftSavePending = false
+		if source != nil {
+			source.Close()
+		}
 		state.draftPersistError = "could not start proofreading draft save"
 	}
 }

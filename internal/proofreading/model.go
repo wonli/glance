@@ -174,7 +174,7 @@ func (m *Model) Undo() bool {
 	for _, c := range e.changes {
 		m.boxes[c.index] = c.before
 	}
-	m.next = e.beforeNext
+	m.next = max(m.next, e.beforeNext)
 	m.revision++
 	m.redo = append(m.redo, e)
 	return true
@@ -189,7 +189,7 @@ func (m *Model) Redo() bool {
 	for _, c := range e.changes {
 		m.boxes[c.index] = c.after
 	}
-	m.next = e.afterNext
+	m.next = max(m.next, e.afterNext)
 	m.revision++
 	m.undo = append(m.undo, e)
 	return true
@@ -258,4 +258,27 @@ func (m *Model) PreviousPage(id PageID) (Page, bool) {
 		return Page{}, false
 	}
 	return m.boxes[i-1].page, true
+}
+
+// EnsureAllocationWatermark reserves identities already present in persisted history.
+func (m *Model) EnsureAllocationWatermark(next CharacterID) { m.next = max(m.next, next) }
+
+// AcceptRestored publishes a fully validated worker candidate only at its captured revision.
+// Piece roots remain immutable; the replacement itself is one undoable operation.
+func (m *Model) AcceptRestored(candidate *Model, revision uint64) error {
+	if candidate == nil || m.revision != revision {
+		return errors.New("stale proofreading restore")
+	}
+	if len(m.boxes) != len(candidate.boxes) {
+		return errors.New("restored page geometry differs")
+	}
+	changes := make([]boxChange, 0, len(m.boxes))
+	for i, b := range candidate.boxes {
+		if b.page.ID != m.boxes[i].page.ID {
+			return errors.New("restored page identity differs")
+		}
+		changes = append(changes, boxChange{i, m.boxes[i], b})
+	}
+	m.commit(changes, max(m.next, candidate.next))
+	return nil
 }

@@ -15,6 +15,10 @@ func (a *App) setProofreadingPageReviewed(reviewed bool) {
 	if s.controller == nil {
 		return
 	}
+	if reviewed {
+		a.confirmProofreadingPage(s.xPageMenuPage)
+		return
+	}
 	if err := s.controller.Model.Review(proofreading.PageID(s.xPageMenuPage+1), reviewed); err != nil {
 		s.draftPersistError = err.Error()
 		return

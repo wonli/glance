@@ -23,6 +23,18 @@ var (
 
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	a.ensureDesktopRuntime()
+	a.processProofreadingWorkbench()
+	a.processProofreadingNavigation(gtx)
+	if a.proofreadingResumeRequested.Swap(false) {
+		a.proofreadingWorkbench.active = false
+	}
+	if a.proofreadingWorkbench.active {
+		if a.proofreading != nil {
+			a.processProofreadingResults()
+			a.acceptProofreadingConfirmation()
+		}
+		return a.layoutProofreadingWorkbench(gtx)
+	}
 	if a.proofreading != nil {
 		a.handleOverlayEscape(gtx)
 		a.processAsyncResults()
@@ -89,6 +101,9 @@ func (a *App) visibleStatus() string {
 }
 
 func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
+	if a.activeTabID == "recent" {
+		return a.layoutProofreadingWorkbench(gtx)
+	}
 	if a.activeTabID == "recent" || (a.book == nil && a.word == nil && a.pptxDoc == nil && a.jsonDoc == nil && a.markdownDoc == nil && a.pdfDoc == nil) {
 		return a.layoutRecent(gtx)
 	}

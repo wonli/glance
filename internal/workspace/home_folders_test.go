@@ -50,8 +50,8 @@ func TestHomeFoldersMigrateFromV6AndPreserveExistingState(t *testing.T) {
 	if err := store.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 7 {
-		t.Fatalf("user_version=%d; want 7", version)
+	if version != 8 {
+		t.Fatalf("user_version=%d; want 8", version)
 	}
 	gotWorkspace, err := store.Load()
 	if err != nil {

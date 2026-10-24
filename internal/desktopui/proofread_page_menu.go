@@ -53,6 +53,7 @@ func (a *App) layoutProofreadingPageMenuRows(gtx layout.Context) layout.Dimensio
 					layout.Rigid(button(72, &s.xPageReviewed, "", "proofread.menu.reviewed", owned.Reviewed, true, nil)),
 				)
 			}),
+			layout.Rigid(button(144, a.ensureProofreadingWorkbench().button("page-history-menu"), "", "proofread.history.page", false, true, nil)),
 		)
 	})
 }

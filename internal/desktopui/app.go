@@ -86,6 +86,8 @@ type App struct {
 	windowCloseButton             widget.Clickable
 	windowOpenResults             chan error
 	windowOpenSource              *App
+	proofreadingResumeRequested   atomic.Bool
+	proofreadingWorkbench         *proofreadingWorkbenchState
 	proofreading                  *proofreadingWorkspace
 	workspacePDFRestoreResults    chan pdfWorkspaceRestoreResult
 	workspacePDFRestoreGeneration uint64

@@ -7,6 +7,7 @@ import (
 
 	"gioui.org/font"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -73,14 +74,21 @@ func (a *App) layoutProofreadingChromeItems(gtx layout.Context) layout.Dimension
 	}
 	children = append(children,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layoutProofreadingIcon(gtx, "ribbon", "files", 18, color.NRGBA{R: 66, G: 109, B: 145, A: 255})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				label := material.Label(a.theme, 13, a.textID("proofread.workspace.name"))
-				label.Color = color.NRGBA{R: 52, G: 59, B: 68, A: 255}
-				label.Font.Weight = font.SemiBold
-				return layoutProofreadingOpticallyCenteredLabel(gtx, label)
+			w := a.ensureProofreadingWorkbench()
+			b := w.button("workbench-tab")
+			return b.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(g layout.Context) layout.Dimensions {
+						return layoutProofreadingIcon(g, "ribbon", "files", 20, color.NRGBA{R: 66, G: 109, B: 145, A: 255})
+					}),
+					layout.Rigid(func(g layout.Context) layout.Dimensions {
+						return layout.Inset{Left: 10}.Layout(g, func(g layout.Context) layout.Dimensions {
+							label := material.Label(a.theme, 16, a.textID("proofread.workspace.name"))
+							label.Font.Weight = font.SemiBold
+							return layoutProofreadingOpticallyCenteredLabel(g, label)
+						})
+					}),
+				)
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(30), 0)} }),
@@ -103,15 +111,22 @@ func (a *App) layoutProofreadingChromeItems(gtx layout.Context) layout.Dimension
 				return layoutProofreadingOpticallyCenteredLabel(gtx, label)
 			})
 		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layoutProofreadingIcon(gtx, "ribbon", "history", 17, color.NRGBA{R: 154, G: 163, B: 171, A: 255})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				label := material.Label(a.theme, 11, a.textID("proofread.workspace.history"))
-				label.Color = color.NRGBA{R: 154, G: 163, B: 171, A: 255}
-				label.Font.Weight = font.SemiBold
-				return layoutProofreadingOpticallyCenteredLabel(gtx, label)
+		layout.Rigid(func(g layout.Context) layout.Dimensions {
+			w := a.ensureProofreadingWorkbench()
+			b := w.button("workspace-history")
+			if b.Clicked(g) && a.proofreading != nil && a.proofreading.projectDocumentID != "" {
+				a.openProofreadingHistory(a.proofreadingProjectMetadata(), 0)
+				g.Execute(op.InvalidateCmd{})
+			}
+			return b.Layout(g, func(g layout.Context) layout.Dimensions {
+				return layout.Flex{Alignment: layout.Middle}.Layout(g,
+					layout.Rigid(func(g layout.Context) layout.Dimensions {
+						return layoutProofreadingIcon(g, "ribbon", "history", 17, proofreadMuted)
+					}),
+					layout.Rigid(func(g layout.Context) layout.Dimensions {
+						return layout.Inset{Left: 7}.Layout(g, material.Label(a.theme, 11, a.textID("proofread.workspace.history")).Layout)
+					}),
+				)
 			})
 		}),
 	)
@@ -345,7 +360,11 @@ func (a *App) layoutProofreadingStatus(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							label := material.Label(a.theme, 10, a.textID(labelKey))
+							message := a.textID(labelKey)
+							if a.proofreading != nil && a.proofreading.history.notice != "" {
+								message = a.proofreading.history.notice
+							}
+							label := material.Label(a.theme, 10, message)
 							label.Color = color.NRGBA{R: 104, G: 115, B: 126, A: 255}
 							return layoutProofreadingOpticallyCenteredLabel(gtx, label)
 						})

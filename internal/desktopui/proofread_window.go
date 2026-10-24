@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"gioui.org/app"
+	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/widget"
 
@@ -24,9 +25,12 @@ import (
 	"glance/internal/format/markdowndoc"
 	"glance/internal/format/pdfdoc"
 	"glance/internal/proofreading"
+	"glance/internal/workspace"
 )
 
 type proofreadingWindowRequest struct {
+	resumePayload  *proofreadingProjectPayload
+	resume         *workspace.ProofreadingProject
 	sourcePath     string
 	sourceName     string
 	sourcePage     int
@@ -149,14 +153,22 @@ type proofreadingPageFrameProvider interface {
 }
 
 type proofreadingWorkspace struct {
-	visibleEditorPages   []int
-	navigator            proofreadingNavigator
-	xEditorWindows       []proofreadingEditorWindow
-	xEditorCarets        []proofreadingEditorCaret
-	xPageRenderScales    []float64
-	xPageViewportHeights []float64
-	xPageScrollOffsets   []float64
-	xRevealCaret         []bool
+	resumePayload            *proofreadingProjectPayload
+	resume                   *workspace.ProofreadingProject
+	history                  proofreadingHistoryState
+	pendingView              string
+	viewSaveAt               time.Time
+	restoredConfirmedCurrent map[int]bool
+	restoredXOffsets         []float64
+	lastSavedView            string
+	visibleEditorPages       []int
+	navigator                proofreadingNavigator
+	xEditorWindows           []proofreadingEditorWindow
+	xEditorCarets            []proofreadingEditorCaret
+	xPageRenderScales        []float64
+	xPageViewportHeights     []float64
+	xPageScrollOffsets       []float64
+	xRevealCaret             []bool
 
 	pendingXPageWheel      map[int]float64
 	xEditorsSnapshot       proofreading.Snapshot
@@ -272,6 +284,8 @@ type proofreadingPageFrameResult struct {
 
 func newProofreadingWorkspace(request proofreadingWindowRequest) *proofreadingWorkspace {
 	state := &proofreadingWorkspace{
+		resume:              request.resume,
+		resumePayload:       request.resumePayload,
 		page:                max(0, request.sourcePage),
 		sourceLoading:       true,
 		sourceResults:       make(chan proofreadingSourceResult, 1),
@@ -329,6 +343,7 @@ func (a *App) startProofreadingSourceSnapshot(reader io.ReadCloser) {
 	window, shutdown, resultChannel := a.window, a.shutdown, state.sourceResults
 	if !a.launchManagedBackground(func() {
 		defer reader.Close()
+		a.loadProofreadingSavedIdentity()
 		sourceHasher := sha256.New()
 		doc, err := pdfdoc.OpenSnapshotStream(func(w io.Writer) error {
 			_, copyErr := io.Copy(io.MultiWriter(w, sourceHasher), reader)
@@ -475,6 +490,9 @@ func (a *App) processProofreadingResults() {
 		view.thumbList.Axis = layout.Horizontal
 		view.followPDFThumbnailPage(view.page)
 		a.startProofreadingPageFrameLoad(pdfAdapter)
+		if state.resume != nil {
+			a.startProofreadingDraftLoad(state.resume.SourceB)
+		}
 	case result := <-state.frameResults:
 		if result.generation != state.frameGen {
 			break
@@ -537,6 +555,19 @@ func (a *App) processProofreadingResults() {
 		state.draftSavePending = false
 		state.draftPersistGen.Add(1)
 		state.projectDocumentID, state.sourceBHash = proofreadingProjectDocumentID(state.aDocument.Path, state.aSourceHash, state.bDocument.Path, state.bDraftText)
+		if state.resume != nil {
+			state.projectDocumentID = state.resume.ID
+		}
+		if a.desktopRuntime != nil && a.window != nil {
+			r := a.desktopRuntime
+			existing := r.claimProofreadingWindow(state.projectDocumentID, a.window)
+			if existing != nil && existing != a.window {
+				r.focusProofreadingWindow(existing)
+				a.window.Perform(system.ActionClose)
+				state.draftError = a.textID("proofread.workbench.already_open")
+				break
+			}
+		}
 		state.draftPersistError = ""
 		state.draftRestoreFailed = false
 		state.draftAutoSaved = false

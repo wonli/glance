@@ -140,6 +140,7 @@ func (a *App) layoutProofreadingProjectionPage(gtx layout.Context, view *pdfView
 				a.layoutProofreadingXPageScrollbar(gtx, *page, pageSize)
 				pass.Pop()
 			}
+			a.drawProofreadingPageStatus(gtx, pageIndex, pageSize)
 			if notice != "" && pageIndex == view.page {
 				a.drawProofreadingProjectionNotice(gtx, pageSize, notice, noticeIsError)
 			}

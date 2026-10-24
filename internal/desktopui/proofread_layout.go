@@ -24,6 +24,8 @@ var (
 )
 
 func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions {
+	defer a.queueProofreadingViewPersistence(gtx)
+	a.acceptProofreadingConfirmation()
 	state := a.proofreading
 	if state == nil {
 		return layout.Dimensions{}

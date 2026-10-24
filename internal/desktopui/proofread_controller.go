@@ -129,6 +129,10 @@ func (a *App) refreshProofreadingModelView() {
 			s.xPagePointerTags[i].pageIndex = i
 		}
 	}
+	if s.restoredXOffsets != nil {
+		copy(s.xPageScrollOffsets, s.restoredXOffsets)
+		s.restoredXOffsets = nil
+	}
 	previousPages := s.xPages
 	s.xPages = make([]proofreadingXPage, count)
 	s.pageOwnership = make([]proofreadingPageOwnership, count)
@@ -151,6 +155,15 @@ func (a *App) refreshProofreadingModelView() {
 			s.xPageAdjustmentPage = i
 		}
 		start = end
+	}
+	if s.restoredConfirmedCurrent != nil {
+		s.history.tokens = map[int]proofreading.ContentToken{}
+		for page, current := range s.restoredConfirmedCurrent {
+			if current {
+				s.history.tokens[page] = s.controller.Model.ContentToken(proofreadingPageID(page))
+			}
+		}
+		s.restoredConfirmedCurrent = nil
 	}
 	if !s.modelLayoutPending && s.controller.Layout.Pages == nil {
 		a.startProofreadingModelLayout(!s.modelInitialAssigned)

@@ -257,3 +257,15 @@ preview layout. The native-loader correction and exact acceptance evidence are
 recorded in [diagram verification](markdown-diagrams-verification.md).
 
 Markdown code fences tagged `vega` or `vega-lite` render offline using pinned, embedded Vega, Vega-Lite, Vega-Embed and expression-interpreter assets; no Node.js or runtime download is needed. The desktop renderer uses macOS WKWebView or an installed Windows Edge/Chrome browser for initial snapshots and interactive sessions. Preview charts keep persistent native WebView state while Gio draws snapshots and forwards chart input; live sessions are bounded to four. PDF export settles and freezes active chart snapshots; unopened charts use their initial static image. PDF charts are static images. Remote data, images, patches, plugins and hyperlink channels are rejected. A restrictive CSP blocks external resources and dynamic evaluation while allowing the app's embedded renderer scripts inline. Native Windows interaction was not available for this verification. macOS WebKit interaction passed earlier in Task 3, but could not be re-run in the current sandbox because WebKit sandbox-extension setup was denied. See [diagram verification](markdown-diagrams-verification.md) for platform details. Markdown PDF can embed unsupported emoji as bundled-font PNG images; those emoji are visible but not searchable text.
+
+## 校对工作台与历史（2026-10-24）
+
+主窗口固定的“文档工作台”首标签及校对窗口首标签提供历史任务列表；SQLite 保存当前工作进度，原 PDF 与稿件复制到任务目录，后续不依赖原文件位置。每页明确显示未校对、已校对但无快照、已有快照、修改待确认或快照失败。
+
+安装系统 Git 并配置校对者身份后，确认页面生成该页 JSON 的独立提交，支持跳页确认、同页修订、单页/全任务历史和冲突检查后的历史恢复。未安装 Git 不阻止编辑、确认与自动恢复，但不会生成快照，也不会补造之前的历史。
+
+远程功能包含 SSH 密钥、HTTPS 用户名/系统钥匙串令牌、项目远程地址与手动普通推送。不会自动推送、强推、拉取或合并远端分歧；新的 SSH 主机需要用户核对指纹后信任。当前 HTTPS askpass 传输实现面向 macOS/Linux，Windows 返回明确的不支持错误。实际外部 SSH/HTTPS 服务认证未在开发验证中使用真实凭据测试；本地 bare 仓库推送已覆盖。
+
+验证覆盖源文件移除后的任务文件读取、SQLite 重开、页/局部滚动恢复、6→500→7 提交隔离、同页历史、跨页字符冲突、撤销后字符身份、单任务窗口、远程字段更新不覆盖进度，以及 1x/2x Metal 渲染与首标签点击导航。实际 `go run` 启动与 GPU 离屏渲染是不同证据；桌面自动化工具无法绑定未打包的 go-run 进程，不能将离屏渲染称为完整实际窗口操作验证。
+
+扩大应用层回归时，`TestMarkdownExportPDFWritesValidatedNewFile`、`TestWordExportPDFWritesValidatedNewFileWithoutChangingSession`、`TestWordPrintCapabilityRequiresHumanAndValidatesPages` 在当前系统字体环境失败（PingFangUI 字形无矢量轮廓）；`TestPresentationExportAndPrintCapabilitiesUseRealSnapshot` 报文字超出投影边界。这些路径不属于本次校对历史功能，尚未解决。

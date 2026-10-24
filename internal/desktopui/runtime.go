@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"gioui.org/app"
+	"glance/internal/proofhistory"
 	"log"
 	"os"
 	"path/filepath"
@@ -61,6 +63,9 @@ type desktopRuntime struct {
 	workspaceInitialized    bool
 	workspaceDBMu           sync.Mutex
 	workspaceStore          *workspace.Store
+	proofIdentity           proofhistory.Identity
+	proofIdentityReady      bool
+	proofWindows            map[string]*app.Window
 	collection              *workspace.Collection
 	homeFolderWorking       workspace.HomeFolderSnapshot
 	homeFolderCommitted     workspace.HomeFolderSnapshot

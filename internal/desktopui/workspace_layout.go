@@ -500,7 +500,7 @@ func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
 	}
 	active := a.workspaceSelectedTabID() == workspace.RecentTabID
 	tab := func(gtx layout.Context) layout.Dimensions {
-		return a.paintTab(gtx, &a.recentTabButton, "⌂  Glance", active)
+		return a.paintTab(gtx, &a.recentTabButton, a.textID("proofread.workspace.name"), active)
 	}
 	if active && a.clientTitlebar {
 		return layoutWindowMoveAreaAfter(gtx, tab)

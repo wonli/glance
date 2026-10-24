@@ -78,6 +78,14 @@ func (r *desktopRuntime) openProofreadingWindow(request proofreadingWindowReques
 		return fmt.Errorf("当前平台不支持多个桌面窗口")
 	}
 	window := new(app.Window)
+	if request.resume != nil {
+		existing := r.claimProofreadingWindow(request.resume.ID, window)
+		if existing != nil {
+			request.sourceSnapshot.Close()
+			r.focusProofreadingWindow(existing)
+			return nil
+		}
+	}
 	configureDesktopWindow(window)
 	go r.runProofreadingWindow(window, request)
 	return nil
@@ -173,9 +181,19 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 			if a.proofreading != nil && a.proofreading.modelLayoutCancel != nil {
 				a.proofreading.modelLayoutCancel()
 			}
+			if a.proofreading != nil {
+				a.queueProofreadingDraftPersistence()
+			}
 			a.shutdownOnce.Do(func() { close(a.shutdown) })
 			a.closeAgentSubscription()
 			a.stopAndWaitManagedBackground()
+			r.mu.Lock()
+			for id, window := range r.proofWindows {
+				if window == a.window {
+					delete(r.proofWindows, id)
+				}
+			}
+			r.mu.Unlock()
 			a.closeProofreadingDraft()
 			a.closeWorkspace()
 			return

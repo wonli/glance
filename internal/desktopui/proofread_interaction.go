@@ -216,7 +216,7 @@ func (a *App) layoutProofreadingXPageMenu(gtx layout.Context, anchor image.Point
 	if !state.xPageMenuOpen {
 		return layout.Dimensions{}
 	}
-	menuSize := image.Pt(gtx.Dp(289), gtx.Dp(81))
+	menuSize := image.Pt(gtx.Dp(289), gtx.Dp(111))
 	margin := gtx.Dp(5)
 	rightLimit := max(menuSize.X+margin, gtx.Constraints.Max.X-gtx.Dp(30))
 	pointerHeight, pointerHalfWidth := gtx.Dp(7), gtx.Dp(6)
