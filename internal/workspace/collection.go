@@ -541,6 +541,7 @@ func (c *Collection) CloseTab(id string) error {
 	if err := c.store.DeleteDocument(removed.Tab.DocumentID); err != nil {
 		return err
 	}
+	_, _ = c.store.AutoMaintainSpace()
 	return nil
 }
 

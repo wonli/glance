@@ -84,3 +84,27 @@ func TestCatalogMissingGlyphDoesNotLoadWholeFont(t *testing.T) {
 		t.Fatal("missing glyph caused complete font/glyph tables to be retained")
 	}
 }
+
+func TestSystemFontsAreNotRetainedInDataByID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "system_font.ttf")
+	if err := os.WriteFile(path, goregular.TTF, 0600); err != nil {
+		t.Fatal(err)
+	}
+	faces, err := fontcatalog.Inspect(context.Background(), path, fontcatalog.System)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shaper, err := NewWithSnapshot(fontcatalog.NewSnapshot(1, faces))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := shaper.Shape("Hello System Font", document.WordTextStyle{FontFamily: "Go", FontSize: 12}); err != nil {
+		t.Fatal(err)
+	}
+	if len(shaper.facesByID) == 0 {
+		t.Fatal("expected at least one face to be loaded")
+	}
+	if len(shaper.dataByID) != 0 {
+		t.Fatalf("expected dataByID to be empty for system fonts to save memory, got %d items", len(shaper.dataByID))
+	}
+}

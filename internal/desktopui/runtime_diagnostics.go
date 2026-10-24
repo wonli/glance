@@ -153,6 +153,7 @@ func (r *desktopRuntime) shrinkWorkspace() error {
 	r.workspaceDBMu.Lock()
 	defer r.workspaceDBMu.Unlock()
 	if r.workspaceStore != nil {
+		_, _ = r.workspaceStore.AutoMaintainSpace()
 		return r.workspaceStore.ShrinkMemory()
 	}
 	return nil

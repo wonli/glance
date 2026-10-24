@@ -48,6 +48,7 @@ type Shaper struct {
 	facesByID         map[fontscan.Location]*font.Face
 	idsByFace         map[*font.Face]fontscan.Location
 	dataByID          map[fontscan.Location][]byte
+	privateLocations  map[fontscan.Location]bool
 	paths             map[string]*list.Element
 	pathLRU           *list.List
 	pathBytes         int64
@@ -501,10 +502,12 @@ func (s *Shaper) loadFace(location fontscan.Location) *font.Face {
 	face := font.NewFace(ft)
 	s.facesByID[location] = face
 	s.idsByFace[face] = location
-	if s.dataByID == nil {
-		s.dataByID = make(map[fontscan.Location][]byte)
+	if s.privateLocations != nil && s.privateLocations[location] {
+		if s.dataByID == nil {
+			s.dataByID = make(map[fontscan.Location][]byte)
+		}
+		s.dataByID[location] = data
 	}
-	s.dataByID[location] = data
 	return face
 }
 

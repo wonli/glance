@@ -8,7 +8,14 @@ import (
 )
 
 func NewWithSnapshot(snapshot fontcatalog.Snapshot) (*Shaper, error) {
-	s := &Shaper{facesByID: make(map[fontscan.Location]*font.Face), idsByFace: make(map[*font.Face]fontscan.Location), dataByID: make(map[fontscan.Location][]byte), paths: make(map[string]*list.Element), pathLRU: list.New()}
+	s := &Shaper{
+		facesByID:        make(map[fontscan.Location]*font.Face),
+		idsByFace:        make(map[*font.Face]fontscan.Location),
+		dataByID:         make(map[fontscan.Location][]byte),
+		privateLocations: make(map[fontscan.Location]bool),
+		paths:            make(map[string]*list.Element),
+		pathLRU:          list.New(),
+	}
 	s.snapshot = &snapshot
 	s.loaded = true
 	s.resourceIDs = make(map[fontscan.Location]fontcatalog.ResourceID)
@@ -18,6 +25,9 @@ func NewWithSnapshot(snapshot fontcatalog.Snapshot) (*Shaper, error) {
 		}
 		location := fontscan.Location{File: f.Path, Index: uint16(f.Index)}
 		s.resourceIDs[location] = f.ID
+		if f.Source != fontcatalog.System {
+			s.privateLocations[location] = true
+		}
 		aspect := font.Aspect{Weight: font.Weight(f.Weight)}
 		if f.Italic {
 			aspect.Style = font.StyleItalic
