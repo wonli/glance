@@ -27,6 +27,7 @@ func TestAppWindowIDPersistenceAcrossWorkspaceInitialization(t *testing.T) {
 func TestHideMainWindowToTrayPreconditions(t *testing.T) {
 	runtime := newDesktopRuntime()
 	app1 := newAppWithRuntimeAndWindowID(nil, "", runtime, 1)
+	runtime.attachWindow(app1.windowID, app1)
 
 	// Case 1: Tray not ready -> cannot hide to tray
 	runtime.trayReady = false
@@ -49,6 +50,7 @@ func TestHideMainWindowToTrayPreconditions(t *testing.T) {
 
 	// Case 3: Multiple windows open -> primary window close must NOT hide to tray
 	app2 := newAppWithRuntimeAndWindowID(nil, "", runtime, 2)
+	runtime.attachWindow(app2.windowID, app2)
 	runtime.mu.Lock()
 	canHideMulti := runtime.trayReady && !runtime.shuttingDown && !runtime.quitRequested &&
 		runtime.primaryWindowID == app1.windowID && runtime.windows[app1.windowID] == app1 &&
@@ -75,6 +77,7 @@ func TestTrayShowMainWindowStateHandling(t *testing.T) {
 
 	// Case 1: Window attached and alive
 	app := newAppWithRuntimeAndWindowID(nil, "", runtime, 1)
+	runtime.attachWindow(app.windowID, app)
 	runtime.showMainWindow()
 
 	runtime.mu.Lock()

@@ -39,6 +39,7 @@ const (
 	commandExportPDF
 	commandShareCopy
 	commandRevealFile
+	commandOpenDirectory
 )
 
 type fileCommandResult struct {
@@ -123,6 +124,9 @@ func (a *App) startFileCommand(kind fileCommandKind, format string) {
 				if result.err == nil && result.path != "" {
 					result.path, result.err = validateHomeFolderDirectory(result.path)
 				}
+			case commandOpenDirectory:
+				result.path = format
+				result.err = openLocalDirectory(format)
 			case commandRevealFile:
 				result.path = format
 				result.err = revealHomeRecentFile(format)
@@ -159,6 +163,8 @@ func fileCommandStartMessage(kind fileCommandKind, format string) i18n.Message {
 			return i18n.Message{ID: "file.command.choose_shared_xlsx"}
 		}
 		return i18n.Message{ID: "file.command.choose_shared_docx"}
+	case commandOpenDirectory:
+		return i18n.Message{ID: "file.command.open_directory"}
 	case commandRevealFile:
 		return i18n.Message{ID: "file.command.reveal_file"}
 	default:
@@ -180,6 +186,8 @@ func fileCommandFailureMessage(kind fileCommandKind) i18n.Message {
 		return i18n.Message{ID: "file.command.pdf_failed"}
 	case commandShareCopy:
 		return i18n.Message{ID: "file.command.share_failed"}
+	case commandOpenDirectory:
+		return i18n.Message{ID: "file.command.open_directory_failed"}
 	case commandRevealFile:
 		return i18n.Message{ID: "file.command.reveal_failed"}
 	default:

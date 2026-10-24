@@ -9,6 +9,7 @@ import (
 	"glance/internal/i18n"
 	"glance/internal/proofhistory"
 	"glance/internal/proofreading"
+	"glance/internal/workspace"
 )
 
 type proofreadingHistoryState struct {
@@ -25,11 +26,31 @@ type proofreadingHistoryState struct {
 	err         string
 }
 type proofreadingConfirmationResult struct {
-	unavailable bool
-	page        int
-	hash        string
-	commit      string
-	err         error
+	unavailable        bool
+	showInstallGitHint bool
+	page               int
+	hash               string
+	commit             string
+	err                error
+}
+
+const proofreadingGitInstallHintPreference = "proofreading.git_install_hint_shown"
+
+func proofreadingShouldShowGitInstallHint(store *workspace.Store) bool {
+	if store == nil {
+		return true
+	}
+	value, found, err := store.Preference(proofreadingGitInstallHintPreference)
+	if err != nil {
+		return true
+	}
+	if found && value == "true" {
+		return false
+	}
+	if err := store.SetPreference(proofreadingGitInstallHintPreference, "true"); err != nil {
+		return true
+	}
+	return true
 }
 
 func cloneProofreadingHashes(m map[int]string) map[int]string {
@@ -99,16 +120,18 @@ func (a *App) confirmProofreadingPage(page int) {
 	s.history.pendingPage = page
 	channel, window := s.history.results, a.window
 	dir := a.proofreadingProjectMetadata().Directory
+	store := a.proofreadingStore()
 	if !a.launchManagedBackground(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		var err error
 		unavailable := (proofhistory.Repository{Directory: dir}).Available(ctx) != nil
 
-		if err == nil {
-			err = p.Identity.Validate()
-		}
 		var commit proofhistory.CommitResult
+		showInstallGitHint := false
+		if unavailable {
+			showInstallGitHint = proofreadingShouldShowGitInstallHint(store)
+		}
 		s.draftFileMu.Lock()
 		if unavailable {
 			err = fmt.Errorf("git unavailable")
@@ -117,7 +140,7 @@ func (a *App) confirmProofreadingPage(page int) {
 			commit, err = (proofhistory.Repository{Directory: dir}).Confirm(ctx, p)
 		}
 		s.draftFileMu.Unlock()
-		channel <- proofreadingConfirmationResult{page: page, hash: p.ContentHash(), commit: commit.Hash, err: err, unavailable: unavailable}
+		channel <- proofreadingConfirmationResult{page: page, hash: p.ContentHash(), commit: commit.Hash, err: err, unavailable: unavailable, showInstallGitHint: showInstallGitHint}
 		if window != nil {
 			window.Invalidate()
 		}
@@ -135,7 +158,10 @@ func (a *App) acceptProofreadingConfirmation() {
 		s.history.pending = false
 		if r.unavailable {
 			s.history.err = ""
-			s.history.notice = a.textID("proofread.history.install_git")
+			s.history.notice = ""
+			if r.showInstallGitHint {
+				s.history.notice = a.textID("proofread.history.install_git")
+			}
 		} else if r.err != nil {
 			s.history.errorPage = r.page
 			s.history.err = r.err.Error()

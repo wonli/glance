@@ -54,20 +54,27 @@ type proofreadingNavigator struct {
 func (a *App) layoutProofreadingXNavigatorCanvas(gtx layout.Context, view *pdfViewState, pages int, status string, isError bool) layout.Dimensions {
 	s := a.proofreading
 	n := &s.navigator
+	pageIndices := a.proofreadingPageIndices(pages)
+	if len(pageIndices) == 0 {
+		return a.layoutProofreadingPageMessageOnCanvas(gtx, a.textID("proofread.filter.empty"), false, proofreadXCanvas)
+	}
 	// The source reading line is one third down the viewport. A remains the
 	// authority even while X text and its local viewport change.
-	target := max(0, min(pages-1, view.canvas.Position.First))
+	firstRow := max(0, min(len(pageIndices)-1, view.canvas.Position.First))
+	targetRow := firstRow
 	top := -view.canvas.Position.Offset
 	line := gtx.Constraints.Max.Y / 3
-	for target+1 < pages {
-		size := proofreadingXPagePixelSize(gtx, view, s, target)
+	for targetRow+1 < len(pageIndices) {
+		page := pageIndices[targetRow]
+		size := proofreadingXPagePixelSize(gtx, view, s, page)
 		bottom := top + size.Y + 2*gtx.Dp(12)
 		if bottom > line {
 			break
 		}
 		top = bottom
-		target++
+		targetRow++
 	}
+	target := pageIndices[targetRow]
 	if !n.initialized || n.page != target {
 		*n = proofreadingNavigator{tag: n.tag, initialized: true, page: target, feedbackKey: "proofread.navigator.ready"}
 		gtx.Execute(op.InvalidateCmd{})
@@ -362,7 +369,7 @@ func (a *App) layoutProofreadingNavigator(gtx layout.Context, pages int) layout.
 	label(size.Y-gtx.Dp(100), message, proofreadBlue)
 	label(size.Y-gtx.Dp(76), n.sample, proofreadInk)
 	label(size.Y-gtx.Dp(50), a.textID("proofread.navigator.shift"), proofreadMuted)
-	label(size.Y-gtx.Dp(22), fmt.Sprintf("%02d / %02d", n.page+1, pages), proofreadMuted)
+	label(size.Y-gtx.Dp(22), fmt.Sprintf("%02d / %02d", n.page+1, max(1, len(s.pageFrames))), proofreadMuted)
 	bounds.Pop()
 	return layout.Dimensions{Size: size}
 }

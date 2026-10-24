@@ -83,11 +83,7 @@ func (a *App) handleProofreadingXPagePointer(gtx layout.Context, view *pdfViewSt
 			continue
 		}
 		secondaryClick := event.Buttons&pointer.ButtonSecondary != 0
-		primaryClick := event.Buttons&pointer.ButtonPrimary != 0
-		if !secondaryClick && !primaryClick {
-			continue
-		}
-		if state.xPageMenuOpen {
+		if !secondaryClick {
 			continue
 		}
 		if state.bDocument == nil {
@@ -168,12 +164,20 @@ func (a *App) layoutProofreadingXPageMenuOverlay(gtx layout.Context, view *pdfVi
 
 func proofreadingXPageMenuRootPoint(gtx layout.Context, view *pdfViewState, state *proofreadingWorkspace) (image.Point, bool) {
 	pageIndex := state.xPageMenuPage
+	if view == nil || pageIndex < 0 || pageIndex >= len(state.pageFrames) {
+		return image.Point{}, false
+	}
+	row := proofreadingFilterRowForPage(view.pageMap, pageIndex)
 	first := state.xCanvas.Position.First
-	if view == nil || pageIndex < first || pageIndex >= len(state.pageFrames) {
+	if row < first || row < 0 {
 		return image.Point{}, false
 	}
 	rowTop := -state.xCanvas.Position.Offset
-	for index := first; index < pageIndex; index++ {
+	for currentRow := first; currentRow < row; currentRow++ {
+		index, ok := view.pageForCanvasRow(currentRow)
+		if !ok {
+			continue
+		}
 		pageSize := proofreadingXPagePixelSize(gtx, view, state, index)
 		rowTop += pageSize.Y + 2*gtx.Dp(12)
 	}
@@ -216,7 +220,7 @@ func (a *App) layoutProofreadingXPageMenu(gtx layout.Context, anchor image.Point
 	if !state.xPageMenuOpen {
 		return layout.Dimensions{}
 	}
-	menuSize := image.Pt(gtx.Dp(289), gtx.Dp(111))
+	menuSize := image.Pt(gtx.Dp(289), gtx.Dp(75))
 	margin := gtx.Dp(5)
 	rightLimit := max(menuSize.X+margin, gtx.Constraints.Max.X-gtx.Dp(30))
 	pointerHeight, pointerHalfWidth := gtx.Dp(7), gtx.Dp(6)

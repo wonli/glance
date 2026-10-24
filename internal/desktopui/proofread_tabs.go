@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"gioui.org/io/system"
 	"gioui.org/layout"
+	"glance/internal/workspace"
 )
 
 // A proofreading tab owns its editors, PDF view and asynchronous jobs. The host
@@ -13,6 +14,11 @@ type proofreadingTab struct {
 	editor    *App
 	closing   bool
 	duplicate bool
+}
+
+type proofreadingTabFocusRequest struct {
+	id      string
+	history *workspace.ProofreadingProject
 }
 
 func (a *App) proofreadingTab(id string) *proofreadingTab {
@@ -46,7 +52,12 @@ func (a *App) openProofreadingTab(request proofreadingWindowRequest) error {
 			if closing {
 				return fmt.Errorf("正在保存并关闭校对稿，请稍后重试")
 			}
-			existing.host.requestProofreadingTabFocus(existing.id)
+			var history *workspace.ProofreadingProject
+			if request.showHistory {
+				project := *request.resume
+				history = &project
+			}
+			existing.host.requestProofreadingTabFocus(existing.id, history)
 			return nil
 		}
 	}
@@ -67,12 +78,20 @@ func (a *App) openProofreadingTab(request proofreadingWindowRequest) error {
 		if owner.host != host || owner.id != id {
 			host.proofreadingTabs = host.proofreadingTabs[:len(host.proofreadingTabs)-1]
 			request.sourceSnapshot.Close()
-			owner.host.requestProofreadingTabFocus(owner.id)
+			var history *workspace.ProofreadingProject
+			if request.showHistory {
+				project := *request.resume
+				history = &project
+			}
+			owner.host.requestProofreadingTabFocus(owner.id, history)
 			return nil
 		}
 	}
 	host.selectedProofreadingTabID = id
 	host.showNewMenu = false
+	if request.showHistory && request.resume != nil {
+		editor.openProofreadingHistory(*request.resume, 0)
+	}
 	editor.startProofreadingSourceSnapshot(request.sourceSnapshot)
 	if host.window != nil {
 		host.window.Invalidate()
@@ -80,15 +99,14 @@ func (a *App) openProofreadingTab(request proofreadingWindowRequest) error {
 	return nil
 }
 
-func (a *App) requestProofreadingTabFocus(id string) {
+func (a *App) requestProofreadingTabFocus(id string, history *workspace.ProofreadingProject) {
 	// Called on other windows' UI threads as well. Only the owning event loop
 	// changes selection; the request channel crosses the window boundary.
 	select {
-	case a.proofreadingTabFocus <- id:
+	case a.proofreadingTabFocus <- proofreadingTabFocusRequest{id: id, history: history}:
 	default:
 	}
 	if a.window != nil {
-		a.window.Perform(system.ActionRaise)
 		a.window.Invalidate()
 	}
 }
@@ -97,6 +115,9 @@ func (a *App) processProofreadingTabs() {
 	if a.proofreadingModule {
 		select {
 		case request := <-a.proofreadingModuleRequests:
+			if a.window != nil {
+				a.window.Perform(system.ActionRaise)
+			}
 			if err := a.openProofreadingTab(request); err != nil {
 				a.ensureProofreadingWorkbench().message = err.Error()
 			}
@@ -104,10 +125,21 @@ func (a *App) processProofreadingTabs() {
 		}
 	}
 	select {
-	case id := <-a.proofreadingTabFocus:
-		if tab := a.proofreadingTab(id); tab != nil {
-			a.selectedProofreadingTabID = id
-			tab.editor.ensureProofreadingWorkbench().active = false
+	case request := <-a.proofreadingTabFocus:
+		if tab := a.proofreadingTab(request.id); tab != nil {
+			if a.window != nil {
+				a.window.Perform(system.ActionRaise)
+			}
+			a.selectedProofreadingTabID = request.id
+			w := tab.editor.ensureProofreadingWorkbench()
+			w.active = false
+			w.settings = false
+			w.historyRequest++
+			w.historyOpen = false
+			w.historyLoading = false
+			if request.history != nil {
+				tab.editor.openProofreadingHistory(*request.history, 0)
+			}
 		}
 	default:
 	}

@@ -107,7 +107,17 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 	}
 	paint.FillShape(gtx.Ops, canvasBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	totalPages := max(1, v.info.Pages)
-	if v.syncPageFromCanvas() {
+	listPages := totalPages
+	if a.proofreading != nil {
+		v.pageMap = a.proofreadingPageIndices(totalPages)
+		listPages = len(v.pageMap)
+		if listPages == 0 {
+			return a.layoutProofreadingPageMessageOnCanvas(gtx, a.textID("proofread.filter.empty"), false, proofreadSourceCanvas)
+		}
+	} else {
+		v.pageMap = nil
+	}
+	if a.syncPDFPageFromCanvas(v) {
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	refW, refH := pdfReferencePageSize(v)
@@ -132,7 +142,11 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 	contentWidth := max(viewport.X, int(refW*scale)+gtx.Dp(48))
 	dimensions := v.horizontal.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		gtx.Constraints = layout.Exact(image.Pt(contentWidth, viewport.Y))
-		return v.canvas.Layout(gtx, totalPages, func(gtx layout.Context, pageIdx int) layout.Dimensions {
+		return v.canvas.Layout(gtx, listPages, func(gtx layout.Context, row int) layout.Dimensions {
+			pageIdx, ok := v.pageForCanvasRow(row)
+			if !ok {
+				return layout.Dimensions{}
+			}
 			pageW, pageH := refW, refH
 			r, ok := v.cache[pageIdx]
 			if a.proofreading != nil {

@@ -88,16 +88,26 @@ func (a *App) setPDFZoomAt(gtx layout.Context, v *pdfViewState, zoom float64, po
 
 	viewport := gtx.Constraints.Max
 	topInset := float64(gtx.Dp(12))
-	first := max(0, min(v.canvas.Position.First, max(0, v.info.Pages-1)))
+	first := max(0, v.canvas.Position.First)
 	firstTop := -float64(v.canvas.Position.Offset)
-	anchorPage, anchorY := first, 0.0
+	anchorPage, _ := v.pageForCanvasRow(first)
+	anchorY := 0.0
 	newRowsBeforeAnchor := 0.0
 	bestDistance := math.Inf(1)
 	rowTop := firstTop
 	rowsBefore := 0.0
 	visibleCount := max(1, v.canvas.Position.Count) + pdfPageViewportOverscan
-	end := min(max(1, v.info.Pages), first+max(pdfPageCacheMaxEntries, visibleCount))
-	for index := first; index < end; index++ {
+	rowCount := max(pdfPageCacheMaxEntries, visibleCount)
+	pageCount := max(1, v.info.Pages)
+	if v.pageMap != nil {
+		pageCount = len(v.pageMap)
+	}
+	end := min(pageCount, first+rowCount)
+	for row := first; row < end; row++ {
+		index, ok := v.pageForCanvasRow(row)
+		if !ok {
+			continue
+		}
 		_, pageHeight := pdfCachedPageSize(v, index)
 		pageTop := rowTop + topInset
 		pageBottom := pageTop + pageHeight*oldScale

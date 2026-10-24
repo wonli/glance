@@ -165,6 +165,7 @@ func (a *App) refreshProofreadingModelView() {
 		}
 		s.restoredConfirmedCurrent = nil
 	}
+	a.reconcileProofreadingPageFilter()
 	if !s.modelLayoutPending && s.controller.Layout.Pages == nil {
 		a.startProofreadingModelLayout(!s.modelInitialAssigned)
 	}

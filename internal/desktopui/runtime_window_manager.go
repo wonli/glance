@@ -104,6 +104,16 @@ func (r *desktopRuntime) markWindowClosing(windowID uint64) {
 			r.closingWindows = make(map[uint64]bool)
 		}
 		r.closingWindows[windowID] = true
+		host := r.windows[windowID]
+		if host.proofreadingModule && r.proofreadingModuleWindow == host.window {
+			r.proofreadingModuleWindow = nil
+			r.proofreadingModuleRequests = nil
+		}
+		for _, owner := range r.proofTabOwners {
+			if owner.host == host {
+				owner.closing = true
+			}
+		}
 	}
 	r.mu.Unlock()
 }
@@ -197,4 +207,39 @@ func (r *desktopRuntime) hasWindow(windowID uint64) bool {
 	_, exists := r.windows[windowID]
 	r.mu.Unlock()
 	return exists
+}
+
+// glanceWindowLocked selects a regular Glance window, never the independent
+// proofreading module. The primary window may belong to either kind after a
+// close, so it cannot alone identify the Glance workbench. Caller holds r.mu.
+func (r *desktopRuntime) glanceWindowLocked() *App {
+	if primary := r.windows[r.primaryWindowID]; primary != nil && !primary.proofreadingModule && !r.closingWindows[primary.windowID] {
+		return primary
+	}
+	var candidate *App
+	var oldest uint64
+	for id, window := range r.windows {
+		if window == nil || window.proofreadingModule {
+			continue
+		}
+		order := r.windowAttachmentOrder[id]
+		if candidate == nil || (r.closingWindows[candidate.windowID] && !r.closingWindows[id]) ||
+			(r.closingWindows[candidate.windowID] == r.closingWindows[id] && order < oldest) {
+			candidate, oldest = window, order
+		}
+	}
+	return candidate
+}
+
+// Only a regular Glance workbench may remain hidden in the tray. A module
+// close must retire its native loop and release manuscript resources.
+func (r *desktopRuntime) canHideGlanceWindowToTray(a *App) bool {
+	if a == nil || a.proofreadingModule {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.trayReady && !r.shuttingDown && !r.quitRequested &&
+		r.primaryWindowID == a.windowID && r.windows[a.windowID] == a &&
+		!r.closingWindows[a.windowID] && len(r.windows) == 1
 }

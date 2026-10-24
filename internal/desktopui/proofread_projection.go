@@ -33,27 +33,50 @@ func (a *App) layoutProofreadingProjectionPages(gtx layout.Context, status strin
 	}
 	view := a.ensurePDFView()
 	recordNativePinchSurface(gtx)
-	if view.syncPageFromCanvas() {
+	pageCount := max(0, view.info.Pages)
+	pages := a.proofreadingPageIndices(pageCount)
+	view.pageMap = pages
+	if a.syncPDFPageFromCanvas(view) {
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	state.xCanvas.Axis = layout.Vertical
 	state.xCanvas.Position = view.canvas.Position
 	paint.FillShape(gtx.Ops, proofreadXCanvas, clip.Rect{Max: gtx.Constraints.Max}.Op())
-	pageCount := max(0, view.info.Pages)
 	if pageCount == 0 {
 		return a.layoutProofreadingPageMessageOnCanvas(gtx, a.textID("proofread.page_frame.error"), true, proofreadXCanvas)
+	}
+	if len(pages) == 0 {
+		state.visibleEditorPages = []int{}
+		state.xPageAdjustmentActive = false
+		return a.layoutProofreadingPageMessageOnCanvas(gtx, a.textID("proofread.filter.empty"), false, proofreadXCanvas)
 	}
 	return a.layoutProofreadingXNavigatorCanvas(gtx, view, pageCount, status, statusIsError)
 }
 
 func (a *App) layoutProofreadingXPageList(gtx layout.Context, view *pdfViewState, pageCount int, status string, statusIsError bool) layout.Dimensions {
 	state := a.proofreading
+	pages := a.proofreadingPageIndices(pageCount)
+	if view != nil {
+		view.pageMap = pages
+		if a.syncPDFPageFromCanvas(view) {
+			gtx.Execute(op.InvalidateCmd{})
+		}
+	}
+	state.visibleEditorPages = state.visibleEditorPages[:0]
+	if len(pages) == 0 {
+		state.visibleEditorPages = []int{}
+		state.xPageAdjustmentActive = false
+		return a.layoutProofreadingPageMessageOnCanvas(gtx, a.textID("proofread.filter.empty"), false, proofreadXCanvas)
+	}
 	state.xViewport = gtx.Constraints.Max
 	a.handleProofreadingXCanvasScroll(gtx, view)
 	var snapshot proofreading.Snapshot
 
-	state.visibleEditorPages = state.visibleEditorPages[:0]
-	dimensions := state.xCanvas.Layout(gtx, pageCount, func(gtx layout.Context, pageIndex int) layout.Dimensions {
+	dimensions := state.xCanvas.Layout(gtx, len(pages), func(gtx layout.Context, row int) layout.Dimensions {
+		pageIndex, ok := proofreadingPDFPageForRow(state, pages, row)
+		if !ok {
+			return layout.Dimensions{}
+		}
 		if state.controller != nil && pageIndex < len(state.xPages) {
 			if !a.proofreadingPageLayoutCurrent(pageIndex) {
 				state.modelRequestedPages = append(state.modelRequestedPages, proofreading.PageID(pageIndex+1))
@@ -88,11 +111,11 @@ func (a *App) layoutProofreadingXPageList(gtx layout.Context, view *pdfViewState
 		xPosition := state.xCanvas.Position
 		aPosition := view.canvas.Position
 		if xPosition.First != aPosition.First || xPosition.Offset != aPosition.Offset {
-			view.canvas.Position.First = max(0, min(view.info.Pages-1, xPosition.First))
+			view.canvas.Position.First = max(0, min(len(pages)-1, xPosition.First))
 			view.canvas.Position.Offset = xPosition.Offset
 			view.canvas.Position.OffsetLast = xPosition.OffsetLast
 			view.canvas.Position.BeforeEnd = xPosition.BeforeEnd
-			view.syncPageFromCanvas()
+			a.syncPDFPageFromCanvas(view)
 			gtx.Execute(op.InvalidateCmd{})
 		}
 	}
@@ -129,7 +152,7 @@ func (a *App) layoutProofreadingProjectionPage(gtx layout.Context, view *pdfView
 			} else if alpha := a.proofreadingXScrollHighlightAlpha(gtx, pageIndex); alpha > 0 {
 				drawProofreadingXPageScrollHighlight(gtx, pageSize, alpha)
 			} else {
-				proofreadingPageBorder(gtx, pageSize)
+				a.drawProofreadingXPageStatus(gtx, pageSize, pageIndex)
 			}
 			if page != nil {
 				// Let the page click observer and text editor receive the same click.
@@ -186,6 +209,21 @@ func proofreadingProjectionContent(units []proofreadingContentUnit) (string, []p
 		blocks = append(blocks, proofreadingFlowBlock{Kind: unit.Kind, Level: unit.Level, Start: start, End: contentRunes})
 	}
 	return content.String(), blocks
+}
+
+// Keep the existing blue selection/scroll highlight above review decoration.
+// The label sits in the existing top gutter, outside the editable paper.
+func (a *App) drawProofreadingXPageStatus(gtx layout.Context, size image.Point, page int) {
+	label, _, border, ink := proofreadingThumbnailStatus(a.proofreadingPageStatusKey(page))
+	proofreadRoundedBorder(gtx, size, 2, border, max(1, gtx.Dp(1)))
+	offset := op.Offset(image.Pt(0, -gtx.Dp(12))).Push(gtx.Ops)
+	defer offset.Pop()
+	gtx.Constraints = layout.Constraints{Max: image.Pt(size.X, gtx.Dp(12))}
+	style := material.Label(a.theme, unit.Sp(9), a.textID(label))
+	style.Color = ink
+	style.Alignment = text.End
+	style.MaxLines = 1
+	style.Layout(gtx)
 }
 
 func proofreadingPageBorder(gtx layout.Context, size image.Point) {

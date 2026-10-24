@@ -12,7 +12,10 @@ import (
 // reconcileWorkspaceTabs refreshes this window's lightweight catalog from the
 // process-wide collection and drops views for tabs closed in another window.
 func (a *App) reconcileWorkspaceTabs() {
-	if a == nil || a.collection == nil {
+	// The proofreading module shares persistence, but owns a separate tab
+	// collection. Importing the global catalog here exposes the source PDF
+	// again beside its comparison task.
+	if a == nil || a.proofreadingModule || a.collection == nil {
 		return
 	}
 	ver := a.collection.Version()

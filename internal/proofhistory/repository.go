@@ -65,7 +65,27 @@ type CommitResult struct {
 	Created           bool
 }
 type Entry struct{ Hash, Author, Date, Message string }
+type PageSummary struct {
+	Page        proofreading.PageID
+	Latest      Entry
+	CommitCount int
+}
+
+// PageChange describes a commit in one page's timeline. Status is scoped to
+// that page; Paths, line counts, and Diff describe the entire Git commit.
+type PageChange struct {
+	Entry                Entry
+	Paths                []string
+	Status, Diff         string
+	TextChanges          []TextChange
+	DisplayChanges       []TextChange
+	TextAvailable        bool
+	Additions, Deletions int
+	FilesChanged         int
+}
 type Repository struct{ Directory string }
+
+var pageHistoryPathPattern = regexp.MustCompile(`^pages/([0-9]+)\.json$`)
 
 func (r Repository) Available(ctx context.Context) error { _, err := exec.LookPath("git"); return err }
 func (r Repository) command(ctx context.Context, args ...string) (string, error) {
@@ -100,11 +120,22 @@ func gitOperation(args []string) string {
 }
 
 func pagePath(id proofreading.PageID) string { return fmt.Sprintf("pages/%06d.json", id) }
+
+func (r Repository) commitIdentity(ctx context.Context, preferred Identity) Identity {
+	if preferred.Validate() == nil {
+		return preferred
+	}
+	name, _ := r.command(ctx, "config", "--get", "user.name")
+	email, _ := r.command(ctx, "config", "--get", "user.email")
+	configured := Identity{Name: name, Email: email}
+	if configured.Validate() == nil {
+		return configured
+	}
+	return Identity{Name: "Glance Proofreader", Email: "proofreading@localhost"}
+}
+
 func (r Repository) Confirm(ctx context.Context, p PageResult) (CommitResult, error) {
 	var result CommitResult
-	if err := p.Identity.Validate(); err != nil {
-		return result, err
-	}
 	if p.Page.ID == 0 || p.ProjectID == "" {
 		return result, errors.New("invalid page identity")
 	}
@@ -122,6 +153,7 @@ func (r Repository) Confirm(ctx context.Context, p PageResult) (CommitResult, er
 	} else if err != nil {
 		return result, err
 	}
+	p.Identity = r.commitIdentity(ctx, p.Identity)
 	if err := r.reserveWatermark(p.Next); err != nil {
 		return result, err
 	}
@@ -204,6 +236,109 @@ func (r Repository) List(ctx context.Context, id proofreading.PageID) ([]Entry, 
 		}
 	}
 	return result, nil
+}
+
+// ListPages returns pages with snapshots, ordered by the time of their latest commit.
+func (r Repository) ListPages(ctx context.Context) ([]PageSummary, error) {
+	if _, err := os.Stat(filepath.Join(r.Directory, ".git")); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	data, err := r.command(ctx, "log", "--format=%H%x1f%an%x1f%aI%x1f%s", "--name-only", "--", "pages")
+	if err != nil {
+		return nil, err
+	}
+	var result []PageSummary
+	indexes := make(map[proofreading.PageID]int)
+	var entry Entry
+	for _, line := range strings.Split(data, "\n") {
+		if fields := strings.SplitN(line, "\x1f", 4); len(fields) == 4 {
+			entry = Entry{Hash: fields[0], Author: fields[1], Date: fields[2], Message: fields[3]}
+			continue
+		}
+		match := pageHistoryPathPattern.FindStringSubmatch(strings.TrimSpace(line))
+		if len(match) != 2 || entry.Hash == "" {
+			continue
+		}
+		page, parseErr := strconv.ParseUint(match[1], 10, 64)
+		if parseErr != nil || page == 0 {
+			continue
+		}
+		id := proofreading.PageID(page)
+		index, found := indexes[id]
+		if !found {
+			index = len(result)
+			indexes[id] = index
+			result = append(result, PageSummary{Page: id, Latest: entry})
+		}
+		result[index].CommitCount++
+	}
+	return result, nil
+}
+
+// PageChanges returns commits touching one page, newest-first. The page status
+// is page-scoped; changed paths, line counts, and the full diff cover each
+// complete Git commit.
+func (r Repository) PageChanges(ctx context.Context, page proofreading.PageID) ([]PageChange, error) {
+	if page == 0 {
+		return nil, errors.New("invalid page identity")
+	}
+	entries, err := r.List(ctx, page)
+	if err != nil {
+		return nil, err
+	}
+	path := pagePath(page)
+	changes := make([]PageChange, 0, len(entries))
+	for _, entry := range entries {
+		if !commitPattern.MatchString(entry.Hash) {
+			return nil, errors.New("invalid commit")
+		}
+		statusData, err := r.command(ctx, "diff-tree", "--root", "--no-commit-id", "--name-status", "-r", entry.Hash, "--", path)
+		if err != nil {
+			return nil, err
+		}
+		change := PageChange{Entry: entry, Status: "modified"}
+		for _, line := range strings.Split(statusData, "\n") {
+			fields := strings.Split(line, "\t")
+			if len(fields) == 2 && fields[1] == path {
+				switch fields[0] {
+				case "A":
+					change.Status = "added"
+				case "D":
+					change.Status = "deleted"
+				}
+			}
+		}
+		stats, err := r.command(ctx, "diff-tree", "--root", "--no-commit-id", "--numstat", "-r", entry.Hash)
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range strings.Split(stats, "\n") {
+			fields := strings.Split(line, "\t")
+			if len(fields) == 3 {
+				change.FilesChanged++
+				change.Paths = append(change.Paths, fields[2])
+				additions, _ := strconv.Atoi(fields[0])
+				deletions, _ := strconv.Atoi(fields[1])
+				change.Additions += additions
+				change.Deletions += deletions
+			}
+		}
+		diff, err := r.command(ctx, "show", "--no-color", "--format=", "--patch", "--unified=0", entry.Hash)
+		if err != nil {
+			return nil, err
+		}
+		change.Diff = diff
+		change.TextChanges, err = r.pageTextChanges(ctx, entry.Hash, change.Status, page)
+		if err != nil {
+			return nil, fmt.Errorf("read page text history: %w", err)
+		}
+		change.DisplayChanges = ChangedTextLines(change.TextChanges)
+		change.TextAvailable = true
+		changes = append(changes, change)
+	}
+	return changes, nil
 }
 
 // Diff returns a bounded, page-only patch for a selected historical commit.

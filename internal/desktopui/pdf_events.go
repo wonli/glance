@@ -122,17 +122,31 @@ func (a *App) handlePDFEvents(gtx layout.Context) {
 	if v.scale > 0 && !v.pending && !v.renderPending {
 		first := max(0, v.canvas.Position.First)
 		dpi := pdfCanvasDPI(v.scale)
-		for i := first; i < min(v.info.Pages, first+2); i++ {
-			if !v.pageInCacheWindow(i) {
-				continue
+		if v.pageMap != nil {
+			for row := first; row < min(len(v.pageMap), first+2); row++ {
+				page := v.pageMap[row]
+				if !v.pageInCacheWindow(page) {
+					continue
+				}
+				if !v.canPrefetchPage(page, dpi) {
+					break
+				}
+				cached, ok := v.cache[page]
+				if !ok || (cached.err == nil && cached.dpi < dpi) {
+					a.requestPDFPage(page, dpi)
+					break
+				}
 			}
-			if !v.canPrefetchPage(i, dpi) {
-				break
-			}
-			cached, ok := v.cache[i]
-			if !ok || (cached.err == nil && cached.dpi < dpi) {
-				a.requestPDFPage(i, dpi)
-				break
+		} else {
+			for page := first; page < min(v.info.Pages, first+2); page++ {
+				if !v.pageInCacheWindow(page) || !v.canPrefetchPage(page, dpi) {
+					continue
+				}
+				cached, ok := v.cache[page]
+				if !ok || (cached.err == nil && cached.dpi < dpi) {
+					a.requestPDFPage(page, dpi)
+					break
+				}
 			}
 		}
 	}

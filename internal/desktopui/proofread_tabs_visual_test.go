@@ -17,6 +17,7 @@ import (
 func TestProofreadingTabsKeepCommonStripVisual(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	fixture := newWindowViewFixture(t)
 	for _, scale := range []float32{1, 2} {
 		host := newAppWithRuntime(nil, newDesktopRuntime())
 		host.proofreadingModule = true
@@ -41,6 +42,17 @@ func TestProofreadingTabsKeepCommonStripVisual(t *testing.T) {
 			return shot
 		}
 		workbench := render()
+		// Sharing the source window's populated document collection must not
+		// introduce ordinary document tabs into the proofreading strip.
+		host.collection = fixture.runtime.collection
+		withSourceDocuments := render()
+		for y := 0; y < int(42*scale); y++ {
+			for x := 0; x < size.X; x++ {
+				if workbench.RGBAAt(x, y) != withSourceDocuments.RGBAAt(x, y) {
+					t.Fatalf("shared documents changed proofreading tab strip at %gx (%d,%d)", scale, x, y)
+				}
+			}
+		}
 		host.activateWorkspaceTab("proofreading:book")
 		manuscript := render()
 		host.activateRecent()

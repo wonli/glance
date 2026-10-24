@@ -286,6 +286,10 @@ func (a *App) handlePDFAction(gtx layout.Context, id string) {
 	if strings.HasPrefix(id, "page-") {
 		n, e := strconv.Atoi(strings.TrimPrefix(id, "page-"))
 		if e == nil {
+			if a.proofreading != nil {
+				a.selectProofreadingThumbnail(n)
+				return
+			}
 			a.runPDFViewAction("set_page", setPageSetPageArguments{Operation: "set_page", PageNumber: n + 1})
 		}
 		return
@@ -306,8 +310,16 @@ func (a *App) handlePDFAction(gtx layout.Context, id string) {
 	case "find":
 		a.startPDFSearch()
 	case "previous":
+		if a.proofreading != nil && a.proofreading.pageFilter != proofreadingPageFilterAll {
+			a.navigateProofreadingPage(-1)
+			return
+		}
 		a.runPDFViewAction("previous", handlePDFActionArguments{Operation: "previous"})
 	case "next":
+		if a.proofreading != nil && a.proofreading.pageFilter != proofreadingPageFilterAll {
+			a.navigateProofreadingPage(1)
+			return
+		}
 		a.runPDFViewAction("next", handlePDFActionArguments{Operation: "next"})
 	case "zoom-out":
 		zoom := int(math.Round(min(4, max(.25, v.currentZoom(gtx.Metric)-.1)) * 100))

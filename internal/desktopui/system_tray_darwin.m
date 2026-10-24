@@ -79,7 +79,10 @@ static BOOL handleAppReopen(id self, SEL _cmd, NSApplication *sender, BOOL hasVi
 	(void)self;
 	(void)_cmd;
 	(void)sender;
-	if (!hasVisibleWindows && activeTrayID != 0) {
+	// A visible proofreading module does not mean the Glance workbench is open.
+	// Let the runtime choose or recreate the correct window on every Dock reopen.
+	(void)hasVisibleWindows;
+	if (activeTrayID != 0) {
 		goGlanceTrayAction(activeTrayID, GlanceTrayActionShow);
 	}
 	return YES;

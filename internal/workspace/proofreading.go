@@ -13,6 +13,7 @@ type ProofreadingProject struct {
 	Title         string    `json:"title"`
 	Directory     string    `json:"directory"`
 	SourceA       string    `json:"source_a"`
+	SourceAHash   string    `json:"source_a_hash,omitempty"`
 	SourceB       string    `json:"source_b"`
 	PageCount     int       `json:"page_count"`
 	ReviewedCount int       `json:"reviewed_count"`

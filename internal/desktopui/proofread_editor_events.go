@@ -15,7 +15,7 @@ func (a *App) processProofreadingEditorEvents(gtx layout.Context) {
 		return
 	}
 	for i := range s.xPageEditors {
-		if s.visibleEditorPages != nil && !gtx.Source.Focused(&s.xPageEditors[i]) {
+		if s.visibleEditorPages != nil {
 			visible := false
 			for _, index := range s.visibleEditorPages {
 				if index == i {
@@ -23,7 +23,7 @@ func (a *App) processProofreadingEditorEvents(gtx layout.Context) {
 					break
 				}
 			}
-			if !visible {
+			if !visible && (s.pageFilter != proofreadingPageFilterAll || !gtx.Source.Focused(&s.xPageEditors[i])) {
 				continue
 			}
 		}
@@ -149,11 +149,6 @@ func (a *App) processProofreadingMenuEvents(gtx layout.Context) {
 			return
 		}
 	}
-	if a.ensureProofreadingWorkbench().button("page-history-menu").Clicked(gtx) {
-		s.xPageMenuOpen = false
-		a.openProofreadingHistory(a.proofreadingProjectMetadata(), uint64(s.xPageMenuPage+1))
-		return
-	}
 	if s.xInsertPageBreak.Clicked(gtx) {
 		a.splitProofreadingPage(false)
 	}
@@ -162,9 +157,11 @@ func (a *App) processProofreadingMenuEvents(gtx layout.Context) {
 	}
 	if s.xPageUnreviewed.Clicked(gtx) {
 		a.setProofreadingPageReviewed(false)
+		a.clearProofreadingFocusOutsideFilter(gtx)
 	}
 	if s.xPageReviewed.Clicked(gtx) {
 		a.setProofreadingPageReviewed(true)
+		a.clearProofreadingFocusOutsideFilter(gtx)
 	}
 	if s.xUndoPaginationMenu.Clicked(gtx) {
 		a.undoProofreadingPagination()

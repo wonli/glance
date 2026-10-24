@@ -111,9 +111,6 @@ func (a *App) layoutProofreadingWorkbench(g layout.Context) layout.Dimensions {
 					return layout.Inset{Top: 61, Bottom: 40}.Layout(g, a.layoutProofreadingIdentity)
 				})
 			}
-			if w.historyOpen {
-				return layout.Inset{Top: 61, Bottom: 24}.Layout(g, a.layoutProofreadingHistory)
-			}
 			return layout.Inset{Top: 61}.Layout(g, func(g layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(g,
 					layout.Rigid(func(g layout.Context) layout.Dimensions {

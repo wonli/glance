@@ -67,6 +67,30 @@ func TestProofreadingTabsShareWindowAndKeepIndependentState(t *testing.T) {
 	}
 }
 
+func TestOpeningPDFSourceInWorkbenchDoesNotOpenRegularPDFDocumentTab(t *testing.T) {
+	host := newAppWithRuntime(nil, newDesktopRuntime())
+	host.proofreadingModule = true
+	defer func() { host.closeAllProofreadingTabs(); host.stopAndWaitManagedBackground() }()
+
+	if err := host.openProofreadingTab(proofreadingWindowRequest{
+		sourcePath:     "/books/book.pdf",
+		sourceName:     "book.pdf",
+		sourceSnapshot: io.NopCloser(strings.NewReader("invalid test PDF")),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(host.proofreadingTabs) != 1 || host.proofreadingTabs[0].id != host.selectedProofreadingTabID {
+		t.Fatalf("proofreading tabs=%d selected=%q; want one selected proofreading task", len(host.proofreadingTabs), host.selectedProofreadingTabID)
+	}
+	if host.pdfDoc != nil || len(host.sessions) != 0 || len(host.tabMeta) != 0 {
+		t.Fatalf("opening the PDF source created a regular PDF document session: pdf=%v sessions=%d metadata=%d", host.pdfDoc != nil, len(host.sessions), len(host.tabMeta))
+	}
+	ids := host.workspaceTabIDs()
+	if len(ids) != 1 || ids[0] != host.selectedProofreadingTabID {
+		t.Fatalf("workbench tabs=%v; want only the proofreading task, without a duplicate PDF document tab", ids)
+	}
+}
+
 func TestProofreadingCommonTabStripSwitchesBothDirections(t *testing.T) {
 	host := newAppWithRuntime(nil, newDesktopRuntime())
 	host.proofreadingModule = true
@@ -138,5 +162,44 @@ func TestProofreadingTabSwitchFlushesLatestChineseDraft(t *testing.T) {
 	}
 	if got := state.controller.Model.Text(2); got != "efgh" {
 		t.Fatalf("switch changed another page: %q", got)
+	}
+}
+
+func TestProofreadingModuleDoesNotImportSharedDocumentTabs(t *testing.T) {
+	fixture := newWindowViewFixture(t)
+	host := newAppWithRuntime(nil, fixture.runtime)
+	host.proofreadingModule = true
+	defer func() { host.closeAllProofreadingTabs(); host.stopAndWaitManagedBackground() }()
+	// The real runtime already contains the source PDF (and may contain other
+	// documents) when the separate proofreading window is constructed.
+	meta := workspace.Tab{ID: "source-pdf", Kind: "document", Title: "book.pdf", DocumentID: "source-pdf", SourcePath: "/books/book.pdf", Position: 2}
+	if err := fixture.runtime.collection.AddTab(meta, "pdf"); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.openProofreadingTab(proofreadingWindowRequest{sourceName: "book.pdf", sourceSnapshot: io.NopCloser(strings.NewReader("invalid test PDF"))}); err != nil {
+		t.Fatal(err)
+	}
+	host.reconcileWorkspaceTabs()
+	ids := host.workspaceTabIDs()
+	if len(ids) != 1 || ids[0] != host.selectedProofreadingTabID {
+		t.Fatalf("module imported ordinary document tabs: %v", ids)
+	}
+	if len(host.tabMeta) != 0 || len(host.sessions) != 0 {
+		t.Fatal("module imported regular document metadata or views")
+	}
+	// Isolating the module must preserve the source window's open documents.
+	if _, ok := fixture.runtime.collection.GetMetadata(meta.ID); !ok {
+		t.Fatal("source PDF was removed from the shared collection")
+	}
+	for _, source := range fixture.apps {
+		found := false
+		for _, id := range source.workspaceTabIDs() {
+			if id == meta.ID {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("source window lost its PDF tab")
+		}
 	}
 }

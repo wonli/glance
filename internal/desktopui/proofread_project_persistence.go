@@ -95,7 +95,7 @@ func writeProofreadingSource(path string, reader io.Reader) error {
 func (a *App) proofreadingProjectMetadata() workspace.ProofreadingProject {
 	s := a.proofreading
 	dir := filepath.Dir(s.draftFilePath)
-	return workspace.ProofreadingProject{ID: s.projectDocumentID, Title: s.aDocument.Name, Directory: dir, SourceA: filepath.Join(dir, "sources", "reference.pdf"), SourceB: filepath.Join(dir, "sources", "manuscript"+filepath.Ext(s.bDocument.Path))}
+	return workspace.ProofreadingProject{ID: s.projectDocumentID, Title: s.aDocument.Name, Directory: dir, SourceA: filepath.Join(dir, "sources", "reference.pdf"), SourceAHash: s.aSourceHash, SourceB: filepath.Join(dir, "sources", "manuscript"+filepath.Ext(s.bDocument.Path))}
 }
 func proofreadingPageResult(s *proofreadingWorkspace, page int, identity proofhistory.Identity) proofhistory.PageResult {
 	snap := s.controller.Model.PageSnapshot(proofreadingPageID(page))

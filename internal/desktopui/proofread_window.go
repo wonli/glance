@@ -29,6 +29,7 @@ import (
 type proofreadingWindowRequest struct {
 	resumePayload  *proofreadingProjectPayload
 	resume         *workspace.ProofreadingProject
+	showHistory    bool
 	sourcePath     string
 	sourceName     string
 	sourcePage     int
@@ -194,29 +195,32 @@ type proofreadingWorkspace struct {
 	sourceResults         chan proofreadingSourceResult
 	sourceGen             uint64
 
-	frameLoading                            bool
-	frameError                              string
-	frameResults                            chan proofreadingPageFrameResult
-	frameGen                                uint64
-	pageFrames                              []proofreadingPageFrame
-	xPages                                  []proofreadingXPage
-	bDraftText                              string
-	bDraftInitialized                       bool
-	bDraftDirty                             bool
-	pageOwnership                           []proofreadingPageOwnership
-	xPageUp, xPageUnreviewed, xPageReviewed widget.Clickable
-	xPageScrollbars                         []widget.Scrollbar
-	xPageEditors                            []widget.Editor
-	xTextSizeStep                           int
-	xPagePointerTags                        []proofreadingPagePointerTag
-	xPageMenuOpen                           bool
-	xPageMenuPage                           int
-	xPageMenuPoint                          proofreadingPagePoint
-	xPageMenuBounds                         image.Rectangle
-	xCanvasScrollPointerTag                 struct{}
-	xCanvasScrollRemainder                  float32
-	xScrollHighlightPage                    int
-	xScrollHighlightUntil                   time.Time
+	frameLoading                                 bool
+	frameError                                   string
+	frameResults                                 chan proofreadingPageFrameResult
+	frameGen                                     uint64
+	pageFrames                                   []proofreadingPageFrame
+	xPages                                       []proofreadingXPage
+	bDraftText                                   string
+	bDraftInitialized                            bool
+	bDraftDirty                                  bool
+	pageOwnership                                []proofreadingPageOwnership
+	pageFilter                                   proofreadingPageFilter
+	filteredPageIndices                          []int
+	filterReviewedButton, filterUnreviewedButton widget.Clickable
+	xPageUp, xPageUnreviewed, xPageReviewed      widget.Clickable
+	xPageScrollbars                              []widget.Scrollbar
+	xPageEditors                                 []widget.Editor
+	xTextSizeStep                                int
+	xPagePointerTags                             []proofreadingPagePointerTag
+	xPageMenuOpen                                bool
+	xPageMenuPage                                int
+	xPageMenuPoint                               proofreadingPagePoint
+	xPageMenuBounds                              image.Rectangle
+	xCanvasScrollPointerTag                      struct{}
+	xCanvasScrollRemainder                       float32
+	xScrollHighlightPage                         int
+	xScrollHighlightUntil                        time.Time
 
 	bDocument           *proofreadingObject
 	draftLoading        bool
@@ -238,8 +242,6 @@ type proofreadingWorkspace struct {
 	draftAutoSaved      bool
 	draftPersistError   string
 	chooseDraft         widget.Clickable
-	toolbarPreviousPage widget.Clickable
-	toolbarNextPage     widget.Clickable
 	xTextSmaller        widget.Clickable
 	xTextLarger         widget.Clickable
 	xInsertPageBreak    widget.Clickable
@@ -302,9 +304,18 @@ func (a *App) openProofreadingWindow() error {
 	if a.pdfDoc == nil {
 		return fmt.Errorf("当前没有打开的 PDF 文档")
 	}
+	entry := a.ensureProofreadingPDFEntry()
+	if entry.busy {
+		return nil
+	}
 	view := a.ensurePDFView()
 	reader, _, _, _, err := a.pdfDoc.SnapshotReaderWithRevision()
 	if err != nil {
+		return fmt.Errorf("读取 PDF 快照失败：%w", err)
+	}
+	hashReader, _, _, _, err := a.pdfDoc.SnapshotReaderWithRevision()
+	if err != nil {
+		reader.Close()
 		return fmt.Errorf("读取 PDF 快照失败：%w", err)
 	}
 	path := sessionPath(a.documentSessionState)
@@ -312,12 +323,40 @@ func (a *App) openProofreadingWindow() error {
 	if path == "" || name == "." {
 		name = a.textID("pdf.proofread.source_a_untitled")
 	}
-	return a.openProofreadingTab(proofreadingWindowRequest{
+	request := proofreadingWindowRequest{
 		sourcePath:     path,
 		sourceName:     name,
 		sourcePage:     view.page,
 		sourceSnapshot: reader,
-	})
+	}
+	store := a.proofreadingStore()
+	if store == nil {
+		reader.Close()
+		hashReader.Close()
+		return fmt.Errorf("校对记录数据库不可用")
+	}
+	entry.busy = true
+	results := entry.results
+	window, shutdown := a.window, a.shutdown
+	if !a.launchManagedBackground(func() {
+		result := inspectProofreadingPDFEntry(store, request, hashReader)
+		select {
+		case results <- result:
+			if window != nil && !isAppShuttingDown(shutdown) {
+				window.Invalidate()
+			}
+		case <-shutdown:
+			if request.sourceSnapshot != nil {
+				_ = request.sourceSnapshot.Close()
+			}
+		}
+	}) {
+		entry.busy = false
+		reader.Close()
+		hashReader.Close()
+		return fmt.Errorf("无法启动校对记录检查")
+	}
+	return nil
 }
 
 func (a *App) startProofreadingSourceSnapshot(reader io.ReadCloser) {
@@ -560,7 +599,7 @@ func (a *App) processProofreadingResults() {
 					state.draftRestoreFailed = true
 					tab.duplicate = true
 					state.draftError = a.textID("proofread.workbench.already_open")
-					owner.host.requestProofreadingTabFocus(owner.id)
+					owner.host.requestProofreadingTabFocus(owner.id, nil)
 				}
 			}
 			if state.draftRestoreFailed {

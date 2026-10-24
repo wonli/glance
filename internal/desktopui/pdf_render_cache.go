@@ -29,12 +29,30 @@ func (v *pdfViewState) pageCacheWindow() (first, last int) {
 	// result is not discarded before the page becomes fully visible.
 	first = v.page - pdfPageCacheRadius
 	last = v.page + pdfPageCacheRadius
-	visibleFirst := max(0, v.canvas.Position.First)
-	visibleCount := max(1, v.canvas.Position.Count)
-	visibleLast := visibleFirst + visibleCount - 1
+	visibleFirst, visibleLast := v.visibleCanvasPageRange()
 	first = min(first, visibleFirst-pdfPageViewportOverscan)
 	last = max(last, visibleLast+pdfPageViewportOverscan)
 	return first, last
+}
+
+func (v *pdfViewState) visibleCanvasPageRange() (first, last int) {
+	if v == nil {
+		return 0, 0
+	}
+	if v.pageMap == nil {
+		first = max(0, v.canvas.Position.First)
+		return first, first + max(1, v.canvas.Position.Count) - 1
+	}
+	rowFirst := max(0, v.canvas.Position.First)
+	rowLast := min(len(v.pageMap)-1, rowFirst+max(1, v.canvas.Position.Count)-1)
+	if len(v.pageMap) == 0 {
+		return max(0, min(v.page, max(0, v.info.Pages-1))), max(0, min(v.page, max(0, v.info.Pages-1)))
+	}
+	if rowFirst >= len(v.pageMap) {
+		rowFirst = len(v.pageMap) - 1
+		rowLast = rowFirst
+	}
+	return v.pageMap[rowFirst], v.pageMap[rowLast]
 }
 
 func (v *pdfViewState) pageInCacheWindow(index int) bool {
@@ -52,6 +70,15 @@ func (v *pdfViewState) pageVisible(index int) bool {
 		return index == v.page
 	}
 	first := max(0, position.First)
+	if v.pageMap != nil {
+		end := min(len(v.pageMap), first+count)
+		for row := first; row < end; row++ {
+			if v.pageMap[row] == index {
+				return true
+			}
+		}
+		return false
+	}
 	return index >= first && index < first+count
 }
 
@@ -59,14 +86,9 @@ func (v *pdfViewState) canPrefetchPage(index int, dpi float64) bool {
 	if v == nil || v.pageVisible(index) || index == v.page {
 		return v != nil
 	}
-	position := v.canvas.Position
-	first, count := max(0, position.First), position.Count
-	if count <= 0 {
-		first, count = v.page, 1
-	}
 	var pinnedBytes int64
 	for page, result := range v.cache {
-		if page == v.page || (page >= first && page < first+count) {
+		if page == v.page || v.pageVisible(page) {
 			pinnedBytes += pdfPageResultBytes(result)
 		}
 	}
@@ -196,8 +218,8 @@ func (v *pdfViewState) cachePage(result pdfPageResult) {
 	first, last := v.pageCacheWindow()
 	maxEntries := min(max(1, v.info.Pages), last-first+1)
 	for len(v.cache) > maxEntries || pdfPageCacheBytes(v.cache) > pdfPageCacheBudgetBytes {
-		visibleFirst := max(0, v.canvas.Position.First)
-		visibleEnd := visibleFirst + max(1, v.canvas.Position.Count)
+		visibleFirst, visibleLast := v.visibleCanvasPageRange()
+		visibleEnd := visibleLast + 1
 		victim := farthestPDFPage(v.cache, v.page, visibleFirst, visibleEnd)
 		if victim < 0 {
 			break

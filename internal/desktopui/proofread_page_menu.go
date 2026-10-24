@@ -16,6 +16,13 @@ func (a *App) layoutProofreadingPageMenuRows(gtx layout.Context) layout.Dimensio
 	if s.xPageMenuPage >= 0 && s.xPageMenuPage < len(s.pageOwnership) {
 		owned = s.pageOwnership[s.xPageMenuPage]
 	}
+	status := a.proofreadingPageStatusKey(s.xPageMenuPage)
+	// A newer draft can be modified while the previous confirmation is saving.
+	actionStatus := status
+	if s.history.pending && s.history.pendingPage == s.xPageMenuPage {
+		actionStatus = "proofread.history.saving"
+	}
+	confirmLabel, confirmEnabled := proofreadingConfirmationMenuAction(actionStatus)
 	canSplit := func(up bool) bool {
 		i := s.xPageMenuPage
 		j := i + 1
@@ -28,7 +35,11 @@ func (a *App) layoutProofreadingPageMenuRows(gtx layout.Context) layout.Dimensio
 		return func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(w), gtx.Dp(30)))
 			if selected {
-				paint.FillShape(gtx.Ops, color.NRGBA{R: 232, G: 240, B: 246, A: 255}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(4)).Op(gtx.Ops))
+				fill := color.NRGBA{R: 232, G: 240, B: 246, A: 255}
+				if b == &s.xPageReviewed && status == "proofread.history.modified" {
+					_, fill, _, _ = proofreadingThumbnailStatus(status)
+				}
+				paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(4)).Op(gtx.Ops))
 			}
 			return layoutProofreadingMenuAction(gtx, a, b, icon, a.textID(key), enabled, action)
 		}
@@ -50,10 +61,9 @@ func (a *App) layoutProofreadingPageMenuRows(gtx layout.Context) layout.Dimensio
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(button(72, &s.xPageUnreviewed, "", "proofread.menu.unreviewed", !owned.Reviewed, true, nil)),
-					layout.Rigid(button(72, &s.xPageReviewed, "", "proofread.menu.reviewed", owned.Reviewed, true, nil)),
+					layout.Rigid(button(100, &s.xPageReviewed, "", confirmLabel, owned.Reviewed, confirmEnabled, nil)),
 				)
 			}),
-			layout.Rigid(button(144, a.ensureProofreadingWorkbench().button("page-history-menu"), "", "proofread.history.page", false, true, nil)),
 		)
 	})
 }

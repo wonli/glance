@@ -162,6 +162,7 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 			a.shutdownOnce.Do(func() { close(a.shutdown) })
 			a.closeAgentSubscription()
 			a.stopAndWaitManagedBackground()
+			a.closePendingProofreadingPDFEntry()
 			a.closeProofreadingDraft()
 			a.closeWorkspace()
 			return

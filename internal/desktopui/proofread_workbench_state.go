@@ -26,18 +26,40 @@ type proofreadingWorkbenchState struct {
 	name, email, remote, authUser, token, ssh widget.Editor
 	hostKeys, hostURL                         string
 	message                                   string
-	history                                   []proofhistory.Entry
+	historyPages                              []proofhistory.PageSummary
+	history                                   []proofhistory.PageChange
+	historyPageList, historyTimelineList      widget.List
 	historyProject                            workspace.ProofreadingProject
 	historyPage                               uint64
 	historyOpen                               bool
-	diff                                      string
+	historyLoading                            bool
+	historyMessage                            string
+	historyRequest                            uint64
+	historyResults                            chan proofreadingHistoryLoadResult
 	selectedCommit                            string
+	historyTextViews                          map[string]*proofreadingHistoryTextView
+}
+
+type proofreadingHistoryLoadResult struct {
+	request  uint64
+	project  workspace.ProofreadingProject
+	pages    []proofhistory.PageSummary
+	changes  []proofhistory.PageChange
+	page     uint64
+	hasPages bool
+	err      error
 }
 
 func (a *App) ensureProofreadingWorkbench() *proofreadingWorkbenchState {
 	if a.proofreadingWorkbench == nil {
-		w := &proofreadingWorkbenchState{buttons: map[string]*widget.Clickable{}, results: make(chan func(), 4)}
+		w := &proofreadingWorkbenchState{
+			buttons:        map[string]*widget.Clickable{},
+			results:        make(chan func(), 4),
+			historyResults: make(chan proofreadingHistoryLoadResult, 4),
+		}
 		w.list.Axis = layout.Vertical
+		w.historyPageList.Axis = layout.Vertical
+		w.historyTimelineList.Axis = layout.Vertical
 		for _, e := range []*widget.Editor{&w.name, &w.email, &w.remote, &w.authUser, &w.token, &w.ssh} {
 			e.SingleLine = true
 		}
@@ -76,6 +98,30 @@ func (a *App) processProofreadingWorkbench() {
 		w.busy = false
 		if done != nil {
 			done()
+		}
+	default:
+	}
+	select {
+	case result := <-w.historyResults:
+		if result.request != w.historyRequest {
+			return
+		}
+		w.historyLoading = false
+		if result.hasPages {
+			w.historyPages = result.pages
+		}
+		w.historyPage = result.page
+		w.history = result.changes
+		w.historyProject = result.project
+		w.remote.SetText(result.project.RemoteURL)
+		if result.err != nil {
+			w.historyMessage = result.err.Error()
+		} else if len(result.pages) == 0 && result.hasPages {
+			w.historyMessage = a.textID("proofread.history.empty")
+		} else if result.page != 0 && len(result.changes) == 0 {
+			w.historyMessage = a.textID("proofread.history.page_empty")
+		} else if len(result.changes) > 0 {
+			w.selectedCommit = result.changes[0].Entry.Hash
 		}
 	default:
 	}
@@ -153,7 +199,7 @@ func (a *App) resumeProofreadingProject(p workspace.ProofreadingProject) {
 			if closing {
 				w.message = "正在保存并关闭校对稿，请稍后重试"
 			} else {
-				owner.host.requestProofreadingTabFocus(owner.id)
+				owner.host.requestProofreadingTabFocus(owner.id, nil)
 			}
 			return
 		}
@@ -234,30 +280,81 @@ func (a *App) newProofreadingProject() {
 }
 func (a *App) openProofreadingHistory(p workspace.ProofreadingProject, page uint64) {
 	w := a.ensureProofreadingWorkbench()
+	w.historyTextViews = nil
+	w.historyRequest++
+	request := w.historyRequest
 	w.historyProject = p
 	w.historyPage = page
 	w.historyOpen = true
-	w.active = true
-	w.settings = false
-	w.diff = ""
+	w.historyLoading = true
+	w.historyMessage = ""
+	w.historyPages = nil
 	w.history = nil
+	w.selectedCommit = ""
+	w.historyPageList.Position = layout.Position{}
+	w.historyTimelineList.Position = layout.Position{}
 	w.list.Position = layout.Position{}
-	a.proofreadingWorkbenchJob(func() func() {
+	window, shutdown := a.window, a.shutdown
+	if !a.launchManagedBackground(func() {
 		if store := a.proofreadingStore(); store != nil {
-			if metadata, found, e := store.LoadProofreadingProjectMetadata(p.ID); e == nil && found {
+			if metadata, found, err := store.LoadProofreadingProjectMetadata(p.ID); err == nil && found {
 				p = metadata
 			}
 		}
-		entries, err := (proofhistory.Repository{Directory: p.Directory}).List(context.Background(), proofreadingPageID(int(page)-1))
-		return func() {
-			w.history = entries
-			w.historyProject = p
-			w.remote.SetText(p.RemoteURL)
-			if err != nil {
-				w.message = a.textID("proofread.history.empty")
-			}
+		repo := proofhistory.Repository{Directory: p.Directory}
+		pages, err := repo.ListPages(context.Background())
+		selectedPage := page
+		if err == nil && selectedPage == 0 && len(pages) > 0 {
+			selectedPage = uint64(pages[0].Page)
 		}
-	})
+		var changes []proofhistory.PageChange
+		if err == nil && selectedPage > 0 {
+			changes, err = repo.PageChanges(context.Background(), proofreadingPageID(int(selectedPage)-1))
+		}
+		result := proofreadingHistoryLoadResult{request: request, project: p, pages: pages, changes: changes, page: selectedPage, hasPages: true, err: err}
+		select {
+		case w.historyResults <- result:
+			if window != nil {
+				window.Invalidate()
+			}
+		case <-shutdown:
+		}
+	}) {
+		w.historyLoading = false
+		w.historyMessage = "无法启动校对历史读取"
+	}
+}
+
+func (a *App) selectProofreadingHistoryPage(page uint64) {
+	w := a.ensureProofreadingWorkbench()
+	if page == 0 || page == w.historyPage {
+		return
+	}
+	w.historyTextViews = nil
+	w.historyRequest++
+	request := w.historyRequest
+	w.historyPage = page
+	w.historyLoading = true
+	w.historyMessage = ""
+	w.history = nil
+	w.selectedCommit = ""
+	w.historyTimelineList.Position = layout.Position{}
+	project := w.historyProject
+	window, shutdown := a.window, a.shutdown
+	if !a.launchManagedBackground(func() {
+		changes, err := (proofhistory.Repository{Directory: project.Directory}).PageChanges(context.Background(), proofreadingPageID(int(page)-1))
+		result := proofreadingHistoryLoadResult{request: request, project: project, changes: changes, page: page, err: err}
+		select {
+		case w.historyResults <- result:
+			if window != nil {
+				window.Invalidate()
+			}
+		case <-shutdown:
+		}
+	}) {
+		w.historyLoading = false
+		w.historyMessage = a.textID("proofread.history.load_failed")
+	}
 }
 
 func (a *App) savedProofreadingIdentity() proofhistory.Identity {

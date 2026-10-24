@@ -30,6 +30,10 @@ func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions 
 	if state == nil {
 		return layout.Dimensions{}
 	}
+	w := a.ensureProofreadingWorkbench()
+	if w.historyOpen {
+		return a.layoutProofreadingHistoryPage(gtx)
+	}
 	if state.controller != nil {
 		a.processProofreadingHistoryKeys(gtx)
 		a.processProofreadingEditorEvents(gtx)
@@ -43,30 +47,37 @@ func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions 
 	if a.pdfDoc != nil {
 		a.handlePDFEvents(gtx)
 	}
+	var content layout.Widget
 	if state.bDocument == nil {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(a.layoutProofreadingTabChrome),
-			layout.Rigid(a.layoutProofreadingToolbar),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Flexed(1, a.layoutProofreadingComparePanes),
-					layout.Rigid(a.layoutProofreadingEmptyFilmstrip),
-				)
-			}),
-			layout.Rigid(a.layoutProofreadingStatus),
-		)
-	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(a.layoutProofreadingTabChrome),
-		layout.Rigid(a.layoutProofreadingToolbar),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+		content = func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Flexed(1, a.layoutProofreadingComparePanes),
-				layout.Rigid(a.layoutProofreadingPagination),
+				layout.Rigid(a.layoutProofreadingTabChrome),
+				layout.Rigid(a.layoutProofreadingToolbar),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Flexed(1, a.layoutProofreadingComparePanes),
+						layout.Rigid(a.layoutProofreadingEmptyFilmstrip),
+					)
+				}),
+				layout.Rigid(a.layoutProofreadingStatus),
 			)
-		}),
-		layout.Rigid(a.layoutProofreadingStatus),
-	)
+		}
+	} else {
+		content = func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(a.layoutProofreadingTabChrome),
+				layout.Rigid(a.layoutProofreadingToolbar),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Flexed(1, a.layoutProofreadingComparePanes),
+						layout.Rigid(a.layoutProofreadingPagination),
+					)
+				}),
+				layout.Rigid(a.layoutProofreadingStatus),
+			)
+		}
+	}
+	return content(gtx)
 }
 
 func (a *App) processProofreadingWindowControlClicks(gtx layout.Context) {

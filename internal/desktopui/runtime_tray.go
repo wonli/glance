@@ -232,8 +232,8 @@ func (r *desktopRuntime) showMainWindow() {
 		r.mu.Unlock()
 		return
 	}
-	primary := r.windows[r.primaryWindowID]
-	if primary != nil && !r.closingWindows[r.primaryWindowID] {
+	primary := r.glanceWindowLocked()
+	if primary != nil && !r.closingWindows[primary.windowID] {
 		window := primary.window
 		r.mu.Unlock()
 		if window != nil {

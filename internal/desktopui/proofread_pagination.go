@@ -74,10 +74,16 @@ func (a *App) layoutProofreadingPaginationHeading(gtx layout.Context, view *pdfV
 }
 
 func (a *App) layoutProofreadingPaginationPages(gtx layout.Context, view *pdfViewState) layout.Dimensions {
+	canPrevious, canNext := view.page > 0, view.page+1 < view.info.Pages
+	if a.proofreading != nil && a.proofreading.pageFilter != proofreadingPageFilterAll {
+		pages := a.proofreadingPageIndices(view.info.Pages)
+		_, canPrevious = proofreadingFilterAdjacentPage(pages, view.page, -1)
+		_, canNext = proofreadingFilterAdjacentPage(pages, view.page, 1)
+	}
 	return layout.Inset{Left: unit.Dp(22), Right: unit.Dp(22), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return a.layoutProofreadingPageArrow(gtx, view, "previous", "chevron-left", view.page > 0)
+				return a.layoutProofreadingPageArrow(gtx, view, "previous", "chevron-left", canPrevious)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Dimensions{Size: image.Pt(gtx.Dp(13), 0)}
@@ -94,7 +100,7 @@ func (a *App) layoutProofreadingPaginationPages(gtx layout.Context, view *pdfVie
 				return layout.Dimensions{Size: image.Pt(gtx.Dp(13), 0)}
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return a.layoutProofreadingPageArrow(gtx, view, "next", "chevron-right", view.page+1 < view.info.Pages)
+				return a.layoutProofreadingPageArrow(gtx, view, "next", "chevron-right", canNext)
 			}),
 		)
 	})

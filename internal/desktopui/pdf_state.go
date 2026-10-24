@@ -39,6 +39,7 @@ type pdfViewState struct {
 	lastCommand                       document.PDFCommand
 	info                              document.PDFInfo
 	page, selected                    int
+	pageMap                           []int
 	selectStart, selectEnd            int
 	zoom                              float64
 	fit                               string
@@ -193,6 +194,19 @@ func (v *pdfViewState) syncPageFromCanvas() bool {
 		return false
 	}
 	page := v.canvas.Position.First
+	if v.pageMap != nil {
+		if page < 0 || page >= len(v.pageMap) {
+			return false
+		}
+		page = v.pageMap[page]
+	}
+	return v.syncPage(page)
+}
+
+func (v *pdfViewState) syncPage(page int) bool {
+	if v == nil {
+		return false
+	}
 	if page < 0 || page >= max(1, v.info.Pages) || v.page == page {
 		return false
 	}

@@ -13,8 +13,6 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
-
-	"glance/internal/i18n"
 )
 
 var (
@@ -172,35 +170,12 @@ func (a *App) layoutProofreadingToolbar(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(30)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layoutProofreadingToolbarPill(gtx, a, 84, "chevron-left", "proofread.toolbar.previous")
+						return layoutProofreadingToolbarPill(gtx, a, 118, "check", "proofread.toolbar.reviewed_filter")
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(6), 0)} }),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layoutProofreadingToolbarPill(gtx, a, 84, "chevron-right", "proofread.toolbar.next")
+						return layoutProofreadingToolbarPill(gtx, a, 126, "clock-3", "proofread.toolbar.unreviewed_filter")
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(22), 0)} }),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layoutProofreadingToolbarPill(gtx, a, 118, "file-text", "proofread.toolbar.exception_filter")
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(6), 0)} }),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layoutProofreadingToolbarPill(gtx, a, 126, "list-filter", "proofread.toolbar.pending_filter")
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							width := max(1, gtx.Dp(1))
-							height := gtx.Dp(30)
-							paint.FillShape(gtx.Ops, color.NRGBA{R: 225, G: 229, B: 233, A: 255}, clip.Rect{Max: image.Pt(width, height)}.Op())
-							return layout.Dimensions{Size: image.Pt(width, height)}
-						})
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						label := material.Label(a.theme, 11, a.textID("proofread.toolbar.progress.loaded"))
-						label.Color = color.NRGBA{R: 99, G: 112, B: 124, A: 255}
-						return layoutProofreadingOpticallyCenteredLabel(gtx, label)
-					}),
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.layoutProofreadingToolbarPageNav(gtx) }),
 				)
 			})
 		},
@@ -208,6 +183,29 @@ func (a *App) layoutProofreadingToolbar(gtx layout.Context) layout.Dimensions {
 }
 
 func layoutProofreadingToolbarPill(gtx layout.Context, a *App, width unit.Dp, iconName, labelKey string) layout.Dimensions {
+	if a != nil && a.proofreading != nil {
+		var button *widget.Clickable
+		var requested proofreadingPageFilter
+		switch labelKey {
+		case "proofread.toolbar.reviewed_filter":
+			button, requested = &a.proofreading.filterReviewedButton, proofreadingPageFilterReviewed
+		case "proofread.toolbar.unreviewed_filter":
+			button, requested = &a.proofreading.filterUnreviewedButton, proofreadingPageFilterUnreviewed
+		}
+		if button != nil {
+			if button.Clicked(gtx) {
+				a.setProofreadingPageFilter(requested)
+				a.clearProofreadingFocusOutsideFilter(gtx)
+			}
+			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layoutProofreadingToolbarPillVisual(gtx, a, width, iconName, labelKey)
+			})
+		}
+	}
+	return layoutProofreadingToolbarPillVisual(gtx, a, width, iconName, labelKey)
+}
+
+func layoutProofreadingToolbarPillVisual(gtx layout.Context, a *App, width unit.Dp, iconName, labelKey string) layout.Dimensions {
 	size := image.Pt(gtx.Dp(width), gtx.Dp(32))
 	labelSize := unit.Sp(11)
 	leftInset, labelGap := unit.Dp(10), unit.Dp(7)
@@ -216,26 +214,31 @@ func layoutProofreadingToolbarPill(gtx layout.Context, a *App, width unit.Dp, ic
 	fill := color.NRGBA{R: 250, G: 251, B: 252, A: 255}
 	border := color.NRGBA{R: 226, G: 230, B: 234, A: 255}
 	switch labelKey {
-	case "proofread.toolbar.previous", "proofread.toolbar.next":
-		labelSize = 12
-		leftInset = 12.5
-		labelInk = color.NRGBA{R: 75, G: 85, B: 99, A: 255}
-		iconInk = labelInk
-		fill = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-		border = color.NRGBA{R: 213, G: 221, B: 229, A: 255}
-	case "proofread.toolbar.exception_filter":
+	case "proofread.toolbar.reviewed_filter":
 		leftInset, labelGap = 22, 6
-		labelInk = color.NRGBA{R: 70, G: 82, B: 94, A: 255}
-		iconInk = color.NRGBA{R: 104, G: 121, B: 134, A: 255}
+		labelInk = color.NRGBA{R: 105, G: 115, B: 126, A: 255}
+		iconInk = color.NRGBA{R: 118, G: 130, B: 141, A: 255}
 		fill = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 		border = color.NRGBA{R: 213, G: 221, B: 229, A: 255}
-	case "proofread.toolbar.pending_filter":
+		if a.proofreading != nil && a.proofreading.pageFilter == proofreadingPageFilterReviewed {
+			labelInk = color.NRGBA{R: 47, G: 94, B: 131, A: 255}
+			iconInk = labelInk
+			fill = color.NRGBA{R: 239, G: 245, B: 251, A: 255}
+			border = color.NRGBA{R: 157, G: 188, B: 215, A: 255}
+		}
+	case "proofread.toolbar.unreviewed_filter":
 		labelSize = 12
 		leftInset = 21.5
-		labelInk = color.NRGBA{R: 166, G: 71, B: 62, A: 255}
-		iconInk = color.NRGBA{R: 181, G: 78, B: 66, A: 255}
-		fill = color.NRGBA{R: 255, G: 241, B: 237, A: 255}
-		border = color.NRGBA{R: 233, G: 195, B: 187, A: 255}
+		labelInk = color.NRGBA{R: 105, G: 115, B: 126, A: 255}
+		iconInk = color.NRGBA{R: 118, G: 130, B: 141, A: 255}
+		fill = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		border = color.NRGBA{R: 213, G: 221, B: 229, A: 255}
+		if a.proofreading != nil && a.proofreading.pageFilter == proofreadingPageFilterUnreviewed {
+			labelInk = color.NRGBA{R: 166, G: 71, B: 62, A: 255}
+			iconInk = color.NRGBA{R: 181, G: 78, B: 66, A: 255}
+			fill = color.NRGBA{R: 255, G: 241, B: 237, A: 255}
+			border = color.NRGBA{R: 233, G: 195, B: 187, A: 255}
+		}
 	}
 	gtx.Constraints = layout.Exact(size)
 	return layout.Background{}.Layout(gtx,
@@ -263,64 +266,6 @@ func layoutProofreadingToolbarPill(gtx layout.Context, a *App, width unit.Dp, ic
 			})
 		},
 	)
-}
-
-func (a *App) layoutProofreadingToolbarPageNav(gtx layout.Context) layout.Dimensions {
-	if a.pdfDoc == nil || a.proofreading == nil {
-		return layout.Dimensions{}
-	}
-	view := a.ensurePDFView()
-	pageCount := view.info.Pages
-	if pageCount <= 0 {
-		return layout.Dimensions{}
-	}
-	previous, next := &a.proofreading.toolbarPreviousPage, &a.proofreading.toolbarNextPage
-	current := view.page
-	if a.proofreading.navigator.initialized {
-		current = a.proofreading.navigator.page
-	}
-	if previous.Clicked(gtx) {
-		view.page = current
-		a.handlePDFAction(gtx, "previous")
-	}
-	if next.Clicked(gtx) {
-		view.page = current
-		a.handlePDFAction(gtx, "next")
-	}
-	size := image.Pt(gtx.Dp(310), gtx.Dp(26))
-	gtx.Constraints = layout.Exact(size)
-	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return previous.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layoutProofreadingIcon(gtx, "ribbon", "chevron-left", 14, color.NRGBA{R: 100, G: 118, B: 135, A: 255})
-				})
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(11), 0)} }),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				page := a.textArgs("proofread.toolbar.page", i18n.Args{
-					"Page":  i18n.FormatNumber(a.localeSnapshot().Resolved, float64(current+1)),
-					"Pages": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(pageCount)),
-				})
-				label := material.Label(a.theme, 11, page)
-				label.Color = color.NRGBA{R: 65, G: 80, B: 94, A: 255}
-				label.Font.Weight = font.SemiBold
-				return layoutProofreadingOpticallyCenteredLabel(gtx, label)
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(11), 0)} }),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return next.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layoutProofreadingIcon(gtx, "ribbon", "chevron-right", 14, color.NRGBA{R: 100, G: 118, B: 135, A: 255})
-				})
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(11), 0)} }),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				label := material.Label(a.theme, 10, a.textID("proofread.toolbar.sync"))
-				label.Color = color.NRGBA{R: 138, G: 150, B: 161, A: 255}
-				return layoutProofreadingOpticallyCenteredLabel(gtx, label)
-			}),
-		)
-	})
 }
 
 func (a *App) layoutProofreadingStatus(gtx layout.Context) layout.Dimensions {

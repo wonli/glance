@@ -2,8 +2,8 @@ package desktopui
 
 import "image/color"
 
-// Review indicators belong to the PDF page navigator (Pen wiBkP), never the
-// editable X paper. Selection changes stroke width independently of status.
+// Review indicators share status across the page navigator and X paper.
+// Blue selection decoration takes precedence over the paper status border.
 func (a *App) proofreadingPageStatusKey(page int) string {
 	s := a.proofreading
 	if s == nil || s.controller == nil || page < 0 || page >= len(s.pageOwnership) {
@@ -50,4 +50,17 @@ func proofreadingThumbnailStatus(key string) (label string, fill, border, ink co
 		label = "proofread.pagination.status.failed"
 	}
 	return
+}
+
+func proofreadingConfirmationMenuAction(status string) (label string, enabled bool) {
+	switch status {
+	case "proofread.history.modified":
+		return "proofread.menu.confirm_changes", true
+	case "proofread.history.saving":
+		return "proofread.menu.saving", false
+	case "proofread.history.failed":
+		return "proofread.menu.retry_confirmation", true
+	default:
+		return "proofread.menu.reviewed", true
+	}
 }

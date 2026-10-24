@@ -40,11 +40,7 @@ func (a *App) hideMainWindowToTray() bool {
 		return false
 	}
 	runtime := a.ensureDesktopRuntime()
-	runtime.mu.Lock()
-	canHide := runtime.trayReady && !runtime.shuttingDown && !runtime.quitRequested &&
-		runtime.primaryWindowID == a.windowID && runtime.windows[a.windowID] == a &&
-		len(runtime.windows) == 1
-	runtime.mu.Unlock()
+	canHide := runtime.canHideGlanceWindowToTray(a)
 	if !canHide {
 		return false
 	}

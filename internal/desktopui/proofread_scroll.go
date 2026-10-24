@@ -51,12 +51,20 @@ func proofreadingPageScrollbarRange(top, viewport, content float64) (start, end 
 
 func proofreadingXPageAt(gtx layout.Context, view *pdfViewState, s *proofreadingWorkspace, point image.Point) (int, image.Rectangle) {
 	top := -s.xCanvas.Position.Offset
-	for i := s.xCanvas.Position.First; i < len(s.pageFrames) && top < gtx.Constraints.Max.Y; i++ {
-		size := proofreadingXPagePixelSize(gtx, view, s, i)
+	pageCount := len(view.pageMap)
+	if view.pageMap == nil {
+		pageCount = len(s.pageFrames)
+	}
+	for row := s.xCanvas.Position.First; row < pageCount && top < gtx.Constraints.Max.Y; row++ {
+		page, ok := view.pageForCanvasRow(row)
+		if !ok {
+			continue
+		}
+		size := proofreadingXPagePixelSize(gtx, view, s, page)
 		left := (gtx.Constraints.Max.X - size.X) / 2
 		bounds := image.Rect(left, top+gtx.Dp(12), left+size.X, top+gtx.Dp(12)+size.Y)
 		if point.In(bounds) {
-			return i, bounds
+			return page, bounds
 		}
 		top += size.Y + 2*gtx.Dp(12)
 	}

@@ -4,8 +4,8 @@ import (
 	"gioui.org/io/system"
 )
 
-func (r *desktopRuntime) consumeActivationRequests(app *App, requests <-chan struct{}) {
-	if app == nil {
+func (r *desktopRuntime) consumeActivationRequests(requests <-chan struct{}) {
+	if r == nil {
 		return
 	}
 	for {
@@ -15,7 +15,7 @@ func (r *desktopRuntime) consumeActivationRequests(app *App, requests <-chan str
 				return
 			}
 			r.activatePrimaryWindow()
-		case <-app.shutdown:
+		case <-r.completion:
 			return
 		}
 	}
@@ -30,8 +30,8 @@ func (r *desktopRuntime) activatePrimaryWindow() {
 		r.mu.Unlock()
 		return
 	}
-	app := r.windows[r.primaryWindowID]
-	if app != nil && r.closingWindows[r.primaryWindowID] {
+	app := r.glanceWindowLocked()
+	if app != nil && r.closingWindows[app.windowID] {
 		app = nil
 	}
 	r.mu.Unlock()

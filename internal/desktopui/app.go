@@ -92,9 +92,10 @@ type App struct {
 	selectedProofreadingTabID     string
 	nextProofreadingTabID         uint64
 	proofreadingTabHost           *App
-	proofreadingTabFocus          chan string
+	proofreadingTabFocus          chan proofreadingTabFocusRequest
 	proofreadingWorkbench         *proofreadingWorkbenchState
 	proofreading                  *proofreadingWorkspace
+	proofEntry                    *proofreadingPDFEntryState
 	workspacePDFRestoreResults    chan pdfWorkspaceRestoreResult
 	workspacePDFRestoreGeneration uint64
 	pendingPDFRestoreTabID        string
@@ -348,7 +349,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		wordCompareDocumentButtons:    make(map[string]*widget.Clickable),
 		mcpConfigurationList:          widget.List{List: layout.List{Axis: layout.Vertical}},
 		shutdown:                      make(chan struct{}),
-		proofreadingTabFocus:          make(chan string, 16),
+		proofreadingTabFocus:          make(chan proofreadingTabFocusRequest, 16),
 		agentUI:                       newAgentUIState(),
 		sessions:                      make(map[string]*documentSessionState),
 		tabMeta:                       make(map[string]workspace.Tab),
@@ -452,7 +453,7 @@ func RunWithActivation(initialPath string, reportStartupError func(error), activ
 	configureDesktopWindow(w)
 	a := newAppWithRuntime(w, runtime)
 	if activationRequests != nil {
-		go runtime.consumeActivationRequests(a, activationRequests)
+		go runtime.consumeActivationRequests(activationRequests)
 	}
 	if initialPath != "" {
 		if err := a.open(initialPath); err != nil {

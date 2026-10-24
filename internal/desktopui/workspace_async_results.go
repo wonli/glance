@@ -8,6 +8,7 @@ import (
 
 func (a *App) processAsyncResults() {
 	a.ensureDesktopRuntime()
+	a.processProofreadingPDFEntryResult()
 	a.processPDFWorkspaceRestoreResults()
 	a.pollFontResults()
 	a.processAgentSettingsResult()
@@ -161,6 +162,8 @@ func (a *App) processAsyncResults() {
 				}
 			case commandRegisterHomeFolder:
 				a.handleHomeFolderPickerResult(result)
+			case commandOpenDirectory:
+				a.setStatusMessage(i18n.Message{ID: "file.command.directory_opened"}, feedbackInfo, notificationSuppressed)
 			case commandRevealFile:
 				if result.path == a.homeRecentMenuPath {
 					a.dismissHomeRecentMenu()
