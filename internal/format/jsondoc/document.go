@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 
 	"glance/internal/fileutil"
@@ -29,7 +27,7 @@ type Document struct {
 func NewBlank() *Document { return &Document{text: "{}\n", dirty: true} }
 
 func Open(path string) (*Document, error) {
-	data, err := os.ReadFile(path)
+	data, err := fileutil.ReadExact(path)
 	if err != nil {
 		return nil, err
 	}
@@ -115,24 +113,7 @@ func (d *Document) saveAsLocked(path string) error {
 	if !json.Valid([]byte(d.text)) {
 		return errors.New("JSON is invalid; correct it before saving")
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".glance-*.json")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if _, err := tmp.WriteString(d.text); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := fileutil.ReplaceFile(tmpPath, path); err != nil {
+	if err := fileutil.AtomicWriteString(path, d.text); err != nil {
 		return fmt.Errorf("replace JSON file: %w", err)
 	}
 	d.path = path

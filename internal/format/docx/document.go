@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 
 	"glance/internal/document"
+	"glance/internal/fileutil"
 )
 
 type BlockKind string
@@ -59,7 +59,7 @@ type Document struct {
 }
 
 func Open(path string) (*Document, error) {
-	data, err := os.ReadFile(path)
+	data, err := fileutil.ReadExact(path)
 	if err != nil {
 		return nil, fmt.Errorf("open docx %q: %w", path, err)
 	}

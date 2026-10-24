@@ -5,8 +5,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"glance/internal/fileutil"
 )
@@ -126,47 +124,15 @@ func (d *Document) SaveAsDocumentWithSnapshot(path string) ([]byte, error) {
 }
 
 func (d *Document) saveAsSnapshot(path string, guard func() (func(), error)) ([]byte, error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".glance-*.docx")
-	if err != nil {
-		return nil, err
-	}
-	tmpPath := tmp.Name()
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return nil, err
-	}
-	defer os.Remove(tmpPath)
-	file, err := os.Create(tmpPath)
-	if err != nil {
-		return nil, err
-	}
 	data, err := d.packageBytes()
 	if err != nil {
-		_ = file.Close()
 		return nil, err
 	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return nil, err
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return nil, err
-	}
-	if err := file.Close(); err != nil {
-		return nil, err
-	}
-	var release func()
+	var opts []fileutil.WriteOption
 	if guard != nil {
-		release, err = guard()
-		if err != nil {
-			return nil, err
-		}
+		opts = append(opts, fileutil.WithCommitGuard(guard))
 	}
-	if release != nil {
-		defer release()
-	}
-	if err := fileutil.ReplaceFile(tmpPath, path); err != nil {
+	if err := fileutil.AtomicWriteBytes(path, data, opts...); err != nil {
 		return nil, fmt.Errorf("replace DOCX file: %w", err)
 	}
 	return data, nil

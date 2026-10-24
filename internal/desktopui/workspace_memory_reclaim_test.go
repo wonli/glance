@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 
+	"glance/internal/wordlayout"
 	"glance/internal/workspace"
 )
 
@@ -823,5 +825,110 @@ func TestMultipleTabsOpenEvictsOldestInactiveSession(t *testing.T) {
 	}
 	if app.sessions[tab1] == nil || app.sessions[tab1].word == nil {
 		t.Fatal("expected tab1 (Word) to be seamlessly rehydrated on demand")
+	}
+}
+
+type dummyWordLayoutEngine struct{}
+
+func (d *dummyWordLayoutEngine) Layout(ctx context.Context, input wordlayout.Input) (wordlayout.Result, error) {
+	return wordlayout.Result{}, nil
+}
+
+func TestBackgroundIdleMemoryReclaim(t *testing.T) {
+	origDelay := backgroundIdleReclaimDelay
+	backgroundIdleReclaimDelay = 20 * time.Millisecond
+	defer func() {
+		backgroundIdleReclaimDelay = origDelay
+	}()
+
+	dbPath := filepath.Join(t.TempDir(), "workspace.db")
+	store, err := workspace.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	col, err := workspace.OpenCollection(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app := New(nil, "")
+	defer close(app.shutdown)
+	app.ensureDesktopRuntime()
+	app.workspaceStore = store
+	app.collection = col
+
+	// Open DOCX (Tab 1)
+	docxPath := filepath.Join("..", "..", "testdata", "office-corpus", "docx", "long-table.docx")
+	if err := app.open(docxPath); err != nil {
+		t.Fatalf("open DOCX: %v", err)
+	}
+	tab1 := app.activeTabID
+
+	// Open XLSX (Tab 2)
+	xlsxPath := filepath.Join("..", "..", "testdata", "office-corpus", "xlsx", "cell-styles.xlsx")
+	if err := app.open(xlsxPath); err != nil {
+		t.Fatalf("open XLSX: %v", err)
+	}
+	tab2 := app.activeTabID
+
+	// Both tabs should be in sessions
+	if app.sessions[tab1] == nil || app.sessions[tab2] == nil {
+		t.Fatal("expected both tab1 and tab2 to be in sessions")
+	}
+
+	app.wordLayoutEngine = &dummyWordLayoutEngine{}
+	app.wordLayoutEngineFontVersion = 42
+
+	// Transition window to unfocused
+	app.handleWindowFocusConfig(false)
+
+	// Wait for background reclaim to fire
+	time.Sleep(60 * time.Millisecond)
+
+	// Inactive session tab1 must have been evicted, retaining only active tab2
+	if app.sessions[tab1] != nil {
+		t.Fatal("expected inactive tab1 to be evicted after background idle reclaim")
+	}
+	if app.sessions[tab2] == nil {
+		t.Fatal("expected active tab2 to remain in sessions")
+	}
+	if app.wordLayoutEngine != nil {
+		t.Fatal("expected wordLayoutEngine to be cleared after background idle reclaim")
+	}
+	if app.wordLayoutEngineFontVersion != 0 {
+		t.Fatalf("expected wordLayoutEngineFontVersion to be reset to 0, got %d", app.wordLayoutEngineFontVersion)
+	}
+
+	// Verify refocusing cancels a pending timer
+	app.handleWindowFocusConfig(true)
+	app.wordLayoutEngine = &dummyWordLayoutEngine{}
+	app.wordLayoutEngineFontVersion = 100
+	app.handleWindowFocusConfig(false)
+	// Immediately refocus before timer fires
+	app.handleWindowFocusConfig(true)
+	time.Sleep(60 * time.Millisecond)
+	if app.wordLayoutEngine == nil || app.wordLayoutEngineFontVersion != 100 {
+		t.Fatal("expected wordLayoutEngine to NOT be cleared when focus is restored promptly")
+	}
+}
+
+func TestMemoryShrinkHookCalledOnRelease(t *testing.T) {
+	hookCalled := make(chan struct{}, 1)
+	registerMemoryShrinkHook(func() error {
+		select {
+		case hookCalled <- struct{}{}:
+		default:
+		}
+		return nil
+	})
+
+	requestMemoryRelease()
+
+	select {
+	case <-hookCalled:
+		// success
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for memory shrink hook to be called on release")
 	}
 }

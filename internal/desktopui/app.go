@@ -103,6 +103,9 @@ type App struct {
 	windowMinimizeButton          widget.Clickable
 	windowMaximizeButton          widget.Clickable
 	windowMode                    app.WindowMode
+	windowFocused                 bool
+	backgroundReclaimTimer        *time.Timer
+	backgroundReclaimMu           sync.Mutex
 	clientTitlebar                bool
 	windowDecorations             widget.Decorations
 	showNewMenu                   bool

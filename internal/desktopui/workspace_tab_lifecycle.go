@@ -486,6 +486,12 @@ func closeSessionState(s *documentSessionState) {
 }
 
 func (a *App) closeWorkspace() {
+	a.backgroundReclaimMu.Lock()
+	if a.backgroundReclaimTimer != nil {
+		a.backgroundReclaimTimer.Stop()
+		a.backgroundReclaimTimer = nil
+	}
+	a.backgroundReclaimMu.Unlock()
 	a.invalidatePDFWorkspaceRestore()
 	a.discardPDFWorkspaceRestoreResults()
 	a.completeQueuedWordSplitsOnClose()

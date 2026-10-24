@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"glance/internal/fileutil"
 	"glance/internal/proofhistory"
 	"glance/internal/proofreading"
 	"glance/internal/workspace"
@@ -88,24 +89,8 @@ func persistProofreadingProject(store *workspace.Store, p workspace.Proofreading
 	return store.SaveProofreadingProject(p)
 }
 func writeProofreadingSource(path string, reader io.Reader) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".source-*")
-	if err != nil {
-		return err
-	}
-	name := f.Name()
-	defer os.Remove(name)
-	if _, err = io.Copy(f, reader); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(name, path)
+	_, err := fileutil.AtomicWriteReader(path, reader, fileutil.WithAutoCreateDir(true))
+	return err
 }
 func (a *App) proofreadingProjectMetadata() workspace.ProofreadingProject {
 	s := a.proofreading

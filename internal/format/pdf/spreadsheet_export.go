@@ -7,7 +7,6 @@ import (
 	"glance/internal/document"
 	"glance/internal/fileutil"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/SalvioniDigitalSolutions/gopdf"
@@ -31,10 +30,9 @@ func ExportSpreadsheetPDFFileWithCommitGuard(ctx context.Context, path string, w
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	directory := filepath.Dir(path)
-	temporary, err := os.CreateTemp(directory, ".spreadsheet-pdf-*.pdf")
+	temporary, err := fileutil.CreateTemp(".spreadsheet-pdf-*.pdf")
 	if err != nil {
-		return fmt.Errorf("create temporary PDF beside destination: %w", err)
+		return fmt.Errorf("create temporary PDF: %w", err)
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)

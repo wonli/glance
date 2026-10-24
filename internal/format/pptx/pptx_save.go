@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	gopptx "github.com/F31/go-pptx/v2/pptx"
+	"glance/internal/fileutil"
 )
 
 // Save saves the presentation to its original path using an atomic temporary file swap.
@@ -53,7 +54,7 @@ func (d *Document) saveAtomicLocked(targetPath string) error {
 		return fmt.Errorf("创建目录失败: %w", err)
 	}
 
-	tmpFile, err := os.CreateTemp(dir, "glance-pptx-*.tmp")
+	tmpFile, err := fileutil.CreateTemp("glance-pptx-*.tmp")
 	if err != nil {
 		return fmt.Errorf("创建临时保存文件失败: %w", err)
 	}
@@ -61,7 +62,7 @@ func (d *Document) saveAtomicLocked(targetPath string) error {
 	_ = tmpFile.Close()
 	defer os.Remove(tmpPath)
 
-	// Save to sibling temporary file
+	// Save to temporary file in Glance temp directory
 	if _, err := d.pres.Save(context.Background(), tmpPath, gopptx.WithSaveOverwrite(true)); err != nil {
 		return fmt.Errorf("写入演示文稿失败: %w", err)
 	}
@@ -72,7 +73,7 @@ func (d *Document) saveAtomicLocked(targetPath string) error {
 		packageEdits = d.presentationComments.PackageEdits
 	}
 	if hasPresentationPackageEdits(d.slideTransformChanges, d.slidePictureCropChanges, d.slideStyleChanges, d.slidePlaceholderChanges, d.slideBackgroundChanges, d.slideSizeChange, slideLayouts, slideTimings, packageEdits) {
-		transformed, err := os.CreateTemp(dir, "glance-pptx-patched-*.tmp")
+		transformed, err := fileutil.CreateTemp("glance-pptx-patched-*.tmp")
 		if err != nil {
 			return fmt.Errorf("创建几何校验文件失败: %w", err)
 		}
@@ -105,7 +106,7 @@ func (d *Document) saveAtomicLocked(targetPath string) error {
 	_ = checkPres.Close()
 
 	// Atomic replace
-	if err := os.Rename(validationPath, targetPath); err != nil {
+	if err := fileutil.ReplaceFile(validationPath, targetPath); err != nil {
 		return fmt.Errorf("替换目标文件失败: %w", err)
 	}
 
@@ -138,7 +139,7 @@ func (d *Document) snapshotBytesLocked() ([]byte, error) {
 		return nil, err
 	}
 
-	tmpFile, err := os.CreateTemp("", "glance-pptx-snap-*.pptx")
+	tmpFile, err := fileutil.CreateTemp("glance-pptx-snap-*.pptx")
 	if err != nil {
 		return nil, fmt.Errorf("创建快照临时文件失败: %w", err)
 	}
@@ -159,7 +160,7 @@ func (d *Document) snapshotBytesLocked() ([]byte, error) {
 		}
 		return os.ReadFile(tmpPath)
 	}
-	patchedFile, err := os.CreateTemp("", "glance-pptx-snap-patched-*.pptx")
+	patchedFile, err := fileutil.CreateTemp("glance-pptx-snap-patched-*.pptx")
 	if err != nil {
 		return nil, fmt.Errorf("创建几何快照文件失败: %w", err)
 	}
@@ -186,7 +187,7 @@ func (d *Document) snapshotBytesLocked() ([]byte, error) {
 
 // OpenBytes loads a PPTX presentation from in-memory byte slice.
 func OpenBytes(data []byte) (*Document, error) {
-	tmpFile, err := os.CreateTemp("", "glance-pptx-restore-*.pptx")
+	tmpFile, err := fileutil.CreateTemp("glance-pptx-restore-*.pptx")
 	if err != nil {
 		return nil, fmt.Errorf("创建恢复临时文件失败: %w", err)
 	}

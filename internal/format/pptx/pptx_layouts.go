@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"glance/internal/document"
+	"glance/internal/fileutil"
 
 	gopptx "github.com/F31/go-pptx/v2/pptx"
 )
@@ -139,7 +140,7 @@ func (d *Document) serializedPackageLocked(ctx context.Context) (*pptxPackage, f
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	tmp, err := os.CreateTemp("", "glance-pptx-layout-*.pptx")
+	tmp, err := fileutil.CreateTemp("glance-pptx-layout-*.pptx")
 	if err != nil {
 		return nil, nil, fmt.Errorf("创建版式校验文件失败: %w", err)
 	}

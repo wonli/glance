@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"glance/internal/document"
+	"glance/internal/fileutil"
 	"glance/internal/fontmanager/fontcatalog"
 	"glance/internal/format/docx"
 	pdfformat "glance/internal/format/pdf"
@@ -117,8 +117,7 @@ func ExportScene(ctx context.Context, path string, layout wordlayout.Result, fon
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	directory := filepath.Dir(path)
-	stage, err := os.CreateTemp(directory, ".glance-word-pdf-stage-*.pdf")
+	stage, err := fileutil.CreateTemp(".glance-word-pdf-stage-*.pdf")
 	if err != nil {
 		return Result{}, fmt.Errorf("create Word PDF staging file: %w", err)
 	}
@@ -152,7 +151,7 @@ func ExportScene(ctx context.Context, path string, layout wordlayout.Result, fon
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	if err := os.Link(stagePath, path); err != nil {
+	if err := fileutil.MoveExclusive(stagePath, path); err != nil {
 		return Result{}, err
 	}
 

@@ -289,6 +289,9 @@ func (a *App) startWordPagination(state *documentSessionState) {
 	revision := state.wordRevisionAtomic.Load()
 	draftEpoch := state.wordDraftEpoch.Load()
 	fonts := a.currentFontSnapshot()
+	if a.window != nil && (fonts.Version == 0 || len(fonts.Faces()) == 0) {
+		return
+	}
 	key := wordLayoutKey{
 		DocumentID:   state.documentID,
 		Revision:     revision,

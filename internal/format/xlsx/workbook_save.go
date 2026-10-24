@@ -3,8 +3,7 @@ package xlsx
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io"
 
 	"glance/internal/fileutil"
 )
@@ -77,42 +76,13 @@ func (w *Workbook) saveTo(path string) error {
 }
 
 func (w *Workbook) saveToWithGuard(path string, guard func() (func(), error)) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".glance-*.xlsx")
-	if err != nil {
-		return fmt.Errorf("create temporary workbook: %w", err)
-	}
-	tmpPath := tmp.Name()
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	defer os.Remove(tmpPath)
-	if err := w.file.SaveAs(tmpPath); err != nil {
-		return fmt.Errorf("write workbook: %w", err)
-	}
-	written, err := os.Open(tmpPath)
-	if err != nil {
-		return err
-	}
-	if err := written.Sync(); err != nil {
-		_ = written.Close()
-		return err
-	}
-	if err := written.Close(); err != nil {
-		return err
-	}
-	var release func()
+	var opts []fileutil.WriteOption
 	if guard != nil {
-		release, err = guard()
-		if err != nil {
-			return err
-		}
+		opts = append(opts, fileutil.WithCommitGuard(guard))
 	}
-	if release != nil {
-		defer release()
-	}
-	if err := fileutil.ReplaceFile(tmpPath, path); err != nil {
+	if err := fileutil.AtomicWrite(path, func(writer io.Writer) error {
+		return w.file.Write(writer)
+	}, opts...); err != nil {
 		return fmt.Errorf("replace workbook: %w", err)
 	}
 	return nil

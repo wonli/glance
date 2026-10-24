@@ -105,7 +105,7 @@ type Document struct {
 // Uses fast line-offset indexing so files with millions of rows open in milliseconds.
 func Open(path string) (*Document, error) {
 	cleanPath := filepath.Clean(path)
-	f, err := os.Open(cleanPath)
+	f, _, err := fileutil.OpenStream(cleanPath)
 	if err != nil {
 		return nil, fmt.Errorf("open csv %q: %w", path, err)
 	}
@@ -414,53 +414,34 @@ func (d *Document) exportToXLSXLocked(path string) error {
 }
 
 func (d *Document) saveToLocked(path string) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".glance-*.csv")
+	err := fileutil.AtomicWrite(path, func(w io.Writer) error {
+		if d.hasBOM {
+			if _, err := w.Write([]byte{0xef, 0xbb, 0xbf}); err != nil {
+				return err
+			}
+		}
+
+		writer := csv.NewWriter(w)
+		if d.comma != 0 {
+			writer.Comma = d.comma
+		}
+		writer.UseCRLF = d.useCRLF
+
+		// Stream write all rows
+		for r := 1; r <= d.maxRow; r++ {
+			rowFields := make([]string, d.maxCol)
+			for c := 1; c <= d.maxCol; c++ {
+				rowFields[c-1] = d.getCellValueLocked(r, c)
+			}
+			if err := writer.Write(rowFields); err != nil {
+				return fmt.Errorf("write csv row %d: %w", r, err)
+			}
+		}
+
+		writer.Flush()
+		return writer.Error()
+	})
 	if err != nil {
-		return fmt.Errorf("create temporary csv: %w", err)
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-
-	if d.hasBOM {
-		if _, err := tmp.Write([]byte{0xef, 0xbb, 0xbf}); err != nil {
-			_ = tmp.Close()
-			return err
-		}
-	}
-
-	w := csv.NewWriter(tmp)
-	if d.comma != 0 {
-		w.Comma = d.comma
-	}
-	w.UseCRLF = d.useCRLF
-
-	// Stream write all rows
-	for r := 1; r <= d.maxRow; r++ {
-		rowFields := make([]string, d.maxCol)
-		for c := 1; c <= d.maxCol; c++ {
-			rowFields[c-1] = d.getCellValueLocked(r, c)
-		}
-		if err := w.Write(rowFields); err != nil {
-			_ = tmp.Close()
-			return fmt.Errorf("write csv row %d: %w", r, err)
-		}
-	}
-
-	w.Flush()
-	if err := w.Error(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-
-	if err := fileutil.ReplaceFile(tmpPath, path); err != nil {
 		return err
 	}
 

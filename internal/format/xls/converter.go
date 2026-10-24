@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"glance/internal/fileutil"
 	"io"
 	"os"
 	"path"
@@ -105,7 +106,7 @@ func convertImportReader(ctx context.Context, reader ImportReader, maxCells uint
 		return nil, errors.New("XLS workbook has no worksheets")
 	}
 
-	directory, err := os.MkdirTemp("", "glance-xls-import-*")
+	directory, err := os.MkdirTemp(fileutil.DefaultTempDir(), "glance-xls-import-*")
 	if err != nil {
 		return nil, fmt.Errorf("create private XLS import directory: %w", err)
 	}
@@ -442,7 +443,7 @@ func patchXLSXPackage(filename string, patches map[string]worksheetPatches) (err
 		}
 		partPatches[path.Clean(part)] = patch
 	}
-	tempFile, err := os.CreateTemp(filepath.Dir(filename), ".xls-package-patch-*.xlsx")
+	tempFile, err := fileutil.CreateTemp(".xls-package-patch-*.xlsx")
 	if err != nil {
 		return err
 	}
@@ -499,7 +500,7 @@ func patchXLSXPackage(filename string, patches map[string]worksheetPatches) (err
 		return err
 	}
 	fileClosed = true
-	if err := os.Rename(tempPath, filename); err != nil {
+	if err := fileutil.ReplaceFile(tempPath, filename); err != nil {
 		return fmt.Errorf("replace staged XLSX package with fidelity patches: %w", err)
 	}
 	return nil

@@ -70,31 +70,37 @@ func writeNewFile(ctx context.Context, path string, data []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".glance-copy-*")
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
-		return err
-	}
-	tmpPath := file.Name()
-	defer os.Remove(tmpPath)
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := os.Link(tmpPath, path); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return ErrTargetExists
 		}
 		return err
 	}
+	var written bool
+	defer func() {
+		if !written {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	written = true
 	return nil
 }

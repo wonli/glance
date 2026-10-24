@@ -8,7 +8,7 @@ import (
 )
 
 func NewWithSnapshot(snapshot fontcatalog.Snapshot) (*Shaper, error) {
-	s := &Shaper{facesByID: make(map[fontscan.Location]*font.Face), idsByFace: make(map[*font.Face]fontscan.Location), paths: make(map[string]*list.Element), pathLRU: list.New()}
+	s := &Shaper{facesByID: make(map[fontscan.Location]*font.Face), idsByFace: make(map[*font.Face]fontscan.Location), dataByID: make(map[fontscan.Location][]byte), paths: make(map[string]*list.Element), pathLRU: list.New()}
 	s.snapshot = &snapshot
 	s.loaded = true
 	s.resourceIDs = make(map[fontscan.Location]fontcatalog.ResourceID)
@@ -32,6 +32,9 @@ func NewWithSnapshot(snapshot fontcatalog.Snapshot) (*Shaper, error) {
 			seen[name] = true
 			s.fonts = append(s.fonts, fontscan.Footprint{Location: location, Family: name, Aspect: aspect})
 		}
+	}
+	if len(s.fonts) == 0 {
+		return NewSystem()
 	}
 	return s, nil
 }

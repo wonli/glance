@@ -13,5 +13,5 @@ func ReplaceFile(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	return windows.MoveFileEx(src, dst, windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH)
+	return windows.MoveFileEx(src, dst, windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_COPY_ALLOWED|windows.MOVEFILE_WRITE_THROUGH)
 }

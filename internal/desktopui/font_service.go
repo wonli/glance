@@ -129,6 +129,20 @@ func (a *App) prepareInitialFontTheme() error {
 	a.fontPicker.event = fontmanager.Event{Snapshot: snapshot}
 	a.fontPicker.renderCache = cache
 	a.fontPicker.renderAccepted = fmt.Sprintf("%d:", snapshot.Version)
+
+	a.wordLayoutEngine = nil
+	a.wordLayoutEngineFontVersion = 0
+	a.wordPDFFontSource = nil
+	for _, s := range a.sessions {
+		if s != nil && s.word != nil {
+			s.cancelWordLayout()
+			s.wordLayoutAcceptedKey = nil
+			s.wordLayoutPendingKey = nil
+			s.wordLayoutErrorKey = nil
+			s.wordLayoutResult = nil
+			s.wordLayoutError = ""
+		}
+	}
 	return nil
 }
 

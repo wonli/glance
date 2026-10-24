@@ -8,12 +8,12 @@ import (
 	"image"
 	"math"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/SalvioniDigitalSolutions/gopdf"
 
 	"glance/internal/document"
+	"glance/internal/fileutil"
 	"glance/internal/fontmanager/fontcatalog"
 	pdfformat "glance/internal/format/pdf"
 	"glance/internal/wordfont"
@@ -89,8 +89,7 @@ func exportSnapshotWithShaper(ctx context.Context, path string, snapshot documen
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	directory := filepath.Dir(path)
-	stage, err := os.CreateTemp(directory, ".glance-presentation-pdf-stage-*.pdf")
+	stage, err := fileutil.CreateTemp(".glance-presentation-pdf-stage-*.pdf")
 	if err != nil {
 		return Result{}, fmt.Errorf("create presentation PDF staging file: %w", err)
 	}
@@ -151,7 +150,7 @@ func exportSnapshotWithShaper(ctx context.Context, path string, snapshot documen
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	if err := os.Link(stagePath, path); err != nil {
+	if err := fileutil.MoveExclusive(stagePath, path); err != nil {
 		return Result{}, err
 	}
 	warnings, truncated := presentationWarnings(snapshot)

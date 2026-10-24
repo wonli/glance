@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"glance/internal/document"
+	"glance/internal/fileutil"
 
 	gopptx "github.com/F31/go-pptx/v2/pptx"
 )
@@ -750,7 +751,7 @@ func (d *Document) packagePartLocked(partName string) ([]byte, error) {
 	if d.pres == nil {
 		return nil, errors.New("演示文稿已关闭")
 	}
-	tmpFile, err := os.CreateTemp("", "glance-pptx-comment-read-*.pptx")
+	tmpFile, err := fileutil.CreateTemp("glance-pptx-comment-read-*.pptx")
 	if err != nil {
 		return nil, fmt.Errorf("创建 PPTX 批注读取快照失败: %w", err)
 	}

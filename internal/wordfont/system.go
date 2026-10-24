@@ -47,6 +47,7 @@ type Shaper struct {
 
 	facesByID         map[fontscan.Location]*font.Face
 	idsByFace         map[*font.Face]fontscan.Location
+	dataByID          map[fontscan.Location][]byte
 	paths             map[string]*list.Element
 	pathLRU           *list.List
 	pathBytes         int64
@@ -208,6 +209,11 @@ func (s *Shaper) Shape(value string, style document.WordTextStyle) (wordlayout.S
 }
 
 func (s *Shaper) readFontBytes(location fontscan.Location) ([]byte, error) {
+	if s.dataByID != nil {
+		if data, ok := s.dataByID[location]; ok && len(data) > 0 {
+			return data, nil
+		}
+	}
 	if s.snapshot != nil {
 		return s.snapshot.ReadFace(s.resourceIDs[location])
 	}
@@ -495,6 +501,10 @@ func (s *Shaper) loadFace(location fontscan.Location) *font.Face {
 	face := font.NewFace(ft)
 	s.facesByID[location] = face
 	s.idsByFace[face] = location
+	if s.dataByID == nil {
+		s.dataByID = make(map[fontscan.Location][]byte)
+	}
+	s.dataByID[location] = data
 	return face
 }
 

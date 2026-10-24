@@ -103,6 +103,7 @@ func migrate(db *sql.DB) error {
 		return fmt.Errorf("workspace database version %d is newer than supported version 8", version)
 	}
 	if version == 0 {
+		_, _ = db.Exec(`PRAGMA auto_vacuum = INCREMENTAL`)
 		tx, err := db.Begin()
 		if err != nil {
 			return err
@@ -752,6 +753,26 @@ func (s *Store) Vacuum() error {
 	}
 	_, err := s.db.Exec(`VACUUM`)
 	return err
+}
+
+// AutoMaintainSpace checks whether dead pages in the freelist exceed maintenance thresholds
+// and reorganizes the database to reclaim space.
+func (s *Store) AutoMaintainSpace() (bool, error) {
+	if s == nil || s.db == nil || s.path == "" || s.path == ":memory:" {
+		return false, nil
+	}
+	var freelist, pageCount int64
+	if err := s.db.QueryRow(`PRAGMA freelist_count`).Scan(&freelist); err != nil {
+		return false, err
+	}
+	if err := s.db.QueryRow(`PRAGMA page_count`).Scan(&pageCount); err != nil {
+		return false, err
+	}
+	// Reclaim if freelist has more than 1000 pages (~4MB), or over 200 pages (~800KB) representing > 10% of total
+	if freelist > 1000 || (freelist > 200 && pageCount > 0 && float64(freelist)/float64(pageCount) > 0.10) {
+		return true, s.Vacuum()
+	}
+	return false, nil
 }
 
 

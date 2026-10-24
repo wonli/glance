@@ -12,6 +12,7 @@ import (
 	"github.com/SalvioniDigitalSolutions/gopdf"
 
 	"glance/internal/document"
+	"glance/internal/fileutil"
 	"glance/internal/fontmanager/fontcatalog"
 	pdfformat "glance/internal/format/pdf"
 	"glance/internal/wordfont"
@@ -88,8 +89,7 @@ func exportWindow(ctx context.Context, path string, sheet string, window documen
 		}
 	}
 
-	directory := filepath.Dir(path)
-	stage, err := os.CreateTemp(directory, ".glance-sheet-pdf-stage-*.pdf")
+	stage, err := fileutil.CreateTemp(".glance-sheet-pdf-stage-*.pdf")
 	if err != nil {
 		return Result{}, fmt.Errorf("create spreadsheet PDF staging file: %w", err)
 	}
@@ -133,7 +133,7 @@ func exportWindow(ctx context.Context, path string, sheet string, window documen
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	if err := os.Link(stagePath, path); err != nil {
+	if err := fileutil.MoveExclusive(stagePath, path); err != nil {
 		return Result{}, err
 	}
 	return Result{Path: path, BytesWritten: info.Size(), PageCount: reader.NumPages()}, nil

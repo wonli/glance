@@ -10,8 +10,6 @@ import (
 	"image"
 	"image/draw"
 	"math"
-	"os"
-	"path/filepath"
 	"sync"
 )
 
@@ -159,32 +157,18 @@ func (d *Document) save(path string) error {
 	if d.closed {
 		return errors.New("PDF 已关闭")
 	}
-	f, e := os.CreateTemp(filepath.Dir(path), ".glance-pdf-*.pdf")
-	if e != nil {
-		return e
+	guard := func(tmp string) (func(), error) {
+		r, e := gopdf.Open(tmp)
+		if e != nil {
+			return nil, e
+		}
+		if r.Repaired() || r.NumPages() != d.reader.NumPages() {
+			return nil, errors.New("PDF 保存验证失败")
+		}
+		return nil, nil
 	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if _, e = f.Write(d.data); e != nil {
-		f.Close()
-		return e
-	}
-	if e = f.Sync(); e != nil {
-		f.Close()
-		return e
-	}
-	if e = f.Close(); e != nil {
-		return e
-	}
-	r, e := gopdf.Open(tmp)
-	if e != nil {
-		return e
-	}
-	if r.Repaired() || r.NumPages() != d.reader.NumPages() {
-		return errors.New("PDF 保存验证失败")
-	}
-	if e = fileutil.ReplaceFile(tmp, path); e != nil {
-		return e
+	if err := fileutil.AtomicWriteBytes(path, d.data, fileutil.WithFileCommitGuard(guard)); err != nil {
+		return err
 	}
 	d.path = path
 	d.saved = d.data

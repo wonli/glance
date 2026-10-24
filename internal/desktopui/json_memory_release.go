@@ -10,9 +10,32 @@ import (
 )
 
 var (
-	memoryReleaseMu    sync.Mutex
-	memoryReleaseTimer *time.Timer
+	memoryReleaseMu     sync.Mutex
+	memoryReleaseTimer  *time.Timer
+	memoryShrinkHooks   []func() error
+	memoryShrinkHooksMu sync.Mutex
 )
+
+// registerMemoryShrinkHook attaches engine-level memory release routines (such as SQLite PRAGMA shrink_memory).
+func registerMemoryShrinkHook(fn func() error) {
+	if fn == nil {
+		return
+	}
+	memoryShrinkHooksMu.Lock()
+	defer memoryShrinkHooksMu.Unlock()
+	memoryShrinkHooks = append(memoryShrinkHooks, fn)
+}
+
+func invokeMemoryShrinkHooks() {
+	memoryShrinkHooksMu.Lock()
+	hooks := append([]func() error(nil), memoryShrinkHooks...)
+	memoryShrinkHooksMu.Unlock()
+	for _, fn := range hooks {
+		if fn != nil {
+			_ = fn()
+		}
+	}
+}
 
 // requestMemoryRelease schedules OS memory reclamation off the Gio event loop.
 // Calls are debounced so rapid tab closes or background worker terminations coalesce
@@ -27,6 +50,7 @@ func requestMemoryRelease() {
 		memoryReleaseMu.Lock()
 		memoryReleaseTimer = nil
 		memoryReleaseMu.Unlock()
+		invokeMemoryShrinkHooks()
 		runtime.GC()
 		debug.FreeOSMemory()
 	})

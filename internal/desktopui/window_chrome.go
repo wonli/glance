@@ -1,8 +1,11 @@
 package desktopui
 
 import (
+	"time"
+
 	"gioui.org/app"
 	"gioui.org/io/system"
+	"glance/internal/diagramrender"
 )
 
 func (a *App) applyWindowConfig(config app.Config) {
@@ -11,8 +14,68 @@ func (a *App) applyWindowConfig(config app.Config) {
 	if config.Mode == app.Minimized {
 		requestMemoryRelease()
 	}
+	a.handleWindowFocusConfig(config.Focused)
 	if a.themeMode == ThemeModeSystem {
 		a.designTokens = ResolveDesignTokens(a.themeMode, a.designTokens.Typography)
+	}
+}
+
+var backgroundIdleReclaimDelay = 20 * time.Second
+
+func (a *App) handleWindowFocusConfig(focused bool) {
+	a.backgroundReclaimMu.Lock()
+	defer a.backgroundReclaimMu.Unlock()
+	wasFocused := a.windowFocused
+	a.windowFocused = focused
+	if focused {
+		if a.backgroundReclaimTimer != nil {
+			a.backgroundReclaimTimer.Stop()
+			a.backgroundReclaimTimer = nil
+		}
+		return
+	}
+	// Window transitioned from focused to unfocused, or started unfocused.
+	// Schedule idle background memory reclamation after a grace period.
+	if wasFocused || a.backgroundReclaimTimer == nil {
+		if a.backgroundReclaimTimer != nil {
+			a.backgroundReclaimTimer.Stop()
+		}
+		a.backgroundReclaimTimer = time.AfterFunc(backgroundIdleReclaimDelay, func() {
+			a.backgroundReclaimMu.Lock()
+			a.backgroundReclaimTimer = nil
+			stillUnfocused := !a.windowFocused
+			a.backgroundReclaimMu.Unlock()
+			if stillUnfocused {
+				a.reclaimBackgroundMemory()
+			}
+		})
+	}
+}
+
+func (a *App) reclaimBackgroundMemory() {
+	if a == nil {
+		return
+	}
+	// 1. Evict inactive document sessions (retains only the active document)
+	a.evictInactiveSessions()
+	// 2. Release Word layout engine and font source while idle in the background.
+	// They will be lazily re-instantiated on demand when the user returns to edit or repaginate.
+	a.releaseIdleEnginesForBackground()
+	// 3. Request debounced memory release (calls SQLite PRAGMA shrink_memory, runtime.GC, debug.FreeOSMemory)
+	requestMemoryRelease()
+}
+
+func (a *App) releaseIdleEnginesForBackground() {
+	if a == nil {
+		return
+	}
+	if !a.hasActiveWordDocument() {
+		a.wordLayoutEngine = nil
+		a.wordLayoutEngineFontVersion = 0
+		a.wordPDFFontSource = nil
+	}
+	if !a.hasActiveMarkdownDocument() {
+		a.launchManagedBackground(diagramrender.IdleCleanup())
 	}
 }
 

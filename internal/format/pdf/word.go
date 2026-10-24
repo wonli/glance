@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/SalvioniDigitalSolutions/gopdf"
@@ -214,10 +213,9 @@ func ExportWordPDFFileWithCommitGuard(ctx context.Context, path string, result w
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	directory := filepath.Dir(path)
-	temporary, err := os.CreateTemp(directory, ".word-pdf-*.pdf")
+	temporary, err := fileutil.CreateTemp(".word-pdf-*.pdf")
 	if err != nil {
-		return fmt.Errorf("create temporary PDF beside destination: %w", err)
+		return fmt.Errorf("create temporary PDF: %w", err)
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)

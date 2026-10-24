@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"glance/internal/document"
+	"glance/internal/fileutil"
 	"io"
 	"os"
 	"path/filepath"
@@ -198,7 +199,7 @@ func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建几何补丁目录失败: %w", err)
 	}
-	tmpFile, err := os.CreateTemp(dir, "glance-pptx-transform-*.tmp")
+	tmpFile, err := fileutil.CreateTemp("glance-pptx-transform-*.tmp")
 	if err != nil {
 		return fmt.Errorf("创建几何补丁临时文件失败: %w", err)
 	}
@@ -275,7 +276,7 @@ func patchPresentationEdits(sourcePath, targetPath string, transforms []map[uint
 	if err := tmpFile.Close(); err != nil {
 		return fmt.Errorf("关闭 PPTX 几何补丁失败: %w", err)
 	}
-	if err := os.Rename(tmpPath, targetPath); err != nil {
+	if err := fileutil.ReplaceFile(tmpPath, targetPath); err != nil {
 		return fmt.Errorf("安装 PPTX 几何补丁失败: %w", err)
 	}
 	return nil

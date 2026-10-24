@@ -148,3 +148,51 @@ func TestReplaceWorkspaceIsTransactional(t *testing.T) {
 		t.Fatalf("failed replacement changed persisted workspace: %+v", got)
 	}
 }
+
+func TestStoreAutoMaintainSpace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// Insert large payloads to allocate pages
+	largePayload := make([]byte, 2*1024*1024)
+	for i := 0; i < 3; i++ {
+		id := filepath.Base(path) + "-doc"
+		if err := s.SaveDocument(Document{
+			ID: id, Format: "docx", Payload: largePayload, UpdatedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Delete documents to create dead pages in freelist
+	if err := s.DeleteDocument(filepath.Base(path) + "-doc"); err != nil {
+		t.Fatal(err)
+	}
+
+	var freelist int64
+	if err := s.db.QueryRow(`PRAGMA freelist_count`).Scan(&freelist); err != nil {
+		t.Fatal(err)
+	}
+	if freelist == 0 {
+		t.Fatal("expected non-zero freelist after delete")
+	}
+
+	maintained, err := s.AutoMaintainSpace()
+	if err != nil {
+		t.Fatalf("AutoMaintainSpace failed: %v", err)
+	}
+	if !maintained {
+		t.Fatal("expected AutoMaintainSpace to return true and vacuum freelist")
+	}
+
+	if err := s.db.QueryRow(`PRAGMA freelist_count`).Scan(&freelist); err != nil {
+		t.Fatal(err)
+	}
+	if freelist != 0 {
+		t.Fatalf("expected 0 freelist pages after AutoMaintainSpace, got %d", freelist)
+	}
+}

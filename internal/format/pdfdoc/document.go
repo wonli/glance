@@ -14,6 +14,7 @@ import (
 
 	"github.com/SalvioniDigitalSolutions/gopdf"
 	"glance/internal/document"
+	"glance/internal/fileutil"
 )
 
 type Document struct {
@@ -67,7 +68,7 @@ func OpenSnapshotStream(write func(io.Writer) error) (*Document, error) {
 	if write == nil {
 		return nil, errors.New("PDF snapshot writer is required")
 	}
-	file, err := os.CreateTemp("", "glance-pdf-snapshot-*.pdf")
+	file, err := fileutil.CreateTemp("glance-pdf-snapshot-*.pdf")
 	if err != nil {
 		return nil, fmt.Errorf("create PDF snapshot backing: %w", err)
 	}

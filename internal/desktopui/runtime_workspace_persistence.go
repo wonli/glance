@@ -64,6 +64,14 @@ func (r *desktopRuntime) startWorkspaceWriter() {
 			r.invalidateWindows()
 		}
 	}()
+	go func() {
+		time.Sleep(1500 * time.Millisecond)
+		r.workspaceDBMu.Lock()
+		defer r.workspaceDBMu.Unlock()
+		if r.workspaceStore != nil {
+			_, _ = r.workspaceStore.AutoMaintainSpace()
+		}
+	}()
 }
 
 func (r *desktopRuntime) drainWorkspaceWriter() {

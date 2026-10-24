@@ -3,6 +3,7 @@ package desktopui
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"glance/internal/diagnostics"
 	"glance/internal/workspace"
@@ -46,6 +47,7 @@ func (r *desktopRuntime) registerDiagnostics() {
 	if r == nil {
 		return
 	}
+	registerMemoryShrinkHook(r.shrinkWorkspace)
 	diagnostics.RegisterWorkspaceDiagnostics(r.diagnoseWorkspace, r.shrinkWorkspace, r.handleWorkspaceAction)
 }
 
@@ -96,7 +98,42 @@ func (r *desktopRuntime) handleWorkspaceAction(action string) (any, error) {
 		}
 		app.evictInactiveSessions()
 		return map[string]any{"status": "evicted inactive sessions"}, nil
+	case "save":
+		r.mu.Lock()
+		app := r.windows[r.primaryWindowID]
+		r.mu.Unlock()
+		if app == nil {
+			return nil, errors.New("primary window unavailable")
+		}
+		if err := app.save(); err != nil {
+			return nil, err
+		}
+		return map[string]any{"status": "saved"}, nil
 	default:
+		if strings.HasPrefix(action, "open:") {
+			targetPath := strings.TrimPrefix(action, "open:")
+			r.mu.Lock()
+			app := r.windows[r.primaryWindowID]
+			r.mu.Unlock()
+			if app == nil {
+				return nil, errors.New("primary window unavailable")
+			}
+			if err := app.open(targetPath); err != nil {
+				return nil, err
+			}
+			return map[string]any{"status": "opened", "path": targetPath}, nil
+		}
+		if strings.HasPrefix(action, "activate:") {
+			tabID := strings.TrimPrefix(action, "activate:")
+			r.mu.Lock()
+			app := r.windows[r.primaryWindowID]
+			r.mu.Unlock()
+			if app == nil {
+				return nil, errors.New("primary window unavailable")
+			}
+			app.activateWorkspaceTab(tabID)
+			return map[string]any{"status": "activated", "tab_id": tabID}, nil
+		}
 		return nil, fmt.Errorf("unknown action %q", action)
 	}
 }
