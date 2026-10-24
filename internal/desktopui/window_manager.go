@@ -65,32 +65,6 @@ func (r *desktopRuntime) openDocumentWindow(documentID string, snapshot windowVi
 	return nil
 }
 
-func (r *desktopRuntime) openProofreadingWindow(request proofreadingWindowRequest) error {
-	if request.sourceSnapshot == nil {
-		return fmt.Errorf("无法读取当前 PDF 快照")
-	}
-	if r == nil {
-		_ = request.sourceSnapshot.Close()
-		return fmt.Errorf("桌面窗口运行时不可用")
-	}
-	if !supportsMultipleDesktopWindows() {
-		_ = request.sourceSnapshot.Close()
-		return fmt.Errorf("当前平台不支持多个桌面窗口")
-	}
-	window := new(app.Window)
-	if request.resume != nil {
-		existing := r.claimProofreadingWindow(request.resume.ID, window)
-		if existing != nil {
-			request.sourceSnapshot.Close()
-			r.focusProofreadingWindow(existing)
-			return nil
-		}
-	}
-	configureDesktopWindow(window)
-	go r.runProofreadingWindow(window, request)
-	return nil
-}
-
 func (r *desktopRuntime) runWindow(windowID uint64, window *app.Window, initialDocumentID string, snapshot windowViewSnapshot) {
 	r.runWindowFrom(windowID, window, initialDocumentID, snapshot, nil)
 }
@@ -184,16 +158,10 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 			if a.proofreading != nil {
 				a.queueProofreadingDraftPersistence()
 			}
+			a.closeAllProofreadingTabs()
 			a.shutdownOnce.Do(func() { close(a.shutdown) })
 			a.closeAgentSubscription()
 			a.stopAndWaitManagedBackground()
-			r.mu.Lock()
-			for id, window := range r.proofWindows {
-				if window == a.window {
-					delete(r.proofWindows, id)
-				}
-			}
-			r.mu.Unlock()
 			a.closeProofreadingDraft()
 			a.closeWorkspace()
 			return
@@ -220,9 +188,13 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 			diagnostics.WindowPhase("frame-submit", func() { e.Frame(gtx.Ops) })
 			a.renderedFrame = true
 			a.finishWordPointerFrame(e)
-			a.pinchFrameSession = a.documentSessionState
-			a.pinchFrameSize = e.Size
-			a.pinchFrameMetric = e.Metric
+			pinchTarget := a
+			if tab := a.proofreadingTab(a.selectedProofreadingTabID); tab != nil {
+				pinchTarget = tab.editor
+			}
+			pinchTarget.pinchFrameSession = pinchTarget.documentSessionState
+			pinchTarget.pinchFrameSize = e.Size
+			pinchTarget.pinchFrameMetric = e.Metric
 			if trayStartupDeferredUntilWindowFrame() {
 				runtime := a.ensureDesktopRuntime()
 				if !a.trayStartupScheduled && !runtime.trayStartupWasAttempted() {

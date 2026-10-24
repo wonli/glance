@@ -14,8 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gioui.org/app"
-	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/widget"
 
@@ -300,13 +298,6 @@ func newProofreadingWorkspace(request proofreadingWindowRequest) *proofreadingWo
 	return state
 }
 
-func (r *desktopRuntime) runProofreadingWindow(window *app.Window, request proofreadingWindowRequest) {
-	a := newAppWithRuntimeAndWindowID(window, "", r, 0)
-	a.proofreading = newProofreadingWorkspace(request)
-	a.startProofreadingSourceSnapshot(request.sourceSnapshot)
-	r.runAppWindow(a)
-}
-
 func (a *App) openProofreadingWindow() error {
 	if a.pdfDoc == nil {
 		return fmt.Errorf("当前没有打开的 PDF 文档")
@@ -321,7 +312,7 @@ func (a *App) openProofreadingWindow() error {
 	if path == "" || name == "." {
 		name = a.textID("pdf.proofread.source_a_untitled")
 	}
-	return a.ensureDesktopRuntime().openProofreadingWindow(proofreadingWindowRequest{
+	return a.openProofreadingTab(proofreadingWindowRequest{
 		sourcePath:     path,
 		sourceName:     name,
 		sourcePage:     view.page,
@@ -558,13 +549,21 @@ func (a *App) processProofreadingResults() {
 		if state.resume != nil {
 			state.projectDocumentID = state.resume.ID
 		}
-		if a.desktopRuntime != nil && a.window != nil {
-			r := a.desktopRuntime
-			existing := r.claimProofreadingWindow(state.projectDocumentID, a.window)
-			if existing != nil && existing != a.window {
-				r.focusProofreadingWindow(existing)
-				a.window.Perform(system.ActionClose)
-				state.draftError = a.textID("proofread.workbench.already_open")
+		if a.proofreadingTabHost != nil {
+			host := a.proofreadingTabHost
+			for _, tab := range host.proofreadingTabs {
+				if tab.editor != a {
+					continue
+				}
+				owner := host.registerProofreadingTab(tab, state.projectDocumentID)
+				if owner.host != host || owner.id != tab.id {
+					state.draftRestoreFailed = true
+					tab.duplicate = true
+					state.draftError = a.textID("proofread.workbench.already_open")
+					owner.host.requestProofreadingTabFocus(owner.id)
+				}
+			}
+			if state.draftRestoreFailed {
 				break
 			}
 		}

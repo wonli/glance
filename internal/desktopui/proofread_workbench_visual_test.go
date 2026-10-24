@@ -21,6 +21,7 @@ func TestProofreadingWorkbenchAndReviewedMarkersVisual(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	for _, scale := range []float32{1, 2} {
 		a, s := proofreadingModelFixture(t)
+		a.proofreadingModule = true
 		var ops op.Ops
 		var router input.Router
 		size := image.Pt(int(520*scale), int(400*scale))

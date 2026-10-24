@@ -65,7 +65,7 @@ type desktopRuntime struct {
 	workspaceStore          *workspace.Store
 	proofIdentity           proofhistory.Identity
 	proofIdentityReady      bool
-	proofWindows            map[string]*app.Window
+	proofTabOwners          map[string]*proofreadingTabOwner
 	collection              *workspace.Collection
 	homeFolderWorking       workspace.HomeFolderSnapshot
 	homeFolderCommitted     workspace.HomeFolderSnapshot
@@ -106,6 +106,9 @@ type desktopRuntime struct {
 	primaryWindowID         uint64
 	nextWindowID            uint64
 	nextWindowAttachment    uint64
+
+	proofreadingModuleWindow   *app.Window
+	proofreadingModuleRequests chan proofreadingWindowRequest
 }
 
 func (r *desktopRuntime) startDesktopMCPIPC() error {

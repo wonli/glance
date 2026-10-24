@@ -86,7 +86,13 @@ type App struct {
 	windowCloseButton             widget.Clickable
 	windowOpenResults             chan error
 	windowOpenSource              *App
-	proofreadingResumeRequested   atomic.Bool
+	proofreadingModule            bool
+	proofreadingModuleRequests    chan proofreadingWindowRequest
+	proofreadingTabs              []*proofreadingTab
+	selectedProofreadingTabID     string
+	nextProofreadingTabID         uint64
+	proofreadingTabHost           *App
+	proofreadingTabFocus          chan string
 	proofreadingWorkbench         *proofreadingWorkbenchState
 	proofreading                  *proofreadingWorkspace
 	workspacePDFRestoreResults    chan pdfWorkspaceRestoreResult
@@ -339,6 +345,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		wordCompareDocumentButtons:    make(map[string]*widget.Clickable),
 		mcpConfigurationList:          widget.List{List: layout.List{Axis: layout.Vertical}},
 		shutdown:                      make(chan struct{}),
+		proofreadingTabFocus:          make(chan string, 16),
 		agentUI:                       newAgentUIState(),
 		sessions:                      make(map[string]*documentSessionState),
 		tabMeta:                       make(map[string]workspace.Tab),

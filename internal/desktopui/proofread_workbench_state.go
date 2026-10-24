@@ -144,8 +144,24 @@ func (a *App) resumeProofreadingProject(p workspace.ProofreadingProject) {
 		return
 	}
 	w := a.ensureProofreadingWorkbench()
+	if r := a.desktopRuntime; r != nil {
+		r.mu.Lock()
+		owner := r.proofTabOwners[p.ID]
+		closing := owner != nil && owner.closing
+		r.mu.Unlock()
+		if owner != nil {
+			if closing {
+				w.message = "正在保存并关闭校对稿，请稍后重试"
+			} else {
+				owner.host.requestProofreadingTabFocus(owner.id)
+			}
+			return
+		}
+	}
 	store := a.proofreadingStore()
-	runtime := a.desktopRuntime
+	if store == nil {
+		return
+	}
 	a.proofreadingWorkbenchJob(func() func() {
 		full, found, err := store.LoadProofreadingProject(p.ID)
 		var payload proofreadingProjectPayload
@@ -184,7 +200,7 @@ func (a *App) resumeProofreadingProject(p workspace.ProofreadingProject) {
 				w.message = err.Error()
 				return
 			}
-			err = runtime.openProofreadingWindow(proofreadingWindowRequest{resume: &full, resumePayload: &payload, sourcePath: full.SourceA, sourceName: full.Title, sourcePage: full.CurrentPage, sourceSnapshot: reader})
+			err = a.openProofreadingTab(proofreadingWindowRequest{resume: &full, resumePayload: &payload, sourcePath: full.SourceA, sourceName: full.Title, sourcePage: full.CurrentPage, sourceSnapshot: reader})
 			if err != nil {
 				w.message = err.Error()
 			}
@@ -196,7 +212,6 @@ func (a *App) newProofreadingProject() {
 	labels := a.filePickerLabels()
 	labels.OpenDocument = a.textID("proofread.workbench.choose_pdf")
 	labels.AllowedExtensions = []string{"pdf"}
-	runtime := a.desktopRuntime
 	a.proofreadingWorkbenchJob(func() func() {
 		path, err := chooseOfficeFile(labels)
 		var reader *os.File
@@ -211,7 +226,7 @@ func (a *App) newProofreadingProject() {
 			if reader == nil {
 				return
 			}
-			if err = runtime.openProofreadingWindow(proofreadingWindowRequest{sourcePath: path, sourceName: filepath.Base(path), sourceSnapshot: reader}); err != nil {
+			if err = a.openProofreadingTab(proofreadingWindowRequest{sourcePath: path, sourceName: filepath.Base(path), sourceSnapshot: reader}); err != nil {
 				w.message = err.Error()
 			}
 		}
@@ -281,6 +296,10 @@ func (a *App) loadProofreadingSavedIdentity() {
 
 func (a *App) processProofreadingNavigation(g layout.Context) {
 	w := a.ensureProofreadingWorkbench()
+	if a.proofreading != nil && w.button("manuscript-tab").Clicked(g) {
+		w.active = false
+		g.Execute(op.InvalidateCmd{})
+	}
 	if a.proofreading != nil && w.button("workbench-tab").Clicked(g) {
 		w.active = true
 		w.settings = false

@@ -1,32 +1,24 @@
 package desktopui
 
-import (
-	"gioui.org/app"
-	"gioui.org/io/system"
-)
-
-// claimProofreadingWindow prevents independent writable models for one task.
-func (r *desktopRuntime) claimProofreadingWindow(id string, window *app.Window) *app.Window {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.proofWindows == nil {
-		r.proofWindows = map[string]*app.Window{}
-	}
-	existing := r.proofWindows[id]
-	if existing == nil {
-		r.proofWindows[id] = window
-	}
-	return existing
+// A registry entry identifies one writable manuscript tab across all windows.
+// Entries stay registered while their final save is being joined on close.
+type proofreadingTabOwner struct {
+	host    *App
+	id      string
+	closing bool
 }
 
-func (r *desktopRuntime) focusProofreadingWindow(window *app.Window) {
+func (a *App) registerProofreadingTab(tab *proofreadingTab, projectID string) *proofreadingTabOwner {
+	r := a.ensureDesktopRuntime()
 	r.mu.Lock()
-	for _, a := range r.windows {
-		if a.window == window {
-			a.proofreadingResumeRequested.Store(true)
-		}
+	defer r.mu.Unlock()
+	if r.proofTabOwners == nil {
+		r.proofTabOwners = map[string]*proofreadingTabOwner{}
 	}
-	r.mu.Unlock()
-	window.Perform(system.ActionRaise)
-	window.Invalidate()
+	if owner := r.proofTabOwners[projectID]; owner != nil {
+		return owner
+	}
+	owner := &proofreadingTabOwner{host: a, id: tab.id}
+	r.proofTabOwners[projectID] = owner
+	return owner
 }

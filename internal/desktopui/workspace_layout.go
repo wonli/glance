@@ -9,6 +9,7 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/io/event"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
 	"gioui.org/layout"
@@ -25,6 +26,7 @@ import (
 )
 
 const (
+	workspaceHomeTabWidth     unit.Dp = 112
 	workspaceTabTopGap        unit.Dp = 5
 	workspaceTabHeight        unit.Dp = 37
 	workspaceDocumentTabGap   unit.Dp = 6
@@ -156,15 +158,25 @@ func (a *App) layoutWindowsWorkspaceDocumentTabs(gtx layout.Context, ids []strin
 
 func (a *App) processWorkspaceTabClicks(gtx layout.Context) {
 	if a.recentTabButton.Clicked(gtx) {
+		if a.selectedProofreadingTabID != "" {
+			gtx.Execute(key.FocusCmd{})
+		}
 		a.showNewMenu = false
 		a.persistActiveSession()
 		a.activateRecent()
 	}
 	if a.newButton.Clicked(gtx) {
-		a.showNewMenu = !a.showNewMenu
+		if a.proofreadingModule {
+			a.newProofreadingProject()
+		} else {
+			a.showNewMenu = !a.showNewMenu
+		}
 	}
 	for id, closeButton := range a.tabCloseButtons {
 		if closeButton != nil && closeButton.Clicked(gtx) {
+			if a.selectedProofreadingTabID == id {
+				gtx.Execute(key.FocusCmd{})
+			}
 			a.showNewMenu = false
 			a.closeWorkspaceTab(id)
 			return
@@ -172,6 +184,9 @@ func (a *App) processWorkspaceTabClicks(gtx layout.Context) {
 	}
 	for id, tabButton := range a.tabButtons {
 		if tabButton != nil && tabButton.Clicked(gtx) {
+			if a.selectedProofreadingTabID != "" || a.proofreadingTab(id) != nil {
+				gtx.Execute(key.FocusCmd{})
+			}
 			a.showNewMenu = false
 			a.activateWorkspaceTab(id)
 			return
@@ -209,7 +224,7 @@ func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Di
 
 		documentItemWidth := gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
 		plusItemWidth := gtx.Dp(workspaceDocumentTabGap) + gtx.Dp(workspacePlusTabWidth)
-		contentWidth := gtx.Dp(unit.Dp(112)) + len(ids)*documentItemWidth + plusItemWidth
+		contentWidth := gtx.Dp(a.workspaceHomeTabWidth()) + len(ids)*documentItemWidth + plusItemWidth
 		listWidth := min(contentWidth, gtx.Constraints.Max.X)
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -227,6 +242,9 @@ func (a *App) revealActiveWorkspaceTab(gtx layout.Context, ids []string) {
 }
 
 func (a *App) workspaceSelectedTabID() string {
+	if a.selectedProofreadingTabID != "" {
+		return a.selectedProofreadingTabID
+	}
 	if a.pendingPDFRestoreTabID != "" {
 		return a.pendingPDFRestoreTabID
 	}
@@ -278,7 +296,7 @@ func (a *App) revealActiveWorkspaceTabInList(gtx layout.Context, ids []string, i
 	}
 	widths := make([]int, widthCount)
 	if includeRecent {
-		widths[0] = gtx.Dp(unit.Dp(112))
+		widths[0] = gtx.Dp(a.workspaceHomeTabWidth())
 	}
 	for i := range ids {
 		widths[i+itemOffset] = gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
@@ -494,13 +512,20 @@ func layoutWindowMoveAreaAfter(gtx layout.Context, w layout.Widget) layout.Dimen
 
 func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
 	if a.recentTabButton.Clicked(gtx) {
+		if a.selectedProofreadingTabID != "" {
+			gtx.Execute(key.FocusCmd{})
+		}
 		a.showNewMenu = false
 		a.persistActiveSession()
 		a.activateRecent()
 	}
 	active := a.workspaceSelectedTabID() == workspace.RecentTabID
 	tab := func(gtx layout.Context) layout.Dimensions {
-		return a.paintTab(gtx, &a.recentTabButton, a.textID("proofread.workspace.name"), active)
+		label := "Glance"
+		if a.proofreadingModule {
+			label = a.textID("proofread.workspace.name")
+		}
+		return a.paintTab(gtx, &a.recentTabButton, label, active)
 	}
 	if active && a.clientTitlebar {
 		return layoutWindowMoveAreaAfter(gtx, tab)
@@ -510,7 +535,11 @@ func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
 
 func (a *App) layoutPlusTab(gtx layout.Context) layout.Dimensions {
 	if a.newButton.Clicked(gtx) {
-		a.showNewMenu = !a.showNewMenu
+		if a.proofreadingModule {
+			a.newProofreadingProject()
+		} else {
+			a.showNewMenu = !a.showNewMenu
+		}
 	}
 	return layout.Inset{Left: workspaceDocumentTabGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return a.paintTab(gtx, &a.newButton, "+", a.showNewMenu)
@@ -531,6 +560,9 @@ func (a *App) workspaceTabIDs() []string {
 		}
 		return left < right
 	})
+	for _, tab := range a.proofreadingTabs {
+		ids = append(ids, tab.id)
+	}
 	return ids
 }
 
@@ -546,6 +578,12 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 		a.closeWorkspaceTab(id)
 	}
 	label := meta.Title
+	if tab := a.proofreadingTab(id); tab != nil {
+		label = a.textID("proofread.workspace.tab.loaded")
+		if state := tab.editor.proofreading; state != nil && state.aDocument != nil {
+			label = state.aDocument.Name
+		}
+	}
 	if state := a.sessions[id]; state != nil && sessionDirty(state) {
 		label += " •"
 	}
@@ -555,6 +593,12 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 }
 
 func (a *App) activateWorkspaceTab(id string) {
+	if tab := a.proofreadingTab(id); tab != nil {
+		a.selectedProofreadingTabID = id
+		tab.editor.ensureProofreadingWorkbench().active = false
+		return
+	}
+	a.selectedProofreadingTabID = ""
 	a.invalidatePDFWorkspaceRestore()
 	a.persistActiveSession()
 	a.ensureDesktopRuntime().drainWorkspaceWriter()
@@ -651,7 +695,7 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		width := workspacePlusTabWidth
 		if label != "+" {
-			width = unit.Dp(112)
+			width = a.workspaceHomeTabWidth()
 		}
 		fixedWidth := gtx.Dp(width)
 		gtx.Constraints.Min.X, gtx.Constraints.Max.X = fixedWidth, fixedWidth
@@ -685,7 +729,7 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 							return layout.Dimensions{Size: image.Pt(gtx.Dp(unit.Dp(8)), 0)}
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							style := material.Body2(a.theme, "Glance")
+							style := material.Body2(a.theme, label)
 							style.TextSize = a.tokens().Typography.Body
 							style.Color = a.tokens().Colors.Text.PureBlack
 							return style.Layout(gtx)
@@ -711,4 +755,11 @@ func (a *App) paintTab(gtx layout.Context, button *widget.Clickable, label strin
 		call.Add(gtx.Ops)
 		return dims
 	})
+}
+
+func (a *App) workspaceHomeTabWidth() unit.Dp {
+	if a.proofreadingModule {
+		return 164
+	}
+	return workspaceHomeTabWidth
 }

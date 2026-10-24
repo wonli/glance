@@ -92,7 +92,9 @@ func (a *App) layoutProofreadingChromeItems(gtx layout.Context) layout.Dimension
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(30), 0)} }),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layoutProofreadingActiveTab(gtx, a) }),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return a.ensureProofreadingWorkbench().button("manuscript-tab").Layout(gtx, func(gtx layout.Context) layout.Dimensions { return layoutProofreadingActiveTab(gtx, a) })
+		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layoutProofreadingIcon(gtx, "home", "plus", 16, color.NRGBA{R: 123, G: 132, B: 144, A: 255})
@@ -111,24 +113,7 @@ func (a *App) layoutProofreadingChromeItems(gtx layout.Context) layout.Dimension
 				return layoutProofreadingOpticallyCenteredLabel(gtx, label)
 			})
 		}),
-		layout.Rigid(func(g layout.Context) layout.Dimensions {
-			w := a.ensureProofreadingWorkbench()
-			b := w.button("workspace-history")
-			if b.Clicked(g) && a.proofreading != nil && a.proofreading.projectDocumentID != "" {
-				a.openProofreadingHistory(a.proofreadingProjectMetadata(), 0)
-				g.Execute(op.InvalidateCmd{})
-			}
-			return b.Layout(g, func(g layout.Context) layout.Dimensions {
-				return layout.Flex{Alignment: layout.Middle}.Layout(g,
-					layout.Rigid(func(g layout.Context) layout.Dimensions {
-						return layoutProofreadingIcon(g, "ribbon", "history", 17, proofreadMuted)
-					}),
-					layout.Rigid(func(g layout.Context) layout.Dimensions {
-						return layout.Inset{Left: 7}.Layout(g, material.Label(a.theme, 11, a.textID("proofread.workspace.history")).Layout)
-					}),
-				)
-			})
-		}),
+		layout.Rigid(a.layoutProofreadingHistoryAction),
 	)
 	if a.clientTitlebar && runtime.GOOS != "darwin" {
 		children = append(children, layout.Rigid(a.layoutStandardWindowControls))
@@ -429,4 +414,23 @@ func layoutProofreadingIcon(gtx layout.Context, family, name string, size unit.D
 		return layout.Dimensions{Size: image.Pt(pixels, pixels)}
 	}
 	return widget.Image{Src: paint.NewImageOp(icon), Fit: widget.Contain}.Layout(gtx)
+}
+
+func (a *App) layoutProofreadingHistoryAction(g layout.Context) layout.Dimensions {
+	w := a.ensureProofreadingWorkbench()
+	b := w.button("workspace-history")
+	if b.Clicked(g) && a.proofreading != nil && a.proofreading.projectDocumentID != "" {
+		a.openProofreadingHistory(a.proofreadingProjectMetadata(), 0)
+		g.Execute(op.InvalidateCmd{})
+	}
+	return b.Layout(g, func(g layout.Context) layout.Dimensions {
+		return layout.Flex{Alignment: layout.Middle}.Layout(g,
+			layout.Rigid(func(g layout.Context) layout.Dimensions {
+				return layoutProofreadingIcon(g, "ribbon", "history", 17, proofreadMuted)
+			}),
+			layout.Rigid(func(g layout.Context) layout.Dimensions {
+				return layout.Inset{Left: 7}.Layout(g, material.Label(a.theme, 11, a.textID("proofread.workspace.history")).Layout)
+			}),
+		)
+	})
 }

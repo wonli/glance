@@ -24,10 +24,11 @@ var (
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	a.ensureDesktopRuntime()
 	a.processProofreadingWorkbench()
-	a.processProofreadingNavigation(gtx)
-	if a.proofreadingResumeRequested.Swap(false) {
-		a.proofreadingWorkbench.active = false
+	a.processProofreadingTabs()
+	for _, tab := range a.proofreadingTabs {
+		tab.editor.processProofreadingEditorEvents(gtx)
 	}
+	a.processProofreadingNavigation(gtx)
 	if a.proofreadingWorkbench.active {
 		if a.proofreading != nil {
 			a.processProofreadingResults()
@@ -46,7 +47,7 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 		)
 	}
 	a.handleOverlayEscape(gtx)
-	if a.markdownDoc != nil && !a.modal.Visible {
+	if a.selectedProofreadingTabID == "" && a.markdownDoc != nil && !a.modal.Visible {
 		a.updateMarkdownInput(gtx)
 	}
 	a.processAsyncResults()
@@ -101,7 +102,10 @@ func (a *App) visibleStatus() string {
 }
 
 func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
-	if a.activeTabID == "recent" {
+	if tab := a.proofreadingTab(a.selectedProofreadingTabID); tab != nil {
+		return a.layoutProofreadingTab(gtx, tab)
+	}
+	if a.proofreadingModule && a.activeTabID == "recent" {
 		return a.layoutProofreadingWorkbench(gtx)
 	}
 	if a.activeTabID == "recent" || (a.book == nil && a.word == nil && a.pptxDoc == nil && a.jsonDoc == nil && a.markdownDoc == nil && a.pdfDoc == nil) {

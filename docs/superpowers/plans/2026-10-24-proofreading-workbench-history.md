@@ -133,3 +133,7 @@
 - Targeted proofreading, SQLite, Git, localization and application regressions passed; Metal 1x/2x tests passed without SKIP. Added regression evidence for single writable task window, atomic remote-field update, stale restore rejection, undoable restore, and preserving local scroll when widget count is unchanged.
 - Independent review findings were fixed: duplicate task windows, remote/autosave lost updates, author identity capture, and page-version comparison.
 - Expanded application suite had four non-proofreading PDF/export/print failures, recorded in office-support.md. Real external credentials/push were not exercised; transport tests use local disposable bare repositories. go-run startup was exercised, but desktop automation could not bind its unpackaged window, so full native-window interaction remains unverified.
+
+## 校对模块多标签修正
+
+恢复应用原主页和 Glance 首标签。工作台是独立校对模块窗口中的固定首标签，稿件在该模块内以同级标签打开；复用主页标签栏的布局与稳定控件，不将校对列表替换为应用主入口。移除任务各开一窗的路由，改为已有模块窗口内打开/定位稿件标签。覆盖独立页码/滚动、同任务去重、关闭隔离、切页前中文草稿，以及主页与模块相互隔离的实际 GPU 渲染。1x/2x Metal 回归与现有加号菜单、文档标签、Ribbon 接缝检查通过；未将离屏渲染表述为完整原生窗口交互验证。

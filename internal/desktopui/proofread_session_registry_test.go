@@ -1,20 +1,19 @@
 package desktopui
 
-import (
-	"gioui.org/app"
-	"testing"
-)
+import "testing"
 
-func TestProofreadingProjectHasSingleWritableWindow(t *testing.T) {
-	r := &desktopRuntime{}
-	first, second := new(app.Window), new(app.Window)
-	if got := r.claimProofreadingWindow("book", first); got != nil {
-		t.Fatal("first claim failed")
+func TestProofreadingProjectHasSingleWritableTab(t *testing.T) {
+	r := newDesktopRuntime()
+	first, second := newAppWithRuntime(nil, r), newAppWithRuntime(nil, r)
+	a, b := &proofreadingTab{id: "first"}, &proofreadingTab{id: "second"}
+	owner := first.registerProofreadingTab(a, "book")
+	if owner.host != first || owner.id != a.id {
+		t.Fatal("first registration failed")
 	}
-	if got := r.claimProofreadingWindow("book", second); got != first {
-		t.Fatal("second window could overwrite the first")
+	if got := second.registerProofreadingTab(b, "book"); got != owner {
+		t.Fatal("another tab could overwrite the first task")
 	}
-	if got := r.claimProofreadingWindow("other", second); got != nil {
+	if got := second.registerProofreadingTab(b, "other"); got.host != second {
 		t.Fatal("independent task blocked")
 	}
 }

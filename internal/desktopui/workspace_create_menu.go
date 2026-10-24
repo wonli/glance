@@ -58,7 +58,7 @@ func (a *App) plusButtonOffset(gtx layout.Context) int {
 	x := -a.workspaceTabsList.Position.Offset
 	for index := a.workspaceTabsList.Position.First; index < plusIndex; index++ {
 		if index == 0 {
-			x += gtx.Dp(unit.Dp(112))
+			x += gtx.Dp(a.workspaceHomeTabWidth())
 		} else {
 			x += gtx.Dp(workspaceDocumentTabWidth + workspaceDocumentTabGap)
 		}

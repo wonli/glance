@@ -10,6 +10,10 @@ import (
 )
 
 func (a *App) activateRecent() {
+	if a.selectedProofreadingTabID != "" && a.proofreadingWorkbench != nil && !a.proofreadingWorkbench.settings {
+		a.proofreadingWorkbench.loaded = false
+	}
+	a.selectedProofreadingTabID = ""
 	a.invalidatePDFWorkspaceRestore()
 	runtime := a.ensureDesktopRuntime()
 	a.persistActiveSession()
@@ -86,6 +90,10 @@ func (a *App) evictInactiveSessions() {
 }
 
 func (a *App) closeWorkspaceTab(id string) {
+	if a.proofreadingTab(id) != nil {
+		a.closeProofreadingTab(id)
+		return
+	}
 	if a.pendingPDFRestoreTabID == id {
 		a.invalidatePDFWorkspaceRestore()
 	}
@@ -460,6 +468,9 @@ func (a *App) reindexTabMetadata() {
 		return
 	}
 	for position, id := range a.workspaceTabIDs() {
+		if a.proofreadingTab(id) != nil {
+			continue
+		}
 		meta := a.tabMeta[id]
 		meta.Position = position
 		a.tabMeta[id] = meta

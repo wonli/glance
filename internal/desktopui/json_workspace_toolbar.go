@@ -112,6 +112,9 @@ func (a *App) layoutJSONModeSwitch(gtx layout.Context) layout.Dimensions {
 }
 
 func (a *App) layoutJSONSaveIndicator(gtx layout.Context) layout.Dimensions {
+	if tab := a.proofreadingTab(a.selectedProofreadingTabID); tab != nil {
+		return layout.Inset{Left: 12, Right: 18}.Layout(gtx, tab.editor.layoutProofreadingHistoryAction)
+	}
 	if (a.jsonDoc == nil && a.markdownDoc == nil) || a.activeTabID == "recent" {
 		return layout.Dimensions{}
 	}

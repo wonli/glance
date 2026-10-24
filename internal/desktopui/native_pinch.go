@@ -121,10 +121,14 @@ func findNativePinchSurface(nodes []input.SemanticNode, point image.Point) (imag
 // Read the preceding completed frame before app.NewContext resets its ops.
 // Parsing the public semantic tree happens only when native gestures arrive.
 func (a *App) processNativePinch(frame app.FrameEvent) {
+	host := a
 	if a.nativePinch == nil {
 		return
 	}
 	events := a.nativePinch.drain()
+	if tab := host.proofreadingTab(host.selectedProofreadingTabID); tab != nil {
+		a = tab.editor
+	}
 	if len(events) == 0 {
 		return
 	}
@@ -135,7 +139,7 @@ func (a *App) processNativePinch(frame app.FrameEvent) {
 	var nodes []input.SemanticNode
 	if valid {
 		var router input.Router
-		router.Frame(&a.ops)
+		router.Frame(&host.ops)
 		nodes = router.AppendSemantics(nil)
 	}
 	for _, e := range events {

@@ -92,7 +92,7 @@ func (a *App) layoutProofreadingWorkbench(g layout.Context) layout.Dimensions {
 	if a.clientTitlebar && a.proofreading != nil {
 		a.processProofreadingWindowControlClicks(g)
 	}
-	paint.Fill(g.Ops, color.NRGBA{R: 248, G: 250, B: 251, A: 255})
+	paint.FillShape(g.Ops, color.NRGBA{R: 248, G: 250, B: 251, A: 255}, clip.Rect{Max: g.Constraints.Max}.Op())
 	return layout.Flex{Axis: layout.Vertical}.Layout(g,
 		layout.Rigid(a.layoutProofreadingWorkbenchHeader),
 		layout.Flexed(1, func(g layout.Context) layout.Dimensions {
@@ -159,7 +159,7 @@ func (a *App) layoutProofreadingWorkbenchHeader(g layout.Context) layout.Dimensi
 	return layout.Inset{Left: 32, Right: 32}.Layout(g, func(g layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(g,
 			layout.Rigid(func(g layout.Context) layout.Dimensions {
-				if !a.clientTitlebar {
+				if !a.clientTitlebar || a.proofreading == nil || a.proofreadingTabHost != nil {
 					return layout.Dimensions{}
 				}
 				if runtime.GOOS == "darwin" {
