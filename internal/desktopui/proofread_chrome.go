@@ -176,6 +176,10 @@ func (a *App) layoutProofreadingToolbar(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layoutProofreadingToolbarPill(gtx, a, 126, "clock-3", "proofread.toolbar.unreviewed_filter")
 					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(16), 0)} }),
+					layout.Flexed(1, a.layoutProofreadingOCRStatus),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(12), 0)} }),
+					layout.Rigid(a.layoutProofreadingOCRAction),
 				)
 			})
 		},

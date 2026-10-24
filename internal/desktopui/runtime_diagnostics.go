@@ -130,6 +130,17 @@ func (r *desktopRuntime) handleWorkspaceAction(action string) (any, error) {
 			}
 			return map[string]any{"status": "opened", "path": targetPath}, nil
 		}
+		if strings.HasPrefix(action, "close:") {
+			tabID := strings.TrimPrefix(action, "close:")
+			r.mu.Lock()
+			app := r.windows[r.primaryWindowID]
+			r.mu.Unlock()
+			if app == nil {
+				return nil, errors.New("primary window unavailable")
+			}
+			app.closeWorkspaceTabNow(tabID)
+			return map[string]any{"status": "closed", "tab_id": tabID}, nil
+		}
 		if strings.HasPrefix(action, "activate:") {
 			tabID := strings.TrimPrefix(action, "activate:")
 			r.mu.Lock()

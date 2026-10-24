@@ -2,7 +2,9 @@
 package workspace
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -18,6 +20,8 @@ const RecentTabID = "recent"
 type Store struct {
 	db                *sql.DB
 	path              string
+	sessionsDir       string
+	tempSessionsDir   bool
 	wordVersionPolicy wordVersionPolicy
 }
 
@@ -82,7 +86,35 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("initialize workspace database: %w", err)
 	}
-	return &Store{db: db, path: filePath, wordVersionPolicy: defaultWordVersionPolicy()}, nil
+	sessionsDir := ""
+	tempSessionsDir := false
+	if filePath != "" {
+		sessionsDir = filepath.Join(filepath.Dir(filePath), "sessions")
+	} else {
+		tempDir, err := os.MkdirTemp("", "glance-sessions-*")
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("create temporary sessions directory: %w", err)
+		}
+		sessionsDir = tempDir
+		tempSessionsDir = true
+	}
+	if err := os.MkdirAll(sessionsDir, 0o700); err != nil {
+		if tempSessionsDir {
+			_ = os.RemoveAll(sessionsDir)
+		}
+		db.Close()
+		return nil, fmt.Errorf("create sessions directory: %w", err)
+	}
+	store := &Store{
+		db:                db,
+		path:              filePath,
+		sessionsDir:       sessionsDir,
+		tempSessionsDir:   tempSessionsDir,
+		wordVersionPolicy: defaultWordVersionPolicy(),
+	}
+	_ = store.CleanupOrphanedSessions()
+	return store, nil
 }
 
 // DefaultDatabasePath returns the per-user location used for durable workspace state.
@@ -289,7 +321,12 @@ func migrate(db *sql.DB) error {
 	return nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	if s.tempSessionsDir && s.sessionsDir != "" {
+		_ = os.RemoveAll(s.sessionsDir)
+	}
+	return s.db.Close()
+}
 
 func (s *Store) Load() (Snapshot, error) {
 	out := Snapshot{}
@@ -378,6 +415,68 @@ func (s *Store) ReplaceWorkspace(w Snapshot) error {
 	return tx.Commit()
 }
 
+func (s *Store) payloadPath(id string) string {
+	if s == nil || s.sessionsDir == "" || id == "" {
+		return ""
+	}
+	hash := sha256.Sum256([]byte(id))
+	hashHex := hex.EncodeToString(hash[:8])
+	var safe strings.Builder
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			safe.WriteRune(r)
+		}
+	}
+	base := safe.String()
+	if len(base) > 48 {
+		base = base[:48]
+	}
+	if base == "" {
+		base = "doc"
+	}
+	return filepath.Join(s.sessionsDir, fmt.Sprintf("%s-%s.dat", base, hashHex))
+}
+
+func (s *Store) writePayloadFile(id string, data []byte) error {
+	target := s.payloadPath(id)
+	if target == "" {
+		return errors.New("cannot determine document payload path")
+	}
+	dir := filepath.Dir(target)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create sessions directory: %w", err)
+	}
+	tmpFile, err := os.CreateTemp(dir, ".tmp-session-*")
+	if err != nil {
+		return fmt.Errorf("create temporary session file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	var committed bool
+	defer func() {
+		if !committed {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if len(data) > 0 {
+		if _, err := tmpFile.Write(data); err != nil {
+			_ = tmpFile.Close()
+			return fmt.Errorf("write session file: %w", err)
+		}
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("sync session file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close session file: %w", err)
+	}
+	if err := os.Rename(tmpPath, target); err != nil {
+		return fmt.Errorf("commit session file: %w", err)
+	}
+	committed = true
+	return nil
+}
+
 func (s *Store) SaveDocument(doc Document) error {
 	if doc.ID == "" || doc.Format == "" {
 		return errors.New("document id and format are required")
@@ -392,7 +491,10 @@ func (s *Store) SaveDocument(doc Document) error {
 	if doc.ViewState == nil {
 		doc.ViewState = []byte{}
 	}
-	_, err := s.db.Exec(`INSERT INTO documents(id,format,payload,dirty,updated_at,view_state) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET format=excluded.format,payload=excluded.payload,dirty=excluded.dirty,updated_at=excluded.updated_at,view_state=excluded.view_state`, doc.ID, doc.Format, doc.Payload, dirty, doc.UpdatedAt.UTC().UnixNano(), doc.ViewState)
+	if err := s.writePayloadFile(doc.ID, doc.Payload); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`INSERT INTO documents(id,format,payload,dirty,updated_at,view_state) VALUES(?,?,X'',?,?,?) ON CONFLICT(id) DO UPDATE SET format=excluded.format,payload=X'',dirty=excluded.dirty,updated_at=excluded.updated_at,view_state=excluded.view_state`, doc.ID, doc.Format, dirty, doc.UpdatedAt.UTC().UnixNano(), doc.ViewState)
 	return err
 }
 
@@ -462,19 +564,16 @@ func (s *Store) ListRecents(limit, offset int, kind, query string) ([]Recent, er
 }
 
 func (s *Store) LoadDocument(id string) (Document, bool, error) {
-	var doc Document
-	var dirty int
-	var updated int64
-	err := s.db.QueryRow(`SELECT id,format,payload,dirty,updated_at,view_state FROM documents WHERE id=?`, id).Scan(&doc.ID, &doc.Format, &doc.Payload, &dirty, &updated, &doc.ViewState)
-	if errors.Is(err, sql.ErrNoRows) {
-		return doc, false, nil
+	doc, found, err := s.LoadDocumentMetadata(id)
+	if err != nil || !found {
+		return doc, found, err
 	}
+	payload, err := s.LoadDocumentPayload(id)
 	if err != nil {
 		return doc, false, err
 	}
-	doc.Dirty = dirty != 0
-	doc.PayloadSize = int64(len(doc.Payload))
-	doc.UpdatedAt = time.Unix(0, updated).UTC()
+	doc.Payload = payload
+	doc.PayloadSize = int64(len(payload))
 	return doc, true, nil
 }
 
@@ -482,7 +581,8 @@ func (s *Store) LoadDocumentMetadata(id string) (Document, bool, error) {
 	var doc Document
 	var dirty int
 	var updated int64
-	err := s.db.QueryRow(`SELECT id,format,length(payload),dirty,updated_at,view_state FROM documents WHERE id=?`, id).Scan(&doc.ID, &doc.Format, &doc.PayloadSize, &dirty, &updated, &doc.ViewState)
+	var sqlitePayloadLen int64
+	err := s.db.QueryRow(`SELECT id,format,length(payload),dirty,updated_at,view_state FROM documents WHERE id=?`, id).Scan(&doc.ID, &doc.Format, &sqlitePayloadLen, &dirty, &updated, &doc.ViewState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return doc, false, nil
 	}
@@ -491,23 +591,47 @@ func (s *Store) LoadDocumentMetadata(id string) (Document, bool, error) {
 	}
 	doc.Dirty = dirty != 0
 	doc.UpdatedAt = time.Unix(0, updated).UTC()
+	if sqlitePayloadLen > 0 {
+		doc.PayloadSize = sqlitePayloadLen
+	} else if target := s.payloadPath(id); target != "" {
+		if fi, err := os.Stat(target); err == nil {
+			doc.PayloadSize = fi.Size()
+		}
+	}
 	return doc, true, nil
 }
 
 func (s *Store) LoadDocumentPayload(id string) ([]byte, error) {
-	var payload []byte
-	err := s.db.QueryRow(`SELECT payload FROM documents WHERE id=?`, id).Scan(&payload)
+	var sqlitePayload []byte
+	err := s.db.QueryRow(`SELECT payload FROM documents WHERE id=?`, id).Scan(&sqlitePayload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return payload, nil
+	if len(sqlitePayload) > 0 {
+		return sqlitePayload, nil
+	}
+	target := s.payloadPath(id)
+	if target == "" {
+		return []byte{}, nil
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return []byte{}, nil
+		}
+		return nil, err
+	}
+	return data, nil
 }
 
 func (s *Store) DeleteDocument(id string) error {
 	_, err := s.db.Exec(`DELETE FROM documents WHERE id=?`, id)
+	if target := s.payloadPath(id); target != "" {
+		_ = os.Remove(target)
+	}
 	return err
 }
 
@@ -726,7 +850,20 @@ func (s *Store) Diagnostics() (StoreDiagnostics, error) {
 	_ = s.db.QueryRow(`PRAGMA page_size`).Scan(&diag.PageSize)
 	_ = s.db.QueryRow(`PRAGMA page_count`).Scan(&diag.PageCount)
 	_ = s.db.QueryRow(`PRAGMA freelist_count`).Scan(&diag.FreelistCount)
-	_ = s.db.QueryRow(`SELECT count(*), coalesce(sum(length(payload)), 0) FROM documents`).Scan(&diag.DocumentsCount, &diag.DocumentsPayloadBytes)
+	var sqlitePayloadBytes int64
+	_ = s.db.QueryRow(`SELECT count(*), coalesce(sum(length(payload)), 0) FROM documents`).Scan(&diag.DocumentsCount, &sqlitePayloadBytes)
+	diag.DocumentsPayloadBytes = sqlitePayloadBytes
+	if s.sessionsDir != "" {
+		if entries, err := os.ReadDir(s.sessionsDir); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".dat") {
+					if fi, err := entry.Info(); err == nil {
+						diag.DocumentsPayloadBytes += fi.Size()
+					}
+				}
+			}
+		}
+	}
 	var tableCount int
 	_ = s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='word_versions'`).Scan(&tableCount)
 	if tableCount > 0 {
@@ -755,10 +892,51 @@ func (s *Store) Vacuum() error {
 	return err
 }
 
+// CleanupOrphanedSessions deletes unreferenced .dat files and temporary sessions from the sessions directory.
+func (s *Store) CleanupOrphanedSessions() error {
+	if s == nil || s.db == nil || s.sessionsDir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(s.sessionsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	rows, err := s.db.Query(`SELECT id FROM documents`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	valid := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil && id != "" {
+			valid[s.payloadPath(id)] = true
+		}
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		fullPath := filepath.Join(s.sessionsDir, name)
+		if strings.HasPrefix(name, ".tmp-session-") || (strings.HasSuffix(name, ".dat") && !valid[fullPath]) {
+			_ = os.Remove(fullPath)
+		}
+	}
+	return nil
+}
+
 // AutoMaintainSpace checks whether dead pages in the freelist exceed maintenance thresholds
-// and reorganizes the database to reclaim space.
+// and reorganizes the database to reclaim space. It also cleans up orphaned session files.
 func (s *Store) AutoMaintainSpace() (bool, error) {
-	if s == nil || s.db == nil || s.path == "" || s.path == ":memory:" {
+	if s == nil || s.db == nil {
+		return false, nil
+	}
+	_ = s.CleanupOrphanedSessions()
+	if s.path == "" || s.path == ":memory:" {
 		return false, nil
 	}
 	var freelist, pageCount int64

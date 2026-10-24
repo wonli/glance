@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"glance/internal/fileutil"
 	"glance/internal/format/presentationpdf"
 )
 
@@ -63,7 +64,7 @@ func registerPresentationPrintCapability(catalog *Catalog, printer PrintService)
 			if input.Copies == 0 {
 				input.Copies = 1
 			}
-			temporaryDirectory, err := os.MkdirTemp("", "glance-presentation-print-")
+			temporaryDirectory, err := os.MkdirTemp(fileutil.DefaultTempDir(), "glance-presentation-print-")
 			if err != nil {
 				return CapabilityResult{}, err
 			}

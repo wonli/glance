@@ -156,6 +156,9 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 				a.proofreading.modelLayoutCancel()
 			}
 			if a.proofreading != nil {
+				if a.proofreading.ocrScan != nil {
+					a.proofreading.ocrScan.cancelTask()
+				}
 				a.queueProofreadingDraftPersistence()
 			}
 			a.closeAllProofreadingTabs()

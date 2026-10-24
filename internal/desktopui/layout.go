@@ -43,7 +43,9 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Min = gtx.Constraints.Max
 		return layout.Background{}.Layout(gtx,
 			func(gtx layout.Context) layout.Dimensions { return fill(gtx, pageBackground) },
-			func(gtx layout.Context) layout.Dimensions { return a.layoutProofreadingWorkspace(gtx) },
+			func(gtx layout.Context) layout.Dimensions {
+				return a.layoutRootWithOverlays(gtx, a.layoutProofreadingWorkspace)
+			},
 		)
 	}
 	a.handleOverlayEscape(gtx)
@@ -58,19 +60,37 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions { return fill(gtx, pageBackground) },
 		func(gtx layout.Context) layout.Dimensions {
-			return layout.Stack{Alignment: layout.Center}.Layout(gtx,
-				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
-						layout.Rigid(a.layoutWorkspaceTabs),
-						layout.Flexed(1, a.layoutWorkspaceBody),
-					)
-				}),
-				layout.Stacked(a.layoutWordSymbolPicker),
-				layout.Expanded(a.layoutFeedback),
-				layout.Expanded(a.layoutModalDialog),
-				layout.Expanded(a.layoutAgentConfirmationModal),
-			)
+			return a.layoutRootWithOverlays(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
+					layout.Rigid(a.layoutWorkspaceTabs),
+					layout.Flexed(1, a.layoutWorkspaceBody),
+				)
+			})
 		},
+	)
+}
+
+func (a *App) layoutRootWithOverlays(gtx layout.Context, content layout.Widget) layout.Dimensions {
+	if tab := a.proofreadingTab(a.selectedProofreadingTabID); tab != nil && tab.editor != nil {
+		editor := tab.editor
+		return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+			layout.Expanded(content),
+			layout.Stacked(editor.layoutWordSymbolPicker),
+			layout.Expanded(editor.layoutFeedback),
+			layout.Expanded(editor.layoutModalDialog),
+			layout.Expanded(editor.layoutAgentConfirmationModal),
+			layout.Stacked(a.layoutWordSymbolPicker),
+			layout.Expanded(a.layoutFeedback),
+			layout.Expanded(a.layoutModalDialog),
+			layout.Expanded(a.layoutAgentConfirmationModal),
+		)
+	}
+	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+		layout.Expanded(content),
+		layout.Stacked(a.layoutWordSymbolPicker),
+		layout.Expanded(a.layoutFeedback),
+		layout.Expanded(a.layoutModalDialog),
+		layout.Expanded(a.layoutAgentConfirmationModal),
 	)
 }
 

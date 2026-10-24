@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"glance/internal/document"
+	"glance/internal/fileutil"
 	"glance/internal/format/sheetpdf"
 )
 
@@ -61,7 +62,7 @@ func registerSpreadsheetPrintCapability(catalog *Catalog, printer PrintService) 
 			if err != nil {
 				return CapabilityResult{}, err
 			}
-			temporaryDirectory, err := os.MkdirTemp("", "glance-spreadsheet-print-")
+			temporaryDirectory, err := os.MkdirTemp(fileutil.DefaultTempDir(), "glance-spreadsheet-print-")
 			if err != nil {
 				return CapabilityResult{}, err
 			}

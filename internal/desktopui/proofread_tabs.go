@@ -190,6 +190,9 @@ func (a *App) closeProofreadingTab(id string) {
 	if editor.proofreading.modelLayoutCancel != nil {
 		editor.proofreading.modelLayoutCancel()
 	}
+	if editor.proofreading.ocrScan != nil {
+		editor.proofreading.ocrScan.cancelTask()
+	}
 	editor.shutdownOnce.Do(func() { close(editor.shutdown) })
 	a.launchManagedBackground(func() {
 		editor.stopAndWaitManagedBackground()

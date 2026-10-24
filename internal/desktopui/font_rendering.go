@@ -127,10 +127,16 @@ type fontFamilyIndexEntry struct {
 	byName  map[string][]fontcatalog.Family
 }
 
+type rawFontFile struct {
+	data  []byte
+	unmap func()
+}
+
 type parsedFontEntry struct {
-	key   string
-	faces []giofont.FontFace
-	bytes int64
+	key     string
+	fileKey string
+	faces   []giofont.FontFace
+	bytes   int64
 }
 
 type fontCollectionCache struct {
@@ -140,6 +146,7 @@ type fontCollectionCache struct {
 	parsedItems map[string]*list.Element
 	parsedLRU   *list.List
 	parsedBytes int64
+	fileBytes   map[string]rawFontFile
 }
 
 func newFontCollectionCache() *fontCollectionCache {
@@ -148,6 +155,7 @@ func newFontCollectionCache() *fontCollectionCache {
 		familyLRU:   list.New(),
 		parsedItems: make(map[string]*list.Element),
 		parsedLRU:   list.New(),
+		fileBytes:   make(map[string]rawFontFile),
 	}
 }
 
@@ -237,15 +245,52 @@ func (cache *fontCollectionCache) parsedFaces(snapshot fontcatalog.Snapshot, fac
 		cache.parsedItems = make(map[string]*list.Element)
 		cache.parsedLRU = list.New()
 	}
+	if cache.fileBytes == nil {
+		cache.fileBytes = make(map[string]rawFontFile)
+	}
 	key := fontParseCacheKey(face)
 	if item := cache.parsedItems[key]; item != nil {
 		cache.parsedLRU.MoveToFront(item)
 		entry := item.Value.(parsedFontEntry)
 		return entry.faces, entry.bytes, true
 	}
-	fonts, size, ok := parseFontCollection(snapshot, face)
-	if !ok || size > fontCollectionCacheLimit {
-		return fonts, size, ok
+
+	fileKey := face.Path
+	if fileKey == "" {
+		fileKey = string(face.ID)
+	}
+	raw, ok := cache.fileBytes[fileKey]
+	if !ok {
+		var data []byte
+		var unmap func()
+		if face.Path != "" {
+			if mapped, cleanup, err := mapFontFile(face.Path); err == nil {
+				data = mapped
+				unmap = cleanup
+			}
+		}
+		if data == nil {
+			var err error
+			data, err = snapshot.ReadFace(face.ID)
+			if err != nil {
+				return nil, 0, false
+			}
+		}
+		raw = rawFontFile{data: data, unmap: unmap}
+		cache.fileBytes[fileKey] = raw
+	}
+
+	parsed, err := wordfont.ParseFont(raw.data, face.Index)
+	if err != nil {
+		return nil, 0, false
+	}
+	fontdiag.RecordUse(parsed, "ui", face.Path, face.Index)
+	selected := giofont.FontFace{Font: opentype.DescriptionToFont(parsed.Describe()), Face: selectedCollectionFace{parsed}}
+	fonts := []giofont.FontFace{selected}
+	size := int64(len(raw.data))
+
+	if size > fontCollectionCacheLimit {
+		return fonts, size, true
 	}
 	for cache.parsedBytes+size > fontCollectionCacheLimit {
 		oldest := cache.parsedLRU.Back()
@@ -257,7 +302,7 @@ func (cache *fontCollectionCache) parsedFaces(snapshot fontcatalog.Snapshot, fac
 		cache.parsedBytes -= entry.bytes
 		cache.parsedLRU.Remove(oldest)
 	}
-	item := cache.parsedLRU.PushFront(parsedFontEntry{key: key, faces: fonts, bytes: size})
+	item := cache.parsedLRU.PushFront(parsedFontEntry{key: key, fileKey: fileKey, faces: fonts, bytes: size})
 	cache.parsedItems[key] = item
 	cache.parsedBytes += size
 	return fonts, size, true
@@ -282,12 +327,23 @@ func (cache *fontCollectionCache) retainParsed(used map[string][]giofont.FontFac
 	}
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
+	activeFiles := make(map[string]bool)
 	for key, item := range cache.parsedItems {
 		if _, ok := used[key]; ok {
+			entry := item.Value.(parsedFontEntry)
+			activeFiles[entry.fileKey] = true
 			continue
 		}
 		cache.parsedBytes -= item.Value.(parsedFontEntry).bytes
 		delete(cache.parsedItems, key)
 		cache.parsedLRU.Remove(item)
+	}
+	for fileKey, raw := range cache.fileBytes {
+		if !activeFiles[fileKey] {
+			if raw.unmap != nil {
+				raw.unmap()
+			}
+			delete(cache.fileBytes, fileKey)
+		}
 	}
 }

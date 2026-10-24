@@ -191,6 +191,9 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 							return material.Body2(a.theme, msg).Layout(gtx)
 						})
 					}
+					if a.proofreading != nil {
+						a.drawProofreadingOCRPageOverlay(gtx, size, pageIdx)
+					}
 
 					if pageIdx == v.page {
 						start, end := v.selectionRange()

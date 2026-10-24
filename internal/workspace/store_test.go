@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"bytes"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -157,19 +159,15 @@ func TestStoreAutoMaintainSpace(t *testing.T) {
 	}
 	defer s.Close()
 
-	// Insert large payloads to allocate pages
+	// Insert large payload rows directly into SQLite to allocate pages for freelist reclamation test
 	largePayload := make([]byte, 2*1024*1024)
-	for i := 0; i < 3; i++ {
-		id := filepath.Base(path) + "-doc"
-		if err := s.SaveDocument(Document{
-			ID: id, Format: "docx", Payload: largePayload, UpdatedAt: time.Now().UTC(),
-		}); err != nil {
-			t.Fatal(err)
-		}
+	id := filepath.Base(path) + "-doc"
+	if _, err := s.db.Exec(`INSERT INTO documents(id,format,payload,dirty,updated_at,view_state) VALUES(?, 'docx', ?, 0, ?, X'')`, id, largePayload, time.Now().UTC().UnixNano()); err != nil {
+		t.Fatal(err)
 	}
 
-	// Delete documents to create dead pages in freelist
-	if err := s.DeleteDocument(filepath.Base(path) + "-doc"); err != nil {
+	// Delete document in SQLite to create dead pages in freelist
+	if err := s.DeleteDocument(id); err != nil {
 		t.Fatal(err)
 	}
 
@@ -194,5 +192,89 @@ func TestStoreAutoMaintainSpace(t *testing.T) {
 	}
 	if freelist != 0 {
 		t.Fatalf("expected 0 freelist pages after AutoMaintainSpace, got %d", freelist)
+	}
+}
+
+func TestStoreFileSessionPayloadLifecycleAndOrphanCleanup(t *testing.T) {
+	dbDir := t.TempDir()
+	path := filepath.Join(dbDir, "workspace.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	payload := []byte("hello-session-file-storage")
+	docID := "tab-doc-test"
+	if err := s.SaveDocument(Document{
+		ID:        docID,
+		Format:    "docx",
+		Payload:   payload,
+		Dirty:     true,
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("SaveDocument: %v", err)
+	}
+
+	// Verify SQLite documents.payload column is empty (0 bytes)
+	var sqlitePayload []byte
+	if err := s.db.QueryRow(`SELECT payload FROM documents WHERE id=?`, docID).Scan(&sqlitePayload); err != nil {
+		t.Fatalf("query SQLite payload: %v", err)
+	}
+	if len(sqlitePayload) != 0 {
+		t.Fatalf("expected SQLite payload to be empty, got %d bytes", len(sqlitePayload))
+	}
+
+	// Verify session file exists on disk
+	datPath := s.payloadPath(docID)
+	if fi, err := os.Stat(datPath); err != nil || fi.Size() != int64(len(payload)) {
+		t.Fatalf("session file %q stat error=%v size=%d, want %d", datPath, err, fi.Size(), len(payload))
+	}
+
+	// Verify LoadDocument returns the exact content
+	loaded, found, err := s.LoadDocument(docID)
+	if err != nil || !found {
+		t.Fatalf("LoadDocument found=%v err=%v", found, err)
+	}
+	if !bytes.Equal(loaded.Payload, payload) || loaded.PayloadSize != int64(len(payload)) {
+		t.Fatalf("LoadDocument payload mismatch: got %q, want %q", loaded.Payload, payload)
+	}
+
+	// Create an artificial orphan .dat file and a leftover .tmp-session- file
+	orphanDat := filepath.Join(s.sessionsDir, "orphan-9999999999999999.dat")
+	if err := os.WriteFile(orphanDat, []byte("orphan"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	leftoverTmp := filepath.Join(s.sessionsDir, ".tmp-session-temp123")
+	if err := os.WriteFile(leftoverTmp, []byte("tmp"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Call CleanupOrphanedSessions
+	if err := s.CleanupOrphanedSessions(); err != nil {
+		t.Fatalf("CleanupOrphanedSessions: %v", err)
+	}
+
+	// Verify orphan files were deleted
+	if _, err := os.Stat(orphanDat); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected orphan .dat to be deleted, got err=%v", err)
+	}
+	if _, err := os.Stat(leftoverTmp); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected leftover .tmp to be deleted, got err=%v", err)
+	}
+
+	// Verify valid session file still exists
+	if _, err := os.Stat(datPath); err != nil {
+		t.Fatalf("valid session file was accidentally deleted: %v", err)
+	}
+
+	// Delete valid document
+	if err := s.DeleteDocument(docID); err != nil {
+		t.Fatalf("DeleteDocument: %v", err)
+	}
+
+	// Verify valid session file is now deleted
+	if _, err := os.Stat(datPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected session file to be removed after DeleteDocument, got err=%v", err)
 	}
 }

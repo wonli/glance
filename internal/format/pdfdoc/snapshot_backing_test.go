@@ -39,17 +39,22 @@ func TestOpenSnapshotStreamPreservesSnapshotBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer doc.Close()
 
 	got, err := doc.Snapshot()
 	if err != nil {
+		doc.Close()
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, want) {
+		doc.Close()
 		t.Fatal("streamed snapshot bytes changed")
 	}
 	if _, _, _, err := doc.SnapshotWithRevision(); err != nil {
+		doc.Close()
 		t.Fatalf("SnapshotWithRevision(): %v", err)
+	}
+	if err := doc.Close(); err != nil {
+		t.Fatal(err)
 	}
 	assertNoTempFiles(t, dir)
 }

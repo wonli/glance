@@ -167,6 +167,7 @@ func (a *App) layoutProofreadingPageThumbnail(gtx layout.Context, view *pdfViewS
 		func(gtx layout.Context) layout.Dimensions {
 			return view.button("page-"+strconv.Itoa(index)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				semantic.DescriptionOp(a.textID(statusKey)).Add(gtx.Ops)
+				a.drawProofreadingOCRThumbnailStatus(gtx, size, index)
 				return layout.Inset{Top: unit.Dp(7), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {

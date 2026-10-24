@@ -30,6 +30,7 @@ func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions 
 	if state == nil {
 		return layout.Dimensions{}
 	}
+	a.processProofreadingOCRScan(gtx)
 	w := a.ensureProofreadingWorkbench()
 	if w.historyOpen {
 		return a.layoutProofreadingHistoryPage(gtx)

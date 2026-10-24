@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"glance/internal/fileutil"
 	"glance/internal/format/wordpdf"
 )
 
@@ -72,7 +73,7 @@ func registerWordPrintCapability(catalog *Catalog, printer PrintService) error {
 				return CapabilityResult{}, ErrPendingEditorDraft
 			}
 
-			temporaryDirectory, err := os.MkdirTemp("", "glance-word-print-")
+			temporaryDirectory, err := os.MkdirTemp(fileutil.DefaultTempDir(), "glance-word-print-")
 			if err != nil {
 				return CapabilityResult{}, err
 			}

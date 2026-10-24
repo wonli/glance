@@ -2,6 +2,7 @@ package pdfdoc
 
 import (
 	"errors"
+	"os"
 	"sync"
 )
 
@@ -10,6 +11,7 @@ import (
 type snapshotBacking struct {
 	data     []byte
 	release  func() error
+	tempPath string
 	mu       sync.Mutex
 	leases   int
 	closing  bool
@@ -73,5 +75,11 @@ func (b *snapshotBacking) closeLocked() error {
 	}
 	b.release = nil
 	b.data = nil
+	if b.tempPath != "" {
+		if err := os.Remove(b.tempPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			b.closeErr = errors.Join(b.closeErr, err)
+		}
+		b.tempPath = ""
+	}
 	return b.closeErr
 }
