@@ -212,7 +212,9 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 			})
 		})
 	})
-	a.layoutPDFPageScrollbar(gtx, v, totalPages)
+	if a.proofreading == nil {
+		a.layoutPDFPageScrollbar(gtx, v, totalPages)
+	}
 	pass := pointer.PassOp{}.Push(gtx.Ops)
 	area := clip.Rect{Max: viewport}.Push(gtx.Ops)
 	v.zoomScroll.Add(gtx.Ops)

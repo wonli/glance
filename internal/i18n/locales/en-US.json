@@ -2536,6 +2536,7 @@
   "proofread.history.failed": "Reviewed · Snapshot failed, retry",
   "proofread.history.ime": "Finish text composition before confirming.",
   "proofread.history.setup_required": "No history snapshot. Check Git and your identity, then retry. Your work is retained.",
+  "proofread.history.snapshot_failed": "Git snapshot failed: {{.Error}}. Your proofreading is retained.",
   "proofread.history.empty": "No history snapshots",
   "proofread.history.title": "All history",
   "proofread.history.page": "Page history",

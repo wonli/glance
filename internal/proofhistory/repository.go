@@ -76,10 +76,29 @@ func (r Repository) command(ctx context.Context, args ...string) (string, error)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w", args[0], err)
+		command := gitOperation(args)
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			return "", fmt.Errorf("git %s: %w: %s", command, err, detail)
+		}
+		return "", fmt.Errorf("git %s: %w", command, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+func gitOperation(args []string) string {
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-c" || args[i] == "-C" {
+			i++
+			continue
+		}
+		if !strings.HasPrefix(args[i], "-") {
+			return args[i]
+		}
+	}
+	return "command"
+}
+
 func pagePath(id proofreading.PageID) string { return fmt.Sprintf("pages/%06d.json", id) }
 func (r Repository) Confirm(ctx context.Context, p PageResult) (CommitResult, error) {
 	var result CommitResult

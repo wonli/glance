@@ -3,10 +3,12 @@ package desktopui
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
+	"glance/internal/i18n"
 	"glance/internal/proofhistory"
 	"glance/internal/proofreading"
-	"time"
 )
 
 type proofreadingHistoryState struct {
@@ -136,8 +138,10 @@ func (a *App) acceptProofreadingConfirmation() {
 			s.history.notice = a.textID("proofread.history.install_git")
 		} else if r.err != nil {
 			s.history.errorPage = r.page
-			s.history.err = a.textID("proofread.history.setup_required")
-			s.history.notice = s.history.err
+			s.history.err = r.err.Error()
+			s.history.notice = a.textArgs("proofread.history.snapshot_failed", i18n.Args{
+				"Error": proofreadingSnapshotErrorDetail(r.err),
+			})
 		} else {
 			if s.history.snapshots == nil {
 				s.history.snapshots = map[int]string{}
@@ -150,4 +154,17 @@ func (a *App) acceptProofreadingConfirmation() {
 		a.queueProofreadingDraftPersistence()
 	default:
 	}
+}
+
+func proofreadingSnapshotErrorDetail(err error) string {
+	if err == nil {
+		return ""
+	}
+	detail := strings.Join(strings.Fields(err.Error()), " ")
+	runes := []rune(detail)
+	const maxRunes = 140
+	if len(runes) > maxRunes {
+		return string(runes[:maxRunes-1]) + "…"
+	}
+	return detail
 }

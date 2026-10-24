@@ -2536,6 +2536,7 @@
   "proofread.history.failed": "已校对 · 快照失败，可重试",
   "proofread.history.ime": "请完成输入法输入后再确认。",
   "proofread.history.setup_required": "未生成历史快照，请检查 Git 安装和校对者身份后重试。当前成果已保留。",
+  "proofread.history.snapshot_failed": "Git 快照失败：{{.Error}}。当前校对成果已保留。",
   "proofread.history.empty": "暂无历史快照",
   "proofread.history.title": "全部历史",
   "proofread.history.page": "本页历史",
