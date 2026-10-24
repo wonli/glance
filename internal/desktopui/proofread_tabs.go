@@ -111,7 +111,7 @@ func (a *App) requestProofreadingTabFocus(id string, history *workspace.Proofrea
 	}
 }
 
-func (a *App) processProofreadingTabs() {
+func (a *App) processProofreadingTabs(gtx layout.Context) {
 	if a.proofreadingModule {
 		select {
 		case request := <-a.proofreadingModuleRequests:
@@ -150,6 +150,7 @@ func (a *App) processProofreadingTabs() {
 		editor.processProofreadingResults()
 		editor.acceptProofreadingConfirmation()
 		editor.acceptProofreadingModelLayout()
+		editor.processProofreadingOCRScan(gtx)
 	}
 	for _, tab := range append([]*proofreadingTab(nil), a.proofreadingTabs...) {
 		if tab.duplicate {

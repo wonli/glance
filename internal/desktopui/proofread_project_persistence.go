@@ -24,6 +24,7 @@ type proofreadingProjectPayload struct {
 	Confirmed        map[int]string             `json:"confirmed,omitempty"`
 	Snapshots        map[int]string             `json:"snapshots,omitempty"`
 	Pushed           string                     `json:"pushed,omitempty"`
+	OCRJob           *proofreadingOCRJobRecord  `json:"ocr_job,omitempty"`
 }
 
 func (a *App) proofreadingStore() *workspace.Store {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/widget"
 
+	"glance/internal/agentsettings"
 	"glance/internal/i18n"
 	"glance/internal/ocr"
 	"glance/internal/textalign"
@@ -23,6 +25,7 @@ type proofreadingOCRStage uint8
 
 const (
 	proofreadingOCRIdle proofreadingOCRStage = iota
+	proofreadingOCRAuthenticating
 	proofreadingOCRUploading
 	proofreadingOCRPending
 	proofreadingOCRRunning
@@ -41,21 +44,90 @@ type proofreadingOCRProgress struct {
 }
 
 type proofreadingOCRPage struct {
-	layout ocr.Layout
-	result textalign.Result
+	layout            ocr.Layout
+	result            textalign.Result
+	missingPage       *proofreadingOCRMissingPageCandidate
+	missingPageButton widget.Clickable
 }
 
 type proofreadingOCRResult struct {
+	generation       uint64
+	pages            []proofreadingOCRPage
+	err              error
+	persistenceErr   error
+	terminalJobState string
+	authRejected     bool
+	cancelled        bool
+}
+
+type proofreadingOCRCredentialResult struct {
 	generation uint64
-	pages      []proofreadingOCRPage
+	endpoint   string
+	job        *proofreadingOCRJobRecord
+	auth       proofreadingOCRAuthentication
+	token      string
+	found      bool
 	err        error
-	cancelled  bool
+}
+
+type proofreadingOCRJobSubmission struct {
+	generation uint64
+	record     proofreadingOCRJobRecord
+}
+
+type proofreadingOCRJobPersistAck struct {
+	jobID string
+	err   error
+}
+
+type proofreadingOCRJobClient interface {
+	Submit(context.Context, ocr.Source, ocr.Options) (ocr.Job, error)
+	Wait(context.Context, string, func(ocr.Job)) (ocr.Job, error)
+	Results(context.Context, ocr.Job) ([]ocr.Page, error)
+}
+
+type proofreadingOCRJobRun struct {
+	CompletedJob   ocr.Job
+	Pages          []ocr.Page
+	PersistenceErr error
+}
+
+func runProofreadingOCRJob(ctx context.Context, client proofreadingOCRJobClient, existingJobID string, source ocr.Source, onSubmitted func(ocr.Job) error, progress func(ocr.Job)) (proofreadingOCRJobRun, error) {
+	var run proofreadingOCRJobRun
+	jobID := existingJobID
+	if jobID == "" {
+		job, err := client.Submit(ctx, source, ocr.Options{})
+		if err != nil {
+			return run, err
+		}
+		if job.ID == "" {
+			return run, errors.New("OCR 服务未返回任务 ID")
+		}
+		jobID = job.ID
+		if onSubmitted != nil {
+			run.PersistenceErr = onSubmitted(job)
+		}
+	}
+	completed, err := client.Wait(ctx, jobID, progress)
+	if err != nil {
+		return run, err
+	}
+	run.CompletedJob = completed
+	pages, err := client.Results(ctx, completed)
+	if err != nil {
+		return run, err
+	}
+	run.Pages = pages
+	return run, nil
 }
 
 type proofreadingOCRScan struct {
 	button              widget.Clickable
 	progress            chan proofreadingOCRProgress
 	results             chan proofreadingOCRResult
+	credentials         chan proofreadingOCRCredentialResult
+	submissions         chan proofreadingOCRJobSubmission
+	persistAcks         chan proofreadingOCRJobPersistAck
 	generation          uint64
 	cancel              context.CancelFunc
 	stage               proofreadingOCRStage
@@ -65,16 +137,25 @@ type proofreadingOCRScan struct {
 	startedAt           time.Time
 	markdownSnapshot    string
 	markdownSnapshotSet bool
+	sourceAHash         string
+	sourceBHash         string
 	pages               []proofreadingOCRPage
 	err                 string
 	notice              string
+	authLookup          bool
+	authRejected        bool
+	awaitingPersistJob  string
+	currentJobID        string
 }
 
 func newProofreadingOCRScan() *proofreadingOCRScan {
 	return &proofreadingOCRScan{
-		progress: make(chan proofreadingOCRProgress, 1),
-		results:  make(chan proofreadingOCRResult, 1),
-		current:  -1,
+		progress:    make(chan proofreadingOCRProgress, 1),
+		results:     make(chan proofreadingOCRResult, 1),
+		credentials: make(chan proofreadingOCRCredentialResult, 1),
+		submissions: make(chan proofreadingOCRJobSubmission, 1),
+		persistAcks: make(chan proofreadingOCRJobPersistAck, 1),
+		current:     -1,
 	}
 }
 
@@ -82,7 +163,7 @@ func (s *proofreadingOCRScan) active() bool {
 	if s == nil {
 		return false
 	}
-	return s.stage == proofreadingOCRUploading || s.stage == proofreadingOCRPending || s.stage == proofreadingOCRRunning || s.stage == proofreadingOCRMatching
+	return s.stage == proofreadingOCRAuthenticating || s.stage == proofreadingOCRUploading || s.stage == proofreadingOCRPending || s.stage == proofreadingOCRRunning || s.stage == proofreadingOCRMatching
 }
 
 func (s *proofreadingOCRScan) close() {
@@ -93,14 +174,11 @@ func (s *proofreadingOCRScan) close() {
 	for {
 		select {
 		case <-s.progress:
-		default:
-			goto drainResults
-		}
-	}
-drainResults:
-	for {
-		select {
 		case <-s.results:
+		case result := <-s.credentials:
+			result.token = ""
+		case <-s.submissions:
+		case <-s.persistAcks:
 		default:
 			return
 		}
@@ -118,10 +196,38 @@ func (s *proofreadingOCRScan) cancelTask() {
 	}
 	s.markdownSnapshot = ""
 	s.markdownSnapshotSet = false
+	s.sourceAHash = ""
+	s.sourceBHash = ""
+	s.authLookup = false
+	s.awaitingPersistJob = ""
 	s.stage = proofreadingOCRCancelled
 }
 
 func (a *App) openProofreadingOCRTokenDialog() {
+	if a == nil || a.proofreading == nil {
+		return
+	}
+	if a.proofreading.ocrScan == nil {
+		a.proofreading.ocrScan = newProofreadingOCRScan()
+	}
+	endpoint, err := proofreadingOCREndpointFromEnvironment()
+	if err != nil {
+		if a != nil && a.proofreading != nil {
+			a.proofreading.ocrScan.err = err.Error()
+		}
+		return
+	}
+	var job *proofreadingOCRJobRecord
+	if a != nil && a.proofreading != nil && a.proofreading.ocrJob != nil && a.proofreading.ocrScan.stage != proofreadingOCRComplete {
+		if candidate, ok := proofreadingOCRResumeJob(a.proofreading.ocrJob, a.proofreading.aSourceHash, a.proofreading.sourceBHash, a.proofreading.bDraftText); ok {
+			job = candidate
+			endpoint = candidate.Endpoint
+		}
+	}
+	a.openProofreadingOCRTokenDialogFor(endpoint, job)
+}
+
+func (a *App) openProofreadingOCRTokenDialogFor(endpoint string, job *proofreadingOCRJobRecord) {
 	if a == nil || a.proofreading == nil || a.modal.Visible {
 		return
 	}
@@ -140,9 +246,19 @@ func (a *App) openProofreadingOCRTokenDialog() {
 		state.ocrScan.notice = "proofread.ai.status.markdown_too_large"
 		return
 	}
+	endpoint, err := normalizeProofreadingOCREndpoint(endpoint)
+	if err != nil {
+		state.ocrScan.err = err.Error()
+		return
+	}
+	var resumeRecord *proofreadingOCRJobRecord
+	if job != nil {
+		copy := *job
+		resumeRecord = &copy
+	}
 	state.ocrScan.notice = ""
 	bodyID := "proofread.ai.token.body"
-	if strings.TrimSpace(os.Getenv("PADDLEOCR_ENDPOINT")) != "" {
+	if endpoint != strings.TrimRight(ocr.DefaultEndpoint, "/") {
 		bodyID = "proofread.ai.token.body.custom"
 	}
 	a.modal.ShowInputMessage(
@@ -169,7 +285,7 @@ func (a *App) openProofreadingOCRTokenDialog() {
 				return
 			}
 			a.modal.Hide()
-			a.startProofreadingOCRScan(token)
+			a.startProofreadingOCRScanWithAuthentication(token, endpoint, resumeRecord, true)
 		},
 		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}},
 		modalDialogActionSpec{ID: "start", LabelRef: i18n.Message{ID: "proofread.ai.scan.start"}},
@@ -180,8 +296,101 @@ func (a *App) openProofreadingOCRTokenDialog() {
 }
 
 func (a *App) startProofreadingOCRScan(token string) {
+	endpoint, err := proofreadingOCREndpointFromEnvironment()
+	if err != nil {
+		if a != nil && a.proofreading != nil {
+			a.proofreading.ocrScan.err = err.Error()
+		}
+		return
+	}
+	a.startProofreadingOCRScanWithAuthentication(token, endpoint, nil, true)
+}
+
+func proofreadingOCREndpointFromEnvironment() (string, error) {
+	return normalizeProofreadingOCREndpoint(os.Getenv("PADDLEOCR_ENDPOINT"))
+}
+
+func (a *App) requestProofreadingOCRScan() {
+	if a == nil || a.proofreading == nil {
+		return
+	}
 	state := a.proofreading
-	if state == nil || a.pdfDoc == nil || state.bDocument == nil || state.bDocument.formatID() != "markdown" {
+	if state.ocrScan == nil {
+		state.ocrScan = newProofreadingOCRScan()
+	}
+	if state.bDocument == nil || state.bDocument.formatID() != "markdown" {
+		state.ocrScan.notice = "proofread.ai.status.markdown_required"
+		state.ocrScan.err = ""
+		return
+	}
+	if a.pdfDoc == nil {
+		state.ocrScan.notice = "proofread.ai.status.source_required"
+		return
+	}
+	if len(state.bDraftText) > 8<<20 {
+		state.ocrScan.notice = "proofread.ai.status.markdown_too_large"
+		return
+	}
+	endpoint, err := proofreadingOCREndpointFromEnvironment()
+	if err != nil {
+		state.ocrScan.err = err.Error()
+		return
+	}
+	var resumeRecord *proofreadingOCRJobRecord
+	if state.ocrJob != nil && state.ocrScan.stage != proofreadingOCRComplete {
+		if candidate, ok := proofreadingOCRResumeJob(state.ocrJob, state.aSourceHash, state.sourceBHash, state.bDraftText); ok {
+			resumeRecord = candidate
+			endpoint = candidate.Endpoint
+		}
+	}
+	store := a.proofreadingStore()
+	if store == nil {
+		a.openProofreadingOCRTokenDialogFor(endpoint, resumeRecord)
+		return
+	}
+	if state.ocrScan.cancel != nil {
+		state.ocrScan.cancel()
+	}
+	scan := state.ocrScan
+	scan.generation++
+	generation := scan.generation
+	ctx, cancel := context.WithCancel(context.Background())
+	scan.cancel = cancel
+	scan.authLookup = true
+	scan.authRejected = false
+	scan.stage = proofreadingOCRAuthenticating
+	scan.notice = ""
+	scan.err = ""
+	credentials := state.ocrCredentialStore
+	if credentials == nil {
+		credentials = agentsettings.SystemCredentialStore{}
+	}
+	resultChannel, window, shutdown := scan.credentials, a.window, a.shutdown
+	if !a.launchManagedBackground(func() {
+		auth, token, found, lookupErr := loadProofreadingOCRAuthentication(ctx, credentials, store, endpoint)
+		result := proofreadingOCRCredentialResult{generation: generation, endpoint: endpoint, job: resumeRecord, auth: auth, token: token, found: found, err: lookupErr}
+		select {
+		case resultChannel <- result:
+			if window != nil {
+				window.Invalidate()
+			}
+		case <-shutdown:
+		}
+	}) {
+		cancel()
+		scan.cancel = nil
+		scan.authLookup = false
+		scan.stage = proofreadingOCRIdle
+		a.openProofreadingOCRTokenDialogFor(endpoint, resumeRecord)
+	}
+}
+
+func (a *App) startProofreadingOCRScanWithAuthentication(token, endpoint string, resumeRecord *proofreadingOCRJobRecord, persistCredential bool) {
+	if a == nil {
+		return
+	}
+	state := a.proofreading
+	if state == nil || a.pdfDoc == nil || state.bDocument == nil || state.bDocument.formatID() != "markdown" || strings.TrimSpace(token) == "" {
 		return
 	}
 	scan := state.ocrScan
@@ -195,28 +404,64 @@ func (a *App) startProofreadingOCRScan(token string) {
 		scan.notice = "proofread.ai.status.markdown_too_large"
 		return
 	}
-	reader, _, _, _, err := a.pdfDoc.SnapshotReaderWithRevision()
+	endpoint, err := normalizeProofreadingOCREndpoint(endpoint)
 	if err != nil {
 		scan.stage = proofreadingOCRFailed
 		scan.err = err.Error()
 		return
 	}
+	draftHash := proofreadingOCRDraftSnapshotHash(markdown)
+	sourceAHash, sourceBHash := state.aSourceHash, state.sourceBHash
+	existingJobID := ""
+	if resumeRecord != nil {
+		if !resumeRecord.validFor(state.aSourceHash, state.sourceBHash, draftHash) {
+			scan.stage = proofreadingOCRFailed
+			scan.notice = "proofread.ai.status.resume_source_changed"
+			scan.err = ""
+			return
+		}
+		endpoint, err = normalizeProofreadingOCREndpoint(resumeRecord.Endpoint)
+		if err != nil {
+			scan.stage = proofreadingOCRFailed
+			scan.err = err.Error()
+			return
+		}
+		existingJobID = resumeRecord.JobID
+	}
 	info := a.pdfDoc.Info()
+	var reader io.ReadCloser
+	if existingJobID == "" {
+		reader, _, _, _, err = a.pdfDoc.SnapshotReaderWithRevision()
+		if err != nil {
+			scan.stage = proofreadingOCRFailed
+			scan.err = err.Error()
+			return
+		}
+	}
 	pdfName := filepath.Base(state.aDocument.Path)
 	if pdfName == "" || pdfName == "." {
 		pdfName = "source.pdf"
+	}
+	if scan.cancel != nil {
+		scan.cancel()
 	}
 	scan.generation++
 	generation := scan.generation
 	ctx, cancel := context.WithCancel(context.Background())
 	scan.cancel = cancel
 	scan.stage = proofreadingOCRUploading
+	if existingJobID != "" {
+		scan.stage = proofreadingOCRPending
+	}
 	scan.current = 0
 	scan.total = max(1, info.Pages)
 	scan.extracted = 0
 	scan.startedAt = time.Now()
 	scan.markdownSnapshot = markdown
 	scan.markdownSnapshotSet = true
+	scan.sourceAHash = sourceAHash
+	scan.sourceBHash = sourceBHash
+	scan.currentJobID = existingJobID
 	scan.pages = nil
 	scan.err = ""
 	scan.notice = ""
@@ -224,9 +469,16 @@ func (a *App) startProofreadingOCRScan(token string) {
 	a.followProofreadingOCRPage(0)
 
 	window, shutdown := a.window, a.shutdown
-	progressChannel, resultChannel := scan.progress, scan.results
+	progressChannel, resultChannel, submissionChannel, persistAcks := scan.progress, scan.results, scan.submissions, scan.persistAcks
+	store := a.proofreadingStore()
+	credentialStore := state.ocrCredentialStore
+	if credentialStore == nil {
+		credentialStore = agentsettings.SystemCredentialStore{}
+	}
 	if !a.launchManagedBackground(func() {
-		defer reader.Close()
+		if reader != nil {
+			defer reader.Close()
+		}
 		defer func() { token = "" }()
 		publish := func(progress proofreadingOCRProgress) {
 			select {
@@ -262,16 +514,57 @@ func (a *App) startProofreadingOCRScan(token string) {
 			}
 		}()
 
-		publish(proofreadingOCRProgress{stage: proofreadingOCRUploading, current: 0, total: max(1, info.Pages)})
-		client := ocr.Client{Token: token, Endpoint: os.Getenv("PADDLEOCR_ENDPOINT")}
-		job, submitErr := client.Submit(ctx, ocr.Source{Name: pdfName, Reader: reader, Size: int64(info.Bytes)}, ocr.Options{})
-		if submitErr != nil {
-			result.err = submitErr
-			result.cancelled = errors.Is(ctx.Err(), context.Canceled)
-			return
+		if persistCredential {
+			if store == nil {
+				result.err = errors.New("OCR workspace credential storage is unavailable")
+				return
+			}
+			if _, saveErr := saveProofreadingOCRAuthentication(ctx, credentialStore, store, endpoint, token); saveErr != nil {
+				result.err = saveErr
+				result.cancelled = errors.Is(ctx.Err(), context.Canceled)
+				return
+			}
 		}
-		publish(proofreadingOCRProgress{stage: proofreadingOCRPending, total: max(1, info.Pages)})
-		completedJob, waitErr := client.Wait(ctx, job.ID, func(update ocr.Job) {
+		if existingJobID == "" {
+			publish(proofreadingOCRProgress{stage: proofreadingOCRUploading, current: 0, total: max(1, info.Pages)})
+		} else {
+			publish(proofreadingOCRProgress{stage: proofreadingOCRPending, total: max(1, info.Pages)})
+		}
+		client := &ocr.Client{Token: token, Endpoint: endpoint}
+		source := ocr.Source{}
+		if reader != nil {
+			source = ocr.Source{Name: pdfName, Reader: reader, Size: int64(info.Bytes)}
+		}
+		onSubmitted := func(job ocr.Job) error {
+			record := proofreadingOCRJobRecord{
+				JobID: job.ID, Endpoint: endpoint, Model: ocr.DefaultModel,
+				SourceAHash: sourceAHash, SourceBHash: sourceBHash, DraftHash: draftHash,
+				CreatedAt: time.Now().UTC(), State: job.State,
+			}
+			select {
+			case submissionChannel <- proofreadingOCRJobSubmission{generation: generation, record: record}:
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-shutdown:
+				return errors.New("application is shutting down")
+			}
+			if window != nil {
+				window.Invalidate()
+			}
+			for {
+				select {
+				case ack := <-persistAcks:
+					if ack.jobID == job.ID {
+						return ack.err
+					}
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-shutdown:
+					return errors.New("application is shutting down")
+				}
+			}
+		}
+		jobRun, runErr := runProofreadingOCRJob(ctx, client, existingJobID, source, onSubmitted, func(update ocr.Job) {
 			stage := proofreadingOCRPending
 			if update.State == "running" || update.State == "done" {
 				stage = proofreadingOCRRunning
@@ -286,18 +579,21 @@ func (a *App) startProofreadingOCRScan(token string) {
 			current := proofreadingOCRCurrentPage(update.Progress.ExtractedPages, total)
 			publish(proofreadingOCRProgress{stage: stage, current: current, total: total, extracted: update.Progress.ExtractedPages})
 		})
-		if waitErr != nil {
-			result.err = waitErr
+		result.persistenceErr = jobRun.PersistenceErr
+		if runErr != nil {
+			result.err = runErr
+			result.authRejected = errors.Is(runErr, ocr.ErrAuthentication)
+			switch {
+			case errors.Is(runErr, ocr.ErrJobFailed):
+				result.terminalJobState = "failed"
+			case errors.Is(runErr, ocr.ErrJobUnavailable):
+				result.terminalJobState = "expired"
+			}
 			result.cancelled = errors.Is(ctx.Err(), context.Canceled)
 			return
 		}
 		publish(proofreadingOCRProgress{stage: proofreadingOCRMatching, current: max(0, info.Pages-1), total: max(1, info.Pages), extracted: max(0, info.Pages)})
-		recognized, err := client.Results(ctx, completedJob)
-		if err != nil {
-			result.err = err
-			result.cancelled = errors.Is(ctx.Err(), context.Canceled)
-			return
-		}
+		recognized := jobRun.Pages
 		if info.Pages > 0 && len(recognized) != info.Pages {
 			result.err = fmt.Errorf("OCR 返回 %d 页，PDF 共 %d 页；页码无法可靠对应", len(recognized), info.Pages)
 			return
@@ -319,7 +615,9 @@ func (a *App) startProofreadingOCRScan(token string) {
 		}
 	}) {
 		cancel()
-		_ = reader.Close()
+		if reader != nil {
+			_ = reader.Close()
+		}
 		scan.cancel = nil
 		scan.stage = proofreadingOCRFailed
 		scan.err = "无法启动 OCR 扫描任务"
@@ -359,12 +657,71 @@ func (a *App) processProofreadingOCRScan(gtx layout.Context) {
 		return
 	}
 	scan := a.proofreading.ocrScan
-	if scan.markdownSnapshotSet && (scan.active() || scan.stage == proofreadingOCRComplete) && scan.markdownSnapshot != a.proofreading.bDraftText {
-		scan.cancelTask()
-		scan.pages = nil
-		scan.err = ""
-		scan.notice = "proofread.ai.status.draft_changed"
+	if scan.markdownSnapshotSet && (scan.active() || scan.stage == proofreadingOCRComplete) {
+		staleDraft := scan.markdownSnapshot != a.proofreading.bDraftText
+		staleSource := scan.sourceAHash != a.proofreading.aSourceHash || scan.sourceBHash != a.proofreading.sourceBHash
+		if staleDraft || staleSource {
+			scan.cancelTask()
+			scan.pages = nil
+			scan.err = ""
+			if staleDraft {
+				scan.notice = "proofread.ai.status.draft_changed"
+			} else {
+				scan.notice = "proofread.ai.status.resume_source_changed"
+			}
+		}
 	}
+	for {
+		select {
+		case result := <-scan.credentials:
+			if result.generation != scan.generation {
+				result.token = ""
+				continue
+			}
+			scan.authLookup = false
+			if scan.cancel != nil {
+				scan.cancel()
+				scan.cancel = nil
+			}
+			if result.err != nil || !result.found {
+				scan.stage = proofreadingOCRIdle
+				if result.err != nil {
+					scan.notice = "proofread.ai.status.credential_unavailable"
+				}
+				a.openProofreadingOCRTokenDialogFor(result.endpoint, result.job)
+				result.token = ""
+				continue
+			}
+			scan.authRejected = false
+			a.startProofreadingOCRScanWithAuthentication(result.token, result.endpoint, result.job, false)
+			result.token = ""
+		case submission := <-scan.submissions:
+			if submission.generation != scan.generation {
+				sendProofreadingOCRPersistAck(scan, proofreadingOCRJobPersistAck{jobID: submission.record.JobID, err: context.Canceled})
+				continue
+			}
+			record := submission.record
+			scan.currentJobID = record.JobID
+			scan.awaitingPersistJob = record.JobID
+			a.proofreading.ocrJob = &record
+			if a.proofreading.projectDocumentID == "" || a.proofreading.controller == nil || !a.proofreading.modelInitialAssigned || !a.proofreading.bDraftInitialized {
+				persistErr := errors.New("OCR task cannot be saved before proofreading recovery state is ready")
+				scan.notice = "proofread.ai.status.resume_unavailable"
+				scan.awaitingPersistJob = ""
+				sendProofreadingOCRPersistAck(scan, proofreadingOCRJobPersistAck{jobID: record.JobID, err: persistErr})
+				continue
+			}
+			if !a.queueProofreadingDraftPersistence() {
+				persistErr := errors.New("OCR task recovery record could not be queued for saving")
+				scan.notice = "proofread.ai.status.resume_unavailable"
+				scan.awaitingPersistJob = ""
+				sendProofreadingOCRPersistAck(scan, proofreadingOCRJobPersistAck{jobID: record.JobID, err: persistErr})
+			}
+		default:
+			goto readProgress
+		}
+	}
+readProgress:
 	for {
 		select {
 		case progress := <-scan.progress:
@@ -396,18 +753,53 @@ readResult:
 		if result.cancelled {
 			scan.stage = proofreadingOCRCancelled
 			scan.err = ""
-			scan.notice = ""
+			if scan.notice != "proofread.ai.status.resume_unavailable" {
+				scan.notice = ""
+			}
 		} else if result.err != nil {
 			scan.stage = proofreadingOCRFailed
 			scan.err = result.err.Error()
-			scan.notice = ""
+			scan.authRejected = result.authRejected
+			if result.terminalJobState != "" {
+				scan.err = ""
+				scan.authRejected = false
+				scan.notice = "proofread.ai.status.job_terminal"
+				if a.proofreading.ocrJob != nil && scan.currentJobID != "" && a.proofreading.ocrJob.JobID == scan.currentJobID {
+					record := *a.proofreading.ocrJob
+					record.State = result.terminalJobState
+					a.proofreading.ocrJob = &record
+					if !a.queueProofreadingDraftPersistence() {
+						scan.notice = "proofread.ai.status.resume_unavailable"
+					}
+				}
+			} else if result.authRejected {
+				scan.notice = "proofread.ai.status.authentication_rejected"
+			} else if scan.notice != "proofread.ai.status.resume_unavailable" {
+				scan.notice = ""
+			}
 		} else {
 			scan.stage = proofreadingOCRComplete
 			scan.pages = result.pages
+			a.refreshProofreadingOCRMissingPageCandidates()
 			scan.err = ""
-			scan.notice = ""
+			scan.authRejected = false
+			if result.persistenceErr != nil {
+				scan.notice = "proofread.ai.status.resume_unavailable"
+			} else if scan.notice != "proofread.ai.status.resume_unavailable" {
+				scan.notice = ""
+			}
 		}
 		gtx.Execute(op.InvalidateCmd{})
+	default:
+	}
+}
+
+func sendProofreadingOCRPersistAck(scan *proofreadingOCRScan, ack proofreadingOCRJobPersistAck) {
+	if scan == nil || scan.persistAcks == nil {
+		return
+	}
+	select {
+	case scan.persistAcks <- ack:
 	default:
 	}
 }

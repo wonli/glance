@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestProofreadingProjectSQLiteAndSourceRecovery(t *testing.T) {
@@ -62,5 +63,33 @@ func TestProofreadingProjectResumeRestoresPageAndLocalScroll(t *testing.T) {
 	view := a.ensurePDFView()
 	if view.page != 1 || view.canvas.Position.Offset != 42 || len(s.xPageScrollOffsets) != 3 || s.xPageScrollOffsets[1] != 18 {
 		t.Fatal(view.page, view.canvas.Position, s.xPageScrollOffsets)
+	}
+}
+
+func TestProofreadingProjectPayloadRoundTripsOCRJobAndReadsLegacyPayload(t *testing.T) {
+	createdAt := time.Date(2026, 10, 24, 1, 2, 3, 0, time.UTC)
+	want := proofreadingOCRJobRecord{
+		JobID: "job-17", Endpoint: "https://ocr.example/api/v2/jobs", Model: "PaddleOCR-VL-1.6",
+		SourceAHash: "pdf-hash", SourceBHash: "source-b-hash", DraftHash: "draft-hash",
+		CreatedAt: createdAt, State: "running",
+	}
+	data, err := json.Marshal(proofreadingProjectPayload{OCRJob: &want})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got proofreadingProjectPayload
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.OCRJob == nil || *got.OCRJob != want {
+		t.Fatalf("OCR job record did not round trip: %#v", got.OCRJob)
+	}
+
+	var legacy proofreadingProjectPayload
+	if err := json.Unmarshal([]byte(`{"page":3,"draft":{"version":2,"text":"old"}}`), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Page != 3 || legacy.OCRJob != nil {
+		t.Fatalf("legacy payload should remain readable without OCR metadata: %#v", legacy)
 	}
 }

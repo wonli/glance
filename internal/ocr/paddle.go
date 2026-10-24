@@ -21,6 +21,16 @@ import (
 const DefaultEndpoint = "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
 const DefaultModel = "PaddleOCR-VL-1.6"
 
+var ErrAuthentication = errors.New("ocr: authentication rejected")
+var ErrJobFailed = errors.New("ocr: remote job failed")
+var ErrJobUnavailable = errors.New("ocr: remote job is unavailable")
+
+type httpStatusError struct {
+	status int
+}
+
+func (e *httpStatusError) Error() string { return fmt.Sprintf("ocr: HTTP status %d", e.status) }
+
 // Client must be configured before use and then may be shared between workers.
 // Token is supplied by the caller and is never persisted by this package.
 type Client struct {
@@ -136,7 +146,10 @@ func (c *Client) request(ctx context.Context, method, target, contentType string
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		resp.Body.Close()
-		return nil, fmt.Errorf("ocr: HTTP status %d", resp.StatusCode)
+		if auth && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+			return nil, fmt.Errorf("%w (HTTP status %d)", ErrAuthentication, resp.StatusCode)
+		}
+		return nil, &httpStatusError{status: resp.StatusCode}
 	}
 	return resp, nil
 }
@@ -269,7 +282,7 @@ func (c *Client) Status(ctx context.Context, id string) (Job, error) {
 	}
 	resp, err := c.request(ctx, http.MethodGet, c.endpoint()+"/"+url.PathEscape(id), "", nil, true)
 	if err != nil {
-		return Job{}, err
+		return Job{}, classifyUnavailableJobError(err)
 	}
 	return decodeJob(resp)
 }
@@ -295,7 +308,7 @@ func (c *Client) Wait(ctx context.Context, id string, progress func(Job)) (Job, 
 			}
 			return job, nil
 		case "failed":
-			return Job{}, errors.New("ocr: remote job failed")
+			return Job{}, ErrJobFailed
 		case "pending", "running":
 		default:
 			return Job{}, errors.New("ocr: unknown job state")
@@ -318,10 +331,18 @@ func (c *Client) Results(ctx context.Context, job Job) ([]Page, error) {
 	}
 	resp, err := c.request(ctx, http.MethodGet, job.ResultURL.JSON, "", nil, false)
 	if err != nil {
-		return nil, err
+		return nil, classifyUnavailableJobError(err)
 	}
 	defer resp.Body.Close()
 	return ParseResults(resp.Body)
+}
+
+func classifyUnavailableJobError(err error) error {
+	var statusErr *httpStatusError
+	if errors.As(err, &statusErr) && (statusErr.status == http.StatusNotFound || statusErr.status == http.StatusGone) {
+		return fmt.Errorf("%w (HTTP status %d)", ErrJobUnavailable, statusErr.status)
+	}
+	return err
 }
 
 func ParseResults(r io.Reader) ([]Page, error) {

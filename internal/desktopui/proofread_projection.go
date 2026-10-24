@@ -163,6 +163,7 @@ func (a *App) layoutProofreadingProjectionPage(gtx layout.Context, view *pdfView
 				a.layoutProofreadingXPageScrollbar(gtx, *page, pageSize)
 				pass.Pop()
 			}
+			a.layoutProofreadingOCRMissingPageBadge(gtx, pageSize, pageIndex)
 			if notice != "" && pageIndex == view.page {
 				a.drawProofreadingProjectionNotice(gtx, pageSize, notice, noticeIsError)
 			}

@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"gioui.org/layout"
 	"io"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ func TestPDFEntryResumesComparisonWithoutDuplicateOrHistory(t *testing.T) {
 			candidates: []proofreadingEntryCandidate{{project: workspace.ProofreadingProject{ID: "book", Title: "book.pdf", SourceA: "/books/book.pdf"}, hasHistory: true}},
 		}
 		host.openSelectedProofreadingEntry(0)
-		host.processProofreadingTabs()
+		host.processProofreadingTabs(layout.Context{})
 	}
 	enter()
 	if len(host.proofreadingTabs) != 1 {

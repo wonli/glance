@@ -188,6 +188,10 @@ type proofreadingWorkspace struct {
 	xPageAdjustmentActive bool
 	xPageAdjustmentPage   int
 	ocrScan               *proofreadingOCRScan
+	ocrJob                *proofreadingOCRJobRecord
+	ocrCredentialStore    proofreadingOCRCredentialStore
+	ocrPreview            *proofreadingOCRMissingPageCandidate
+	ocrPreviewList        widget.List
 	aDocument             *proofreadingObject
 	aSourceHash           string
 	page                  int
@@ -274,6 +278,7 @@ type proofreadingDraftRestoreResult struct {
 
 type proofreadingDraftSaveResult struct {
 	generation uint64
+	ocrJobID   string
 	err        error
 }
 
@@ -656,6 +661,13 @@ func (a *App) processProofreadingResults() {
 		} else {
 			state.draftPersistError = ""
 			state.draftAutoSaved = true
+		}
+		if result.ocrJobID != "" && state.ocrScan != nil && state.ocrScan.awaitingPersistJob == result.ocrJobID {
+			state.ocrScan.awaitingPersistJob = ""
+			if result.err != nil {
+				state.ocrScan.notice = "proofread.ai.status.resume_unavailable"
+			}
+			sendProofreadingOCRPersistAck(state.ocrScan, proofreadingOCRJobPersistAck{jobID: result.ocrJobID, err: result.err})
 		}
 	default:
 	}

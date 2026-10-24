@@ -24,15 +24,23 @@ func (a *App) layoutProofreadingOCRAction(gtx layout.Context) layout.Dimensions 
 			scan.cancelTask()
 			scan.err = ""
 			scan.notice = ""
-		} else {
+		} else if scan.authRejected {
 			a.openProofreadingOCRTokenDialog()
+		} else {
+			a.requestProofreadingOCRScan()
 		}
 	}
 	labelID := "proofread.ai.scan.start"
 	if scan.active() {
 		labelID = "proofread.ai.scan.cancel"
+	} else if scan.authRejected {
+		labelID = "proofread.ai.token.replace"
 	} else if scan.stage == proofreadingOCRComplete {
 		labelID = "proofread.ai.scan.rescan"
+	} else if a.proofreading.ocrJob != nil && a.proofreading.ocrJob.terminal() {
+		labelID = "proofread.ai.scan.rescan"
+	} else if _, ok := proofreadingOCRResumeJob(a.proofreading.ocrJob, a.proofreading.aSourceHash, a.proofreading.sourceBHash, a.proofreading.bDraftText); ok {
+		labelID = "proofread.ai.scan.resume"
 	}
 	size := image.Pt(gtx.Dp(142), gtx.Dp(32))
 	return scan.button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -76,6 +84,8 @@ func (a *App) layoutProofreadingOCRStatus(gtx layout.Context) layout.Dimensions 
 		ink = color.NRGBA{R: 166, G: 67, B: 61, A: 255}
 	} else if statusID == "" {
 		switch scan.stage {
+		case proofreadingOCRAuthenticating:
+			statusID = "proofread.ai.status.authenticating"
 		case proofreadingOCRUploading:
 			statusID = "proofread.ai.status.uploading"
 		case proofreadingOCRPending:
@@ -127,8 +137,14 @@ func (a *App) drawProofreadingOCRThumbnailStatus(gtx layout.Context, size image.
 	if scan == nil || pageIndex < 0 || pageIndex >= len(scan.pages) {
 		return
 	}
-	ink := proofreadingOCRStatusColor(scan.pages[pageIndex].result.Status)
-	semantic.DescriptionOp(a.textID(proofreadingOCRStatusMessage(scan.pages[pageIndex].result.Status))).Add(gtx.Ops)
+	page := scan.pages[pageIndex]
+	ink := proofreadingOCRStatusColor(page.result.Status)
+	description := proofreadingOCRStatusMessage(page.result.Status)
+	if page.missingPage != nil {
+		ink = proofreadingOCRMissingPageColor
+		description = "proofread.ai.status.page_missing"
+	}
+	semantic.DescriptionOp(a.textID(description)).Add(gtx.Ops)
 	box := image.Rect(size.X-gtx.Dp(13), gtx.Dp(5), size.X-gtx.Dp(5), gtx.Dp(13))
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Ellipse(box.Inset(-gtx.Dp(1))).Op(gtx.Ops))
 	paint.FillShape(gtx.Ops, ink, clip.Ellipse(box).Op(gtx.Ops))

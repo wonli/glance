@@ -119,3 +119,88 @@ func TestRejectInvalidResults(t *testing.T) {
 		}
 	}
 }
+
+func TestSubmitClassifiesAuthenticationRejections(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			client := Client{Token: "synthetic-token", Endpoint: "https://ocr.example/jobs", HTTPClient: &http.Client{Transport: statusRoundTripper(status)}}
+			_, err := client.Submit(context.Background(), Source{URL: "https://example.test/book.pdf"}, Options{})
+			if !errors.Is(err, ErrAuthentication) {
+				t.Fatalf("HTTP %d must be identifiable as an authentication rejection, got %v", status, err)
+			}
+		})
+	}
+}
+
+func TestWaitClassifiesTerminalRemoteFailure(t *testing.T) {
+	client := Client{
+		Token: "synthetic-token", Endpoint: "https://ocr.example/jobs", PollInterval: time.Millisecond,
+		HTTPClient: &http.Client{Transport: newResponseRoundTripper(http.StatusOK, `{"data":{"state":"failed","errorMsg":"recognition failed"}}`)},
+	}
+	_, err := client.Wait(context.Background(), "job", nil)
+	if !errors.Is(err, ErrJobFailed) {
+		t.Fatalf("remote failed state should be terminal and classifiable, got %v", err)
+	}
+}
+
+func TestStatusClassifiesExpiredRemoteJobs(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusGone} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			client := Client{Token: "synthetic-token", Endpoint: "https://ocr.example/jobs", HTTPClient: &http.Client{Transport: statusRoundTripper(status)}}
+			_, err := client.Status(context.Background(), "expired-job")
+			if !errors.Is(err, ErrJobUnavailable) {
+				t.Fatalf("HTTP %d for a saved job should be terminal, got %v", status, err)
+			}
+		})
+	}
+}
+
+func TestResultsClassifiesExpiredStorageWithoutMislabelingAuthentication(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		status     int
+		wantAuth   bool
+		wantAbsent bool
+	}{
+		{name: "forbidden signed URL", status: http.StatusForbidden},
+		{name: "missing signed URL result", status: http.StatusNotFound, wantAbsent: true},
+		{name: "expired signed URL result", status: http.StatusGone, wantAbsent: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := Client{Token: "synthetic-token", Endpoint: "https://ocr.example/jobs", HTTPClient: &http.Client{Transport: statusRoundTripper(test.status)}}
+			_, err := client.Results(context.Background(), Job{ResultURL: struct {
+				JSON string `json:"jsonUrl"`
+			}{JSON: "https://results.example/signed.jsonl"}})
+			if errors.Is(err, ErrAuthentication) != test.wantAuth {
+				t.Fatalf("signed result URL HTTP %d authentication classification: err=%v", test.status, err)
+			}
+			if errors.Is(err, ErrJobUnavailable) != test.wantAbsent {
+				t.Fatalf("signed result URL HTTP %d unavailable classification: err=%v", test.status, err)
+			}
+		})
+	}
+}
+
+type statusRoundTripper int
+
+func (status statusRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: int(status),
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("rejected")),
+		Request:    request,
+	}, nil
+}
+
+type responseRoundTripper struct {
+	status int
+	body   string
+}
+
+func newResponseRoundTripper(status int, body string) responseRoundTripper {
+	return responseRoundTripper{status: status, body: body}
+}
+
+func (r responseRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: r.status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(r.body)), Request: request}, nil
+}

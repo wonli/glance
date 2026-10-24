@@ -349,6 +349,7 @@ func (a *App) startProofreadingDraftRestore() {
 			return
 		}
 		state.draftFilePath = filepath.Join(state.resume.Directory, "proofreading-copy.md")
+		state.ocrJob = payload.OCRJob
 		state.page = max(0, payload.Page)
 		state.restoredXOffsets = payload.XOffsets
 		state.history.confirmed = payload.Confirmed
@@ -453,16 +454,16 @@ func (a *App) startProofreadingDraftRestore() {
 	}
 }
 
-func (a *App) queueProofreadingDraftPersistence() {
+func (a *App) queueProofreadingDraftPersistence() bool {
 	state := a.proofreading
 	if state == nil || state.controller == nil || !state.modelInitialAssigned || !state.bDraftInitialized || state.projectDocumentID == "" || state.draftRestoreFailed {
-		return
+		return false
 	}
 	if state.draftFilePath == "" {
 		path, err := proofreadingDraftFilePath(state.bDocument.Path, state.projectDocumentID)
 		if err != nil {
 			state.draftPersistError = err.Error()
-			return
+			return false
 		}
 		state.draftFilePath = path
 	}
@@ -471,7 +472,7 @@ func (a *App) queueProofreadingDraftPersistence() {
 	state.draftAutoSaved = false
 	state.draftPersistError = ""
 	if state.controller == nil {
-		return
+		return false
 	}
 	captured := state.controller.Model.Capture()
 	draft := proofreadingPersistedDraft{
@@ -483,7 +484,16 @@ func (a *App) queueProofreadingDraftPersistence() {
 	store := a.proofreadingStore()
 	project := a.proofreadingProjectMetadata()
 	view := a.ensurePDFView()
-	projectData := proofreadingProjectPayload{Head: state.history.head, Page: view.page, Offset: view.canvas.Position.Offset, XOffsets: append([]float64(nil), state.xPageScrollOffsets...), Confirmed: cloneProofreadingHashes(state.history.confirmed), Snapshots: cloneProofreadingHashes(state.history.snapshots), Pushed: state.history.pushed}
+	var ocrJob *proofreadingOCRJobRecord
+	if state.ocrJob != nil {
+		copy := *state.ocrJob
+		ocrJob = &copy
+	}
+	projectData := proofreadingProjectPayload{Head: state.history.head, Page: view.page, Offset: view.canvas.Position.Offset, XOffsets: append([]float64(nil), state.xPageScrollOffsets...), Confirmed: cloneProofreadingHashes(state.history.confirmed), Snapshots: cloneProofreadingHashes(state.history.snapshots), Pushed: state.history.pushed, OCRJob: ocrJob}
+	ocrJobID := ""
+	if ocrJob != nil {
+		ocrJobID = ocrJob.JobID
+	}
 	bPath := state.bDocument.Path
 	var source io.ReadCloser
 	if store != nil && a.pdfDoc != nil {
@@ -504,7 +514,11 @@ func (a *App) queueProofreadingDraftPersistence() {
 		err := writeProofreadingDraftFile(path, draft)
 		projectData.Draft = draft
 		if err == nil {
-			err = persistProofreadingProject(store, project, projectData, source, bPath)
+			if store == nil && ocrJobID != "" {
+				err = errors.New("workspace storage is unavailable; OCR task cannot be resumed after closing")
+			} else {
+				err = persistProofreadingProject(store, project, projectData, source, bPath)
+			}
 		} else if source != nil {
 			source.Close()
 		}
@@ -512,7 +526,7 @@ func (a *App) queueProofreadingDraftPersistence() {
 		if state.draftPersistGen.Load() != generation {
 			return
 		}
-		result := proofreadingDraftSaveResult{generation: generation, err: err}
+		result := proofreadingDraftSaveResult{generation: generation, ocrJobID: ocrJobID, err: err}
 		select {
 		case results <- result:
 			if window != nil {
@@ -526,7 +540,9 @@ func (a *App) queueProofreadingDraftPersistence() {
 			source.Close()
 		}
 		state.draftPersistError = "could not start proofreading draft save"
+		return false
 	}
+	return true
 }
 
 func (a *App) applyProofreadingPageEdit(page proofreadingXPage, editedText string) {

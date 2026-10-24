@@ -24,7 +24,7 @@ var (
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	a.ensureDesktopRuntime()
 	a.processProofreadingWorkbench()
-	a.processProofreadingTabs()
+	a.processProofreadingTabs(gtx)
 	for _, tab := range a.proofreadingTabs {
 		tab.editor.processProofreadingEditorEvents(gtx)
 	}

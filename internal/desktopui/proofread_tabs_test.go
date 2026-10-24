@@ -54,7 +54,7 @@ func TestProofreadingTabsShareWindowAndKeepIndependentState(t *testing.T) {
 	}
 	// Continuing an open project focuses its tab without making another model.
 	open("first")
-	host.processProofreadingTabs()
+	host.processProofreadingTabs(layout.Context{})
 	if len(host.proofreadingTabs) != 2 || host.selectedProofreadingTabID != first.id {
 		t.Fatal("continuing an open task duplicated its editor")
 	}
@@ -64,6 +64,37 @@ func TestProofreadingTabsShareWindowAndKeepIndependentState(t *testing.T) {
 	}
 	if second.editor.proofreading.page != 500 {
 		t.Fatal("closing one manuscript changed another")
+	}
+}
+
+func TestInactiveProofreadingTabProcessesOCRSubmissionPersistence(t *testing.T) {
+	runtime := newDesktopRuntime()
+	host := newAppWithRuntime(nil, runtime)
+	host.proofreadingModule = true
+	editor := newAppWithRuntime(nil, runtime)
+	scan := newProofreadingOCRScan()
+	scan.generation = 7
+	scan.stage = proofreadingOCRPending
+	state := &proofreadingWorkspace{ocrScan: scan}
+	editor.proofreading = state
+	tabID := "proofreading:background"
+	host.proofreadingTabs = []*proofreadingTab{{id: tabID, editor: editor}}
+	host.selectedProofreadingTabID = workspace.RecentTabID
+	record := proofreadingOCRJobRecord{JobID: "submitted-job", Endpoint: "https://ocr.example/jobs", State: "pending"}
+	scan.submissions <- proofreadingOCRJobSubmission{generation: 7, record: record}
+
+	host.processProofreadingTabs(layout.Context{})
+
+	if state.ocrJob == nil || state.ocrJob.JobID != record.JobID {
+		t.Fatalf("inactive tab did not accept the submitted job ID: %#v", state.ocrJob)
+	}
+	select {
+	case ack := <-scan.persistAcks:
+		if ack.jobID != record.JobID || ack.err == nil {
+			t.Fatalf("unready inactive project should release the worker with an explicit persistence error: %+v", ack)
+		}
+	default:
+		t.Fatal("inactive tab left the OCR worker waiting for persistence acknowledgement")
 	}
 }
 
