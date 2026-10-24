@@ -271,3 +271,5 @@ Markdown code fences tagged `vega` or `vega-lite` render offline using pinned, e
 扩大应用层回归时，`TestMarkdownExportPDFWritesValidatedNewFile`、`TestWordExportPDFWritesValidatedNewFileWithoutChangingSession`、`TestWordPrintCapabilityRequiresHumanAndValidatesPages` 在当前系统字体环境失败（PingFangUI 字形无矢量轮廓）；`TestPresentationExportAndPrintCapabilitiesUseRealSnapshot` 报文字超出投影边界。这些路径不属于本次校对历史功能，尚未解决。
 
 2026-10-24 多标签修正（仅限校对模块，应用主页已恢复）：覆盖工作台 ↔ 稿件往返、两份稿件独立页码/滚动、同任务去重及关闭隔离；完整窗口树的 1x/2x Metal 检查确认列表背景不会覆盖标签栏，切回工作台没有旧画面残留。原生窗口端到端交互仍未由自动化工具验证。
+
+校对状态显示位置（Pen `wiBkP`）：仅在底部 PDF 页码缩略图导航区，通过页卡边框、底色和短状态标签区分未校对、已校对、快照保存中/已保存/失败及修改待确认。当前页使用加粗边框，不把当前选中误作差异页。X 编辑纸张不绘制校对状态文字、彩色边框或状态底色；1x/2x GPU 回归比较校对前后 X 纸张像素一致。

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"gioui.org/font"
+	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -140,14 +141,17 @@ func (a *App) layoutProofreadingPageThumbnail(gtx layout.Context, view *pdfViewS
 	size := image.Pt(gtx.Dp(96), gtx.Dp(96))
 	gtx.Constraints = layout.Exact(size)
 	selected := index == view.page
-	fill := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	border := color.NRGBA{R: 221, G: 227, B: 232, A: 255}
+	statusKey := a.proofreadingPageStatusKey(index)
+	statusLabel, fill, border, ink := proofreadingThumbnailStatus(statusKey)
 	borderWidth := gtx.Dp(1)
 	if selected {
-		fill = color.NRGBA{R: 255, G: 245, B: 242, A: 255}
-		border = color.NRGBA{R: 198, G: 83, B: 72, A: 255}
 		borderWidth = gtx.Dp(2)
+		if statusKey == "proofread.history.unreviewed" {
+			fill = color.NRGBA{R: 239, G: 245, B: 251, A: 255}
+			border = proofreadBlue
+		}
 	}
+
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rect(0, 0, size.X, size.Y), gtx.Dp(5)).Op(gtx.Ops))
@@ -156,24 +160,24 @@ func (a *App) layoutProofreadingPageThumbnail(gtx layout.Context, view *pdfViewS
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return view.button("page-"+strconv.Itoa(index)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				semantic.DescriptionOp(a.textID(statusKey)).Add(gtx.Ops)
 				return layout.Inset{Top: unit.Dp(7), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							previewSize := image.Pt(gtx.Dp(46), gtx.Dp(61))
 							gtx.Constraints = layout.Exact(previewSize)
 							if img := view.thumbCache[index]; img.Size().X > 0 {
-								return layoutProofreadingPageThumbnailImage(gtx, img, selected)
+								return layoutProofreadingPageThumbnailImage(gtx, img, false)
 							}
-							return a.layoutProofreadingThumbnailPlaceholder(gtx, index, selected)
+							return a.layoutProofreadingThumbnailPlaceholder(gtx, index, false)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							page := a.textArgs("proofread.pagination.page", i18n.Args{
 								"Page": proofreadingPageLabelNumber(a, index),
 							})
-							label := material.Label(a.theme, 10, page)
-							label.Color = proofreadMuted
+							label := material.Label(a.theme, 9, page+"  "+a.textID(statusLabel))
+							label.Color = ink
 							if selected {
-								label.Color = color.NRGBA{R: 166, G: 71, B: 62, A: 255}
 								label.Font.Weight = font.Bold
 							} else {
 								label.Font.Weight = font.SemiBold

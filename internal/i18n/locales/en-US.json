@@ -2583,5 +2583,11 @@
   "proofread.remote.token_title": "HTTPS access token",
   "proofread.remote.token_help": "Enter the authentication username when adding; tokens are stored in the system keychain.",
   "proofread.remote.add_key": "Add key",
-  "proofread.remote.add_token": "Add token"
+  "proofread.remote.add_token": "Add token",
+  "proofread.pagination.status.unreviewed": "Unreviewed",
+  "proofread.pagination.status.reviewed": "Reviewed ○",
+  "proofread.pagination.status.saved": "Reviewed ✓",
+  "proofread.pagination.status.modified": "Modified",
+  "proofread.pagination.status.saving": "Saving",
+  "proofread.pagination.status.failed": "Failed"
 }

@@ -6,6 +6,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
+	"gioui.org/widget"
 	"glance/internal/workspace"
 	"image"
 	"image/color"
@@ -24,20 +25,21 @@ func TestProofreadingWorkbenchAndReviewedMarkersVisual(t *testing.T) {
 		a.proofreadingModule = true
 		var ops op.Ops
 		var router input.Router
-		size := image.Pt(int(520*scale), int(400*scale))
+		size := image.Pt(int(96*scale), int(96*scale))
+		view := &pdfViewState{page: 1, buttons: map[string]*widget.Clickable{}}
 		gtx := layout.Context{Source: router.Source(), Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: scale, PxPerSp: scale}, Constraints: layout.Exact(size)}
 		paint.Fill(&ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
-		a.drawProofreadingPageStatus(gtx, 0, size)
+		a.layoutProofreadingPageThumbnail(gtx, view, 0)
 		unreviewed := renderPresentationTestOps(t, &ops, size)
 		s.controller.Model.Review(1, true)
 		a.refreshProofreadingModelView()
 		ops.Reset()
 		paint.Fill(&ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
-		a.drawProofreadingPageStatus(gtx, 0, size)
+		a.layoutProofreadingPageThumbnail(gtx, view, 0)
 		reviewed := renderPresentationTestOps(t, &ops, size)
 		changed := 0
 		green := 0
-		for y := 0; y < int(30*scale); y++ {
+		for y := 0; y < size.Y; y++ {
 			for x := 0; x < size.X; x++ {
 				p := reviewed.RGBAAt(x, y)
 				if p != unreviewed.RGBAAt(x, y) {

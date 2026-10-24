@@ -2583,5 +2583,11 @@
   "proofread.remote.token_title": "HTTPS 访问令牌",
   "proofread.remote.token_help": "添加时填写认证用户名；令牌保存在系统钥匙串",
   "proofread.remote.add_key": "添加密钥",
-  "proofread.remote.add_token": "添加令牌"
+  "proofread.remote.add_token": "添加令牌",
+  "proofread.pagination.status.unreviewed": "未校对",
+  "proofread.pagination.status.reviewed": "已校对 ○",
+  "proofread.pagination.status.saved": "已校对 ✓",
+  "proofread.pagination.status.modified": "待确认",
+  "proofread.pagination.status.saving": "保存中",
+  "proofread.pagination.status.failed": "快照失败"
 }
