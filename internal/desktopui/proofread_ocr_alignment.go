@@ -63,13 +63,17 @@ func proofreadingOCRRangeSegments(pages []proofreadingXPage, r textalign.Range) 
 }
 
 func buildProofreadingOCRAlignmentSummary(results []proofreadingOCRPage, xPages []proofreadingXPage, modelRevision uint64) proofreadingOCRAlignmentSummary {
+	return buildProofreadingOCRAlignmentSummaryWithReviewedPages(results, xPages, nil, modelRevision)
+}
+
+func buildProofreadingOCRAlignmentSummaryWithReviewedPages(results []proofreadingOCRPage, xPages []proofreadingXPage, reviewedPages []proofreadingPageOwnership, modelRevision uint64) proofreadingOCRAlignmentSummary {
 	summary := proofreadingOCRAlignmentSummary{ModelRevision: modelRevision}
 	for _, page := range results {
 		var candidate *textalign.Candidate
 		switch page.result.Status {
 		case "matched":
 			candidate = page.result.Selected
-		case "ambiguous":
+		case "ambiguous", "limited":
 			if page.result.Selected != nil {
 				candidate = page.result.Selected
 			} else if len(page.result.PathChoices) > 0 {
@@ -91,15 +95,20 @@ func buildProofreadingOCRAlignmentSummary(results []proofreadingOCRPage, xPages 
 			XFirstPage: segments[0].PageIndex + 1,
 			XLastPage:  segments[len(segments)-1].PageIndex + 1,
 		}
-		switch page.result.Status {
-		case "matched":
+		confirmed := page.result.Status == "matched"
+		if !confirmed {
+			pageIndex := page.result.Page - 1
+			confirmed = pageIndex >= 0 && pageIndex < len(reviewedPages) && reviewedPages[pageIndex].Reviewed &&
+				len(segments) == 1 && segments[0].PageIndex == pageIndex
+		}
+		if confirmed {
 			if summary.First == nil || anchor.APage < summary.First.APage {
 				summary.First = anchor
 			}
 			if summary.Last == nil || anchor.APage > summary.Last.APage {
 				summary.Last = anchor
 			}
-		case "ambiguous":
+		} else {
 			if summary.ProvisionalFirst == nil || anchor.APage < summary.ProvisionalFirst.APage {
 				summary.ProvisionalFirst = anchor
 			}
@@ -126,5 +135,5 @@ func (a *App) refreshProofreadingOCRAlignmentSummary() {
 	if state.controller != nil {
 		revision = state.controller.Model.Revision()
 	}
-	scan.alignmentSummary = buildProofreadingOCRAlignmentSummary(scan.pages, state.xPages, revision)
+	scan.alignmentSummary = buildProofreadingOCRAlignmentSummaryWithReviewedPages(scan.pages, state.xPages, state.pageOwnership, revision)
 }

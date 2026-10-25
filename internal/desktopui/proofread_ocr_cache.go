@@ -43,6 +43,20 @@ type proofreadingOCRCachePage struct {
 	Layout       ocr.Layout `json:"layout"`
 }
 
+type proofreadingOCRStepPageCache struct {
+	Version      int        `json:"version"`
+	PageNumber   int        `json:"page_number"`
+	PageCount    int        `json:"page_count"`
+	RenderDPI    int        `json:"render_dpi"`
+	SourceAHash  string     `json:"source_a_sha256"`
+	Model        string     `json:"model"`
+	OptionsHash  string     `json:"options_sha256"`
+	OriginalText string     `json:"original_text"`
+	Layout       ocr.Layout `json:"layout"`
+}
+
+const proofreadingOCRStepRenderDPI = 144
+
 func proofreadingOCRCachePaths(sourceAHash, optionsHash string) (root, pagesDir, manifestPath string, err error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -172,6 +186,103 @@ func loadProofreadingOCRPageCache(sourceAHash, model string, options ocr.Options
 		}
 	}
 	return pages, true, nil
+}
+
+// loadProofreadingOCRCachePage reuses one page from the complete-book cache or
+// a page-at-a-time cache without loading every page into memory.
+func loadProofreadingOCRCachePage(sourceAHash, model string, options ocr.Options, pageNumber, expectedPages int) (ocr.Page, bool, error) {
+	if sourceAHash == "" || model == "" || pageNumber < 1 || expectedPages < pageNumber || expectedPages > proofreadingOCRCacheMaxPages {
+		return ocr.Page{}, false, nil
+	}
+	optionsHash, err := proofreadingOCRCacheOptionsHash(model, options)
+	if err != nil {
+		return ocr.Page{}, false, fmt.Errorf("hash OCR cache options: %w", err)
+	}
+	root, pagesDir, manifestPath, err := proofreadingOCRCachePaths(sourceAHash, optionsHash)
+	if err != nil {
+		return ocr.Page{}, false, err
+	}
+	var manifest proofreadingOCRCacheManifest
+	if err = readProofreadingOCRCacheJSON(manifestPath, &manifest); err == nil &&
+		manifest.Version == proofreadingOCRCacheVersion && manifest.Complete &&
+		manifest.SourceAHash == sourceAHash && manifest.Model == model &&
+		manifest.OptionsHash == optionsHash && manifest.PageCount == expectedPages {
+		var record proofreadingOCRCachePage
+		path := filepath.Join(pagesDir, fmt.Sprintf("%06d.json", pageNumber))
+		if err = readProofreadingOCRCacheJSON(path, &record); err == nil &&
+			record.Version == proofreadingOCRCacheVersion && record.PageNumber == pageNumber &&
+			record.PageCount == expectedPages && record.SourceAHash == sourceAHash &&
+			record.Model == model && record.OptionsHash == optionsHash {
+			page, pageErr := proofreadingOCRPageFromCache(record.PageNumber, record.OriginalText, record.Layout)
+			if pageErr == nil {
+				return page, true, nil
+			}
+		}
+	}
+
+	path := filepath.Join(root, "step-pages", fmt.Sprintf("%06d.json", pageNumber))
+	var record proofreadingOCRStepPageCache
+	if err = readProofreadingOCRCacheJSON(path, &record); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ocr.Page{}, false, nil
+		}
+		return ocr.Page{}, false, fmt.Errorf("read OCR page cache %d: %w", pageNumber, err)
+	}
+	if record.Version != 1 || record.PageNumber != pageNumber || record.PageCount != expectedPages ||
+		record.RenderDPI != proofreadingOCRStepRenderDPI || record.SourceAHash != sourceAHash ||
+		record.Model != model || record.OptionsHash != optionsHash {
+		return ocr.Page{}, false, nil
+	}
+	page, err := proofreadingOCRPageFromCache(record.PageNumber, record.OriginalText, record.Layout)
+	if err != nil {
+		return ocr.Page{}, false, fmt.Errorf("validate OCR page cache %d: %w", pageNumber, err)
+	}
+	return page, true, nil
+}
+
+func proofreadingOCRPageFromCache(pageNumber int, markdown string, layout ocr.Layout) (ocr.Page, error) {
+	raw, err := json.Marshal(struct {
+		PrunedResult ocr.Layout `json:"prunedResult"`
+	}{PrunedResult: layout})
+	if err != nil {
+		return ocr.Page{}, err
+	}
+	page := ocr.Page{Number: pageNumber, Markdown: markdown, Raw: raw}
+	if _, err = page.Layout(); err != nil {
+		return ocr.Page{}, err
+	}
+	return page, nil
+}
+
+func saveProofreadingOCRStepPageCache(sourceAHash, model string, options ocr.Options, page ocr.Page, pageCount int) error {
+	if sourceAHash == "" || model == "" || page.Number < 1 || pageCount < page.Number || pageCount > proofreadingOCRCacheMaxPages {
+		return errors.New("invalid OCR page cache identity")
+	}
+	optionsHash, err := proofreadingOCRCacheOptionsHash(model, options)
+	if err != nil {
+		return fmt.Errorf("hash OCR cache options: %w", err)
+	}
+	root, _, _, err := proofreadingOCRCachePaths(sourceAHash, optionsHash)
+	if err != nil {
+		return err
+	}
+	layout, err := page.Layout()
+	if err != nil {
+		return fmt.Errorf("read OCR layout for page %d: %w", page.Number, err)
+	}
+	dir := filepath.Join(root, "step-pages")
+	if err = os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("create page OCR cache: %w", err)
+	}
+	record := proofreadingOCRStepPageCache{
+		Version: 1, PageNumber: page.Number, PageCount: pageCount,
+		RenderDPI: proofreadingOCRStepRenderDPI, SourceAHash: sourceAHash,
+		Model: model, OptionsHash: optionsHash, OriginalText: page.Markdown, Layout: layout,
+	}
+	if err = writeProofreadingOCRCacheJSON(filepath.Join(dir, fmt.Sprintf("%06d.json", page.Number)), record); err != nil {
+		return fmt.Errorf("save OCR page cache %d: %w", page.Number, err)
+	}
+	return nil
 }
 
 func writeProofreadingOCRCacheJSON(path string, value any) error {

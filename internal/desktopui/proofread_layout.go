@@ -31,6 +31,7 @@ func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions 
 		return layout.Dimensions{}
 	}
 	a.processProofreadingOCRScan(gtx)
+	a.processProofreadingOCRStep(gtx)
 	w := a.ensureProofreadingWorkbench()
 	if w.historyOpen {
 		return a.layoutProofreadingHistoryPage(gtx)
@@ -111,6 +112,9 @@ func (a *App) layoutProofreadingComparePanes(gtx layout.Context) layout.Dimensio
 			dividerX := gtx.Constraints.Max.X / 2
 			paint.FillShape(gtx.Ops, proofreadChromeLine, clip.Rect{Min: image.Pt(dividerX, 0), Max: image.Pt(dividerX+max(1, gtx.Dp(1)), gtx.Constraints.Max.Y)}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Max}
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return a.layoutProofreadingOCRDiffSummary(gtx)
 		}),
 	)
 }

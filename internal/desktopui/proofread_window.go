@@ -188,6 +188,8 @@ type proofreadingWorkspace struct {
 	xPageAdjustmentActive bool
 	xPageAdjustmentPage   int
 	ocrScan               *proofreadingOCRScan
+	ocrStep               *proofreadingOCRStepState
+	aiProofreading        bool
 	ocrJob                *proofreadingOCRJobRecord
 	ocrCredentialStore    proofreadingOCRCredentialStore
 	ocrPreview            *proofreadingOCRMissingPageCandidate
@@ -301,6 +303,7 @@ func newProofreadingWorkspace(request proofreadingWindowRequest) *proofreadingWo
 		draftRestoreResults: make(chan proofreadingDraftRestoreResult, 1),
 		draftSaveResults:    make(chan proofreadingDraftSaveResult, 8),
 		ocrScan:             newProofreadingOCRScan(),
+		ocrStep:             newProofreadingOCRStepState(),
 		aDocument:           &proofreadingObject{Role: proofreadingRoleA, Path: request.sourcePath, Name: request.sourceName},
 	}
 	state.xCanvas.Axis = layout.Vertical
@@ -706,6 +709,9 @@ func (a *App) closeProofreadingDraft() {
 	state := a.proofreading
 	if state.ocrScan != nil {
 		state.ocrScan.close()
+	}
+	if state.ocrStep != nil {
+		state.ocrStep.close()
 	}
 	if state.bDocument != nil && state.bDocument.Adapter != nil {
 		_ = state.bDocument.Adapter.Close()

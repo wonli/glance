@@ -13,6 +13,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"glance/internal/i18n"
 )
 
 var (
@@ -168,20 +169,262 @@ func (a *App) layoutProofreadingToolbar(gtx layout.Context) layout.Dimensions {
 				})
 			}
 			return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(30)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return a.layoutProofreadingToolbarModes(gtx)
+			})
+		},
+	)
+}
+
+func (a *App) layoutProofreadingToolbarModes(gtx layout.Context) layout.Dimensions {
+	state := a.proofreading
+	step := a.proofreadingOCRStep()
+	view := a.ensurePDFView()
+	if view == nil {
+		return layout.Dimensions{}
+	}
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layoutProofreadingToolbarPill(gtx, a, 118, "check", "proofread.toolbar.reviewed_filter")
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(6), 0)}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layoutProofreadingToolbarPill(gtx, a, 126, "clock-3", "proofread.toolbar.unreviewed_filter")
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(12), 0)}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			width, height := max(1, gtx.Dp(1)), gtx.Dp(28)
+			size := image.Pt(width, height)
+			gtx.Constraints = layout.Exact(size)
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 176, G: 188, B: 201, A: 255}, clip.Rect{Max: size}.Op())
+			return layout.Dimensions{Size: size}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(12), 0)}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return a.layoutProofreadingModeTab(gtx, &step.manualModeButton, "proofread.toolbar.mode.manual", "book-open", false)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Dimensions{Size: image.Pt(gtx.Dp(2), 0)}
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return a.layoutProofreadingModeTab(gtx, &step.aiModeButton, "proofread.toolbar.mode.ai_action", "sparkles", true)
+				}),
+			)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !state.aiProofreading {
+				return layout.Dimensions{}
+			}
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(12), 0)}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !state.aiProofreading {
+				return layout.Dimensions{}
+			}
+			return a.layoutProofreadingOCRAction(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !state.aiProofreading {
+				return layout.Dimensions{}
+			}
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(8), 0)}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !state.aiProofreading {
+				return layout.Dimensions{}
+			}
+			label, icon := "proofread.ai.step.recognize", "scan"
+			if step.active() {
+				label, icon = "proofread.ai.step.cancel", "x"
+			}
+			return a.layoutProofreadingToolbarAction(gtx, &step.ocrButton, label, icon, 110, true, a.requestProofreadingOCRStep)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !state.aiProofreading {
+				return layout.Dimensions{}
+			}
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(8), 0)}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !state.aiProofreading {
+				return layout.Dimensions{}
+			}
+			_, hasOCR := step.pages[max(0, view.page)]
+			return a.layoutProofreadingToolbarAction(gtx, &step.compareButton, "proofread.ai.step.compare", "git-compare-arrows", 110, hasOCR && !step.active(), a.compareProofreadingOCRStep)
+		}),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !state.aiProofreading {
+				return layout.Dimensions{}
+			}
+			return a.layoutProofreadingOCRStepToolbarStatus(gtx, step, view)
+		}),
+	)
+}
+
+func (a *App) layoutProofreadingModeTab(gtx layout.Context, button *widget.Clickable, labelKey, iconName string, aiMode bool) layout.Dimensions {
+	if a == nil || a.proofreading == nil || button == nil {
+		return layout.Dimensions{}
+	}
+	if button.Clicked(gtx) {
+		a.proofreading.aiProofreading = aiMode
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	}
+	selected := a.proofreading.aiProofreading == aiMode
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layoutProofreadingModeTabVisual(gtx, a, labelKey, iconName, selected)
+	})
+}
+
+func layoutProofreadingModeTabVisual(gtx layout.Context, a *App, labelKey, iconName string, selected bool) layout.Dimensions {
+	size := image.Pt(gtx.Dp(108), gtx.Dp(32))
+	fill := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	border := color.NRGBA{R: 213, G: 221, B: 229, A: 255}
+	ink := color.NRGBA{R: 105, G: 115, B: 126, A: 255}
+	if selected {
+		fill = color.NRGBA{R: 239, G: 245, B: 251, A: 255}
+		border = color.NRGBA{R: 157, G: 188, B: 215, A: 255}
+		ink = color.NRGBA{R: 47, G: 94, B: 131, A: 255}
+	}
+	gtx.Constraints = layout.Exact(size)
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rect(0, 0, size.X, size.Y), gtx.Dp(6)).Op(gtx.Ops))
+			proofreadRoundedBorder(gtx, size, 6, border, max(1, gtx.Dp(1)))
+			return layout.Dimensions{Size: size}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layoutProofreadingToolbarPill(gtx, a, 118, "check", "proofread.toolbar.reviewed_filter")
+						return layoutProofreadingIcon(gtx, "ribbon", iconName, 14, ink)
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(6), 0)} }),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layoutProofreadingToolbarPill(gtx, a, 126, "clock-3", "proofread.toolbar.unreviewed_filter")
+						label := material.Label(a.theme, 10, a.textID(labelKey))
+						label.Color = ink
+						label.Font.Weight = font.SemiBold
+						label.MaxLines = 1
+						return layout.Inset{Left: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layoutProofreadingOpticallyCenteredLabel(gtx, label)
+						})
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(16), 0)} }),
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
+				)
+			})
+		},
+	)
+}
+
+func (a *App) layoutProofreadingOCRStepToolbarStatus(gtx layout.Context, step *proofreadingOCRStepState, view *pdfViewState) layout.Dimensions {
+	if a == nil || a.proofreading == nil || step == nil || view == nil {
+		return layout.Dimensions{}
+	}
+	currentAPage := max(0, view.page)
+	currentBPage := a.proofreadingCurrentBPage()
+	statusKey := proofreadingOCRStepStatusKeyForPages(step, currentAPage, currentBPage, a.proofreading.aSourceHash)
+	comparison, hasComparison := a.currentProofreadingOCRStepComparison()
+	if hasComparison {
+		statusKey = "proofread.ai.step.compared"
+		if !comparison.HasEvidence {
+			statusKey = "proofread.ai.step.no_evidence"
+		} else if !comparison.Complete {
+			statusKey = "proofread.ai.step.partial"
+		}
+	}
+	statusAPage, statusBPage := currentAPage, currentBPage
+	if step.active() {
+		statusAPage, statusBPage = max(0, step.page), max(0, step.bPage)
+	}
+	args := i18n.Args{
+		"APage":     proofreadOCRStepPageLabel(a, statusAPage),
+		"BPage":     proofreadOCRStepPageLabel(a, statusBPage),
+		"Extracted": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(step.extracted)),
+		"Total":     i18n.FormatNumber(a.localeSnapshot().Resolved, float64(max(1, step.total))),
+	}
+	if step.err != "" {
+		args["Error"] = step.err
+	}
+	if step.cacheErr != "" {
+		args["Error"] = step.cacheErr
+	}
+	if hasComparison {
+		args["Matches"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.Matches))
+		args["AOnly"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.AOnly))
+		args["BOnly"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.BOnly))
+	}
+	label := material.Label(a.theme, 10, a.textArgs(statusKey, args))
+	label.Color = proofreadMuted
+	label.MaxLines = 1
+	width := min(gtx.Constraints.Max.X, gtx.Dp(220))
+	if width <= 0 {
+		return layout.Dimensions{}
+	}
+	size := image.Pt(width, gtx.Dp(32))
+	gtx.Constraints = layout.Exact(size)
+	return layout.Stack{Alignment: layout.E}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: size}
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min = image.Point{}
+			return label.Layout(gtx)
+		}),
+	)
+}
+
+func (a *App) layoutProofreadingToolbarAction(gtx layout.Context, button *widget.Clickable, labelKey, iconName string, width unit.Dp, enabled bool, action func()) layout.Dimensions {
+	if button == nil {
+		return layout.Dimensions{}
+	}
+	if button.Clicked(gtx) && enabled && action != nil {
+		action()
+	}
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layoutProofreadingToolbarActionVisual(gtx, a, labelKey, iconName, width, !enabled)
+	})
+}
+
+func layoutProofreadingToolbarActionVisual(gtx layout.Context, a *App, labelKey, iconName string, width unit.Dp, disabled bool) layout.Dimensions {
+	size := image.Pt(gtx.Dp(width), gtx.Dp(32))
+	fill := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	border := color.NRGBA{R: 213, G: 221, B: 229, A: 255}
+	ink := color.NRGBA{R: 47, G: 94, B: 131, A: 255}
+	if disabled {
+		fill = color.NRGBA{R: 247, G: 248, B: 250, A: 255}
+		border = color.NRGBA{R: 229, G: 233, B: 238, A: 255}
+		ink = color.NRGBA{R: 157, G: 165, B: 173, A: 255}
+	}
+	gtx.Constraints = layout.Exact(size)
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rect(0, 0, size.X, size.Y), gtx.Dp(6)).Op(gtx.Ops))
+			proofreadRoundedBorder(gtx, size, 6, border, max(1, gtx.Dp(1)))
+			return layout.Dimensions{Size: size}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layoutProofreadingIcon(gtx, "ribbon", iconName, 14, ink)
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(12), 0)} }),
-					layout.Rigid(a.layoutProofreadingOCRAction),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						label := material.Label(a.theme, 11, a.textID(labelKey))
+						label.Color = ink
+						label.Font.Weight = font.SemiBold
+						return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layoutProofreadingOpticallyCenteredLabel(gtx, label)
+						})
+					}),
 				)
 			})
 		},

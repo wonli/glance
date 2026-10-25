@@ -217,13 +217,16 @@ type selectedCollectionFace struct{ font *fontapi.Font }
 func (f selectedCollectionFace) Face() *fontapi.Face { return fontapi.NewFace(f.font) }
 
 func parseFontCollection(snapshot fontcatalog.Snapshot, face fontcatalog.Face) ([]giofont.FontFace, int64, bool) {
-	data, err := snapshot.ReadFace(face.ID)
+	parsed, err := snapshot.OpenParsedFace(face.ID)
 	if err != nil {
-		return nil, 0, false
-	}
-	parsed, err := wordfont.ParseFont(data, face.Index)
-	if err != nil {
-		return nil, 0, false
+		data, err2 := snapshot.ReadFace(face.ID)
+		if err2 != nil {
+			return nil, 0, false
+		}
+		parsed, err = wordfont.ParseFont(data, face.Index)
+		if err != nil {
+			return nil, 0, false
+		}
 	}
 
 	fontdiag.RecordUse(parsed, "ui", face.Path, face.Index)
@@ -232,7 +235,7 @@ func parseFontCollection(snapshot fontcatalog.Snapshot, face fontcatalog.Face) (
 	// tables we never use. Wrap only this immutable font; each shaper gets its
 	// own mutable Face through Face(), as in Gio's OpenType wrapper.
 	selected := giofont.FontFace{Font: opentype.DescriptionToFont(parsed.Describe()), Face: selectedCollectionFace{parsed}}
-	return []giofont.FontFace{selected}, int64(len(data)), true
+	return []giofont.FontFace{selected}, face.Size, true
 }
 
 func (cache *fontCollectionCache) parsedFaces(snapshot fontcatalog.Snapshot, face fontcatalog.Face) ([]giofont.FontFace, int64, bool) {

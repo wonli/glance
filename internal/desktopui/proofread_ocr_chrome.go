@@ -336,6 +336,29 @@ func proofreadingOCRAnchorArgs(a *App, first, last *proofreadingOCRAlignmentAnch
 }
 
 func (a *App) drawProofreadingOCRThumbnailStatus(gtx layout.Context, size image.Point, pageIndex int) {
+	if a == nil || a.proofreading == nil || pageIndex < 0 {
+		return
+	}
+	if a.proofreading.aiProofreading {
+		step := a.proofreading.ocrStep
+		if step == nil || step.pageSourceHash[pageIndex] != a.proofreading.aSourceHash {
+			return
+		}
+		if _, ok := step.pages[pageIndex]; !ok {
+			return
+		}
+		ink := color.NRGBA{R: 74, G: 113, B: 153, A: 220}
+		description := "proofread.ai.step.thumbnail.recognized"
+		if comparison, ok := step.comparisons[proofreadingOCRStepPair{APage: pageIndex, BPage: pageIndex}]; ok && proofreadingOCRStepComparisonValid(a.proofreading, comparison) {
+			ink = proofreadingOCRStatusColor(comparison.Result.Status)
+			description = "proofread.ai.step.thumbnail.compared"
+		}
+		semantic.DescriptionOp(a.textID(description)).Add(gtx.Ops)
+		box := image.Rect(size.X-gtx.Dp(13), gtx.Dp(5), size.X-gtx.Dp(5), gtx.Dp(13))
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Ellipse(box.Inset(-gtx.Dp(1))).Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, ink, clip.Ellipse(box).Op(gtx.Ops))
+		return
+	}
 	scan := a.proofreading.ocrScan
 	if scan == nil || pageIndex < 0 || pageIndex >= len(scan.pages) {
 		return
@@ -355,6 +378,8 @@ func (a *App) drawProofreadingOCRThumbnailStatus(gtx layout.Context, size image.
 
 func proofreadingOCRStatusMessage(status string) string {
 	switch status {
+	case "recognized":
+		return "proofread.ai.step.thumbnail.recognized"
 	case "matched":
 		return "proofread.ai.status.page_matched"
 	case "ambiguous":

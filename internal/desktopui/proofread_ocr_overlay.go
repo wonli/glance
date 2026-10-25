@@ -19,6 +19,26 @@ func (a *App) drawProofreadingOCRPageOverlay(gtx layout.Context, size image.Poin
 	if state == nil || state.ocrScan == nil || size.X <= 0 || size.Y <= 0 {
 		return
 	}
+	if state.aiProofreading {
+		step := state.ocrStep
+		if step != nil {
+			if page, ok := step.pages[pageIndex]; ok && step.pageSourceHash[pageIndex] == state.aSourceHash {
+				comparison, hasComparison := a.currentProofreadingOCRStepComparison()
+				if hasComparison && comparison.APage == pageIndex {
+					page.result = comparison.Result
+				}
+				drawProofreadingOCRBlocks(gtx, size, page, -1, time.Time{})
+				if hasComparison && comparison.APage == pageIndex {
+					drawProofreadingOCRStepAOnlyBlockHighlights(gtx, size, page, comparison)
+				}
+			}
+			if step.active() && step.page == pageIndex {
+				drawProofreadingLaser(gtx, size, step.startedAt)
+				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
+			}
+		}
+		return
+	}
 	scan := state.ocrScan
 	if pageIndex >= 0 && pageIndex < len(scan.pages) {
 		page := &scan.pages[pageIndex]
@@ -147,6 +167,8 @@ func (a *App) layoutProofreadingOCRBlockTargets(gtx layout.Context, size image.P
 
 func proofreadingOCRStatusColor(status string) color.NRGBA {
 	switch status {
+	case "recognized":
+		return color.NRGBA{R: 74, G: 113, B: 153, A: 185}
 	case "matched":
 		return color.NRGBA{R: 38, G: 145, B: 106, A: 220}
 	case "ambiguous":
