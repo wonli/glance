@@ -489,25 +489,29 @@ func (s *Shaper) loadFace(location fontscan.Location) *font.Face {
 	if face := s.facesByID[location]; face != nil {
 		return face
 	}
-	data, err := s.readFontBytes(location)
-	if err != nil {
-		return nil
+	var ft *font.Font
+	if s.snapshot != nil {
+		if resID, ok := s.resourceIDs[location]; ok && resID != "" {
+			if parsed, err := s.snapshot.OpenParsedFace(resID); err == nil {
+				ft = parsed
+			}
+		}
 	}
-	ft, err := ParseFont(data, uint32(location.Index))
-	if err != nil {
-		return nil
+	if ft == nil {
+		data, err := s.readFontBytes(location)
+		if err != nil {
+			return nil
+		}
+		ft, err = ParseFont(data, uint32(location.Index))
+		if err != nil {
+			return nil
+		}
 	}
 
 	fontdiag.RecordUse(ft, "word", location.File, uint32(location.Index))
 	face := font.NewFace(ft)
 	s.facesByID[location] = face
 	s.idsByFace[face] = location
-	if s.privateLocations != nil && s.privateLocations[location] {
-		if s.dataByID == nil {
-			s.dataByID = make(map[fontscan.Location][]byte)
-		}
-		s.dataByID[location] = data
-	}
 	return face
 }
 

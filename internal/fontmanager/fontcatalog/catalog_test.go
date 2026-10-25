@@ -84,3 +84,22 @@ func TestPreferredSourceResolvesConflict(t *testing.T) {
 		t.Fatalf("preferred source ignored: %+v %v", r, err)
 	}
 }
+
+func TestResolveWithAliasFallback(t *testing.T) {
+	// Snapshot has Arial and PingFang SC, but not Calibri.
+	s := NewSnapshot(1, []Face{
+		{ID: "cjk", Family: "PingFang SC", Source: System, Weight: 400},
+		{ID: "western", Family: "Arial", Source: System, Weight: 400},
+	})
+	// Requesting Calibri should prefer Arial over PingFang SC via alias candidates.
+	r, err := s.Resolve(Request{Family: "Calibri", Weight: 400})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Face.Family != "Arial" {
+		t.Fatalf("Resolve(Calibri) = %q; want Arial alias substitute", r.Face.Family)
+	}
+	if !r.Substitute {
+		t.Fatalf("Resolve(Calibri) Substitute = false; want true")
+	}
+}

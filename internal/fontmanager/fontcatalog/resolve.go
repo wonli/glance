@@ -3,6 +3,7 @@ package fontcatalog
 import (
 	"bytes"
 	"errors"
+	"glance/internal/fontmanager/fontfallback"
 	"io"
 	"sort"
 	"strings"
@@ -38,7 +39,18 @@ func matchFamily(f Face, name string) bool {
 func resolutionScore(f Face, req Request, weight int) int {
 	score := 0
 	if !matchFamily(f, req.Family) {
-		score += 100000
+		candidates := fontfallback.FamilyCandidates(req.Family)
+		matchedCandidate := false
+		for i := 1; i < len(candidates); i++ {
+			if matchFamily(f, candidates[i]) {
+				score += 5000 + i*100
+				matchedCandidate = true
+				break
+			}
+		}
+		if !matchedCandidate {
+			score += 100000
+		}
 	}
 	distance := f.Weight - weight
 	if distance < 0 {

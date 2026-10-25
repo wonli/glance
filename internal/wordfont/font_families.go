@@ -3,6 +3,7 @@ package wordfont
 import (
 	"github.com/go-text/typesetting/font"
 	"glance/internal/document"
+	"glance/internal/fontmanager/fontfallback"
 	"unicode"
 )
 
@@ -36,17 +37,14 @@ func fontFamilyForRune(style document.WordTextStyle, r rune) string {
 // supplies outlines; it does not rewrite the source font names in the package.
 func wordFontFamilyCandidates(value string) []string {
 	var out []string
+	seen := make(map[string]bool)
 	for _, family := range splitWordFontFamilies(value) {
-		out = append(out, family)
-		switch font.NormalizeFamily(family) {
-		case "simhei", "黑体":
-			out = append(out, "SimHei", "黑体", "Heiti SC", "Noto Sans CJK SC")
-		case "simsun", "宋体":
-			out = append(out, "SimSun", "宋体", "Songti SC", "Noto Serif CJK SC")
-		case "fangsong", "fangsong_gb2312", "仿宋", "仿宋_gb2312":
-			out = append(out, "FangSong", "仿宋", "STFangsong", "Songti SC", "Noto Serif CJK SC")
-		case "kaiti", "kaiti_gb2312", "楷体", "楷体_gb2312":
-			out = append(out, "KaiTi", "楷体", "Kaiti SC", "Songti SC")
+		for _, candidate := range fontfallback.FamilyCandidates(family) {
+			normalized := font.NormalizeFamily(candidate)
+			if !seen[normalized] {
+				seen[normalized] = true
+				out = append(out, candidate)
+			}
 		}
 	}
 	return out
