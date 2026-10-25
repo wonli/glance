@@ -511,6 +511,7 @@ func (a *App) processProofreadingResults() {
 			state.sourceError = "PDF 快照不可用"
 			break
 		}
+		a.clearProofreadingOCRLink(true)
 		state.aDocument = result.object
 		state.aSourceHash = result.sourceHash
 		a.pdfDoc = pdfAdapter.doc

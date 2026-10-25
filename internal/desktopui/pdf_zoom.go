@@ -45,6 +45,9 @@ func (a *App) handlePDFCanvasScroll(gtx layout.Context, v *pdfViewState) {
 			continue
 		}
 		if applyPDFCanvasScroll(v, pe.Scroll) {
+			if a != nil && a.proofreading != nil && a.proofreading.ocrScan != nil && a.proofreading.ocrScan.link.Active {
+				a.clearProofreadingOCRLink(true)
+			}
 			if a.window != nil {
 				a.window.Invalidate()
 			}

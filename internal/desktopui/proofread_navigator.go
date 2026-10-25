@@ -85,7 +85,9 @@ func (a *App) layoutProofreadingXNavigatorCanvas(gtx layout.Context, view *pdfVi
 	a.revealProofreadingNavigatorBoundary()
 	// Use identical outer geometry for A and X; only X reserves the right strip.
 	s.xCanvas.Axis = layout.Vertical
-	s.xCanvas.Position = view.canvas.Position
+	if !a.validateProofreadingOCRLink() {
+		s.xCanvas.Position = view.canvas.Position
+	}
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return a.layoutProofreadingXPageList(gtx, view, pages, status, isError)

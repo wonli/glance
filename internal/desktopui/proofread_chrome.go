@@ -317,6 +317,9 @@ func (a *App) layoutProofreadingStatus(gtx layout.Context) layout.Dimensions {
 							return layoutProofreadingOpticallyCenteredLabel(gtx, label)
 						})
 					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return a.layoutProofreadingOCRLinkControls(gtx)
+					}),
 				)
 			})
 		},

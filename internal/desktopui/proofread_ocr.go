@@ -50,6 +50,7 @@ type proofreadingOCRPage struct {
 	result            textalign.Result
 	missingPage       *proofreadingOCRMissingPageCandidate
 	missingPageButton widget.Clickable
+	blockButtons      map[int]*widget.Clickable
 }
 
 type proofreadingOCRResult struct {
@@ -148,6 +149,10 @@ type proofreadingOCRScan struct {
 	pages               []proofreadingOCRPage
 	alignmentSummary    proofreadingOCRAlignmentSummary
 	highlight           proofreadingOCRHighlightState
+	link                proofreadingOCRLinkState
+	linkPrevious        widget.Clickable
+	linkNext            widget.Clickable
+	linkUnlink          widget.Clickable
 	err                 string
 	notice              string
 	authLookup          bool
@@ -212,6 +217,7 @@ func (s *proofreadingOCRScan) cancelTask() {
 	s.alignment = textalign.AlignmentProgress{}
 	s.alignmentSummary = proofreadingOCRAlignmentSummary{}
 	s.highlight = proofreadingOCRHighlightState{}
+	s.link = proofreadingOCRLinkState{}
 	s.awaitingPersistJob = ""
 	s.cacheHit = false
 	s.cacheErr = ""
@@ -383,6 +389,7 @@ func (a *App) requestProofreadingOCRScan() {
 	scan.alignment = textalign.AlignmentProgress{}
 	scan.alignmentSummary = proofreadingOCRAlignmentSummary{}
 	scan.highlight = proofreadingOCRHighlightState{}
+	scan.link = proofreadingOCRLinkState{}
 	scan.startedAt = time.Now()
 	scan.currentJobID = ""
 	scan.pages = nil
@@ -549,6 +556,7 @@ func (a *App) startProofreadingOCRScanWithAuthentication(token, endpoint string,
 	scan.alignment = textalign.AlignmentProgress{}
 	scan.alignmentSummary = proofreadingOCRAlignmentSummary{}
 	scan.highlight = proofreadingOCRHighlightState{}
+	scan.link = proofreadingOCRLinkState{}
 	scan.startedAt = time.Now()
 	scan.markdownSnapshot = markdown
 	scan.markdownSnapshotSet = true

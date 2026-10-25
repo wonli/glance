@@ -119,9 +119,14 @@ func (a *App) syncPDFPageFromCanvas(view *pdfViewState) bool {
 		view.pageMap = nil
 		return view.syncPageFromCanvas()
 	}
+	state := a.proofreading
 	pages := a.proofreadingPageIndices(max(1, view.info.Pages))
 	view.pageMap = pages
-	return view.syncPageFromCanvas()
+	changed := view.syncPageFromCanvas()
+	if state.ocrScan != nil && state.ocrScan.link.Active && !proofreadingOCRLinkSourcePinned(state.ocrScan.link, view, pages) {
+		a.clearProofreadingOCRLink(true)
+	}
+	return changed
 }
 
 func (a *App) setProofreadingPageFilter(requested proofreadingPageFilter) {
@@ -129,6 +134,9 @@ func (a *App) setProofreadingPageFilter(requested proofreadingPageFilter) {
 		return
 	}
 	state := a.proofreading
+	if state.ocrScan != nil && state.ocrScan.link.Active {
+		a.clearProofreadingOCRLink(true)
+	}
 	state.pageFilter = proofreadingFilterModeAfterClick(state.pageFilter, requested)
 	a.reconcileProofreadingPageFilter()
 	if a.window != nil {
@@ -194,6 +202,9 @@ func (a *App) setProofreadingCurrentPage(page int) bool {
 		return false
 	}
 	state, view := a.proofreading, a.pdfView
+	if state.ocrScan != nil && state.ocrScan.link.Active {
+		a.clearProofreadingOCRLink(true)
+	}
 	pages := a.proofreadingPageIndices(max(1, view.info.Pages))
 	row := proofreadingFilterRowForPage(pages, page)
 	if row < 0 {

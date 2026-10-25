@@ -359,8 +359,9 @@ func (a *App) handleOverlayEscape(gtx layout.Context) bool {
 	hasWordColorPicker := state != nil && (state.wordToolbarColorPicker || state.wordToolbarHighlightPicker)
 	hasAgentHistorySurface := a.aiHistoryDrawerOpen || a.agentUI.conversationHistoryVisible
 	hasProofreadingHistory := a.proofreadingWorkbench != nil && a.proofreadingWorkbench.historyOpen
+	hasProofreadingOCRLink := a.proofreadingOCRLinkValid()
 	hasPresentationStylePopover := state != nil && state.pptxView != nil && state.pptxView.stylePopover != ""
-	if localAccess == nil && confirmation == nil && !a.modal.Visible && !a.wordSymbolPickerVisible && !a.wordVersionHistoryVisible && !a.showNewMenu && !a.fontPicker.open && !hasRibbonPopup && !hasWordColorPicker && !hasAgentHistorySurface && !hasProofreadingHistory && !hasPresentationStylePopover {
+	if localAccess == nil && confirmation == nil && !a.modal.Visible && !a.wordSymbolPickerVisible && !a.wordVersionHistoryVisible && !a.showNewMenu && !a.fontPicker.open && !hasRibbonPopup && !hasWordColorPicker && !hasAgentHistorySurface && !hasProofreadingHistory && !hasProofreadingOCRLink && !hasPresentationStylePopover {
 		return false
 	}
 	if localAccess == nil && confirmation == nil && a.modal.Visible && a.modal.hasActiveComposition() {
@@ -400,6 +401,8 @@ func (a *App) handleOverlayEscape(gtx layout.Context) bool {
 		a.proofreadingWorkbench.historyRequest++
 		a.proofreadingWorkbench.historyOpen = false
 		gtx.Execute(key.FocusCmd{Tag: a.proofreadingWorkbench.button("workspace-history")})
+	case hasProofreadingOCRLink:
+		a.clearProofreadingOCRLink(true)
 	case a.agentUI.conversationHistoryVisible:
 		a.agentUI.conversationHistoryVisible = false
 		gtx.Execute(key.FocusCmd{Tag: &a.agentUI.conversationTitleButton})

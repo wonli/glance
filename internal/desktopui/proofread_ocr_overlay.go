@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -19,14 +20,22 @@ func (a *App) drawProofreadingOCRPageOverlay(gtx layout.Context, size image.Poin
 	}
 	scan := state.ocrScan
 	if pageIndex >= 0 && pageIndex < len(scan.pages) {
-		drawProofreadingOCRBlocks(gtx, size, scan.pages[pageIndex])
+		page := &scan.pages[pageIndex]
+		activeBlock := -1
+		if scan.link.Active && scan.link.APage == pageIndex {
+			activeBlock = scan.link.BlockID
+		}
+		drawProofreadingOCRBlocks(gtx, size, *page, activeBlock)
+		if scan.stage == proofreadingOCRComplete {
+			a.layoutProofreadingOCRBlockTargets(gtx, size, pageIndex, page)
+		}
 	}
 	if scan.active() && scan.stage != proofreadingOCRMatching && scan.current == pageIndex {
 		drawProofreadingLaser(gtx, size, scan.startedAt)
 	}
 }
 
-func drawProofreadingOCRBlocks(gtx layout.Context, size image.Point, page proofreadingOCRPage) {
+func drawProofreadingOCRBlocks(gtx layout.Context, size image.Point, page proofreadingOCRPage, activeBlockID int) {
 	if page.layout.Width <= 0 || page.layout.Height <= 0 {
 		return
 	}
@@ -35,24 +44,72 @@ func drawProofreadingOCRBlocks(gtx layout.Context, size image.Point, page proofr
 	ink := proofreadingOCRStatusColor(page.result.Status)
 	stroke := max(1, gtx.Dp(1))
 	for _, block := range page.layout.Blocks {
-		x0 := int(block.Bounds[0] / float64(page.layout.Width) * float64(size.X))
-		y0 := int(block.Bounds[1] / float64(page.layout.Height) * float64(size.Y))
-		x1 := int(block.Bounds[2] / float64(page.layout.Width) * float64(size.X))
-		y1 := int(block.Bounds[3] / float64(page.layout.Height) * float64(size.Y))
-		minX, maxX := max(0, min(x0, x1)), min(size.X, max(x0, x1))
-		minY, maxY := max(0, min(y0, y1)), min(size.Y, max(y0, y1))
-		if maxX-minX < 2 || maxY-minY < 2 {
+		bounds := proofreadingOCRBlockPixelBounds(size, page.layout.Width, page.layout.Height, block.Bounds)
+		if bounds.Dx() < 2 || bounds.Dy() < 2 {
 			continue
 		}
-		bounds := image.Rect(minX, minY, maxX, maxY)
 		paint.FillShape(gtx.Ops, color.NRGBA{R: ink.R, G: ink.G, B: ink.B, A: 24}, clip.Rect(bounds).Op())
 		for _, band := range []image.Rectangle{
-			image.Rect(minX, minY, maxX, min(maxY, minY+stroke)),
-			image.Rect(minX, max(minY, maxY-stroke), maxX, maxY),
-			image.Rect(minX, minY, min(maxX, minX+stroke), maxY),
-			image.Rect(max(minX, maxX-stroke), minY, maxX, maxY),
+			image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, min(bounds.Max.Y, bounds.Min.Y+stroke)),
+			image.Rect(bounds.Min.X, max(bounds.Min.Y, bounds.Max.Y-stroke), bounds.Max.X, bounds.Max.Y),
+			image.Rect(bounds.Min.X, bounds.Min.Y, min(bounds.Max.X, bounds.Min.X+stroke), bounds.Max.Y),
+			image.Rect(max(bounds.Min.X, bounds.Max.X-stroke), bounds.Min.Y, bounds.Max.X, bounds.Max.Y),
 		} {
 			paint.FillShape(gtx.Ops, ink, clip.Rect(band).Op())
+		}
+		if block.ID == activeBlockID {
+			active := color.NRGBA{R: 32, G: 166, B: 124, A: 255}
+			width := max(gtx.Dp(2), stroke+1)
+			for _, band := range []image.Rectangle{
+				image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, min(bounds.Max.Y, bounds.Min.Y+width)),
+				image.Rect(bounds.Min.X, max(bounds.Min.Y, bounds.Max.Y-width), bounds.Max.X, bounds.Max.Y),
+				image.Rect(bounds.Min.X, bounds.Min.Y, min(bounds.Max.X, bounds.Min.X+width), bounds.Max.Y),
+				image.Rect(max(bounds.Min.X, bounds.Max.X-width), bounds.Min.Y, bounds.Max.X, bounds.Max.Y),
+			} {
+				paint.FillShape(gtx.Ops, active, clip.Rect(band).Op())
+			}
+		}
+	}
+}
+
+func proofreadingOCRBlockPixelBounds(size image.Point, layoutWidth, layoutHeight int, bounds [4]float64) image.Rectangle {
+	if size.X <= 0 || size.Y <= 0 || layoutWidth <= 0 || layoutHeight <= 0 {
+		return image.Rectangle{}
+	}
+	x0 := int(bounds[0] / float64(layoutWidth) * float64(size.X))
+	y0 := int(bounds[1] / float64(layoutHeight) * float64(size.Y))
+	x1 := int(bounds[2] / float64(layoutWidth) * float64(size.X))
+	y1 := int(bounds[3] / float64(layoutHeight) * float64(size.Y))
+	return image.Rect(max(0, min(x0, x1)), max(0, min(y0, y1)), min(size.X, max(x0, x1)), min(size.Y, max(y0, y1)))
+}
+
+func (a *App) layoutProofreadingOCRBlockTargets(gtx layout.Context, size image.Point, pageIndex int, page *proofreadingOCRPage) {
+	if a == nil || a.proofreading == nil || a.proofreading.ocrScan == nil || page == nil || pageIndex < 0 || pageIndex >= len(a.proofreading.ocrScan.pages) {
+		return
+	}
+	for _, block := range page.layout.Blocks {
+		if len(proofreadingOCRBlockChoice(*page, block.ID)) == 0 {
+			continue
+		}
+		bounds := proofreadingOCRBlockPixelBounds(size, page.layout.Width, page.layout.Height, block.Bounds)
+		if bounds.Dx() < 2 || bounds.Dy() < 2 {
+			continue
+		}
+		button := page.blockButton(block.ID)
+		if button == nil {
+			continue
+		}
+		clicked := button.Clicked(gtx)
+		offset := op.Offset(bounds.Min).Push(gtx.Ops)
+		child := gtx
+		child.Constraints = layout.Exact(bounds.Size())
+		button.Layout(child, func(gtx layout.Context) layout.Dimensions {
+			semantic.DescriptionOp(a.textID("proofread.ai.link.block")).Add(gtx.Ops)
+			return layout.Dimensions{Size: bounds.Size()}
+		})
+		offset.Pop()
+		if clicked {
+			a.activateProofreadingOCRBlock(pageIndex, block.ID)
 		}
 	}
 }

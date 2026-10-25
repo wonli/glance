@@ -174,6 +174,7 @@ func (a *App) refreshProofreadingModelView() {
 }
 func (a *App) proofreadingModelChanged(reflow bool) {
 	s := a.proofreading
+	a.clearProofreadingOCRLink(true)
 	s.bDraftDirty = true
 	a.refreshProofreadingModelView()
 	a.startProofreadingModelLayout(reflow)
@@ -187,6 +188,7 @@ func (a *App) proofreadingModelChanged(reflow bool) {
 // boxes plus any refilled suffix; bDraftText is unchanged by ownership moves.
 func (a *App) proofreadingBoundaryChanged(index int, affected ...proofreading.PageID) {
 	s := a.proofreading
+	a.validateProofreadingOCRLink()
 	if index < 0 || index >= len(s.xPages) {
 		return
 	}

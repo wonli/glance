@@ -25,6 +25,7 @@ func (a *App) layoutProofreadingProjectionPages(gtx layout.Context, status strin
 		return a.layoutProofreadingPageMessageOnCanvas(gtx, a.textID("proofread.loading.source"), false, proofreadXCanvas)
 	}
 	state := a.proofreading
+	a.validateProofreadingOCRLink()
 	if state.xPageAdjustmentActive {
 		i := state.xPageAdjustmentPage
 		if i < 0 || i >= len(state.pageOwnership) || !state.pageOwnership[i].Locked || state.pageOwnership[i].Reviewed {
@@ -40,7 +41,9 @@ func (a *App) layoutProofreadingProjectionPages(gtx layout.Context, status strin
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	state.xCanvas.Axis = layout.Vertical
-	state.xCanvas.Position = view.canvas.Position
+	if !a.validateProofreadingOCRLink() {
+		state.xCanvas.Position = view.canvas.Position
+	}
 	paint.FillShape(gtx.Ops, proofreadXCanvas, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	if pageCount == 0 {
 		return a.layoutProofreadingPageMessageOnCanvas(gtx, a.textID("proofread.page_frame.error"), true, proofreadXCanvas)
@@ -84,6 +87,7 @@ func (a *App) layoutProofreadingXPageList(gtx layout.Context, view *pdfViewState
 			}
 			pageSnapshot := state.controller.Model.PageSnapshot(proofreading.PageID(pageIndex + 1))
 			a.syncProofreadingEditor(pageIndex, pageSnapshot)
+			a.applyPendingProofreadingOCRLinkScroll(pageIndex)
 			snapshot.Runs = append(snapshot.Runs, pageSnapshot.Runs...)
 			state.visibleEditorPages = append(state.visibleEditorPages, pageIndex)
 		}
@@ -107,17 +111,8 @@ func (a *App) layoutProofreadingXPageList(gtx layout.Context, view *pdfViewState
 
 	state.xEditorsSnapshot = snapshot
 	a.registerProofreadingXCanvasScrollPointer(gtx)
-	{
-		xPosition := state.xCanvas.Position
-		aPosition := view.canvas.Position
-		if xPosition.First != aPosition.First || xPosition.Offset != aPosition.Offset {
-			view.canvas.Position.First = max(0, min(len(pages)-1, xPosition.First))
-			view.canvas.Position.Offset = xPosition.Offset
-			view.canvas.Position.OffsetLast = xPosition.OffsetLast
-			view.canvas.Position.BeforeEnd = xPosition.BeforeEnd
-			a.syncPDFPageFromCanvas(view)
-			gtx.Execute(op.InvalidateCmd{})
-		}
+	if a.syncProofreadingXPositionToA(view) {
+		gtx.Execute(op.InvalidateCmd{})
 	}
 
 	if state.xPageMenuOpen {

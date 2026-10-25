@@ -8,6 +8,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/unit"
+	"gioui.org/widget"
 	"gioui.org/widget/material"
 
 	"glance/internal/i18n"
@@ -74,6 +76,29 @@ func (a *App) proofreadingOCRStatusText() (string, color.NRGBA, bool) {
 		return "", color.NRGBA{}, false
 	}
 	scan := a.proofreading.ocrScan
+	if a.validateProofreadingOCRLink() {
+		link := scan.link
+		choices := proofreadingOCRBlockChoice(scan.pages[link.APage], link.BlockID)
+		args := i18n.Args{
+			"APage": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(link.APage+1)),
+			"First": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(link.XFirstPage+1)),
+			"Last":  i18n.FormatNumber(a.localeSnapshot().Resolved, float64(link.XLastPage+1)),
+		}
+		statusID := "proofread.ai.link.active"
+		if len(choices) > 1 {
+			current := 0
+			for i, choice := range choices {
+				if choice.PathChoiceIndex == link.PathChoiceIndex && choice.Range == link.BRange {
+					current = i
+					break
+				}
+			}
+			statusID = "proofread.ai.link.choice"
+			args["Choice"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(current+1))
+			args["Choices"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(len(choices)))
+		}
+		return a.textArgs(statusID, args), color.NRGBA{R: 38, G: 145, B: 106, A: 255}, true
+	}
 	statusID := scan.notice
 	args := i18n.Args{}
 	ink := color.NRGBA{R: 104, G: 120, B: 135, A: 255}
@@ -121,6 +146,64 @@ func (a *App) proofreadingOCRStatusText() (string, color.NRGBA, bool) {
 		ink = color.NRGBA{R: 166, G: 67, B: 61, A: 255}
 	}
 	return a.textArgs(statusID, args), ink, true
+}
+
+func (a *App) layoutProofreadingOCRLinkControls(gtx layout.Context) layout.Dimensions {
+	if a == nil || a.proofreading == nil || a.proofreading.ocrScan == nil || !a.validateProofreadingOCRLink() {
+		return layout.Dimensions{}
+	}
+	scan := a.proofreading.ocrScan
+	choices := proofreadingOCRBlockChoice(scan.pages[scan.link.APage], scan.link.BlockID)
+	if scan.linkUnlink.Clicked(gtx) {
+		a.clearProofreadingOCRLink(true)
+		return layout.Dimensions{}
+	}
+	if len(choices) > 1 {
+		if scan.linkPrevious.Clicked(gtx) {
+			a.moveProofreadingOCRLinkChoice(-1)
+		}
+		if scan.linkNext.Clicked(gtx) {
+			a.moveProofreadingOCRLinkChoice(1)
+		}
+	}
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if len(choices) <= 1 {
+				return layout.Dimensions{}
+			}
+			return layoutProofreadingOCRLinkButton(gtx, a, &scan.linkPrevious, "proofread.ai.link.previous", "‹")
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if len(choices) <= 1 {
+				return layout.Dimensions{}
+			}
+			return layoutProofreadingOCRLinkButton(gtx, a, &scan.linkNext, "proofread.ai.link.next", "›")
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layoutProofreadingOCRLinkButton(gtx, a, &scan.linkUnlink, "proofread.ai.link.unlink", "×")
+		}),
+	)
+}
+
+func layoutProofreadingOCRLinkButton(gtx layout.Context, a *App, button *widget.Clickable, labelID, fallback string) layout.Dimensions {
+	width := gtx.Dp(28)
+	if labelID == "proofread.ai.link.unlink" {
+		width = gtx.Dp(48)
+	}
+	gtx.Constraints = layout.Constraints{Min: image.Pt(width, 0), Max: image.Pt(width, gtx.Dp(25))}
+	label := fallback
+	if a != nil {
+		semantic.DescriptionOp(a.textID(labelID)).Add(gtx.Ops)
+		if labelID == "proofread.ai.link.unlink" {
+			label = a.textID(labelID)
+		}
+	}
+	style := material.Button(a.theme, button, label)
+	style.TextSize = unit.Sp(10)
+	style.Background = color.NRGBA{R: 232, G: 241, B: 238, A: 255}
+	style.Color = color.NRGBA{R: 44, G: 119, B: 92, A: 255}
+	style.Inset = layout.Inset{Left: unit.Dp(3), Right: unit.Dp(3), Top: unit.Dp(2), Bottom: unit.Dp(2)}
+	return style.Layout(gtx)
 }
 
 func proofreadingOCRSummaryArgs(a *App, scan *proofreadingOCRScan) i18n.Args {
