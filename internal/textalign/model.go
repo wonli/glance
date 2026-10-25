@@ -43,6 +43,7 @@ type Result struct {
 	Status                              string      `json:"status"`
 	Selected                            *Candidate  `json:"selected,omitempty"`
 	Candidates                          []Candidate `json:"candidates"`
+	PathChoices                         []Candidate `json:"pathChoices,omitempty"`
 	Reasons                             []string    `json:"reasons,omitempty"`
 	Search                              SearchStats `json:"search"`
 	Anchors                             []Anchor    `json:"anchors,omitempty"`
@@ -51,6 +52,7 @@ type Result struct {
 	searchLimited, pathChecked, canSkip bool
 	hasUnread                           bool
 	supported                           []int
+	selectedChoice                      int
 	// ExactBoundary remains false: text evidence endpoints do not assign surrounding
 	// Markdown markup, whitespace, or unrecognized images to pages.
 	ExactBoundary bool `json:"exactBoundary"`
@@ -79,7 +81,27 @@ type Options struct {
 	// MaxJointCells bounds forward+reverse cells over all anchored spans.
 	// Zero uses 2 million; the hard ceiling is 8 million.
 	MaxJointCells int
+	// OnProgress reports candidate-search and global-path phases. Align calls it
+	// synchronously; the callback should return quickly and must not block on UI
+	// work. A callback may cancel the supplied context to stop the alignment.
+	OnProgress func(AlignmentProgress)
 }
+
+// AlignmentProgress reports page-level work performed by Align. Page is the
+// source PDF page number during candidate search, and zero during path solving.
+// CompletedPages counts candidate searches that have finished; it does not
+// imply that those pages have final matches until Align returns.
+type AlignmentProgress struct {
+	Phase          string
+	Page           int
+	CompletedPages int
+	TotalPages     int
+}
+
+const (
+	AlignmentPhaseCandidates = "candidates"
+	AlignmentPhasePath       = "path"
+)
 
 type Anchor struct {
 	BlockID int   `json:"blockID"`

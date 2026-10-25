@@ -42,6 +42,7 @@ type proofreadingOCRProgress struct {
 	current    int
 	total      int
 	extracted  int
+	alignment  textalign.AlignmentProgress
 }
 
 type proofreadingOCRPage struct {
@@ -138,6 +139,7 @@ type proofreadingOCRScan struct {
 	current             int
 	total               int
 	extracted           int
+	alignment           textalign.AlignmentProgress
 	startedAt           time.Time
 	markdownSnapshot    string
 	markdownSnapshotSet bool
@@ -205,6 +207,7 @@ func (s *proofreadingOCRScan) cancelTask() {
 	s.sourceAHash = ""
 	s.sourceBHash = ""
 	s.authLookup = false
+	s.alignment = textalign.AlignmentProgress{}
 	s.awaitingPersistJob = ""
 	s.cacheHit = false
 	s.cacheErr = ""
@@ -373,6 +376,7 @@ func (a *App) requestProofreadingOCRScan() {
 	scan.current = -1
 	scan.total = max(1, info.Pages)
 	scan.extracted = 0
+	scan.alignment = textalign.AlignmentProgress{}
 	scan.startedAt = time.Now()
 	scan.currentJobID = ""
 	scan.pages = nil
@@ -415,14 +419,25 @@ func (a *App) requestProofreadingOCRScan() {
 				window.Invalidate()
 			}
 		}
+		publishAlignmentProgress := func(progress textalign.AlignmentProgress, totalPages, extractedPages int) {
+			current := max(0, totalPages-1)
+			if progress.Phase == textalign.AlignmentPhaseCandidates && progress.Page > 0 {
+				current = progress.Page - 1
+			}
+			publishProgress(proofreadingOCRProgress{
+				stage: proofreadingOCRMatching, current: current, total: totalPages,
+				extracted: extractedPages, alignment: progress,
+			})
+		}
 		options, model := ocr.Options{}, ocr.DefaultModel
 		cachedPages, cacheHit, cacheErr := loadProofreadingOCRPageCache(sourceAHash, model, options, info.Pages)
 		if err := ctx.Err(); err != nil {
 			return
 		}
 		if cacheHit {
-			publishProgress(proofreadingOCRProgress{stage: proofreadingOCRMatching, current: 0, total: len(cachedPages), extracted: len(cachedPages)})
-			aligned, alignErr := alignProofreadingOCRPages(ctx, cachedPages, markdown)
+			aligned, alignErr := alignProofreadingOCRPages(ctx, cachedPages, markdown, func(progress textalign.AlignmentProgress) {
+				publishAlignmentProgress(progress, len(cachedPages), len(cachedPages))
+			})
 			result := proofreadingOCRResult{cacheHit: true, cacheErr: cacheErr, err: alignErr, pages: aligned, cancelled: errors.Is(ctx.Err(), context.Canceled)}
 			finishScan(result)
 			return
@@ -525,6 +540,7 @@ func (a *App) startProofreadingOCRScanWithAuthentication(token, endpoint string,
 	scan.current = 0
 	scan.total = max(1, info.Pages)
 	scan.extracted = 0
+	scan.alignment = textalign.AlignmentProgress{}
 	scan.startedAt = time.Now()
 	scan.markdownSnapshot = markdown
 	scan.markdownSnapshotSet = true
@@ -661,7 +677,6 @@ func (a *App) startProofreadingOCRScanWithAuthentication(token, endpoint string,
 			result.cancelled = errors.Is(ctx.Err(), context.Canceled)
 			return
 		}
-		publish(proofreadingOCRProgress{stage: proofreadingOCRMatching, current: max(0, info.Pages-1), total: max(1, info.Pages), extracted: max(0, info.Pages)})
 		recognized := jobRun.Pages
 		if info.Pages > 0 && len(recognized) != info.Pages {
 			result.err = fmt.Errorf("OCR 返回 %d 页，PDF 共 %d 页；页码无法可靠对应", len(recognized), info.Pages)
@@ -674,7 +689,16 @@ func (a *App) startProofreadingOCRScanWithAuthentication(token, endpoint string,
 		if cacheErr := saveProofreadingOCRPageCache(sourceAHash, ocr.DefaultModel, jobRun.CompletedJob.ID, ocr.Options{}, recognized, expectedPages); cacheErr != nil {
 			result.cacheErr = cacheErr
 		}
-		result.pages, result.err = alignProofreadingOCRPages(ctx, recognized, markdown)
+		result.pages, result.err = alignProofreadingOCRPages(ctx, recognized, markdown, func(progress textalign.AlignmentProgress) {
+			current := max(0, len(recognized)-1)
+			if progress.Phase == textalign.AlignmentPhaseCandidates && progress.Page > 0 {
+				current = progress.Page - 1
+			}
+			publish(proofreadingOCRProgress{
+				stage: proofreadingOCRMatching, current: current, total: len(recognized),
+				extracted: len(recognized), alignment: progress,
+			})
+		})
 		result.cancelled = errors.Is(ctx.Err(), context.Canceled)
 	}) {
 		cancel()
@@ -715,12 +739,12 @@ func proofreadingOCRAlignmentPages(recognized []ocr.Page) ([]ocr.Layout, []texta
 	return layouts, pages, nil
 }
 
-func alignProofreadingOCRPages(ctx context.Context, recognized []ocr.Page, markdown string) ([]proofreadingOCRPage, error) {
+func alignProofreadingOCRPages(ctx context.Context, recognized []ocr.Page, markdown string, onProgress func(textalign.AlignmentProgress)) ([]proofreadingOCRPage, error) {
 	layouts, pages, err := proofreadingOCRAlignmentPages(recognized)
 	if err != nil {
 		return nil, err
 	}
-	aligned, err := textalign.Align(ctx, pages, markdown, textalign.Options{})
+	aligned, err := textalign.Align(ctx, pages, markdown, textalign.Options{OnProgress: onProgress})
 	if err != nil {
 		return nil, err
 	}
@@ -813,9 +837,12 @@ readProgress:
 			}
 			oldPage := scan.current
 			scan.stage = progress.stage
-			scan.current = max(0, progress.current)
+			if progress.current >= 0 {
+				scan.current = progress.current
+			}
 			scan.total = max(1, progress.total)
 			scan.extracted = max(0, progress.extracted)
+			scan.alignment = progress.alignment
 			if scan.current != oldPage {
 				a.followProofreadingOCRPage(scan.current)
 			}
