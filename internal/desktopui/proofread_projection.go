@@ -361,6 +361,7 @@ func (a *App) drawProofreadingXContent(gtx layout.Context, page proofreadingXPag
 	// height so its private scroll-to-caret cannot fight the page scrollbar.
 	row.Constraints.Max.Y = 1 << 20
 	style.Layout(row)
+	a.drawProofreadingOCRMatchHighlight(gtx, editor, page, window)
 	// Mark the last character without changing native selection or keyboard focus.
 	n := &state.navigator
 	if n.initialized && n.page == page.PageIndex && !n.feedbackAt.IsZero() && gtx.Now.Sub(n.feedbackAt) < 700*time.Millisecond && n.highlightStart >= window.Start && n.highlightEnd <= window.End && n.highlightEnd > n.highlightStart {
