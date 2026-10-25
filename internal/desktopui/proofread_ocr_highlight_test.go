@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"runtime"
 	"testing"
+	"time"
 
 	"gioui.org/gpu/headless"
 	"gioui.org/layout"
@@ -191,5 +192,46 @@ func TestProofreadingOCRLinkedRangeVisual(t *testing.T) {
 	}
 	if changedRegions < 2 || readableLines < 2 {
 		t.Fatalf("wrapped match overlay changed/readable lines = %d/%d; want translucent overlay and visible glyph ink on both wrapped lines", changedRegions, readableLines)
+	}
+}
+
+func TestProofreadingOCRLaserVisual(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	for _, scale := range []float32{1, 2} {
+		t.Run(map[float32]string{1: "1x", 2: "2x"}[scale], func(t *testing.T) {
+			size := image.Pt(int(320*scale), int(480*scale))
+			window, err := headless.NewWindow(size.X, size.Y)
+			if err != nil {
+				t.Skipf("headless GPU is unavailable: %v", err)
+			}
+			defer window.Release()
+			now := time.Now()
+			started := now.Add(-725 * time.Millisecond)
+			var ops op.Ops
+			paint.FillShape(&ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: size}.Op())
+			gtx := layout.Context{Ops: &ops, Now: now, Metric: unit.Metric{PxPerDp: scale, PxPerSp: scale}, Constraints: layout.Exact(size)}
+			drawProofreadingLaser(gtx, size, started)
+			if err := window.Frame(&ops); err != nil {
+				t.Fatalf("render OCR laser at %gx: %v", scale, err)
+			}
+			shot := image.NewRGBA(image.Rect(0, 0, size.X, size.Y))
+			if err := window.Screenshot(shot); err != nil {
+				t.Fatalf("capture OCR laser at %gx: %v", scale, err)
+			}
+			expectedY := int((float64(now.Sub(started)) / float64(1450*time.Millisecond)) * float64(size.Y))
+			red := 0
+			for y := max(0, expectedY-3*int(scale)); y < min(size.Y, expectedY+3*int(scale)); y++ {
+				for x := 0; x < size.X; x++ {
+					pixel := color.NRGBAModel.Convert(shot.At(x, y)).(color.NRGBA)
+					if pixel.R > 220 && pixel.G < 130 && pixel.B < 150 {
+						red++
+					}
+				}
+			}
+			if red < size.X/2 {
+				t.Fatalf("laser was not rendered around its progress position at %gx: red pixels=%d", scale, red)
+			}
+		})
 	}
 }

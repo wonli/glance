@@ -301,7 +301,7 @@ func (a *App) layoutProofreadingStatus(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layoutProofreadingIcon(gtx, "ribbon", iconName, 15, iconColor)
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							message := a.textID(labelKey)
 							messageColor := color.NRGBA{R: 104, G: 115, B: 126, A: 255}
@@ -316,6 +316,9 @@ func (a *App) layoutProofreadingStatus(gtx layout.Context) layout.Dimensions {
 							label.MaxLines = 1
 							return layoutProofreadingOpticallyCenteredLabel(gtx, label)
 						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return a.layoutProofreadingOCRFollowControl(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return a.layoutProofreadingOCRLinkControls(gtx)

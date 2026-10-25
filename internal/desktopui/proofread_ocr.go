@@ -129,6 +129,7 @@ func runProofreadingOCRJob(ctx context.Context, client proofreadingOCRJobClient,
 
 type proofreadingOCRScan struct {
 	button              widget.Clickable
+	followButton        widget.Clickable
 	progress            chan proofreadingOCRProgress
 	results             chan proofreadingOCRResult
 	credentials         chan proofreadingOCRCredentialResult
@@ -142,6 +143,8 @@ type proofreadingOCRScan struct {
 	extracted           int
 	alignment           textalign.AlignmentProgress
 	startedAt           time.Time
+	matchingStartedAt   time.Time
+	follow              bool
 	markdownSnapshot    string
 	markdownSnapshotSet bool
 	sourceAHash         string
@@ -215,6 +218,8 @@ func (s *proofreadingOCRScan) cancelTask() {
 	s.sourceBHash = ""
 	s.authLookup = false
 	s.alignment = textalign.AlignmentProgress{}
+	s.matchingStartedAt = time.Time{}
+	s.follow = false
 	s.alignmentSummary = proofreadingOCRAlignmentSummary{}
 	s.highlight = proofreadingOCRHighlightState{}
 	s.link = proofreadingOCRLinkState{}
@@ -386,6 +391,8 @@ func (a *App) requestProofreadingOCRScan() {
 	scan.current = -1
 	scan.total = max(1, info.Pages)
 	scan.extracted = 0
+	scan.follow = true
+	scan.matchingStartedAt = time.Time{}
 	scan.alignment = textalign.AlignmentProgress{}
 	scan.alignmentSummary = proofreadingOCRAlignmentSummary{}
 	scan.highlight = proofreadingOCRHighlightState{}
@@ -553,6 +560,8 @@ func (a *App) startProofreadingOCRScanWithAuthentication(token, endpoint string,
 	scan.current = 0
 	scan.total = max(1, info.Pages)
 	scan.extracted = 0
+	scan.follow = true
+	scan.matchingStartedAt = time.Time{}
 	scan.alignment = textalign.AlignmentProgress{}
 	scan.alignmentSummary = proofreadingOCRAlignmentSummary{}
 	scan.highlight = proofreadingOCRHighlightState{}
@@ -669,9 +678,6 @@ func (a *App) startProofreadingOCRScanWithAuthentication(token, endpoint string,
 			stage := proofreadingOCRPending
 			if update.State == "running" || update.State == "done" {
 				stage = proofreadingOCRRunning
-			}
-			if update.State == "done" {
-				stage = proofreadingOCRMatching
 			}
 			total := update.Progress.TotalPages
 			if total <= 0 {
@@ -853,13 +859,19 @@ readProgress:
 			}
 			oldPage := scan.current
 			scan.stage = progress.stage
+			if scan.stage == proofreadingOCRMatching && scan.matchingStartedAt.IsZero() {
+				scan.matchingStartedAt = gtx.Now
+				if scan.matchingStartedAt.IsZero() {
+					scan.matchingStartedAt = time.Now()
+				}
+			}
 			if progress.current >= 0 {
 				scan.current = progress.current
 			}
 			scan.total = max(1, progress.total)
 			scan.extracted = max(0, progress.extracted)
 			scan.alignment = progress.alignment
-			if scan.current != oldPage {
+			if scan.follow && scan.current != oldPage {
 				a.followProofreadingOCRPage(scan.current)
 			}
 		default:
@@ -884,12 +896,14 @@ readResult:
 		}
 		if result.cancelled {
 			scan.stage = proofreadingOCRCancelled
+			scan.matchingStartedAt = time.Time{}
 			scan.err = ""
 			if scan.notice != "proofread.ai.status.resume_unavailable" {
 				scan.notice = ""
 			}
 		} else if result.err != nil {
 			scan.stage = proofreadingOCRFailed
+			scan.matchingStartedAt = time.Time{}
 			scan.err = result.err.Error()
 			scan.authRejected = result.authRejected
 			if result.terminalJobState != "" {
@@ -911,6 +925,7 @@ readResult:
 			}
 		} else {
 			scan.stage = proofreadingOCRComplete
+			scan.matchingStartedAt = time.Time{}
 			scan.pages = result.pages
 			a.refreshProofreadingOCRAlignmentSummary()
 			a.refreshProofreadingOCRMissingPageCandidates()
@@ -942,6 +957,9 @@ func (a *App) followProofreadingOCRPage(page int) {
 	if state == nil || a.pdfDoc == nil {
 		return
 	}
+	if state.ocrScan != nil && state.ocrScan.active() && !state.ocrScan.follow {
+		return
+	}
 	view := a.ensurePDFView()
 	page = max(0, min(max(0, view.info.Pages-1), page))
 	row, clearFilter := proofreadingOCRPageRow(state, max(1, view.info.Pages), page)
@@ -963,6 +981,20 @@ func (a *App) followProofreadingOCRPage(page int) {
 	view.followPDFThumbnailPage(page)
 	state.page = page
 	state.xCanvas.Position = view.canvas.Position
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+}
+
+func (a *App) setProofreadingOCRFollow(enabled bool) {
+	if a == nil || a.proofreading == nil || a.proofreading.ocrScan == nil {
+		return
+	}
+	scan := a.proofreading.ocrScan
+	scan.follow = enabled
+	if enabled && scan.stage == proofreadingOCRMatching && scan.current >= 0 {
+		a.followProofreadingOCRPage(scan.current)
+	}
 	if a.window != nil {
 		a.window.Invalidate()
 	}

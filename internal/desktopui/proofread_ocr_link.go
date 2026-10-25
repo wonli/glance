@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"strings"
+	"time"
 
 	"gioui.org/layout"
 	"gioui.org/widget"
@@ -28,6 +29,7 @@ type proofreadingOCRLinkState struct {
 	XScrollPending    bool
 	ASourceRow        int
 	ASourceOffset     int
+	PulseAt           time.Time
 }
 
 type proofreadingOCRBlockRange struct {
@@ -208,13 +210,14 @@ func (a *App) activateProofreadingOCRBlock(pageIndex, blockID int) bool {
 		ResultFingerprint: proofreadingOCRBlockResultFingerprint(scan.pages[pageIndex], blockID),
 		OCRGeneration:     scan.generation, ModelRevision: a.proofreadingOCRLinkRevision(),
 		XFirstPage: segments[0].PageIndex, XLastPage: segments[len(segments)-1].PageIndex,
-		ASourceRow: row, ASourceOffset: view.canvas.Position.Offset,
+		ASourceRow: row, ASourceOffset: view.canvas.Position.Offset, PulseAt: time.Now(),
 	}
 	scan.link = link
 	scan.highlight = proofreadingOCRHighlightState{
 		Active: true, APage: pageIndex, BlockID: blockID, BRange: choice.Range,
 		SourceAHash: link.SourceAHash, SourceBHash: link.SourceBHash,
 		OCRGeneration: link.OCRGeneration, ModelRevision: link.ModelRevision,
+		PulseAt: link.PulseAt,
 	}
 	scan.link.XScrollPending = !a.positionProofreadingOCRLinkTarget(link)
 	if view != nil {
@@ -252,10 +255,12 @@ func (a *App) moveProofreadingOCRLinkChoice(delta int) bool {
 	}
 	link.PathChoiceIndex = choice.PathChoiceIndex
 	link.BRange = choice.Range
+	link.PulseAt = time.Now()
 	link.XFirstPage = segments[0].PageIndex
 	link.XLastPage = segments[len(segments)-1].PageIndex
 	scan.link = link
 	scan.highlight.BRange = choice.Range
+	scan.highlight.PulseAt = link.PulseAt
 	scan.link.XScrollPending = !a.positionProofreadingOCRLinkTarget(link)
 	if a.window != nil {
 		a.window.Invalidate()

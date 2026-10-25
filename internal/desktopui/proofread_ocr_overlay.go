@@ -11,6 +11,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"glance/internal/textalign"
 )
 
 func (a *App) drawProofreadingOCRPageOverlay(gtx layout.Context, size image.Point, pageIndex int) {
@@ -22,20 +23,47 @@ func (a *App) drawProofreadingOCRPageOverlay(gtx layout.Context, size image.Poin
 	if pageIndex >= 0 && pageIndex < len(scan.pages) {
 		page := &scan.pages[pageIndex]
 		activeBlock := -1
+		var pulseAt time.Time
 		if scan.link.Active && scan.link.APage == pageIndex {
 			activeBlock = scan.link.BlockID
+			pulseAt = scan.link.PulseAt
 		}
-		drawProofreadingOCRBlocks(gtx, size, *page, activeBlock)
+		drawProofreadingOCRBlocks(gtx, size, *page, activeBlock, pulseAt)
 		if scan.stage == proofreadingOCRComplete {
 			a.layoutProofreadingOCRBlockTargets(gtx, size, pageIndex, page)
 		}
 	}
-	if scan.active() && scan.stage != proofreadingOCRMatching && scan.current == pageIndex {
-		drawProofreadingLaser(gtx, size, scan.startedAt)
+	if proofreadingOCRAnimationShouldRun(scan, pageIndex, true, true) {
+		drawProofreadingLaser(gtx, size, scan.matchingStartedAt)
 	}
 }
 
-func drawProofreadingOCRBlocks(gtx layout.Context, size image.Point, page proofreadingOCRPage, activeBlockID int) {
+func proofreadingOCRAnimationShouldRun(scan *proofreadingOCRScan, pageIndex int, pageVisible, proofreadingViewActive bool) bool {
+	return scan != nil && scan.stage == proofreadingOCRMatching && scan.follow &&
+		scan.alignment.Phase == textalign.AlignmentPhaseCandidates && scan.current == pageIndex &&
+		pageVisible && proofreadingViewActive
+}
+
+func proofreadingOCRPulseAlpha(now, pulseAt time.Time, steady uint8) uint8 {
+	const duration = 750 * time.Millisecond
+	if pulseAt.IsZero() {
+		return steady
+	}
+	elapsed := now.Sub(pulseAt)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	if elapsed >= duration {
+		return steady
+	}
+	return steady + uint8((float64(255-steady)*float64(duration-elapsed))/float64(duration))
+}
+
+func proofreadingOCRPulseActive(now, pulseAt time.Time) bool {
+	return !pulseAt.IsZero() && now.Sub(pulseAt) < 750*time.Millisecond
+}
+
+func drawProofreadingOCRBlocks(gtx layout.Context, size image.Point, page proofreadingOCRPage, activeBlockID int, pulseAt time.Time) {
 	if page.layout.Width <= 0 || page.layout.Height <= 0 {
 		return
 	}
@@ -58,7 +86,7 @@ func drawProofreadingOCRBlocks(gtx layout.Context, size image.Point, page proofr
 			paint.FillShape(gtx.Ops, ink, clip.Rect(band).Op())
 		}
 		if block.ID == activeBlockID {
-			active := color.NRGBA{R: 32, G: 166, B: 124, A: 255}
+			active := color.NRGBA{R: 32, G: 166, B: 124, A: proofreadingOCRPulseAlpha(gtx.Now, pulseAt, 150)}
 			width := max(gtx.Dp(2), stroke+1)
 			for _, band := range []image.Rectangle{
 				image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, min(bounds.Max.Y, bounds.Min.Y+width)),
@@ -69,6 +97,9 @@ func drawProofreadingOCRBlocks(gtx layout.Context, size image.Point, page proofr
 				paint.FillShape(gtx.Ops, active, clip.Rect(band).Op())
 			}
 		}
+	}
+	if activeBlockID >= 0 && proofreadingOCRPulseActive(gtx.Now, pulseAt) {
+		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
 	}
 }
 

@@ -2,9 +2,11 @@ package desktopui
 
 import (
 	"image/color"
+	"time"
 	"unicode/utf8"
 
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/widget"
@@ -20,6 +22,7 @@ type proofreadingOCRHighlightState struct {
 	SourceBHash   string
 	OCRGeneration uint64
 	ModelRevision uint64
+	PulseAt       time.Time
 }
 
 func proofreadingOCRHighlightLocalRange(segment proofreadingOCRRangeSegment, window proofreadingEditorWindow) (textalign.Range, bool) {
@@ -85,6 +88,11 @@ func (a *App) drawProofreadingOCRMatchHighlight(gtx layout.Context, editor *widg
 		return
 	}
 	segments := proofreadingOCRRangeSegments(state.xPages, scan.highlight.BRange)
+	matchedColor := proofreadingOCRHighlightColor
+	matchedColor.A = proofreadingOCRPulseAlpha(gtx.Now, scan.highlight.PulseAt, proofreadingOCRHighlightColor.A)
+	if proofreadingOCRPulseActive(gtx.Now, scan.highlight.PulseAt) {
+		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
+	}
 	for _, segment := range segments {
 		if segment.PageIndex != page.PageIndex {
 			continue
@@ -94,7 +102,7 @@ func (a *App) drawProofreadingOCRMatchHighlight(gtx layout.Context, editor *widg
 			return
 		}
 		for _, region := range editor.Regions(local.Start, local.End, nil) {
-			paint.FillShape(gtx.Ops, proofreadingOCRHighlightColor, clip.Rect(region.Bounds).Op())
+			paint.FillShape(gtx.Ops, matchedColor, clip.Rect(region.Bounds).Op())
 		}
 		return
 	}

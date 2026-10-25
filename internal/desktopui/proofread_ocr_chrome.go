@@ -13,6 +13,7 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/i18n"
+	"glance/internal/textalign"
 )
 
 func (a *App) layoutProofreadingOCRAction(gtx layout.Context) layout.Dimensions {
@@ -122,7 +123,13 @@ func (a *App) proofreadingOCRStatusText() (string, color.NRGBA, bool) {
 			args["Total"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(scan.total))
 			args["Extracted"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(scan.extracted))
 		case proofreadingOCRMatching:
-			statusID = "proofread.ai.status.matching"
+			statusID = "proofread.ai.status.matching.path"
+			args["Completed"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(scan.alignment.CompletedPages))
+			args["Total"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(max(1, scan.alignment.TotalPages)))
+			if scan.alignment.Phase == textalign.AlignmentPhaseCandidates {
+				statusID = "proofread.ai.status.matching.progress"
+				args["Page"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(max(1, scan.alignment.Page)))
+			}
 		case proofreadingOCRComplete:
 			args = proofreadingOCRSummaryArgs(a, scan)
 			switch {
@@ -145,7 +152,36 @@ func (a *App) proofreadingOCRStatusText() (string, color.NRGBA, bool) {
 		args["Error"] = scan.cacheErr
 		ink = color.NRGBA{R: 166, G: 67, B: 61, A: 255}
 	}
-	return a.textArgs(statusID, args), ink, true
+	message := a.textArgs(statusID, args)
+	if scan.stage == proofreadingOCRComplete {
+		if evidence := proofreadingOCRStatusEvidence(a, scan); evidence != "" {
+			message += " · " + evidence
+		}
+	}
+	return message, ink, true
+}
+
+func (a *App) layoutProofreadingOCRFollowControl(gtx layout.Context) layout.Dimensions {
+	if a == nil || a.proofreading == nil || a.proofreading.ocrScan == nil || a.proofreading.ocrScan.stage != proofreadingOCRMatching {
+		return layout.Dimensions{}
+	}
+	scan := a.proofreading.ocrScan
+	if scan.followButton.Clicked(gtx) {
+		a.setProofreadingOCRFollow(!scan.follow)
+	}
+	labelID := "proofread.ai.follow.resume"
+	if scan.follow {
+		labelID = "proofread.ai.follow.pause"
+	}
+	semantic.DescriptionOp(a.textID(labelID)).Add(gtx.Ops)
+	size := image.Pt(gtx.Dp(92), gtx.Dp(24))
+	gtx.Constraints = layout.Exact(size)
+	button := material.Button(a.theme, &scan.followButton, a.textID(labelID))
+	button.TextSize = unit.Sp(9)
+	button.Background = color.NRGBA{R: 235, G: 240, B: 246, A: 255}
+	button.Color = color.NRGBA{R: 65, G: 91, B: 121, A: 255}
+	button.Inset = layout.Inset{Left: unit.Dp(4), Right: unit.Dp(4), Top: unit.Dp(2), Bottom: unit.Dp(2)}
+	return button.Layout(gtx)
 }
 
 func (a *App) layoutProofreadingOCRLinkControls(gtx layout.Context) layout.Dimensions {
@@ -231,6 +267,72 @@ func proofreadingOCRSummaryArgs(a *App, scan *proofreadingOCRScan) i18n.Args {
 	args["Unmatched"] = i18n.FormatNumber(locale, float64(unmatched))
 	args["Limited"] = i18n.FormatNumber(locale, float64(limited))
 	return args
+}
+
+func proofreadingOCRStatusEvidence(a *App, scan *proofreadingOCRScan) string {
+	if a == nil || scan == nil || len(scan.pages) == 0 {
+		return ""
+	}
+	state := a.proofreading
+	var xPages []proofreadingXPage
+	if state != nil {
+		xPages = state.xPages
+	}
+	summary := buildProofreadingOCRAlignmentSummary(scan.pages, xPages, 0)
+	anchorArgs := i18n.Args{}
+	anchorID := "proofread.ai.evidence.no_anchor"
+	switch {
+	case summary.First != nil && summary.Last != nil:
+		anchorID = "proofread.ai.evidence.anchors"
+		anchorArgs = proofreadingOCRAnchorArgs(a, summary.First, summary.Last)
+	case summary.ProvisionalFirst != nil && summary.ProvisionalLast != nil:
+		anchorID = "proofread.ai.evidence.provisional_anchors"
+		anchorArgs = proofreadingOCRAnchorArgs(a, summary.ProvisionalFirst, summary.ProvisionalLast)
+	}
+	anchors := a.textArgs(anchorID, anchorArgs)
+	point, rangeCount, unresolved := 0, 0, 0
+	for _, page := range scan.pages {
+		if page.result.BoundaryAfter == nil {
+			continue
+		}
+		switch page.result.BoundaryAfter.Status {
+		case "point":
+			point++
+		case "range":
+			rangeCount++
+		default:
+			unresolved++
+		}
+	}
+	boundaryID := "proofread.ai.evidence.boundary"
+	boundaryArgs := i18n.Args{
+		"Point":      i18n.FormatNumber(a.localeSnapshot().Resolved, float64(point)),
+		"Range":      i18n.FormatNumber(a.localeSnapshot().Resolved, float64(rangeCount)),
+		"Unresolved": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(unresolved)),
+	}
+	if point+rangeCount+unresolved == 0 {
+		boundaryID = "proofread.ai.evidence.no_boundary"
+		boundaryArgs = i18n.Args{}
+	}
+	return a.textArgs("proofread.ai.evidence.summary", i18n.Args{
+		"Anchors":    anchors,
+		"Boundaries": a.textArgs(boundaryID, boundaryArgs),
+	})
+}
+
+func proofreadingOCRAnchorArgs(a *App, first, last *proofreadingOCRAlignmentAnchor) i18n.Args {
+	if a == nil || first == nil || last == nil {
+		return i18n.Args{}
+	}
+	locale := a.localeSnapshot().Resolved
+	return i18n.Args{
+		"FirstA":    i18n.FormatNumber(locale, float64(first.APage)),
+		"FirstB":    i18n.FormatNumber(locale, float64(first.XFirstPage)),
+		"FirstLast": i18n.FormatNumber(locale, float64(first.XLastPage)),
+		"LastA":     i18n.FormatNumber(locale, float64(last.APage)),
+		"LastB":     i18n.FormatNumber(locale, float64(last.XFirstPage)),
+		"LastLast":  i18n.FormatNumber(locale, float64(last.XLastPage)),
+	}
 }
 
 func (a *App) drawProofreadingOCRThumbnailStatus(gtx layout.Context, size image.Point, pageIndex int) {
