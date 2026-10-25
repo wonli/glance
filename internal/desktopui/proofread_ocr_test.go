@@ -43,16 +43,19 @@ func TestProofreadingOCRTokenDialogMasksAndDoesNotRetainTokenOnCancel(t *testing
 	defer object.Adapter.Close()
 
 	a := New(nil, "")
+	attachProofreadingOCRTestPDF(t, a)
+	defer a.stopAndWaitManagedBackground()
 	a.proofreading = &proofreadingWorkspace{
 		bDocument: object,
 		ocrScan:   newProofreadingOCRScan(),
 	}
-	a.pdfDoc = &pdfdoc.Document{}
 	a.proofreading.ocrScan.button.Click()
 	var ops op.Ops
 	var router input.Router
 	gtx := layout.Context{Ops: &ops, Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(500, 54))}
 	a.layoutProofreadingOCRAction(gtx)
+	a.managedBackgroundTasks.Wait()
+	a.processProofreadingOCRScan(gtx)
 	if !a.modal.Visible || !a.modal.HasInput || a.modal.Input.Mask != '•' {
 		t.Fatalf("token dialog not visible and masked: visible=%v input=%v mask=%q", a.modal.Visible, a.modal.HasInput, a.modal.Input.Mask)
 	}
@@ -117,7 +120,7 @@ func TestProofreadingTabOCRClickRendersOwnedTokenModal(t *testing.T) {
 	host.managedBackgroundClosed = true
 	editor := newAppWithRuntime(nil, runtime)
 	editor.managedBackgroundClosed = true
-	editor.pdfDoc = &pdfdoc.Document{}
+	attachProofreadingOCRTestPDF(t, editor)
 	editor.proofreading = &proofreadingWorkspace{
 		aDocument:     &proofreadingObject{Name: "book.pdf", Path: "book.pdf"},
 		bDocument:     object,
@@ -574,6 +577,7 @@ func TestProofreadingOCRCredentialLookupUsesSavedTokenWithoutOpeningDialog(t *te
 		t.Fatal(err)
 	}
 	credentials := &fakeProofreadingOCRCredentials{values: map[string]string{reference: "synthetic-token"}}
+	pdf := proofreadingOCRTestPDFDoc(t)
 	state := &proofreadingWorkspace{
 		bDocument:          object,
 		bDraftText:         "校对稿快照",
@@ -583,7 +587,7 @@ func TestProofreadingOCRCredentialLookupUsesSavedTokenWithoutOpeningDialog(t *te
 	a := &App{
 		desktopRuntime: &desktopRuntime{workspaceStore: store},
 		documentSessionState: &documentSessionState{sharedDocumentSession: &sharedDocumentSession{
-			liveDocumentState: liveDocumentState{pdfDoc: &pdfdoc.Document{}},
+			liveDocumentState: liveDocumentState{pdfDoc: pdf},
 		}},
 		proofreading: state,
 		shutdown:     make(chan struct{}),
@@ -602,6 +606,24 @@ func TestProofreadingOCRCredentialLookupUsesSavedTokenWithoutOpeningDialog(t *te
 		t.Fatal("credential lookup did not return")
 	}
 	a.stopAndWaitManagedBackground()
+}
+
+func attachProofreadingOCRTestPDF(t *testing.T, a *App) {
+	t.Helper()
+	pdf := proofreadingOCRTestPDFDoc(t)
+	a.documentSessionState = &documentSessionState{sharedDocumentSession: &sharedDocumentSession{
+		liveDocumentState: liveDocumentState{pdfDoc: pdf},
+	}}
+}
+
+func proofreadingOCRTestPDFDoc(t *testing.T) *pdfdoc.Document {
+	t.Helper()
+	pdf, err := pdfdoc.OpenSnapshot(pdfTestBytes(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pdf.Close() })
+	return pdf
 }
 
 func TestProofreadingOCRMatchingDraftSaveAcknowledgesSubmittedJob(t *testing.T) {
