@@ -146,6 +146,7 @@ type proofreadingOCRScan struct {
 	sourceAHash         string
 	sourceBHash         string
 	pages               []proofreadingOCRPage
+	alignmentSummary    proofreadingOCRAlignmentSummary
 	err                 string
 	notice              string
 	authLookup          bool
@@ -208,6 +209,7 @@ func (s *proofreadingOCRScan) cancelTask() {
 	s.sourceBHash = ""
 	s.authLookup = false
 	s.alignment = textalign.AlignmentProgress{}
+	s.alignmentSummary = proofreadingOCRAlignmentSummary{}
 	s.awaitingPersistJob = ""
 	s.cacheHit = false
 	s.cacheErr = ""
@@ -377,6 +379,7 @@ func (a *App) requestProofreadingOCRScan() {
 	scan.total = max(1, info.Pages)
 	scan.extracted = 0
 	scan.alignment = textalign.AlignmentProgress{}
+	scan.alignmentSummary = proofreadingOCRAlignmentSummary{}
 	scan.startedAt = time.Now()
 	scan.currentJobID = ""
 	scan.pages = nil
@@ -541,6 +544,7 @@ func (a *App) startProofreadingOCRScanWithAuthentication(token, endpoint string,
 	scan.total = max(1, info.Pages)
 	scan.extracted = 0
 	scan.alignment = textalign.AlignmentProgress{}
+	scan.alignmentSummary = proofreadingOCRAlignmentSummary{}
 	scan.startedAt = time.Now()
 	scan.markdownSnapshot = markdown
 	scan.markdownSnapshotSet = true
@@ -896,6 +900,7 @@ readResult:
 		} else {
 			scan.stage = proofreadingOCRComplete
 			scan.pages = result.pages
+			a.refreshProofreadingOCRAlignmentSummary()
 			a.refreshProofreadingOCRMissingPageCandidates()
 			scan.err = ""
 			scan.authRejected = false

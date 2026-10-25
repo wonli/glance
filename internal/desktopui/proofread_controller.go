@@ -167,6 +167,7 @@ func (a *App) refreshProofreadingModelView() {
 	}
 	a.reconcileProofreadingPageFilter()
 	a.refreshProofreadingOCRMissingPageCandidates()
+	a.refreshProofreadingOCRAlignmentSummary()
 	if !s.modelLayoutPending && s.controller.Layout.Pages == nil {
 		a.startProofreadingModelLayout(!s.modelInitialAssigned)
 	}
@@ -216,6 +217,7 @@ func (a *App) proofreadingBoundaryChanged(index int, affected ...proofreading.Pa
 		owned.Reviewed = state.Reviewed
 		start = p.ContentEnd
 	}
+	a.refreshProofreadingOCRAlignmentSummary()
 	s.bDraftDirty = true
 	pages := []proofreading.PageID{proofreading.PageID(index + 1)}
 	for i := index + 1; i <= last; i++ {
