@@ -80,6 +80,29 @@ func TestProofreadingOCRCacheRoundTripsCompleteBook(t *testing.T) {
 			t.Fatalf("cached page %d layout = %+v, err=%v", i+1, layout, err)
 		}
 	}
+	baseLayout, err := pages[0].Layout()
+	if err != nil {
+		t.Fatal(err)
+	}
+	localized := baseLayout
+	localized.CharacterVersion = ocr.CharacterGeometryVersion
+	localized.Characters = []ocr.CharacterBox{{BlockID: 1, Offset: 0, Text: "天", Bounds: [4]float64{1, 2, 10, 20}}}
+	enriched, err := pages[0].WithLayout(localized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = saveProofreadingOCRStepPageCache(sourceHash, ocr.DefaultModel, options, enriched, len(pages)); err != nil {
+		t.Fatal(err)
+	}
+	preferred, found, err := loadProofreadingOCRCachePage(sourceHash, ocr.DefaultModel, options, 1, len(pages))
+	if err != nil || !found || preferred.Markdown != pages[0].Markdown {
+		t.Fatalf("geometry cache changed recognized Markdown or was missed: hit=%v err=%v", found, err)
+	}
+	geometry, geometryErr, cacheErr := ensureProofreadingOCRCharacterGeometry(context.Background(), nil, 0, len(pages), sourceHash, baseLayout)
+	if geometryErr != nil || cacheErr != nil || len(geometry.Characters) != 1 {
+		t.Fatalf("enriched cache was not reused before rendering: %+v %v %v", geometry, geometryErr, cacheErr)
+	}
+
 }
 
 func TestProofreadingOCRCacheRejectsIncompleteOrMismatchedPageSet(t *testing.T) {

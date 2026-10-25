@@ -206,17 +206,7 @@ func (a *App) layoutProofreadingToolbarModes(gtx layout.Context) layout.Dimensio
 			return layout.Dimensions{Size: image.Pt(gtx.Dp(12), 0)}
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return a.layoutProofreadingModeTab(gtx, &step.manualModeButton, "proofread.toolbar.mode.manual", "book-open", false)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Dimensions{Size: image.Pt(gtx.Dp(2), 0)}
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return a.layoutProofreadingModeTab(gtx, &step.aiModeButton, "proofread.toolbar.mode.ai_action", "sparkles", true)
-				}),
-			)
+			return a.layoutProofreadingModeGroup(gtx, step)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if !state.aiProofreading {
@@ -240,24 +230,13 @@ func (a *App) layoutProofreadingToolbarModes(gtx layout.Context) layout.Dimensio
 			if !state.aiProofreading {
 				return layout.Dimensions{}
 			}
-			label, icon := "proofread.ai.step.recognize", "scan"
+			label, icon := "proofread.ai.step.compare", "git-compare-arrows"
+			action := a.compareProofreadingOCRStep
 			if step.active() {
 				label, icon = "proofread.ai.step.cancel", "x"
+				action = func() { step.cancelTask() }
 			}
-			return a.layoutProofreadingToolbarAction(gtx, &step.ocrButton, label, icon, 110, true, a.requestProofreadingOCRStep)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if !state.aiProofreading {
-				return layout.Dimensions{}
-			}
-			return layout.Dimensions{Size: image.Pt(gtx.Dp(8), 0)}
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if !state.aiProofreading {
-				return layout.Dimensions{}
-			}
-			_, hasOCR := step.pages[max(0, view.page)]
-			return a.layoutProofreadingToolbarAction(gtx, &step.compareButton, "proofread.ai.step.compare", "git-compare-arrows", 110, hasOCR && !step.active(), a.compareProofreadingOCRStep)
+			return a.layoutProofreadingToolbarAction(gtx, &step.compareButton, label, icon, 110, true, action)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
@@ -271,7 +250,24 @@ func (a *App) layoutProofreadingToolbarModes(gtx layout.Context) layout.Dimensio
 	)
 }
 
-func (a *App) layoutProofreadingModeTab(gtx layout.Context, button *widget.Clickable, labelKey, iconName string, aiMode bool) layout.Dimensions {
+// Match the Markdown ribbon's grouped mode selector while keeping the
+// proofreading buttons in their persistent OCR state.
+func (a *App) layoutProofreadingModeGroup(gtx layout.Context, step *proofreadingOCRStepState) layout.Dimensions {
+	gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(218), gtx.Dp(34)))
+	paint.FillShape(gtx.Ops, chromeSurface, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(6)).Op(gtx.Ops))
+	return layout.UniformInset(3).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return a.layoutProofreadingModeTab(gtx, &step.manualModeButton, "proofread.toolbar.mode.manual", false)
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return a.layoutProofreadingModeTab(gtx, &step.aiModeButton, "proofread.toolbar.mode.ai_action", true)
+			}),
+		)
+	})
+}
+
+func (a *App) layoutProofreadingModeTab(gtx layout.Context, button *widget.Clickable, labelKey string, aiMode bool) layout.Dimensions {
 	if a == nil || a.proofreading == nil || button == nil {
 		return layout.Dimensions{}
 	}
@@ -283,46 +279,13 @@ func (a *App) layoutProofreadingModeTab(gtx layout.Context, button *widget.Click
 	}
 	selected := a.proofreading.aiProofreading == aiMode
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layoutProofreadingModeTabVisual(gtx, a, labelKey, iconName, selected)
+		if selected {
+			paint.FillShape(gtx.Ops, contentSurface, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(4)).Op(gtx.Ops))
+		}
+		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return jsonLabel(gtx, a, a.textID(labelKey), 11, jsonBlue, selected, false)
+		})
 	})
-}
-
-func layoutProofreadingModeTabVisual(gtx layout.Context, a *App, labelKey, iconName string, selected bool) layout.Dimensions {
-	size := image.Pt(gtx.Dp(108), gtx.Dp(32))
-	fill := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	border := color.NRGBA{R: 213, G: 221, B: 229, A: 255}
-	ink := color.NRGBA{R: 105, G: 115, B: 126, A: 255}
-	if selected {
-		fill = color.NRGBA{R: 239, G: 245, B: 251, A: 255}
-		border = color.NRGBA{R: 157, G: 188, B: 215, A: 255}
-		ink = color.NRGBA{R: 47, G: 94, B: 131, A: 255}
-	}
-	gtx.Constraints = layout.Exact(size)
-	return layout.Background{}.Layout(gtx,
-		func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rect(0, 0, size.X, size.Y), gtx.Dp(6)).Op(gtx.Ops))
-			proofreadRoundedBorder(gtx, size, 6, border, max(1, gtx.Dp(1)))
-			return layout.Dimensions{Size: size}
-		},
-		func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layoutProofreadingIcon(gtx, "ribbon", iconName, 14, ink)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						label := material.Label(a.theme, 10, a.textID(labelKey))
-						label.Color = ink
-						label.Font.Weight = font.SemiBold
-						label.MaxLines = 1
-						return layout.Inset{Left: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return layoutProofreadingOpticallyCenteredLabel(gtx, label)
-						})
-					}),
-				)
-			})
-		},
-	)
 }
 
 func (a *App) layoutProofreadingOCRStepToolbarStatus(gtx layout.Context, step *proofreadingOCRStepState, view *pdfViewState) layout.Dimensions {
@@ -337,7 +300,7 @@ func (a *App) layoutProofreadingOCRStepToolbarStatus(gtx layout.Context, step *p
 		statusKey = "proofread.ai.step.compared"
 		if !comparison.HasEvidence {
 			statusKey = "proofread.ai.step.no_evidence"
-		} else if !comparison.Complete {
+		} else if !comparison.Complete || comparison.AlignmentLimited {
 			statusKey = "proofread.ai.step.partial"
 		}
 	}
@@ -361,6 +324,20 @@ func (a *App) layoutProofreadingOCRStepToolbarStatus(gtx layout.Context, step *p
 		args["Matches"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.Matches))
 		args["AOnly"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.AOnly))
 		args["BOnly"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.BOnly))
+	}
+	if hasComparison && comparison.CharacterTotal > 0 {
+		args["Located"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.CharacterLocated))
+		args["SourceChars"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.CharacterTotal))
+		statusKey = "proofread.ai.step.character_geometry_coverage"
+		if comparison.AlignmentLimited {
+			statusKey = "proofread.ai.step.character_geometry_coverage_unconfirmed"
+		}
+		if !comparison.Complete {
+			statusKey = "proofread.ai.step.character_geometry_coverage_partial"
+		}
+	}
+	if hasComparison && step.characterErr != "" {
+		statusKey = "proofread.ai.step.character_geometry_unavailable"
 	}
 	label := material.Label(a.theme, 10, a.textArgs(statusKey, args))
 	label.Color = proofreadMuted

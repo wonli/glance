@@ -73,7 +73,66 @@ func (a *App) layoutProofreadingOCRAction(gtx layout.Context) layout.Dimensions 
 }
 
 func (a *App) proofreadingOCRStatusText() (string, color.NRGBA, bool) {
-	if a == nil || a.proofreading == nil || a.proofreading.ocrScan == nil {
+	if a == nil || a.proofreading == nil {
+		return "", color.NRGBA{}, false
+	}
+	if a.proofreading.aiProofreading {
+		step := a.proofreading.ocrStep
+		if step == nil {
+			return "", color.NRGBA{}, false
+		}
+		if step.err != "" {
+			return a.textArgs("proofread.ai.step.failed", i18n.Args{"Error": step.err}), color.NRGBA{R: 166, G: 67, B: 61, A: 255}, true
+		}
+		if step.active() {
+			args := i18n.Args{
+				"APage":     proofreadOCRStepPageLabel(a, max(0, step.page)),
+				"BPage":     proofreadOCRStepPageLabel(a, max(0, step.bPage)),
+				"Extracted": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(step.extracted)),
+				"Total":     i18n.FormatNumber(a.localeSnapshot().Resolved, float64(max(1, step.total))),
+			}
+			switch step.phase {
+			case proofreadingOCRStepCheckingCache:
+				return a.textArgs("proofread.ai.step.cache_checking", args), proofreadBlue, true
+			case proofreadingOCRStepAuthenticating:
+				return a.textArgs("proofread.ai.step.authenticating", args), proofreadBlue, true
+			case proofreadingOCRStepRendering:
+				return a.textArgs("proofread.ai.step.rendering", args), proofreadBlue, true
+			case proofreadingOCRStepUploading:
+				return a.textArgs("proofread.ai.step.uploading", args), proofreadBlue, true
+			case proofreadingOCRStepRunning:
+				return a.textArgs("proofread.ai.step.running", args), proofreadBlue, true
+			case proofreadingOCRStepComparing, proofreadingOCRStepCheckingBoundary:
+				return a.textArgs("proofread.ai.step.comparing", args), proofreadBlue, true
+			}
+		}
+		comparison, hasComparison := a.currentProofreadingOCRStepComparison()
+		if hasComparison {
+			if step.diffRunning || step.diffPaused {
+				progress := min(len(comparison.Frames), max(0, step.diffCursor))
+				msg := a.textArgs("proofread.ai.step.diff.animation.progress", i18n.Args{
+					"Done":  i18n.FormatNumber(a.localeSnapshot().Resolved, float64(progress)),
+					"Total": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(len(comparison.Frames))),
+				})
+				return msg, proofreadBlue, true
+			}
+			if !comparison.HasEvidence {
+				return a.textID("proofread.ai.step.no_evidence"), color.NRGBA{R: 180, G: 110, B: 30, A: 255}, true
+			}
+			args := i18n.Args{
+				"Matches": i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.Matches)),
+				"AOnly":   i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.AOnly)),
+				"BOnly":   i18n.FormatNumber(a.localeSnapshot().Resolved, float64(comparison.BOnly)),
+			}
+			msg := a.textArgs("proofread.ai.step.compared", args)
+			if comparison.AOnly > 0 || comparison.BOnly > 0 {
+				return msg, color.NRGBA{R: 196, G: 56, B: 46, A: 255}, true
+			}
+			return msg, color.NRGBA{R: 38, G: 145, B: 106, A: 255}, true
+		}
+		return "", color.NRGBA{}, false
+	}
+	if a.proofreading.ocrScan == nil {
 		return "", color.NRGBA{}, false
 	}
 	scan := a.proofreading.ocrScan

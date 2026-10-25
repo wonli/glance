@@ -72,7 +72,7 @@ func (a *App) proofreadingVisibleEditorWindow(index int, text string) proofreadi
 			if line.Start > len(content) {
 				break
 			}
-			if line.Bottom <= max(0, top-12*proofreadingXTextScale(s.xTextSizeStep)) {
+			if line.Bottom <= max(0, top-12*proofreadingXTextScale(s.xTextSizeStep)*proofreadingXEditorLineHeightScale) {
 				continue
 			}
 			if first {

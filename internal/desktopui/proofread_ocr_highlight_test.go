@@ -220,17 +220,17 @@ func TestProofreadingOCRLaserVisual(t *testing.T) {
 				t.Fatalf("capture OCR laser at %gx: %v", scale, err)
 			}
 			expectedY := int((float64(now.Sub(started)) / float64(1450*time.Millisecond)) * float64(size.Y))
-			red := 0
+			blue := 0
 			for y := max(0, expectedY-3*int(scale)); y < min(size.Y, expectedY+3*int(scale)); y++ {
 				for x := 0; x < size.X; x++ {
 					pixel := color.NRGBAModel.Convert(shot.At(x, y)).(color.NRGBA)
-					if pixel.R > 220 && pixel.G < 130 && pixel.B < 150 {
-						red++
+					if pixel.B > 200 && pixel.R < 80 && pixel.G > 80 && pixel.G < 160 {
+						blue++
 					}
 				}
 			}
-			if red < size.X/2 {
-				t.Fatalf("laser was not rendered around its progress position at %gx: red pixels=%d", scale, red)
+			if blue < size.X/2 {
+				t.Fatalf("laser was not rendered around its progress position at %gx: blue pixels=%d", scale, blue)
 			}
 		})
 	}

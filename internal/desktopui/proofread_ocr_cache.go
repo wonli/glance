@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -202,6 +203,10 @@ func loadProofreadingOCRCachePage(sourceAHash, model string, options ocr.Options
 	if err != nil {
 		return ocr.Page{}, false, err
 	}
+	page, found, stepErr := loadProofreadingOCRStepCachePage(root, sourceAHash, model, optionsHash, pageNumber, expectedPages)
+	if found {
+		return page, true, nil
+	}
 	var manifest proofreadingOCRCacheManifest
 	if err = readProofreadingOCRCacheJSON(manifestPath, &manifest); err == nil &&
 		manifest.Version == proofreadingOCRCacheVersion && manifest.Complete &&
@@ -220,9 +225,13 @@ func loadProofreadingOCRCachePage(sourceAHash, model string, options ocr.Options
 		}
 	}
 
+	return ocr.Page{}, false, stepErr
+}
+
+func loadProofreadingOCRStepCachePage(root, sourceAHash, model, optionsHash string, pageNumber, expectedPages int) (ocr.Page, bool, error) {
 	path := filepath.Join(root, "step-pages", fmt.Sprintf("%06d.json", pageNumber))
 	var record proofreadingOCRStepPageCache
-	if err = readProofreadingOCRCacheJSON(path, &record); err != nil {
+	if err := readProofreadingOCRCacheJSON(path, &record); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return ocr.Page{}, false, nil
 		}
@@ -310,4 +319,109 @@ func readProofreadingOCRCacheJSON(path string, value any) error {
 		return err
 	}
 	return nil
+}
+
+type proofreadingOCRComparisonCacheRecord struct {
+	Version      int                           `json:"version"`
+	APage        int                           `json:"a_page"`
+	BPage        int                           `json:"b_page"`
+	SourceHash   string                        `json:"source_hash"`
+	DraftHash    string                        `json:"draft_hash"`
+	Comparison   proofreadingOCRStepComparison `json:"comparison"`
+	UpdatedAtUTC time.Time                     `json:"updated_at_utc"`
+}
+
+func proofreadingOCRComparisonCacheDir(sourceAHash string) (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve cache dir: %w", err)
+	}
+	if len(sourceAHash) != 64 {
+		return "", errors.New("invalid PDF source hash")
+	}
+	dir := filepath.Join(configDir, "Glance Office", "Proofreading", "comparisons", sourceAHash)
+	return dir, nil
+}
+
+func saveProofreadingOCRComparisonCache(comparison proofreadingOCRStepComparison) error {
+	if comparison.SourceHash == "" || comparison.DraftHash == "" {
+		return errors.New("cannot cache comparison without source and draft hash")
+	}
+	dir, err := proofreadingOCRComparisonCacheDir(comparison.SourceHash)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	filename := fmt.Sprintf("a%d_b%d_%s.json", comparison.APage, comparison.BPage, comparison.DraftHash)
+	path := filepath.Join(dir, filename)
+	record := proofreadingOCRComparisonCacheRecord{
+		Version:      proofreadingOCRCacheVersion,
+		APage:        comparison.APage,
+		BPage:        comparison.BPage,
+		SourceHash:   comparison.SourceHash,
+		DraftHash:    comparison.DraftHash,
+		Comparison:   comparison,
+		UpdatedAtUTC: time.Now().UTC(),
+	}
+	return writeProofreadingOCRCacheJSON(path, record)
+}
+
+func loadProofreadingOCRComparisonCache(sourceAHash string, aPage, bPage int, draftHash string) (proofreadingOCRStepComparison, bool, error) {
+	if sourceAHash == "" || draftHash == "" {
+		return proofreadingOCRStepComparison{}, false, nil
+	}
+	dir, err := proofreadingOCRComparisonCacheDir(sourceAHash)
+	if err != nil {
+		return proofreadingOCRStepComparison{}, false, err
+	}
+	filename := fmt.Sprintf("a%d_b%d_%s.json", aPage, bPage, draftHash)
+	path := filepath.Join(dir, filename)
+	var record proofreadingOCRComparisonCacheRecord
+	if err := readProofreadingOCRCacheJSON(path, &record); err != nil {
+		if os.IsNotExist(err) {
+			return proofreadingOCRStepComparison{}, false, nil
+		}
+		return proofreadingOCRStepComparison{}, false, err
+	}
+	if record.SourceHash != sourceAHash || record.DraftHash != draftHash || record.APage != aPage || record.BPage != bPage {
+		return proofreadingOCRStepComparison{}, false, nil
+	}
+	return record.Comparison, true, nil
+}
+
+func loadProofreadingOCRStepHistory(ctx context.Context, sourceAHash string, pageCount int, xPages []proofreadingXPage) []proofreadingOCRStepHistoryEntry {
+	if ctx == nil || sourceAHash == "" || pageCount <= 0 || pageCount > proofreadingOCRCacheMaxPages || len(xPages) == 0 {
+		return nil
+	}
+
+	entries := make([]proofreadingOCRStepHistoryEntry, 0)
+	for pageIndex := 0; pageIndex < min(pageCount, len(xPages)); pageIndex++ {
+		if ctx.Err() != nil {
+			return nil
+		}
+		xPage := xPages[pageIndex]
+		draftHash := proofreadingOCRDraftSnapshotHash(xPage.Content)
+		comparison, found, err := loadProofreadingOCRComparisonCache(sourceAHash, pageIndex, pageIndex, draftHash)
+		if err != nil || !found || comparison.SourceHash != sourceAHash || comparison.DraftHash != draftHash ||
+			comparison.APage != pageIndex || comparison.BPage != pageIndex || comparison.BText != xPage.Content ||
+			comparison.BStart != xPage.ContentStart || comparison.BEnd != xPage.ContentEnd {
+			continue
+		}
+
+		cachedPage, found, err := loadProofreadingOCRCachePage(sourceAHash, ocr.DefaultModel, ocr.Options{}, pageIndex+1, pageCount)
+		if err != nil || !found || cachedPage.Number != pageIndex+1 {
+			continue
+		}
+		layout, err := cachedPage.Layout()
+		if err != nil || layout.Width <= 0 || layout.Height <= 0 {
+			continue
+		}
+		entries = append(entries, proofreadingOCRStepHistoryEntry{page: pageIndex, layout: layout, comparison: comparison})
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
+	return entries
 }

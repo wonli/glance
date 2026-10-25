@@ -311,14 +311,11 @@ func (a *App) drawProofreadingXContent(gtx layout.Context, page proofreadingXPag
 	if state == nil || page.PageIndex < 0 || page.PageIndex >= len(state.xPageEditors) {
 		return
 	}
-	scale := 1.0
-	if page.Width > 0 && page.Height > 0 {
-		scale = min(float64(pageSize.X)/page.Width, float64(pageSize.Y)/page.Height)
-	}
-	marginDocX, marginDocY := proofreadingTextMargins(page.Width, page.Height)
-	marginX := int(math.Round(marginDocX * scale))
-	marginY := int(math.Round(marginDocY * scale))
-	contentRect := image.Rect(marginX, marginY, max(marginX, pageSize.X-marginX), max(marginY, pageSize.Y-marginY))
+	window := state.xEditorWindows[page.PageIndex]
+	geometry := proofreadingXPageTextGeometry(page, pageSize, window.Top, state.xPageScrollOffsets[page.PageIndex])
+	scale := geometry.Scale
+	marginDocX, marginDocY := geometry.MarginX, geometry.MarginY
+	contentRect := geometry.Content
 	if contentRect.Empty() {
 		return
 	}
@@ -332,23 +329,21 @@ func (a *App) drawProofreadingXContent(gtx layout.Context, page proofreadingXPag
 	child.Metric = unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	child.Constraints = layout.Exact(image.Pt(max(1, int(math.Round(page.Width-2*marginDocX))), max(1, int(math.Round(page.Height-2*marginDocY)))))
 	area := clip.Rect{Max: contentRect.Size()}.Push(gtx.Ops)
-	defer area.Pop()
 	editor := &state.xPageEditors[page.PageIndex]
 	editor.SingleLine = false
 	editor.ReadOnly = !state.modelInitialAssigned
-	editor.LineHeightScale = 1.28
+	editor.LineHeightScale = proofreadingXEditorLineHeightScale
 	editor.WrapPolicy = text.WrapWords
 	style := material.Editor(a.theme, editor, a.textID("proofread.x_editor.empty"))
 	style.TextSize = fontSize
 	style.Color = proofreadInk
-	style.LineHeightScale = 1.28
+	style.LineHeightScale = proofreadingXEditorLineHeightScale
 	style.SelectionColor = color.NRGBA{R: 187, G: 215, B: 244, A: 160}
-	window := state.xEditorWindows[page.PageIndex]
 	state.xPageRenderScales[page.PageIndex] = scale
 	state.xPageViewportHeights[page.PageIndex] = float64(contentRect.Dy()) / scale
 	transform := op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(float32(scale), float32(scale)))).Push(gtx.Ops)
 	defer transform.Pop()
-	shiftY := int(math.Round(window.Top - state.xPageScrollOffsets[page.PageIndex]))
+	shiftY := geometry.WindowShiftY
 	shift := op.Offset(image.Pt(0, shiftY)).Push(gtx.Ops)
 	row := child
 	row.Constraints.Min.Y = 0
@@ -357,9 +352,7 @@ func (a *App) drawProofreadingXContent(gtx layout.Context, page proofreadingXPag
 	row.Constraints.Max.Y = 1 << 20
 	style.Layout(row)
 	a.drawProofreadingOCRMatchHighlight(gtx, editor, page, window)
-	if state.aiProofreading {
-		a.drawProofreadingOCRStepComparisonHighlights(gtx, editor, page, window)
-	}
+	a.drawProofreadingOCRStepComparisonHighlights(gtx, editor, page, window)
 	// Mark the last character without changing native selection or keyboard focus.
 	n := &state.navigator
 	if n.initialized && n.page == page.PageIndex && !n.feedbackAt.IsZero() && gtx.Now.Sub(n.feedbackAt) < 700*time.Millisecond && n.highlightStart >= window.Start && n.highlightEnd <= window.End && n.highlightEnd > n.highlightStart {
@@ -367,6 +360,12 @@ func (a *App) drawProofreadingXContent(gtx layout.Context, page proofreadingXPag
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 64, G: 139, B: 225, A: 55}, clip.Rect(region.Bounds).Op())
 		}
 		gtx.Execute(op.InvalidateCmd{At: n.feedbackAt.Add(700 * time.Millisecond)})
+	}
+	area.Pop()
+	if state.aiProofreading {
+		if comparison, ok := a.currentProofreadingOCRStepComparison(); ok && comparison.BPage == page.PageIndex {
+			a.drawProofreadingOCRStepEmptyPage(gtx, page, marginDocX, marginDocY, a.proofreadingOCRStep(), comparison)
+		}
 	}
 	shift.Pop()
 }

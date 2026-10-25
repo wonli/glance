@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"image/color"
 	"image/png"
 	"sort"
@@ -36,21 +37,40 @@ const (
 	proofreadingOCRStepTokenRequired
 	proofreadingOCRStepRecognized
 	proofreadingOCRStepComparing
+	proofreadingOCRStepCheckingBoundary
 	proofreadingOCRStepCompared
 	proofreadingOCRStepFailed
 )
 
 type proofreadingOCRStepResult struct {
-	generation uint64
+	generation         uint64
+	page               int
+	sourceHash         string
+	ocrPage            *ocr.Page
+	ocrLayout          *ocr.Layout
+	overflowCandidate  *proofreadingOCROverflowTail
+	comparison         *proofreadingOCRStepComparison
+	cacheHit           bool
+	cacheErr           error
+	characterLayout    *ocr.Layout
+	characterErr       error
+	needToken          bool
+	endpoint           string
+	err                error
+	overflowPrefetch   bool
+	overflowGeneration uint64
+}
+
+type proofreadingOCRStepHistoryEntry struct {
 	page       int
+	layout     ocr.Layout
+	comparison proofreadingOCRStepComparison
+}
+
+type proofreadingOCRStepHistoryResult struct {
+	generation uint64
 	sourceHash string
-	ocrPage    *ocr.Page
-	comparison *proofreadingOCRStepComparison
-	cacheHit   bool
-	cacheErr   error
-	needToken  bool
-	endpoint   string
-	err        error
+	entries    []proofreadingOCRStepHistoryEntry
 }
 
 type proofreadingOCRStepProgress struct {
@@ -66,62 +86,105 @@ type proofreadingOCRStepPair struct {
 }
 
 type proofreadingOCRStepComparison struct {
-	APage         int
-	BPage         int
-	SourceHash    string
-	DraftHash     string
-	BText         string
-	BStart        int
-	BEnd          int
-	Result        textalign.Result
-	Matches       int
-	AOnly         int
-	BOnly         int
-	MatchedText   string
-	AOnlyText     string
-	BOnlyText     string
-	HasEvidence   bool
-	Complete      bool
-	MatchedRanges []textalign.Range
-	Differences   []textalign.Range
-	AOnlyBlockIDs []int
+	APage            int
+	BPage            int
+	SourceHash       string
+	DraftHash        string
+	BText            string
+	BStart           int
+	BEnd             int
+	Result           textalign.Result
+	Matches          int
+	AOnly            int
+	BOnly            int
+	MatchedText      string
+	AOnlyText        string
+	BOnlyText        string
+	HasEvidence      bool
+	Complete         bool
+	AlignmentLimited bool
+	CharacterLocated int
+	CharacterTotal   int
+	MatchedRanges    []textalign.Range
+	Differences      []textalign.Range
+	AOnlyBlockIDs    []int
+	Frames           []proofreadingOCRDiffFrame
 }
 
 type proofreadingOCRStepState struct {
-	manualModeButton widget.Clickable
-	aiModeButton     widget.Clickable
-	ocrButton        widget.Clickable
-	compareButton    widget.Clickable
-	diffList         widget.List
-	pages            map[int]proofreadingOCRPage
-	pageSourceHash   map[int]string
-	comparisons      map[proofreadingOCRStepPair]proofreadingOCRStepComparison
-	results          chan proofreadingOCRStepResult
-	progress         chan proofreadingOCRStepProgress
-	generation       uint64
-	page             int
-	bPage            int
-	phase            proofreadingOCRStepPhase
-	extracted        int
-	total            int
-	startedAt        time.Time
-	cancel           context.CancelFunc
-	cacheHit         bool
-	cacheErr         string
-	err              string
-	status           string
-	sourceHash       string
+	manualModeButton    widget.Clickable
+	aiModeButton        widget.Clickable
+	ocrButton           widget.Clickable
+	compareButton       widget.Clickable
+	diffPauseButton     widget.Clickable
+	diffReplayButton    widget.Clickable
+	diffList            widget.List
+	pages               map[int]proofreadingOCRPage
+	pageSourceHash      map[int]string
+	comparisons         map[proofreadingOCRStepPair]proofreadingOCRStepComparison
+	results             chan proofreadingOCRStepResult
+	progress            chan proofreadingOCRStepProgress
+	historyResults      chan proofreadingOCRStepHistoryResult
+	generation          uint64
+	historyGeneration   uint64
+	historySourceHash   string
+	historyLoading      bool
+	historyLoaded       bool
+	historyCancel       context.CancelFunc
+	historyInvalidPages map[int]bool
+	page                int
+	bPage               int
+	phase               proofreadingOCRStepPhase
+	extracted           int
+	total               int
+	startedAt           time.Time
+	cancel              context.CancelFunc
+	overflowCancel      context.CancelFunc
+	overflowGeneration  uint64
+	overflowRequest     *proofreadingOCROverflowRequest
+	boundarySkip        *proofreadingOCRBoundarySkip
+	cacheHit            bool
+	cacheErr            string
+	characterErr        string
+	err                 string
+	status              string
+	sourceHash          string
+	diffPair            proofreadingOCRStepPair
+	diffDraftHash       string
+	diffCursor          int
+	diffNextAt          time.Time
+	diffRunning         bool
+	diffPaused          bool
+	diffMatches         int
+	diffAOnly           int
+	diffBOnly           int
+	diffPlayedPairs     map[proofreadingOCRStepPair]string
+	autoCompareAfterOCR bool
+	circuitCache        proofreadingCircuitCache
+	badgeClicksByPair   map[proofreadingOCRStepPair][]widget.Clickable
+	badgeAnchors        map[proofreadingOCRStepPair][]proofreadingCenterBadgeAnchor
+	badgeConnections    map[proofreadingOCRStepPair][]proofreadingOCRConnection
+	currentConnections  []proofreadingOCRConnection
+	currentBadges       []proofreadingCenterBadge
+	inspector           proofreadingDiffInspector
 }
 
 func newProofreadingOCRStepState() *proofreadingOCRStepState {
 	return &proofreadingOCRStepState{
-		pages:          map[int]proofreadingOCRPage{},
-		pageSourceHash: map[int]string{},
-		comparisons:    map[proofreadingOCRStepPair]proofreadingOCRStepComparison{},
-		results:        make(chan proofreadingOCRStepResult, 1),
-		progress:       make(chan proofreadingOCRStepProgress, 1),
-		page:           -1,
-		bPage:          -1,
+		pages:               map[int]proofreadingOCRPage{},
+		pageSourceHash:      map[int]string{},
+		comparisons:         map[proofreadingOCRStepPair]proofreadingOCRStepComparison{},
+		results:             make(chan proofreadingOCRStepResult, 1),
+		progress:            make(chan proofreadingOCRStepProgress, 1),
+		historyResults:      make(chan proofreadingOCRStepHistoryResult, 1),
+		diffPlayedPairs:     map[proofreadingOCRStepPair]string{},
+		badgeClicksByPair:   make(map[proofreadingOCRStepPair][]widget.Clickable),
+		badgeAnchors:        make(map[proofreadingOCRStepPair][]proofreadingCenterBadgeAnchor),
+		badgeConnections:    make(map[proofreadingOCRStepPair][]proofreadingOCRConnection),
+		historyInvalidPages: make(map[int]bool),
+		inspector:           newProofreadingDiffInspector(),
+		page:                -1,
+		bPage:               -1,
 	}
 }
 
@@ -132,7 +195,8 @@ func (s *proofreadingOCRStepState) active() bool {
 	switch s.phase {
 	case proofreadingOCRStepCheckingCache, proofreadingOCRStepAuthenticating,
 		proofreadingOCRStepRendering, proofreadingOCRStepUploading,
-		proofreadingOCRStepRunning, proofreadingOCRStepComparing:
+		proofreadingOCRStepRunning, proofreadingOCRStepComparing,
+		proofreadingOCRStepCheckingBoundary:
 		return true
 	default:
 		return false
@@ -144,14 +208,28 @@ func (s *proofreadingOCRStepState) close() {
 		return
 	}
 	s.cancelTask()
+	s.cancelHistoryLoad()
 	for {
 		select {
 		case <-s.results:
 		case <-s.progress:
+		case <-s.historyResults:
 		default:
 			return
 		}
 	}
+}
+
+func (s *proofreadingOCRStepState) cancelHistoryLoad() {
+	if s == nil {
+		return
+	}
+	s.historyGeneration++
+	if s.historyCancel != nil {
+		s.historyCancel()
+		s.historyCancel = nil
+	}
+	s.historyLoading = false
 }
 
 func (s *proofreadingOCRStepState) cancelTask() {
@@ -163,6 +241,12 @@ func (s *proofreadingOCRStepState) cancelTask() {
 		s.cancel()
 		s.cancel = nil
 	}
+	if s.overflowCancel != nil {
+		s.overflowCancel()
+		s.overflowCancel = nil
+	}
+	s.overflowGeneration++
+	s.overflowRequest = nil
 	if s.active() {
 		s.phase = proofreadingOCRStepIdle
 		s.status = "proofread.ai.step.cancelled"
@@ -197,6 +281,7 @@ func (a *App) requestProofreadingOCRStep() {
 		return
 	}
 	if step.active() {
+		step.autoCompareAfterOCR = false
 		step.cancelTask()
 		return
 	}
@@ -217,6 +302,11 @@ func (a *App) requestProofreadingOCRStep() {
 		step.err = a.textID("proofread.ai.step.page_unavailable")
 		return
 	}
+	// This comparison is explicitly A-current-page ↔ B-same-page. An older
+	// block link may have left X independently scrolled, which would hide the
+	// B anchor and make the cross-pane connector impossible to draw.
+	state.xCanvas.Axis = layout.Vertical
+	state.xCanvas.Position = view.canvas.Position
 	endpoint, err := proofreadingOCREndpointFromEnvironment()
 	if err != nil {
 		step.phase = proofreadingOCRStepFailed
@@ -227,8 +317,16 @@ func (a *App) requestProofreadingOCRStep() {
 		step.pages = map[int]proofreadingOCRPage{}
 		step.pageSourceHash = map[int]string{}
 		step.comparisons = map[proofreadingOCRStepPair]proofreadingOCRStepComparison{}
+		step.historyInvalidPages = make(map[int]bool)
+		step.badgeAnchors = make(map[proofreadingOCRStepPair][]proofreadingCenterBadgeAnchor)
+		step.badgeConnections = make(map[proofreadingOCRStepPair][]proofreadingOCRConnection)
+		step.badgeClicksByPair = make(map[proofreadingOCRStepPair][]widget.Clickable)
 	}
 	step.sourceHash = state.aSourceHash
+	if step.historyInvalidPages == nil {
+		step.historyInvalidPages = make(map[int]bool)
+	}
+	step.historyInvalidPages[pageIndex] = true
 	step.cancelTask()
 	step.generation++
 	generation := step.generation
@@ -244,7 +342,7 @@ func (a *App) requestProofreadingOCRStep() {
 	step.startedAt = time.Now()
 	step.total = 1
 	step.extracted = 0
-	delete(step.comparisons, proofreadingOCRStepPair{APage: pageIndex, BPage: step.bPage})
+	a.clearProofreadingOCRStepComparisonHistory(step, proofreadingOCRStepPair{APage: pageIndex, BPage: step.bPage})
 	if _, exists := step.pages[pageIndex]; exists {
 		delete(step.pages, pageIndex)
 	}
@@ -397,8 +495,16 @@ func (a *App) startProofreadingOCRPageStepWithAuthentication(token, endpoint str
 		step.pages = map[int]proofreadingOCRPage{}
 		step.pageSourceHash = map[int]string{}
 		step.comparisons = map[proofreadingOCRStepPair]proofreadingOCRStepComparison{}
+		step.historyInvalidPages = make(map[int]bool)
+		step.badgeAnchors = make(map[proofreadingOCRStepPair][]proofreadingCenterBadgeAnchor)
+		step.badgeConnections = make(map[proofreadingOCRStepPair][]proofreadingOCRConnection)
+		step.badgeClicksByPair = make(map[proofreadingOCRStepPair][]widget.Clickable)
 	}
 	step.sourceHash = sourceHash
+	if step.historyInvalidPages == nil {
+		step.historyInvalidPages = make(map[int]bool)
+	}
+	step.historyInvalidPages[pageIndex] = true
 	window, shutdown := a.window, a.shutdown
 	store := a.proofreadingStore()
 	credentials := state.ocrCredentialStore
@@ -453,29 +559,74 @@ func (a *App) compareProofreadingOCRStep() {
 	}
 	state := a.proofreading
 	step := a.proofreadingOCRStep()
-	if step == nil || step.active() {
+	if step == nil {
 		return
 	}
 	view := a.ensurePDFView()
+	if step.active() {
+		if step.phase != proofreadingOCRStepCheckingBoundary {
+			return
+		}
+		if view != nil && view.page == step.page && a.proofreadingCurrentBPage() == step.bPage {
+			return
+		}
+		step.cancelTask()
+	}
 	aPage := max(0, min(view.info.Pages-1, view.page))
 	bPage := a.proofreadingCurrentBPage()
-	ocrPage, found := step.pages[aPage]
-	if !found || step.pageSourceHash[aPage] != state.aSourceHash {
-		step.phase = proofreadingOCRStepFailed
-		step.err = a.textID("proofread.ai.step.ocr_required")
-		return
-	}
 	if bPage < 0 || bPage >= len(state.xPages) {
 		step.phase = proofreadingOCRStepFailed
 		step.err = a.textID("proofread.ai.step.page_unavailable")
 		return
 	}
-	if ocrPage.layout.Width <= 0 || ocrPage.layout.Height <= 0 {
-		step.phase = proofreadingOCRStepFailed
-		step.err = a.textID("proofread.ai.step.ocr_required")
+
+	b := state.xPages[bPage]
+	sourceHash := state.aSourceHash
+	pageDraftHash := proofreadingOCRDraftSnapshotHash(b.Content)
+	step.page, step.bPage = aPage, bPage
+	ocrPage, found := step.pages[aPage]
+	if !found || step.pageSourceHash[aPage] != state.aSourceHash || ocrPage.layout.Width <= 0 || ocrPage.layout.Height <= 0 {
+		step.autoCompareAfterOCR = true
+		a.requestProofreadingOCRStep()
+		if !step.active() {
+			step.autoCompareAfterOCR = false
+		}
 		return
 	}
-	b := state.xPages[bPage]
+	a.clearProofreadingOCRStepComparisonHistory(step, proofreadingOCRStepPair{APage: aPage, BPage: bPage})
+	if strings.TrimSpace(b.Content) == "" && a.fillEmptyProofreadingBPageFromOCR(aPage, ocrPage.layout) {
+		return
+	}
+	// Resolve the PDF page boundary from adjacent-page OCR before character comparison.
+	if !a.consumeProofreadingOCRBoundarySkip(aPage, sourceHash, pageDraftHash) {
+		if a.adjustProofreadingOCRBoundaryFromCachedPages(aPage, b) {
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+			return
+		}
+		if a.startProofreadingOCRBoundaryPrefetch(aPage, b) {
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+			return
+		}
+	}
+	if cachedComparison, hit, _ := loadProofreadingOCRComparisonCache(sourceHash, aPage, bPage, pageDraftHash); hit && cachedComparison.Complete && proofreadingOCRStepComparisonValid(state, cachedComparison) {
+		a.clearProofreadingOCRStepComparisonHistory(step, proofreadingOCRStepPair{APage: aPage, BPage: bPage})
+		step.page, step.bPage = aPage, bPage
+		if a.prepareProofreadingOCRStepComparison(cachedComparison) {
+			if a.window != nil {
+				a.window.Invalidate()
+			}
+			return
+		}
+		a.presentProofreadingOCRStepComparison(cachedComparison)
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+		return
+	}
 	step.cancelTask()
 	step.generation++
 	generation := step.generation
@@ -486,28 +637,40 @@ func (a *App) compareProofreadingOCRStep() {
 	step.status = "proofread.ai.step.comparing"
 	step.err = ""
 	step.startedAt = time.Now()
-	delete(step.comparisons, proofreadingOCRStepPair{APage: aPage, BPage: bPage})
+	a.clearProofreadingOCRStepComparisonHistory(step, proofreadingOCRStepPair{APage: aPage, BPage: bPage})
 	layout := ocrPage.layout
 	bText, bStart, bEnd := b.Content, b.ContentStart, b.ContentEnd
-	sourceHash := state.aSourceHash
-	draftHash := proofreadingOCRDraftSnapshotHash(state.bDraftText)
 	window, shutdown := a.window, a.shutdown
+	document, pageCount := a.pdfDoc, view.info.Pages
 	if !a.launchManagedBackground(func() {
 		result := proofreadingOCRStepResult{generation: generation, page: aPage, sourceHash: sourceHash}
+		if layout.CharacterVersion != ocr.CharacterGeometryVersion {
+			layout, result.characterErr, result.cacheErr = ensureProofreadingOCRCharacterGeometry(ctx, document, aPage, pageCount, sourceHash, layout)
+			if ctx.Err() != nil {
+				return
+			}
+			result.characterLayout = &layout
+		}
 		page, err := alignProofreadingOCRLayoutPage(ctx, aPage+1, layout, bText)
 		if err != nil {
 			result.err = err
 		} else {
 			page.result = shiftProofreadingOCRResult(page.result, bStart)
-			diff := proofreadingOCRCharacterDiff(layout, page.result, bText, bStart)
+			diff := proofreadingOCRCharacterDiff(layout, bText, bStart)
+			located, total := proofreadingOCRCharacterCoverage(layout)
 			comparison := proofreadingOCRStepComparison{
-				APage: aPage, BPage: bPage, SourceHash: sourceHash, DraftHash: draftHash,
+				APage: aPage, BPage: bPage, SourceHash: sourceHash, DraftHash: pageDraftHash,
 				BText: bText, BStart: bStart, BEnd: bEnd, Result: page.result,
 				Matches: diff.Matches, AOnly: diff.AOnly, BOnly: diff.BOnly,
 				MatchedText: diff.MatchedText,
 				AOnlyText:   diff.AOnlyText, BOnlyText: diff.BOnlyText,
-				HasEvidence: diff.HasEvidence, Complete: diff.Complete, MatchedRanges: diff.MatchedRanges,
-				Differences: diff.BOnlyRanges, AOnlyBlockIDs: diff.AOnlyBlockIDs,
+				HasEvidence: diff.HasEvidence, Complete: diff.Complete,
+				AlignmentLimited: page.result.Status != "matched",
+				MatchedRanges:    diff.MatchedRanges,
+				Differences:      diff.BOnlyRanges, AOnlyBlockIDs: diff.AOnlyBlockIDs,
+				Frames:           diff.Frames,
+				CharacterLocated: located,
+				CharacterTotal:   total,
 			}
 			result.comparison = &comparison
 		}
@@ -532,13 +695,56 @@ func (a *App) processProofreadingOCRStep(gtx layout.Context) {
 	if step == nil {
 		return
 	}
-	if a.proofreading != nil && step.sourceHash != "" && step.sourceHash != a.proofreading.aSourceHash {
-		step.cancelTask()
-		step.pages = map[int]proofreadingOCRPage{}
-		step.pageSourceHash = map[int]string{}
-		step.comparisons = map[proofreadingOCRStepPair]proofreadingOCRStepComparison{}
-		step.sourceHash = a.proofreading.aSourceHash
+	if a.proofreading != nil {
+		state := a.proofreading
+		if state.aSourceHash != "" && step.historySourceHash != state.aSourceHash {
+			step.cancelHistoryLoad()
+			step.historySourceHash = state.aSourceHash
+			step.historyLoaded = false
+		}
+		if state.aSourceHash != "" && step.sourceHash != "" && step.sourceHash != state.aSourceHash {
+			step.cancelTask()
+			step.pages = map[int]proofreadingOCRPage{}
+			step.pageSourceHash = map[int]string{}
+			step.comparisons = map[proofreadingOCRStepPair]proofreadingOCRStepComparison{}
+			step.historyInvalidPages = make(map[int]bool)
+			step.badgeAnchors = make(map[proofreadingOCRStepPair][]proofreadingCenterBadgeAnchor)
+			step.badgeConnections = make(map[proofreadingOCRStepPair][]proofreadingOCRConnection)
+			step.badgeClicksByPair = make(map[proofreadingOCRStepPair][]widget.Clickable)
+		}
+		if state.aSourceHash != "" {
+			step.sourceHash = state.aSourceHash
+			a.requestProofreadingOCRStepHistory(step)
+		}
 	}
+	a.advanceProofreadingOCRDiffPlayback(gtx, step)
+	for {
+		select {
+		case history := <-step.historyResults:
+			if history.generation != step.historyGeneration || a.proofreading == nil || history.sourceHash != a.proofreading.aSourceHash {
+				continue
+			}
+			step.historyLoading = false
+			step.historyLoaded = true
+			step.historyCancel = nil
+			for _, entry := range history.entries {
+				if entry.page < 0 || entry.page >= len(a.proofreading.xPages) || entry.comparison.APage != entry.page ||
+					entry.comparison.BPage != entry.page || !proofreadingOCRStepComparisonValid(a.proofreading, entry.comparison) ||
+					entry.layout.Width <= 0 || entry.layout.Height <= 0 || step.historyInvalidPages[entry.page] {
+					continue
+				}
+				step.pages[entry.page] = proofreadingOCRPage{
+					layout: entry.layout,
+					result: textalign.Result{Page: entry.page + 1, Status: "recognized"},
+				}
+				step.pageSourceHash[entry.page] = history.sourceHash
+				step.comparisons[proofreadingOCRStepPair{APage: entry.page, BPage: entry.page}] = entry.comparison
+			}
+		default:
+			goto historyReady
+		}
+	}
+historyReady:
 	for {
 		select {
 		case progress := <-step.progress:
@@ -558,6 +764,52 @@ resultLoop:
 		if result.generation != step.generation || result.sourceHash != a.proofreading.aSourceHash {
 			return
 		}
+		if result.overflowPrefetch {
+			if result.overflowGeneration != step.overflowGeneration {
+				return
+			}
+			if step.overflowCancel != nil {
+				step.overflowCancel()
+			}
+			step.overflowCancel = nil
+			request := step.overflowRequest
+			if request == nil || !request.preComparison {
+				return
+			}
+			keepRequest := result.needToken && a.openProofreadingOCROverflowTokenDialog(result.endpoint, request)
+			requestCurrent := a.proofreadingOCROverflowRequestCurrent(request)
+			if result.needToken && keepRequest {
+				gtx.Execute(op.InvalidateCmd{})
+				return
+			}
+			if result.ocrLayout != nil {
+				nextPage := request.comparison.APage + 1
+				step.pages[nextPage] = proofreadingOCRPage{
+					layout: *result.ocrLayout,
+					result: textalign.Result{Page: nextPage + 1, Status: "recognized"},
+				}
+				step.pageSourceHash[nextPage] = result.sourceHash
+				if requestCurrent && result.overflowCandidate != nil &&
+					a.applyProofreadingOCRBoundaryPrefetch(request, *result.overflowCandidate, *result.ocrLayout) {
+					gtx.Execute(op.InvalidateCmd{})
+					return
+				}
+			} else if requestCurrent {
+				a.setProofreadingOCRBoundarySkip(request)
+			}
+			if step.overflowRequest == request {
+				step.overflowRequest = nil
+			}
+			if step.phase == proofreadingOCRStepCheckingBoundary {
+				step.phase = proofreadingOCRStepIdle
+			}
+			view := a.ensurePDFView()
+			if view != nil && view.page == request.comparison.APage && a.proofreadingCurrentBPage() == request.comparison.BPage {
+				a.compareProofreadingOCRStep()
+			}
+			gtx.Execute(op.InvalidateCmd{})
+			return
+		}
 		if step.cancel != nil {
 			step.cancel()
 			step.cancel = nil
@@ -573,23 +825,44 @@ resultLoop:
 		} else if result.err != nil {
 			step.phase = proofreadingOCRStepFailed
 			step.err = result.err.Error()
+			step.autoCompareAfterOCR = false
 		} else if result.comparison != nil {
 			comparison := *result.comparison
-			if comparison.SourceHash != a.proofreading.aSourceHash || comparison.DraftHash != proofreadingOCRDraftSnapshotHash(a.proofreading.bDraftText) || comparison.BPage < 0 || comparison.BPage >= len(a.proofreading.xPages) || comparison.BText != a.proofreading.xPages[comparison.BPage].Content || comparison.BStart != a.proofreading.xPages[comparison.BPage].ContentStart || comparison.BEnd != a.proofreading.xPages[comparison.BPage].ContentEnd {
+			if comparison.SourceHash != a.proofreading.aSourceHash || comparison.BPage < 0 || comparison.BPage >= len(a.proofreading.xPages) || comparison.BText != a.proofreading.xPages[comparison.BPage].Content || comparison.BStart != a.proofreading.xPages[comparison.BPage].ContentStart || comparison.BEnd != a.proofreading.xPages[comparison.BPage].ContentEnd {
 				step.phase = proofreadingOCRStepFailed
 				step.err = a.textID("proofread.ai.step.stale")
 			} else {
-				step.comparisons[proofreadingOCRStepPair{APage: comparison.APage, BPage: comparison.BPage}] = comparison
-				step.phase = proofreadingOCRStepCompared
+				if result.characterLayout != nil {
+					page := step.pages[result.page]
+					page.layout = *result.characterLayout
+					step.pages[result.page] = page
+				}
+				step.characterErr = ""
+				if result.characterErr != nil {
+					step.characterErr = result.characterErr.Error()
+				}
+				if result.cacheErr != nil {
+					step.cacheErr = result.cacheErr.Error()
+				}
+				step.phase = proofreadingOCRStepCheckingBoundary
 				step.err = ""
-				step.status = "proofread.ai.step.compared"
+				if a.prepareProofreadingOCRStepComparison(comparison) {
+					gtx.Execute(op.InvalidateCmd{})
+					return
+				}
+				a.presentProofreadingOCRStepComparison(comparison)
 			}
 		} else if result.ocrPage != nil {
 			layout, err := result.ocrPage.Layout()
 			if err != nil {
 				step.phase = proofreadingOCRStepFailed
 				step.err = err.Error()
+				step.autoCompareAfterOCR = false
 			} else {
+				if step.historyInvalidPages == nil {
+					step.historyInvalidPages = make(map[int]bool)
+				}
+				step.historyInvalidPages[result.page] = true
 				step.pages[result.page] = proofreadingOCRPage{layout: layout, result: textalign.Result{Page: result.page + 1, Status: "recognized"}}
 				step.pageSourceHash[result.page] = result.sourceHash
 				step.page = result.page
@@ -603,13 +876,85 @@ resultLoop:
 				step.status = "proofread.ai.step.recognized"
 				for pair := range step.comparisons {
 					if pair.APage == result.page {
-						delete(step.comparisons, pair)
+						a.clearProofreadingOCRStepComparisonHistory(step, pair)
 					}
+				}
+				if step.autoCompareAfterOCR {
+					step.autoCompareAfterOCR = false
+					view := a.ensurePDFView()
+					if view != nil && view.page == result.page && a.proofreadingCurrentBPage() == step.bPage {
+						a.compareProofreadingOCRStep()
+					}
+					return
 				}
 			}
 		}
 		gtx.Execute(op.InvalidateCmd{})
 	default:
+	}
+}
+
+func (a *App) clearProofreadingOCRStepComparisonHistory(step *proofreadingOCRStepState, pair proofreadingOCRStepPair) {
+	if step == nil {
+		return
+	}
+	delete(step.comparisons, pair)
+	delete(step.badgeAnchors, pair)
+	delete(step.badgeConnections, pair)
+	delete(step.badgeClicksByPair, pair)
+	if step.inspector.open && step.inspector.pair == pair {
+		step.inspector.open = false
+	}
+	if step.diffPair == pair {
+		step.currentConnections = nil
+		step.currentBadges = nil
+		step.diffCursor = 0
+		step.diffDraftHash = ""
+		step.diffNextAt = time.Time{}
+		step.diffRunning = false
+		step.diffPaused = false
+		delete(step.diffPlayedPairs, pair)
+	}
+}
+
+func (a *App) requestProofreadingOCRStepHistory(step *proofreadingOCRStepState) {
+	if a == nil || a.proofreading == nil || step == nil || step.historyLoading || step.historyLoaded ||
+		step.historySourceHash != a.proofreading.aSourceHash || !a.proofreading.bDraftInitialized || len(a.proofreading.xPages) == 0 {
+		return
+	}
+	view := a.ensurePDFView()
+	if view == nil || view.info.Pages <= 0 || view.info.Pages > proofreadingOCRCacheMaxPages {
+		step.historyLoaded = true
+		return
+	}
+	pageCount := view.info.Pages
+	pages := append([]proofreadingXPage(nil), a.proofreading.xPages...)
+	sourceHash := a.proofreading.aSourceHash
+	step.historyGeneration++
+	generation := step.historyGeneration
+	ctx, cancel := context.WithCancel(context.Background())
+	step.historyCancel = cancel
+	step.historyLoading = true
+	window, shutdown := a.window, a.shutdown
+	if !a.launchManagedBackground(func() {
+		entries := loadProofreadingOCRStepHistory(ctx, sourceHash, pageCount, pages)
+		if ctx.Err() != nil {
+			return
+		}
+		result := proofreadingOCRStepHistoryResult{generation: generation, sourceHash: sourceHash, entries: entries}
+		select {
+		case step.historyResults <- result:
+			if window != nil {
+				window.Invalidate()
+			}
+		case <-ctx.Done():
+		case <-shutdown:
+		}
+	}) {
+		cancel()
+		step.historyCancel = nil
+		step.historyLoading = false
+		step.historyLoaded = true
 	}
 }
 
@@ -629,6 +974,9 @@ func (a *App) openProofreadingOCRStepTokenDialog(endpoint string) {
 			a.modal.Input.Mask = 0
 			if action != "start" && action != "confirm" {
 				a.modal.Hide()
+				if a.proofreading != nil && a.proofreading.ocrStep != nil {
+					a.proofreading.ocrStep.autoCompareAfterOCR = false
+				}
 				return
 			}
 			if token == "" {
@@ -712,16 +1060,6 @@ func shiftProofreadingOCRResult(result textalign.Result, delta int) textalign.Re
 	return result
 }
 
-func proofreadingOCRComparisonCandidate(result textalign.Result) *textalign.Candidate {
-	if result.Selected != nil {
-		return result.Selected
-	}
-	if len(result.PathChoices) > 0 {
-		return &result.PathChoices[0]
-	}
-	return nil
-}
-
 func mergeProofreadingOCRRanges(values []textalign.Range) []textalign.Range {
 	if len(values) == 0 {
 		return nil
@@ -762,7 +1100,7 @@ func proofreadingOCRStepStatusKeyForPages(step *proofreadingOCRStepState, aPage,
 			return "proofread.ai.step.uploading"
 		case proofreadingOCRStepRunning:
 			return "proofread.ai.step.running"
-		case proofreadingOCRStepComparing:
+		case proofreadingOCRStepComparing, proofreadingOCRStepCheckingBoundary:
 			return "proofread.ai.step.comparing"
 		}
 	}
@@ -813,44 +1151,166 @@ func (a *App) currentProofreadingOCRStepComparison() (proofreadingOCRStepCompari
 }
 
 func proofreadingOCRStepComparisonValid(state *proofreadingWorkspace, comparison proofreadingOCRStepComparison) bool {
-	if state == nil || comparison.SourceHash != state.aSourceHash || comparison.DraftHash != proofreadingOCRDraftSnapshotHash(state.bDraftText) || comparison.BPage < 0 || comparison.BPage >= len(state.xPages) {
+	if state == nil || comparison.SourceHash != state.aSourceHash || comparison.BPage < 0 || comparison.BPage >= len(state.xPages) {
 		return false
 	}
 	page := state.xPages[comparison.BPage]
 	return comparison.BText == page.Content && comparison.BStart == page.ContentStart && comparison.BEnd == page.ContentEnd
 }
 
+func proofreadingOCRStepComparisonsForPage(state *proofreadingWorkspace, page int, source bool) []proofreadingOCRStepComparison {
+	if state == nil || state.ocrStep == nil {
+		return nil
+	}
+	var comparisons []proofreadingOCRStepComparison
+	for _, comparison := range state.ocrStep.comparisons {
+		matches := comparison.BPage == page
+		if source {
+			matches = comparison.APage == page
+		}
+		if matches && proofreadingOCRStepComparisonValid(state, comparison) {
+			comparisons = append(comparisons, comparison)
+		}
+	}
+	sort.Slice(comparisons, func(i, j int) bool {
+		if comparisons[i].APage != comparisons[j].APage {
+			return comparisons[i].APage < comparisons[j].APage
+		}
+		return comparisons[i].BPage < comparisons[j].BPage
+	})
+	return comparisons
+}
+
+func drawProofreadingStrikethrough(gtx layout.Context, bounds image.Rectangle, ink color.NRGBA) {
+	midY := (bounds.Min.Y + bounds.Max.Y) / 2
+	h := max(1, gtx.Dp(1.5))
+	line := image.Rect(bounds.Min.X, midY-h/2, bounds.Max.X, midY-h/2+h)
+	paint.FillShape(gtx.Ops, ink, clip.Rect(line).Op())
+}
+
+func drawProofreadingCaret(gtx layout.Context, bounds image.Rectangle, ink color.NRGBA) {
+	caretX := bounds.Min.X
+	w := max(2, gtx.Dp(2))
+	stem := image.Rect(caretX-w/2, bounds.Min.Y, caretX-w/2+w, bounds.Max.Y)
+	paint.FillShape(gtx.Ops, ink, clip.Rect(stem).Op())
+
+	capW := max(6, gtx.Dp(6))
+	capH := max(1, gtx.Dp(1.5))
+	topCap := image.Rect(caretX-capW/2, bounds.Min.Y, caretX-capW/2+capW, bounds.Min.Y+capH)
+	botCap := image.Rect(caretX-capW/2, bounds.Max.Y-capH, caretX-capW/2+capW, bounds.Max.Y)
+	paint.FillShape(gtx.Ops, ink, clip.Rect(topCap).Op())
+	paint.FillShape(gtx.Ops, ink, clip.Rect(botCap).Op())
+}
+
 func (a *App) drawProofreadingOCRStepComparisonHighlights(gtx layout.Context, editor *widget.Editor, page proofreadingXPage, window proofreadingEditorWindow) {
-	if a == nil || editor == nil {
+	if a == nil || a.proofreading == nil || editor == nil {
 		return
 	}
-	comparison, ok := a.currentProofreadingOCRStepComparison()
-	if !ok || comparison.BPage != page.PageIndex {
-		return
+	for _, comparison := range proofreadingOCRStepComparisonsForPage(a.proofreading, page.PageIndex, false) {
+		a.drawProofreadingOCRComparisonHighlights(gtx, editor, page, window, comparison)
 	}
-	matchColor := color.NRGBA{R: 57, G: 145, B: 100, A: 88}
-	if comparison.Result.Status == "ambiguous" {
-		matchColor = color.NRGBA{R: 213, G: 151, B: 49, A: 72}
-	}
-	for _, matched := range comparison.MatchedRanges {
-		start, end := matched.Start-page.ContentStart, matched.End-page.ContentStart
-		local, valid := proofreadingOCRHighlightLocalRange(proofreadingOCRRangeSegment{PageIndex: page.PageIndex, Start: start, End: end}, proofreadingEditorWindow{Start: window.Start, End: window.End})
+}
+
+func (a *App) drawProofreadingOCRComparisonHighlights(gtx layout.Context, editor *widget.Editor, page proofreadingXPage, window proofreadingEditorWindow, comparison proofreadingOCRStepComparison) {
+	strokeWidth := float32(max(1, gtx.Dp(1.5)))
+	diffStroke := color.NRGBA{R: 217, G: 48, B: 37, A: 255}
+	diffFill := color.NRGBA{R: 217, G: 48, B: 37, A: 38}
+	greenStroke := color.NRGBA{R: 46, G: 160, B: 67, A: 255}
+	greenFill := color.NRGBA{R: 46, G: 160, B: 67, A: 45}
+
+	step := a.proofreadingOCRStep()
+	if step != nil && (step.diffRunning || step.diffPaused) &&
+		step.diffPair == (proofreadingOCRStepPair{APage: comparison.APage, BPage: comparison.BPage}) && step.diffDraftHash == comparison.DraftHash {
+		frame, hasFrame := proofreadingOCRCurrentDiffFrame(step, comparison)
+		if !hasFrame {
+			return
+		}
+		if frame.Kind == proofreadingOCRDiffAOnly {
+			regions := proofreadingOCRDiffAnchorRegions(editor, page, window, frame.BPosition)
+			if len(regions) > 0 {
+				drawProofreadingCaret(gtx, regions[0].Bounds, proofreadScanInk)
+			}
+			return
+		}
+		if frame.BPosition < page.ContentStart || frame.BPosition >= page.ContentEnd {
+			return
+		}
+		start := frame.BPosition - page.ContentStart
+		local, valid := proofreadingOCRHighlightLocalRange(proofreadingOCRRangeSegment{PageIndex: page.PageIndex, Start: start, End: start + 1}, window)
 		if !valid {
-			continue
+			return
 		}
 		for _, region := range editor.Regions(local.Start, local.End, nil) {
-			paint.FillShape(gtx.Ops, matchColor, clip.Rect(region.Bounds).Op())
+			paint.FillShape(gtx.Ops, proofreadScanFill, clip.Rect(region.Bounds).Op())
+			paint.FillShape(gtx.Ops, proofreadScanInk, clip.Stroke{Path: clip.Rect(region.Bounds).Path(), Width: float32(max(1, gtx.Dp(2)))}.Op())
+			if frame.Kind == proofreadingOCRDiffBOnly {
+				drawProofreadingStrikethrough(gtx, region.Bounds, proofreadScanInk)
+			}
+		}
+		return
+	}
+
+	_, resolvedB := proofreadingOCRResolvedDiffRuns(a.pdfView, a.proofreading, step, comparison)
+	seenAOnlyPositions := make(map[int]bool)
+	type diffRun struct {
+		kind       proofreadingOCRDiffOpKind
+		start, end int
+	}
+	var runs []diffRun
+	for _, frame := range comparison.Frames {
+		if frame.Kind == proofreadingOCRDiffEqual {
+			continue
+		}
+		if frame.Kind == proofreadingOCRDiffAOnly {
+			if !seenAOnlyPositions[frame.BPosition] {
+				seenAOnlyPositions[frame.BPosition] = true
+				regions := proofreadingOCRDiffAnchorRegions(editor, page, window, frame.BPosition)
+				if len(regions) > 0 {
+					caretInk := diffStroke
+					if resolvedB[frame.BPosition] {
+						caretInk = greenStroke
+					}
+					drawProofreadingCaret(gtx, regions[0].Bounds, caretInk)
+				}
+			}
+			continue
+		}
+		if frame.BPosition < page.ContentStart || frame.BPosition >= page.ContentEnd {
+			continue
+		}
+		pos := frame.BPosition
+		if len(runs) > 0 && runs[len(runs)-1].kind == frame.Kind && runs[len(runs)-1].end == pos {
+			runs[len(runs)-1].end = pos + 1
+		} else {
+			runs = append(runs, diffRun{kind: frame.Kind, start: pos, end: pos + 1})
 		}
 	}
-	diffColor := color.NRGBA{R: 51, G: 124, B: 205, A: 112}
-	for _, diff := range comparison.Differences {
-		start, end := diff.Start-page.ContentStart, diff.End-page.ContentStart
+
+	for _, r := range runs {
+		start, end := r.start-page.ContentStart, r.end-page.ContentStart
 		local, valid := proofreadingOCRHighlightLocalRange(proofreadingOCRRangeSegment{PageIndex: page.PageIndex, Start: start, End: end}, window)
 		if !valid {
 			continue
 		}
+		isResolved := false
+		for p := r.start; p < r.end; p++ {
+			if resolvedB[p] {
+				isResolved = true
+				break
+			}
+		}
+		stroke := diffStroke
+		fill := diffFill
+		if isResolved {
+			stroke = greenStroke
+			fill = greenFill
+		}
 		for _, region := range editor.Regions(local.Start, local.End, nil) {
-			paint.FillShape(gtx.Ops, diffColor, clip.Rect(region.Bounds).Op())
+			paint.FillShape(gtx.Ops, fill, clip.Rect(region.Bounds).Op())
+			paint.FillShape(gtx.Ops, stroke, clip.Stroke{Path: clip.Rect(region.Bounds).Path(), Width: strokeWidth}.Op())
+			if r.kind == proofreadingOCRDiffBOnly {
+				drawProofreadingStrikethrough(gtx, region.Bounds, stroke)
+			}
 		}
 	}
 }

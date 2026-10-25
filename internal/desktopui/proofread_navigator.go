@@ -28,6 +28,7 @@ import (
 // display density. Fine input never accelerates or converts distance to lines.
 const proofreadingNavigatorStepDP = 1
 const proofreadingNavigatorLineStepDP = 16
+const proofreadingNavigatorWidthDP = 54
 
 type proofreadingNavigatorIntent struct {
 	steps int
@@ -83,7 +84,8 @@ func (a *App) layoutProofreadingXNavigatorCanvas(gtx layout.Context, view *pdfVi
 	s.xPageAdjustmentPage = target
 	s.xPageAdjustmentActive = target < len(s.pageOwnership) && !s.pageOwnership[target].Reviewed
 	a.revealProofreadingNavigatorBoundary()
-	// Use identical outer geometry for A and X; only X reserves the right strip.
+	// The compare layout gives A and the X page list equal width, with this
+	// navigation strip occupying the remaining right edge.
 	s.xCanvas.Axis = layout.Vertical
 	if !a.validateProofreadingOCRLink() {
 		s.xCanvas.Position = view.canvas.Position
@@ -93,7 +95,7 @@ func (a *App) layoutProofreadingXNavigatorCanvas(gtx layout.Context, view *pdfVi
 			return a.layoutProofreadingXPageList(gtx, view, pages, status, isError)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(54), gtx.Constraints.Max.Y))
+			gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(proofreadingNavigatorWidthDP), gtx.Constraints.Max.Y))
 			return a.layoutProofreadingNavigator(gtx, pages)
 		}),
 	)

@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"glance/internal/ocr"
 	"glance/internal/textalign"
@@ -21,11 +22,18 @@ type proofreadingOCRCharacterDiffResult struct {
 	MatchedRanges []textalign.Range
 	BOnlyRanges   []textalign.Range
 	AOnlyBlockIDs []int
+	Frames        []proofreadingOCRDiffFrame
 }
 
 type proofreadingOCRDiffSource struct {
 	characters []rune
 	starts     []int
+}
+
+type proofreadingOCRMappedPageText struct {
+	text         string
+	blockIDs     []int
+	blockOffsets []int
 }
 
 type proofreadingOCRDiffOpKind uint8
@@ -43,9 +51,13 @@ type proofreadingOCRDiffOp struct {
 	b    int
 }
 
-type proofreadingOCRAOnlyPosition struct {
-	blockID int
-	start   int
+type proofreadingOCRDiffFrame struct {
+	Kind      proofreadingOCRDiffOpKind
+	ABlockID  int
+	AOffset   int
+	AChar     rune
+	BPosition int
+	BChar     rune
 }
 
 func newProofreadingOCRDiffSource(value string) proofreadingOCRDiffSource {
@@ -64,84 +76,101 @@ func newProofreadingOCRDiffSource(value string) proofreadingOCRDiffSource {
 	return source
 }
 
-func proofreadingOCRCharacterDiff(layout ocr.Layout, result textalign.Result, markdown string, globalStart int) proofreadingOCRCharacterDiffResult {
+func proofreadingOCRPageText(layout ocr.Layout) proofreadingOCRMappedPageText {
+	blocks := append([]ocr.LayoutBlock(nil), layout.Blocks...)
+	sort.SliceStable(blocks, func(i, j int) bool {
+		left, right := blocks[i].Order, blocks[j].Order
+		if left == nil {
+			return false
+		}
+		if right == nil {
+			return true
+		}
+		return *left < *right
+	})
+	var text strings.Builder
+	var blockIDs []int
+	var blockOffsets []int
+	for _, block := range blocks {
+		if proofreadingOCRDiffFurniture(block.Label) || block.Text == "" {
+			continue
+		}
+		if text.Len() > 0 {
+			text.WriteRune('\n')
+			blockIDs = append(blockIDs, -1)
+			blockOffsets = append(blockOffsets, -1)
+		}
+		for offset, value := range []rune(block.Text) {
+			text.WriteRune(value)
+			blockIDs = append(blockIDs, block.ID)
+			blockOffsets = append(blockOffsets, offset)
+		}
+	}
+	return proofreadingOCRMappedPageText{text: text.String(), blockIDs: blockIDs, blockOffsets: blockOffsets}
+}
+
+func proofreadingOCRDiffFurniture(label string) bool {
+	switch label {
+	case "number", "header", "footer", "header_image", "footer_image":
+		return true
+	default:
+		return false
+	}
+}
+
+func proofreadingOCRCharacterDiff(layout ocr.Layout, markdown string, globalStart int) proofreadingOCRCharacterDiffResult {
 	diff := proofreadingOCRCharacterDiffResult{Complete: true}
-	candidate := proofreadingOCRComparisonCandidate(result)
-	if candidate == nil || len(candidate.Evidence) == 0 {
+	aPage := proofreadingOCRPageText(layout)
+	aSource := newProofreadingOCRDiffSource(aPage.text)
+	bSource := newProofreadingOCRDiffSource(markdown)
+	diff.HasEvidence = len(aSource.characters) > 0 || len(bSource.characters) > 0
+	if !diff.HasEvidence {
+		return diff
+	}
+	ops, ok := proofreadingOCRDiffOperations(aSource.characters, bSource.characters)
+	if !ok {
 		diff.Complete = false
 		return diff
 	}
-
-	blocks := make(map[int]ocr.LayoutBlock, len(layout.Blocks))
-	for _, block := range layout.Blocks {
-		blocks[block.ID] = block
-	}
-	markdownRunes := []rune(markdown)
-	seenEvidence := make(map[proofreadingOCRStepEvidenceKey]struct{}, len(candidate.Evidence))
-	seenBPositions := make(map[int]struct{})
-	seenAPositions := make(map[proofreadingOCRAOnlyPosition]struct{})
 	aOnlyBlocks := make(map[int]struct{})
 	var matchedText, aOnlyText, bOnlyText strings.Builder
-
-	for _, evidence := range candidate.Evidence {
-		key := proofreadingOCRStepEvidenceKey{blockID: evidence.BlockID, aRange: evidence.QueryRange, bRange: evidence.Range}
-		if _, duplicate := seenEvidence[key]; duplicate {
-			continue
-		}
-		seenEvidence[key] = struct{}{}
-
-		block, ok := blocks[evidence.BlockID]
-		if !ok {
-			diff.Complete = false
-			continue
-		}
-		querySource, err := textalign.NewSource(block.Text)
-		if err != nil || evidence.QueryRange.Start < 0 || evidence.QueryRange.End <= evidence.QueryRange.Start || evidence.QueryRange.End > len(querySource.Text) {
-			diff.Complete = false
-			continue
-		}
-		aRange := querySource.OriginalRange(evidence.QueryRange.Start, evidence.QueryRange.End)
-		localBRange := textalign.Range{Start: evidence.Range.Start - globalStart, End: evidence.Range.End - globalStart}
-		if aRange.Start < 0 || aRange.End > len([]rune(block.Text)) || localBRange.Start < 0 || localBRange.End <= localBRange.Start || localBRange.End > len(markdownRunes) {
-			diff.Complete = false
-			continue
-		}
-
-		aRunes := []rune(block.Text)
-		aStart, aEnd := expandProofreadingOCRDiffSpan(aRunes, aRange.Start, aRange.End)
-		bStart, bEnd := expandProofreadingOCRDiffSpan(markdownRunes, localBRange.Start, localBRange.End)
-		aSource := newProofreadingOCRDiffSource(string(aRunes[aStart:aEnd]))
-		bSource := newProofreadingOCRDiffSource(string(markdownRunes[bStart:bEnd]))
-		ops, ok := proofreadingOCRDiffOperations(aSource.characters, bSource.characters)
-		if !ok {
-			diff.Complete = false
-			continue
-		}
-		diff.HasEvidence = true
-		var matchedInEvidence, aOnlyInEvidence, bOnlyInEvidence strings.Builder
-		for _, operation := range ops {
-			switch operation.kind {
-			case proofreadingOCRDiffEqual:
-				if globalBStart, valid := proofreadingOCRDiffGlobalBPosition(globalStart, bStart, bSource, operation.b); valid {
-					if _, duplicate := seenBPositions[globalBStart]; !duplicate {
-						seenBPositions[globalBStart] = struct{}{}
-						diff.Matches++
-						matchedInEvidence.WriteRune(bSource.characters[operation.b])
-						diff.MatchedRanges = append(diff.MatchedRanges, textalign.Range{Start: globalBStart, End: globalBStart + 1})
-					}
+	bCursor := 0
+	for _, operation := range ops {
+		switch operation.kind {
+		case proofreadingOCRDiffEqual:
+			if globalB, valid := proofreadingOCRDiffGlobalBPosition(globalStart, bSource, operation.b); valid {
+				diff.Matches++
+				matchedText.WriteRune(bSource.characters[operation.b])
+				diff.MatchedRanges = append(diff.MatchedRanges, textalign.Range{Start: globalB, End: globalB + 1})
+				diff.Frames = append(diff.Frames, proofreadingOCRDiffFrame{
+					Kind:     proofreadingOCRDiffEqual,
+					ABlockID: proofreadingOCRDiffABlockID(aPage, aSource, operation.a),
+					AOffset:  proofreadingOCRDiffAOffset(aPage, aSource, operation.a),
+					AChar:    aSource.characters[operation.a], BPosition: globalB, BChar: bSource.characters[operation.b],
+				})
+			}
+		case proofreadingOCRDiffAOnly:
+			bPosition := proofreadingOCRDiffGlobalBBoundary(globalStart, markdown, bSource, bCursor)
+			proofreadingOCRAppendAOnly(&diff, &aOnlyText, aOnlyBlocks, aPage, aSource, operation.a, bPosition)
+		case proofreadingOCRDiffBOnly:
+			diff.appendBOnly(operation.b, globalStart, bSource, &bOnlyText)
+		case proofreadingOCRDiffReplace:
+			frameStart := len(diff.Frames)
+			bPosition := proofreadingOCRDiffGlobalBBoundary(globalStart, markdown, bSource, operation.b)
+			proofreadingOCRAppendAOnly(&diff, &aOnlyText, aOnlyBlocks, aPage, aSource, operation.a, bPosition)
+			diff.appendBOnly(operation.b, globalStart, bSource, &bOnlyText)
+			if len(diff.Frames) == frameStart+2 {
+				aFrame, bFrame := diff.Frames[frameStart], diff.Frames[frameStart+1]
+				diff.Frames[frameStart] = proofreadingOCRDiffFrame{
+					Kind: proofreadingOCRDiffReplace, ABlockID: aFrame.ABlockID, AOffset: aFrame.AOffset, AChar: aFrame.AChar,
+					BPosition: bFrame.BPosition, BChar: bFrame.BChar,
 				}
-			case proofreadingOCRDiffAOnly:
-				proofreadingOCRAppendAOnly(&diff, &aOnlyInEvidence, aOnlyBlocks, seenAPositions, evidence.BlockID, aStart, aSource, operation.a)
-			case proofreadingOCRDiffBOnly:
-				diff.appendBOnly(operation.b, globalStart, bStart, bSource, &bOnlyInEvidence, seenBPositions)
-			case proofreadingOCRDiffReplace:
-				proofreadingOCRAppendAOnly(&diff, &aOnlyInEvidence, aOnlyBlocks, seenAPositions, evidence.BlockID, aStart, aSource, operation.a)
-				diff.appendBOnly(operation.b, globalStart, bStart, bSource, &bOnlyInEvidence, seenBPositions)
+				diff.Frames = diff.Frames[:frameStart+1]
 			}
 		}
-		appendProofreadingOCRDiffEvidenceText(&matchedText, matchedInEvidence.String())
-		appendProofreadingOCRDiffEvidenceText(&aOnlyText, aOnlyInEvidence.String())
-		appendProofreadingOCRDiffEvidenceText(&bOnlyText, bOnlyInEvidence.String())
+		if operation.kind != proofreadingOCRDiffAOnly {
+			bCursor = operation.b + 1
+		}
 	}
 
 	diff.MatchedText = matchedText.String()
@@ -156,80 +185,78 @@ func proofreadingOCRCharacterDiff(layout ocr.Layout, result textalign.Result, ma
 	return diff
 }
 
-type proofreadingOCRStepEvidenceKey struct {
-	blockID int
-	aRange  textalign.Range
-	bRange  textalign.Range
-}
-
-func appendProofreadingOCRDiffEvidenceText(target *strings.Builder, value string) {
-	if value == "" {
-		return
-	}
-	if target.Len() > 0 {
-		target.WriteString("\n")
-	}
-	target.WriteString(value)
-}
-
 func proofreadingOCRAppendAOnly(
 	diff *proofreadingOCRCharacterDiffResult,
 	text *strings.Builder,
 	blocks map[int]struct{},
-	seen map[proofreadingOCRAOnlyPosition]struct{},
-	blockID, sourceStart int,
+	page proofreadingOCRMappedPageText,
 	source proofreadingOCRDiffSource,
 	index int,
+	bPosition int,
 ) {
 	if index < 0 || index >= len(source.starts) {
 		return
 	}
-	key := proofreadingOCRAOnlyPosition{blockID: blockID, start: sourceStart + source.starts[index]}
-	if _, duplicate := seen[key]; duplicate {
+	rawIndex := source.starts[index]
+	if rawIndex < 0 || rawIndex >= len(page.blockIDs) || page.blockIDs[rawIndex] < 0 {
 		return
 	}
-	seen[key] = struct{}{}
+	blockID := page.blockIDs[rawIndex]
 	diff.AOnly++
 	text.WriteRune(source.characters[index])
 	blocks[blockID] = struct{}{}
+	diff.Frames = append(diff.Frames, proofreadingOCRDiffFrame{
+		Kind: proofreadingOCRDiffAOnly, ABlockID: blockID, AOffset: page.blockOffsets[rawIndex], AChar: source.characters[index], BPosition: bPosition,
+	})
 }
 
-func (diff *proofreadingOCRCharacterDiffResult) appendBOnly(index, globalStart, sourceStart int, source proofreadingOCRDiffSource, text *strings.Builder, seen map[int]struct{}) {
-	globalPosition, valid := proofreadingOCRDiffGlobalBPosition(globalStart, sourceStart, source, index)
+func proofreadingOCRDiffABlockID(page proofreadingOCRMappedPageText, source proofreadingOCRDiffSource, index int) int {
+	if index < 0 || index >= len(source.starts) {
+		return -1
+	}
+	rawIndex := source.starts[index]
+	if rawIndex < 0 || rawIndex >= len(page.blockIDs) {
+		return -1
+	}
+	return page.blockIDs[rawIndex]
+}
+
+func proofreadingOCRDiffAOffset(page proofreadingOCRMappedPageText, source proofreadingOCRDiffSource, index int) int {
+	if index < 0 || index >= len(source.starts) {
+		return -1
+	}
+	raw := source.starts[index]
+	if raw < 0 || raw >= len(page.blockOffsets) {
+		return -1
+	}
+	return page.blockOffsets[raw]
+}
+
+func (diff *proofreadingOCRCharacterDiffResult) appendBOnly(index, globalStart int, source proofreadingOCRDiffSource, text *strings.Builder) {
+	globalPosition, valid := proofreadingOCRDiffGlobalBPosition(globalStart, source, index)
 	if !valid {
 		return
 	}
-	if _, duplicate := seen[globalPosition]; duplicate {
-		return
-	}
-	seen[globalPosition] = struct{}{}
 	diff.BOnly++
 	text.WriteRune(source.characters[index])
 	diff.BOnlyRanges = append(diff.BOnlyRanges, textalign.Range{Start: globalPosition, End: globalPosition + 1})
+	diff.Frames = append(diff.Frames, proofreadingOCRDiffFrame{
+		Kind: proofreadingOCRDiffBOnly, ABlockID: -1, AOffset: -1, BPosition: globalPosition, BChar: source.characters[index],
+	})
 }
 
-func proofreadingOCRDiffGlobalBPosition(globalStart, sourceStart int, source proofreadingOCRDiffSource, index int) (int, bool) {
+func proofreadingOCRDiffGlobalBPosition(globalStart int, source proofreadingOCRDiffSource, index int) (int, bool) {
 	if index < 0 || index >= len(source.starts) {
 		return 0, false
 	}
-	return globalStart + sourceStart + source.starts[index], true
+	return globalStart + source.starts[index], true
 }
 
-func expandProofreadingOCRDiffSpan(value []rune, start, end int) (int, int) {
-	if start < 0 || end <= start || end > len(value) {
-		return start, end
+func proofreadingOCRDiffGlobalBBoundary(globalStart int, markdown string, source proofreadingOCRDiffSource, index int) int {
+	if index >= 0 && index < len(source.starts) {
+		return globalStart + source.starts[index]
 	}
-	for start > 0 && proofreadingOCRDiffBoundaryPunctuation(value[start-1]) {
-		start--
-	}
-	for end < len(value) && proofreadingOCRDiffBoundaryPunctuation(value[end]) {
-		end++
-	}
-	return start, end
-}
-
-func proofreadingOCRDiffBoundaryPunctuation(value rune) bool {
-	return !unicode.IsSpace(value) && !unicode.IsLetter(value) && !unicode.IsNumber(value)
+	return globalStart + utf8.RuneCountInString(markdown)
 }
 
 func proofreadingOCRDiffOperations(a, b []rune) ([]proofreadingOCRDiffOp, bool) {

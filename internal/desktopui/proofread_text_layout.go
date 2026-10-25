@@ -12,6 +12,8 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
+const proofreadingXEditorLineHeightScale = 1.5
+
 // Shape on a worker-owned Gio shaper, with the same document-coordinate
 // parameters as the native editor. Sharing the UI shaper across goroutines
 // would race its mutable glyph iterator and caches.
@@ -39,7 +41,7 @@ func newProofreadingEditorLineShaper(fontSnapshots ...fontcatalog.Snapshot) appl
 			Font:       font.Font{Typeface: font.Typeface(style.Family)},
 			PxPerEm:    fixed.I(int(math.Round(style.Size))),
 			MaxWidth:   max(1, int(math.Round(width))),
-			WrapPolicy: text.WrapWords, LineHeightScale: 1.28,
+			WrapPolicy: text.WrapWords, LineHeightScale: proofreadingXEditorLineHeightScale,
 			DisableSpaceTrim: true,
 		}, value)
 		var lines []application.ProofreadingLine
@@ -58,7 +60,10 @@ func newProofreadingEditorLineShaper(fontSnapshots ...fontcatalog.Snapshot) appl
 				if len(lines) > 0 {
 					lines[len(lines)-1].Bottom = float64(y)
 				}
-				lines = append(lines, application.ProofreadingLine{Start: start, End: offset, Top: float64(y), Bottom: float64(y) + math.Round(style.Size)*1.28})
+				lines = append(lines, application.ProofreadingLine{
+					Start: start, End: offset, Top: float64(y),
+					Bottom: float64(y) + math.Round(style.Size)*proofreadingXEditorLineHeightScale,
+				})
 				start = offset
 			}
 		}

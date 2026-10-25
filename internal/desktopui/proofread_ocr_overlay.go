@@ -16,30 +16,29 @@ import (
 
 func (a *App) drawProofreadingOCRPageOverlay(gtx layout.Context, size image.Point, pageIndex int) {
 	state := a.proofreading
-	if state == nil || state.ocrScan == nil || size.X <= 0 || size.Y <= 0 {
+	if state == nil || size.X <= 0 || size.Y <= 0 {
 		return
 	}
-	if state.aiProofreading {
-		step := state.ocrStep
-		if step != nil {
-			if page, ok := step.pages[pageIndex]; ok && step.pageSourceHash[pageIndex] == state.aSourceHash {
-				comparison, hasComparison := a.currentProofreadingOCRStepComparison()
-				if hasComparison && comparison.APage == pageIndex {
-					page.result = comparison.Result
-				}
-				drawProofreadingOCRBlocks(gtx, size, page, -1, time.Time{})
-				if hasComparison && comparison.APage == pageIndex {
-					drawProofreadingOCRStepAOnlyBlockHighlights(gtx, size, page, comparison)
-				}
-			}
-			if step.active() && step.page == pageIndex {
-				drawProofreadingLaser(gtx, size, step.startedAt)
-				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
+	step := state.ocrStep
+	if step != nil {
+		if page, ok := step.pages[pageIndex]; ok && step.pageSourceHash[pageIndex] == state.aSourceHash {
+			for _, comparison := range proofreadingOCRStepComparisonsForPage(state, pageIndex, true) {
+				page.result = comparison.Result
+				drawProofreadingOCRStepAOnlyBlockHighlights(gtx, size, page, step, comparison)
 			}
 		}
+		if state.aiProofreading && step.active() && step.page == pageIndex {
+			drawProofreadingLaser(gtx, size, step.startedAt)
+			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
+		}
+	}
+	if state.aiProofreading {
 		return
 	}
 	scan := state.ocrScan
+	if scan == nil {
+		return
+	}
 	if pageIndex >= 0 && pageIndex < len(scan.pages) {
 		page := &scan.pages[pageIndex]
 		activeBlock := -1
@@ -96,7 +95,6 @@ func drawProofreadingOCRBlocks(gtx layout.Context, size image.Point, page proofr
 		if bounds.Dx() < 2 || bounds.Dy() < 2 {
 			continue
 		}
-		paint.FillShape(gtx.Ops, color.NRGBA{R: ink.R, G: ink.G, B: ink.B, A: 24}, clip.Rect(bounds).Op())
 		for _, band := range []image.Rectangle{
 			image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, min(bounds.Max.Y, bounds.Min.Y+stroke)),
 			image.Rect(bounds.Min.X, max(bounds.Min.Y, bounds.Max.Y-stroke), bounds.Max.X, bounds.Max.Y),
@@ -193,13 +191,30 @@ func drawProofreadingLaser(gtx layout.Context, size image.Point, started time.Ti
 	y := int(phase * float64(size.Y))
 	area := clip.Rect{Max: size}.Push(gtx.Ops)
 	defer area.Pop()
+	// A fading trail gives the sweep direction without washing out the text.
+	trail := max(1, gtx.Dp(26))
+	strip := max(1, gtx.Dp(2))
+	for distance := trail; distance > 0; distance -= strip {
+		alpha := uint8(3 + 25*(trail-distance)/trail)
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 26, G: 115, B: 232, A: alpha}, clip.Rect(image.Rect(0, y-distance, size.X, y-distance+strip)).Op())
+	}
 	for _, band := range []struct {
 		h   int
 		col color.NRGBA
-	}{{gtx.Dp(18), color.NRGBA{R: 246, G: 61, B: 72, A: 22}}, {gtx.Dp(7), color.NRGBA{R: 246, G: 61, B: 72, A: 55}}, {gtx.Dp(2), color.NRGBA{R: 255, G: 58, B: 69, A: 230}}} {
+	}{{gtx.Dp(18), color.NRGBA{R: 26, G: 115, B: 232, A: 24}}, {gtx.Dp(7), color.NRGBA{R: 26, G: 115, B: 232, A: 70}}, {gtx.Dp(2), proofreadScanInk}} {
 		h := max(1, band.h)
 		top := y - h/2
 		paint.FillShape(gtx.Ops, band.col, clip.Rect{Min: image.Pt(0, top), Max: image.Pt(size.X, top+h)}.Op())
 	}
+	// A bright inner filament and a travelling glint add a
+	// restrained scanner appearance; all geometry remains inside this paper.
+	core := max(1, gtx.Dp(1))
+	light := color.NRGBA{R: 163, G: 207, B: 255, A: 255}
+	paint.FillShape(gtx.Ops, light, clip.Rect(image.Rect(0, y, size.X, y+core)).Op())
+	glintPhase := math.Mod(float64(elapsed), float64(1100*time.Millisecond)) / float64(1100*time.Millisecond)
+	glintX := int(glintPhase * float64(size.X))
+	glintW := max(2, gtx.Dp(16))
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 224, G: 243, B: 255, A: 255}, clip.Rect(image.Rect(glintX-glintW/2, y, glintX+glintW/2, y+core)).Op())
+
 	gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
 }

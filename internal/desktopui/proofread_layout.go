@@ -46,7 +46,7 @@ func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions 
 	if a.clientTitlebar {
 		a.processProofreadingWindowControlClicks(gtx)
 	}
-	if a.pdfDoc != nil {
+	if a.documentSessionState != nil && a.sharedDocumentSession != nil && a.pdfDoc != nil {
 		a.handlePDFEvents(gtx)
 	}
 	var content layout.Widget
@@ -78,7 +78,10 @@ func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions 
 			)
 		}
 	}
-	return content(gtx)
+	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+		layout.Expanded(content),
+		layout.Expanded(a.layoutProofreadingDiffInspector),
+	)
 }
 
 func (a *App) processProofreadingWindowControlClicks(gtx layout.Context) {
@@ -97,10 +100,14 @@ func (a *App) processProofreadingWindowControlClicks(gtx layout.Context) {
 }
 
 func (a *App) layoutProofreadingComparePanes(gtx layout.Context) layout.Dimensions {
+	reserveNavigator := a.pdfDoc != nil && a.proofreading != nil && a.proofreading.bDocument != nil
+	splitX := proofreadingComparePaneSplit(gtx, reserveNavigator)
 	return layout.Stack{Alignment: layout.NW}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.X = splitX
+					gtx.Constraints.Max.X = splitX
 					return a.layoutProofreadingPane(gtx, proofreadingRoleA)
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -109,14 +116,25 @@ func (a *App) layoutProofreadingComparePanes(gtx layout.Context) layout.Dimensio
 			)
 		}),
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			dividerX := gtx.Constraints.Max.X / 2
+			dividerX := proofreadingComparePaneSplit(gtx, reserveNavigator)
 			paint.FillShape(gtx.Ops, proofreadChromeLine, clip.Rect{Min: image.Pt(dividerX, 0), Max: image.Pt(dividerX+max(1, gtx.Dp(1)), gtx.Constraints.Max.Y)}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		}),
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutProofreadingOCRDiffSummary(gtx)
+			a.drawProofreadingOCRStepConnector(gtx)
+			return layout.Dimensions{Size: gtx.Constraints.Max}
 		}),
 	)
+}
+
+// The X pane reserves a fixed right strip for page navigation. Split the
+// remaining width evenly so the A canvas and X page list have equal space.
+func proofreadingComparePaneSplit(gtx layout.Context, reserveNavigator bool) int {
+	width := gtx.Constraints.Max.X
+	if reserveNavigator {
+		width -= gtx.Dp(proofreadingNavigatorWidthDP)
+	}
+	return max(0, width) / 2
 }
 
 func (a *App) layoutProofreadingPane(gtx layout.Context, role proofreadingDocumentRole) layout.Dimensions {
@@ -189,7 +207,25 @@ func (a *App) layoutProofreadingPaneHeader(gtx layout.Context, role proofreading
 						if role != proofreadingRoleX || state.bDocument == nil {
 							return layout.Dimensions{}
 						}
+						return layout.Dimensions{Size: image.Pt(gtx.Dp(6), 0)}
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if role != proofreadingRoleX || state.bDocument == nil {
+							return layout.Dimensions{}
+						}
 						return a.layoutProofreadingXTextSizeButton(gtx, state, -1)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if role != proofreadingRoleX || state.bDocument == nil || !state.aiProofreading {
+							return layout.Dimensions{}
+						}
+						return layout.Dimensions{Size: image.Pt(gtx.Dp(8), 0)}
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if role != proofreadingRoleX {
+							return layout.Dimensions{}
+						}
+						return a.layoutProofreadingOCRDiffHeaderControls(gtx)
 					}),
 				)
 			})
@@ -204,7 +240,7 @@ func (a *App) layoutProofreadingSourcePage(gtx layout.Context) layout.Dimensions
 	if a.proofreading.sourceError != "" {
 		return a.layoutProofreadingPageMessage(gtx, a.proofreading.sourceError, true)
 	}
-	if a.pdfDoc == nil {
+	if a.documentSessionState == nil || a.sharedDocumentSession == nil || a.pdfDoc == nil {
 		return a.layoutProofreadingPageMessage(gtx, a.textID("proofread.source.unavailable"), true)
 	}
 	// Source loading sets the initial fit. Keep fit cleared after a pinch so the
