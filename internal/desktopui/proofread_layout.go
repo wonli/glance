@@ -53,7 +53,6 @@ func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions 
 		content = func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(a.layoutProofreadingTabChrome),
-				layout.Rigid(a.layoutProofreadingToolbar),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Flexed(1, a.layoutProofreadingComparePanes),

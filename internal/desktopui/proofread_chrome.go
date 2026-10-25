@@ -177,7 +177,9 @@ func (a *App) layoutProofreadingToolbar(gtx layout.Context) layout.Dimensions {
 						return layoutProofreadingToolbarPill(gtx, a, 126, "clock-3", "proofread.toolbar.unreviewed_filter")
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(16), 0)} }),
-					layout.Flexed(1, a.layoutProofreadingOCRStatus),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
+					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Dp(12), 0)} }),
 					layout.Rigid(a.layoutProofreadingOCRAction),
 				)
@@ -287,19 +289,31 @@ func (a *App) layoutProofreadingStatus(gtx layout.Context) layout.Dimensions {
 			if a.proofreading != nil && a.proofreading.bDocument != nil {
 				labelKey = proofreadingStatusBarKey(a.proofreading)
 			}
+			ocrMessage, ocrColor, hasOCRMessage := a.proofreadingOCRStatusText()
+			iconName := "lock-keyhole"
+			iconColor := color.NRGBA{R: 117, G: 128, B: 139, A: 255}
+			if hasOCRMessage {
+				iconName = "scan"
+				iconColor = ocrColor
+			}
 			return layout.Inset{Left: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layoutProofreadingIcon(gtx, "ribbon", "lock-keyhole", 15, color.NRGBA{R: 117, G: 128, B: 139, A: 255})
+						return layoutProofreadingIcon(gtx, "ribbon", iconName, 15, iconColor)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							message := a.textID(labelKey)
-							if a.proofreading != nil && a.proofreading.history.notice != "" {
+							messageColor := color.NRGBA{R: 104, G: 115, B: 126, A: 255}
+							if hasOCRMessage {
+								message = ocrMessage
+								messageColor = ocrColor
+							} else if a.proofreading != nil && a.proofreading.history.notice != "" {
 								message = a.proofreading.history.notice
 							}
 							label := material.Label(a.theme, 10, message)
-							label.Color = color.NRGBA{R: 104, G: 115, B: 126, A: 255}
+							label.Color = messageColor
+							label.MaxLines = 1
 							return layoutProofreadingOpticallyCenteredLabel(gtx, label)
 						})
 					}),

@@ -25,6 +25,7 @@ type proofreadingOCRStage uint8
 
 const (
 	proofreadingOCRIdle proofreadingOCRStage = iota
+	proofreadingOCRCheckingCache
 	proofreadingOCRAuthenticating
 	proofreadingOCRUploading
 	proofreadingOCRPending
@@ -54,6 +55,8 @@ type proofreadingOCRResult struct {
 	generation       uint64
 	pages            []proofreadingOCRPage
 	err              error
+	cacheErr         error
+	cacheHit         bool
 	persistenceErr   error
 	terminalJobState string
 	authRejected     bool
@@ -67,6 +70,7 @@ type proofreadingOCRCredentialResult struct {
 	auth       proofreadingOCRAuthentication
 	token      string
 	found      bool
+	cacheErr   error
 	err        error
 }
 
@@ -146,6 +150,8 @@ type proofreadingOCRScan struct {
 	authRejected        bool
 	awaitingPersistJob  string
 	currentJobID        string
+	cacheHit            bool
+	cacheErr            string
 }
 
 func newProofreadingOCRScan() *proofreadingOCRScan {
@@ -163,7 +169,7 @@ func (s *proofreadingOCRScan) active() bool {
 	if s == nil {
 		return false
 	}
-	return s.stage == proofreadingOCRAuthenticating || s.stage == proofreadingOCRUploading || s.stage == proofreadingOCRPending || s.stage == proofreadingOCRRunning || s.stage == proofreadingOCRMatching
+	return s.stage == proofreadingOCRCheckingCache || s.stage == proofreadingOCRAuthenticating || s.stage == proofreadingOCRUploading || s.stage == proofreadingOCRPending || s.stage == proofreadingOCRRunning || s.stage == proofreadingOCRMatching
 }
 
 func (s *proofreadingOCRScan) close() {
@@ -200,6 +206,8 @@ func (s *proofreadingOCRScan) cancelTask() {
 	s.sourceBHash = ""
 	s.authLookup = false
 	s.awaitingPersistJob = ""
+	s.cacheHit = false
+	s.cacheErr = ""
 	s.stage = proofreadingOCRCancelled
 }
 
@@ -218,7 +226,7 @@ func (a *App) openProofreadingOCRTokenDialog() {
 		return
 	}
 	var job *proofreadingOCRJobRecord
-	if a != nil && a.proofreading != nil && a.proofreading.ocrJob != nil && a.proofreading.ocrScan.stage != proofreadingOCRComplete {
+	if a != nil && a.proofreading != nil && a.proofreading.ocrJob != nil {
 		if candidate, ok := proofreadingOCRResumeJob(a.proofreading.ocrJob, a.proofreading.aSourceHash, a.proofreading.sourceBHash, a.proofreading.bDraftText); ok {
 			job = candidate
 			endpoint = candidate.Endpoint
@@ -337,17 +345,16 @@ func (a *App) requestProofreadingOCRScan() {
 		return
 	}
 	var resumeRecord *proofreadingOCRJobRecord
-	if state.ocrJob != nil && state.ocrScan.stage != proofreadingOCRComplete {
+	if state.ocrJob != nil {
 		if candidate, ok := proofreadingOCRResumeJob(state.ocrJob, state.aSourceHash, state.sourceBHash, state.bDraftText); ok {
 			resumeRecord = candidate
 			endpoint = candidate.Endpoint
 		}
 	}
 	store := a.proofreadingStore()
-	if store == nil {
-		a.openProofreadingOCRTokenDialogFor(endpoint, resumeRecord)
-		return
-	}
+	info := a.pdfDoc.Info()
+	markdown := state.bDraftText
+	sourceAHash := state.aSourceHash
 	if state.ocrScan.cancel != nil {
 		state.ocrScan.cancel()
 	}
@@ -358,17 +365,79 @@ func (a *App) requestProofreadingOCRScan() {
 	scan.cancel = cancel
 	scan.authLookup = true
 	scan.authRejected = false
-	scan.stage = proofreadingOCRAuthenticating
+	scan.stage = proofreadingOCRCheckingCache
 	scan.notice = ""
 	scan.err = ""
+	scan.cacheHit = false
+	scan.cacheErr = ""
+	scan.current = -1
+	scan.total = max(1, info.Pages)
+	scan.extracted = 0
+	scan.startedAt = time.Now()
+	scan.currentJobID = ""
+	scan.pages = nil
+	a.refreshProofreadingOCRMissingPageCandidates()
+	scan.markdownSnapshot = markdown
+	scan.markdownSnapshotSet = true
+	scan.sourceAHash = sourceAHash
+	scan.sourceBHash = state.sourceBHash
 	credentials := state.ocrCredentialStore
 	if credentials == nil {
 		credentials = agentsettings.SystemCredentialStore{}
 	}
 	resultChannel, window, shutdown := scan.credentials, a.window, a.shutdown
 	if !a.launchManagedBackground(func() {
-		auth, token, found, lookupErr := loadProofreadingOCRAuthentication(ctx, credentials, store, endpoint)
-		result := proofreadingOCRCredentialResult{generation: generation, endpoint: endpoint, job: resumeRecord, auth: auth, token: token, found: found, err: lookupErr}
+		finishScan := func(result proofreadingOCRResult) {
+			result.generation = generation
+			select {
+			case scan.results <- result:
+				if window != nil {
+					window.Invalidate()
+				}
+			case <-shutdown:
+			}
+		}
+		publishProgress := func(progress proofreadingOCRProgress) {
+			progress.generation = generation
+			select {
+			case scan.progress <- progress:
+			default:
+				select {
+				case <-scan.progress:
+				default:
+				}
+				select {
+				case scan.progress <- progress:
+				default:
+				}
+			}
+			if window != nil {
+				window.Invalidate()
+			}
+		}
+		options, model := ocr.Options{}, ocr.DefaultModel
+		cachedPages, cacheHit, cacheErr := loadProofreadingOCRPageCache(sourceAHash, model, options, info.Pages)
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		if cacheHit {
+			publishProgress(proofreadingOCRProgress{stage: proofreadingOCRMatching, current: 0, total: len(cachedPages), extracted: len(cachedPages)})
+			aligned, alignErr := alignProofreadingOCRPages(ctx, cachedPages, markdown)
+			result := proofreadingOCRResult{cacheHit: true, cacheErr: cacheErr, err: alignErr, pages: aligned, cancelled: errors.Is(ctx.Err(), context.Canceled)}
+			finishScan(result)
+			return
+		}
+		publishProgress(proofreadingOCRProgress{stage: proofreadingOCRAuthenticating, total: max(1, info.Pages)})
+		var auth proofreadingOCRAuthentication
+		var token string
+		var found bool
+		var lookupErr error
+		if store == nil {
+			lookupErr = errors.New("OCR credential storage is unavailable")
+		} else {
+			auth, token, found, lookupErr = loadProofreadingOCRAuthentication(ctx, credentials, store, endpoint)
+		}
+		result := proofreadingOCRCredentialResult{generation: generation, endpoint: endpoint, job: resumeRecord, auth: auth, token: token, found: found, cacheErr: cacheErr, err: lookupErr}
 		select {
 		case resultChannel <- result:
 			if window != nil {
@@ -598,21 +667,15 @@ func (a *App) startProofreadingOCRScanWithAuthentication(token, endpoint string,
 			result.err = fmt.Errorf("OCR 返回 %d 页，PDF 共 %d 页；页码无法可靠对应", len(recognized), info.Pages)
 			return
 		}
-		layouts, alignedPages, err := proofreadingOCRAlignmentPages(recognized)
-		if err != nil {
-			result.err = err
-			return
+		expectedPages := info.Pages
+		if expectedPages <= 0 {
+			expectedPages = len(recognized)
 		}
-		aligned, err := textalign.Align(ctx, alignedPages, markdown, textalign.Options{})
-		if err != nil {
-			result.err = err
-			result.cancelled = errors.Is(ctx.Err(), context.Canceled)
-			return
+		if cacheErr := saveProofreadingOCRPageCache(sourceAHash, ocr.DefaultModel, jobRun.CompletedJob.ID, ocr.Options{}, recognized, expectedPages); cacheErr != nil {
+			result.cacheErr = cacheErr
 		}
-		result.pages = make([]proofreadingOCRPage, len(layouts))
-		for i := range layouts {
-			result.pages[i] = proofreadingOCRPage{layout: layouts[i], result: aligned[i]}
-		}
+		result.pages, result.err = alignProofreadingOCRPages(ctx, recognized, markdown)
+		result.cancelled = errors.Is(ctx.Err(), context.Canceled)
 	}) {
 		cancel()
 		if reader != nil {
@@ -652,6 +715,22 @@ func proofreadingOCRAlignmentPages(recognized []ocr.Page) ([]ocr.Layout, []texta
 	return layouts, pages, nil
 }
 
+func alignProofreadingOCRPages(ctx context.Context, recognized []ocr.Page, markdown string) ([]proofreadingOCRPage, error) {
+	layouts, pages, err := proofreadingOCRAlignmentPages(recognized)
+	if err != nil {
+		return nil, err
+	}
+	aligned, err := textalign.Align(ctx, pages, markdown, textalign.Options{})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]proofreadingOCRPage, len(layouts))
+	for i := range layouts {
+		result[i] = proofreadingOCRPage{layout: layouts[i], result: aligned[i]}
+	}
+	return result, nil
+}
+
 func (a *App) processProofreadingOCRScan(gtx layout.Context) {
 	if a == nil || a.proofreading == nil || a.proofreading.ocrScan == nil {
 		return
@@ -679,6 +758,10 @@ func (a *App) processProofreadingOCRScan(gtx layout.Context) {
 				continue
 			}
 			scan.authLookup = false
+			scan.cacheErr = ""
+			if result.cacheErr != nil {
+				scan.cacheErr = result.cacheErr.Error()
+			}
 			if scan.cancel != nil {
 				scan.cancel()
 				scan.cancel = nil
@@ -750,6 +833,12 @@ readResult:
 			scan.cancel()
 			scan.cancel = nil
 		}
+		scan.authLookup = false
+		scan.cacheHit = result.cacheHit
+		scan.cacheErr = ""
+		if result.cacheErr != nil {
+			scan.cacheErr = result.cacheErr.Error()
+		}
 		if result.cancelled {
 			scan.stage = proofreadingOCRCancelled
 			scan.err = ""
@@ -785,7 +874,7 @@ readResult:
 			scan.authRejected = false
 			if result.persistenceErr != nil {
 				scan.notice = "proofread.ai.status.resume_unavailable"
-			} else if scan.notice != "proofread.ai.status.resume_unavailable" {
+			} else {
 				scan.notice = ""
 			}
 		}

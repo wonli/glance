@@ -69,12 +69,11 @@ func (a *App) layoutProofreadingOCRAction(gtx layout.Context) layout.Dimensions 
 	})
 }
 
-func (a *App) layoutProofreadingOCRStatus(gtx layout.Context) layout.Dimensions {
-	scan := a.proofreading.ocrScan
-	if scan == nil {
-		scan = newProofreadingOCRScan()
-		a.proofreading.ocrScan = scan
+func (a *App) proofreadingOCRStatusText() (string, color.NRGBA, bool) {
+	if a == nil || a.proofreading == nil || a.proofreading.ocrScan == nil {
+		return "", color.NRGBA{}, false
 	}
+	scan := a.proofreading.ocrScan
 	statusID := scan.notice
 	args := i18n.Args{}
 	ink := color.NRGBA{R: 104, G: 120, B: 135, A: 255}
@@ -84,6 +83,8 @@ func (a *App) layoutProofreadingOCRStatus(gtx layout.Context) layout.Dimensions 
 		ink = color.NRGBA{R: 166, G: 67, B: 61, A: 255}
 	} else if statusID == "" {
 		switch scan.stage {
+		case proofreadingOCRCheckingCache:
+			statusID = "proofread.ai.status.cache_checking"
 		case proofreadingOCRAuthenticating:
 			statusID = "proofread.ai.status.authenticating"
 		case proofreadingOCRUploading:
@@ -98,38 +99,55 @@ func (a *App) layoutProofreadingOCRStatus(gtx layout.Context) layout.Dimensions 
 		case proofreadingOCRMatching:
 			statusID = "proofread.ai.status.matching"
 		case proofreadingOCRComplete:
-			statusID = "proofread.ai.status.complete"
-			matched, ambiguous, unmatched, limited := 0, 0, 0, 0
-			for _, page := range scan.pages {
-				switch page.result.Status {
-				case "matched":
-					matched++
-				case "ambiguous":
-					ambiguous++
-				case "limited":
-					limited++
-				default:
-					unmatched++
-				}
+			args = proofreadingOCRSummaryArgs(a, scan)
+			switch {
+			case scan.cacheErr != "":
+				statusID = "proofread.ai.status.cache_save_failed"
+				args["Error"] = scan.cacheErr
+				ink = color.NRGBA{R: 166, G: 67, B: 61, A: 255}
+			case scan.cacheHit:
+				statusID = "proofread.ai.status.cache_reused"
+			default:
+				statusID = "proofread.ai.status.cache_saved"
 			}
-			args["Pages"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(len(scan.pages)))
-			args["Matched"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(matched))
-			args["Ambiguous"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(ambiguous))
-			args["Unmatched"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(unmatched))
-			args["Limited"] = i18n.FormatNumber(a.localeSnapshot().Resolved, float64(limited))
 		case proofreadingOCRCancelled:
 			statusID = "proofread.ai.status.cancelled"
 		default:
-			statusID = "proofread.ai.status.ready"
+			return "", color.NRGBA{}, false
 		}
 	}
-	if statusID == "" {
-		statusID = "proofread.ai.status.ready"
+	if statusID == "proofread.ai.status.cache_save_failed" && scan.cacheErr != "" {
+		args["Error"] = scan.cacheErr
+		ink = color.NRGBA{R: 166, G: 67, B: 61, A: 255}
 	}
-	label := material.Label(a.theme, 10, a.textArgs(statusID, args))
-	label.Color = ink
-	label.MaxLines = 1
-	return label.Layout(gtx)
+	return a.textArgs(statusID, args), ink, true
+}
+
+func proofreadingOCRSummaryArgs(a *App, scan *proofreadingOCRScan) i18n.Args {
+	args := i18n.Args{}
+	if a == nil || scan == nil {
+		return args
+	}
+	matched, ambiguous, unmatched, limited := 0, 0, 0, 0
+	for _, page := range scan.pages {
+		switch page.result.Status {
+		case "matched":
+			matched++
+		case "ambiguous":
+			ambiguous++
+		case "limited":
+			limited++
+		default:
+			unmatched++
+		}
+	}
+	locale := a.localeSnapshot().Resolved
+	args["Pages"] = i18n.FormatNumber(locale, float64(len(scan.pages)))
+	args["Matched"] = i18n.FormatNumber(locale, float64(matched))
+	args["Ambiguous"] = i18n.FormatNumber(locale, float64(ambiguous))
+	args["Unmatched"] = i18n.FormatNumber(locale, float64(unmatched))
+	args["Limited"] = i18n.FormatNumber(locale, float64(limited))
+	return args
 }
 
 func (a *App) drawProofreadingOCRThumbnailStatus(gtx layout.Context, size image.Point, pageIndex int) {
