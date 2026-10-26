@@ -405,9 +405,11 @@ func loadProofreadingOCRStepHistory(ctx context.Context, sourceAHash string, pag
 		draftHash := proofreadingOCRDraftSnapshotHash(xPage.Content)
 		comparison, found, err := loadProofreadingOCRComparisonCache(sourceAHash, pageIndex, pageIndex, draftHash)
 		if err != nil || !found || comparison.SourceHash != sourceAHash || comparison.DraftHash != draftHash ||
-			comparison.APage != pageIndex || comparison.BPage != pageIndex || comparison.BText != xPage.Content ||
-			comparison.BStart != xPage.ContentStart || comparison.BEnd != xPage.ContentEnd {
+			comparison.APage != pageIndex || comparison.BPage != pageIndex || comparison.BText != xPage.Content {
 			continue
+		}
+		if comparison.BStart != xPage.ContentStart || comparison.BEnd != xPage.ContentEnd {
+			rebaseProofreadingOCRStepComparison(&comparison, xPage.ContentStart)
 		}
 
 		cachedPage, found, err := loadProofreadingOCRCachePage(sourceAHash, ocr.DefaultModel, ocr.Options{}, pageIndex+1, pageCount)

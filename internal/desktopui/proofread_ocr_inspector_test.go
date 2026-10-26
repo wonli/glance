@@ -308,3 +308,67 @@ func TestProofreadingResolvedBadgesKeepNumbersAndColorsAndNoDiffBadge(t *testing
 		t.Fatalf("scrolling should still have 0 diff connections, got %d", len(step.currentConnections))
 	}
 }
+
+func TestProofreadingBadgeClickAlwaysOpensProcessingDialogEvenWhenAllResolved(t *testing.T) {
+	a, gtx, comparison := proofreadingConnectorFixture(1)
+	page := a.proofreading.xPages[3]
+
+	comparison.Frames = []proofreadingOCRDiffFrame{
+		{Kind: proofreadingOCRDiffReplace, BPosition: page.ContentStart + 1, AChar: '1', BChar: 'b', ABlockID: 7, AOffset: 0},
+		{Kind: proofreadingOCRDiffReplace, BPosition: page.ContentStart + 6, AChar: '2', BChar: 'b', ABlockID: 7, AOffset: 1},
+	}
+	pair := proofreadingOCRStepPair{APage: comparison.APage, BPage: comparison.BPage}
+	a.proofreading.ocrStep.comparisons[pair] = comparison
+	step := a.proofreading.ocrStep
+	step.currentConnections = []proofreadingOCRConnection{
+		{from: image.Pt(100, 50), to: image.Pt(400, 50), kind: proofreadingOCRDiffReplace, frame: comparison.Frames[0]},
+		{from: image.Pt(100, 80), to: image.Pt(400, 80), kind: proofreadingOCRDiffReplace, frame: comparison.Frames[1]},
+	}
+
+	// 1. Resolve both diffs and transition to completion
+	a.openProofreadingDiffInspector(0)
+	a.adoptProofreadingDiffInspector() // diff 0 adopted -> moves to diff 1
+	a.keepProofreadingDiffInspector()  // diff 1 kept -> all 2 resolved
+
+	if !step.inspector.allResolved {
+		t.Fatal("expected allResolved to be true after resolving all items")
+	}
+
+	// 2. Click badge 0: must open processing dialog for diff 0, NOT the completion dialog!
+	a.openProofreadingDiffInspector(0)
+	if !step.inspector.open {
+		t.Fatal("expected inspector to be open")
+	}
+	if step.inspector.allResolved {
+		t.Fatal("expected allResolved to be false when user clicks a badge, but it was true")
+	}
+	if step.inspector.diffIndex != 0 {
+		t.Fatalf("expected diffIndex=0, got %d", step.inspector.diffIndex)
+	}
+
+	// 3. User navigates with next / prev buttons: must remain in processing dialog
+	a.navigateProofreadingDiffInspector(1)
+	if step.inspector.diffIndex != 1 || step.inspector.allResolved {
+		t.Fatalf("expected diffIndex=1 with allResolved=false, got idx=%d allResolved=%v", step.inspector.diffIndex, step.inspector.allResolved)
+	}
+	a.navigateProofreadingDiffInspector(-1)
+	if step.inspector.diffIndex != 0 || step.inspector.allResolved {
+		t.Fatalf("expected diffIndex=0 with allResolved=false, got idx=%d allResolved=%v", step.inspector.diffIndex, step.inspector.allResolved)
+	}
+
+	// 4. Test reverting diff 0 back to unresolved
+	if !step.inspector.resolved[0] {
+		t.Fatal("expected diff 0 to initially be marked resolved")
+	}
+	// Trigger layout to register clickable and invoke revertBtn
+	_ = a.layoutProofreadingDiffInspector(gtx)
+	step.inspector.revertBtn.Click()
+	_ = a.layoutProofreadingDiffInspector(gtx)
+
+	if step.inspector.resolved[0] {
+		t.Fatal("expected diff 0 to be reverted (unresolved), but resolved[0] is still true")
+	}
+	if step.inspector.allResolved {
+		t.Fatal("expected allResolved to be false after reverting")
+	}
+}

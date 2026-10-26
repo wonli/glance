@@ -26,6 +26,7 @@ type proofreadingProjectPayload struct {
 	Pushed           string                          `json:"pushed,omitempty"`
 	OCRJob           *proofreadingOCRJobRecord       `json:"ocr_job,omitempty"`
 	OCRBatch         *proofreadingOCRBatchCheckpoint `json:"ocr_batch,omitempty"`
+	DiffExceptions   []string                        `json:"diff_exceptions,omitempty"`
 }
 
 func (a *App) proofreadingStore() *workspace.Store {

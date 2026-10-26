@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"strings"
+	"time"
 
 	"gioui.org/f32"
 	"gioui.org/font"
@@ -22,38 +24,66 @@ import (
 	"glance/internal/proofreading"
 )
 
+const (
+	proofreadingResolvedNone      = ""
+	proofreadingResolvedAdopted   = "adopted"
+	proofreadingResolvedKept      = "kept"
+	proofreadingResolvedIgnored   = "ignored"
+	proofreadingResolvedException = "exception"
+)
+
 type proofreadingDiffInspector struct {
-	open             bool
-	pair             proofreadingOCRStepPair
-	connections      []proofreadingOCRConnection
-	diffIndex        int
-	resolved         map[int]bool
-	resolvedByPage   map[int]map[int]bool
-	allResolved      bool
-	editor           widget.Editor
-	editorText       string
-	editorPage       int
-	editorRangeStart int
-	editorRangeEnd   int
-	diffRelStart     int
-	diffRelEnd       int
+	open                  bool
+	pair                  proofreadingOCRStepPair
+	connections           []proofreadingOCRConnection
+	diffIndex             int
+	resolved              map[int]bool
+	resolvedByPage        map[int]map[int]bool
+	resolvedReasons       map[int]string
+	resolvedReasonsByPage map[int]map[int]string
+	allResolved           bool
+	editor                widget.Editor
+	editorText            string
+	editorPage            int
+	editorRangeStart      int
+	editorRangeEnd        int
+	diffRelStart          int
+	diffRelEnd            int
 
 	adoptPdfBtn    widget.Clickable
 	keepCurrentBtn widget.Clickable
 	ignoreBtn      widget.Clickable
+	revertBtn      widget.Clickable
 	prevBtn        widget.Clickable
 	nextBtn        widget.Clickable
 	closeBtn       widget.Clickable
 	finishBtn      widget.Clickable
 	scrimClick     widget.Clickable
 	cardClick      widget.Clickable
+
+	// 例外规则系统
+	exceptions          proofreadingDiffExceptionState
+	exceptionBtn        widget.Clickable
+	manageExceptionsBtn widget.Clickable
+	exceptionsOpen      bool
+	exceptionEditor     widget.Editor
+	addExceptionBtn     widget.Clickable
+	closeExceptionsBtn  widget.Clickable
+	removeRuleBtns      []widget.Clickable
+	exceptionToast      string
+	exceptionToastTimer time.Time
 }
 
 func newProofreadingDiffInspector() proofreadingDiffInspector {
-	return proofreadingDiffInspector{
-		resolved:       make(map[int]bool),
-		resolvedByPage: make(map[int]map[int]bool),
+	insp := proofreadingDiffInspector{
+		resolved:              make(map[int]bool),
+		resolvedByPage:        make(map[int]map[int]bool),
+		resolvedReasons:       make(map[int]string),
+		resolvedReasonsByPage: make(map[int]map[int]string),
+		exceptions:            newProofreadingDiffExceptionState(),
 	}
+	insp.exceptionEditor.SingleLine = true
+	return insp
 }
 
 func (insp *proofreadingDiffInspector) pageResolved(page int) map[int]bool {
@@ -66,6 +96,18 @@ func (insp *proofreadingDiffInspector) pageResolved(page int) map[int]bool {
 		insp.resolvedByPage[page] = res
 	}
 	return res
+}
+
+func (insp *proofreadingDiffInspector) pageReasons(page int) map[int]string {
+	if insp.resolvedReasonsByPage == nil {
+		insp.resolvedReasonsByPage = make(map[int]map[int]string)
+	}
+	reasons, ok := insp.resolvedReasonsByPage[page]
+	if !ok {
+		reasons = make(map[int]string)
+		insp.resolvedReasonsByPage[page] = reasons
+	}
+	return reasons
 }
 
 func (a *App) openProofreadingDiffInspector(badgeIndex int) {
@@ -107,8 +149,195 @@ func (a *App) openProofreadingDiffInspectorForPair(pair proofreadingOCRStepPair,
 	step.inspector.diffIndex = badgeIndex
 	step.inspector.editorPage = comparison.BPage
 	step.inspector.resolved = step.inspector.pageResolved(comparison.BPage)
+	step.inspector.resolvedReasons = step.inspector.pageReasons(comparison.BPage)
 	step.inspector.allResolved = false
-	a.syncProofreadingDiffInspectorState(badgeIndex)
+
+	// 打开时先应用当前已定义的例外规则
+	a.applyExceptionsToCurrentPage(false)
+
+	target := badgeIndex
+	step.inspector.diffIndex = target
+	a.syncProofreadingDiffInspectorState(target)
+}
+
+func (a *App) applyExceptionsToCurrentPage(reportCount bool) int {
+	s := a.proofreading
+	if s == nil || s.ocrStep == nil {
+		return 0
+	}
+	step := s.ocrStep
+	res := step.inspector.pageResolved(step.inspector.editorPage)
+	reasons := step.inspector.pageReasons(step.inspector.editorPage)
+
+	skipped := 0
+	for i, conn := range step.inspector.connections {
+		if res[i] {
+			continue
+		}
+		if step.inspector.exceptions.Matches(conn.frame) {
+			res[i] = true
+			reasons[i] = proofreadingResolvedException
+			skipped++
+		}
+	}
+	step.inspector.resolved = res
+	step.inspector.resolvedReasons = reasons
+	return skipped
+}
+
+func (a *App) toggleCurrentDiffException() {
+	s := a.proofreading
+	if s == nil || s.ocrStep == nil {
+		return
+	}
+	step := s.ocrStep
+	idx := step.inspector.diffIndex
+	if idx < 0 || idx >= len(step.inspector.connections) {
+		return
+	}
+	frame := step.inspector.connections[idx].frame
+
+	var targetChar rune
+	if frame.AChar != 0 {
+		targetChar = frame.AChar
+	} else if frame.BChar != 0 {
+		targetChar = frame.BChar
+	}
+	if targetChar == 0 {
+		return
+	}
+
+	if step.inspector.exceptions.Contains(targetChar) {
+		// 从例外中移除
+		step.inspector.exceptions.RemoveCharException(targetChar)
+		res := step.inspector.pageResolved(step.inspector.editorPage)
+		reasons := step.inspector.pageReasons(step.inspector.editorPage)
+		for i, conn := range step.inspector.connections {
+			if reasons[i] == proofreadingResolvedException {
+				if !step.inspector.exceptions.Matches(conn.frame) {
+					delete(res, i)
+					delete(reasons, i)
+				}
+			}
+		}
+		step.inspector.resolved = res
+		step.inspector.resolvedReasons = reasons
+		step.inspector.allResolved = false
+		step.inspector.exceptionToast = fmt.Sprintf("已将「%c」从例外中移除", targetChar)
+		step.inspector.exceptionToastTimer = time.Now()
+		a.advanceProofreadingDiffInspector(0)
+	} else {
+		// 添加到例外
+		step.inspector.exceptions.AddCharException(targetChar)
+		res := step.inspector.pageResolved(step.inspector.editorPage)
+		reasons := step.inspector.pageReasons(step.inspector.editorPage)
+		res[idx] = true
+		reasons[idx] = proofreadingResolvedException
+		skipped := 1
+		for i, conn := range step.inspector.connections {
+			if i == idx || res[i] {
+				continue
+			}
+			if step.inspector.exceptions.Matches(conn.frame) {
+				res[i] = true
+				reasons[i] = proofreadingResolvedException
+				skipped++
+			}
+		}
+		step.inspector.resolved = res
+		step.inspector.resolvedReasons = reasons
+		if skipped > 1 {
+			step.inspector.exceptionToast = fmt.Sprintf("已将「%c」添加到例外，跳过 %d 处同类差异", targetChar, skipped)
+		} else {
+			step.inspector.exceptionToast = fmt.Sprintf("已将「%c」添加到例外", targetChar)
+		}
+		step.inspector.exceptionToastTimer = time.Now()
+		a.advanceProofreadingDiffInspector(1)
+	}
+}
+
+func (a *App) applyCurrentDiffAsException() {
+	a.toggleCurrentDiffException()
+}
+
+func (a *App) removeProofreadingDiffException(ruleIndex int) {
+	s := a.proofreading
+	if s == nil || s.ocrStep == nil {
+		return
+	}
+	step := s.ocrStep
+	if !step.inspector.exceptions.RemoveRuleAt(ruleIndex) {
+		return
+	}
+
+	res := step.inspector.pageResolved(step.inspector.editorPage)
+	reasons := step.inspector.pageReasons(step.inspector.editorPage)
+	for i, conn := range step.inspector.connections {
+		if reasons[i] == proofreadingResolvedException {
+			if !step.inspector.exceptions.Matches(conn.frame) {
+				delete(res, i)
+				delete(reasons, i)
+			}
+		}
+	}
+	step.inspector.resolved = res
+	step.inspector.resolvedReasons = reasons
+	step.inspector.allResolved = false
+	step.inspector.exceptionToast = "已更新例外规则"
+	step.inspector.exceptionToastTimer = time.Now()
+
+	// 重新同步当前状态
+	a.advanceProofreadingDiffInspector(0)
+}
+
+func (a *App) findNextUnresolvedDiffIndex(startIndex, direction int) int {
+	s := a.proofreading
+	if s == nil || s.ocrStep == nil {
+		return -1
+	}
+	step := s.ocrStep
+	connections := step.inspector.connections
+	total := len(connections)
+	if total == 0 {
+		return -1
+	}
+	res := step.inspector.pageResolved(step.inspector.editorPage)
+
+	allResolved := true
+	for i := 0; i < total; i++ {
+		if !res[i] {
+			allResolved = false
+			break
+		}
+	}
+	if allResolved {
+		return -1
+	}
+
+	if direction >= 0 {
+		for i := startIndex + 1; i < total; i++ {
+			if !res[i] {
+				return i
+			}
+		}
+		for i := 0; i <= startIndex; i++ {
+			if !res[i] {
+				return i
+			}
+		}
+	} else {
+		for i := startIndex - 1; i >= 0; i-- {
+			if !res[i] {
+				return i
+			}
+		}
+		for i := total - 1; i >= startIndex; i-- {
+			if !res[i] {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 func (a *App) syncProofreadingDiffInspectorState(badgeIndex int) {
@@ -205,8 +434,11 @@ func (a *App) adoptProofreadingDiffInspector() {
 
 	a.commitInspectorTextChange(step.inspector.editorPage, newSnippet)
 	res := step.inspector.pageResolved(step.inspector.editorPage)
+	reasons := step.inspector.pageReasons(step.inspector.editorPage)
 	res[step.inspector.diffIndex] = true
+	reasons[step.inspector.diffIndex] = proofreadingResolvedAdopted
 	step.inspector.resolved = res
+	step.inspector.resolvedReasons = reasons
 	a.advanceProofreadingDiffInspector(1)
 }
 
@@ -221,9 +453,34 @@ func (a *App) keepProofreadingDiffInspector() {
 		a.commitInspectorTextChange(step.inspector.editorPage, currentSnippet)
 	}
 	res := step.inspector.pageResolved(step.inspector.editorPage)
+	reasons := step.inspector.pageReasons(step.inspector.editorPage)
 	res[step.inspector.diffIndex] = true
+	reasons[step.inspector.diffIndex] = proofreadingResolvedKept
 	step.inspector.resolved = res
+	step.inspector.resolvedReasons = reasons
 	a.advanceProofreadingDiffInspector(1)
+}
+
+func (a *App) navigateProofreadingDiffInspector(delta int) {
+	s := a.proofreading
+	if s == nil || s.ocrStep == nil {
+		return
+	}
+	step := s.ocrStep
+	total := len(step.inspector.connections)
+	if total == 0 {
+		step.inspector.open = false
+		return
+	}
+	newIdx := step.inspector.diffIndex + delta
+	if newIdx < 0 {
+		newIdx = total - 1
+	} else if newIdx >= total {
+		newIdx = 0
+	}
+	step.inspector.diffIndex = newIdx
+	step.inspector.allResolved = false
+	a.syncProofreadingDiffInspectorState(newIdx)
 }
 
 func (a *App) advanceProofreadingDiffInspector(delta int) {
@@ -242,22 +499,21 @@ func (a *App) advanceProofreadingDiffInspector(delta int) {
 	res := step.inspector.pageResolved(step.inspector.editorPage)
 	step.inspector.resolved = res
 
-	next := step.inspector.diffIndex + delta
-	if next >= total {
-		allDone := true
-		for i := 0; i < total; i++ {
-			if !res[i] {
-				allDone = false
-				next = i
-				break
+	if delta == 0 {
+		if step.inspector.diffIndex >= 0 && step.inspector.diffIndex < total {
+			if !res[step.inspector.diffIndex] {
+				step.inspector.allResolved = false
+				a.syncProofreadingDiffInspectorState(step.inspector.diffIndex)
+				return
 			}
 		}
-		if allDone {
-			step.inspector.allResolved = true
-			return
-		}
-	} else if next < 0 {
-		next = total - 1
+		delta = 1
+	}
+
+	next := a.findNextUnresolvedDiffIndex(step.inspector.diffIndex, delta)
+	if next < 0 {
+		step.inspector.allResolved = true
+		return
 	}
 
 	step.inspector.diffIndex = next
@@ -336,6 +592,29 @@ func (a *App) commitInspectorTextChange(bPage int, newSnippet string) {
 			s.ocrStep.diffDraftHash = comp.DraftHash
 		}
 		_ = saveProofreadingOCRComparisonCache(comp)
+
+		if delta != 0 {
+			for otherPair, otherComp := range s.ocrStep.comparisons {
+				if otherPair.BPage <= pair.BPage {
+					continue
+				}
+				rebaseProofreadingOCRStepComparison(&otherComp, otherComp.BStart+delta)
+				s.ocrStep.comparisons[otherPair] = otherComp
+				if connections, exists := s.ocrStep.badgeConnections[otherPair]; exists {
+					for ci := range connections {
+						shiftProofreadingOCRConnection(&connections[ci], -1, delta)
+					}
+					s.ocrStep.badgeConnections[otherPair] = connections
+				}
+				if anchors, exists := s.ocrStep.badgeAnchors[otherPair]; exists {
+					for ai := range anchors {
+						anchors[ai].frame.BPosition += delta
+					}
+					s.ocrStep.badgeAnchors[otherPair] = anchors
+				}
+				_ = saveProofreadingOCRComparisonCache(otherComp)
+			}
+		}
 	}
 }
 
@@ -377,7 +656,41 @@ func (a *App) layoutProofreadingDiffInspector(gtx layout.Context) layout.Dimensi
 			break
 		}
 		if keyEv, isKey := ev.(key.Event); isKey && keyEv.State == key.Press {
-			step.inspector.open = false
+			if step.inspector.exceptionsOpen {
+				step.inspector.exceptionsOpen = false
+			} else {
+				step.inspector.open = false
+			}
+			gtx.Execute(op.InvalidateCmd{})
+		}
+	}
+
+	// Handle Tab key (跳过当前项)
+	for {
+		ev, ok := gtx.Event(key.Filter{Name: key.NameTab})
+		if !ok {
+			break
+		}
+		if keyEv, isKey := ev.(key.Event); isKey && keyEv.State == key.Press {
+			res := step.inspector.pageResolved(step.inspector.editorPage)
+			reasons := step.inspector.pageReasons(step.inspector.editorPage)
+			res[step.inspector.diffIndex] = true
+			reasons[step.inspector.diffIndex] = proofreadingResolvedIgnored
+			step.inspector.resolved = res
+			step.inspector.resolvedReasons = reasons
+			a.advanceProofreadingDiffInspector(1)
+			gtx.Execute(op.InvalidateCmd{})
+		}
+	}
+
+	// Handle E key (设为例外)
+	for {
+		ev, ok := gtx.Event(key.Filter{Name: "E"})
+		if !ok {
+			break
+		}
+		if keyEv, isKey := ev.(key.Event); isKey && keyEv.State == key.Press && !gtx.Focused(&step.inspector.editor) && !gtx.Focused(&step.inspector.exceptionEditor) {
+			a.applyCurrentDiffAsException()
 			gtx.Execute(op.InvalidateCmd{})
 		}
 	}
@@ -414,21 +727,31 @@ func (a *App) layoutProofreadingDiffInspector(gtx layout.Context) layout.Dimensi
 				Width: float32(max(1, gtx.Dp(1))),
 			}.Op())
 
-			// Card content layout
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return a.layoutProofreadingInspectorHeader(gtx, step, len(connections))
+			// Card content layout with modal overlay support
+			return layout.Stack{}.Layout(gtx,
+				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return a.layoutProofreadingInspectorHeader(gtx, step, len(connections))
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							size := image.Pt(cardW, max(1, gtx.Dp(1)))
+							paint.FillShape(gtx.Ops, proofreadChromeLine, clip.Rect{Max: size}.Op())
+							return layout.Dimensions{Size: size}
+						}),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							if step.inspector.allResolved {
+								return a.layoutProofreadingInspectorCompletion(gtx, step)
+							}
+							return a.layoutProofreadingInspectorBody(gtx, step, comparison, connections)
+						}),
+					)
 				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					size := image.Pt(cardW, max(1, gtx.Dp(1)))
-					paint.FillShape(gtx.Ops, proofreadChromeLine, clip.Rect{Max: size}.Op())
-					return layout.Dimensions{Size: size}
-				}),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					if step.inspector.allResolved {
-						return a.layoutProofreadingInspectorCompletion(gtx, step)
+				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+					if step.inspector.exceptionsOpen {
+						return a.layoutProofreadingExceptionsModal(gtx, step)
 					}
-					return a.layoutProofreadingInspectorBody(gtx, step, comparison, connections)
+					return layout.Dimensions{}
 				}),
 			)
 		})
@@ -467,6 +790,30 @@ func (a *App) layoutProofreadingInspectorHeader(gtx layout.Context, step *proofr
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 			// Left: Badge + Title + Kind Pill
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if step.inspector.allResolved {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							badgeR := gtx.Dp(4)
+							badgeSize := image.Pt(gtx.Dp(24), gtx.Dp(24))
+							badgeRect := image.Rect(0, 0, badgeSize.X, badgeSize.Y)
+							paint.FillShape(gtx.Ops, color.NRGBA{R: 34, G: 134, B: 58, A: 255}, clip.UniformRRect(badgeRect, badgeR).Op(gtx.Ops))
+							lbl := material.Label(a.theme, 12, "✓")
+							lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+							lbl.Font.Weight = font.Bold
+							layoutProofreadingInspectorCenteredLabel(gtx, badgeSize, lbl)
+							return layout.Dimensions{Size: badgeSize}
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Dimensions{Size: image.Pt(gtx.Dp(10), 0)}
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							title := material.Label(a.theme, 13, fmt.Sprintf("差异校对 (本页共 %d 处已全部完成)", total))
+							title.Font.Weight = font.Bold
+							title.Color = color.NRGBA{R: 30, G: 41, B: 59, A: 255}
+							return layoutProofreadingOpticallyCenteredLabel(gtx, title)
+						}),
+					)
+				}
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						badgeR := gtx.Dp(4)
@@ -509,16 +856,67 @@ func (a *App) layoutProofreadingInspectorHeader(gtx layout.Context, step *proofr
 						off.Pop()
 						return layout.Dimensions{Size: image.Pt(pillW, pillH)}
 					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !step.inspector.resolved[idx] {
+							return layout.Dimensions{}
+						}
+						statusText := "已处理"
+						statusBg := color.NRGBA{R: 240, G: 253, B: 244, A: 255}
+						statusBorder := color.NRGBA{R: 187, G: 247, B: 208, A: 255}
+						statusInk := color.NRGBA{R: 22, G: 101, B: 52, A: 255}
+						switch step.inspector.resolvedReasons[idx] {
+						case proofreadingResolvedAdopted:
+							statusText = "✓ 已采用原文"
+						case proofreadingResolvedKept:
+							statusText = "✓ 已维持当前"
+						case proofreadingResolvedIgnored:
+							statusText = "已跳过"
+							statusBg = color.NRGBA{R: 241, G: 245, B: 249, A: 255}
+							statusBorder = color.NRGBA{R: 226, G: 232, B: 240, A: 255}
+							statusInk = color.NRGBA{R: 100, G: 116, B: 139, A: 255}
+						case proofreadingResolvedException:
+							statusText = "例外排除"
+							statusBg = color.NRGBA{R: 254, G: 243, B: 199, A: 255}
+							statusBorder = color.NRGBA{R: 253, G: 230, B: 138, A: 255}
+							statusInk = color.NRGBA{R: 180, G: 83, B: 9, A: 255}
+						}
+						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Label(a.theme, 10, statusText)
+							lbl.Color = statusInk
+							lbl.Font.Weight = font.Medium
+							labelGtx := gtx
+							labelGtx.Constraints.Min.Y = 0
+							macro := op.Record(labelGtx.Ops)
+							dims := lbl.Layout(labelGtx)
+							call := macro.Stop()
+							pillH := gtx.Dp(22)
+							pillW := dims.Size.X + gtx.Dp(16)
+							pillRect := image.Rect(0, 0, pillW, pillH)
+							paint.FillShape(gtx.Ops, statusBg, clip.UniformRRect(pillRect, gtx.Dp(4)).Op(gtx.Ops))
+							paint.FillShape(gtx.Ops, statusBorder, clip.Stroke{
+								Path:  clip.UniformRRect(pillRect, gtx.Dp(4)).Path(gtx.Ops),
+								Width: float32(max(1, gtx.Dp(1))),
+							}.Op())
+							off := op.Offset(image.Pt((pillW-dims.Size.X)/2, (pillH-dims.Size.Y)/2)).Push(gtx.Ops)
+							call.Add(gtx.Ops)
+							off.Pop()
+							return layout.Dimensions{Size: image.Pt(pillW, pillH)}
+						})
+					}),
 				)
 			}),
-			// Right: Nav Buttons + Close Button
+			// Right: Exceptions Manager Button + Nav Buttons + Close Button
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if step.inspector.manageExceptionsBtn.Clicked(gtx) {
+					step.inspector.exceptionsOpen = !step.inspector.exceptionsOpen
+					gtx.Execute(op.InvalidateCmd{})
+				}
 				if step.inspector.prevBtn.Clicked(gtx) {
-					a.advanceProofreadingDiffInspector(-1)
+					a.navigateProofreadingDiffInspector(-1)
 					gtx.Execute(op.InvalidateCmd{})
 				}
 				if step.inspector.nextBtn.Clicked(gtx) {
-					a.advanceProofreadingDiffInspector(1)
+					a.navigateProofreadingDiffInspector(1)
 					gtx.Execute(op.InvalidateCmd{})
 				}
 				if step.inspector.closeBtn.Clicked(gtx) {
@@ -527,6 +925,39 @@ func (a *App) layoutProofreadingInspectorHeader(gtx layout.Context, step *proofr
 				}
 
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return step.inspector.manageExceptionsBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							ruleCount := len(step.inspector.exceptions.Rules)
+							label := "例外规则"
+							if ruleCount > 0 {
+								label = fmt.Sprintf("例外 (%d)", ruleCount)
+							}
+							btnH := gtx.Dp(28)
+							lbl := material.Label(a.theme, 11, label)
+							lbl.Color = color.NRGBA{R: 71, G: 85, B: 105, A: 255}
+							macro := op.Record(gtx.Ops)
+							dims := lbl.Layout(gtx)
+							call := macro.Stop()
+							btnW := dims.Size.X + gtx.Dp(18)
+							rect := image.Rect(0, 0, btnW, btnH)
+							bg := color.NRGBA{R: 241, G: 245, B: 249, A: 255}
+							if step.inspector.exceptionsOpen {
+								bg = color.NRGBA{R: 254, G: 243, B: 199, A: 255}
+							}
+							paint.FillShape(gtx.Ops, bg, clip.UniformRRect(rect, gtx.Dp(5)).Op(gtx.Ops))
+							paint.FillShape(gtx.Ops, color.NRGBA{R: 203, G: 213, B: 225, A: 255}, clip.Stroke{
+								Path:  clip.UniformRRect(rect, gtx.Dp(5)).Path(gtx.Ops),
+								Width: float32(max(1, gtx.Dp(1))),
+							}.Op())
+							off := op.Offset(image.Pt((btnW-dims.Size.X)/2, (btnH-dims.Size.Y)/2)).Push(gtx.Ops)
+							call.Add(gtx.Ops)
+							off.Pop()
+							return layout.Dimensions{Size: rect.Size()}
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Dimensions{Size: image.Pt(gtx.Dp(8), 0)}
+					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return step.inspector.prevBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return a.layoutInspectorHeaderIconButton(gtx, "excel", "chevron-left", "上一处")
@@ -746,7 +1177,7 @@ func (a *App) layoutInspectorPDFZoomedCrop(gtx layout.Context, step *proofreadin
 }
 
 func (a *App) layoutInspectorCenterRail(gtx layout.Context, step *proofreadingOCRStepState) layout.Dimensions {
-	railW := gtx.Dp(164)
+	railW := gtx.Dp(176)
 	gtx.Constraints = layout.Exact(image.Pt(railW, gtx.Constraints.Max.Y))
 
 	if step.inspector.adoptPdfBtn.Clicked(gtx) {
@@ -757,9 +1188,51 @@ func (a *App) layoutInspectorCenterRail(gtx layout.Context, step *proofreadingOC
 		a.keepProofreadingDiffInspector()
 		gtx.Execute(op.InvalidateCmd{})
 	}
+	if step.inspector.exceptionBtn.Clicked(gtx) {
+		a.toggleCurrentDiffException()
+		gtx.Execute(op.InvalidateCmd{})
+	}
 	if step.inspector.ignoreBtn.Clicked(gtx) {
+		res := step.inspector.pageResolved(step.inspector.editorPage)
+		reasons := step.inspector.pageReasons(step.inspector.editorPage)
+		res[step.inspector.diffIndex] = true
+		reasons[step.inspector.diffIndex] = proofreadingResolvedIgnored
+		step.inspector.resolved = res
+		step.inspector.resolvedReasons = reasons
 		a.advanceProofreadingDiffInspector(1)
 		gtx.Execute(op.InvalidateCmd{})
+	}
+	if step.inspector.revertBtn.Clicked(gtx) {
+		res := step.inspector.pageResolved(step.inspector.editorPage)
+		reasons := step.inspector.pageReasons(step.inspector.editorPage)
+		delete(res, step.inspector.diffIndex)
+		delete(reasons, step.inspector.diffIndex)
+		step.inspector.resolved = res
+		step.inspector.resolvedReasons = reasons
+		step.inspector.allResolved = false
+		gtx.Execute(op.InvalidateCmd{})
+	}
+
+	var currentFrame proofreadingOCRDiffFrame
+	if step.inspector.diffIndex >= 0 && step.inspector.diffIndex < len(step.inspector.connections) {
+		currentFrame = step.inspector.connections[step.inspector.diffIndex].frame
+	}
+	var targetChar rune
+	if currentFrame.AChar != 0 {
+		targetChar = currentFrame.AChar
+	} else if currentFrame.BChar != 0 {
+		targetChar = currentFrame.BChar
+	}
+	isException := targetChar != 0 && step.inspector.exceptions.Contains(targetChar)
+	exceptionBtnText := "添加到例外"
+	excBg := color.NRGBA{R: 254, G: 243, B: 199, A: 255}
+	excBorder := color.NRGBA{R: 245, G: 158, B: 11, A: 255}
+	excInk := color.NRGBA{R: 180, G: 83, B: 9, A: 255}
+	if isException {
+		exceptionBtnText = "从例外中移除"
+		excBg = color.NRGBA{R: 241, G: 245, B: 249, A: 255}
+		excBorder = color.NRGBA{R: 148, G: 163, B: 184, A: 255}
+		excInk = color.NRGBA{R: 71, G: 85, B: 105, A: 255}
 	}
 
 	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
@@ -788,7 +1261,7 @@ func (a *App) layoutInspectorCenterRail(gtx layout.Context, step *proofreadingOC
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(10))}
+					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(8))}
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					// Keep current button
@@ -809,12 +1282,33 @@ func (a *App) layoutInspectorCenterRail(gtx layout.Context, step *proofreadingOC
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(12))}
+					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(8))}
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					// Exception button (放到跳过按钮上面，支持添加到例外与从例外中移除)
+					return step.inspector.exceptionBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						btnW, btnH := gtx.Dp(136), gtx.Dp(30)
+						size := image.Pt(btnW, btnH)
+						gtx.Constraints = layout.Exact(size)
+						rect := image.Rect(0, 0, btnW, btnH)
+						paint.FillShape(gtx.Ops, excBg, clip.UniformRRect(rect, gtx.Dp(4)).Op(gtx.Ops))
+						paint.FillShape(gtx.Ops, excBorder, clip.Stroke{
+							Path:  clip.UniformRRect(rect, gtx.Dp(4)).Path(gtx.Ops),
+							Width: float32(max(1, gtx.Dp(1))),
+						}.Op())
+						lbl := material.Label(a.theme, 11, exceptionBtnText)
+						lbl.Font.Weight = font.Bold
+						lbl.Color = excInk
+						return layoutProofreadingInspectorCenteredLabel(gtx, size, lbl)
+					})
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(8))}
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					// Skip button
 					return step.inspector.ignoreBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						btnW, btnH := gtx.Dp(96), gtx.Dp(26)
+						btnW, btnH := gtx.Dp(110), gtx.Dp(26)
 						size := image.Pt(btnW, btnH)
 						gtx.Constraints = layout.Exact(size)
 						rect := image.Rect(0, 0, btnW, btnH)
@@ -829,12 +1323,43 @@ func (a *App) layoutInspectorCenterRail(gtx layout.Context, step *proofreadingOC
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if !step.inspector.resolved[step.inspector.diffIndex] {
+						return layout.Dimensions{}
+					}
+					return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return step.inspector.revertBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							btnW, btnH := gtx.Dp(110), gtx.Dp(26)
+							size := image.Pt(btnW, btnH)
+							gtx.Constraints = layout.Exact(size)
+							rect := image.Rect(0, 0, btnW, btnH)
+							paint.FillShape(gtx.Ops, color.NRGBA{R: 254, G: 242, B: 242, A: 255}, clip.UniformRRect(rect, gtx.Dp(4)).Op(gtx.Ops))
+							paint.FillShape(gtx.Ops, color.NRGBA{R: 252, G: 165, B: 165, A: 255}, clip.Stroke{
+								Path:  clip.UniformRRect(rect, gtx.Dp(4)).Path(gtx.Ops),
+								Width: float32(max(1, gtx.Dp(1))),
+							}.Op())
+							lbl := material.Label(a.theme, 10, "↩ 恢复为未处理")
+							lbl.Color = color.NRGBA{R: 220, G: 38, B: 38, A: 255}
+							return layoutProofreadingInspectorCenteredLabel(gtx, size, lbl)
+						})
+					})
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(6))}
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					hint := material.Label(a.theme, 9, "Esc 关闭 · Tab 跳过")
+					hint := material.Label(a.theme, 9, "Esc 关闭 · Tab 跳过 · E 设例外")
 					hint.Color = color.NRGBA{R: 148, G: 163, B: 184, A: 255}
 					return hint.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if step.inspector.exceptionToast != "" && time.Since(step.inspector.exceptionToastTimer) < 4*time.Second {
+						return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Label(a.theme, 9, "✓ "+step.inspector.exceptionToast)
+							lbl.Color = color.NRGBA{R: 22, G: 101, B: 52, A: 255}
+							return lbl.Layout(gtx)
+						})
+					}
+					return layout.Dimensions{}
 				}),
 			)
 		}),
@@ -919,6 +1444,7 @@ func (a *App) layoutProofreadingInspectorCompletion(gtx layout.Context, step *pr
 		gtx.Execute(op.InvalidateCmd{})
 	}
 
+	gtx.Constraints = layout.Exact(gtx.Constraints.Max)
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -977,4 +1503,226 @@ func layoutProofreadingInspectorFinishLabel(gtx layout.Context, size image.Point
 	call.Add(gtx.Ops)
 	off.Pop()
 	return layout.Dimensions{Size: size}
+}
+
+func (a *App) layoutProofreadingExceptionsModal(gtx layout.Context, step *proofreadingOCRStepState) layout.Dimensions {
+	w, h := gtx.Constraints.Max.X, gtx.Constraints.Max.Y
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 15, G: 23, B: 42, A: 120}, clip.Rect{Max: image.Pt(w, h)}.Op())
+
+	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		modalW := min(gtx.Dp(520), w-gtx.Dp(24))
+		modalH := min(gtx.Dp(320), h-gtx.Dp(24))
+		gtx.Constraints = layout.Exact(image.Pt(modalW, modalH))
+
+		mRect := image.Rect(0, 0, modalW, modalH)
+		mArea := clip.UniformRRect(mRect, gtx.Dp(8)).Push(gtx.Ops)
+		defer mArea.Pop()
+
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.UniformRRect(mRect, gtx.Dp(8)).Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 203, G: 213, B: 225, A: 255}, clip.Stroke{
+			Path:  clip.UniformRRect(mRect, gtx.Dp(8)).Path(gtx.Ops),
+			Width: float32(max(1, gtx.Dp(1))),
+		}.Op())
+
+		if step.inspector.closeExceptionsBtn.Clicked(gtx) {
+			step.inspector.exceptionsOpen = false
+			gtx.Execute(op.InvalidateCmd{})
+		}
+
+		if step.inspector.addExceptionBtn.Clicked(gtx) {
+			text := strings.TrimSpace(step.inspector.exceptionEditor.Text())
+			if text != "" {
+				for _, r := range text {
+					step.inspector.exceptions.AddCharException(r)
+				}
+				step.inspector.exceptionEditor.SetText("")
+				a.applyExceptionsToCurrentPage(true)
+				step.inspector.exceptionToast = fmt.Sprintf("已添加例外「%s」", text)
+				step.inspector.exceptionToastTimer = time.Now()
+				a.advanceProofreadingDiffInspector(0)
+			}
+			gtx.Execute(op.InvalidateCmd{})
+		}
+
+		return layout.Inset{Top: unit.Dp(14), Bottom: unit.Dp(14), Left: unit.Dp(18), Right: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				// Header
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									t := material.Label(a.theme, 13, "差异例外规则")
+									t.Font.Weight = font.Bold
+									t.Color = color.NRGBA{R: 15, G: 23, B: 42, A: 255}
+									return t.Layout(gtx)
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									st := material.Label(a.theme, 10, "添加到例外列表的字将在逐字扫描比对前直接排除，不作为差异扫描。")
+									st.Color = color.NRGBA{R: 100, G: 116, B: 139, A: 255}
+									return st.Layout(gtx)
+								}),
+							)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return step.inspector.closeExceptionsBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return a.layoutInspectorHeaderIconButton(gtx, "home", "x", "关闭例外管理")
+							})
+						}),
+					)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(12))}
+				}),
+				// 手动输入添加行（无预设，用户输入什么添加什么）
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							return layout.Background{}.Layout(gtx,
+								func(gtx layout.Context) layout.Dimensions {
+									r := gtx.Dp(4)
+									paint.FillShape(gtx.Ops, color.NRGBA{R: 248, G: 250, B: 252, A: 255}, clip.UniformRRect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Dp(30)), r).Op(gtx.Ops))
+									paint.FillShape(gtx.Ops, color.NRGBA{R: 203, G: 213, B: 225, A: 255}, clip.Stroke{
+										Path:  clip.UniformRRect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Dp(30)), r).Path(gtx.Ops),
+										Width: float32(max(1, gtx.Dp(1))),
+									}.Op())
+									return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, gtx.Dp(30))}
+								},
+								func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										ed := material.Editor(a.theme, &step.inspector.exceptionEditor, "输入要排除的字，如「（」或特定字符...")
+										ed.TextSize = 11
+										return ed.Layout(gtx)
+									})
+								},
+							)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Dimensions{Size: image.Pt(gtx.Dp(8), 0)}
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return step.inspector.addExceptionBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								btnW, btnH := gtx.Dp(96), gtx.Dp(30)
+								gtx.Constraints = layout.Exact(image.Pt(btnW, btnH))
+								paint.FillShape(gtx.Ops, color.NRGBA{R: 26, G: 115, B: 232, A: 255}, clip.UniformRRect(image.Rect(0, 0, btnW, btnH), gtx.Dp(4)).Op(gtx.Ops))
+								lbl := material.Label(a.theme, 11, "+ 添加到例外")
+								lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+								lbl.Font.Weight = font.Bold
+								return layoutProofreadingInspectorCenteredLabel(gtx, image.Pt(btnW, btnH), lbl)
+							})
+						}),
+					)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(12))}
+				}),
+				// 当前已生效规则列表
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return a.layoutProofreadingExceptionsList(gtx, step)
+				}),
+			)
+		})
+	})
+}
+
+func (a *App) layoutProofreadingExceptionsList(gtx layout.Context, step *proofreadingOCRStepState) layout.Dimensions {
+	rules := step.inspector.exceptions.Rules
+	if len(rules) == 0 {
+		emptyLbl := material.Label(a.theme, 11, "当前暂无例外规则。在差异弹窗中点击「设为例外」即可自动将字符加入。")
+		emptyLbl.Color = color.NRGBA{R: 148, G: 163, B: 184, A: 255}
+		return layout.Center.Layout(gtx, emptyLbl.Layout)
+	}
+
+	for len(step.inspector.removeRuleBtns) < len(rules) {
+		step.inspector.removeRuleBtns = append(step.inspector.removeRuleBtns, widget.Clickable{})
+	}
+
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			r := gtx.Dp(4)
+			rect := image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 248, G: 250, B: 252, A: 255}, clip.UniformRRect(rect, r).Op(gtx.Ops))
+			return layout.Dimensions{Size: rect.Size()}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				const perRow = 4
+				var rowChildren []layout.FlexChild
+				for r := 0; r < len(rules); r += perRow {
+					end := min(r+perRow, len(rules))
+					rowSlice := rules[r:end]
+					startIdx := r
+					rowChildren = append(rowChildren, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						var tags []layout.FlexChild
+						for j, rule := range rowSlice {
+							ruleIdx := startIdx + j
+							if step.inspector.removeRuleBtns[ruleIdx].Clicked(gtx) {
+								a.removeProofreadingDiffException(ruleIdx)
+								gtx.Execute(op.InvalidateCmd{})
+							}
+							currRule := rule
+							btn := &step.inspector.removeRuleBtns[ruleIdx]
+							tags = append(tags, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Right: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return a.layoutInspectorExceptionRuleTag(gtx, btn, currRule)
+								})
+							}))
+						}
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, tags...)
+					}))
+				}
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rowChildren...)
+			})
+		},
+	)
+}
+
+func (a *App) layoutInspectorExceptionRuleTag(gtx layout.Context, btn *widget.Clickable, rule proofreadingDiffException) layout.Dimensions {
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		label := rule.Label
+		if label == "" {
+			label = fmt.Sprintf("忽略 '%c'", rule.Char)
+		}
+		lbl := material.Label(a.theme, 10, label+" ✕")
+		lbl.Color = color.NRGBA{R: 180, G: 83, B: 9, A: 255}
+		macro := op.Record(gtx.Ops)
+		dims := lbl.Layout(gtx)
+		call := macro.Stop()
+
+		pillW := dims.Size.X + gtx.Dp(14)
+		pillH := gtx.Dp(22)
+		rect := image.Rect(0, 0, pillW, pillH)
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 254, G: 243, B: 199, A: 255}, clip.UniformRRect(rect, gtx.Dp(4)).Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 245, G: 158, B: 11, A: 255}, clip.Stroke{
+			Path:  clip.UniformRRect(rect, gtx.Dp(4)).Path(gtx.Ops),
+			Width: float32(max(1, gtx.Dp(1))),
+		}.Op())
+		off := op.Offset(image.Pt((pillW-dims.Size.X)/2, (pillH-dims.Size.Y)/2)).Push(gtx.Ops)
+		call.Add(gtx.Ops)
+		off.Pop()
+		return layout.Dimensions{Size: image.Pt(pillW, pillH)}
+	})
+}
+
+func (a *App) layoutInspectorChipButton(gtx layout.Context, btn *widget.Clickable, text string) layout.Dimensions {
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		lbl := material.Label(a.theme, 10, text)
+		lbl.Color = color.NRGBA{R: 26, G: 115, B: 232, A: 255}
+		macro := op.Record(gtx.Ops)
+		dims := lbl.Layout(gtx)
+		call := macro.Stop()
+
+		pillW := dims.Size.X + gtx.Dp(12)
+		pillH := gtx.Dp(22)
+		rect := image.Rect(0, 0, pillW, pillH)
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 239, G: 246, B: 255, A: 255}, clip.UniformRRect(rect, gtx.Dp(4)).Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 191, G: 219, B: 254, A: 255}, clip.Stroke{
+			Path:  clip.UniformRRect(rect, gtx.Dp(4)).Path(gtx.Ops),
+			Width: float32(max(1, gtx.Dp(1))),
+		}.Op())
+		off := op.Offset(image.Pt((pillW-dims.Size.X)/2, (pillH-dims.Size.Y)/2)).Push(gtx.Ops)
+		call.Add(gtx.Ops)
+		off.Pop()
+		return layout.Dimensions{Size: image.Pt(pillW, pillH)}
+	})
 }

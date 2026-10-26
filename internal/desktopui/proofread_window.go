@@ -256,6 +256,13 @@ type proofreadingWorkspace struct {
 	xUndoPaginationMenu widget.Clickable
 	xUndoPageBreak      widget.Clickable
 	xCanvas             widget.List
+
+	toolbarExceptionsBtn widget.Clickable
+	exceptionsModalOpen  bool
+	exceptionInput       widget.Editor
+	addExceptionBtn      widget.Clickable
+	closeExceptionsBtn   widget.Clickable
+	removeExceptionBtns  []widget.Clickable
 }
 
 type proofreadingSourceResult struct {

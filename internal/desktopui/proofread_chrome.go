@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"runtime"
@@ -238,9 +239,83 @@ func (a *App) layoutProofreadingToolbarModes(gtx layout.Context) layout.Dimensio
 			}
 			return a.layoutProofreadingToolbarAction(gtx, &step.compareButton, label, icon, 128, true, action)
 		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !state.aiProofreading {
+				return layout.Dimensions{}
+			}
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(8), 0)}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !state.aiProofreading {
+				return layout.Dimensions{}
+			}
+			return a.layoutProofreadingToolbarExceptionsAction(gtx, state)
+		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
 		}),
+	)
+}
+
+func (a *App) layoutProofreadingToolbarExceptionsAction(gtx layout.Context, state *proofreadingWorkspace) layout.Dimensions {
+	if a == nil || state == nil {
+		return layout.Dimensions{}
+	}
+	step := a.proofreadingOCRStep()
+	count := 0
+	if step != nil {
+		count = len(step.inspector.exceptions.List())
+	}
+	label := "例外管理"
+	if count > 0 {
+		label = fmt.Sprintf("例外管理 (%d)", count)
+	}
+	if state.toolbarExceptionsBtn.Clicked(gtx) {
+		state.exceptionsModalOpen = !state.exceptionsModalOpen
+		if a.window != nil {
+			a.window.Invalidate()
+		}
+	}
+	width := unit.Dp(112)
+	return state.toolbarExceptionsBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layoutProofreadingToolbarCustomActionVisual(gtx, a, label, "list-filter", width, false)
+	})
+}
+
+func layoutProofreadingToolbarCustomActionVisual(gtx layout.Context, a *App, label, iconName string, width unit.Dp, disabled bool) layout.Dimensions {
+	size := image.Pt(gtx.Dp(width), gtx.Dp(32))
+	fill := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	border := color.NRGBA{R: 213, G: 221, B: 229, A: 255}
+	ink := color.NRGBA{R: 47, G: 94, B: 131, A: 255}
+	if disabled {
+		fill = color.NRGBA{R: 247, G: 248, B: 250, A: 255}
+		border = color.NRGBA{R: 229, G: 233, B: 238, A: 255}
+		ink = color.NRGBA{R: 157, G: 165, B: 173, A: 255}
+	}
+	gtx.Constraints = layout.Exact(size)
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rect(0, 0, size.X, size.Y), gtx.Dp(6)).Op(gtx.Ops))
+			proofreadRoundedBorder(gtx, size, 6, border, max(1, gtx.Dp(1)))
+			return layout.Dimensions{Size: size}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layoutProofreadingIcon(gtx, "ribbon", iconName, 14, ink)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						lbl := material.Label(a.theme, 11, label)
+						lbl.Color = ink
+						lbl.Font.Weight = font.SemiBold
+						return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layoutProofreadingOpticallyCenteredLabel(gtx, lbl)
+						})
+					}),
+				)
+			})
+		},
 	)
 }
 

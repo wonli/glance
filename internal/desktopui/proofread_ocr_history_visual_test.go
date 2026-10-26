@@ -138,3 +138,55 @@ func TestProofreadingVisibleHistoryKeepsConnectorLines(t *testing.T) {
 		t.Fatal("visible history page lost its connector because another page was selected")
 	}
 }
+
+func TestProofreadingHistoryKeepsBadgesAndConnectorsWhenPriorPageShifted(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	a, gtx, comparison := proofreadingConnectorFixture(1)
+	s, step := a.proofreading, a.proofreading.ocrStep
+	a.pdfView.pageMap = []int{2, 3}
+	s.xPages[2] = s.xPages[3]
+	s.xPages[2].PageIndex = 2
+	s.xEditorWindows[2] = s.xEditorWindows[3]
+	s.xPageEditors[2].SetText(s.xPages[2].Content)
+	shape := gtx
+	shape.Constraints = layout.Constraints{Max: image.Pt(240, 1<<20)}
+	style := material.Editor(a.theme, &s.xPageEditors[2], "")
+	style.TextSize = 12
+	style.LineHeightScale = proofreadingXEditorLineHeightScale
+	style.Layout(shape)
+	step.pages[2] = step.pages[3]
+	comparison.APage, comparison.BPage = 2, 2
+	step.comparisons[proofreadingOCRStepPair{APage: 2, BPage: 2}] = comparison
+
+	// 1. Initial render: page 2 comparison has badges and anchors created
+	_ = renderProofreadingHistory(t, gtx, a.drawProofreadingOCRStepConnector)
+	if len(step.badgeAnchors[proofreadingOCRStepPair{APage: 2, BPage: 2}]) == 0 {
+		t.Fatal("expected badge anchors to be created for page 2")
+	}
+
+	// 2. Simulate prior page (e.g. page 0 or 1) being edited, causing page 2's ContentStart and ContentEnd to shift by -25
+	const delta = -25
+	s.xPages[2].ContentStart += delta
+	s.xPages[2].ContentEnd += delta
+	// At this point, comparison.BStart has NOT been updated yet (simulating stale cache or un-rebased comparison)
+
+	// 3. Render next frame: connector drawing should automatically rebase page 2 without dropping badges or connections!
+	shot := renderProofreadingHistory(t, gtx, a.drawProofreadingOCRStepConnector)
+	pair := proofreadingOCRStepPair{APage: 2, BPage: 2}
+	if _, ok := step.comparisons[pair]; !ok {
+		t.Fatal("history comparison for page 2 was erroneously deleted")
+	}
+	if len(step.badgeAnchors[pair]) == 0 {
+		t.Fatal("badge anchors for page 2 were erroneously deleted")
+	}
+	if len(step.badgeConnections[pair]) == 0 {
+		t.Fatal("badge connections for page 2 were erroneously deleted")
+	}
+	if comp := step.comparisons[pair]; comp.BStart != s.xPages[2].ContentStart {
+		t.Fatalf("comparison.BStart was not rebased: got %d, want %d", comp.BStart, s.xPages[2].ContentStart)
+	}
+	if proofreadingHistoryInkBounds(shot, image.Rect(405, 60, 465, 170), false).Empty() {
+		t.Fatal("history page lost its visible connector lines after prior page was edited")
+	}
+}

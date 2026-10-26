@@ -613,20 +613,30 @@ func (a *App) compareProofreadingOCRStep() {
 			return
 		}
 	}
-	if cachedComparison, hit, _ := loadProofreadingOCRComparisonCache(sourceHash, aPage, bPage, pageDraftHash); hit && cachedComparison.Complete && ocrPage.layout.CharacterVersion == ocr.CharacterGeometryVersion && proofreadingOCRStepComparisonValid(state, cachedComparison) {
-		a.clearProofreadingOCRStepComparisonHistory(step, proofreadingOCRStepPair{APage: aPage, BPage: bPage})
-		step.page, step.bPage = aPage, bPage
-		if a.prepareProofreadingOCRStepComparison(cachedComparison) {
+	exceptions := a.proofreadingDiffExceptionMap()
+	if cachedComparison, hit, _ := loadProofreadingOCRComparisonCache(sourceHash, aPage, bPage, pageDraftHash); hit && cachedComparison.Complete && ocrPage.layout.CharacterVersion == ocr.CharacterGeometryVersion {
+		if cachedComparison.BText == b.Content && (cachedComparison.BStart != b.ContentStart || cachedComparison.BEnd != b.ContentEnd) {
+			rebaseProofreadingOCRStepComparison(&cachedComparison, b.ContentStart)
+			_ = saveProofreadingOCRComparisonCache(cachedComparison)
+		}
+		if proofreadingOCRStepComparisonValid(state, cachedComparison) {
+			if len(exceptions) > 0 {
+				filterProofreadingOCRComparisonExceptions(&cachedComparison, exceptions)
+			}
+			a.clearProofreadingOCRStepComparisonHistory(step, proofreadingOCRStepPair{APage: aPage, BPage: bPage})
+			step.page, step.bPage = aPage, bPage
+			if a.prepareProofreadingOCRStepComparison(cachedComparison) {
+				if a.window != nil {
+					a.window.Invalidate()
+				}
+				return
+			}
+			a.presentProofreadingOCRStepComparison(cachedComparison)
 			if a.window != nil {
 				a.window.Invalidate()
 			}
 			return
 		}
-		a.presentProofreadingOCRStepComparison(cachedComparison)
-		if a.window != nil {
-			a.window.Invalidate()
-		}
-		return
 	}
 	step.cancelTask()
 	step.generation++
@@ -657,7 +667,7 @@ func (a *App) compareProofreadingOCRStep() {
 			result.err = err
 		} else {
 			page.result = shiftProofreadingOCRResult(page.result, bStart)
-			diff := proofreadingOCRCharacterDiff(layout, bText, bStart)
+			diff := proofreadingOCRCharacterDiff(layout, bText, bStart, exceptions)
 			located, total := proofreadingOCRCharacterCoverage(layout)
 			comparison := proofreadingOCRStepComparison{
 				APage: aPage, BPage: bPage, SourceHash: sourceHash, DraftHash: pageDraftHash,
@@ -733,11 +743,22 @@ func (a *App) processProofreadingOCRStep(gtx layout.Context) {
 			step.historyLoading = false
 			step.historyLoaded = true
 			step.historyCancel = nil
+			exceptions := a.proofreadingDiffExceptionMap()
 			for _, entry := range history.entries {
 				if entry.page < 0 || entry.page >= len(a.proofreading.xPages) || entry.comparison.APage != entry.page ||
-					entry.comparison.BPage != entry.page || !proofreadingOCRStepComparisonValid(a.proofreading, entry.comparison) ||
+					entry.comparison.BPage != entry.page ||
 					entry.layout.Width <= 0 || entry.layout.Height <= 0 || step.historyInvalidPages[entry.page] {
 					continue
+				}
+				xPage := a.proofreading.xPages[entry.page]
+				if entry.comparison.BText == xPage.Content && (entry.comparison.BStart != xPage.ContentStart || entry.comparison.BEnd != xPage.ContentEnd) {
+					rebaseProofreadingOCRStepComparison(&entry.comparison, xPage.ContentStart)
+				}
+				if !proofreadingOCRStepComparisonValid(a.proofreading, entry.comparison) {
+					continue
+				}
+				if len(exceptions) > 0 {
+					filterProofreadingOCRComparisonExceptions(&entry.comparison, exceptions)
 				}
 				step.pages[entry.page] = proofreadingOCRPage{
 					layout: entry.layout,
@@ -1337,4 +1358,54 @@ func proofreadOCRStepPageLabel(a *App, page int) string {
 		return fmt.Sprint(page + 1)
 	}
 	return i18n.FormatNumber(a.localeSnapshot().Resolved, float64(page+1))
+}
+
+func (a *App) proofreadingDiffExceptionMap() map[rune]bool {
+	if a == nil || a.proofreading == nil || a.proofreading.ocrStep == nil {
+		return nil
+	}
+	return a.proofreading.ocrStep.inspector.exceptions.Map()
+}
+
+func filterProofreadingOCRComparisonExceptions(comparison *proofreadingOCRStepComparison, exceptions map[rune]bool) {
+	if comparison == nil || len(exceptions) == 0 {
+		return
+	}
+	filtered := make([]proofreadingOCRDiffFrame, 0, len(comparison.Frames))
+	aOnly := 0
+	bOnly := 0
+	matches := 0
+	for _, f := range comparison.Frames {
+		if (f.AChar != 0 && exceptions[f.AChar]) || (f.BChar != 0 && exceptions[f.BChar]) {
+			continue
+		}
+		filtered = append(filtered, f)
+		switch f.Kind {
+		case proofreadingOCRDiffEqual:
+			matches++
+		case proofreadingOCRDiffAOnly:
+			aOnly++
+		case proofreadingOCRDiffBOnly:
+			bOnly++
+		case proofreadingOCRDiffReplace:
+			aOnly++
+			bOnly++
+		}
+	}
+	comparison.Frames = filtered
+	comparison.AOnly = aOnly
+	comparison.BOnly = bOnly
+	comparison.Matches = matches
+}
+
+func rebaseProofreadingOCRStepComparison(comparison *proofreadingOCRStepComparison, newStart int) {
+	if comparison == nil || comparison.BStart == newStart {
+		return
+	}
+	delta := newStart - comparison.BStart
+	comparison.BStart = newStart
+	comparison.BEnd += delta
+	for i := range comparison.Frames {
+		comparison.Frames[i].BPosition += delta
+	}
 }

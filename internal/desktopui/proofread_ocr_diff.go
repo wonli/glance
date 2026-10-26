@@ -60,7 +60,11 @@ type proofreadingOCRDiffFrame struct {
 	BChar     rune
 }
 
-func newProofreadingOCRDiffSource(value string) proofreadingOCRDiffSource {
+func newProofreadingOCRDiffSource(value string, exceptions ...map[rune]bool) proofreadingOCRDiffSource {
+	var exc map[rune]bool
+	if len(exceptions) > 0 {
+		exc = exceptions[0]
+	}
 	runes := []rune(value)
 	source := proofreadingOCRDiffSource{
 		characters: make([]rune, 0, len(runes)),
@@ -68,6 +72,9 @@ func newProofreadingOCRDiffSource(value string) proofreadingOCRDiffSource {
 	}
 	for index, current := range runes {
 		if unicode.IsSpace(current) {
+			continue
+		}
+		if len(exc) > 0 && exc[current] {
 			continue
 		}
 		source.characters = append(source.characters, current)
@@ -118,11 +125,15 @@ func proofreadingOCRDiffFurniture(label string) bool {
 	}
 }
 
-func proofreadingOCRCharacterDiff(layout ocr.Layout, markdown string, globalStart int) proofreadingOCRCharacterDiffResult {
+func proofreadingOCRCharacterDiff(layout ocr.Layout, markdown string, globalStart int, exceptions ...map[rune]bool) proofreadingOCRCharacterDiffResult {
+	var exc map[rune]bool
+	if len(exceptions) > 0 {
+		exc = exceptions[0]
+	}
 	diff := proofreadingOCRCharacterDiffResult{Complete: true}
 	aPage := proofreadingOCRPageText(layout)
-	aSource := newProofreadingOCRDiffSource(aPage.text)
-	bSource := newProofreadingOCRDiffSource(markdown)
+	aSource := newProofreadingOCRDiffSource(aPage.text, exc)
+	bSource := newProofreadingOCRDiffSource(markdown, exc)
 	diff.HasEvidence = len(aSource.characters) > 0 || len(bSource.characters) > 0
 	if !diff.HasEvidence {
 		return diff

@@ -3,10 +3,13 @@ package desktopui
 import (
 	"image"
 	"image/color"
+	"strings"
 
 	"gioui.org/font"
+	"gioui.org/io/key"
 	"gioui.org/io/system"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -88,6 +91,12 @@ func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions 
 			return a.layoutProofreadingDiffInspector(a.proofreadingOCRBatchContentContext(gtx))
 		}),
 		layout.Expanded(a.layoutProofreadingOCRBatchDialog),
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			if a.proofreading != nil && a.proofreading.exceptionsModalOpen {
+				return a.layoutProofreadingSessionExceptionsDialog(gtx)
+			}
+			return layout.Dimensions{}
+		}),
 	)
 }
 
@@ -300,4 +309,185 @@ func (a *App) layoutProofreadingPageMessageOnCanvas(gtx layout.Context, message 
 			})
 		},
 	)
+}
+
+func (a *App) layoutProofreadingSessionExceptionsDialog(gtx layout.Context) layout.Dimensions {
+	state := a.proofreading
+	if state == nil || !state.exceptionsModalOpen {
+		return layout.Dimensions{}
+	}
+	step := a.proofreadingOCRStep()
+	if step == nil {
+		return layout.Dimensions{}
+	}
+
+	w, h := gtx.Constraints.Max.X, gtx.Constraints.Max.Y
+
+	for {
+		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape})
+		if !ok {
+			break
+		}
+		if keyEv, isKey := ev.(key.Event); isKey && keyEv.State == key.Press {
+			state.exceptionsModalOpen = false
+			gtx.Execute(op.InvalidateCmd{})
+		}
+	}
+
+	for state.closeExceptionsBtn.Clicked(gtx) {
+		state.exceptionsModalOpen = false
+		gtx.Execute(op.InvalidateCmd{})
+	}
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 15, G: 23, B: 42, A: 140}, clip.Rect{Max: image.Pt(w, h)}.Op())
+
+	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		modalW := min(gtx.Dp(480), w-gtx.Dp(32))
+		modalH := min(gtx.Dp(320), h-gtx.Dp(32))
+		gtx.Constraints = layout.Exact(image.Pt(modalW, modalH))
+
+		mRect := image.Rect(0, 0, modalW, modalH)
+		mArea := clip.UniformRRect(mRect, gtx.Dp(8)).Push(gtx.Ops)
+		defer mArea.Pop()
+
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.UniformRRect(mRect, gtx.Dp(8)).Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 203, G: 213, B: 225, A: 255}, clip.Stroke{
+			Path:  clip.UniformRRect(mRect, gtx.Dp(8)).Path(gtx.Ops),
+			Width: float32(max(1, gtx.Dp(1))),
+		}.Op())
+
+		if state.addExceptionBtn.Clicked(gtx) {
+			text := strings.TrimSpace(state.exceptionInput.Text())
+			if text != "" {
+				for _, r := range text {
+					step.inspector.exceptions.AddCharException(r)
+				}
+				state.exceptionInput.SetText("")
+				a.applyExceptionsToCurrentPage(true)
+			}
+			gtx.Execute(op.InvalidateCmd{})
+		}
+
+		rules := step.inspector.exceptions.Rules
+		for len(state.removeExceptionBtns) < len(rules) {
+			state.removeExceptionBtns = append(state.removeExceptionBtns, widget.Clickable{})
+		}
+
+		return layout.Inset{Top: unit.Dp(16), Bottom: unit.Dp(16), Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									t := material.Label(a.theme, 13, "对比例外管理")
+									t.Font.Weight = font.Bold
+									t.Color = color.NRGBA{R: 15, G: 23, B: 42, A: 255}
+									return t.Layout(gtx)
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									st := material.Label(a.theme, 10, "添加到例外列表的字将在逐字扫描比对前直接排除，不作为差异扫描。")
+									st.Color = color.NRGBA{R: 100, G: 116, B: 139, A: 255}
+									return st.Layout(gtx)
+								}),
+							)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return state.closeExceptionsBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return a.layoutInspectorHeaderIconButton(gtx, "home", "x", "关闭例外管理")
+							})
+						}),
+					)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(14))}
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							return layout.Background{}.Layout(gtx,
+								func(gtx layout.Context) layout.Dimensions {
+									r := gtx.Dp(4)
+									paint.FillShape(gtx.Ops, color.NRGBA{R: 248, G: 250, B: 252, A: 255}, clip.UniformRRect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Dp(32)), r).Op(gtx.Ops))
+									paint.FillShape(gtx.Ops, color.NRGBA{R: 203, G: 213, B: 225, A: 255}, clip.Stroke{
+										Path:  clip.UniformRRect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Dp(32)), r).Path(gtx.Ops),
+										Width: float32(max(1, gtx.Dp(1))),
+									}.Op())
+									return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, gtx.Dp(32))}
+								},
+								func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10), Top: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										ed := material.Editor(a.theme, &state.exceptionInput, "输入要排除的任意字，如「（」或特定字符...")
+										ed.TextSize = 11
+										return ed.Layout(gtx)
+									})
+								},
+							)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Dimensions{Size: image.Pt(gtx.Dp(8), 0)}
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return state.addExceptionBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								btnW, btnH := gtx.Dp(96), gtx.Dp(32)
+								gtx.Constraints = layout.Exact(image.Pt(btnW, btnH))
+								paint.FillShape(gtx.Ops, color.NRGBA{R: 26, G: 115, B: 232, A: 255}, clip.UniformRRect(image.Rect(0, 0, btnW, btnH), gtx.Dp(4)).Op(gtx.Ops))
+								lbl := material.Label(a.theme, 11, "+ 添加到例外")
+								lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+								lbl.Font.Weight = font.Bold
+								return layoutProofreadingInspectorCenteredLabel(gtx, image.Pt(btnW, btnH), lbl)
+							})
+						}),
+					)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Dimensions{Size: image.Pt(0, gtx.Dp(14))}
+				}),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					if len(rules) == 0 {
+						emptyLbl := material.Label(a.theme, 11, "当前对比会话暂无例外字。可在上方输入添加，或在差异处理弹窗中点击「添加到例外」。")
+						emptyLbl.Color = color.NRGBA{R: 148, G: 163, B: 184, A: 255}
+						return layout.Center.Layout(gtx, emptyLbl.Layout)
+					}
+					return layout.Background{}.Layout(gtx,
+						func(gtx layout.Context) layout.Dimensions {
+							r := gtx.Dp(4)
+							rect := image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)
+							paint.FillShape(gtx.Ops, color.NRGBA{R: 248, G: 250, B: 252, A: 255}, clip.UniformRRect(rect, r).Op(gtx.Ops))
+							return layout.Dimensions{Size: rect.Size()}
+						},
+						func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								const perRow = 5
+								var rowChildren []layout.FlexChild
+								for r := 0; r < len(rules); r += perRow {
+									end := min(r+perRow, len(rules))
+									rowSlice := rules[r:end]
+									startIdx := r
+									rowChildren = append(rowChildren, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										var tags []layout.FlexChild
+										for j, rule := range rowSlice {
+											ruleIdx := startIdx + j
+											if state.removeExceptionBtns[ruleIdx].Clicked(gtx) {
+												a.removeProofreadingDiffException(ruleIdx)
+												gtx.Execute(op.InvalidateCmd{})
+											}
+											currRule := rule
+											btn := &state.removeExceptionBtns[ruleIdx]
+											tags = append(tags, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+												return layout.Inset{Right: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+													return a.layoutInspectorExceptionRuleTag(gtx, btn, currRule)
+												})
+											}))
+										}
+										return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, tags...)
+									}))
+								}
+								return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rowChildren...)
+							})
+						},
+					)
+				}),
+			)
+		})
+	})
 }

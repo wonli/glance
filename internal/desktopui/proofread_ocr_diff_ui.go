@@ -76,7 +76,7 @@ func (a *App) advanceProofreadingOCRDiffPlayback(gtx layout.Context, step *proof
 		return
 	}
 	if gtx.Now.Before(step.diffNextAt) {
-		gtx.Execute(op.InvalidateCmd{At: step.diffNextAt})
+		gtx.Execute(op.InvalidateCmd{})
 		return
 	}
 	if step.diffCursor >= len(comparison.Frames) {
@@ -109,7 +109,7 @@ func (a *App) advanceProofreadingOCRDiffPlayback(gtx layout.Context, step *proof
 		step.diffNextAt = step.diffNextAt.Add(delay)
 	}
 
-	gtx.Execute(op.InvalidateCmd{At: step.diffNextAt})
+	gtx.Execute(op.InvalidateCmd{})
 }
 
 func proofreadingOCRCurrentDiffFrame(step *proofreadingOCRStepState, comparison proofreadingOCRStepComparison) (proofreadingOCRDiffFrame, bool) {

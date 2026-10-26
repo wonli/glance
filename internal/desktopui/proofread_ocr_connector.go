@@ -373,6 +373,26 @@ func (a *App) drawProofreadingOCRStepConnector(gtx layout.Context) {
 	connectionsByPair := make(map[proofreadingOCRStepPair][]proofreadingOCRConnection, len(pairs))
 	for _, candidate := range pairs {
 		comparison := step.comparisons[candidate]
+		if candidate.BPage >= 0 && candidate.BPage < len(state.xPages) {
+			page := state.xPages[candidate.BPage]
+			if comparison.BText == page.Content && (comparison.BStart != page.ContentStart || comparison.BEnd != page.ContentEnd) {
+				delta := page.ContentStart - comparison.BStart
+				rebaseProofreadingOCRStepComparison(&comparison, page.ContentStart)
+				step.comparisons[candidate] = comparison
+				if connections, exists := step.badgeConnections[candidate]; exists {
+					for ci := range connections {
+						shiftProofreadingOCRConnection(&connections[ci], -1, delta)
+					}
+					step.badgeConnections[candidate] = connections
+				}
+				if anchors, exists := step.badgeAnchors[candidate]; exists {
+					for ai := range anchors {
+						anchors[ai].frame.BPosition += delta
+					}
+					step.badgeAnchors[candidate] = anchors
+				}
+			}
+		}
 		if !proofreadingOCRStepComparisonValid(state, comparison) {
 			delete(step.badgeAnchors, candidate)
 			delete(step.badgeConnections, candidate)
