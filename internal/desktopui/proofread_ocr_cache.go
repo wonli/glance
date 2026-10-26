@@ -61,7 +61,7 @@ const proofreadingOCRStepRenderDPI = 144
 func proofreadingOCRCachePaths(sourceAHash, optionsHash string) (root, pagesDir, manifestPath string, err error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return "", "", "", fmt.Errorf("resolve Proofreading cache directory: %w", err)
+		return "", "", "", fmt.Errorf("resolve proofreading cache directory: %w", err)
 	}
 	if len(sourceAHash) != 64 {
 		return "", "", "", errors.New("invalid PDF source hash")
@@ -69,7 +69,7 @@ func proofreadingOCRCachePaths(sourceAHash, optionsHash string) (root, pagesDir,
 	if _, err = hex.DecodeString(sourceAHash); err != nil {
 		return "", "", "", errors.New("invalid PDF source hash")
 	}
-	root = filepath.Join(configDir, "Glance Office", "Proofreading", "ocr", sourceAHash, optionsHash)
+	root = filepath.Join(configDir, "Glance Office", "proofreading", "ocr", sourceAHash, optionsHash)
 	pagesDir = filepath.Join(root, "pages")
 	manifestPath = filepath.Join(root, "manifest.json")
 	return root, pagesDir, manifestPath, nil
@@ -339,7 +339,7 @@ func proofreadingOCRComparisonCacheDir(sourceAHash string) (string, error) {
 	if len(sourceAHash) != 64 {
 		return "", errors.New("invalid PDF source hash")
 	}
-	dir := filepath.Join(configDir, "Glance Office", "Proofreading", "comparisons", sourceAHash)
+	dir := filepath.Join(configDir, "Glance Office", "proofreading", "comparisons", sourceAHash)
 	return dir, nil
 }
 

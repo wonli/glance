@@ -54,3 +54,33 @@ func TestProofreadingRemoteUpdateDoesNotOverwriteWorkingPayload(t *testing.T) {
 		t.Fatal(got, err)
 	}
 }
+
+func TestProofreadingProjectDelete(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p := ProofreadingProject{ID: "task-delete", Title: "To Delete", Directory: "/tmp/del"}
+	if err = s.SaveProofreadingProject(p); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SetPreference("proofreading.pushed.task-delete", "commit-hash"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.DeleteProofreadingProject("task-delete"); err != nil {
+		t.Fatal(err)
+	}
+	_, found, err := s.LoadProofreadingProject("task-delete")
+	if err != nil || found {
+		t.Fatalf("expected project deleted, found=%v err=%v", found, err)
+	}
+	list, err := s.ListProofreadingProjects()
+	if err != nil || len(list) != 0 {
+		t.Fatalf("expected empty list, got=%d err=%v", len(list), err)
+	}
+	pref, foundPref, err := s.Preference("proofreading.pushed.task-delete")
+	if err != nil || foundPref || pref != "" {
+		t.Fatalf("expected pushed preference deleted, found=%v val=%v err=%v", foundPref, pref, err)
+	}
+}

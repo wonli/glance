@@ -675,3 +675,44 @@ func (c *recordingProofreadingOCRClient) Results(_ context.Context, job ocr.Job)
 	c.events = append(c.events, "results:"+job.ID)
 	return c.pages, nil
 }
+
+func TestProofreadingAIAcceptsPlainTextB(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "article.txt")
+	if err := os.WriteFile(path, []byte("第一段文本\n第二段文本"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	object, err := loadProofreadingObject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer object.Adapter.Close()
+
+	if object.formatID() != "txt" {
+		t.Fatalf("expected formatID txt, got %s", object.formatID())
+	}
+
+	a := New(nil, "")
+	attachProofreadingOCRTestPDF(t, a)
+	defer a.stopAndWaitManagedBackground()
+
+	a.proofreading = &proofreadingWorkspace{
+		bDocument:   object,
+		bDraftText:  "第一段文本\n第二段文本",
+		ocrScan:     newProofreadingOCRScan(),
+		aSourceHash: "test-pdf-hash",
+		pageFrames:  []proofreadingPageFrame{{PageIndex: 0, Width: 100, Height: 100}},
+	}
+
+	// 1. requestProofreadingOCRStep should accept txt without failing with markdown_required
+	step := a.proofreadingOCRStep()
+	a.requestProofreadingOCRStep()
+	if step.err == a.textID("proofread.ai.status.markdown_required") {
+		t.Fatal("requestProofreadingOCRStep rejected txt B with markdown_required")
+	}
+
+	// 2. requestProofreadingOCRScan should accept txt without setting markdown_required notice
+	a.requestProofreadingOCRScan()
+	if a.proofreading.ocrScan.notice == "proofread.ai.status.markdown_required" {
+		t.Fatal("requestProofreadingOCRScan rejected txt B with markdown_required notice")
+	}
+}

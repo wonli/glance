@@ -183,7 +183,7 @@ Commit the tray-residency state and window restoration behavior.
 
 **Interfaces:**
 - Produces: `desktoplaunch.PrepareCLIConsole() error`; on Windows it attaches to the parent console, refreshes standard handles, preserves valid redirected handles, and allocates a console only when no usable output handle exists. Other platforms return without changing stdio.
-- Produces: startup logging under `os.UserConfigDir()/Glance/startup.log` and a Windows startup-error dialog for errors before the first rendered frame.
+- Produces: startup logging under `os.UserConfigDir()/Glance Office/startup.log` and a Windows startup-error dialog for errors before the first rendered frame.
 - Consumes: `golang.org/x/sys/windows`, root Cobra routing from Task 1, and tray startup errors from Task 2.
 
 - [x] **Step 1: Attach a console only for CLI invocations**

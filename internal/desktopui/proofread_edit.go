@@ -79,13 +79,9 @@ func proofreadingDraftFilePath(bPath, projectID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve proofreading directory: %w", err)
 	}
-	name := strings.TrimSuffix(filepath.Base(bPath), filepath.Ext(bPath))
-	if name == "" || name == "." {
-		name = "proofreading-copy"
-	}
 	var safeName strings.Builder
 	lastDash := false
-	for _, r := range name {
+	for _, r := range projectID {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
 			safeName.WriteRune(r)
 			lastDash = false
@@ -94,22 +90,29 @@ func proofreadingDraftFilePath(bPath, projectID string) (string, error) {
 			lastDash = true
 		}
 	}
-	segment := strings.Trim(safeName.String(), "-_.")
-	if segment == "" {
-		segment = "proofreading-copy"
-	}
-	if runes := []rune(segment); len(runes) > 48 {
-		segment = string(runes[:48])
-	}
-	suffix := strings.TrimPrefix(projectID, "proofread-")
-	if len(suffix) > 12 {
-		suffix = suffix[:12]
-	}
-	if suffix == "" {
+	raw := strings.Trim(safeName.String(), "-_.")
+	if raw == "" {
 		fallback := sha256.Sum256([]byte(projectID))
-		suffix = hex.EncodeToString(fallback[:6])
+		raw = "proofread-" + hex.EncodeToString(fallback[:6])
 	}
-	return filepath.Join(configDir, "Glance Office", "Proofreading", segment+"-"+suffix, "proofreading-copy.md"), nil
+	var dirName string
+	if strings.HasPrefix(raw, "proofread-") {
+		suffix := strings.TrimPrefix(raw, "proofread-")
+		if len(suffix) > 12 {
+			suffix = suffix[:12]
+		}
+		if suffix == "" {
+			fallback := sha256.Sum256([]byte(projectID))
+			suffix = hex.EncodeToString(fallback[:6])
+		}
+		dirName = "proofread-" + suffix
+	} else {
+		if len(raw) > 24 {
+			raw = raw[:24]
+		}
+		dirName = raw
+	}
+	return filepath.Join(configDir, "Glance Office", "proofreading", dirName, "proofreading-copy.md"), nil
 }
 
 func encodeProofreadingDraftFile(draft proofreadingPersistedDraft) ([]byte, error) {

@@ -34,7 +34,8 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 			a.processProofreadingResults()
 			a.acceptProofreadingConfirmation()
 		}
-		return a.layoutProofreadingWorkbench(gtx)
+		a.handleOverlayEscape(gtx)
+		return a.layoutRootWithOverlays(gtx, a.layoutProofreadingWorkbench)
 	}
 	if a.proofreading != nil {
 		a.handleOverlayEscape(gtx)

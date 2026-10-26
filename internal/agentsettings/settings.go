@@ -56,7 +56,7 @@ func NewDefaultStore(credentials CredentialStore) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("find user config directory: %w", err)
 	}
-	return NewStore(filepath.Join(root, "Glance", "agent", "model-settings.json"), credentials)
+	return NewStore(filepath.Join(root, "Glance Office", "agent", "model-settings.json"), credentials)
 }
 
 func (s *Store) Load(ctx context.Context) (ModelSettings, error) {

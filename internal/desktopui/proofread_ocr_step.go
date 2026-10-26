@@ -286,7 +286,7 @@ func (a *App) requestProofreadingOCRStep() {
 		step.cancelTask()
 		return
 	}
-	if state.bDocument == nil || state.bDocument.formatID() != "markdown" {
+	if state.bDocument == nil || !isSupportedAIProofreadingFormat(state.bDocument.formatID()) {
 		step.phase = proofreadingOCRStepFailed
 		step.err = a.textID("proofread.ai.status.markdown_required")
 		return

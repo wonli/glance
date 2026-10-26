@@ -99,3 +99,15 @@ func (s *Store) LoadProofreadingProjectMetadata(id string) (ProofreadingProject,
 	err = json.Unmarshal(meta, &p)
 	return p, err == nil, err
 }
+
+func (s *Store) DeleteProofreadingProject(id string) error {
+	if id == "" {
+		return errors.New("proofreading project ID is empty")
+	}
+	_, err := s.db.Exec(`DELETE FROM proofreading_projects WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	_, _ = s.db.Exec(`DELETE FROM preferences WHERE key=?`, "proofreading.pushed."+id)
+	return nil
+}

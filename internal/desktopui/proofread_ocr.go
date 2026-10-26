@@ -253,12 +253,16 @@ func (a *App) openProofreadingOCRTokenDialog() {
 	a.openProofreadingOCRTokenDialogFor(endpoint, job)
 }
 
+func isSupportedAIProofreadingFormat(format string) bool {
+	return format == "markdown" || format == "txt"
+}
+
 func (a *App) openProofreadingOCRTokenDialogFor(endpoint string, job *proofreadingOCRJobRecord) {
 	if a == nil || a.proofreading == nil || a.modal.Visible {
 		return
 	}
 	state := a.proofreading
-	if state.bDocument == nil || state.bDocument.formatID() != "markdown" {
+	if state.bDocument == nil || !isSupportedAIProofreadingFormat(state.bDocument.formatID()) {
 		state.ocrScan.notice = "proofread.ai.status.markdown_required"
 		state.ocrScan.err = ""
 		return
@@ -344,7 +348,7 @@ func (a *App) requestProofreadingOCRScan() {
 	if state.ocrScan == nil {
 		state.ocrScan = newProofreadingOCRScan()
 	}
-	if state.bDocument == nil || state.bDocument.formatID() != "markdown" {
+	if state.bDocument == nil || !isSupportedAIProofreadingFormat(state.bDocument.formatID()) {
 		state.ocrScan.notice = "proofread.ai.status.markdown_required"
 		state.ocrScan.err = ""
 		return
@@ -494,7 +498,7 @@ func (a *App) startProofreadingOCRScanWithAuthentication(token, endpoint string,
 		return
 	}
 	state := a.proofreading
-	if state == nil || a.pdfDoc == nil || state.bDocument == nil || state.bDocument.formatID() != "markdown" || strings.TrimSpace(token) == "" {
+	if state == nil || a.pdfDoc == nil || state.bDocument == nil || !isSupportedAIProofreadingFormat(state.bDocument.formatID()) || strings.TrimSpace(token) == "" {
 		return
 	}
 	scan := state.ocrScan

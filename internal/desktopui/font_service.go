@@ -42,7 +42,7 @@ func newDesktopFontManager() *fontmanager.Manager {
 	}
 	root, objects := "", ""
 	if data != "" {
-		root = filepath.Join(data, "glance", "fonts")
+		root = filepath.Join(data, "Glance Office", "fonts")
 		objects = filepath.Join(root, "objects")
 		_ = os.MkdirAll(objects, 0700)
 	}

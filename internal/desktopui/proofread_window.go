@@ -792,9 +792,21 @@ func (proofreadingPlainTextAdapter) Open(path string) (proofreadingAdapterDocume
 		return nil, err
 	}
 	content := strings.TrimPrefix(strings.ToValidUTF8(string(data), "�"), "\uFEFF")
-	units := []proofreadingContentUnit(nil)
-	if strings.TrimSpace(content) != "" {
-		units = append(units, proofreadingContentUnit{ID: "plain-text", Kind: proofreadingUnitParagraph, Text: content, Ordinal: 0})
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	lines := strings.Split(normalized, "\n")
+	units := make([]proofreadingContentUnit, 0, len(lines))
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		units = append(units, proofreadingContentUnit{
+			ID:      fmt.Sprintf("paragraph-%d", index),
+			Kind:    proofreadingUnitParagraph,
+			Text:    trimmed,
+			Ordinal: len(units),
+		})
 	}
 	return &proofreadingPlainTextDocument{units: units}, nil
 }

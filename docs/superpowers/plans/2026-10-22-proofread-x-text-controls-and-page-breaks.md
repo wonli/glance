@@ -25,7 +25,7 @@
 - [x] Kept A and X on the shared PDF page position and zoom state.
 - [x] Stored manual page breaks at rune offsets, flowed following B text to the next B page, and retained undo with the marker at the click location.
 - [x] Kept all A text extraction and OCR out of the proofreading path.
-- [x] Auto-saved X's independent proofreading copy as a human-readable Markdown file in the per-user `Glance Office/Proofreading` directory; an HTML metadata header stores source hashes, manual breaks, B-page alignment, and X text size while the body remains plain text for readable diffs. Older workspace-database drafts migrate into the file.
+- [x] Auto-saved X's independent proofreading copy as a human-readable Markdown file in the per-user `Glance Office/proofreading` directory; an HTML metadata header stores source hashes, manual breaks, B-page alignment, and X text size while the body remains plain text for readable diffs. Older workspace-database drafts migrate into the file.
 - [x] Formatted changed Go files, validated locale JSON, ran `go build ./...`, and ran `git diff --check`.
 
 ## Current limits

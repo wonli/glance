@@ -24,7 +24,7 @@ func proofreadingAuthRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	root = filepath.Join(root, "Glance Office", "Proofreading", "authentication")
+	root = filepath.Join(root, "Glance Office", "proofreading", "authentication")
 	return root, os.MkdirAll(root, 0700)
 }
 func loadProofreadingAuth(store *workspace.Store) (proofreadingAuthSettings, error) {

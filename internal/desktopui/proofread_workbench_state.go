@@ -11,6 +11,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/widget"
+	"glance/internal/i18n"
 	"glance/internal/proofhistory"
 	"glance/internal/workspace"
 )
@@ -253,6 +254,93 @@ func (a *App) resumeProofreadingProject(p workspace.ProofreadingProject) {
 		}
 	})
 }
+
+func (a *App) confirmDeleteProofreadingProject(p workspace.ProofreadingProject) {
+	title := p.Title
+	if title == "" {
+		title = a.textID("proofread.workspace.untitled")
+	}
+	a.modal.ShowConfirmMessage(
+		"proofread.workbench.delete",
+		i18n.Message{ID: "proofread.workbench.dialog.delete.title"},
+		i18n.Message{ID: "proofread.workbench.dialog.delete.body", Args: i18n.Args{"Title": title}},
+		modalDialogDangerConfirmStyle,
+		func(action string) {
+			a.modal.Hide()
+			if action != "delete" {
+				return
+			}
+			a.deleteProofreadingProject(p)
+		},
+		modalDialogActionSpec{ID: "cancel", LabelRef: i18n.Message{ID: "common.action.cancel"}, Style: modalDialogActionSecondary},
+		modalDialogActionSpec{ID: "delete", LabelRef: i18n.Message{ID: "common.action.delete"}, Style: modalDialogActionDanger},
+	)
+}
+
+func (a *App) deleteProofreadingProject(p workspace.ProofreadingProject) {
+	w := a.ensureProofreadingWorkbench()
+	if w.busy {
+		return
+	}
+	if r := a.desktopRuntime; r != nil {
+		r.mu.Lock()
+		owner := r.proofTabOwners[p.ID]
+		r.mu.Unlock()
+		if owner != nil {
+			owner.host.closeProofreadingTab(owner.id)
+		}
+	}
+	if a.proofreading != nil && a.proofreading.projectDocumentID == p.ID {
+		a.closeProofreadingDraft()
+		a.proofreading = nil
+	}
+	if w.historyOpen && w.historyProject.ID == p.ID {
+		w.historyOpen = false
+		w.historyPages = nil
+		w.history = nil
+		w.historyMessage = ""
+	}
+
+	store := a.proofreadingStore()
+	dir := p.Directory
+
+	a.proofreadingWorkbenchJob(func() func() {
+		var dbErr error
+		if store != nil {
+			dbErr = store.DeleteProofreadingProject(p.ID)
+		}
+		var fsErr error
+		if dir != "" && dir != "/" && dir != "." {
+			_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+				if err == nil && info != nil {
+					_ = os.Chmod(path, 0o700)
+				}
+				return nil
+			})
+			fsErr = os.RemoveAll(dir)
+		}
+		return func() {
+			err := dbErr
+			if err == nil {
+				err = fsErr
+			}
+			if err != nil {
+				w.message = err.Error()
+				a.setStatusErrorMessage(i18n.Message{ID: "proofread.workbench.error.delete_failed"}, err, notificationToast)
+			} else {
+				for i, item := range w.projects {
+					if item.ID == p.ID {
+						w.projects = append(w.projects[:i], w.projects[i+1:]...)
+						break
+					}
+				}
+				w.message = a.textID("proofread.workbench.delete_success")
+				a.setStatusMessage(i18n.Message{ID: "proofread.workbench.delete_success"}, feedbackSuccess, notificationToast)
+			}
+		}
+	})
+}
+
 func (a *App) newProofreadingProject() {
 	w := a.ensureProofreadingWorkbench()
 	labels := a.filePickerLabels()

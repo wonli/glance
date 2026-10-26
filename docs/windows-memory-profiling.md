@@ -10,7 +10,7 @@ Start-Process ".\glance-windows-amd64-latest.exe"
 
 浏览器打开 `http://127.0.0.1:6060/debug/pprof/`。局域网其他电脑使用 `http://<Windows电脑的局域网IP>:6060/debug/pprof/`，下面采集命令中的 `127.0.0.1` 也替换成该 IP。若无法连接，在 Windows 防火墙中允许该程序在专用网络访问，或添加仅允许本地子网的 TCP 6060 入站规则。pprof 没有身份验证，调试结束后关闭监听；不要把端口映射到公网。
 
-端口占用或地址无效会写入 `%APPDATA%\Glance\startup.log`，应用仍正常启动。
+端口占用或地址无效会写入 `%APPDATA%\Glance Office\startup.log`，应用仍正常启动。
 不需要安装 Go 就能下载快照。以下命令在 PowerShell 中执行：
 
 1. 空窗口稳定后采集基线，并记录任务管理器中的进程内存数值及列名。

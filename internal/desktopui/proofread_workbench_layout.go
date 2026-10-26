@@ -227,10 +227,10 @@ func (a *App) layoutProofreadingProjectRow(g layout.Context, p workspace.Proofre
 	paint.FillShape(g.Ops, contentSurface, clip.Rect{Max: size}.Op())
 	paint.FillShape(g.Ops, color.NRGBA{R: 237, G: 240, B: 242, A: 255}, clip.Rect{Min: image.Pt(0, size.Y-max(1, g.Dp(1))), Max: size}.Op())
 	width := unit.Dp(float32(size.X) / g.Metric.PxPerDp)
-	proofreadingAt(g, 27, 32, width-220, 24, func(g layout.Context) layout.Dimensions {
+	proofreadingAt(g, 27, 32, width-260, 24, func(g layout.Context) layout.Dimensions {
 		return a.proofreadingText(g, p.Title, 14, proofreadInk, true)
 	})
-	proofreadingAt(g, 27, 64, width-220, 22, func(g layout.Context) layout.Dimensions {
+	proofreadingAt(g, 27, 64, width-260, 22, func(g layout.Context) layout.Dimensions {
 		return a.proofreadingText(g, fmt.Sprintf(a.textID("proofread.workbench.progress_short"), p.CurrentPage+1, p.ReviewedCount, p.PageCount), 12, proofreadMuted, false)
 	})
 	proofreadingAt(g, width-185, 32, 158, 20, func(g layout.Context) layout.Dimensions {
@@ -238,16 +238,35 @@ func (a *App) layoutProofreadingProjectRow(g layout.Context, p workspace.Proofre
 		l.Color = proofreadMuted
 		return layout.E.Layout(g, l.Layout)
 	})
-	proofreadingAt(g, width-160, 61, 133, 26, func(g layout.Context) layout.Dimensions {
+	proofreadingAt(g, width-240, 61, 213, 26, func(g layout.Context) layout.Dimensions {
 		w := a.ensureProofreadingWorkbench()
-		b := w.button("open-" + p.ID)
-		if b.Clicked(g) && !w.busy {
+		bDelete := w.button("delete-" + p.ID)
+		if bDelete.Clicked(g) && !w.busy {
+			a.confirmDeleteProofreadingProject(p)
+		}
+		bOpen := w.button("open-" + p.ID)
+		if bOpen.Clicked(g) && !w.busy {
 			a.resumeProofreadingProject(p)
 		}
-		return b.Layout(g, func(g layout.Context) layout.Dimensions {
-			return layout.E.Layout(g, func(g layout.Context) layout.Dimensions {
-				return a.proofreadingText(g, a.textID("proofread.workbench.continue"), 12, proofreadingDesignBlue, true)
-			})
+		return layout.E.Layout(g, func(g layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(g,
+				layout.Rigid(func(g layout.Context) layout.Dimensions {
+					return bDelete.Layout(g, func(g layout.Context) layout.Dimensions {
+						return layout.Inset{Left: 6, Right: 6, Top: 4, Bottom: 4}.Layout(g, func(g layout.Context) layout.Dimensions {
+							return a.proofreadingText(g, a.textID("common.action.delete"), 12, color.NRGBA{R: 204, G: 68, B: 68, A: 255}, false)
+						})
+					})
+				}),
+				layout.Rigid(func(g layout.Context) layout.Dimensions {
+					return layout.Inset{Left: 12}.Layout(g, func(g layout.Context) layout.Dimensions {
+						return bOpen.Layout(g, func(g layout.Context) layout.Dimensions {
+							return layout.Inset{Left: 4, Right: 4, Top: 4, Bottom: 4}.Layout(g, func(g layout.Context) layout.Dimensions {
+								return a.proofreadingText(g, a.textID("proofread.workbench.continue"), 12, proofreadingDesignBlue, true)
+							})
+						})
+					})
+				}),
+			)
 		})
 	})
 	return layout.Dimensions{Size: size}

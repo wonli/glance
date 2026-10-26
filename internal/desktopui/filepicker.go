@@ -27,7 +27,7 @@ func (l filePickerLabels) officeFileExtensions() []string {
 	if len(l.AllowedExtensions) > 0 {
 		return l.AllowedExtensions
 	}
-	return []string{"xlsx", "xls", "doc", "docx", "json", "md", "markdown", "pdf", "csv"}
+	return []string{"xlsx", "xls", "doc", "docx", "json", "md", "markdown", "pdf", "csv", "txt"}
 }
 
 func (l filePickerLabels) officeFileGlobs(separator string) string {
