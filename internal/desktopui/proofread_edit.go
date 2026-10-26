@@ -23,6 +23,7 @@ type proofreadingPersistedDraft struct {
 	Version               int                         `json:"version"`
 	SourceAHash           string                      `json:"source_a_hash"`
 	SourceBHash           string                      `json:"source_b_hash"`
+	OriginalPageEnds      []int                       `json:"original_page_ends,omitempty"`
 	Text                  string                      `json:"text"`
 	Pages                 []proofreadingPageOwnership `json:"pages,omitempty"`
 	ManualBreaks          []proofreadingManualBreak   `json:"manual_breaks"`
@@ -36,6 +37,7 @@ type proofreadingDraftFileMetadata struct {
 	Version               int                         `json:"version"`
 	SourceAHash           string                      `json:"source_a_hash"`
 	SourceBHash           string                      `json:"source_b_hash"`
+	OriginalPageEnds      []int                       `json:"original_page_ends,omitempty"`
 	Pages                 []proofreadingPageOwnership `json:"pages,omitempty"`
 	ManualBreaks          []proofreadingManualBreak   `json:"manual_breaks"`
 	AlignmentOffset       int                         `json:"alignment_offset"`
@@ -119,12 +121,16 @@ func proofreadingDraftFilePath(bPath, projectID string) (string, error) {
 func encodeProofreadingDraftFile(draft proofreadingPersistedDraft) ([]byte, error) {
 	metadata := proofreadingDraftFileMetadata{
 		Model: draft.Model, Version: draft.Version, SourceAHash: draft.SourceAHash, SourceBHash: draft.SourceBHash,
-		Pages: draft.Pages, ManualBreaks: draft.ManualBreaks, AlignmentOffset: draft.AlignmentOffset,
+		OriginalPageEnds: append([]int(nil), draft.OriginalPageEnds...),
+		Pages:            draft.Pages, ManualBreaks: draft.ManualBreaks, AlignmentOffset: draft.AlignmentOffset,
 		AlignmentScrollOffset: draft.AlignmentScrollOffset, TextSizeStep: draft.TextSizeStep,
 	}
 	if draft.Model != nil {
 		if _, err := proofreading.Restore(*draft.Model); err != nil {
 			return nil, err
+		}
+		if len(draft.OriginalPageEnds) > 0 && len(draft.OriginalPageEnds) != len(draft.Model.Pages) {
+			return nil, fmt.Errorf("original page boundaries do not match proofreading page count")
 		}
 		var body strings.Builder
 		for _, run := range draft.Model.Runs {
@@ -174,6 +180,9 @@ func decodeProofreadingDraftFile(data []byte) (proofreadingPersistedDraft, error
 	if metadata.Version == 2 && metadata.Model == nil {
 		return proofreadingPersistedDraft{}, fmt.Errorf("proofreading v2 model missing")
 	}
+	if metadata.Model != nil && len(metadata.OriginalPageEnds) > 0 && len(metadata.OriginalPageEnds) != len(metadata.Model.Pages) {
+		return proofreadingPersistedDraft{}, fmt.Errorf("original page boundaries do not match proofreading page count")
+	}
 	textStart := headerStart + separatorOffset + len(separator)
 	text := string(data[textStart:])
 	if metadata.Model != nil {
@@ -190,7 +199,8 @@ func decodeProofreadingDraftFile(data []byte) (proofreadingPersistedDraft, error
 	}
 	return proofreadingPersistedDraft{
 		Model: metadata.Model, Version: metadata.Version, SourceAHash: metadata.SourceAHash, SourceBHash: metadata.SourceBHash,
-		Pages: metadata.Pages, Text: text, ManualBreaks: metadata.ManualBreaks,
+		OriginalPageEnds: append([]int(nil), metadata.OriginalPageEnds...),
+		Pages:            metadata.Pages, Text: text, ManualBreaks: metadata.ManualBreaks,
 		AlignmentOffset: metadata.AlignmentOffset, AlignmentScrollOffset: metadata.AlignmentScrollOffset,
 		TextSizeStep: metadata.TextSizeStep,
 	}, nil
@@ -486,6 +496,7 @@ func (a *App) queueProofreadingDraftPersistence() bool {
 	captured := state.controller.Model.Capture()
 	draft := proofreadingPersistedDraft{
 		Version: 2, SourceAHash: state.aSourceHash, SourceBHash: state.sourceBHash, Text: state.bDraftText,
+		OriginalPageEnds: append([]int(nil), state.originalPageEnds...),
 
 		TextSizeStep: state.xTextSizeStep,
 	}

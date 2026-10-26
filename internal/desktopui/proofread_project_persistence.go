@@ -3,10 +3,12 @@ package desktopui
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"time"
+	"unicode/utf8"
 
 	"glance/internal/fileutil"
 	"glance/internal/proofhistory"
@@ -98,7 +100,19 @@ func writeProofreadingSource(path string, reader io.Reader) error {
 func (a *App) proofreadingProjectMetadata() workspace.ProofreadingProject {
 	s := a.proofreading
 	dir := filepath.Dir(s.draftFilePath)
-	return workspace.ProofreadingProject{ID: s.projectDocumentID, Title: s.aDocument.Name, Directory: dir, SourceA: filepath.Join(dir, "sources", "reference.pdf"), SourceAHash: s.aSourceHash, SourceB: filepath.Join(dir, "sources", "manuscript"+filepath.Ext(s.bDocument.Path))}
+	originalBName := s.originalBName
+	if originalBName == "" {
+		originalBName = filepath.Base(s.bDocument.Path)
+	}
+	originalAPath := s.originalAPath
+	if originalAPath == "" {
+		originalAPath = s.aDocument.Path
+	}
+	originalBPath := s.originalBPath
+	if originalBPath == "" {
+		originalBPath = s.bDocument.Path
+	}
+	return workspace.ProofreadingProject{ID: s.projectDocumentID, Title: s.aDocument.Name, Directory: dir, SourceA: filepath.Join(dir, "sources", "reference.pdf"), SourceAHash: s.aSourceHash, SourceAOriginalPath: originalAPath, SourceB: filepath.Join(dir, "sources", "manuscript"+filepath.Ext(s.bDocument.Path)), SourceBName: originalBName, SourceBOriginalPath: originalBPath}
 }
 func proofreadingPageResult(s *proofreadingWorkspace, page int, identity proofhistory.Identity) proofhistory.PageResult {
 	snap := s.controller.Model.PageSnapshot(proofreadingPageID(page))
@@ -112,6 +126,33 @@ func proofreadingPageResult(s *proofreadingWorkspace, page int, identity proofhi
 }
 
 func proofreadingPageID(page int) proofreading.PageID { return proofreading.PageID(page + 1) }
+
+func proofreadingOriginalPagesFromEnds(text string, ends []int) ([]string, error) {
+	if len(ends) == 0 {
+		return nil, fmt.Errorf("original page boundaries are unavailable")
+	}
+	pages := make([]string, len(ends))
+	runeOffset, byteOffset := 0, 0
+	for i, end := range ends {
+		if end < runeOffset {
+			return nil, fmt.Errorf("original page %d has an invalid rune boundary", i+1)
+		}
+		startByte := byteOffset
+		for runeOffset < end {
+			if byteOffset >= len(text) {
+				return nil, fmt.Errorf("original page %d has an invalid rune boundary", i+1)
+			}
+			_, size := utf8.DecodeRuneInString(text[byteOffset:])
+			byteOffset += size
+			runeOffset++
+		}
+		pages[i] = text[startByte:byteOffset]
+	}
+	if byteOffset != len(text) {
+		return nil, fmt.Errorf("original page boundaries omit source text")
+	}
+	return pages, nil
+}
 
 func proofreadingConfirmedCurrent(data proofreadingProjectPayload, projectID string) map[int]bool {
 	result := map[int]bool{}

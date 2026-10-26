@@ -60,3 +60,23 @@ func TestFeedbackRepeatsCompletedOperationAfterDismissal(t *testing.T) {
 		t.Fatal("repeated operation completion was mistaken for repeated frame")
 	}
 }
+
+func TestExplicitToastCanShowProgressAndSuccessWithoutChangingStatusBar(t *testing.T) {
+	a := New(nil, "")
+	a.statusRef = i18n.Message{ID: "status.initial.open_document"}
+	now := time.Now()
+	a.showProgressToastMessage(i18n.Message{ID: "proofread.export.progress"})
+	if a.statusRef.ID != "status.initial.open_document" {
+		t.Fatalf("toast changed global status reference to %q", a.statusRef.ID)
+	}
+	if !a.feedback.toastVisible(now.Add(30 * time.Minute)) {
+		t.Fatal("informational progress toast is not visible")
+	}
+	a.showToastMessage(i18n.Message{ID: "proofread.export.success"}, feedbackSuccess, "")
+	if !a.feedback.toastVisible(now.Add(time.Second)) {
+		t.Fatal("success toast is not visible")
+	}
+	if !a.feedback.forceToast {
+		t.Fatal("explicit toast visibility was lost when replacing progress with success")
+	}
+}

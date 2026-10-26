@@ -212,6 +212,7 @@ type proofreadingWorkspace struct {
 	bDraftInitialized                            bool
 	bDraftDirty                                  bool
 	pageOwnership                                []proofreadingPageOwnership
+	originalPageEnds                             []int
 	pageFilter                                   proofreadingPageFilter
 	filteredPageIndices                          []int
 	filterReviewedButton, filterUnreviewedButton widget.Clickable
@@ -230,6 +231,9 @@ type proofreadingWorkspace struct {
 	xScrollHighlightUntil                        time.Time
 
 	bDocument           *proofreadingObject
+	originalAPath       string
+	originalBPath       string
+	originalBName       string
 	draftLoading        bool
 	draftError          string
 	choosingDraft       bool
@@ -312,6 +316,10 @@ func newProofreadingWorkspace(request proofreadingWindowRequest) *proofreadingWo
 		ocrScan:             newProofreadingOCRScan(),
 		ocrStep:             newProofreadingOCRStepState(),
 		aDocument:           &proofreadingObject{Role: proofreadingRoleA, Path: request.sourcePath, Name: request.sourceName},
+		originalAPath:       request.sourcePath,
+	}
+	if request.resume != nil && request.resume.SourceAOriginalPath != "" {
+		state.originalAPath = request.resume.SourceAOriginalPath
 	}
 	state.xCanvas.Axis = layout.Vertical
 	return state
@@ -587,6 +595,16 @@ func (a *App) processProofreadingResults() {
 			_ = state.bDocument.Adapter.Close()
 		}
 		state.bDocument = result.object
+		state.originalBPath = result.object.Path
+		state.originalBName = result.object.Name
+		if state.resume != nil && filepath.Clean(result.object.Path) == filepath.Clean(state.resume.SourceB) {
+			if state.resume.SourceBOriginalPath != "" {
+				state.originalBPath = state.resume.SourceBOriginalPath
+			}
+			if state.resume.SourceBName != "" {
+				state.originalBName = state.resume.SourceBName
+			}
+		}
 		if state.modelLayoutCancel != nil {
 			state.modelLayoutCancel()
 		}
@@ -606,6 +624,7 @@ func (a *App) processProofreadingResults() {
 		state.bDraftInitialized = true
 		state.bDraftDirty = false
 		state.pageOwnership = nil
+		state.originalPageEnds = nil
 		state.draftFilePath = ""
 		state.draftSavePending = false
 		state.draftPersistGen.Add(1)
@@ -649,6 +668,7 @@ func (a *App) processProofreadingResults() {
 		if result.found && result.draft != nil {
 			state.bDraftText = result.draft.Text
 			state.restoredModel = result.draft.Model
+			state.originalPageEnds = append([]int(nil), result.draft.OriginalPageEnds...)
 			state.pageOwnership = append([]proofreadingPageOwnership(nil), result.draft.Pages...)
 			state.xTextSizeStep = max(-3, min(proofreadingXTextSizeMaxStep, result.draft.TextSizeStep))
 			state.bDraftDirty = true
@@ -840,6 +860,11 @@ func (proofreadingMarkdownAdapter) Open(path string) (proofreadingAdapterDocumen
 		closeLoadedDocument(loaded)
 		return nil, err
 	}
+	units := proofreadingMarkdownContentUnits(parsed)
+	return &proofreadingLoadedAdapter{format: "markdown", loaded: loaded, units: units}, nil
+}
+
+func proofreadingMarkdownContentUnits(parsed document.MarkdownSnapshot) []proofreadingContentUnit {
 	units := make([]proofreadingContentUnit, 0, len(parsed.Blocks))
 	for index, block := range parsed.Blocks {
 		if block.Kind == "table" {
@@ -874,7 +899,7 @@ func (proofreadingMarkdownAdapter) Open(path string) (proofreadingAdapterDocumen
 		}
 		units = append(units, proofreadingContentUnit{ID: fmt.Sprintf("block-%d", index), Kind: kind, Text: text, Ordinal: len(units), Level: block.Level, Start: block.SourceStart, End: block.SourceEnd})
 	}
-	return &proofreadingLoadedAdapter{format: "markdown", loaded: loaded, units: units}, nil
+	return units
 }
 
 type proofreadingWordAdapter struct{}

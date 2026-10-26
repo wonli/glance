@@ -370,8 +370,13 @@ func (a *App) acceptProofreadingModelLayout() {
 					for i := range ends {
 						ends[i] = r.layout.Ends[proofreading.PageID(i+1)]
 					}
-					err = s.controller.Model.AssignInitial(ends)
+					if _, err = proofreadingOriginalPagesFromEnds(s.bDraftText, ends); err == nil {
+						err = s.controller.Model.AssignInitial(ends)
+					}
 					s.modelInitialAssigned = err == nil
+					if err == nil {
+						s.originalPageEnds = append([]int(nil), ends...)
+					}
 				} else {
 					err = s.controller.Model.ReflowDerived(r.layout.Ends)
 				}

@@ -9,19 +9,22 @@ import (
 
 // ProofreadingProject separates resumable working data from confirmed Git history.
 type ProofreadingProject struct {
-	ID            string    `json:"id"`
-	Title         string    `json:"title"`
-	Directory     string    `json:"directory"`
-	SourceA       string    `json:"source_a"`
-	SourceAHash   string    `json:"source_a_hash,omitempty"`
-	SourceB       string    `json:"source_b"`
-	PageCount     int       `json:"page_count"`
-	ReviewedCount int       `json:"reviewed_count"`
-	CurrentPage   int       `json:"current_page"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	Payload       []byte    `json:"-"`
-	RemoteURL     string    `json:"remote_url,omitempty"`
-	CredentialRef string    `json:"credential_ref,omitempty"`
+	ID                  string    `json:"id"`
+	Title               string    `json:"title"`
+	Directory           string    `json:"directory"`
+	SourceA             string    `json:"source_a"`
+	SourceAHash         string    `json:"source_a_hash,omitempty"`
+	SourceAOriginalPath string    `json:"source_a_original_path,omitempty"`
+	SourceB             string    `json:"source_b"`
+	SourceBName         string    `json:"source_b_name,omitempty"`
+	SourceBOriginalPath string    `json:"source_b_original_path,omitempty"`
+	PageCount           int       `json:"page_count"`
+	ReviewedCount       int       `json:"reviewed_count"`
+	CurrentPage         int       `json:"current_page"`
+	UpdatedAt           time.Time `json:"updated_at"`
+	Payload             []byte    `json:"-"`
+	RemoteURL           string    `json:"remote_url,omitempty"`
+	CredentialRef       string    `json:"credential_ref,omitempty"`
 }
 
 func (s *Store) SaveProofreadingProject(p ProofreadingProject) error {

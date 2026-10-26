@@ -37,6 +37,8 @@ type feedbackState struct {
 	kind           feedbackKind
 	messageRef     i18n.Message
 	policy         notificationPolicy
+	forceToast     bool
+	stickyToast    bool
 	detail         string
 	until          time.Time
 	close          widget.Clickable
@@ -48,6 +50,8 @@ type feedbackState struct {
 
 func (s *feedbackState) showMessage(message i18n.Message, kind feedbackKind, policy notificationPolicy, detail string, now time.Time) {
 	s.policy = policy
+	s.forceToast = false
+	s.stickyToast = false
 	s.kind = kind
 	s.messageRef = message
 	s.detail = detail
@@ -61,20 +65,22 @@ func (s *feedbackState) showMessage(message i18n.Message, kind feedbackKind, pol
 }
 
 func (s *feedbackState) visible(now time.Time) bool {
-	return s.policy == notificationToast && s.messageRef.ID != "" && now.Before(s.until)
+	return s.policy == notificationToast && s.messageRef.ID != "" && (s.stickyToast || now.Before(s.until))
 }
 
 func (s *feedbackState) toastVisible(now time.Time) bool {
 	if !s.visible(now) {
 		return false
 	}
-	return s.kind == feedbackError || s.actionLabel != ""
+	return s.forceToast || s.kind == feedbackError || s.actionLabel != ""
 }
 
 func (s *feedbackState) dismiss() {
 	s.messageRef = i18n.Message{}
 	s.detail = ""
 	s.actionLabel = ""
+	s.forceToast = false
+	s.stickyToast = false
 }
 
 type feedbackStyle struct {
@@ -116,7 +122,9 @@ func (a *App) layoutFeedback(gtx layout.Context) layout.Dimensions {
 	if !s.toastVisible(gtx.Now) || a.modal.Visible {
 		return layout.Dimensions{}
 	}
-	gtx.Execute(op.InvalidateCmd{At: s.until})
+	if !s.stickyToast {
+		gtx.Execute(op.InvalidateCmd{At: s.until})
+	}
 	return layout.NE.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: 160, Right: 16, Left: 16}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			width := min(gtx.Dp(390), gtx.Constraints.Max.X)
@@ -238,6 +246,16 @@ func (a *App) setStatusErrorMessage(message i18n.Message, source error, policy n
 func (a *App) setStatusDetailMessage(message i18n.Message, kind feedbackKind, policy notificationPolicy, detail string) {
 	a.statusRef = message
 	a.feedback.showMessage(message, kind, policy, detail, time.Now())
+}
+
+func (a *App) showToastMessage(message i18n.Message, kind feedbackKind, detail string) {
+	a.feedback.showMessage(message, kind, notificationToast, detail, time.Now())
+	a.feedback.forceToast = true
+}
+
+func (a *App) showProgressToastMessage(message i18n.Message) {
+	a.showToastMessage(message, feedbackInfo, "")
+	a.feedback.stickyToast = true
 }
 
 func (a *App) clearStatus() {

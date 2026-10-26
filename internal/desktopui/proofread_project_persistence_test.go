@@ -3,12 +3,14 @@ package desktopui
 import (
 	"bytes"
 	"encoding/json"
+	"glance/internal/application"
 	"glance/internal/fileutil"
 	"glance/internal/proofreading"
 	"glance/internal/workspace"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +28,7 @@ func TestProofreadingProjectSQLiteAndSourceRecovery(t *testing.T) {
 	m, _ := proofreading.New("修订正文", []proofreading.PageID{1})
 	snap := m.Snapshot()
 	p := workspace.ProofreadingProject{ID: "task", Directory: filepath.Join(root, "task"), SourceA: filepath.Join(root, "task", "sources", "a.pdf"), SourceB: filepath.Join(root, "task", "sources", "b.md")}
-	data := proofreadingProjectPayload{Draft: proofreadingPersistedDraft{Version: 2, Text: "修订正文", Model: &snap}, Page: 5, Offset: 42, XOffsets: []float64{17}, Confirmed: map[int]string{0: "hash"}}
+	data := proofreadingProjectPayload{Draft: proofreadingPersistedDraft{Version: 2, Text: "修订正文", Model: &snap, OriginalPageEnds: []int{2}}, Page: 5, Offset: 42, XOffsets: []float64{17}, Confirmed: map[int]string{0: "hash"}}
 	if err = persistProofreadingProject(store, p, data, io.NopCloser(bytes.NewBufferString("PDF")), b); err != nil {
 		t.Fatal(err)
 	}
@@ -39,13 +41,88 @@ func TestProofreadingProjectSQLiteAndSourceRecovery(t *testing.T) {
 	if err = json.Unmarshal(loaded.Payload, &restored); err != nil {
 		t.Fatal(err)
 	}
-	if restored.Page != 5 || restored.Offset != 42 || restored.XOffsets[0] != 17 || restored.Draft.Text != "修订正文" {
+	if restored.Page != 5 || restored.Offset != 42 || restored.XOffsets[0] != 17 || restored.Draft.Text != "修订正文" || !reflect.DeepEqual(restored.Draft.OriginalPageEnds, []int{2}) {
 		t.Fatal(restored)
 	}
 	src, err := os.ReadFile(loaded.SourceB)
 	if err != nil || string(src) != "正文" {
 		t.Fatal(string(src), err)
 	}
+}
+
+func TestProofreadingOriginalPagesSplitAtRuneEnds(t *testing.T) {
+	got, err := proofreadingOriginalPagesFromEnds("甲🙂e\u0301乙", []int{2, 4, 5})
+	if err != nil {
+		t.Fatalf("proofreadingOriginalPagesFromEnds: %v", err)
+	}
+	want := []string{"甲🙂", "e\u0301", "乙"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("proofreadingOriginalPagesFromEnds() = %#v, want %#v", got, want)
+	}
+}
+
+func TestProofreadingOriginalPagesRejectIncompleteRuneEnds(t *testing.T) {
+	if _, err := proofreadingOriginalPagesFromEnds("甲乙丙", []int{1, 2}); err == nil {
+		t.Fatal("proofreadingOriginalPagesFromEnds() error = nil, want omitted original text error")
+	}
+}
+
+func TestProofreadingOriginalPagesInitialAssignmentCapturesRuneEnds(t *testing.T) {
+	text := "甲🙂e\u0301乙"
+	model, err := proofreading.New(text, []proofreading.PageID{1, 2, 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(nil, "")
+	a.managedBackgroundClosed = true
+	s := &proofreadingWorkspace{
+		controller:         application.NewProofreadingController(model),
+		modelLayoutResults: make(chan proofreadingModelLayoutResult, 1),
+		pageFrames: []proofreadingPageFrame{
+			{PageIndex: 0, Width: 400, Height: 600},
+			{PageIndex: 1, Width: 400, Height: 600},
+			{PageIndex: 2, Width: 400, Height: 600},
+		},
+		bDraftText: text,
+		bDocument:  &proofreadingObject{},
+	}
+	a.proofreading = s
+	s.modelLayoutResults <- proofreadingModelLayoutResult{
+		generation: s.modelLayoutGeneration,
+		reflow:     true,
+		layout: application.ProofreadingLayoutSnapshot{
+			Revision:      model.Revision(),
+			StyleRevision: s.xTextSizeStep,
+			Pages:         map[proofreading.PageID]application.ProofreadingPageLayout{},
+			Ends:          map[proofreading.PageID]int{1: 2, 2: 4, 3: 5},
+		},
+	}
+
+	a.acceptProofreadingModelLayout()
+	if !reflect.DeepEqual(s.originalPageEnds, []int{2, 4, 5}) {
+		t.Fatalf("originalPageEnds = %#v, want %#v", s.originalPageEnds, []int{2, 4, 5})
+	}
+}
+
+func TestProofreadingOriginalPagesPersistAndRestore(t *testing.T) {
+	model, err := proofreading.New("确认稿", []proofreading.PageID{1, 2, 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := model.Snapshot()
+	draft := proofreadingPersistedDraft{Version: 2, Text: "确认稿", Model: &snapshot, OriginalPageEnds: []int{2, 4, 5}}
+	encoded, err := encodeProofreadingDraftFile(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := decodeProofreadingDraftFile(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(restored.OriginalPageEnds, []int{2, 4, 5}) {
+		t.Fatalf("draft OriginalPageEnds = %#v, want %#v", restored.OriginalPageEnds, []int{2, 4, 5})
+	}
+
 }
 
 func TestProofreadingProjectResumeRestoresPageAndLocalScroll(t *testing.T) {
@@ -91,7 +168,7 @@ func TestProofreadingProjectPayloadRoundTripsOCRJobAndReadsLegacyPayload(t *test
 	if err := json.Unmarshal([]byte(`{"page":3,"draft":{"version":2,"text":"old"}}`), &legacy); err != nil {
 		t.Fatal(err)
 	}
-	if legacy.Page != 3 || legacy.OCRJob != nil {
+	if legacy.Page != 3 || legacy.OCRJob != nil || legacy.Draft.OriginalPageEnds != nil {
 		t.Fatalf("legacy payload should remain readable without OCR metadata: %#v", legacy)
 	}
 }

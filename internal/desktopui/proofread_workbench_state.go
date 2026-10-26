@@ -39,6 +39,7 @@ type proofreadingWorkbenchState struct {
 	historyResults                            chan proofreadingHistoryLoadResult
 	selectedCommit                            string
 	historyTextViews                          map[string]*proofreadingHistoryTextView
+	exportPathPicker                          func(ext string, labels filePickerLabels) (string, error)
 }
 
 type proofreadingHistoryLoadResult struct {

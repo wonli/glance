@@ -27,6 +27,14 @@ type Store struct {
 	wordVersionPolicy wordVersionPolicy
 }
 
+// Path returns the backing database path when the store is file-backed.
+func (s *Store) Path() string {
+	if s == nil {
+		return ""
+	}
+	return s.path
+}
+
 type Tab struct {
 	ID         string
 	Kind       string
@@ -954,5 +962,3 @@ func (s *Store) AutoMaintainSpace() (bool, error) {
 	}
 	return false, nil
 }
-
-

@@ -68,6 +68,24 @@ func proofreadingAt(g layout.Context, x, y, w, h unit.Dp, draw layout.Widget) {
 	g.Constraints = layout.Exact(image.Pt(g.Dp(w), g.Dp(h)))
 	draw(g)
 }
+
+func (a *App) layoutProofreadingRowAction(g layout.Context, button *widget.Clickable, icon, label string, tint color.NRGBA) layout.Dimensions {
+	return button.Layout(g, func(g layout.Context) layout.Dimensions {
+		return layout.Inset{Left: 4, Right: 4, Top: 4, Bottom: 4}.Layout(g, func(g layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(g,
+				layout.Rigid(func(g layout.Context) layout.Dimensions {
+					return layoutProofreadingIcon(g, "home", icon, 14, tint)
+				}),
+				layout.Rigid(func(g layout.Context) layout.Dimensions {
+					return layout.Inset{Left: 4}.Layout(g, func(g layout.Context) layout.Dimensions {
+						return a.proofreadingText(g, a.textID(label), 12, tint, false)
+					})
+				}),
+			)
+		})
+	})
+}
+
 func proofreadingCard(g layout.Context, height unit.Dp, draw layout.Widget) layout.Dimensions {
 	size := image.Pt(g.Constraints.Max.X, g.Dp(height))
 	g.Constraints = layout.Exact(size)
@@ -248,23 +266,22 @@ func (a *App) layoutProofreadingProjectRow(g layout.Context, p workspace.Proofre
 		if bOpen.Clicked(g) && !w.busy {
 			a.resumeProofreadingProject(p)
 		}
+		bExport := w.button("export-" + p.ID)
+		if bExport.Clicked(g) && !w.busy {
+			a.startProofreadingProjectExport(p)
+		}
 		return layout.E.Layout(g, func(g layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(g,
 				layout.Rigid(func(g layout.Context) layout.Dimensions {
-					return bDelete.Layout(g, func(g layout.Context) layout.Dimensions {
-						return layout.Inset{Left: 6, Right: 6, Top: 4, Bottom: 4}.Layout(g, func(g layout.Context) layout.Dimensions {
-							return a.proofreadingText(g, a.textID("common.action.delete"), 12, color.NRGBA{R: 204, G: 68, B: 68, A: 255}, false)
-						})
-					})
+					return a.layoutProofreadingRowAction(g, bDelete, "trash-2", "common.action.delete", color.NRGBA{R: 204, G: 68, B: 68, A: 255})
 				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 				layout.Rigid(func(g layout.Context) layout.Dimensions {
-					return layout.Inset{Left: 12}.Layout(g, func(g layout.Context) layout.Dimensions {
-						return bOpen.Layout(g, func(g layout.Context) layout.Dimensions {
-							return layout.Inset{Left: 4, Right: 4, Top: 4, Bottom: 4}.Layout(g, func(g layout.Context) layout.Dimensions {
-								return a.proofreadingText(g, a.textID("proofread.workbench.continue"), 12, proofreadingDesignBlue, true)
-							})
-						})
-					})
+					return a.layoutProofreadingRowAction(g, bOpen, "pencil", "proofread.workbench.continue", proofreadingDesignBlue)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
+				layout.Rigid(func(g layout.Context) layout.Dimensions {
+					return a.layoutProofreadingRowAction(g, bExport, "download", "proofread.export.action", proofreadingDesignBlue)
 				}),
 			)
 		})
