@@ -141,3 +141,23 @@ func TestProofreadingOCRCompareRetriesIncompleteCache(t *testing.T) {
 		t.Fatalf("incomplete cache prevented retry: phase=%v err=%q", step.phase, step.err)
 	}
 }
+
+func TestProofreadingOCRCompareRefreshesOldCharacterGeometry(t *testing.T) {
+	a, s := proofreadingOCROverflowFixture(t)
+	step, page := s.ocrStep, s.xPages[0]
+	old := step.pages[0]
+	old.layout.CharacterVersion = 1
+	step.pages[0] = old
+	hash := proofreadingOCRDraftSnapshotHash(page.Content)
+	step.boundarySkip = &proofreadingOCRBoundarySkip{page: 0, sourceHash: s.aSourceHash, draftHash: hash}
+	cached := proofreadingOCRStepComparison{APage: 0, BPage: 0, SourceHash: s.aSourceHash, DraftHash: hash, BText: page.Content, BStart: page.ContentStart, BEnd: page.ContentEnd, HasEvidence: true, Complete: true}
+	if err := saveProofreadingOCRComparisonCache(cached); err != nil {
+		t.Fatal(err)
+	}
+	a.compareProofreadingOCRStep()
+	// The fixture blocks workers. Reaching the launch failure proves the old
+	// geometry goes through localization again instead of displaying its cache.
+	if step.phase != proofreadingOCRStepFailed {
+		t.Fatalf("completed comparison reused obsolete character geometry: phase=%v", step.phase)
+	}
+}

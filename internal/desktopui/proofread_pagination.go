@@ -3,6 +3,7 @@ package desktopui
 import (
 	"image"
 	"image/color"
+	"math"
 	"strconv"
 
 	"gioui.org/font"
@@ -67,6 +68,14 @@ func (a *App) layoutProofreadingPaginationHeading(gtx layout.Context, view *pdfV
 				label.MaxLines = 1
 				return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layoutProofreadingOpticallyCenteredLabel(gtx, label)
+				})
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: 24}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.E.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						gtx.Constraints = layout.Exact(image.Pt(min(gtx.Dp(360), gtx.Constraints.Max.X), gtx.Dp(18)))
+						return a.layoutProofreadingPaginationScrollbar(gtx, view)
+					})
 				})
 			}),
 		)
@@ -268,4 +277,47 @@ func (a *App) layoutProofreadingPaginationWaiting(gtx layout.Context) layout.Dim
 		label.Color = proofreadMuted
 		return label.Layout(gtx)
 	})
+}
+
+// The scrollbar navigates the same filtered page sequence as the thumbnails.
+// It changes only the viewport, leaving text and page ownership untouched.
+func (a *App) layoutProofreadingPaginationScrollbar(gtx layout.Context, view *pdfViewState) layout.Dimensions {
+	size := gtx.Constraints.Max
+	if size.X <= 0 || size.Y <= 0 {
+		return layout.Dimensions{}
+	}
+	bounds := image.Rectangle{Max: size}
+	area := clip.Rect(bounds).Push(gtx.Ops)
+	defer area.Pop()
+	semantic.DescriptionOp(a.textID("proofread.pagination.scrollbar.description")).Add(gtx.Ops)
+	pages := a.proofreadingPageIndices(max(1, view.info.Pages))
+	style := material.Scrollbar(a.theme, &view.paginationScrollbar)
+	style.Track.MajorPadding = 0
+	style.Track.MinorPadding = 4
+	style.Track.Color = color.NRGBA{}
+	trackColor := color.NRGBA{R: 224, G: 226, B: 229, A: 255}
+	trackHeight := max(1, gtx.Dp(4))
+	trackTop := (size.Y - trackHeight) / 2
+	paint.FillShape(gtx.Ops, trackColor, clip.UniformRRect(image.Rect(0, trackTop, size.X, trackTop+trackHeight), trackHeight/2).Op(gtx.Ops))
+	style.Indicator.MinorWidth = 10
+	style.Indicator.CornerRadius = 5
+	style.Indicator.MajorMinLen = 40
+	style.Indicator.Color = color.NRGBA{R: 148, G: 153, B: 161, A: 255}
+	style.Indicator.HoverColor = color.NRGBA{R: 112, G: 119, B: 129, A: 255}
+	if view.paginationScrollbar.Dragging() {
+		style.Indicator.Color = style.Indicator.HoverColor
+	}
+	if len(pages) < 2 {
+		return layout.Dimensions{Size: size}
+	}
+	row := max(0, proofreadingFilterRowForPage(pages, view.page))
+	span := max(1/float32(len(pages)), min(float32(.5), float32(gtx.Dp(style.Indicator.MajorMinLen))/float32(size.X)))
+	start := float32(row) / float32(len(pages)-1) * (1 - span)
+	style.Layout(gtx, layout.Horizontal, start, start+span)
+	if delta := view.paginationScrollbar.ScrollDistance(); delta != 0 {
+		position := max(float32(0), min(1-span, start+delta))
+		target := int(math.Round(float64(position/(1-span)) * float64(len(pages)-1)))
+		a.setProofreadingCurrentPage(pages[max(0, min(len(pages)-1, target))])
+	}
+	return layout.Dimensions{Size: size}
 }

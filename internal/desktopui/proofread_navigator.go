@@ -59,23 +59,10 @@ func (a *App) layoutProofreadingXNavigatorCanvas(gtx layout.Context, view *pdfVi
 	if len(pageIndices) == 0 {
 		return a.layoutProofreadingPageMessageOnCanvas(gtx, a.textID("proofread.filter.empty"), false, proofreadXCanvas)
 	}
-	// The source reading line is one third down the viewport. A remains the
-	// authority even while X text and its local viewport change.
-	firstRow := max(0, min(len(pageIndices)-1, view.canvas.Position.First))
-	targetRow := firstRow
-	top := -view.canvas.Position.Offset
-	line := gtx.Constraints.Max.Y / 3
-	for targetRow+1 < len(pageIndices) {
-		page := pageIndices[targetRow]
-		size := proofreadingXPagePixelSize(gtx, view, s, page)
-		bottom := top + size.Y + 2*gtx.Dp(12)
-		if bottom > line {
-			break
-		}
-		top = bottom
-		targetRow++
-	}
-	target := pageIndices[targetRow]
+	view.proofreadingReadingLine = gtx.Constraints.Max.Y / 3
+	view.proofreadingPageGap = 2 * gtx.Dp(12)
+	a.syncPDFPageFromCanvas(view)
+	target := view.page
 	if !n.initialized || n.page != target {
 		*n = proofreadingNavigator{tag: n.tag, initialized: true, page: target, feedbackKey: "proofread.navigator.ready"}
 		gtx.Execute(op.InvalidateCmd{})

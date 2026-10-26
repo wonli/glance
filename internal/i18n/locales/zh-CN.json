@@ -2604,6 +2604,7 @@
   "proofread.page_frame.error": "无法读取 A 的页面尺寸",
   "proofread.page_frame.page_unavailable": "无法读取当前页尺寸，X 使用默认页面尺寸显示 B。",
   "proofread.pagination.title": "页码",
+  "proofread.pagination.scrollbar.description": "拖动快速定位页码，A / X 同步翻页",
   "proofread.pagination.instruction": "点击缩略页，A / X 同步翻页",
   "proofread.pagination.adjust.backward": "将分页线向前移动一个字",
   "proofread.pagination.adjust.forward": "将分页线向后移动一个字",

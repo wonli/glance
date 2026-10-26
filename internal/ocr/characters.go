@@ -13,7 +13,7 @@ import (
 	"unicode"
 )
 
-const CharacterGeometryVersion = 1
+const CharacterGeometryVersion = 3
 
 var ErrCharacterLocalizationUnavailable = errors.New("本机文字定位不可用")
 
@@ -128,9 +128,9 @@ type characterGeometryPair struct {
 	equal            bool
 }
 
-// Align local geometry to the authoritative cloud text. Isolated replacement
-// characters are accepted only between exact neighbours in a strongly matching
-// block. Repeated word/line-sized boxes are rejected instead of called glyphs.
+// Align local geometry to the authoritative cloud text. Replacement runs of up
+// to three characters require exact neighbours in a strongly matching block.
+// Repeated word/line-sized boxes are rejected instead of called glyphs.
 func alignCharacterGeometry(target string, observed []detectedCharacter) []characterGeometryPair {
 	var a, b []rune
 	var offsets, indices []int
@@ -211,12 +211,65 @@ func alignCharacterGeometry(target string, observed []detectedCharacter) []chara
 		if duplicates[box] > 1 || box[0] < 0 || box[1] < 0 || box[2] > 1 || box[3] > 1 || box[2] <= box[0] || box[3] <= box[1] {
 			continue
 		}
-		if !pair.equal {
-			if matches*100 < max(len(a), len(b))*65 || i == 0 || i+1 == len(pairs) || !pairs[i-1].equal || !pairs[i+1].equal || pairs[i-1].offset+1 != pair.offset || pair.offset+1 != pairs[i+1].offset || pairs[i-1].observed+1 != pair.observed || pair.observed+1 != pairs[i+1].observed {
-				continue
-			}
+		if !pair.equal && (matches*100 < max(len(a), len(b))*65 || !characterGeometryReplacementAnchored(pairs, i, observed, duplicates, len(a), len(b))) {
+			continue
 		}
+
 		result = append(result, pair)
 	}
 	return result
+}
+
+// Use measured glyph rectangles for a short substitution run only when exact
+// neighbours bound a one-to-one, contiguous mapping on the same observed line.
+func characterGeometryReplacementAnchored(pairs []characterGeometryPair, index int, observed []detectedCharacter, duplicates map[[4]float64]int, targetCount, observedCount int) bool {
+	start, end := index, index
+	for start > 0 && !pairs[start-1].equal {
+		start--
+	}
+	for end+1 < len(pairs) && !pairs[end+1].equal {
+		end++
+	}
+	if end-start+1 > 3 {
+		return false
+	}
+	left, right := start-1, end+1
+	if left < 0 || right == len(pairs) {
+		// A title edge has only one side to anchor. Require one substitution,
+		// three exact neighbours, and no insertion/deletion anywhere in the block.
+		if start != end || targetCount != observedCount || len(pairs) != targetCount || len(pairs) < 4 {
+			return false
+		}
+		if left < 0 {
+			left, right = 0, 3
+		} else {
+			left, right = len(pairs)-4, len(pairs)-1
+		}
+		for i := left; i <= right; i++ {
+			if i != start && !pairs[i].equal {
+				return false
+			}
+		}
+	}
+	horizontal, vertical := true, true
+	for i := left; i <= right; i++ {
+		p := pairs[i]
+		box := observed[p.observed].Bounds
+		if duplicates[box] > 1 || box[0] < 0 || box[1] < 0 || box[2] > 1 || box[3] > 1 || box[2] <= box[0] || box[3] <= box[1] {
+			return false
+		}
+		if i == left {
+			continue
+		}
+		prev := pairs[i-1]
+		if prev.offset+1 != p.offset || prev.observed+1 != p.observed {
+			return false
+		}
+		before := observed[prev.observed].Bounds
+		yOverlap := math.Min(before[3], box[3]) - math.Max(before[1], box[1])
+		xOverlap := math.Min(before[2], box[2]) - math.Max(before[0], box[0])
+		horizontal = horizontal && 2*yOverlap >= math.Min(before[3]-before[1], box[3]-box[1]) && box[0] > before[0]
+		vertical = vertical && 2*xOverlap >= math.Min(before[2]-before[0], box[2]-box[0]) && box[1] > before[1]
+	}
+	return horizontal || vertical
 }

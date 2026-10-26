@@ -2604,6 +2604,7 @@
   "proofread.page_frame.error": "Could not read A's page dimensions",
   "proofread.page_frame.page_unavailable": "Could not read this page size; X is showing B on a default page frame.",
   "proofread.pagination.title": "Pages",
+  "proofread.pagination.scrollbar.description": "Drag to jump to a page and sync A / X",
   "proofread.pagination.instruction": "Select a thumbnail to sync A / X",
   "proofread.pagination.adjust.backward": "Move the page break back by one character",
   "proofread.pagination.adjust.forward": "Move the page break forward by one character",

@@ -612,7 +612,7 @@ func (a *App) compareProofreadingOCRStep() {
 			return
 		}
 	}
-	if cachedComparison, hit, _ := loadProofreadingOCRComparisonCache(sourceHash, aPage, bPage, pageDraftHash); hit && cachedComparison.Complete && proofreadingOCRStepComparisonValid(state, cachedComparison) {
+	if cachedComparison, hit, _ := loadProofreadingOCRComparisonCache(sourceHash, aPage, bPage, pageDraftHash); hit && cachedComparison.Complete && ocrPage.layout.CharacterVersion == ocr.CharacterGeometryVersion && proofreadingOCRStepComparisonValid(state, cachedComparison) {
 		a.clearProofreadingOCRStepComparisonHistory(step, proofreadingOCRStepPair{APage: aPage, BPage: bPage})
 		step.page, step.bPage = aPage, bPage
 		if a.prepareProofreadingOCRStepComparison(cachedComparison) {

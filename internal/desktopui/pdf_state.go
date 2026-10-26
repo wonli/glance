@@ -47,6 +47,9 @@ type pdfViewState struct {
 	thumbnails, showSearch            bool
 	visualOnly                        bool
 	toolbar, thumbList, canvas, notes widget.List
+	paginationScrollbar               widget.Scrollbar
+	proofreadingReadingLine           int
+	proofreadingPageGap               int
 	horizontal                        widget.List
 	buttons                           map[string]*widget.Clickable
 	search                            widget.Editor

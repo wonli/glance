@@ -106,7 +106,13 @@ func (a *App) layoutProofreadingXPageList(gtx layout.Context, view *pdfViewState
 		if pageStatus == "" && pageIndex == view.page && status != "" {
 			pageStatus, isError = status, statusIsError
 		}
-		return a.layoutProofreadingProjectionPage(gtx, view, pageIndex, page, pageStatus, isError)
+		dims := a.layoutProofreadingProjectionPage(gtx, view, pageIndex, page, pageStatus, isError)
+		// Keep room below the last paper so List doesn't backfill a previous
+		// row and undo an explicit jump to the final page.
+		if row == len(pages)-1 {
+			dims.Size.Y = max(dims.Size.Y, state.xViewport.Y)
+		}
+		return dims
 	})
 
 	state.xEditorsSnapshot = snapshot

@@ -122,7 +122,27 @@ func (a *App) syncPDFPageFromCanvas(view *pdfViewState) bool {
 	state := a.proofreading
 	pages := a.proofreadingPageIndices(max(1, view.info.Pages))
 	view.pageMap = pages
-	changed := view.syncPageFromCanvas()
+	// First is the first partially visible row, not necessarily the page at
+	// the reading line. Use the same page for X's highlight and all navigation.
+	row := view.canvas.Position.First
+	top := -view.canvas.Position.Offset
+	for row >= 0 && row+1 < len(pages) && view.proofreadingReadingLine > 0 && view.scale > 0 {
+		_, height := pdfCachedPageSize(view, pages[row])
+		if _, h, ok := state.pageSize(pages[row]); ok {
+			height = h
+		}
+		if cached, ok := view.cache[pages[row]]; ok && cached.page.Height > 0 {
+			height = cached.page.Height
+		}
+		bottom := top + max(1, int(height*view.scale)) + view.proofreadingPageGap
+		if bottom > view.proofreadingReadingLine {
+			break
+		}
+		top = bottom
+		row++
+	}
+	page, ok := proofreadingFilterPageAtRow(pages, row)
+	changed := ok && view.syncPage(page)
 	if changed && state.ocrScan != nil && state.ocrScan.active() && view.page != state.ocrScan.current {
 		state.ocrScan.follow = false
 	}

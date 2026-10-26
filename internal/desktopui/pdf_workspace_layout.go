@@ -117,6 +117,10 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 	} else {
 		v.pageMap = nil
 	}
+	if a.proofreading != nil {
+		v.proofreadingReadingLine = gtx.Constraints.Max.Y / 3
+		v.proofreadingPageGap = 2 * gtx.Dp(12)
+	}
 	if a.syncPDFPageFromCanvas(v) {
 		gtx.Execute(op.InvalidateCmd{})
 	}
@@ -159,7 +163,7 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 				pageH = r.page.Height
 			}
 			size := image.Pt(max(1, int(pageW*scale)), max(1, int(pageH*scale)))
-			return layout.Inset{Top: 12, Bottom: 12, Left: 24, Right: 24}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			dims := layout.Inset{Top: 12, Bottom: 12, Left: 24, Right: 24}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints = layout.Exact(size)
 					shadowOffset := gtx.Dp(2)
@@ -227,6 +231,10 @@ func (a *App) layoutPDFCanvas(gtx layout.Context) layout.Dimensions {
 					return layout.Dimensions{Size: size}
 				})
 			})
+			if a.proofreading != nil && row == listPages-1 {
+				dims.Size.Y = max(dims.Size.Y, viewport.Y)
+			}
+			return dims
 		})
 	})
 	if a.proofreading == nil {

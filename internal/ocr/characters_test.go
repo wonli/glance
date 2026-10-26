@@ -115,3 +115,27 @@ func TestCharacterGeometryRejectsUnanchoredReplacementRuns(t *testing.T) {
 		}
 	}
 }
+
+func TestCharacterGeometryKeepsAnchoredTitleEdgeReplacement(t *testing.T) {
+	for _, item := range []struct{ target, observed string }{{"贈李果毅", "赠李果毅"}, {"天地玄昈", "天地玄曈"}} {
+		pairs := alignCharacterGeometry(item.target, testDetectedCharacters(item.observed))
+		if len(pairs) != 4 {
+			t.Fatalf("title edge lost its measured glyph: target=%q pairs=%v", item.target, pairs)
+		}
+		for i, p := range pairs {
+			if p.offset != i || p.observed != i {
+				t.Fatal("title geometry shifted")
+			}
+		}
+	}
+}
+
+func TestCharacterGeometryRejectsAmbiguousTitleEdge(t *testing.T) {
+	for _, item := range []struct{ target, observed string }{{"贈李果", "赠李果"}, {"贈李果毅", "赠天李果毅"}, {"贈李果毅", "李果毅"}} {
+		for _, p := range alignCharacterGeometry(item.target, testDetectedCharacters(item.observed)) {
+			if !p.equal {
+				t.Fatalf("ambiguous title edge mapped: %q %+v", item.target, p)
+			}
+		}
+	}
+}
