@@ -137,6 +137,9 @@ type App struct {
 	settingsReturnSection         homeSection
 	homeTypeFilter                string
 	homeSearch                    widget.Editor
+	homeToolsCategory             string
+	homeToolsSearch               widget.Editor
+	homeToolsFilterButtons        map[string]*widget.Clickable
 	homeSortOpenedDesc            bool
 	homeContentList               widget.List
 	homeActionButtons             map[string]*widget.Clickable
@@ -357,10 +360,12 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		tabCloseButtons:               make(map[string]*widget.Clickable),
 		homeSection:                   homeSectionRecent,
 		homeTypeFilter:                homeFilterAll,
+		homeToolsCategory:             homeToolFilterAll,
 		homeSortOpenedDesc:            true,
 		homeActionButtons:             make(map[string]*widget.Clickable),
 		homeNavButtons:                make(map[string]*widget.Clickable),
 		homeFilterButtons:             make(map[string]*widget.Clickable),
+		homeToolsFilterButtons:        make(map[string]*widget.Clickable),
 		homeOpenButtons:               make(map[string]*widget.Clickable),
 		homeFavoriteButtons:           make(map[string]*widget.Clickable),
 		homeMoreButtons:               make(map[string]*widget.Clickable),
@@ -398,6 +403,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 	}
 	a.setActiveSessionID("")
 	a.homeSearch.SingleLine = true
+	a.homeToolsSearch.SingleLine = true
 	if window == nil {
 		if err := prepareWordFontScanner(); err != nil {
 			log.Printf("prepare test utility Word/system font scanner: %v", err)

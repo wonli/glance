@@ -5,6 +5,7 @@ dist/**
 **.DS_Store
 .idea/
 .worktrees/
+.codex-**/
 data/**
 config.yaml
 trashDir

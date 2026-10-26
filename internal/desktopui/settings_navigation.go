@@ -28,7 +28,7 @@ func (a *App) processSettingsNavClicks(gtx layout.Context) {
 		a.agentUI.apiKeyInput.Mask = '•'
 		a.resetHomeContentScroll()
 		switch a.settingsReturnSection {
-		case homeSectionRecent, homeSectionFavorites, homeSectionAIAssistant:
+		case homeSectionRecent, homeSectionFavorites, homeSectionAIAssistant, homeSectionTools:
 			a.homeSection = a.settingsReturnSection
 		default:
 			a.homeSection = homeSectionRecent

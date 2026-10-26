@@ -32,6 +32,7 @@ const (
 	homeSectionRecent homeSection = iota
 	homeSectionFavorites
 	homeSectionAIAssistant
+	homeSectionTools
 	homeSectionSettings
 )
 
@@ -343,6 +344,11 @@ func (a *App) layoutHomeSidebar(gtx layout.Context) layout.Dimensions {
 						})
 					}),
 					trackedRigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return a.layoutHomeNavRow(gtx, "tools", "blocks", a.text(i18n.Message{ID: "home.nav.tools"}), -1, a.homeSection == homeSectionTools)
+						})
+					}),
+					trackedRigid(func(gtx layout.Context) layout.Dimensions {
 						return a.layoutHomeNavRow(gtx, "agent-settings", "settings-2", a.text(i18n.Message{ID: "home.nav.settings"}), -1, a.homeSection == homeSectionSettings)
 					}),
 					trackedRigid(func(gtx layout.Context) layout.Dimensions {
@@ -404,9 +410,13 @@ func (a *App) processHomeNavClicks(gtx layout.Context) {
 	}{
 		{id: "recent", section: homeSectionRecent},
 		{id: "favorites", section: homeSectionFavorites},
+		{id: "tools", section: homeSectionTools},
 	} {
 		if a.homeNavButton(navigation.id).Clicked(gtx) {
 			a.selectHomeFolder("")
+			if navigation.section == homeSectionTools {
+				a.resetHomeContentScroll()
+			}
 			a.homeSection = navigation.section
 		}
 	}
@@ -526,6 +536,9 @@ func (a *App) layoutHomeContentScrollbar(gtx layout.Context) layout.Dimensions {
 func (a *App) layoutHomeContentPage(gtx layout.Context) layout.Dimensions {
 	if a.homeSection == homeSectionRecent && a.homeSelectedFolderID != "" {
 		return a.layoutHomeFolderContentPage(gtx)
+	}
+	if a.homeSection == homeSectionTools {
+		return a.layoutHomeToolsPage(gtx)
 	}
 	var precedingHeight int
 	trackedRigid := func(child layout.Widget) layout.FlexChild {

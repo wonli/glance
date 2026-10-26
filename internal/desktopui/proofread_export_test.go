@@ -30,7 +30,7 @@ type proofreadingExportFixture struct {
 	originalRaw []byte
 }
 
-func newProofreadingExportFixture(t *testing.T, extension string, saveEnds bool, confirmed map[int]string, stale map[int]string) proofreadingExportFixture {
+func newProofreadingExportFixture(t *testing.T, extension string, saveEnds bool, confirmed map[int]string, stale map[int]string, sourceContent ...string) proofreadingExportFixture {
 	t.Helper()
 	root := t.TempDir()
 	store, err := workspace.Open(filepath.Join(root, "workspace.db"))
@@ -60,9 +60,12 @@ func newProofreadingExportFixture(t *testing.T, extension string, saveEnds bool,
 	pdfHash := hex.EncodeToString(pdfDigest[:])
 	originalBPath := filepath.Join(root, "Original Manuscript"+extension)
 	bPath := filepath.Join(sourcesDir, "manuscript"+extension)
-	source := []byte("aa\nbb\ncc\ndd")
+	source := "aa\nbb\ncc\ndd"
+	if len(sourceContent) > 0 {
+		source = sourceContent[0]
+	}
 	for _, path := range []string{originalBPath, bPath} {
-		if err := os.WriteFile(path, source, 0600); err != nil {
+		if err := os.WriteFile(path, []byte(source), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -129,7 +132,7 @@ func newProofreadingExportFixture(t *testing.T, extension string, saveEnds bool,
 	if err != nil || !found {
 		t.Fatalf("load saved proofreading metadata: found=%v err=%v", found, err)
 	}
-	return proofreadingExportFixture{store: store, project: project, original: original, originalRaw: source}
+	return proofreadingExportFixture{store: store, project: project, original: original, originalRaw: []byte(source)}
 }
 
 func proofreadingExportCurrentPageHash(projectID, sourceHash string, model *proofreading.Model, id proofreading.PageID) string {
@@ -447,6 +450,55 @@ func TestProofreadingMarkdownExportPreservesInlineFormatting(t *testing.T) {
 	}
 }
 
+func TestProofreadingMarkdownExportPreservesHTMLUnderline(t *testing.T) {
+	raw := "Intro <u>underlined</u> text."
+	original, _, err := proofreadingMarkdownProjection(raw)
+	if err != nil {
+		t.Fatalf("proofreadingMarkdownProjection: %v", err)
+	}
+	model, err := proofreading.New(original, []proofreading.PageID{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := model.AssignInitial([]int{len([]rune(original))}); err != nil {
+		t.Fatal(err)
+	}
+	if err := model.ReplacePage(1, strings.Replace(original, "underlined", "emphasized", 1)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := preserveProofreadingMarkdownFormatting(raw, original, model.Snapshot().Runs)
+	if err != nil {
+		t.Fatalf("preserveProofreadingMarkdownFormatting: %v", err)
+	}
+	want := "Intro <u>emphasized</u> text."
+	if got != want {
+		t.Fatalf("formatted export = %q, want %q", got, want)
+	}
+}
+
+func TestBuildProofreadingMarkdownExportPreservesEditedFormatting(t *testing.T) {
+	raw := "**aa**\n\n**bb**\n\n**cc**\n\n**dd**"
+	want := "**strong**\n\n**bb**\n\n**cc**\n\n**dd**"
+	for _, tc := range []struct {
+		name      string
+		confirmed map[int]string
+	}{
+		{name: "all pages confirmed", confirmed: map[int]string{0: "strong", 1: "\nbb", 2: "\ncc", 3: "\ndd"}},
+		{name: "unreviewed pages retain original formatting", confirmed: map[int]string{0: "strong"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newProofreadingExportFixture(t, ".md", true, tc.confirmed, nil, raw)
+			got, extension, err := buildProofreadingProjectExport(context.Background(), fixture.store, fixture.project, "Go", fontcatalog.Snapshot{})
+			if err != nil {
+				t.Fatalf("buildProofreadingProjectExport: %v", err)
+			}
+			if extension != ".md" || got != want {
+				t.Fatalf("export = (%q, %q), want (%q, %q)", got, extension, want, ".md")
+			}
+		})
+	}
+}
+
 func TestBuildProofreadingExportRejectsWordBeforeReadingSources(t *testing.T) {
 	project := workspace.ProofreadingProject{ID: "word", SourceB: filepath.Join(t.TempDir(), "source.docx")}
 	_, _, err := buildProofreadingProjectExport(context.Background(), nil, project, "Go", fontcatalog.Snapshot{})
@@ -516,8 +568,7 @@ func TestProofreadingExportFlowUsesOriginalExtensionAndBasename(t *testing.T) {
 	for _, extension := range []string{".md", ".markdown", ".txt"} {
 		t.Run(extension, func(t *testing.T) {
 			a, w, fixture := newProofreadingExportFlowFixture(t, extension)
-			originalName := filepath.Base(fixture.project.SourceBName)
-			wantDefault := strings.TrimSuffix(originalName, filepath.Ext(originalName)) + a.textID("proofread.export.filename_suffix")
+			wantDefault := "Reference-校对进度(0／4)"
 			chosen := filepath.Join(t.TempDir(), "chosen"+extension)
 			var gotExtension, gotDefault string
 			w.exportPathPicker = func(ext string, labels filePickerLabels) (string, error) {
@@ -530,13 +581,30 @@ func TestProofreadingExportFlowUsesOriginalExtensionAndBasename(t *testing.T) {
 				t.Fatalf("picker ext/default = %q/%q, want %q/%q", gotExtension, gotDefault, strings.TrimPrefix(extension, "."), wantDefault)
 			}
 			if _, err := os.Stat(chosen); err != nil {
-				t.Fatalf("export output %q was not created: %v", chosen, err)
+				t.Fatalf("export output %q was not created: %v (export detail: %s)", chosen, err, a.feedback.detail)
 			}
 			if w.message != "" || a.feedback.messageRef.ID != "proofread.export.success" || !strings.Contains(a.text(a.feedback.messageRef), chosen) || !a.feedback.toastVisible(time.Now()) {
 				t.Fatalf("success should appear as a toast without changing workbench layout: workbench=%q toast=%q", w.message, a.text(a.feedback.messageRef))
 			}
 		})
 	}
+}
+
+func TestProofreadingExportFilenameUsesANameAndProgress(t *testing.T) {
+	a, w, fixture := newProofreadingExportFlowFixture(t, ".md")
+	project := fixture.project
+	project.SourceBName = "manuscript.md"
+	project.SourceBOriginalPath = "/books/唐诗.增订版.md"
+	project.Title = "唐诗汇评.增订版.pdf"
+	project.ReviewedCount, project.PageCount = 2, 892
+	w.exportPathPicker = func(ext string, labels filePickerLabels) (string, error) {
+		if ext != "md" || labels.UntitledFile != "唐诗汇评.增订版-校对进度(2／892)" {
+			t.Errorf("picker filename = %q.%s", labels.UntitledFile, ext)
+		}
+		return "", nil
+	}
+	a.startProofreadingProjectExport(project)
+	finishProofreadingExportFlow(a)
 }
 
 func TestProofreadingExportFlowRejectsExtensionMismatchWithoutOverwritingExpectedExtension(t *testing.T) {
@@ -778,5 +846,43 @@ func TestProofreadingExportFlowReportsConfirmedPageNumber(t *testing.T) {
 	finishProofreadingExportFlow(a)
 	if w.message != "" || a.feedback.messageRef.ID != "proofread.export.confirm_page" || !strings.Contains(a.text(a.feedback.messageRef), "3") || !a.feedback.toastVisible(time.Now()) {
 		t.Fatalf("page-specific toast = %q, want page 3 without changing workbench layout", a.text(a.feedback.messageRef))
+	}
+}
+
+func TestProofreadingMarkdownExportPreservesLayoutAtBoundaries(t *testing.T) {
+	for _, tc := range []struct{ name, raw, before, after, want string }{
+		{"paragraph end", "# 标题\n\n**原文**\n\n下一段\n", "原文", "原文补充", "# 标题\n\n**原文补充**\n\n下一段\n"},
+		{"paragraph start", "第一段\n\n**原文**\n", "原文", "补充原文", "第一段\n\n**补充原文**\n"},
+		{"table", "| 名称 | 内容 |\n| --- | --- |\n| 原文 | **粗体** |\n", "原文", "新文", "| 名称 | 内容 |\n| --- | --- |\n| 新文 | **粗体** |\n"},
+		{"code", "```txt\n原文\n```\n", "原文", "新文", "```txt\n新文\n```\n"},
+		{"inline code", "文字 `原文` 结尾\n", "原文", "新文", "文字 `新文` 结尾\n"},
+		{"list end", "- **原文**\n- 下一项\n", "原文", "原文补充", "- **原文补充**\n- 下一项\n"},
+		{"code punctuation", "```txt\n原文\n```\n", "原文", "a_b", "```txt\na_b\n```\n"},
+		{"math block", "$$\nx_1\n$$\n", "x_1", "y_2", "$$\ny_2\n$$\n"},
+		{"line ending", "**原文**\r\n下一行\r\n", "原文", "新文", "**新文**\r\n下一行\r\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			original, _, err := proofreadingMarkdownProjection(tc.raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			model, err := proofreading.New(original, []proofreading.PageID{1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := model.AssignInitial([]int{len([]rune(original))}); err != nil {
+				t.Fatal(err)
+			}
+			if err := model.ReplacePage(1, strings.Replace(original, tc.before, tc.after, 1)); err != nil {
+				t.Fatal(err)
+			}
+			got, err := preserveProofreadingMarkdownFormatting(tc.raw, original, model.Snapshot().Runs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("export = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

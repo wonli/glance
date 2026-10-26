@@ -118,7 +118,9 @@ func (a *App) processProofreadingTabs(gtx layout.Context) {
 			if a.window != nil {
 				a.window.Perform(system.ActionRaise)
 			}
-			if err := a.openProofreadingTab(request); err != nil {
+			if request.workbenchOnly {
+				a.selectProofreadingWorkbench()
+			} else if err := a.openProofreadingTab(request); err != nil {
 				a.ensureProofreadingWorkbench().message = err.Error()
 			}
 		default:
@@ -157,6 +159,20 @@ func (a *App) processProofreadingTabs(gtx layout.Context) {
 			a.closeProofreadingTab(tab.id)
 		}
 	}
+}
+
+func (a *App) selectProofreadingWorkbench() {
+	a.selectedProofreadingTabID = ""
+	a.activeTabID = "recent"
+	w := a.ensureProofreadingWorkbench()
+	w.settings = false
+	w.authMode = ""
+	w.historyRequest++
+	w.historyOpen = false
+	w.historyLoading = false
+	w.historyMessage = ""
+	w.message = ""
+	w.list.Position = layout.Position{}
 }
 
 func (a *App) layoutProofreadingTab(g layout.Context, tab *proofreadingTab) layout.Dimensions {

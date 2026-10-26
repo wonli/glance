@@ -26,13 +26,19 @@ func (r *desktopRuntime) openProofreadingModuleWindow(request proofreadingWindow
 // Enqueue and retirement share the runtime lock: no request can be delivered
 // to an old queue after that window begins closing.
 func (r *desktopRuntime) enqueueProofreadingModuleRequest(request proofreadingWindowRequest) (*app.Window, chan proofreadingWindowRequest, bool, error) {
-	if request.sourceSnapshot == nil {
+	if request.workbenchOnly && request.sourceSnapshot != nil {
+		request.sourceSnapshot.Close()
+		return nil, nil, false, fmt.Errorf("文档工作台入口不能携带 PDF 快照")
+	}
+	if request.sourceSnapshot == nil && !request.workbenchOnly {
 		return nil, nil, false, fmt.Errorf("无法读取当前 PDF 快照")
 	}
 	r.mu.Lock()
 	if r.shuttingDown || r.quitRequested {
 		r.mu.Unlock()
-		request.sourceSnapshot.Close()
+		if request.sourceSnapshot != nil {
+			request.sourceSnapshot.Close()
+		}
 		return nil, nil, false, fmt.Errorf("应用正在退出，无法打开校对模块")
 	}
 	window, requests := r.proofreadingModuleWindow, r.proofreadingModuleRequests
@@ -49,7 +55,9 @@ func (r *desktopRuntime) enqueueProofreadingModuleRequest(request proofreadingWi
 		return window, requests, start, nil
 	default:
 		r.mu.Unlock()
-		request.sourceSnapshot.Close()
+		if request.sourceSnapshot != nil {
+			request.sourceSnapshot.Close()
+		}
 		return nil, nil, false, fmt.Errorf("校对模块正在打开任务，请稍后重试")
 	}
 }

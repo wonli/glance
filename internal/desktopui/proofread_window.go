@@ -27,6 +27,7 @@ import (
 )
 
 type proofreadingWindowRequest struct {
+	workbenchOnly  bool
 	resumePayload  *proofreadingProjectPayload
 	resume         *workspace.ProofreadingProject
 	showHistory    bool

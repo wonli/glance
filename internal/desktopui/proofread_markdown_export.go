@@ -22,11 +22,11 @@ type proofreadingMarkdownSourceSegment struct {
 }
 
 type proofreadingMarkdownLocalSegment struct {
-	start      int
-	end        int
-	source     int
-	direct     bool
-	math       bool
+	start  int
+	end    int
+	source int
+	direct bool
+	math   bool
 }
 
 type proofreadingMarkdownSourceEdit struct {
@@ -70,7 +70,9 @@ func proofreadingMarkdownProjection(source string) (string, []proofreadingMarkdo
 		}
 		leading := len([]rune(value)) - len([]rune(strings.TrimLeftFunc(value, unicode.IsSpace)))
 		trimmedLength := utf8.RuneCountInString(trimmed)
-		preserveOffsets := value == text
+		// Tab replacement changes the glyph, but not its rune position. Only
+		// CRLF normalization changes the positions of following characters.
+		preserveOffsets := !strings.Contains(text, "\r\n")
 		for _, item := range local {
 			start := max(item.start, leading)
 			end := min(item.end, leading+trimmedLength)
@@ -140,7 +142,15 @@ func proofreadingMarkdownProjection(source string) (string, []proofreadingMarkdo
 		} else if block.SourceEnd > block.SourceStart && block.SourceStart >= 0 && block.SourceEnd <= len(sourceRunes) {
 			contentRunes := []rune(block.Text)
 			if len(contentRunes) == block.SourceEnd-block.SourceStart && string(sourceRunes[block.SourceStart:block.SourceEnd]) == block.Text {
-				local = append(local, proofreadingMarkdownLocalSegment{start: prefixLength, end: prefixLength + len(contentRunes), source: block.SourceStart, direct: true})
+				local = append(local, proofreadingMarkdownLocalSegment{start: prefixLength, end: prefixLength + len(contentRunes), source: block.SourceStart, direct: true, math: block.Kind == "code" || block.Kind == "diagram"})
+			} else if block.Kind == "math" {
+				inner := string(sourceRunes[block.SourceStart:block.SourceEnd])
+				if strings.HasPrefix(inner, "$$") && strings.HasSuffix(inner, "$$") {
+					inner = inner[2 : len(inner)-2]
+					if at := strings.Index(inner, block.Text); at >= 0 {
+						local = append(local, proofreadingMarkdownLocalSegment{start: prefixLength, end: prefixLength + len(contentRunes), source: block.SourceStart + 2 + utf8.RuneCountInString(inner[:at]), direct: true, math: true})
+					}
+				}
 			}
 		}
 		appendUnit(proofreadingUnitBlock, text, local)
@@ -173,7 +183,7 @@ func proofreadingMarkdownSpanSourceSegment(span document.MarkdownSpan, localOffs
 	}
 	return proofreadingMarkdownLocalSegment{
 		start: localOffset, end: localOffset + length,
-		source: span.SourceStart, direct: true,
+		source: span.SourceStart, direct: true, math: span.Kind == "code",
 	}, true
 }
 
@@ -294,6 +304,19 @@ func preserveProofreadingMarkdownFormatting(source, originalText string, selecte
 			return "", errors.New("cannot locate an insertion point in the original Markdown")
 		}
 		sourceOffset, mathContext, ok := proofreadingMarkdownSourceOffset(segments, int(anchorID-1))
+		// A paragraph separator or list prefix belongs to the projection, not
+		// the source text. Anchor an insertion to the adjacent retained text
+		// instead, keeping it inside that text's original formatting wrapper.
+		if !ok && previousOriginalID > 0 {
+			sourceOffset, mathContext, ok = proofreadingMarkdownSourceOffset(segments, int(previousOriginalID-1))
+			if ok {
+				atEnd = true
+			}
+		}
+		if !ok && nextOriginalID > 0 {
+			sourceOffset, mathContext, ok = proofreadingMarkdownSourceOffset(segments, int(nextOriginalID-1))
+			atEnd = false
+		}
 		if !ok {
 			return "", fmt.Errorf("cannot preserve Markdown formatting near source character %d", anchorID)
 		}
@@ -325,11 +348,13 @@ func applyProofreadingMarkdownSourceEdits(source string, edits []proofreadingMar
 	if len(edits) == 0 {
 		return source, nil
 	}
-	sort.Slice(edits, func(i, j int) bool {
+	sort.SliceStable(edits, func(i, j int) bool {
 		if edits[i].start != edits[j].start {
 			return edits[i].start < edits[j].start
 		}
-		return edits[i].end > edits[j].end
+		// Insert replacement text before deleting the source rune at the same
+		// offset. Stable ordering also keeps adjacent inserted runs in order.
+		return edits[i].end < edits[j].end
 	})
 	sourceRunes := []rune(source)
 	var output strings.Builder

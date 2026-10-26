@@ -510,21 +510,22 @@ func buildProofreadingProjectExportWithSnapshot(ctx context.Context, store *work
 		}
 	}
 	var originalPages []string
+	var originalEnds []int
 	if len(payload.Draft.OriginalPageEnds) == 0 && allPagesConfirmedCurrent {
 		originalPages = make([]string, pageCount)
 	} else {
-		ends := append([]int(nil), payload.Draft.OriginalPageEnds...)
-		if len(ends) == 0 {
-			ends, err = reconstructProofreadingOriginalPageEnds(ctx, stored, themeFace, fonts)
+		originalEnds = append([]int(nil), payload.Draft.OriginalPageEnds...)
+		if len(originalEnds) == 0 {
+			originalEnds, err = reconstructProofreadingOriginalPageEnds(ctx, stored, themeFace, fonts)
 			if err != nil {
 				return "", "", fmt.Errorf("%w: %w", errProofreadingLegacyPageMapping, err)
 			}
-			ends, err = inferLegacyProofreadingPageEnds(snapshot, originalText, ends)
+			originalEnds, err = inferLegacyProofreadingPageEnds(snapshot, originalText, originalEnds)
 			if err != nil {
 				return "", "", fmt.Errorf("%w: %w", errProofreadingLegacyPageMapping, err)
 			}
 		}
-		originalPages, err = proofreadingOriginalPagesFromEnds(originalText, ends)
+		originalPages, err = proofreadingOriginalPagesFromEnds(originalText, originalEnds)
 		if err != nil {
 			return "", "", err
 		}
@@ -534,12 +535,20 @@ func buildProofreadingProjectExportWithSnapshot(ctx context.Context, store *work
 	}
 	gitSnapshots := loadProofreadingExportGitSnapshots(ctx, stored, payload)
 	exportPages := make([]application.ProofreadingExportPage, 0, pageCount)
+	currentRuns := make(map[proofreading.PageID][]proofreading.Run, pageCount)
+	for _, run := range snapshot.Runs {
+		currentRuns[run.Page] = append(currentRuns[run.Page], run)
+	}
+	selectedRunsByPage := make(map[proofreading.PageID][]proofreading.Run, pageCount)
 	for i, page := range snapshot.Pages {
 		index := i
 		confirmedHash := payload.Confirmed[index]
 		currentText := currentTexts[page.ID].String()
 		if snapshotPage, ok := gitSnapshots[index]; ok && confirmedCurrent[index] && confirmedHash != "" {
 			currentText = snapshotPage.Text()
+			selectedRunsByPage[page.ID] = append([]proofreading.Run(nil), snapshotPage.Runs...)
+		} else {
+			selectedRunsByPage[page.ID] = currentRuns[page.ID]
 		}
 		exportPages = append(exportPages, application.ProofreadingExportPage{
 			ID: page.ID, Reviewed: page.Reviewed || confirmedHash != "", CurrentConfirmed: confirmedCurrent[index],
@@ -552,6 +561,46 @@ func buildProofreadingProjectExportWithSnapshot(ctx context.Context, store *work
 	}
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
+	if strings.EqualFold(extension, ".md") || strings.EqualFold(extension, ".markdown") {
+		rawSource, readErr := os.ReadFile(stored.SourceB)
+		if readErr != nil {
+			return "", "", fmt.Errorf("read original Markdown source: %w", readErr)
+		}
+		var selectedRuns []proofreading.Run
+		var selectedRunText strings.Builder
+		for index, page := range snapshot.Pages {
+			confirmedHash := payload.Confirmed[index]
+			if page.Reviewed || confirmedHash != "" {
+				pageRuns := selectedRunsByPage[page.ID]
+				selectedRuns = append(selectedRuns, pageRuns...)
+				for _, run := range pageRuns {
+					selectedRunText.WriteString(run.Text)
+				}
+				continue
+			}
+			if len(originalEnds) != pageCount {
+				return "", "", errors.New("original Markdown page mapping is unavailable for unreviewed pages")
+			}
+			start := 0
+			if index > 0 {
+				start = originalEnds[index-1]
+			}
+			pageText := originalPages[index]
+			if pageText != "" {
+				pageRuns := []proofreading.Run{{First: proofreading.CharacterID(start + 1), Text: pageText, Page: page.ID}}
+				selectedRuns = append(selectedRuns, pageRuns...)
+				selectedRunText.WriteString(pageText)
+			}
+		}
+		if selectedRunText.String() != text {
+			return "", "", errors.New("selected Markdown proofreading runs do not match the export text")
+		}
+		formatted, formatErr := preserveProofreadingMarkdownFormatting(string(rawSource), originalText, selectedRuns)
+		if formatErr != nil {
+			return "", "", fmt.Errorf("preserve original Markdown formatting: %w", formatErr)
+		}
+		text = formatted
+	}
 	return text, extension, nil
 }
 
@@ -605,14 +654,30 @@ func (a *App) startProofreadingProjectExport(project workspace.ProofreadingProje
 	labels := a.filePickerLabels()
 	labels.SaveAs = a.textID("proofread.export.save_as")
 	labels.SaveFilter = a.textID("proofread.export.file_filter")
-	defaultSourceName := project.SourceBName
+	defaultSourceName := project.Title
 	if defaultSourceName == "" {
-		defaultSourceName = filepath.Base(project.SourceB)
+		defaultSourceName = project.SourceAOriginalPath
 	}
-	labels.UntitledFile = strings.TrimSuffix(filepath.Base(defaultSourceName), filepath.Ext(defaultSourceName))
-	if labels.UntitledFile == "" || labels.UntitledFile == "." {
-		labels.UntitledFile = a.textID("filepicker.untitled_file")
+	if defaultSourceName == "" {
+		defaultSourceName = filepath.Base(project.SourceA)
 	}
+	defaultBaseName := strings.TrimSuffix(filepath.Base(defaultSourceName), filepath.Ext(defaultSourceName))
+	if defaultBaseName == "" || defaultBaseName == "." {
+		defaultBaseName = a.textID("filepicker.untitled_file")
+	}
+	reviewedCount, pageCount := project.ReviewedCount, project.PageCount
+	if live != nil {
+		pages := live.view.Snapshot().Pages
+		pageCount, reviewedCount = len(pages), 0
+		for _, page := range pages {
+			if page.Reviewed {
+				reviewedCount++
+			}
+		}
+	}
+	// Save pickers append the original extension exactly once.
+	// A literal slash is a path separator, so use its filename-safe fullwidth form.
+	labels.UntitledFile = fmt.Sprintf("%s-校对进度(%d／%d)", defaultBaseName, reviewedCount, pageCount)
 	picker := w.exportPathPicker
 	store := a.proofreadingStore()
 	themeFace := ""

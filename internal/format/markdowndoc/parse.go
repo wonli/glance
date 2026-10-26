@@ -176,6 +176,10 @@ func Parse(source string) (document.MarkdownSnapshot, error) {
 				continue
 			}
 			if b.Kind == "code" {
+				if n.Lines().Len() > 0 {
+					b.SourceStart = byteRuneOffset(n.Lines().At(0).Start)
+					b.SourceEnd = byteRuneOffset(n.Lines().At(n.Lines().Len() - 1).Stop)
+				}
 				b.CodeSpans = HighlightCode(b.Text, b.Language)
 			}
 			p.Blocks = append(p.Blocks, b)
@@ -262,14 +266,26 @@ func inline(n ast.Node, source []byte, runeOffset func(int) int) []document.Mark
 			case *ast.Image:
 				out = append(out, document.MarkdownSpan{Kind: "image", Text: markdownPlainText(string(v.Text(source))), Destination: markdownPlainText(string(v.Destination)), LinkDestination: dest})
 			case *ast.CodeSpan:
-				out = append(out, document.MarkdownSpan{Kind: "code", Text: string(v.Text(source))})
+				span := document.MarkdownSpan{Kind: "code", Text: string(v.Text(source))}
+				if first, ok := v.FirstChild().(*ast.Text); ok {
+					if last, ok := v.LastChild().(*ast.Text); ok {
+						span.SourceStart = runeOffset(first.Segment.Start)
+						span.SourceEnd = runeOffset(last.Segment.Stop)
+					}
+				}
+				out = append(out, span)
 			case *ast.RawHTML:
 				var literal strings.Builder
 				for i := 0; i < v.Segments.Len(); i++ {
 					segment := v.Segments.At(i)
 					literal.Write(segment.Value(source))
 				}
-				out = append(out, document.MarkdownSpan{Kind: "code", Text: literal.String()})
+				span := document.MarkdownSpan{Kind: "code", Text: literal.String()}
+				if v.Segments.Len() > 0 {
+					span.SourceStart = runeOffset(v.Segments.At(0).Start)
+					span.SourceEnd = runeOffset(v.Segments.At(v.Segments.Len() - 1).Stop)
+				}
+				out = append(out, span)
 			case *extast.TaskCheckBox:
 				label := "☐ "
 				if v.IsChecked {
