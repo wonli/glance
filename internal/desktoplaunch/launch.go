@@ -9,6 +9,7 @@ import (
 	"glance/internal/desktopinstance"
 	"glance/internal/desktopui"
 	"glance/internal/diagnostics"
+	"glance/internal/fileutil"
 )
 
 // RunDesktop starts the desktop runtime and enters Gio's platform event loop.
@@ -24,6 +25,9 @@ func RunDesktop(initialPath string) {
 	}
 	if !primary {
 		return
+	}
+	if cleaned, err := fileutil.CleanOrphanedTempFiles(0); err != nil {
+		log.Printf("clean orphaned temporary files: %v (cleaned %d)", err, cleaned)
 	}
 	profiling, err := diagnostics.StartProfiling(os.Getenv("GLANCE_PPROF_ADDR"))
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 var (
@@ -48,6 +49,46 @@ func DefaultTempDir() string {
 func CreateTemp(pattern string) (*os.File, error) {
 	dir := DefaultTempDir()
 	return os.CreateTemp(dir, pattern)
+}
+
+// CleanOrphanedTempFiles removes temporary files and directories left in
+// DefaultTempDir by previous runs. If olderThan > 0, only items modified
+// before (now - olderThan) are removed. If olderThan <= 0, all items in
+// DefaultTempDir are removed.
+func CleanOrphanedTempFiles(olderThan time.Duration) (int, error) {
+	dir := DefaultTempDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	var cutoff time.Time
+	if olderThan > 0 {
+		cutoff = time.Now().Add(-olderThan)
+	}
+	removed := 0
+	var removeErrors []error
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		if olderThan > 0 {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(cutoff) {
+				continue
+			}
+		}
+		if err := os.RemoveAll(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			removeErrors = append(removeErrors, err)
+		} else {
+			removed++
+		}
+	}
+	return removed, errors.Join(removeErrors...)
 }
 
 // WriteOptions configures atomic write operations.

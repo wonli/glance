@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAtomicWriteAndReadExact(t *testing.T) {
@@ -254,6 +255,65 @@ func TestCentralizedTempDirDoesNotPolluteTargetDir(t *testing.T) {
 			names = append(names, e.Name())
 		}
 		t.Fatalf("glanceTempDir should be clean after commit, found: %v", names)
+	}
+}
+
+func TestCleanOrphanedTempFiles(t *testing.T) {
+	tempRoot := t.TempDir()
+	SetDefaultTempDir(tempRoot)
+	defer SetDefaultTempDir("")
+
+	oldFile := filepath.Join(tempRoot, "glance-pdf-snapshot-old.pdf")
+	if err := os.WriteFile(oldFile, []byte("old content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(oldFile, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	recentFile := filepath.Join(tempRoot, "glance-pdf-snapshot-recent.pdf")
+	if err := os.WriteFile(recentFile, []byte("recent content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	subDir := filepath.Join(tempRoot, "glance-print-stage")
+	if err := os.Mkdir(subDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(subDir, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Clean with olderThan = 1 hour: only oldFile and subDir should be removed
+	cleaned, err := CleanOrphanedTempFiles(time.Hour)
+	if err != nil {
+		t.Fatalf("CleanOrphanedTempFiles(1h): %v", err)
+	}
+	if cleaned != 2 {
+		t.Fatalf("cleaned = %d, want 2", cleaned)
+	}
+	if _, err := os.Stat(recentFile); err != nil {
+		t.Fatalf("recent file was unexpectedly removed: %v", err)
+	}
+	if _, err := os.Stat(oldFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old file was not removed: %v", err)
+	}
+
+	// 2. Clean with olderThan = 0: removes everything
+	cleanedAll, err := CleanOrphanedTempFiles(0)
+	if err != nil {
+		t.Fatalf("CleanOrphanedTempFiles(0): %v", err)
+	}
+	if cleanedAll != 1 {
+		t.Fatalf("cleanedAll = %d, want 1", cleanedAll)
+	}
+	entries, err := os.ReadDir(tempRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("temp directory still contains %d items after full clean", len(entries))
 	}
 }
 
