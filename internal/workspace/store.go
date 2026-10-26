@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"glance/internal/fileutil"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -123,7 +125,7 @@ func DefaultDatabasePath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve user config directory: %w", err)
 	}
-	return filepath.Join(dir, "Glance Office", "workspace.db"), nil
+	return filepath.Join(dir, fileutil.AppDir, "workspace.db"), nil
 }
 
 func migrate(db *sql.DB) error {

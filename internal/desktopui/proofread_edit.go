@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"glance/internal/fileutil"
 	"glance/internal/proofreading"
 	"io"
 	"os"
@@ -112,7 +113,7 @@ func proofreadingDraftFilePath(bPath, projectID string) (string, error) {
 		}
 		dirName = raw
 	}
-	return filepath.Join(configDir, "Glance Office", "proofreading", dirName, "proofreading-copy.md"), nil
+	return filepath.Join(configDir, fileutil.AppDir, "proofreading", dirName, "proofreading-copy.md"), nil
 }
 
 func encodeProofreadingDraftFile(draft proofreadingPersistedDraft) ([]byte, error) {

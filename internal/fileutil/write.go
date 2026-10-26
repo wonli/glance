@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// AppDir is the root directory name for Glance user configuration and state under os.UserConfigDir().
+const AppDir = "GlanceOffice"
+
 var (
 	customTempDirMu sync.RWMutex
 	customTempDir   string
@@ -34,7 +37,7 @@ func DefaultTempDir() string {
 	}
 
 	if configDir, err := os.UserConfigDir(); err == nil && configDir != "" {
-		glanceTmp := filepath.Join(configDir, "Glance Office", "tmp")
+		glanceTmp := filepath.Join(configDir, AppDir, "tmp")
 		if err := os.MkdirAll(glanceTmp, 0700); err == nil {
 			return glanceTmp
 		}

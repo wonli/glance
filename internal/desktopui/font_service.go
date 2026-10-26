@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"glance/internal/diagramrender"
+	"glance/internal/fileutil"
 	"glance/internal/fontmanager"
 	"glance/internal/fontmanager/fontcatalog"
 	"glance/internal/fontmanager/fontdownload"
@@ -42,7 +43,7 @@ func newDesktopFontManager() *fontmanager.Manager {
 	}
 	root, objects := "", ""
 	if data != "" {
-		root = filepath.Join(data, "Glance Office", "fonts")
+		root = filepath.Join(data, fileutil.AppDir, "fonts")
 		objects = filepath.Join(root, "objects")
 		_ = os.MkdirAll(objects, 0700)
 	}

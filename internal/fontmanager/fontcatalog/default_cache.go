@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+
+	"glance/internal/fileutil"
 )
 
 func DefaultPaths() (cachePath, objectsPath string, err error) {
@@ -15,7 +17,7 @@ func DefaultPaths() (cachePath, objectsPath string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	return filepath.Join(cache, "glance", "fonts", "catalog-v1.json"), filepath.Join(data, "Glance Office", "fonts", "objects"), nil
+	return filepath.Join(cache, "glance", "fonts", "catalog-v1.json"), filepath.Join(data, fileutil.AppDir, "fonts", "objects"), nil
 }
 
 // LoadResources supports headless rendering and recovery after cache eviction.

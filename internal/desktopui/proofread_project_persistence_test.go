@@ -3,6 +3,7 @@ package desktopui
 import (
 	"bytes"
 	"encoding/json"
+	"glance/internal/fileutil"
 	"glance/internal/proofreading"
 	"glance/internal/workspace"
 	"io"
@@ -282,6 +283,10 @@ func TestProofreadingDraftFilePathDoesNotContainSourceFileName(t *testing.T) {
 	parentDir := filepath.Base(filepath.Dir(dir))
 	if parentDir != "proofreading" {
 		t.Fatalf("expected proofreading directory to be lowercase 'proofreading', got %s", parentDir)
+	}
+	appRoot := filepath.Base(filepath.Dir(filepath.Dir(dir)))
+	if appRoot != fileutil.AppDir {
+		t.Fatalf("expected app root directory to match fileutil.AppDir %q, got %s", fileutil.AppDir, appRoot)
 	}
 	if strings.Contains(path, "very_secret_original_novel") {
 		t.Fatalf("draft file path %q must not contain original file name", path)

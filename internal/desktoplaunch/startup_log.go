@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+
+	"glance/internal/fileutil"
 )
 
 var startupLogFile *os.File
@@ -14,7 +16,7 @@ func initializeStartupLog() error {
 	if err != nil {
 		return fmt.Errorf("locate the user config directory: %w", err)
 	}
-	logDir := filepath.Join(configDir, "Glance Office")
+	logDir := filepath.Join(configDir, fileutil.AppDir)
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return fmt.Errorf("create startup log directory %q: %w", logDir, err)
 	}

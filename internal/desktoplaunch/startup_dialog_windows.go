@@ -5,6 +5,8 @@ package desktoplaunch
 import (
 	"fmt"
 
+	"glance/internal/fileutil"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -12,7 +14,7 @@ func showStartupError(err error) {
 	if err == nil {
 		return
 	}
-	message, messageErr := windows.UTF16PtrFromString(fmt.Sprintf("Glance 无法正常启动。\r\n\r\n%s\r\n\r\n启动日志位于用户配置目录下的 Glance Office/startup.log。", err))
+	message, messageErr := windows.UTF16PtrFromString(fmt.Sprintf("Glance 无法正常启动。\r\n\r\n%s\r\n\r\n启动日志位于用户配置目录下的 %s/startup.log。", err, fileutil.AppDir))
 	if messageErr != nil {
 		return
 	}
