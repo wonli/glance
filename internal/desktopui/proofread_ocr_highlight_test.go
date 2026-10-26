@@ -235,3 +235,58 @@ func TestProofreadingOCRLaserVisual(t *testing.T) {
 		})
 	}
 }
+
+func TestProofreadingOCRLaserEdgeFadeAndInvalidation(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	size := image.Pt(320, 480)
+	window, err := headless.NewWindow(size.X, size.Y)
+	if err != nil {
+		t.Skipf("headless GPU is unavailable: %v", err)
+	}
+	defer window.Release()
+
+	now := time.Now()
+	// Near top edge (20ms into 1450ms sweep, phase ≈ 0.0138)
+	startedNearTop := now.Add(-20 * time.Millisecond)
+	var opsTop op.Ops
+	gtxTop := layout.Context{Ops: &opsTop, Now: now, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(size)}
+	drawProofreadingLaser(gtxTop, size, startedNearTop)
+	if err := window.Frame(&opsTop); err != nil {
+		t.Fatalf("render OCR laser near top edge: %v", err)
+	}
+	shotTop := image.NewRGBA(image.Rect(0, 0, size.X, size.Y))
+	if err := window.Screenshot(shotTop); err != nil {
+		t.Fatalf("capture OCR laser near top: %v", err)
+	}
+
+	// Mid sweep (725ms into 1450ms sweep, phase = 0.5)
+	startedMid := now.Add(-725 * time.Millisecond)
+	var opsMid op.Ops
+	gtxMid := layout.Context{Ops: &opsMid, Now: now, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(size)}
+	drawProofreadingLaser(gtxMid, size, startedMid)
+	if err := window.Frame(&opsMid); err != nil {
+		t.Fatalf("render OCR laser mid sweep: %v", err)
+	}
+	shotMid := image.NewRGBA(image.Rect(0, 0, size.X, size.Y))
+	if err := window.Screenshot(shotMid); err != nil {
+		t.Fatalf("capture OCR laser mid: %v", err)
+	}
+
+	var maxBTop, maxBMid uint8
+	for y := 0; y < size.Y; y++ {
+		for x := 0; x < size.X; x++ {
+			cTop := color.NRGBAModel.Convert(shotTop.At(x, y)).(color.NRGBA)
+			if cTop.B > maxBTop {
+				maxBTop = cTop.B
+			}
+			cMid := color.NRGBAModel.Convert(shotMid.At(x, y)).(color.NRGBA)
+			if cMid.B > maxBMid {
+				maxBMid = cMid.B
+			}
+		}
+	}
+	if maxBTop >= maxBMid {
+		t.Fatalf("edge fade expected lower peak intensity at entry (%d) than mid-sweep (%d)", maxBTop, maxBMid)
+	}
+}

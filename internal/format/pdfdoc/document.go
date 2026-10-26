@@ -107,7 +107,9 @@ func OpenSnapshotStream(write func(io.Writer) error) (*Document, error) {
 	if closeErr != nil {
 		return nil, errors.Join(fmt.Errorf("close mapped PDF snapshot file: %w", closeErr), backing.Close(), removeSnapshotPath(path))
 	}
-	backing.tempPath = path
+	if err := removeSnapshotPath(path); err != nil {
+		return nil, errors.Join(fmt.Errorf("unlink PDF snapshot backing: %w", err), backing.Close(), removeSnapshotPath(path))
+	}
 	doc, err := openSnapshotOwned(backing.data)
 	if err != nil {
 		return nil, errors.Join(err, backing.Close())

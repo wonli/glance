@@ -350,6 +350,7 @@ func (a *App) startProofreadingDraftRestore() {
 		}
 		state.draftFilePath = filepath.Join(state.resume.Directory, "proofreading-copy.md")
 		state.ocrJob = payload.OCRJob
+		a.proofreadingOCRStep().batch.restore(payload.OCRBatch, state.aSourceHash)
 		state.page = max(0, payload.Page)
 		state.restoredXOffsets = payload.XOffsets
 		state.history.confirmed = payload.Confirmed
@@ -490,6 +491,9 @@ func (a *App) queueProofreadingDraftPersistence() bool {
 		ocrJob = &copy
 	}
 	projectData := proofreadingProjectPayload{Head: state.history.head, Page: view.page, Offset: view.canvas.Position.Offset, XOffsets: append([]float64(nil), state.xPageScrollOffsets...), Confirmed: cloneProofreadingHashes(state.history.confirmed), Snapshots: cloneProofreadingHashes(state.history.snapshots), Pushed: state.history.pushed, OCRJob: ocrJob}
+	if state.ocrStep != nil {
+		projectData.OCRBatch = state.ocrStep.batch.snapshot()
+	}
 	ocrJobID := ""
 	if ocrJob != nil {
 		ocrJobID = ocrJob.JobID

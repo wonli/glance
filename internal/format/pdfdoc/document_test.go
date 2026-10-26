@@ -2,11 +2,26 @@ package pdfdoc
 
 import (
 	"bytes"
-	"github.com/SalvioniDigitalSolutions/gopdf"
-	"glance/internal/document"
+	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/SalvioniDigitalSolutions/gopdf"
+	"glance/internal/document"
+	"glance/internal/fileutil"
 )
+
+func TestMain(m *testing.M) {
+	tempDir, err := os.MkdirTemp("", "glance-pdfdoc-test-*")
+	if err == nil {
+		fileutil.SetDefaultTempDir(tempDir)
+		defer func() {
+			fileutil.SetDefaultTempDir("")
+			_ = os.RemoveAll(tempDir)
+		}()
+	}
+	os.Exit(m.Run())
+}
 
 func fixture(t *testing.T) []byte {
 	t.Helper()
@@ -154,6 +169,7 @@ func TestAnnotationsInkRotationRenderRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer reopened.Close()
 	p, err := reopened.Page(0)
 	if err != nil || len(p.Annotations) != 3 {
 		t.Fatalf("annotations lost: %v %v", p, err)

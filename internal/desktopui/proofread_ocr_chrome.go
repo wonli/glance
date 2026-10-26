@@ -72,6 +72,32 @@ func (a *App) layoutProofreadingOCRAction(gtx layout.Context) layout.Dimensions 
 	})
 }
 
+// The status bar owns page readiness and idle comparison diagnostics. Keep
+// active progress concise, and retain the ordinary comparison totals alongside
+// character coverage after playback.
+func (a *App) proofreadingStatusBarOCRText() (string, color.NRGBA, bool) {
+	message, ink, hasMessage := a.proofreadingOCRStatusText()
+	if a == nil || a.proofreading == nil || !a.proofreading.aiProofreading || a.pdfView == nil {
+		return message, ink, hasMessage
+	}
+	step := a.proofreading.ocrStep
+	if step == nil || step.active() || step.diffRunning || step.diffPaused || step.err != "" {
+		return message, ink, hasMessage
+	}
+	comparison, hasComparison := a.currentProofreadingOCRStepComparison()
+	if !hasMessage || hasComparison && (comparison.CharacterTotal > 0 || step.characterErr != "" || !comparison.Complete || comparison.AlignmentLimited) {
+		detail := a.proofreadingOCRStepDetailText(step, a.pdfView)
+		if detail != "" {
+			if hasMessage {
+				message += " · " + detail
+			} else {
+				message, ink, hasMessage = detail, proofreadMuted, true
+			}
+		}
+	}
+	return message, ink, hasMessage
+}
+
 func (a *App) proofreadingOCRStatusText() (string, color.NRGBA, bool) {
 	if a == nil || a.proofreading == nil {
 		return "", color.NRGBA{}, false

@@ -218,7 +218,7 @@ func (a *App) layoutProofreadingToolbarModes(gtx layout.Context) layout.Dimensio
 			if !state.aiProofreading {
 				return layout.Dimensions{}
 			}
-			return a.layoutProofreadingOCRAction(gtx)
+			return a.layoutProofreadingOCRBatchAction(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if !state.aiProofreading {
@@ -230,22 +230,16 @@ func (a *App) layoutProofreadingToolbarModes(gtx layout.Context) layout.Dimensio
 			if !state.aiProofreading {
 				return layout.Dimensions{}
 			}
-			label, icon := "proofread.ai.step.compare", "git-compare-arrows"
-			action := a.compareProofreadingOCRStep
-			if step.active() {
+			label, icon := "proofread.ai.step.compare", "scan-page"
+			action := a.requestProofreadingSinglePageComparison
+			if step.active() && !step.batch.suspended {
 				label, icon = "proofread.ai.step.cancel", "x"
 				action = func() { step.cancelTask() }
 			}
-			return a.layoutProofreadingToolbarAction(gtx, &step.compareButton, label, icon, 110, true, action)
+			return a.layoutProofreadingToolbarAction(gtx, &step.compareButton, label, icon, 128, true, action)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if !state.aiProofreading {
-				return layout.Dimensions{}
-			}
-			return a.layoutProofreadingOCRStepToolbarStatus(gtx, step, view)
 		}),
 	)
 }
@@ -288,9 +282,9 @@ func (a *App) layoutProofreadingModeTab(gtx layout.Context, button *widget.Click
 	})
 }
 
-func (a *App) layoutProofreadingOCRStepToolbarStatus(gtx layout.Context, step *proofreadingOCRStepState, view *pdfViewState) layout.Dimensions {
+func (a *App) proofreadingOCRStepDetailText(step *proofreadingOCRStepState, view *pdfViewState) string {
 	if a == nil || a.proofreading == nil || step == nil || view == nil {
-		return layout.Dimensions{}
+		return ""
 	}
 	currentAPage := max(0, view.page)
 	currentBPage := a.proofreadingCurrentBPage()
@@ -339,24 +333,7 @@ func (a *App) layoutProofreadingOCRStepToolbarStatus(gtx layout.Context, step *p
 	if hasComparison && step.characterErr != "" {
 		statusKey = "proofread.ai.step.character_geometry_unavailable"
 	}
-	label := material.Label(a.theme, 10, a.textArgs(statusKey, args))
-	label.Color = proofreadMuted
-	label.MaxLines = 1
-	width := min(gtx.Constraints.Max.X, gtx.Dp(220))
-	if width <= 0 {
-		return layout.Dimensions{}
-	}
-	size := image.Pt(width, gtx.Dp(32))
-	gtx.Constraints = layout.Exact(size)
-	return layout.Stack{Alignment: layout.E}.Layout(gtx,
-		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			return layout.Dimensions{Size: size}
-		}),
-		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min = image.Point{}
-			return label.Layout(gtx)
-		}),
-	)
+	return a.textArgs(statusKey, args)
 }
 
 func (a *App) layoutProofreadingToolbarAction(gtx layout.Context, button *widget.Clickable, labelKey, iconName string, width unit.Dp, enabled bool, action func()) layout.Dimensions {
@@ -392,7 +369,11 @@ func layoutProofreadingToolbarActionVisual(gtx layout.Context, a *App, labelKey,
 			return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layoutProofreadingIcon(gtx, "ribbon", iconName, 14, ink)
+						family := "ribbon"
+						if iconName == "scan-page" || iconName == "scan-pages" {
+							family = "home"
+						}
+						return layoutProofreadingIcon(gtx, family, iconName, 14, ink)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						label := material.Label(a.theme, 11, a.textID(labelKey))
@@ -509,7 +490,7 @@ func (a *App) layoutProofreadingStatus(gtx layout.Context) layout.Dimensions {
 			if a.proofreading != nil && a.proofreading.bDocument != nil {
 				labelKey = proofreadingStatusBarKey(a.proofreading)
 			}
-			ocrMessage, ocrColor, hasOCRMessage := a.proofreadingOCRStatusText()
+			ocrMessage, ocrColor, hasOCRMessage := a.proofreadingStatusBarOCRText()
 			iconName := "lock-keyhole"
 			iconColor := color.NRGBA{R: 117, G: 128, B: 139, A: 255}
 			if hasOCRMessage {

@@ -15,16 +15,17 @@ import (
 )
 
 type proofreadingProjectPayload struct {
-	ConfirmedCurrent map[int]bool               `json:"confirmed_current,omitempty"`
-	Head             string                     `json:"head,omitempty"`
-	Draft            proofreadingPersistedDraft `json:"draft"`
-	Page             int                        `json:"page"`
-	Offset           int                        `json:"offset"`
-	XOffsets         []float64                  `json:"x_offsets,omitempty"`
-	Confirmed        map[int]string             `json:"confirmed,omitempty"`
-	Snapshots        map[int]string             `json:"snapshots,omitempty"`
-	Pushed           string                     `json:"pushed,omitempty"`
-	OCRJob           *proofreadingOCRJobRecord  `json:"ocr_job,omitempty"`
+	ConfirmedCurrent map[int]bool                    `json:"confirmed_current,omitempty"`
+	Head             string                          `json:"head,omitempty"`
+	Draft            proofreadingPersistedDraft      `json:"draft"`
+	Page             int                             `json:"page"`
+	Offset           int                             `json:"offset"`
+	XOffsets         []float64                       `json:"x_offsets,omitempty"`
+	Confirmed        map[int]string                  `json:"confirmed,omitempty"`
+	Snapshots        map[int]string                  `json:"snapshots,omitempty"`
+	Pushed           string                          `json:"pushed,omitempty"`
+	OCRJob           *proofreadingOCRJobRecord       `json:"ocr_job,omitempty"`
+	OCRBatch         *proofreadingOCRBatchCheckpoint `json:"ocr_batch,omitempty"`
 }
 
 func (a *App) proofreadingStore() *workspace.Store {

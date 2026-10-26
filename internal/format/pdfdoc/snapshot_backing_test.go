@@ -9,12 +9,15 @@ import (
 	"testing"
 
 	"glance/internal/document"
+	"glance/internal/fileutil"
 )
 
 func snapshotTempDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("TMPDIR", dir)
+	fileutil.SetDefaultTempDir(dir)
+	t.Cleanup(func() { fileutil.SetDefaultTempDir("") })
 	return dir
 }
 
@@ -39,23 +42,20 @@ func TestOpenSnapshotStreamPreservesSnapshotBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer doc.Close()
 
 	got, err := doc.Snapshot()
 	if err != nil {
-		doc.Close()
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, want) {
-		doc.Close()
 		t.Fatal("streamed snapshot bytes changed")
 	}
 	if _, _, _, err := doc.SnapshotWithRevision(); err != nil {
-		doc.Close()
 		t.Fatalf("SnapshotWithRevision(): %v", err)
 	}
-	if err := doc.Close(); err != nil {
-		t.Fatal(err)
-	}
+	// The temporary file must be unlinked immediately after mapping;
+	// the active document retains no linked temporary file.
 	assertNoTempFiles(t, dir)
 }
 
@@ -201,8 +201,9 @@ func TestSnapshotReaderLeaseDefersMappedBackingRelease(t *testing.T) {
 }
 
 func TestOpenCopiesSourceFileSnapshot(t *testing.T) {
+	dir := snapshotTempDir(t)
 	want := fixture(t)
-	path := filepath.Join(t.TempDir(), "source.pdf")
+	path := filepath.Join(dir, "source.pdf")
 	if err := os.WriteFile(path, want, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -220,5 +221,14 @@ func TestOpenCopiesSourceFileSnapshot(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatal("opened PDF changed after its source file was replaced")
+	}
+	// The temporary snapshot backing must have been unlinked immediately.
+	// Only the source file itself should remain in dir.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "source.pdf" {
+		t.Fatalf("unexpected files in temp dir: %v", entries)
 	}
 }

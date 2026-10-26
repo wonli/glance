@@ -112,6 +112,7 @@ type proofreadingOCRStepComparison struct {
 }
 
 type proofreadingOCRStepState struct {
+	batch               proofreadingOCRBatch
 	manualModeButton    widget.Clickable
 	aiModeButton        widget.Clickable
 	ocrButton           widget.Clickable
@@ -695,6 +696,11 @@ func (a *App) processProofreadingOCRStep(gtx layout.Context) {
 	if step == nil {
 		return
 	}
+	// Leave in-flight results queued while paused. Workers still finish and
+	// persist OCR caches, but no boundary mutation or playback may run here.
+	if step.batch.suspended {
+		return
+	}
 	if a.proofreading != nil {
 		state := a.proofreading
 		if state.aSourceHash != "" && step.historySourceHash != state.aSourceHash {
@@ -779,6 +785,17 @@ resultLoop:
 			keepRequest := result.needToken && a.openProofreadingOCROverflowTokenDialog(result.endpoint, request)
 			requestCurrent := a.proofreadingOCROverflowRequestCurrent(request)
 			if result.needToken && keepRequest {
+				gtx.Execute(op.InvalidateCmd{})
+				return
+			}
+			if requestCurrent && result.err != nil {
+				// A failed adjacent-page recognition is not evidence that the
+				// current boundary is correct. Surface it in the shared page
+				// pipeline so callers can retry instead of silently skipping it.
+				a.cancelProofreadingOCROverflowRequest(request)
+				step.phase = proofreadingOCRStepFailed
+				step.err = result.err.Error()
+				step.autoCompareAfterOCR = false
 				gtx.Execute(op.InvalidateCmd{})
 				return
 			}

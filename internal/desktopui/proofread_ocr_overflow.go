@@ -116,61 +116,13 @@ func proofreadingOCRExactPageTail(current ocr.Layout, bText string) (proofreadin
 }
 
 func proofreadingOCRBoundaryTailFromPages(current, next ocr.Layout, bText string) (proofreadingOCROverflowTail, bool) {
-	if exact, ok := proofreadingOCRExactPageTail(current, bText); ok && exact.RuneCount > 0 {
-		return exact, true
-	}
-	// For an inexact current page, anchor the split at both PDF pages.
-	if current.Width <= 0 || current.Height <= 0 || next.Width <= 0 || next.Height <= 0 {
+	if next.Width <= 0 || next.Height <= 0 {
+		if exact, ok := proofreadingOCRExactPageTail(current, bText); ok && exact.RuneCount > 0 {
+			return exact, true
+		}
 		return proofreadingOCROverflowTail{}, false
 	}
-	bRunes := []rune(bText)
-	bSource := newProofreadingOCRDiffSource(bText)
-	currentSource := newProofreadingOCRDiffSource(proofreadingOCRPageText(current).text)
-	nextSource := newProofreadingOCRDiffSource(proofreadingOCRPageText(next).text)
-	if len(bSource.characters) < proofreadingOCROverflowMinimumRunes*2 ||
-		len(currentSource.characters) < proofreadingOCROverflowMinimumRunes ||
-		len(nextSource.characters) < proofreadingOCROverflowMinimumRunes {
-		return proofreadingOCROverflowTail{}, false
-	}
-	currentStarts := proofreadingOCRPrefixMatches(bSource.characters, currentSource.characters)
-	if len(currentStarts) == 0 || currentStarts[0] < proofreadingOCROverflowMinimumRunes {
-		return proofreadingOCROverflowTail{}, false
-	}
-
-	nextMatches := proofreadingOCRPrefixMatches(bSource.characters, nextSource.characters)
-	reversedCurrent := proofreadingOCRReverseRunes(currentSource.characters)
-	reversedB := proofreadingOCRReverseRunes(bSource.characters)
-	currentMatches := proofreadingOCRPrefixMatches(reversedB, reversedCurrent)
-	bestStart, bestScore, bestCurrent, bestMatched := -1, -1, -1, 0
-	ambiguous := false
-	for start := proofreadingOCROverflowMinimumRunes; start+proofreadingOCROverflowMinimumRunes <= len(bSource.characters); start++ {
-		nextOverlap := nextMatches[start]
-		if nextOverlap < proofreadingOCROverflowMinimumRunes {
-			continue
-		}
-		currentOverlap := currentMatches[len(bSource.characters)-start]
-		if currentOverlap < proofreadingOCROverflowMinimumRunes {
-			continue
-		}
-		rawStart := bSource.starts[start]
-		if rawStart <= 0 {
-			continue
-		}
-		score := currentOverlap + nextOverlap
-		if score > bestScore || (score == bestScore && currentOverlap > bestCurrent) {
-			bestStart, bestScore, bestCurrent = rawStart, score, currentOverlap
-			bestMatched = min(currentOverlap, nextOverlap)
-			ambiguous = false
-		} else if score == bestScore && currentOverlap == bestCurrent && rawStart != bestStart {
-			ambiguous = true
-		}
-	}
-	if bestStart <= 0 || ambiguous {
-		return proofreadingOCROverflowTail{}, false
-	}
-	return proofreadingOCROverflowTail{
-		Start: bestStart, RuneCount: len(bRunes) - bestStart, MatchedRunes: bestMatched,
-	}, true
+	return proofreadingOCRAlignedPageTail(current, next, bText)
 }
 
 func proofreadingOCRPrefixMatches(text, pattern []rune) []int {
@@ -196,14 +148,6 @@ func proofreadingOCRPrefixMatches(text, pattern []rune) []int {
 		matches[index] = min(len(pattern), z[len(pattern)+1+index])
 	}
 	return matches
-}
-
-func proofreadingOCRReverseRunes(source []rune) []rune {
-	reversed := make([]rune, len(source))
-	for index, value := range source {
-		reversed[len(source)-1-index] = value
-	}
-	return reversed
 }
 
 func proofreadingOCRPagePrefixMatchesText(layout ocr.Layout, text string) bool {
@@ -282,11 +226,26 @@ func (a *App) fillEmptyProofreadingBPageFromOCR(pageIndex int, layout ocr.Layout
 		state.draftPersistError = err.Error()
 		return false
 	}
-	a.invalidateProofreadingOCRStepComparisons()
+	a.invalidateProofreadingOCRStepComparisons(pageIndex)
 	state.ocrStep.cancelTask()
 	a.proofreadingModelChanged(true)
 	a.compareProofreadingOCRStep()
 	return true
+}
+
+func (a *App) isProofreadingOCROverflowPlaceholder(nextLayout ocr.Layout, nextMeta proofreading.Page, nextContent string, currentContent string, candidate proofreadingOCROverflowTail) bool {
+	if nextMeta.Reviewed || nextMeta.Locked {
+		return false
+	}
+	if !proofreadingOCRPagePrefixMatchesText(nextLayout, nextContent) {
+		return false
+	}
+	currentRunes := []rune(currentContent)
+	if candidate.Start < 0 || candidate.Start >= len(currentRunes) {
+		return false
+	}
+	overflowText := string(currentRunes[candidate.Start:])
+	return proofreadingOCRPagePrefixMatchesText(nextLayout, overflowText)
 }
 
 func (a *App) startProofreadingOCROverflowCheck(comparison proofreadingOCRStepComparison) bool {
@@ -310,8 +269,7 @@ func (a *App) startProofreadingOCROverflowCheck(comparison proofreadingOCRStepCo
 	currentMeta, currentOK := state.controller.Model.Page(currentID)
 	nextMeta, nextOK := state.controller.Model.Page(nextID)
 	if !currentOK || !nextOK || currentMeta.Reviewed || currentMeta.Locked ||
-		nextMeta.Reviewed || nextMeta.Locked ||
-		proofreadingOCRPageHasTypedOrProtectedText(state.controller.Model, nextID) {
+		nextMeta.Reviewed || nextMeta.Locked {
 		return false
 	}
 	currentOCR, currentExists := step.pages[comparison.APage]
@@ -330,6 +288,10 @@ func (a *App) startProofreadingOCROverflowCheck(comparison proofreadingOCRStepCo
 		if !confirmedOK || confirmed != candidate {
 			return false
 		}
+	}
+	isPlaceholder := a.isProofreadingOCROverflowPlaceholder(nextOCR.layout, nextMeta, state.xPages[comparison.BPage+1].Content, comparison.BText, candidate)
+	if proofreadingOCRPageHasTypedOrProtectedText(state.controller.Model, nextID) && !isPlaceholder {
+		return false
 	}
 	if state.controller.Model.BoundaryReturnableRunes(currentID) < candidate.RuneCount {
 		return false
@@ -353,14 +315,28 @@ func (a *App) startProofreadingOCRBoundaryPrefetch(pageIndex int, page proofread
 	nextID := proofreading.PageID(pageIndex + 2)
 	currentMeta, currentOK := state.controller.Model.Page(currentID)
 	nextMeta, nextOK := state.controller.Model.Page(nextID)
+	nextPageOCR, nextOCRExists := step.pages[pageIndex+1]
+	if (!nextOCRExists || step.pageSourceHash[pageIndex+1] != state.aSourceHash || nextPageOCR.layout.Width <= 0) && view != nil {
+		cached, hit, _ := loadProofreadingOCRCachePage(state.aSourceHash, ocr.DefaultModel, ocr.Options{}, pageIndex+2, view.info.Pages)
+		if hit {
+			layout, err := cached.Layout()
+			if err == nil {
+				nextPageOCR = proofreadingOCRPage{layout: layout}
+				step.pages[pageIndex+1] = nextPageOCR
+				step.pageSourceHash[pageIndex+1] = state.aSourceHash
+				nextOCRExists = true
+			}
+		}
+	}
+	nextIsPlaceholder := nextOCRExists && proofreadingOCRPagePrefixMatchesText(nextPageOCR.layout, state.xPages[pageIndex+1].Content)
 	if !currentOK || !nextOK || currentMeta.Reviewed || currentMeta.Locked ||
 		nextMeta.Reviewed || nextMeta.Locked ||
-		proofreadingOCRPageHasTypedOrProtectedText(state.controller.Model, nextID) ||
+		(proofreadingOCRPageHasTypedOrProtectedText(state.controller.Model, nextID) && !nextIsPlaceholder) ||
 		state.controller.Model.BoundaryReturnableRunes(currentID) == 0 {
 		return false
 	}
-	if nextPage, exists := step.pages[pageIndex+1]; exists && step.pageSourceHash[pageIndex+1] == state.aSourceHash &&
-		nextPage.layout.Width > 0 && nextPage.layout.Height > 0 {
+	if nextOCRExists && step.pageSourceHash[pageIndex+1] == state.aSourceHash &&
+		nextPageOCR.layout.Width > 0 && nextPageOCR.layout.Height > 0 {
 		return false
 	}
 	endpoint, endpointErr := proofreadingOCREndpointFromEnvironment()
@@ -496,12 +472,11 @@ func (a *App) openProofreadingOCROverflowTokenDialog(endpoint string, request *p
 			a.modal.Input.Mask = 0
 			if action != "start" && action != "confirm" {
 				a.modal.Hide()
-				if request.preComparison && a.proofreadingOCROverflowRequestCurrent(request) {
-					a.setProofreadingOCRBoundarySkip(request)
-				}
 				a.cancelProofreadingOCROverflowRequest(request)
 				if request.preComparison {
-					a.compareProofreadingOCRStep()
+					step := a.proofreadingOCRStep()
+					step.phase = proofreadingOCRStepTokenRequired
+					step.err = a.textID("proofread.ai.token.required")
 				} else {
 					a.presentProofreadingOCRStepComparison(request.comparison)
 				}
@@ -634,8 +609,19 @@ func (a *App) adjustProofreadingOCRBoundaryFromCachedPages(pageIndex int, page p
 	}
 	currentOCR, currentExists := step.pages[pageIndex]
 	nextOCR := step.pages[pageIndex+1]
-	if step.pageSourceHash[pageIndex+1] != state.aSourceHash {
-		nextOCR = proofreadingOCRPage{}
+	if step.pageSourceHash[pageIndex+1] != state.aSourceHash || nextOCR.layout.Width <= 0 {
+		view := a.ensurePDFView()
+		if view != nil {
+			cached, hit, _ := loadProofreadingOCRCachePage(state.aSourceHash, ocr.DefaultModel, ocr.Options{}, pageIndex+2, view.info.Pages)
+			if hit {
+				layout, err := cached.Layout()
+				if err == nil {
+					nextOCR = proofreadingOCRPage{layout: layout}
+					step.pages[pageIndex+1] = nextOCR
+					step.pageSourceHash[pageIndex+1] = state.aSourceHash
+				}
+			}
+		}
 	}
 	if !currentExists || step.pageSourceHash[pageIndex] != state.aSourceHash || strings.TrimSpace(page.Content) == "" {
 		return false
@@ -686,19 +672,23 @@ func (a *App) applyProofreadingOCRBoundaryAt(
 	currentID, nextID := proofreading.PageID(pageIndex+1), proofreading.PageID(pageIndex+2)
 	currentMeta, currentOK := state.controller.Model.Page(currentID)
 	nextMeta, nextOK := state.controller.Model.Page(nextID)
+	isPlaceholder := a.isProofreadingOCROverflowPlaceholder(nextLayout, nextMeta, nextPage.Content, currentText, candidate)
 	if !currentOK || !nextOK || currentMeta.Reviewed || currentMeta.Locked ||
 		nextMeta.Reviewed || nextMeta.Locked ||
-		proofreadingOCRPageHasTypedOrProtectedText(state.controller.Model, nextID) ||
+		(proofreadingOCRPageHasTypedOrProtectedText(state.controller.Model, nextID) && !isPlaceholder) ||
 		state.controller.Model.BoundaryReturnableRunes(currentID) < candidate.RuneCount {
 		return false
 	}
-	if proofreadingOCRPagePrefixMatchesText(nextLayout, nextPage.Content) {
+	if !isPlaceholder && proofreadingOCRPagePrefixMatchesText(nextLayout, nextPage.Content) {
 		return false
 	}
+	if isPlaceholder {
+		_ = state.controller.Model.ReplacePage(nextID, "")
+	}
+	destinationEmpty := strings.TrimSpace(nextPage.Content) == "" || isPlaceholder
 	if err := state.controller.Model.AdjustBoundary(currentID, -candidate.RuneCount); err != nil {
 		return false
 	}
-	destinationEmpty := strings.TrimSpace(nextPage.Content) == ""
 	filledDestination := false
 	if destinationEmpty && strings.TrimSpace(state.controller.Model.Text(nextID)) == "" {
 		recognized := strings.TrimSpace(proofreadingOCRPagePreview(nextLayout))
@@ -708,7 +698,7 @@ func (a *App) applyProofreadingOCRBoundaryAt(
 			}
 		}
 	}
-	a.invalidateProofreadingOCRStepComparisons()
+	a.invalidateProofreadingOCRStepComparisons(pageIndex)
 	step.cancelTask()
 	if filledDestination {
 		a.proofreadingModelChanged(true)
@@ -788,9 +778,10 @@ func (a *App) applyProofreadingOCROverflow(
 	nextID := proofreading.PageID(comparison.BPage + 2)
 	currentMeta, currentOK := state.controller.Model.Page(currentID)
 	nextMeta, nextOK := state.controller.Model.Page(nextID)
+	isPlaceholder := a.isProofreadingOCROverflowPlaceholder(nextLayout, nextMeta, nextPage.Content, currentPage.Content, candidate)
 	if !currentOK || !nextOK || currentMeta.Reviewed || currentMeta.Locked ||
 		nextMeta.Reviewed || nextMeta.Locked ||
-		proofreadingOCRPageHasTypedOrProtectedText(state.controller.Model, nextID) ||
+		(proofreadingOCRPageHasTypedOrProtectedText(state.controller.Model, nextID) && !isPlaceholder) ||
 		state.controller.Model.BoundaryReturnableRunes(currentID) < candidate.RuneCount {
 		return false
 	}
@@ -802,7 +793,7 @@ func (a *App) applyProofreadingOCROverflow(
 			return false
 		}
 	}
-	if proofreadingOCRPagePrefixMatchesText(nextLayout, nextPage.Content) {
+	if !isPlaceholder && proofreadingOCRPagePrefixMatchesText(nextLayout, nextPage.Content) {
 		return false
 	}
 	if overflowGeneration != 0 && (step.overflowRequest == nil || step.overflowRequest.mainGeneration != mainGeneration ||
@@ -810,7 +801,10 @@ func (a *App) applyProofreadingOCROverflow(
 		step.overflowRequest.nextText != nextPage.Content) {
 		return false
 	}
-	destinationEmpty := strings.TrimSpace(nextPage.Content) == ""
+	if isPlaceholder {
+		_ = state.controller.Model.ReplacePage(nextID, "")
+	}
+	destinationEmpty := strings.TrimSpace(nextPage.Content) == "" || isPlaceholder
 	if err := state.controller.Model.AdjustBoundary(currentID, -candidate.RuneCount); err != nil {
 		return false
 	}
@@ -823,7 +817,7 @@ func (a *App) applyProofreadingOCROverflow(
 			}
 		}
 	}
-	a.invalidateProofreadingOCRStepComparisons()
+	a.invalidateProofreadingOCRStepComparisons(comparison.BPage)
 	step.cancelTask()
 	if filledDestination {
 		a.proofreadingModelChanged(true)
@@ -834,12 +828,18 @@ func (a *App) applyProofreadingOCROverflow(
 	return true
 }
 
-func (a *App) invalidateProofreadingOCRStepComparisons() {
+func (a *App) invalidateProofreadingOCRStepComparisons(firstChangedPage int) {
 	if a == nil || a.proofreading == nil || a.proofreading.ocrStep == nil {
 		return
 	}
 	step := a.proofreading.ocrStep
-	step.comparisons = make(map[proofreadingOCRStepPair]proofreadingOCRStepComparison)
+	// Earlier pages retain their text and offsets. Keep their differences and
+	// connectors in both single-page and whole-book comparison workflows.
+	for pair := range step.comparisons {
+		if pair.BPage >= firstChangedPage {
+			a.clearProofreadingOCRStepComparisonHistory(step, pair)
+		}
+	}
 	step.diffCursor = 0
 	step.diffRunning = false
 	step.diffPaused = false

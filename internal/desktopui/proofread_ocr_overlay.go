@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"gioui.org/f32"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -29,7 +30,7 @@ func (a *App) drawProofreadingOCRPageOverlay(gtx layout.Context, size image.Poin
 		}
 		if state.aiProofreading && step.active() && step.page == pageIndex {
 			drawProofreadingLaser(gtx, size, step.startedAt)
-			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
+			gtx.Execute(op.InvalidateCmd{})
 		}
 	}
 	if state.aiProofreading {
@@ -117,7 +118,7 @@ func drawProofreadingOCRBlocks(gtx layout.Context, size image.Point, page proofr
 		}
 	}
 	if activeBlockID >= 0 && proofreadingOCRPulseActive(gtx.Now, pulseAt) {
-		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
+		gtx.Execute(op.InvalidateCmd{})
 	}
 }
 
@@ -188,33 +189,92 @@ func drawProofreadingLaser(gtx layout.Context, size image.Point, started time.Ti
 		elapsed = 0
 	}
 	phase := math.Mod(float64(elapsed), float64(sweepDuration)) / float64(sweepDuration)
-	y := int(phase * float64(size.Y))
+	eased := phase * phase * (3 - 2*phase)
+	y := int(eased * float64(size.Y))
 	area := clip.Rect{Max: size}.Push(gtx.Ops)
 	defer area.Pop()
-	// A fading trail gives the sweep direction without washing out the text.
+
+	alphaScale := 1.0
+	if phase < 0.08 {
+		alphaScale = phase / 0.08
+	} else if phase > 0.92 {
+		alphaScale = (1.0 - phase) / 0.08
+	}
+
 	trail := max(1, gtx.Dp(26))
-	strip := max(1, gtx.Dp(2))
-	for distance := trail; distance > 0; distance -= strip {
-		alpha := uint8(3 + 25*(trail-distance)/trail)
-		paint.FillShape(gtx.Ops, color.NRGBA{R: 26, G: 115, B: 232, A: alpha}, clip.Rect(image.Rect(0, y-distance, size.X, y-distance+strip)).Op())
+	if trail > 0 && y > 0 && alphaScale > 0.01 {
+		topTrail := max(0, y-trail)
+		trailRect := image.Rect(0, topTrail, size.X, y)
+		if !trailRect.Empty() {
+			trailStack := clip.Rect(trailRect).Push(gtx.Ops)
+			topAlpha := uint8(float64(2) * alphaScale)
+			bottomAlpha := uint8(float64(28) * alphaScale)
+			paint.LinearGradientOp{
+				Stop1:  f32.Pt(0, float32(y-trail)),
+				Color1: color.NRGBA{R: 26, G: 115, B: 232, A: topAlpha},
+				Stop2:  f32.Pt(0, float32(y)),
+				Color2: color.NRGBA{R: 26, G: 115, B: 232, A: bottomAlpha},
+			}.Add(gtx.Ops)
+			paint.PaintOp{}.Add(gtx.Ops)
+			trailStack.Pop()
+		}
 	}
 	for _, band := range []struct {
 		h   int
 		col color.NRGBA
-	}{{gtx.Dp(18), color.NRGBA{R: 26, G: 115, B: 232, A: 24}}, {gtx.Dp(7), color.NRGBA{R: 26, G: 115, B: 232, A: 70}}, {gtx.Dp(2), proofreadScanInk}} {
+	}{
+		{gtx.Dp(18), color.NRGBA{R: 26, G: 115, B: 232, A: uint8(float64(24) * alphaScale)}},
+		{gtx.Dp(7), color.NRGBA{R: 26, G: 115, B: 232, A: uint8(float64(70) * alphaScale)}},
+		{gtx.Dp(2), color.NRGBA{R: proofreadScanInk.R, G: proofreadScanInk.G, B: proofreadScanInk.B, A: uint8(float64(proofreadScanInk.A) * alphaScale)}},
+	} {
 		h := max(1, band.h)
 		top := y - h/2
 		paint.FillShape(gtx.Ops, band.col, clip.Rect{Min: image.Pt(0, top), Max: image.Pt(size.X, top+h)}.Op())
 	}
-	// A bright inner filament and a travelling glint add a
-	// restrained scanner appearance; all geometry remains inside this paper.
 	core := max(1, gtx.Dp(1))
-	light := color.NRGBA{R: 163, G: 207, B: 255, A: 255}
+	light := color.NRGBA{R: 163, G: 207, B: 255, A: uint8(float64(255) * alphaScale)}
 	paint.FillShape(gtx.Ops, light, clip.Rect(image.Rect(0, y, size.X, y+core)).Op())
-	glintPhase := math.Mod(float64(elapsed), float64(1100*time.Millisecond)) / float64(1100*time.Millisecond)
-	glintX := int(glintPhase * float64(size.X))
-	glintW := max(2, gtx.Dp(16))
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 224, G: 243, B: 255, A: 255}, clip.Rect(image.Rect(glintX-glintW/2, y, glintX+glintW/2, y+core)).Op())
 
-	gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
+	glintPhase := math.Mod(float64(elapsed), float64(1100*time.Millisecond)) / float64(1100*time.Millisecond)
+	glintAlpha := alphaScale
+	if glintPhase < 0.08 {
+		glintAlpha *= glintPhase / 0.08
+	} else if glintPhase > 0.92 {
+		glintAlpha *= (1.0 - glintPhase) / 0.08
+	}
+	if glintAlpha > 0.01 {
+		glintX := int(glintPhase * float64(size.X))
+		glintW := max(2, gtx.Dp(24))
+		left := max(0, glintX-glintW/2)
+		right := min(size.X, glintX+glintW/2)
+		midX := float32(glintX)
+		glintCol := color.NRGBA{R: 224, G: 243, B: 255, A: uint8(float64(255) * glintAlpha)}
+		clearCol := color.NRGBA{R: 224, G: 243, B: 255, A: 0}
+		leftRect := image.Rect(left, y, glintX, y+core)
+		if !leftRect.Empty() {
+			s := clip.Rect(leftRect).Push(gtx.Ops)
+			paint.LinearGradientOp{
+				Stop1:  f32.Pt(float32(left), float32(y)),
+				Color1: clearCol,
+				Stop2:  f32.Pt(midX, float32(y)),
+				Color2: glintCol,
+			}.Add(gtx.Ops)
+			paint.PaintOp{}.Add(gtx.Ops)
+			s.Pop()
+		}
+		rightRect := image.Rect(glintX, y, right, y+core)
+		if !rightRect.Empty() {
+			s := clip.Rect(rightRect).Push(gtx.Ops)
+			paint.LinearGradientOp{
+				Stop1:  f32.Pt(midX, float32(y)),
+				Color1: glintCol,
+				Stop2:  f32.Pt(float32(right), float32(y)),
+				Color2: clearCol,
+			}.Add(gtx.Ops)
+			paint.PaintOp{}.Add(gtx.Ops)
+			s.Pop()
+		}
+	}
+
+	gtx.Execute(op.InvalidateCmd{})
 }

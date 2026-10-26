@@ -30,8 +30,12 @@ func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions 
 	if state == nil {
 		return layout.Dimensions{}
 	}
+	overlayGtx := gtx
+	a.processProofreadingOCRBatchControls(gtx)
 	a.processProofreadingOCRScan(gtx)
 	a.processProofreadingOCRStep(gtx)
+	a.processProofreadingOCRBatch(gtx)
+	gtx = a.proofreadingOCRBatchContentContext(gtx)
 	w := a.ensureProofreadingWorkbench()
 	if w.historyOpen {
 		return a.layoutProofreadingHistoryPage(gtx)
@@ -78,9 +82,12 @@ func (a *App) layoutProofreadingWorkspace(gtx layout.Context) layout.Dimensions 
 			)
 		}
 	}
-	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
-		layout.Expanded(content),
-		layout.Expanded(a.layoutProofreadingDiffInspector),
+	return layout.Stack{Alignment: layout.Center}.Layout(overlayGtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions { return content(a.proofreadingOCRBatchContentContext(gtx)) }),
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return a.layoutProofreadingDiffInspector(a.proofreadingOCRBatchContentContext(gtx))
+		}),
+		layout.Expanded(a.layoutProofreadingOCRBatchDialog),
 	)
 }
 

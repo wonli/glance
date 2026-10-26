@@ -510,7 +510,7 @@ func (a *App) drawProofreadingOCRStepConnector(gtx layout.Context) {
 	}
 	if current, ok := step.comparisons[pair]; step.diffRunning && ok && proofreadingOCRStepComparisonValid(state, current) &&
 		step.diffPair == pair && step.diffDraftHash == current.DraftHash {
-		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
+		gtx.Execute(op.InvalidateCmd{})
 	}
 }
 

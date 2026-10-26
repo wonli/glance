@@ -91,7 +91,7 @@ func (a *App) drawProofreadingOCRMatchHighlight(gtx layout.Context, editor *widg
 	matchedColor := proofreadingOCRHighlightColor
 	matchedColor.A = proofreadingOCRPulseAlpha(gtx.Now, scan.highlight.PulseAt, proofreadingOCRHighlightColor.A)
 	if proofreadingOCRPulseActive(gtx.Now, scan.highlight.PulseAt) {
-		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(16 * time.Millisecond)})
+		gtx.Execute(op.InvalidateCmd{})
 	}
 	for _, segment := range segments {
 		if segment.PageIndex != page.PageIndex {
