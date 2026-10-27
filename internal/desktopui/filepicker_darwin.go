@@ -56,17 +56,7 @@ func chooseOfficeFolderContext(ctx context.Context, labels filePickerLabels) (st
 }
 
 func chooseSavePath(ext string, labels filePickerLabels) (string, error) {
-	cmd := exec.Command("osascript", "-e", `set pickedFile to choose file name with prompt `+appleScriptString(labels.SaveAs)+` default name `+appleScriptString(labels.UntitledFile+"."+ext)+"\n"+`POSIX path of pickedFile`)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		if strings.Contains(stderr.String(), "User canceled") {
-			return "", nil
-		}
-		return "", errors.New(strings.TrimSpace(stderr.String()))
-	}
-	return strings.TrimSpace(string(out)), nil
+	return chooseNativeSavePath(labels.SaveAs, labels.UntitledFile+"."+ext)
 }
 
 func chooseOfficeImageFile(labels filePickerLabels) (string, error) {
