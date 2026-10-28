@@ -20,6 +20,12 @@
 | Draft Save As | Supported, basic | JSON save tests and desktop extension guard tests; cancel does not call a writer. `.xlsx`, `.docx`, and `.json` extensions are validated. |
 | Word View > New Window (shared document session) | Implemented; native runtime unverified | `TestWordNewWindowActionOpensSharedDocumentView`, `TestPrimaryWindowPromotionAndFinalShutdown`, and `TestSessionResultFansOutAfterOriginWindowCloses`; one shared Word adapter/session with fresh per-window Gio view state, primary promotion and final close drain. Only the primary view is persisted. The 2026-10-03 macOS CUA pass opened a local DOCX and View ribbon, but CUA returned `noWindowsAvailable` after invoking New Window, before the second window and cross-window edits/close could be verified. Do not claim macOS, Windows, or Linux runtime support until an interactive pass succeeds. |
 
+## PDF
+
+| Feature | Status | Evidence / limitation |
+|---|---|---|
+| Local PDF merge and split workbench | Adapter, Runtime, and Gio regression scope verified | `TestPDFUtilityMergePreservesInputOrder`, `TestPDFUtilitySplitByRangesWritesOneFilePerRange`, `TestPDFUtilitySplitByPageWritesSinglePageFiles`, `TestPDFUtilityRejectsUnsupportedInputAndCleansStaging`, `TestPDFUtilityRejectsSourceAndExistingTargets`, `TestPDFUtilitySplitReportsPartialCommitAndCleansStaging`, `TestRuntimePDFUtilityInspectMergeSplit`, and `TestPDFMergeSplitTool*`; merges in chosen order, splits inclusive page ranges or one file per page, reopens outputs and checks page counts, keeps merge sources byte-identical, rejects encrypted/repaired/truncated input and existing destinations, and reports already committed files on partial split failure. Output is written to a user-selected local folder; there is no download flow. Internal links, non-URI annotations, and signature validity are not preserved. The focused tests use generated PDFs and do not establish broad PDF compatibility or preservation of every visible feature. The required `go run ./cmd/glance` process launched, but CUA could not bind to its standalone executable, so native chooser behavior and live window rendering remain unverified. |
+
 ## XLSX
 
 | Feature | Status | Evidence / limitation |
