@@ -76,6 +76,10 @@ type App struct {
 	tabCloseButtons               map[string]*widget.Clickable
 	newButton                     widget.Clickable
 	recentTabButton               widget.Clickable
+	pdfMergeSplitTabButton        widget.Clickable
+	pdfMergeSplitTabCloseButton   widget.Clickable
+	pdfMergeSplitTabActive        bool
+	pdfMergeSplitReturnTabID      string
 	workspaceTabsList             widget.List
 	workspaceTabsListPendingReset bool
 	workspaceTabsRevealedActiveID string

@@ -141,17 +141,13 @@ func (a *App) refreshHomeMetadata() {
 
 func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
 	a.reconcileHomeFolderSelection()
-	if a.pdfMergeSplitToolPage {
+	if a.pdfMergeSplitToolTabActive() {
 		a.processPDFMergeSplitToolEvents(gtx)
 	}
 	if a.homeSection == homeSectionSettings {
 		a.processSettingsNavClicks(gtx)
 	} else {
 		a.processHomeNavClicks(gtx)
-	}
-	if a.pdfMergeSplitToolPage && a.homeSection != homeSectionTools {
-		a.pdfMergeSplitToolPage = false
-		a.cancelPDFMergeSplitJobForExit()
 	}
 	if a.homeSection == homeSectionSettings {
 		a.dismissHomeRecentMenu()
@@ -164,6 +160,10 @@ func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
 		dims := a.layoutAIAssistantWorkspace(gtx)
 		a.layoutHomeFolderMenuDismissInput(gtx)
 		return dims
+	}
+	if a.pdfMergeSplitToolTabActive() {
+		a.dismissHomeRecentMenu()
+		return a.layoutPDFMergeSplitTool(gtx)
 	}
 	dims := layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions { return fill(gtx, homeCanvas) },
@@ -545,9 +545,6 @@ func (a *App) layoutHomeContentPage(gtx layout.Context) layout.Dimensions {
 		return a.layoutHomeFolderContentPage(gtx)
 	}
 	if a.homeSection == homeSectionTools {
-		if a.pdfMergeSplitToolPage {
-			return a.layoutPDFMergeSplitTool(gtx)
-		}
 		return a.layoutHomeToolsPage(gtx)
 	}
 	var precedingHeight int

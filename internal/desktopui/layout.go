@@ -7,7 +7,6 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
-	"glance/internal/workspace"
 )
 
 var (
@@ -25,10 +24,6 @@ var (
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	a.ensureDesktopRuntime()
 	a.processPDFMergeSplitToolJobResults()
-	if a.pdfMergeSplitToolPage && a.activeTabID != workspace.RecentTabID {
-		a.pdfMergeSplitToolPage = false
-		a.cancelPDFMergeSplitJobForExit()
-	}
 	a.processProofreadingWorkbench()
 	a.processProofreadingTabs(gtx)
 	for _, tab := range a.proofreadingTabs {
@@ -64,15 +59,16 @@ func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	a.reconcileWorkspaceTabs()
 	syncWindowViewFromSharedSession(gtx, a.documentSessionState)
 	gtx.Constraints.Min = gtx.Constraints.Max
+	content := layout.Widget(func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
+			layout.Rigid(a.layoutWorkspaceTabs),
+			layout.Flexed(1, a.layoutWorkspaceBody),
+		)
+	})
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions { return fill(gtx, pageBackground) },
 		func(gtx layout.Context) layout.Dimensions {
-			return a.layoutRootWithOverlays(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx,
-					layout.Rigid(a.layoutWorkspaceTabs),
-					layout.Flexed(1, a.layoutWorkspaceBody),
-				)
-			})
+			return a.layoutRootWithOverlays(gtx, content)
 		},
 	)
 }
@@ -129,6 +125,9 @@ func (a *App) visibleStatus() string {
 }
 
 func (a *App) layoutDocument(gtx layout.Context) layout.Dimensions {
+	if a.pdfMergeSplitToolTabActive() {
+		return a.layoutRecent(gtx)
+	}
 	if tab := a.proofreadingTab(a.selectedProofreadingTabID); tab != nil {
 		return a.layoutProofreadingTab(gtx, tab)
 	}

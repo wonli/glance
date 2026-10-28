@@ -3,6 +3,7 @@ package desktopui
 import (
 	"context"
 	"image/color"
+	"time"
 
 	"gioui.org/gesture"
 	"gioui.org/layout"
@@ -49,12 +50,20 @@ type pdfMergeSplitMergeDraft struct {
 }
 
 type pdfMergeSplitFileButtons struct {
-	remove       widget.Clickable
-	grab         widget.Clickable
-	drag         gesture.Drag
-	dragPressY   float32
-	dragIdentity uint64
-	dragStarted  bool
+	remove                 widget.Clickable
+	grab                   widget.Clickable
+	drag                   gesture.Drag
+	dragPressY             float32
+	dragIdentity           uint64
+	dragStartIndex         int
+	dragTargetIndex        int
+	dragPressVisualOffsetY float32
+	dragOffsetY            float32
+	dragStarted            bool
+	dragLiftStartedAt      time.Time
+	dragDropStartedAt      time.Time
+	reorderOffsetY         float32
+	reorderAnimationStart  time.Time
 }
 
 type pdfMergeSplitSplitDraft struct {
@@ -63,6 +72,7 @@ type pdfMergeSplitSplitDraft struct {
 	prefix             widget.Editor
 	rangeInput         widget.Editor
 	rangeMode          pdfMergeSplitSplitMode
+	clearButton        widget.Clickable
 	selectButton       widget.Clickable
 	outputButton       widget.Clickable
 	rangesButton       widget.Clickable
@@ -81,7 +91,6 @@ type pdfMergeSplitToolState struct {
 	mode            pdfMergeSplitMode
 	mergeDraft      pdfMergeSplitMergeDraft
 	splitDraft      pdfMergeSplitSplitDraft
-	backButton      widget.Clickable
 	cancelButton    widget.Clickable
 	mergeModeButton widget.Clickable
 	splitModeButton widget.Clickable
@@ -97,7 +106,7 @@ type pdfMergeSplitToolState struct {
 	pendingRun      bool
 }
 
-var pdfMergeSplitAccent = color.NRGBA{R: 222, G: 111, B: 48, A: 255}
+var pdfMergeSplitAccent = color.NRGBA{R: 217, G: 107, B: 77, A: 255}
 
 func newPDFMergeSplitToolState() pdfMergeSplitToolState {
 	state := pdfMergeSplitToolState{

@@ -3,10 +3,12 @@ package desktopui
 import (
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gioui.org/gesture"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"glance/internal/application"
@@ -20,9 +22,9 @@ func (a *App) processPDFMergeSplitToolEvents(gtx layout.Context) {
 	if state.busy {
 		cancelClicked := consumePDFMergeSplitClick(&state.cancelButton, gtx)
 		for _, button := range []*widget.Clickable{
-			&state.backButton, &state.mergeModeButton, &state.splitModeButton,
+			&state.mergeModeButton, &state.splitModeButton,
 			&state.mergeDraft.addButton, &state.mergeDraft.clearButton, &state.mergeDraft.outputButton, &state.mergeDraft.mergeButton,
-			&state.splitDraft.selectButton, &state.splitDraft.outputButton, &state.splitDraft.rangesButton, &state.splitDraft.byPageButton, &state.splitDraft.splitButton,
+			&state.splitDraft.clearButton, &state.splitDraft.selectButton, &state.splitDraft.outputButton, &state.splitDraft.rangesButton, &state.splitDraft.byPageButton, &state.splitDraft.splitButton,
 		} {
 			consumePDFMergeSplitClick(button, gtx)
 		}
@@ -33,7 +35,7 @@ func (a *App) processPDFMergeSplitToolEvents(gtx layout.Context) {
 		for identity, buttons := range state.mergeDraft.fileButtons {
 			consumePDFMergeSplitClick(&buttons.remove, gtx)
 			if buttons.dragIdentity == identity {
-				buttons.dragStarted = false
+				a.cancelPDFMergeSplitDrag(gtx, buttons)
 			}
 			for _, ok := buttons.drag.Update(gtx.Metric, gtx.Source, gesture.Both); ok; _, ok = buttons.drag.Update(gtx.Metric, gtx.Source, gesture.Both) {
 			}
@@ -54,7 +56,6 @@ func (a *App) processPDFMergeSplitToolEvents(gtx layout.Context) {
 	if state.mode == pdfMergeSplitModeSplit {
 		a.updatePDFMergeSplitRangePreview()
 	}
-	backClicked := state.backButton.Clicked(gtx)
 	mergeModeClicked := state.mergeModeButton.Clicked(gtx)
 	splitModeClicked := state.splitModeButton.Clicked(gtx)
 	rangesModeClicked := state.splitDraft.rangesButton.Clicked(gtx)
@@ -64,18 +65,13 @@ func (a *App) processPDFMergeSplitToolEvents(gtx layout.Context) {
 	splitSelectClicked := state.splitDraft.selectButton.Clicked(gtx)
 	mergeFolderClicked := state.mergeDraft.outputButton.Clicked(gtx)
 	mergeRunClicked := state.mergeDraft.mergeButton.Clicked(gtx)
+	splitClearClicked := state.splitDraft.clearButton.Clicked(gtx)
 	splitFolderClicked := state.splitDraft.outputButton.Clicked(gtx)
 	splitRunClicked := state.splitDraft.splitButton.Clicked(gtx)
 	removeClicked := make(map[uint64]bool, len(state.mergeDraft.fileButtons))
 	for identity, buttons := range state.mergeDraft.fileButtons {
 		removeClicked[identity] = buttons.remove.Clicked(gtx)
 		buttons.grab.Clicked(gtx)
-	}
-	if backClicked {
-		a.pdfMergeSplitToolPage = false
-		a.cancelPDFMergeSplitJobForExit()
-		state.clearOperationResult()
-		return
 	}
 	if mergeModeClicked {
 		state.selectMode(pdfMergeSplitModeMerge)
@@ -130,6 +126,18 @@ func (a *App) processPDFMergeSplitToolEvents(gtx layout.Context) {
 		a.startPDFMergeSplitFilePicker(pdfMergeSplitJobSplitSource)
 		return
 	}
+	if state.mode == pdfMergeSplitModeSplit && splitClearClicked {
+		draft := &state.splitDraft
+		draft.source = nil
+		draft.rangeInput.SetText("")
+		draft.outputFolder = ""
+		draft.prefix.SetText("")
+		draft.prefixDefault, draft.prefixLastSeen = "", ""
+		draft.prefixCustomized = false
+		a.updatePDFMergeSplitRangePreview()
+		state.clearOperationResult()
+		return
+	}
 	if state.mode == pdfMergeSplitModeMerge {
 		if mergeFolderClicked {
 			a.startPDFMergeSplitFolderPicker(pdfMergeSplitJobMergeFolder, false)
@@ -168,30 +176,160 @@ func (a *App) processPDFMergeSplitDrag(gtx layout.Context, rowIndex int, buttons
 		case pointer.Press:
 			buttons.dragPressY = event.Position.Y
 			buttons.dragIdentity = a.pdfMergeSplitTool.mergeDraft.files[rowIndex].identity
+			buttons.dragStartIndex = rowIndex
+			buttons.dragTargetIndex = rowIndex
+			buttons.dragPressVisualOffsetY, _ = pdfMergeSplitReorderOffsetAt(buttons, gtx.Now)
+			buttons.dragOffsetY = buttons.dragPressVisualOffsetY
+			buttons.dragDropStartedAt = time.Time{}
 			buttons.dragStarted = false
 		case pointer.Drag:
-			delta := event.Position.Y - buttons.dragPressY
+			step := float32(gtx.Dp(unit.Dp(80)))
+			delta := pdfMergeSplitDragPointerDelta(event.Position.Y, buttons, step)
 			threshold := float32(gtx.Dp(unit.Dp(3)))
 			if delta*delta > threshold*threshold {
+				if !buttons.dragStarted {
+					buttons.dragLiftStartedAt = gtx.Now
+					buttons.reorderOffsetY = 0
+					buttons.reorderAnimationStart = time.Time{}
+				}
 				buttons.dragStarted = true
+			}
+			if buttons.dragStarted {
+				target := clampPDFMergeSplitFileIndex(buttons.dragStartIndex+pdfMergeSplitDragSteps(delta, step), len(a.pdfMergeSplitTool.mergeDraft.files))
+				if target != buttons.dragTargetIndex {
+					a.updatePDFMergeSplitDragPreview(gtx, buttons, target, step)
+				}
+				buttons.dragOffsetY = buttons.dragPressVisualOffsetY + delta - float32(buttons.dragTargetIndex-buttons.dragStartIndex)*step
+				gtx.Execute(op.InvalidateCmd{})
 			}
 		case pointer.Release:
 			if buttons.dragStarted {
-				from := a.pdfMergeSplitFileIndex(buttons.dragIdentity)
-				delta := event.Position.Y - buttons.dragPressY
-				rowHeight := float32(gtx.Dp(unit.Dp(54)))
-				if delta < 0 {
-					steps := -int((-delta + rowHeight/2) / rowHeight)
-					a.movePDFMergeSplitFile(from, from+steps)
-				} else {
-					steps := int((delta + rowHeight/2) / rowHeight)
-					a.movePDFMergeSplitFile(from, from+steps)
+				step := float32(gtx.Dp(unit.Dp(80)))
+				delta := pdfMergeSplitDragPointerDelta(event.Position.Y, buttons, step)
+				target := clampPDFMergeSplitFileIndex(buttons.dragStartIndex+pdfMergeSplitDragSteps(delta, step), len(a.pdfMergeSplitTool.mergeDraft.files))
+				if target != buttons.dragTargetIndex {
+					a.updatePDFMergeSplitDragPreview(gtx, buttons, target, step)
 				}
+				buttons.dragOffsetY = buttons.dragPressVisualOffsetY + delta - float32(buttons.dragTargetIndex-buttons.dragStartIndex)*step
+				from := a.pdfMergeSplitFileIndex(buttons.dragIdentity)
+				a.movePDFMergeSplitFile(from, buttons.dragTargetIndex)
+				buttons.reorderOffsetY = buttons.dragOffsetY
+				buttons.reorderAnimationStart = gtx.Now
+				buttons.dragStarted = false
+				buttons.dragDropStartedAt = gtx.Now
+				buttons.dragOffsetY = 0
+				buttons.dragIdentity = 0
+				gtx.Execute(op.InvalidateCmd{})
+			} else {
+				resumePDFMergeSplitReorderAnimation(buttons, buttons.dragPressVisualOffsetY, gtx.Now)
+				buttons.dragIdentity = 0
 			}
-			buttons.dragStarted = false
 		case pointer.Cancel:
-			buttons.dragStarted = false
+			a.cancelPDFMergeSplitDrag(gtx, buttons)
 		}
+	}
+}
+
+func pdfMergeSplitDragPointerDelta(positionY float32, buttons *pdfMergeSplitFileButtons, step float32) float32 {
+	visualOffset := float32(buttons.dragTargetIndex-buttons.dragStartIndex)*step + buttons.dragOffsetY
+	return positionY - buttons.dragPressY + visualOffset - buttons.dragPressVisualOffsetY
+}
+
+func pdfMergeSplitDragSteps(delta, step float32) int {
+	if step <= 0 {
+		return 0
+	}
+	if delta < 0 {
+		return -int((-delta + step/2) / step)
+	}
+	return int((delta + step/2) / step)
+}
+
+func clampPDFMergeSplitFileIndex(index, count int) int {
+	if count <= 0 {
+		return 0
+	}
+	return max(0, min(count-1, index))
+}
+
+func pdfMergeSplitMoveFileSlice(files []pdfMergeSplitFile, from, to int) []pdfMergeSplitFile {
+	moved := append([]pdfMergeSplitFile(nil), files...)
+	if from < 0 || from >= len(moved) || to < 0 || to >= len(moved) || from == to {
+		return moved
+	}
+	file := moved[from]
+	if from < to {
+		copy(moved[from:to], moved[from+1:to+1])
+	} else {
+		copy(moved[to+1:from+1], moved[to:from])
+	}
+	moved[to] = file
+	return moved
+}
+
+func (a *App) updatePDFMergeSplitDragPreview(gtx layout.Context, buttons *pdfMergeSplitFileButtons, target int, step float32) {
+	draft := &a.pdfMergeSplitTool.mergeDraft
+	target = clampPDFMergeSplitFileIndex(target, len(draft.files))
+	if buttons == nil || target == buttons.dragTargetIndex || len(draft.files) == 0 {
+		return
+	}
+	currentOrder := pdfMergeSplitMoveFileSlice(draft.files, buttons.dragStartIndex, buttons.dragTargetIndex)
+	nextOrder := pdfMergeSplitMoveFileSlice(draft.files, buttons.dragStartIndex, target)
+	currentIndex := make(map[uint64]int, len(currentOrder))
+	for index, file := range currentOrder {
+		currentIndex[file.identity] = index
+	}
+	for nextIndex, file := range nextOrder {
+		if file.identity == buttons.dragIdentity {
+			continue
+		}
+		fileButtons := draft.fileButtons[file.identity]
+		if fileButtons == nil {
+			continue
+		}
+		oldIndex, found := currentIndex[file.identity]
+		if !found {
+			continue
+		}
+		currentOffset, _ := pdfMergeSplitReorderOffsetAt(fileButtons, gtx.Now)
+		fromOffset := float32(oldIndex-nextIndex)*step + currentOffset
+		fileButtons.reorderOffsetY = fromOffset
+		if fromOffset == 0 {
+			fileButtons.reorderAnimationStart = time.Time{}
+		} else {
+			fileButtons.reorderAnimationStart = gtx.Now
+		}
+	}
+	buttons.dragTargetIndex = target
+}
+
+func (a *App) cancelPDFMergeSplitDrag(gtx layout.Context, buttons *pdfMergeSplitFileButtons) {
+	if buttons == nil {
+		return
+	}
+	if buttons.dragStarted {
+		step := float32(gtx.Dp(unit.Dp(80)))
+		oldTarget := buttons.dragTargetIndex
+		returnOffset := float32(oldTarget-buttons.dragStartIndex)*step + buttons.dragOffsetY
+		a.updatePDFMergeSplitDragPreview(gtx, buttons, buttons.dragStartIndex, step)
+		buttons.reorderOffsetY = returnOffset
+		buttons.reorderAnimationStart = gtx.Now
+		buttons.dragStarted = false
+		buttons.dragDropStartedAt = gtx.Now
+		buttons.dragOffsetY = 0
+		gtx.Execute(op.InvalidateCmd{})
+	} else if buttons.dragIdentity != 0 {
+		resumePDFMergeSplitReorderAnimation(buttons, buttons.dragPressVisualOffsetY, gtx.Now)
+	}
+	buttons.dragIdentity = 0
+}
+
+func resumePDFMergeSplitReorderAnimation(buttons *pdfMergeSplitFileButtons, offset float32, now time.Time) {
+	buttons.reorderOffsetY = offset
+	if offset == 0 {
+		buttons.reorderAnimationStart = time.Time{}
+	} else {
+		buttons.reorderAnimationStart = now
 	}
 }
 

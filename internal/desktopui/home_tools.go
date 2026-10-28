@@ -17,10 +17,12 @@ import (
 )
 
 const (
-	homeToolFilterAll        = "all"
-	homeToolFilterDocuments  = "documents-pdf"
-	homeToolFilterImages     = "images-recognition"
-	homeToolFilterManagement = "file-management"
+	homeToolFilterAll                 = "all"
+	homeToolFilterDocuments           = "documents-pdf"
+	homeToolFilterImages              = "images-recognition"
+	homeToolFilterManagement          = "file-management"
+	homeToolsGridGap          unit.Dp = 16
+	homeToolsGridMinCardWidth unit.Dp = 320
 )
 
 type homeToolFilter struct {
@@ -277,29 +279,64 @@ func (a *App) filteredHomeToolEntries() []homeToolEntry {
 }
 
 func layoutHomeToolsEntries(gtx layout.Context, app *App, entries []homeToolEntry) layout.Dimensions {
-	children := make([]layout.FlexChild, 0, len(entries))
-	for _, entry := range entries {
-		entry := entry
-		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			switch entry.id {
-			case "workbench":
-				return app.layoutHomeToolsWorkbenchCard(gtx)
-			case "pdf-merge-split":
-				return app.layoutHomeToolsPDFMergeSplitCard(gtx)
-			default:
-				return layout.Dimensions{}
+	if len(entries) == 0 {
+		return layout.Dimensions{}
+	}
+	columns := 1
+	minCardWidth := gtx.Dp(homeToolsGridMinCardWidth)
+	gap := gtx.Dp(homeToolsGridGap)
+	if gtx.Constraints.Max.X >= 2*minCardWidth+gap {
+		columns = 2
+	}
+	if gtx.Constraints.Max.X >= 3*minCardWidth+2*gap {
+		columns = 3
+	}
+
+	rows := make([]layout.FlexChild, 0, (len(entries)+columns-1)/columns*2)
+	for start := 0; start < len(entries); start += columns {
+		start := start
+		if start > 0 {
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Spacer{Height: homeToolsGridGap}.Layout(gtx)
+			}))
+		}
+		rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			children := make([]layout.FlexChild, 0, columns*2-1)
+			for column := 0; column < columns; column++ {
+				if column > 0 {
+					children = append(children, layout.Rigid(layout.Spacer{Width: homeToolsGridGap}.Layout))
+				}
+				index := start + column
+				if index >= len(entries) {
+					children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
+					}))
+					continue
+				}
+				entry := entries[index]
+				children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					switch entry.id {
+					case "workbench":
+						return app.layoutHomeToolsWorkbenchCard(gtx)
+					case "pdf-merge-split":
+						return app.layoutHomeToolsPDFMergeSplitCard(gtx)
+					default:
+						return layout.Dimensions{}
+					}
+				}))
 			}
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 		}))
 	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
 }
 
 func (a *App) layoutHomeToolsWorkbenchCard(gtx layout.Context) layout.Dimensions {
-	width := min(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(720)))
+	width := gtx.Constraints.Max.X
 	if width <= 0 {
 		return layout.Dimensions{}
 	}
-	size := image.Pt(width, gtx.Dp(unit.Dp(200)))
+	size := image.Pt(width, gtx.Dp(unit.Dp(218)))
 	gtx.Constraints = layout.Exact(size)
 	button := a.homeNavButton("tools-workbench")
 	if button.Clicked(gtx) {

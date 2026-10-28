@@ -26,13 +26,14 @@ import (
 )
 
 const (
-	workspaceHomeTabWidth     unit.Dp = 112
-	workspaceTabTopGap        unit.Dp = 5
-	workspaceTabHeight        unit.Dp = 37
-	workspaceDocumentTabGap   unit.Dp = 6
-	workspaceDocumentTabWidth unit.Dp = 190
-	workspacePlusTabWidth     unit.Dp = 32
-	workspaceTabStripSize     unit.Dp = workspaceTabTopGap + workspaceTabHeight
+	workspaceHomeTabWidth       unit.Dp = 112
+	workspaceTabTopGap          unit.Dp = 5
+	workspaceTabHeight          unit.Dp = 37
+	workspaceDocumentTabGap     unit.Dp = 6
+	workspaceDocumentTabWidth   unit.Dp = 190
+	workspacePlusTabWidth       unit.Dp = 32
+	workspaceTabStripSize       unit.Dp = workspaceTabTopGap + workspaceTabHeight
+	workspacePDFMergeSplitTabID         = "__pdf_merge_split_tool__"
 )
 
 func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
@@ -125,7 +126,11 @@ func (a *App) layoutWindowsWorkspaceDocumentTabs(gtx layout.Context, ids []strin
 	list := func(gtx layout.Context) layout.Dimensions {
 		a.handleWorkspaceTabScroll(gtx)
 		a.revealActiveWindowsWorkspaceTab(gtx, ids)
-		dims := a.workspaceTabsList.Layout(gtx, len(ids)+1, func(gtx layout.Context, index int) layout.Dimensions {
+		itemCount := len(ids) + 1 // document tabs and the plus tab.
+		if a.pdfMergeSplitToolPage && !a.proofreadingModule {
+			itemCount++
+		}
+		dims := a.workspaceTabsList.Layout(gtx, itemCount, func(gtx layout.Context, index int) layout.Dimensions {
 			return a.layoutWindowsWorkspaceTabListItem(gtx, ids, index)
 		})
 		pass := pointer.PassOp{}.Push(gtx.Ops)
@@ -142,9 +147,13 @@ func (a *App) layoutWindowsWorkspaceDocumentTabs(gtx layout.Context, ids []strin
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, list))
 	}
 
+	pdfToolItemWidth := 0
+	if a.pdfMergeSplitToolPage && !a.proofreadingModule {
+		pdfToolItemWidth = gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
+	}
 	documentItemWidth := gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
 	plusItemWidth := gtx.Dp(workspaceDocumentTabGap) + gtx.Dp(workspacePlusTabWidth)
-	contentWidth := len(ids)*documentItemWidth + plusItemWidth
+	contentWidth := pdfToolItemWidth + len(ids)*documentItemWidth + plusItemWidth
 	listWidth := min(contentWidth, gtx.Constraints.Max.X)
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -161,9 +170,18 @@ func (a *App) processWorkspaceTabClicks(gtx layout.Context) {
 		if a.selectedProofreadingTabID != "" {
 			gtx.Execute(key.FocusCmd{})
 		}
-		a.showNewMenu = false
-		a.persistActiveSession()
-		a.activateRecent()
+		a.activateGlanceWorkspaceTab()
+		return
+	}
+	if a.pdfMergeSplitToolPage && !a.proofreadingModule {
+		if a.pdfMergeSplitTabCloseButton.Clicked(gtx) {
+			a.closePDFMergeSplitToolTab(false)
+			return
+		}
+		if a.pdfMergeSplitTabButton.Clicked(gtx) {
+			a.activatePDFMergeSplitToolTab()
+			return
+		}
 	}
 	if a.newButton.Clicked(gtx) {
 		if a.proofreadingModule {
@@ -192,6 +210,30 @@ func (a *App) processWorkspaceTabClicks(gtx layout.Context) {
 			return
 		}
 	}
+	return
+}
+
+func (a *App) activateGlanceWorkspaceTab() {
+	a.pdfMergeSplitTabActive = false
+	a.showNewMenu = false
+	a.homeSection = homeSectionRecent
+	a.persistActiveSession()
+	a.activateRecent()
+}
+
+func (a *App) activatePDFMergeSplitToolTab() {
+	if !a.pdfMergeSplitToolPage || a.proofreadingModule {
+		return
+	}
+	if !a.pdfMergeSplitTabActive {
+		a.persistActiveSession()
+	}
+	a.showNewMenu = false
+	a.pdfMergeSplitTabActive = true
+	a.homeSection = homeSectionTools
+	if a.pdfMergeSplitReturnTabID == "" {
+		a.pdfMergeSplitReturnTabID = workspace.RecentTabID
+	}
 }
 
 func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Dimensions {
@@ -205,7 +247,11 @@ func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Di
 		list := func(gtx layout.Context) layout.Dimensions {
 			a.handleWorkspaceTabScroll(gtx)
 			a.revealActiveWorkspaceTab(gtx, ids)
-			dims := a.workspaceTabsList.Layout(gtx, len(ids)+2, func(gtx layout.Context, index int) layout.Dimensions {
+			itemCount := len(ids) + 2 // Recent and plus tabs.
+			if a.pdfMergeSplitToolPage && !a.proofreadingModule {
+				itemCount++
+			}
+			dims := a.workspaceTabsList.Layout(gtx, itemCount, func(gtx layout.Context, index int) layout.Dimensions {
 				return a.layoutWorkspaceTabListItem(gtx, ids, index)
 			})
 			pass := pointer.PassOp{}.Push(gtx.Ops)
@@ -222,9 +268,13 @@ func (a *App) layoutWorkspaceTabList(gtx layout.Context, ids []string) layout.Di
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, list), layout.Rigid(a.layoutJSONSaveIndicator))
 		}
 
+		pdfToolItemWidth := 0
+		if a.pdfMergeSplitToolPage && !a.proofreadingModule {
+			pdfToolItemWidth = gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
+		}
 		documentItemWidth := gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
 		plusItemWidth := gtx.Dp(workspaceDocumentTabGap) + gtx.Dp(workspacePlusTabWidth)
-		contentWidth := gtx.Dp(a.workspaceHomeTabWidth()) + len(ids)*documentItemWidth + plusItemWidth
+		contentWidth := gtx.Dp(a.workspaceHomeTabWidth()) + len(ids)*documentItemWidth + pdfToolItemWidth + plusItemWidth
 		listWidth := min(contentWidth, gtx.Constraints.Max.X)
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -242,6 +292,9 @@ func (a *App) revealActiveWorkspaceTab(gtx layout.Context, ids []string) {
 }
 
 func (a *App) workspaceSelectedTabID() string {
+	if a.pdfMergeSplitToolTabActive() {
+		return workspacePDFMergeSplitTabID
+	}
 	if a.selectedProofreadingTabID != "" {
 		return a.selectedProofreadingTabID
 	}
@@ -265,17 +318,22 @@ func (a *App) revealActiveWindowsWorkspaceTab(gtx layout.Context, ids []string) 
 
 func (a *App) revealActiveWorkspaceTabInList(gtx layout.Context, ids []string, includeRecent bool) {
 	index := -1
-	itemOffset := 0
+	includePDFTool := a.pdfMergeSplitToolPage && !a.proofreadingModule
+	documentOffset := 0
+	if includeRecent {
+		documentOffset++
+	}
 	selectedTabID := a.workspaceSelectedTabID()
 	if includeRecent && selectedTabID == workspace.RecentTabID {
 		index = 0
-	} else {
-		if includeRecent {
-			itemOffset = 1
+	} else if selectedTabID == workspacePDFMergeSplitTabID {
+		if includePDFTool {
+			index = documentOffset + len(ids)
 		}
+	} else {
 		for i, id := range ids {
 			if id == selectedTabID {
-				index = i + itemOffset
+				index = i + documentOffset
 				break
 			}
 		}
@@ -294,12 +352,18 @@ func (a *App) revealActiveWorkspaceTabInList(gtx layout.Context, ids []string, i
 	if includeRecent {
 		widthCount++
 	}
+	if includePDFTool {
+		widthCount++
+	}
 	widths := make([]int, widthCount)
 	if includeRecent {
 		widths[0] = gtx.Dp(a.workspaceHomeTabWidth())
 	}
 	for i := range ids {
-		widths[i+itemOffset] = gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
+		widths[i+documentOffset] = gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
+	}
+	if includePDFTool {
+		widths[documentOffset+len(ids)] = gtx.Dp(workspaceDocumentTabWidth) + gtx.Dp(workspaceDocumentTabGap)
 	}
 	widths[len(widths)-1] = gtx.Dp(workspaceDocumentTabGap) + gtx.Dp(workspacePlusTabWidth)
 	prefix := make([]int, len(widths)+1)
@@ -370,9 +434,20 @@ func absFloat32(value float32) float32 {
 
 func (a *App) layoutWorkspaceTabListItem(gtx layout.Context, ids []string, index int) layout.Dimensions {
 	var item layout.Widget
+	toolOpen := a.pdfMergeSplitToolPage && !a.proofreadingModule
+	toolCount := 0
+	if toolOpen {
+		toolCount = 1
+	}
+	toolIndex := len(ids) + 1
+	plusIndex := len(ids) + 1 + toolCount
 	if index == 0 {
 		item = a.layoutRecentTab
-	} else if index == len(ids)+1 {
+	} else if toolOpen && index == toolIndex {
+		item = func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: workspaceDocumentTabGap}.Layout(gtx, a.layoutPDFMergeSplitWorkspaceTab)
+		}
+	} else if index == plusIndex {
 		item = a.layoutPlusTab
 	} else if index > 0 && index <= len(ids) {
 		item = func(gtx layout.Context) layout.Dimensions {
@@ -389,7 +464,18 @@ func (a *App) layoutWorkspaceTabListItem(gtx layout.Context, ids []string, index
 
 func (a *App) layoutWindowsWorkspaceTabListItem(gtx layout.Context, ids []string, index int) layout.Dimensions {
 	var item layout.Widget
-	if index == len(ids) {
+	toolOpen := a.pdfMergeSplitToolPage && !a.proofreadingModule
+	toolCount := 0
+	if toolOpen {
+		toolCount = 1
+	}
+	toolIndex := len(ids)
+	plusIndex := len(ids) + toolCount
+	if toolOpen && index == toolIndex {
+		item = func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: workspaceDocumentTabGap}.Layout(gtx, a.layoutPDFMergeSplitWorkspaceTab)
+		}
+	} else if index == plusIndex {
 		item = a.layoutPlusTab
 	} else if index >= 0 && index < len(ids) {
 		item = func(gtx layout.Context) layout.Dimensions {
@@ -515,9 +601,7 @@ func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
 		if a.selectedProofreadingTabID != "" {
 			gtx.Execute(key.FocusCmd{})
 		}
-		a.showNewMenu = false
-		a.persistActiveSession()
-		a.activateRecent()
+		a.activateGlanceWorkspaceTab()
 	}
 	active := a.workspaceSelectedTabID() == workspace.RecentTabID
 	tab := func(gtx layout.Context) layout.Dimensions {
@@ -531,6 +615,18 @@ func (a *App) layoutRecentTab(gtx layout.Context) layout.Dimensions {
 		return layoutWindowMoveAreaAfter(gtx, tab)
 	}
 	return tab(gtx)
+}
+
+func (a *App) layoutPDFMergeSplitWorkspaceTab(gtx layout.Context) layout.Dimensions {
+	active := a.pdfMergeSplitToolTabActive()
+	return a.paintDocumentTabWithActiveSurface(
+		gtx,
+		&a.pdfMergeSplitTabButton,
+		&a.pdfMergeSplitTabCloseButton,
+		a.textID("home.tools.pdf_merge_split.title"),
+		active,
+		pdfMergeSplitCanvas,
+	)
 }
 
 func (a *App) layoutPlusTab(gtx layout.Context) layout.Dimensions {
@@ -593,6 +689,7 @@ func (a *App) layoutDocumentTab(gtx layout.Context, id string) layout.Dimensions
 }
 
 func (a *App) activateWorkspaceTab(id string) {
+	a.pdfMergeSplitTabActive = false
 	if tab := a.proofreadingTab(id); tab != nil {
 		a.selectedProofreadingTabID = id
 		tab.editor.ensureProofreadingWorkbench().active = false
@@ -646,6 +743,10 @@ func (a *App) documentTabWidgets(id string) (*widget.Clickable, *widget.Clickabl
 }
 
 func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable, label string, active bool) layout.Dimensions {
+	return a.paintDocumentTabWithActiveSurface(gtx, tab, close, label, active, contentSurface)
+}
+
+func (a *App) paintDocumentTabWithActiveSurface(gtx layout.Context, tab, close *widget.Clickable, label string, active bool, activeSurface color.NRGBA) layout.Dimensions {
 	width := gtx.Dp(workspaceDocumentTabWidth)
 	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(workspaceTabHeight), gtx.Dp(workspaceTabHeight)
@@ -684,7 +785,7 @@ func (a *App) paintDocumentTab(gtx layout.Context, tab, close *widget.Clickable,
 	call := child.Stop()
 	bg := workspaceTabStripSurface
 	if active {
-		bg = contentSurface
+		bg = activeSurface
 	}
 	paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y), NW: gtx.Dp(unit.Dp(6)), NE: gtx.Dp(unit.Dp(6))}.Op(gtx.Ops))
 	call.Add(gtx.Ops)
