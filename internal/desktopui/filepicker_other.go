@@ -10,11 +10,18 @@ import (
 )
 
 func chooseOfficeFile(labels filePickerLabels) (string, error) {
+	return chooseOfficeFileContext(context.Background(), labels)
+}
+
+func chooseOfficeFileContext(ctx context.Context, labels filePickerLabels) (string, error) {
 	if _, err := exec.LookPath("zenity"); err != nil {
 		return "", fmt.Errorf("%s", labels.InstallPickerNotice)
 	}
-	output, err := exec.Command("zenity", "--file-selection", "--title="+labels.OpenDocument, "--file-filter="+labels.DocumentFilter+" | "+labels.officeFileGlobs(" ")).Output()
+	output, err := exec.CommandContext(ctx, "zenity", "--file-selection", "--title="+labels.OpenDocument, "--file-filter="+labels.DocumentFilter+" | "+labels.officeFileGlobs(" ")).Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		if _, ok := err.(*exec.ExitError); ok {
 			return "", nil
 		}

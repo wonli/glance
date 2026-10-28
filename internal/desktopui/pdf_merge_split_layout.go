@@ -24,7 +24,6 @@ var (
 )
 
 func (a *App) layoutPDFMergeSplitTool(gtx layout.Context) layout.Dimensions {
-	a.processPDFMergeSplitToolBaseClicks(gtx)
 	state := &a.pdfMergeSplitTool
 	return state.pageList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		return layout.Inset{Top: unit.Dp(26), Bottom: unit.Dp(32), Left: unit.Dp(32), Right: unit.Dp(32)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -42,6 +41,9 @@ func (a *App) layoutPDFMergeSplitTool(gtx layout.Context) layout.Dimensions {
 						}
 						return a.layoutPDFMergeSplitMergeDraft(gtx)
 					})
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, a.layoutPDFMergeSplitStatus)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -66,35 +68,11 @@ func (a *App) layoutPDFMergeSplitTool(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-func (a *App) processPDFMergeSplitToolBaseClicks(gtx layout.Context) {
-	state := &a.pdfMergeSplitTool
-	if state.backButton.Clicked(gtx) && !state.busy {
-		a.pdfMergeSplitToolPage = false
-		state.clearOperationResult()
-	}
-	if state.mergeModeButton.Clicked(gtx) {
-		state.selectMode(pdfMergeSplitModeMerge)
-		state.clearOperationResult()
-	}
-	if state.splitModeButton.Clicked(gtx) {
-		state.selectMode(pdfMergeSplitModeSplit)
-		state.clearOperationResult()
-	}
-	if state.splitDraft.rangesButton.Clicked(gtx) && !state.busy {
-		state.splitDraft.rangeMode = pdfMergeSplitSplitModeRanges
-		state.clearOperationResult()
-	}
-	if state.splitDraft.byPageButton.Clicked(gtx) && !state.busy {
-		state.splitDraft.rangeMode = pdfMergeSplitSplitModeByPage
-		state.clearOperationResult()
-	}
-}
-
 func (a *App) layoutPDFMergeSplitHeader(gtx layout.Context) layout.Dimensions {
 	state := &a.pdfMergeSplitTool
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return pdfMergeSplitTextButton(gtx, a.theme, &state.backButton, "arrow-left", a.textID("pdf_merge_split.back"), false, false)
+			return pdfMergeSplitTextButton(gtx, a.theme, &state.backButton, "arrow-left", a.textID("pdf_merge_split.back"), false, state.busy)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -177,7 +155,7 @@ func (a *App) layoutPDFMergeSplitMergeFiles(gtx layout.Context) layout.Dimension
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return state.fileList.Layout(gtx, len(state.files), func(gtx layout.Context, index int) layout.Dimensions {
 				file := state.files[index]
-				return layoutPDFMergeSplitFileRow(gtx, a.theme, locale, file, state.fileButtons[file.identity], false)
+				return layoutPDFMergeSplitFileRow(gtx, a.theme, locale, file, state.fileButtons[file.identity], true, a.pdfMergeSplitTool.busy)
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -188,27 +166,31 @@ func (a *App) layoutPDFMergeSplitMergeFiles(gtx layout.Context) layout.Dimension
 
 func (a *App) layoutPDFMergeSplitEmptyFiles(gtx layout.Context) layout.Dimensions {
 	state := &a.pdfMergeSplitTool.mergeDraft
-	return a.pdfMergeSplitDropZone(gtx, &state.addButton, "file", "pdf_merge_split.merge.empty", "pdf_merge_split.merge.add")
+	return a.pdfMergeSplitDropZone(gtx, &state.addButton, "file", "pdf_merge_split.merge.empty", "pdf_merge_split.merge.add", a.pdfMergeSplitTool.busy)
 }
 
 func (a *App) layoutPDFMergeSplitAddDropZone(gtx layout.Context) layout.Dimensions {
 	state := &a.pdfMergeSplitTool.mergeDraft
-	return a.pdfMergeSplitDropZone(gtx, &state.addButton, "plus", "pdf_merge_split.merge.empty", "pdf_merge_split.merge.add")
+	return a.pdfMergeSplitDropZone(gtx, &state.addButton, "plus", "pdf_merge_split.merge.empty", "pdf_merge_split.merge.add", a.pdfMergeSplitTool.busy)
 }
 
-func (a *App) pdfMergeSplitDropZone(gtx layout.Context, button *widget.Clickable, icon, descriptionKey, actionKey string) layout.Dimensions {
+func (a *App) pdfMergeSplitDropZone(gtx layout.Context, button *widget.Clickable, icon, descriptionKey, actionKey string, disabled bool) layout.Dimensions {
 	width := gtx.Constraints.Max.X
 	height := gtx.Dp(unit.Dp(112))
 	size := image.Pt(width, height)
 	gtx.Constraints = layout.Exact(size)
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		background, border, foreground := pdfMergeSplitPale, color.NRGBA{R: 244, G: 209, B: 183, A: 255}, pdfMergeSplitAccent
+		if disabled {
+			background, border, foreground = color.NRGBA{R: 245, G: 246, B: 247, A: 255}, pdfMergeSplitLine, pdfMergeSplitMute
+		}
 		shape := clip.UniformRRect(image.Rectangle{Max: size}, gtx.Dp(unit.Dp(10)))
-		paint.FillShape(gtx.Ops, pdfMergeSplitPale, shape.Op(gtx.Ops))
-		paintRoundedBorder(gtx.Ops, shape, float32(max(1, gtx.Dp(unit.Dp(1)))), color.NRGBA{R: 244, G: 209, B: 183, A: 255})
+		paint.FillShape(gtx.Ops, background, shape.Op(gtx.Ops))
+		paintRoundedBorder(gtx.Ops, shape, float32(max(1, gtx.Dp(unit.Dp(1)))), border)
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return homeIcon(gtx, icon, unit.Dp(23), pdfMergeSplitAccent)
+					return homeIcon(gtx, icon, unit.Dp(23), foreground)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -217,7 +199,7 @@ func (a *App) pdfMergeSplitDropZone(gtx layout.Context, button *widget.Clickable
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return homeTextLabel(gtx, a.theme, a.textID(actionKey), 13, pdfMergeSplitAccent, true)
+						return homeTextLabel(gtx, a.theme, a.textID(actionKey), 13, foreground, true)
 					})
 				}),
 			)
@@ -225,7 +207,7 @@ func (a *App) pdfMergeSplitDropZone(gtx layout.Context, button *widget.Clickable
 	})
 }
 
-func layoutPDFMergeSplitFileRow(gtx layout.Context, theme *material.Theme, locale i18n.Locale, file pdfMergeSplitFile, buttons *pdfMergeSplitFileButtons, reorder bool) layout.Dimensions {
+func layoutPDFMergeSplitFileRow(gtx layout.Context, theme *material.Theme, locale i18n.Locale, file pdfMergeSplitFile, buttons *pdfMergeSplitFileButtons, reorder bool, disabled bool) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(54))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	return homeRoundedPanel(gtx, color.NRGBA{R: 250, G: 251, B: 252, A: 255}, pdfMergeSplitLine, unit.Dp(8), func(gtx layout.Context) layout.Dimensions {
@@ -251,11 +233,22 @@ func layoutPDFMergeSplitFileRow(gtx layout.Context, theme *material.Theme, local
 						return layout.Dimensions{}
 					}
 					if reorder {
-						return homeIconButton(gtx, &buttons.grab, "arrow-up", unit.Dp(32), pdfMergeSplitMute, false)
+						return layoutPDFMergeSplitDragHandle(gtx, buttons)
 					}
-					return homeIconButton(gtx, &buttons.remove, "x", unit.Dp(32), pdfMergeSplitMute, false)
+					return homeIconButton(gtx, &buttons.remove, "x", unit.Dp(32), pdfMergeSplitMute, disabled)
 				}),
 			)
+		})
+	})
+}
+
+func layoutPDFMergeSplitDragHandle(gtx layout.Context, buttons *pdfMergeSplitFileButtons) layout.Dimensions {
+	size := gtx.Dp(unit.Dp(32))
+	gtx.Constraints = layout.Exact(image.Pt(size, size))
+	return buttons.grab.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		buttons.drag.Add(gtx.Ops)
+		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return homeIcon(gtx, "grip-vertical", unit.Dp(18), pdfMergeSplitMute)
 		})
 	})
 }
@@ -294,6 +287,7 @@ func (a *App) layoutPDFMergeSplitOutputFields(gtx layout.Context, editor *widget
 }
 
 func (a *App) layoutPDFMergeSplitTextField(gtx layout.Context, editor *widget.Editor, labelKey, hint string) layout.Dimensions {
+	editor.ReadOnly = a.pdfMergeSplitTool.busy
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return homeTextLabel(gtx, a.theme, a.textID(labelKey), 12, pdfMergeSplitMute, false)
@@ -348,7 +342,7 @@ func pdfMergeSplitSummaryItem(gtx layout.Context, theme *material.Theme, title, 
 
 func (a *App) layoutPDFMergeSplitSplitDraft(gtx layout.Context) layout.Dimensions {
 	draft := &a.pdfMergeSplitTool.splitDraft
-	return pdfMergeSplitPanel(gtx, 460, func(gtx layout.Context) layout.Dimensions {
+	return pdfMergeSplitPanel(gtx, 484, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: unit.Dp(22), Bottom: unit.Dp(20), Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -363,11 +357,11 @@ func (a *App) layoutPDFMergeSplitSplitDraft(gtx layout.Context) layout.Dimension
 					return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								return pdfMergeSplitTextButton(gtx, a.theme, &draft.rangesButton, "list-minus", a.textID("pdf_merge_split.split.by_ranges"), draft.rangeMode == pdfMergeSplitSplitModeRanges, false)
+								return pdfMergeSplitTextButton(gtx, a.theme, &draft.rangesButton, "list-minus", a.textID("pdf_merge_split.split.by_ranges"), draft.rangeMode == pdfMergeSplitSplitModeRanges, a.pdfMergeSplitTool.busy)
 							}),
 							layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								return pdfMergeSplitTextButton(gtx, a.theme, &draft.byPageButton, "scan-pages", a.textID("pdf_merge_split.split.by_page"), draft.rangeMode == pdfMergeSplitSplitModeByPage, false)
+								return pdfMergeSplitTextButton(gtx, a.theme, &draft.byPageButton, "scan-pages", a.textID("pdf_merge_split.split.by_page"), draft.rangeMode == pdfMergeSplitSplitModeByPage, a.pdfMergeSplitTool.busy)
 							}),
 						)
 					})
@@ -384,6 +378,17 @@ func (a *App) layoutPDFMergeSplitSplitDraft(gtx layout.Context) layout.Dimension
 					}
 					return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return a.layoutPDFMergeSplitTextField(gtx, &draft.rangeInput, "pdf_merge_split.split.ranges", a.textID("pdf_merge_split.split.ranges.placeholder"))
+					})
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if draft.rangeMode == pdfMergeSplitSplitModeByPage {
+						return layout.Dimensions{}
+					}
+					return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						if draft.rangeError != "" {
+							return homeTextLabel(gtx, a.theme, draft.rangeError, 12, color.NRGBA{R: 173, G: 54, B: 48, A: 255}, false)
+						}
+						return homeTextLabel(gtx, a.theme, a.textArgs("pdf_merge_split.split.range_preview", i18n.Args{"Count": formatPDFUtilityNumber(draft.rangeCount)}), 12, pdfMergeSplitMute, false)
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -409,9 +414,58 @@ func (a *App) layoutPDFMergeSplitSplitDraft(gtx layout.Context) layout.Dimension
 func (a *App) layoutPDFMergeSplitSplitSource(gtx layout.Context) layout.Dimensions {
 	draft := &a.pdfMergeSplitTool.splitDraft
 	if draft.source == nil {
-		return a.pdfMergeSplitDropZone(gtx, &draft.selectButton, "file", "pdf_merge_split.split.empty", "pdf_merge_split.split.select")
+		return a.pdfMergeSplitDropZone(gtx, &draft.selectButton, "file", "pdf_merge_split.split.empty", "pdf_merge_split.split.select", a.pdfMergeSplitTool.busy)
 	}
-	return layoutPDFMergeSplitFileRow(gtx, a.theme, a.localeSnapshot().Resolved, *draft.source, nil, false)
+	return layoutPDFMergeSplitFileRow(gtx, a.theme, a.localeSnapshot().Resolved, *draft.source, nil, false, true)
+}
+
+func (a *App) layoutPDFMergeSplitStatus(gtx layout.Context) layout.Dimensions {
+	state := &a.pdfMergeSplitTool
+	children := make([]layout.FlexChild, 0, len(state.lastOutputs)+3)
+	if state.busy {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return homeTextLabel(gtx, a.theme, a.textID("pdf_merge_split.status.busy"), 13, pdfMergeSplitMute, false)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return pdfMergeSplitTextButton(gtx, a.theme, &state.cancelButton, "x", a.textID("pdf_merge_split.status.cancel"), false, false)
+				}),
+			)
+		}))
+	}
+	if state.lastError != "" {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return homeTextLabel(gtx, a.theme, state.lastError, 13, color.NRGBA{R: 173, G: 54, B: 48, A: 255}, false)
+		}))
+	} else if state.cancelled {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return homeTextLabel(gtx, a.theme, a.textID("pdf_merge_split.status.cancelled"), 13, pdfMergeSplitMute, false)
+		}))
+	} else if len(state.lastOutputs) > 0 {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return homeTextLabel(gtx, a.theme, a.textID("pdf_merge_split.status.success"), 13, color.NRGBA{R: 49, G: 121, B: 78, A: 255}, false)
+		}))
+	}
+	if (state.lastError != "" || state.cancelled) && len(state.lastOutputs) > 0 {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return homeTextLabel(gtx, a.theme, a.textID("pdf_merge_split.status.partial"), 12, pdfMergeSplitMute, false)
+		}))
+	}
+	if len(state.lastOutputs) > 0 {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			rowHeight := gtx.Dp(unit.Dp(24))
+			height := min(len(state.lastOutputs)*rowHeight, gtx.Dp(unit.Dp(144)))
+			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+			return state.outputList.Layout(gtx, len(state.lastOutputs), func(gtx layout.Context, index int) layout.Dimensions {
+				return homeTextLabel(gtx, a.theme, state.lastOutputs[index], 12, pdfMergeSplitInk, false)
+			})
+		}))
+	}
+	if len(children) == 0 {
+		return layout.Dimensions{}
+	}
+	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceEnd}.Layout(gtx, children...)
 }
 
 func (a *App) layoutPDFMergeSplitOutputFolder(gtx layout.Context, folder string, button *widget.Clickable) layout.Dimensions {

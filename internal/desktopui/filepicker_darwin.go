@@ -11,17 +11,24 @@ import (
 )
 
 func chooseOfficeFile(labels filePickerLabels) (string, error) {
+	return chooseOfficeFileContext(context.Background(), labels)
+}
+
+func chooseOfficeFileContext(ctx context.Context, labels filePickerLabels) (string, error) {
 	types := make([]string, 0, len(labels.officeFileExtensions()))
 	for _, extension := range labels.officeFileExtensions() {
 		types = append(types, appleScriptString(strings.TrimPrefix(extension, ".")))
 	}
 	script := `set pickedFile to choose file with prompt ` + appleScriptString(labels.OpenDocument) + ` of type {` + strings.Join(types, ", ") + `}
 POSIX path of pickedFile`
-	cmd := exec.Command("osascript", "-e", script)
+	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	output, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		message := strings.TrimSpace(stderr.String())
 		if strings.Contains(message, "User canceled") {
 			return "", nil

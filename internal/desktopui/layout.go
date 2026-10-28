@@ -7,6 +7,7 @@ import (
 	"gioui.org/widget/material"
 
 	"glance/internal/document"
+	"glance/internal/workspace"
 )
 
 var (
@@ -23,6 +24,11 @@ var (
 
 func (a *App) layout(gtx layout.Context) layout.Dimensions {
 	a.ensureDesktopRuntime()
+	a.processPDFMergeSplitToolJobResults()
+	if a.pdfMergeSplitToolPage && a.activeTabID != workspace.RecentTabID {
+		a.pdfMergeSplitToolPage = false
+		a.cancelPDFMergeSplitJobForExit()
+	}
 	a.processProofreadingWorkbench()
 	a.processProofreadingTabs(gtx)
 	for _, tab := range a.proofreadingTabs {

@@ -161,6 +161,7 @@ func (r *desktopRuntime) runAppWindow(a *App) {
 				}
 				a.queueProofreadingDraftPersistence()
 			}
+			a.cancelPDFMergeSplitJobForShutdown()
 			a.closeAllProofreadingTabs()
 			a.shutdownOnce.Do(func() { close(a.shutdown) })
 			a.closeAgentSubscription()

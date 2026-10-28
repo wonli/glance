@@ -141,10 +141,17 @@ func (a *App) refreshHomeMetadata() {
 
 func (a *App) layoutRecent(gtx layout.Context) layout.Dimensions {
 	a.reconcileHomeFolderSelection()
+	if a.pdfMergeSplitToolPage {
+		a.processPDFMergeSplitToolEvents(gtx)
+	}
 	if a.homeSection == homeSectionSettings {
 		a.processSettingsNavClicks(gtx)
 	} else {
 		a.processHomeNavClicks(gtx)
+	}
+	if a.pdfMergeSplitToolPage && a.homeSection != homeSectionTools {
+		a.pdfMergeSplitToolPage = false
+		a.cancelPDFMergeSplitJobForExit()
 	}
 	if a.homeSection == homeSectionSettings {
 		a.dismissHomeRecentMenu()
