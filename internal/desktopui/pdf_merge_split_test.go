@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/f32"
 	"gioui.org/io/input"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -56,6 +58,112 @@ func TestPDFMergeSplitToolNavigation(t *testing.T) {
 	app.layoutHomeContentPage(gtx)
 	if app.pdfMergeSplitToolPage {
 		t.Fatal("workbench back action did not return to the tools catalog")
+	}
+}
+
+func TestPDFMergeSplitToolHeaderBackButtonDoesNotCoverTitle(t *testing.T) {
+	app := New(nil, "")
+	defer closePDFMergeSplitTestApp(app)
+	app.pdfMergeSplitToolPage = true
+	var ops op.Ops
+	var router input.Router
+	gtx := pdfMergeSplitLayoutContext(&ops, &router, 1, image.Pt(1000, 100))
+	gtx.Constraints = layout.Constraints{Max: image.Pt(1000, 100)}
+	frame := func() {
+		ops.Reset()
+		gtx.Ops = &ops
+		gtx.Source = router.Source()
+		app.processPDFMergeSplitToolEvents(gtx)
+		app.layoutPDFMergeSplitHeader(gtx)
+		router.Frame(&ops)
+	}
+	click := func(position f32.Point) {
+		router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 31, Buttons: pointer.ButtonPrimary, Position: position})
+		frame()
+		router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 31, Position: position})
+		frame()
+		frame()
+	}
+	frame()
+	click(f32.Pt(600, 21))
+	if !app.pdfMergeSplitToolPage {
+		t.Fatal("clicking the header title area triggered the back button")
+	}
+	click(f32.Pt(120, 21))
+	if app.pdfMergeSplitToolPage {
+		t.Fatal("clicking the right side of the Chinese back label did not activate the back button; the button is too narrow")
+	}
+	click(f32.Pt(56, 21))
+	if app.pdfMergeSplitToolPage {
+		t.Fatal("clicking the back button did not leave the workbench")
+	}
+}
+
+func TestPDFMergeSplitToolCanReplaceSplitSource(t *testing.T) {
+	app := New(nil, "")
+	defer closePDFMergeSplitTestApp(app)
+	app.pdfMergeSplitToolPage = true
+	app.pdfMergeSplitTool.mode = pdfMergeSplitModeSplit
+	first, second := writePDFMergeSplitFixture(t, "first.pdf"), writePDFMergeSplitFixture(t, "second.pdf")
+	draft := &app.pdfMergeSplitTool.splitDraft
+	draft.source = &pdfMergeSplitFile{path: first, name: filepath.Base(first), pageCount: 4, sizeBytes: 100, identity: 1}
+	draft.pickPDFFile = func(context.Context, filePickerLabels) (string, error) { return second, nil }
+	var ops op.Ops
+	var router input.Router
+	gtx := pdfMergeSplitLayoutContext(&ops, &router, 1, image.Pt(1000, 700))
+	frame := func() {
+		ops.Reset()
+		gtx.Ops = &ops
+		gtx.Source = router.Source()
+		app.processPDFMergeSplitToolEvents(gtx)
+		app.layoutPDFMergeSplitSplitSource(gtx)
+		router.Frame(&ops)
+	}
+	frame()
+	position := f32.Pt(500, 83)
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 32, Buttons: pointer.ButtonPrimary, Position: position})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 32, Position: position})
+	frame()
+	frame()
+	if !app.pdfMergeSplitTool.busy {
+		t.Fatal("selected split source has no reachable replace control")
+	}
+	waitPDFMergeSplitJob(t, app)
+	if draft.source == nil || draft.source.path != second {
+		t.Fatalf("replacing the split source left %+v, want %q", draft.source, second)
+	}
+}
+
+func TestPDFMergeSplitToolMergeRowCanRemoveFile(t *testing.T) {
+	app := New(nil, "")
+	defer closePDFMergeSplitTestApp(app)
+	app.pdfMergeSplitToolPage = true
+	state := &app.pdfMergeSplitTool.mergeDraft
+	file := pdfMergeSplitFile{path: "/one.pdf", name: "one.pdf", pageCount: 1, sizeBytes: 100, identity: 1}
+	state.files = []pdfMergeSplitFile{file}
+	state.fileButtons[file.identity] = &pdfMergeSplitFileButtons{}
+	app.recalculatePDFMergeSplitMergeSummary()
+	var ops op.Ops
+	var router input.Router
+	gtx := pdfMergeSplitLayoutContext(&ops, &router, 1, image.Pt(1000, 200))
+	frame := func() {
+		ops.Reset()
+		gtx.Ops = &ops
+		gtx.Source = router.Source()
+		app.processPDFMergeSplitToolEvents(gtx)
+		app.layoutPDFMergeSplitMergeFiles(gtx)
+		router.Frame(&ops)
+	}
+	frame()
+	position := f32.Pt(980, 27)
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: 33, Buttons: pointer.ButtonPrimary, Position: position})
+	frame()
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: 33, Position: position})
+	frame()
+	frame()
+	if len(state.files) != 0 {
+		t.Fatalf("clicking the merge row remove control left %+v", state.files)
 	}
 }
 
@@ -162,6 +270,62 @@ func TestPDFMergeSplitToolVisual(t *testing.T) {
 		if dims := renderPresentationTestOps(t, &ops, workbenchSize); dims == nil {
 			t.Fatalf("busy progress state did not render at %gx", scale)
 		}
+	}
+}
+
+func TestPDFMergeSplitToolPanelsFitPrimaryActions(t *testing.T) {
+	app := New(nil, "")
+	defer closePDFMergeSplitTestApp(app)
+	app.pdfMergeSplitToolPage = true
+	app.pdfMergeSplitTool.mergeDraft.files = []pdfMergeSplitFile{
+		{path: "/source/quarterly-report.pdf", name: "quarterly-report.pdf", pageCount: 12, sizeBytes: 2_400_000, identity: 1},
+		{path: "/source/appendix.pdf", name: "appendix.pdf", pageCount: 4, sizeBytes: 870_000, identity: 2},
+	}
+	app.pdfMergeSplitTool.mergeDraft.fileButtons[1] = &pdfMergeSplitFileButtons{}
+	app.pdfMergeSplitTool.mergeDraft.fileButtons[2] = &pdfMergeSplitFileButtons{}
+	app.recalculatePDFMergeSplitMergeSummary()
+	app.setPDFMergeSplitSource(application.PDFUtilityFileInfo{Path: "/source/quarterly-report.pdf", PageCount: 12, SizeBytes: 2_400_000})
+	twoFiles := append([]pdfMergeSplitFile(nil), app.pdfMergeSplitTool.mergeDraft.files...)
+	splitSource := app.pdfMergeSplitTool.splitDraft.source
+
+	for _, scale := range []float32{1, 2} {
+		var ops op.Ops
+		var router input.Router
+		gtx := pdfMergeSplitLayoutContext(&ops, &router, scale, image.Pt(int(1200*scale), int(800*scale)))
+		merge := app.layoutPDFMergeSplitMergeDraft(gtx)
+		if minimum := gtx.Dp(unit.Dp(560)); merge.Size.Y < minimum {
+			t.Errorf("merge panel at %gx is %dpx high, want at least %dpx so the output folder and merge action both fit", scale, merge.Size.Y, minimum)
+		}
+		app.pdfMergeSplitTool.mergeDraft.files = twoFiles[:1]
+		app.recalculatePDFMergeSplitMergeSummary()
+		ops.Reset()
+		if oneFile := app.layoutPDFMergeSplitMergeDraft(gtx); oneFile.Size.Y != gtx.Dp(unit.Dp(506)) {
+			t.Errorf("one-file merge panel at %gx is %dpx high, want %dpx", scale, oneFile.Size.Y, gtx.Dp(unit.Dp(506)))
+		}
+		app.pdfMergeSplitTool.mergeDraft.files = nil
+		app.recalculatePDFMergeSplitMergeSummary()
+		ops.Reset()
+		if empty := app.layoutPDFMergeSplitMergeDraft(gtx); empty.Size.Y != gtx.Dp(unit.Dp(468)) {
+			t.Errorf("empty merge panel at %gx is %dpx high, want %dpx", scale, empty.Size.Y, gtx.Dp(unit.Dp(468)))
+		}
+		app.pdfMergeSplitTool.mergeDraft.files = twoFiles
+		app.recalculatePDFMergeSplitMergeSummary()
+		app.pdfMergeSplitTool.mode = pdfMergeSplitModeSplit
+		ops.Reset()
+		split := app.layoutPDFMergeSplitSplitDraft(gtx)
+		if minimum := gtx.Dp(unit.Dp(552)); split.Size.Y < minimum {
+			t.Errorf("split panel at %gx is %dpx high, want at least %dpx so the output folder and split action both fit", scale, split.Size.Y, minimum)
+		}
+		if addZone := app.layoutPDFMergeSplitAddDropZone(gtx); addZone.Size.Y != gtx.Dp(unit.Dp(88)) {
+			t.Errorf("merge add-file zone at %gx is %dpx high, want %dpx for a compact in-list action", scale, addZone.Size.Y, gtx.Dp(unit.Dp(88)))
+		}
+		app.pdfMergeSplitTool.splitDraft.source = nil
+		ops.Reset()
+		if emptySplit := app.layoutPDFMergeSplitSplitDraft(gtx); emptySplit.Size.Y != gtx.Dp(unit.Dp(560)) {
+			t.Errorf("empty split panel at %gx is %dpx high, want %dpx", scale, emptySplit.Size.Y, gtx.Dp(unit.Dp(560)))
+		}
+		app.pdfMergeSplitTool.splitDraft.source = splitSource
+		app.pdfMergeSplitTool.mode = pdfMergeSplitModeMerge
 	}
 }
 

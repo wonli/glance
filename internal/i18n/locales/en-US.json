@@ -62,6 +62,7 @@
   "pdf_merge_split.merge.summary_size": "Total source size",
   "pdf_merge_split.split.source": "Source PDF",
   "pdf_merge_split.split.select": "Choose PDF",
+  "pdf_merge_split.split.replace": "Replace PDF",
   "pdf_merge_split.split.empty": "Choose a local PDF to split.",
   "pdf_merge_split.split.by_ranges": "By page ranges",
   "pdf_merge_split.split.by_page": "One file per page",

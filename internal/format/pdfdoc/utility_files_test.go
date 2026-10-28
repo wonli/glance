@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,6 +25,28 @@ func utilityTestPDF(t testing.TB, widths ...float64) []byte {
 		page.SetFont(gopdf.Helvetica, 12)
 		page.Text(20, 30, fmt.Sprintf("page-%d", index+1))
 	}
+	var data bytes.Buffer
+	if _, err := doc.WriteTo(&data); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
+}
+
+func utilityTestPDFWithImage(t testing.TB) []byte {
+	t.Helper()
+	doc := gopdf.New()
+	page := doc.AddPageSize(gopdf.PageSize{W: 100, H: 100})
+	pixels := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			pixels.SetRGBA(x, y, color.RGBA{R: 220, G: 70, B: 35, A: 255})
+		}
+	}
+	img, err := doc.AddImage(pixels)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page.DrawImage(img, 10, 10, 40, 40)
 	var data bytes.Buffer
 	if _, err := doc.WriteTo(&data); err != nil {
 		t.Fatal(err)
@@ -103,6 +128,37 @@ func TestPDFUtilityMergePreservesInputOrder(t *testing.T) {
 		if !bytes.Equal(data, want) {
 			t.Fatalf("source %q changed during merge", source)
 		}
+	}
+}
+
+func TestPDFUtilityMergeKeepsMappedImageResourcesAlive(t *testing.T) {
+	const helperEnv = "GLANCE_PDF_UTILITY_IMAGE_STREAM_HELPER"
+	if os.Getenv(helperEnv) == "1" {
+		dir := t.TempDir()
+		source := writeUtilityTestPDF(t, dir, "source.pdf", utilityTestPDFWithImage(t))
+		target := filepath.Join(dir, "merged.pdf")
+		if _, err := MergeUtilityPDFs(context.Background(), []string{source, source}, target); err != nil {
+			t.Fatalf("MergeUtilityPDFs: %v", err)
+		}
+		reader, err := gopdf.Open(target)
+		if err != nil {
+			t.Fatalf("open merged PDF: %v", err)
+		}
+		images, err := reader.PageImages(0)
+		if err != nil || len(images) != 1 {
+			t.Fatalf("merged page images = %d, %v; want one image", len(images), err)
+		}
+		decoded, err := images[0].Decode()
+		if err != nil || decoded.Bounds().Dx() != 8 || decoded.Bounds().Dy() != 8 {
+			t.Fatalf("merged image decode = %v, %v; want 8x8 image", decoded, err)
+		}
+		return
+	}
+
+	command := exec.Command(os.Args[0], "-test.run=^TestPDFUtilityMergeKeepsMappedImageResourcesAlive$")
+	command.Env = append(os.Environ(), helperEnv+"=1")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("isolated image-stream merge failed: %v\n%s", err, output)
 	}
 }
 

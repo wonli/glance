@@ -90,6 +90,13 @@ func MergeUtilityPDFs(ctx context.Context, sources []string, targetPath string) 
 
 	merged := gopdf.New()
 	pageCount := 0
+	inputs := make([]*Document, 0, len(absSources))
+	// Imported resource streams may alias reader bytes; keep mmap-backed inputs alive through serialization.
+	defer func() {
+		for _, input := range inputs {
+			_ = input.Close()
+		}
+	}()
 	for _, source := range absSources {
 		if err := checkUtilityContext(ctx); err != nil {
 			return UtilityOutput{}, err
@@ -98,19 +105,15 @@ func MergeUtilityPDFs(ctx context.Context, sources []string, targetPath string) 
 		if err != nil {
 			return UtilityOutput{}, fmt.Errorf("open source PDF %q: %w", source, err)
 		}
+		inputs = append(inputs, input)
 		for pageIndex := 0; pageIndex < input.Info().Pages; pageIndex++ {
 			if err := checkUtilityContext(ctx); err != nil {
-				_ = input.Close()
 				return UtilityOutput{}, err
 			}
 			if _, err := merged.ImportPage(input.reader, pageIndex); err != nil {
-				_ = input.Close()
 				return UtilityOutput{}, fmt.Errorf("import page %d from %q: %w", pageIndex+1, source, err)
 			}
 			pageCount++
-		}
-		if err := input.Close(); err != nil {
-			return UtilityOutput{}, fmt.Errorf("close source PDF %q: %w", source, err)
 		}
 	}
 	return writeUtilityPDF(ctx, merged, target, pageCount)

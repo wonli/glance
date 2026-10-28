@@ -62,6 +62,7 @@
   "pdf_merge_split.merge.summary_size": "源文件总大小",
   "pdf_merge_split.split.source": "源 PDF",
   "pdf_merge_split.split.select": "选择 PDF",
+  "pdf_merge_split.split.replace": "更换 PDF",
   "pdf_merge_split.split.empty": "选择一份本地 PDF 开始拆分。",
   "pdf_merge_split.split.by_ranges": "按页码范围",
   "pdf_merge_split.split.by_page": "每页一个文件",
