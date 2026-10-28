@@ -19,6 +19,15 @@ func chooseOfficeFileContext(ctx context.Context, labels filePickerLabels) (stri
 	return windowsPickerContext(ctx, command)
 }
 
+func chooseOfficeFilesContext(ctx context.Context, labels filePickerLabels) ([]string, error) {
+	command := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Title = '" + powerShellString(labels.OpenDocument) + "'; $d.Filter = '" + powerShellString(labels.windowsOfficeFileFilter()) + "'; $d.Multiselect = $true; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write(($d.FileNames -join [char]0)) }"
+	output, err := windowsPickerContext(ctx, command)
+	if err != nil {
+		return nil, err
+	}
+	return splitFilePickerPaths(output), nil
+}
+
 func chooseOfficeFolder(labels filePickerLabels) (string, error) {
 	return chooseOfficeFolderContext(context.Background(), labels)
 }

@@ -353,21 +353,27 @@ func (a *App) layoutPDFMergeSplitFilesHeading(gtx layout.Context, title string, 
 
 func pdfMergeSplitCountPill(gtx layout.Context, theme *material.Theme, label string) layout.Dimensions {
 	height := gtx.Dp(unit.Dp(22))
+	gtx.Constraints.Min.X = 0
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	style := material.Body2(theme, label)
 	style.TextSize = unit.Sp(11)
 	style.Color = color.NRGBA{R: 107, G: 117, B: 129, A: 255}
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(9), Right: unit.Dp(9)}.Layout(gtx, style.Layout)
-			})
-		},
-		func(gtx layout.Context) layout.Dimensions {
-			width := gtx.Constraints.Max.X
+			width := gtx.Constraints.Min.X
 			gtx.Constraints = layout.Exact(image.Pt(width, height))
 			shape := clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, height/2)
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 242, G: 244, B: 246, A: 255}, shape.Op(gtx.Ops))
 			return layout.Dimensions{Size: gtx.Constraints.Max}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(9), Right: unit.Dp(9)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return pdfMergeSplitNaturalHeight(gtx, style.Layout)
+					})
+				}),
+			)
 		},
 	)
 }

@@ -30,6 +30,23 @@ func chooseOfficeFileContext(ctx context.Context, labels filePickerLabels) (stri
 	return strings.TrimSpace(string(output)), nil
 }
 
+func chooseOfficeFilesContext(ctx context.Context, labels filePickerLabels) ([]string, error) {
+	if _, err := exec.LookPath("zenity"); err != nil {
+		return nil, fmt.Errorf("%s", labels.InstallPickerNotice)
+	}
+	output, err := exec.CommandContext(ctx, "zenity", "--file-selection", "--multiple", "--separator=\n", "--title="+labels.OpenDocument, "--file-filter="+labels.DocumentFilter+" | "+labels.officeFileGlobs(" ")).Output()
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if _, ok := err.(*exec.ExitError); ok {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return splitFilePickerPaths(string(output)), nil
+}
+
 func chooseOfficeFolder(labels filePickerLabels) (string, error) {
 	return chooseOfficeFolderContext(context.Background(), labels)
 }

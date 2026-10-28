@@ -41,6 +41,37 @@ POSIX path of pickedFile`
 	return strings.TrimSpace(string(output)), nil
 }
 
+func chooseOfficeFilesContext(ctx context.Context, labels filePickerLabels) ([]string, error) {
+	types := make([]string, 0, len(labels.officeFileExtensions()))
+	for _, extension := range labels.officeFileExtensions() {
+		types = append(types, appleScriptString(strings.TrimPrefix(extension, ".")))
+	}
+	script := `set pickedFiles to choose file with prompt ` + appleScriptString(labels.OpenDocument) + ` of type {` + strings.Join(types, ", ") + `} with multiple selections allowed
+set outputText to ""
+repeat with pickedFile in pickedFiles
+ set outputText to outputText & (POSIX path of pickedFile) & linefeed
+end repeat
+return outputText`
+	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		message := strings.TrimSpace(stderr.String())
+		if strings.Contains(message, "User canceled") {
+			return nil, nil
+		}
+		if message == "" {
+			message = err.Error()
+		}
+		return nil, errors.New(message)
+	}
+	return splitFilePickerPaths(string(output)), nil
+}
+
 func chooseOfficeFolder(labels filePickerLabels) (string, error) {
 	return chooseOfficeFolderContext(context.Background(), labels)
 }

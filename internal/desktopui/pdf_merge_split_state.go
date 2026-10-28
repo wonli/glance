@@ -46,6 +46,7 @@ type pdfMergeSplitMergeDraft struct {
 	totalPageCount     int
 	totalSizeBytes     int64
 	pickPDFFile        func(context.Context, filePickerLabels) (string, error)
+	pickPDFFiles       func(context.Context, filePickerLabels) ([]string, error)
 	chooseOutputFolder func(context.Context, filePickerLabels) (string, error)
 }
 

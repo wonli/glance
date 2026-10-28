@@ -43,6 +43,27 @@ func (l filePickerLabels) windowsOfficeFileFilter() string {
 	return l.DocumentFilter + " (" + patterns + ")|" + patterns
 }
 
+func splitFilePickerPaths(output string) []string {
+	output = strings.ReplaceAll(output, "\r\n", "\n")
+	output = strings.TrimRight(output, "\r\n")
+	if output == "" {
+		return nil
+	}
+	delimiter := "\n"
+	if strings.Contains(output, "\x00") {
+		delimiter = "\x00"
+	}
+	parts := strings.Split(output, delimiter)
+	paths := make([]string, 0, len(parts))
+	for _, path := range parts {
+		path = strings.TrimSuffix(path, "\r")
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
 func (a *App) filePickerLabels() filePickerLabels {
 	return filePickerLabels{
 		OpenDocument:        a.textID("filepicker.open_document"),

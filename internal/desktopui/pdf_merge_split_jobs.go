@@ -3,6 +3,7 @@ package desktopui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -24,6 +25,7 @@ type pdfMergeSplitJobResult struct {
 	mode       pdfMergeSplitMode
 	kind       pdfMergeSplitJobKind
 	file       application.PDFUtilityFileInfo
+	files      []application.PDFUtilityFileInfo
 	folder     string
 	outputs    []application.PDFUtilityOutput
 	err        error
@@ -36,22 +38,37 @@ func (a *App) startPDFMergeSplitFilePicker(kind pdfMergeSplitJobKind) {
 	}
 	mode := state.mode
 	var picker func(context.Context, filePickerLabels) (string, error)
+	var multiPicker func(context.Context, filePickerLabels) ([]string, error)
 	if kind == pdfMergeSplitJobMergeFile {
 		picker = state.mergeDraft.pickPDFFile
+		multiPicker = state.mergeDraft.pickPDFFiles
+		if picker == nil && multiPicker == nil {
+			multiPicker = chooseOfficeFilesContext
+		}
 	} else {
 		picker = state.splitDraft.pickPDFFile
-	}
-	if picker == nil {
-		picker = chooseOfficeFileContext
+		if picker == nil {
+			picker = chooseOfficeFileContext
+		}
 	}
 	labels := a.filePickerLabels()
 	labels.AllowedExtensions = []string{"pdf"}
 	runtime := a.ensureDesktopRuntime().applicationRuntime
 	runtimeErr := a.ensureDesktopRuntime().applicationRuntimeErr
 	a.startPDFMergeSplitJob(kind, mode, func(ctx context.Context) pdfMergeSplitJobResult {
-		path, err := picker(ctx, labels)
 		result := pdfMergeSplitJobResult{kind: kind}
-		if err != nil || path == "" {
+		var paths []string
+		var err error
+		if multiPicker != nil {
+			paths, err = multiPicker(ctx, labels)
+		} else {
+			var path string
+			path, err = picker(ctx, labels)
+			if path != "" {
+				paths = []string{path}
+			}
+		}
+		if err != nil || len(paths) == 0 {
 			result.err = err
 			return result
 		}
@@ -62,7 +79,20 @@ func (a *App) startPDFMergeSplitFilePicker(kind pdfMergeSplitJobKind) {
 			}
 			return result
 		}
-		result.file, result.err = runtime.InspectPDFUtilityFile(ctx, path)
+		if kind == pdfMergeSplitJobMergeFile {
+			files := make([]application.PDFUtilityFileInfo, 0, len(paths))
+			for _, path := range paths {
+				file, inspectErr := runtime.InspectPDFUtilityFile(ctx, path)
+				if inspectErr != nil {
+					result.err = fmt.Errorf("%s: %w", filepath.Base(path), inspectErr)
+					return result
+				}
+				files = append(files, file)
+			}
+			result.files = files
+			return result
+		}
+		result.file, result.err = runtime.InspectPDFUtilityFile(ctx, paths[0])
 		return result
 	})
 }
@@ -280,8 +310,14 @@ func (a *App) applyPDFMergeSplitToolJobResult(result pdfMergeSplitJobResult) {
 	}
 	switch result.kind {
 	case pdfMergeSplitJobMergeFile:
-		if result.err == nil && result.file.Path != "" {
-			a.appendPDFMergeSplitFile(result.file, true)
+		if result.err == nil {
+			if len(result.files) > 0 {
+				for _, file := range result.files {
+					a.appendPDFMergeSplitFile(file, true)
+				}
+			} else if result.file.Path != "" {
+				a.appendPDFMergeSplitFile(result.file, true)
+			}
 		}
 	case pdfMergeSplitJobSplitSource:
 		if result.err == nil && result.file.Path != "" {
