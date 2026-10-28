@@ -538,6 +538,9 @@ func (a *App) layoutHomeContentPage(gtx layout.Context) layout.Dimensions {
 		return a.layoutHomeFolderContentPage(gtx)
 	}
 	if a.homeSection == homeSectionTools {
+		if a.pdfMergeSplitToolPage {
+			return a.layoutPDFMergeSplitTool(gtx)
+		}
 		return a.layoutHomeToolsPage(gtx)
 	}
 	var precedingHeight int

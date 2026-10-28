@@ -49,6 +49,12 @@ var homeToolCatalog = []homeToolEntry{
 		title:       i18n.Message{ID: "home.tools.workbench.title"},
 		description: i18n.Message{ID: "home.tools.workbench.description"},
 	},
+	{
+		id:          "pdf-merge-split",
+		category:    homeToolFilterDocuments,
+		title:       i18n.Message{ID: "home.tools.pdf_merge_split.title"},
+		description: i18n.Message{ID: "home.tools.pdf_merge_split.description"},
+	},
 }
 
 var (
@@ -278,6 +284,8 @@ func layoutHomeToolsEntries(gtx layout.Context, app *App, entries []homeToolEntr
 			switch entry.id {
 			case "workbench":
 				return app.layoutHomeToolsWorkbenchCard(gtx)
+			case "pdf-merge-split":
+				return app.layoutHomeToolsPDFMergeSplitCard(gtx)
 			default:
 				return layout.Dimensions{}
 			}

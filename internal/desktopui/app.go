@@ -140,6 +140,8 @@ type App struct {
 	homeToolsCategory             string
 	homeToolsSearch               widget.Editor
 	homeToolsFilterButtons        map[string]*widget.Clickable
+	pdfMergeSplitToolPage         bool
+	pdfMergeSplitTool             pdfMergeSplitToolState
 	homeSortOpenedDesc            bool
 	homeContentList               widget.List
 	homeActionButtons             map[string]*widget.Clickable
@@ -361,6 +363,7 @@ func newAppWithRuntimeAndWindowID(window *app.Window, initialPath string, runtim
 		homeSection:                   homeSectionRecent,
 		homeTypeFilter:                homeFilterAll,
 		homeToolsCategory:             homeToolFilterAll,
+		pdfMergeSplitTool:             newPDFMergeSplitToolState(),
 		homeSortOpenedDesc:            true,
 		homeActionButtons:             make(map[string]*widget.Clickable),
 		homeNavButtons:                make(map[string]*widget.Clickable),
