@@ -636,7 +636,7 @@ func proofreadingOCRStepConnections(gtx layout.Context, view *pdfViewState, stat
 		anchorKey := [2]int{frame.ABlockID, frame.AOffset}
 		aPoint, found := anchors[anchorKey]
 		if !found {
-			bounds, located := proofreadingOCRStepSourceCharacterBounds(step, comparison, frame, aSize)
+			bounds, located := proofreadingOCRStepConnectorSourceBounds(step, comparison, frame, aSize)
 			ok = located
 			aPoint = image.Pt(bounds.Max.X, (bounds.Min.Y+bounds.Max.Y)/2)
 			if !ok {

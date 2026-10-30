@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -95,6 +96,8 @@ func (l *windowsDesktopLock) Close() error {
 	return l.closeErr
 }
 
+var cancelSynchronousIO = windows.NewLazySystemDLL("kernel32.dll").NewProc("CancelSynchronousIo")
+
 type activationPipeServer struct {
 	name      string
 	security  *windows.SECURITY_DESCRIPTOR
@@ -126,25 +129,42 @@ func startActivationServer(_ string, requests chan<- struct{}) (func() error, er
 		return nil, fmt.Errorf("create initial desktop activation pipe: %w", err)
 	}
 	server.active = first
-	go server.acceptLoop(first, requests)
+	threadReady := make(chan error, 1)
+	var thread windows.Handle
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		var err error
+		thread, err = windows.OpenThread(windows.THREAD_TERMINATE, false, windows.GetCurrentThreadId())
+		threadReady <- err
+		if err != nil {
+			_ = windows.CloseHandle(first)
+			close(server.done)
+			return
+		}
+		server.acceptLoop(first, requests)
+	}()
+	if err := <-threadReady; err != nil {
+		return nil, fmt.Errorf("open activation server thread: %w", err)
+	}
 	return func() error {
 		server.mu.Lock()
 		server.closed = true
-		active := server.active
-		connected := server.connected
-		if !connected {
-			server.active = 0
-		}
 		server.mu.Unlock()
-		var closeErr error
-		if active != 0 && !connected {
-			closeErr = windows.CloseHandle(active)
+		// Closing a handle from another thread does not reliably interrupt a
+		// synchronous ConnectNamedPipe or ReadFile. Cancel the actual server
+		// thread's I/O until it exits, covering the race before a call starts.
+		ticker := time.NewTicker(time.Millisecond * 10)
+		defer ticker.Stop()
+		defer windows.CloseHandle(thread)
+		for {
+			cancelSynchronousIO.Call(uintptr(thread))
+			select {
+			case <-server.done:
+				return nil
+			case <-ticker.C:
+			}
 		}
-		<-server.done
-		if errors.Is(closeErr, windows.ERROR_OPERATION_ABORTED) || errors.Is(closeErr, windows.ERROR_INVALID_HANDLE) {
-			closeErr = nil
-		}
-		return closeErr
 	}, nil
 }
 
@@ -168,16 +188,23 @@ func (s *activationPipeServer) acceptLoop(handle windows.Handle, requests chan<-
 	defer close(s.done)
 	first := false
 	for {
+		s.mu.Lock()
+		closed := s.closed
+		s.mu.Unlock()
+		if closed {
+			_ = windows.CloseHandle(handle)
+			return
+		}
 		err := windows.ConnectNamedPipe(handle, nil)
 		if err != nil && err != windows.ERROR_PIPE_CONNECTED {
 			s.mu.Lock()
 			closed := s.closed
 			s.active = 0
 			s.mu.Unlock()
+			_ = windows.CloseHandle(handle)
 			if closed {
 				return
 			}
-			_ = windows.CloseHandle(handle)
 			var createErr error
 			handle, createErr = s.createPipe(first)
 			if createErr != nil {
@@ -198,6 +225,7 @@ func (s *activationPipeServer) acceptLoop(handle windows.Handle, requests chan<-
 		if s.closed {
 			s.active = 0
 			s.mu.Unlock()
+			_ = windows.CloseHandle(handle)
 			return
 		}
 		s.connected = true
@@ -205,7 +233,7 @@ func (s *activationPipeServer) acceptLoop(handle windows.Handle, requests chan<-
 		serveActivationPipe(handle, requests)
 
 		s.mu.Lock()
-		closed := s.closed
+		closed = s.closed
 		s.active = 0
 		s.connected = false
 		s.mu.Unlock()

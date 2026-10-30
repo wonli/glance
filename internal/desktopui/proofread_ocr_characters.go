@@ -32,6 +32,27 @@ func proofreadingOCRStepSourceCharacterBounds(step *proofreadingOCRStepState, co
 	return image.Rectangle{}, false
 }
 
+// Connector fallback uses the observed block, without claiming a character box.
+func proofreadingOCRStepConnectorSourceBounds(step *proofreadingOCRStepState, comparison proofreadingOCRStepComparison, frame proofreadingOCRDiffFrame, size image.Point) (image.Rectangle, bool) {
+	if bounds, ok := proofreadingOCRStepSourceCharacterBounds(step, comparison, frame, size); ok {
+		return bounds, true
+	}
+	if step == nil || frame.AOffset < 0 {
+		return image.Rectangle{}, false
+	}
+	page, ok := step.pages[comparison.APage]
+	if !ok || page.layout.CharacterVersion == ocr.CharacterGeometryVersion {
+		return image.Rectangle{}, false
+	}
+	for _, block := range page.layout.Blocks {
+		if block.ID == frame.ABlockID {
+			bounds := proofreadingOCRBlockPixelBounds(size, page.layout.Width, page.layout.Height, block.Bounds)
+			return bounds, !bounds.Empty()
+		}
+	}
+	return image.Rectangle{}, false
+}
+
 func drawProofreadingOCRCharacterBoxes(gtx layout.Context, size image.Point, step *proofreadingOCRStepState, comparison proofreadingOCRStepComparison) {
 	frames := comparison.Frames
 	running := step != nil && (step.diffRunning || step.diffPaused) &&

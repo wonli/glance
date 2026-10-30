@@ -16,7 +16,7 @@ import (
 var proofreadEmptyCanvas = color.NRGBA{R: 233, G: 237, B: 241, A: 255}
 
 func (a *App) layoutProofreadingEmptyFilmstrip(gtx layout.Context) layout.Dimensions {
-	height := min(gtx.Dp(96), gtx.Constraints.Max.Y)
+	height := min(gtx.Dp(48), gtx.Constraints.Max.Y)
 	size := image.Pt(gtx.Constraints.Max.X, height)
 	gtx.Constraints = layout.Exact(size)
 	return layout.Background{}.Layout(gtx,

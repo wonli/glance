@@ -21,7 +21,7 @@ import (
 var proofreadPaginationSurface = color.NRGBA{R: 245, G: 247, B: 249, A: 255}
 
 func (a *App) layoutProofreadingPagination(gtx layout.Context) layout.Dimensions {
-	height := min(gtx.Dp(140), gtx.Constraints.Max.Y)
+	height := min(gtx.Dp(70), gtx.Constraints.Max.Y)
 	height = max(0, height)
 	gtx.Constraints.Min.Y = height
 	gtx.Constraints.Max.Y = height
@@ -51,7 +51,7 @@ func (a *App) layoutProofreadingPagination(gtx layout.Context) layout.Dimensions
 }
 
 func (a *App) layoutProofreadingPaginationHeading(gtx layout.Context, view *pdfViewState) layout.Dimensions {
-	return layout.Inset{Top: unit.Dp(9), Bottom: unit.Dp(8), Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(1), Bottom: unit.Dp(1), Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				label := material.Label(a.theme, 13, a.textID("proofread.pagination.title"))
@@ -89,7 +89,7 @@ func (a *App) layoutProofreadingPaginationPages(gtx layout.Context, view *pdfVie
 		_, canPrevious = proofreadingFilterAdjacentPage(pages, view.page, -1)
 		_, canNext = proofreadingFilterAdjacentPage(pages, view.page, 1)
 	}
-	return layout.Inset{Left: unit.Dp(22), Right: unit.Dp(22), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: unit.Dp(22), Right: unit.Dp(22), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return a.layoutProofreadingPageArrow(gtx, view, "previous", "chevron-left", canPrevious)
@@ -153,7 +153,7 @@ func (a *App) layoutProofreadingPageArrow(gtx layout.Context, view *pdfViewState
 }
 
 func (a *App) layoutProofreadingPageThumbnail(gtx layout.Context, view *pdfViewState, index int) layout.Dimensions {
-	size := image.Pt(gtx.Dp(96), gtx.Dp(96))
+	size := image.Pt(gtx.Dp(96), gtx.Dp(42))
 	gtx.Constraints = layout.Exact(size)
 	selected := index == view.page
 	statusKey := a.proofreadingPageStatusKey(index)
@@ -176,36 +176,42 @@ func (a *App) layoutProofreadingPageThumbnail(gtx layout.Context, view *pdfViewS
 		func(gtx layout.Context) layout.Dimensions {
 			return view.button("page-"+strconv.Itoa(index)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				semantic.DescriptionOp(a.textID(statusKey)).Add(gtx.Ops)
-				a.drawProofreadingOCRThumbnailStatus(gtx, size, index)
-				return layout.Inset{Top: unit.Dp(7), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							previewSize := image.Pt(gtx.Dp(46), gtx.Dp(61))
+				return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+					layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+						gtx.Constraints = layout.Exact(size)
+						return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							previewSize := image.Pt(gtx.Dp(25), gtx.Dp(33))
 							gtx.Constraints = layout.Exact(previewSize)
 							if img := view.thumbCache[index]; img.Size().X > 0 {
 								return layoutProofreadingPageThumbnailImage(gtx, img, false)
 							}
 							return a.layoutProofreadingThumbnailPlaceholder(gtx, index, false)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							page := a.textArgs("proofread.pagination.page", i18n.Args{
-								"Page": proofreadingPageLabelNumber(a, index),
-							})
-							label := material.Label(a.theme, 9, page+"  "+a.textID(statusLabel))
-							label.Color = ink
-							if selected {
-								label.Font.Weight = font.Bold
-							} else {
-								label.Font.Weight = font.SemiBold
-							}
-							label.MaxLines = 1
-							return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								gtx.Constraints.Min.X = 0
-								return label.Layout(gtx)
-							})
-						}),
-					)
-				})
+						})
+					}),
+					layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+						page := a.textArgs("proofread.pagination.page", i18n.Args{
+							"Page": proofreadingPageLabelNumber(a, index),
+						})
+						label := material.Label(a.theme, 9, page+"  "+a.textID(statusLabel))
+						label.Color = ink
+						if selected {
+							label.Font.Weight = font.Bold
+						} else {
+							label.Font.Weight = font.SemiBold
+						}
+						label.MaxLines = 1
+						return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 225}, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(3)).Op(gtx.Ops))
+							return layout.Dimensions{Size: gtx.Constraints.Min}
+						}, func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(3), Right: unit.Dp(3)}.Layout(gtx, label.Layout)
+						})
+					}),
+					layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+						a.drawProofreadingOCRThumbnailStatus(gtx, size, index)
+						return layout.Dimensions{Size: size}
+					}),
+				)
 			})
 		},
 	)
@@ -247,12 +253,12 @@ func (a *App) layoutProofreadingThumbnailPlaceholder(gtx layout.Context, index i
 		border = color.NRGBA{R: 233, G: 203, B: 197, A: 255}
 	}
 	proofreadRoundedBorder(gtx, size, 0, border, max(1, gtx.Dp(1)))
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 166, G: 175, B: 184, A: 255}, clip.Rect{Min: image.Pt(gtx.Dp(6), gtx.Dp(8)), Max: image.Pt(gtx.Dp(35), gtx.Dp(10))}.Op())
-	lineWidths := [...]unit.Dp{34, 31, 34, 31, 20}
+	paint.FillShape(gtx.Ops, color.NRGBA{R: 166, G: 175, B: 184, A: 255}, clip.Rect{Min: image.Pt(size.X/8, size.Y/8), Max: image.Pt(size.X*3/4, size.Y/8+max(1, gtx.Dp(1)))}.Op())
+	lineWidths := [...]int{7, 6, 7, 6, 4}
 	for row, lineWidth := range lineWidths {
-		y := gtx.Dp(unit.Dp(16 + row*7))
-		lineHeight := max(1, gtx.Dp(1.5))
-		paint.FillShape(gtx.Ops, lineColor, clip.Rect{Min: image.Pt(gtx.Dp(6), y), Max: image.Pt(gtx.Dp(6+lineWidth), y+lineHeight)}.Op())
+		y := size.Y * (3 + row) / 10
+		lineHeight := max(1, gtx.Dp(1))
+		paint.FillShape(gtx.Ops, lineColor, clip.Rect{Min: image.Pt(size.X/8, y), Max: image.Pt(size.X/8+size.X*lineWidth/10, y+lineHeight)}.Op())
 	}
 	return layout.Dimensions{Size: size}
 }

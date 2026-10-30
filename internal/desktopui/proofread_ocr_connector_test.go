@@ -259,3 +259,36 @@ func TestProofreadingOCRConnectorPagePointSurvivesTextWindowAndReflow(t *testing
 		t.Fatalf("font enlargement did not obtain fresh character geometry: %+v -> %+v valid=%v", after, reflowed, ok)
 	}
 }
+
+func TestProofreadingOCRConnectorWithoutCharacterGeometry(t *testing.T) {
+	a, gtx, comparison := proofreadingConnectorFixture(1)
+	step := a.proofreading.ocrStep
+	page := step.pages[comparison.APage]
+	page.layout.Characters = nil
+	page.layout.CharacterVersion = 0
+	step.pages[comparison.APage] = page
+	a.drawProofreadingOCRStepConnector(gtx)
+	if len(step.currentBadges) == 0 || len(step.currentConnections) == 0 {
+		t.Fatal("block geometry must provide badges and connections when character localization is unavailable")
+	}
+	live := proofreadingOCRStepConnections(gtx, a.pdfView, a.proofreading, step, comparison)
+	if len(live) == 0 {
+		t.Fatal("missing live connectors with block geometry")
+	}
+	anchor, ok := proofreadingOCRStepSourceAnchor(step, comparison, 7, proofreadingOCRStepSourcePagePixelSize(a.pdfView, comparison.APage))
+	origin, _, _ := proofreadingOCRStepConnectorPageOrigins(gtx, a.pdfView, a.proofreading, comparison.APage, comparison.BPage)
+	if !ok || live[0].from != origin.Add(anchor) {
+		t.Fatalf("connector must use the observed block anchor: got %v", live[0].from)
+	}
+}
+
+func TestProofreadingPaginationCompactHeight(t *testing.T) {
+	a, gtx, _ := proofreadingConnectorFixture(1)
+	gtx.Constraints.Min = image.Point{}
+	if got := a.layoutProofreadingPagination(gtx).Size.Y; got != 70 {
+		t.Fatalf("pagination height = %d, want 70", got)
+	}
+	if got := a.layoutProofreadingEmptyFilmstrip(gtx).Size.Y; got != 48 {
+		t.Fatalf("empty filmstrip height = %d, want 48", got)
+	}
+}

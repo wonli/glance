@@ -38,7 +38,7 @@ func proofreadingOCRStepBadgeConnections(gtx layout.Context, view *pdfViewState,
 			frame.ABlockID < 0 || frame.AOffset < 0 || frame.BPosition < comparison.BStart || frame.BPosition > comparison.BEnd {
 			continue
 		}
-		bounds, located := proofreadingOCRStepSourceCharacterBounds(step, comparison, frame, aSize)
+		bounds, located := proofreadingOCRStepConnectorSourceBounds(step, comparison, frame, aSize)
 		if !located {
 			continue
 		}
