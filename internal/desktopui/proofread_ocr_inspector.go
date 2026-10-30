@@ -1123,23 +1123,20 @@ func (a *App) layoutInspectorPDFZoomedCrop(gtx layout.Context, step *proofreadin
 		}
 	}
 
-	if imageOp.Size().X == 0 {
-		// Fallback for headless testing or before render is cached
-		lbl := material.Label(a.theme, 28, string(frame.AChar))
-		lbl.Font.Weight = font.Bold
-		lbl.Color = color.NRGBA{R: 217, G: 48, B: 37, A: 255}
+	if _, located := proofreadingOCRStepSourceCharacterBounds(step, comparison, frame, image.Pt(1000, 1000)); !located {
+		lbl := material.Label(a.theme, 12, "未能定位原文字符")
+		lbl.Color = color.NRGBA{R: 100, G: 116, B: 139, A: 255}
 		return layout.Center.Layout(gtx, lbl.Layout)
 	}
-
+	if imageOp.Size().X == 0 {
+		lbl := material.Label(a.theme, 12, "PDF 预览尚未加载")
+		lbl.Color = color.NRGBA{R: 100, G: 116, B: 139, A: 255}
+		return layout.Center.Layout(gtx, lbl.Layout)
+	}
 	imgSize := imageOp.Size()
 	bounds, located := proofreadingOCRStepSourceCharacterBounds(step, comparison, frame, imgSize)
 	if !located {
-		anchor, locatedAnchor := proofreadingOCRStepSourceAnchor(step, comparison, frame.ABlockID, imgSize)
-		if locatedAnchor {
-			bounds = image.Rect(anchor.X-24, anchor.Y-24, anchor.X+24, anchor.Y+24)
-		} else {
-			bounds = image.Rect(imgSize.X/2-24, imgSize.Y/2-24, imgSize.X/2+24, imgSize.Y/2+24)
-		}
+		return layout.Dimensions{Size: image.Pt(w, h)}
 	}
 
 	centerX := (bounds.Min.X + bounds.Max.X) / 2

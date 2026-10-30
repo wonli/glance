@@ -289,3 +289,70 @@ func (c *countingProofreadingOCRCredentials) Get(context.Context, string) (strin
 
 func (*countingProofreadingOCRCredentials) Put(context.Context, string, string) error { return nil }
 func (*countingProofreadingOCRCredentials) Delete(context.Context, string) error      { return nil }
+
+func TestProofreadingOCRCachePreservesProviderResultAndEnrichment(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	input := `{"row_extra":{"value":17},"result":{"other":[1,2],"layoutParsingResults":[{"prunedResult":{"width":100,"height":100,"provider_extra":{"nested":true},"parsing_res_list":[{"block_id":7,"block_content":"甲乙","block_bbox":[10,10,80,80],"extra":[3,4]}]},"markdown":{"text":"甲乙","images":{"a":"url"}},"outputImages":{"b":"url2"},"page_extra":42}]}}`
+	pages, err := ocr.ParseResults(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveProofreadingOCRPageCache(hash, ocr.DefaultModel, "job", ocr.Options{}, pages, 1); err != nil {
+		t.Fatal(err)
+	}
+	loaded, hit, err := loadProofreadingOCRPageCache(hash, ocr.DefaultModel, ocr.Options{}, 1)
+	if err != nil || !hit {
+		t.Fatalf("hit=%v err=%v", hit, err)
+	}
+	check := func(p ocr.Page) {
+		t.Helper()
+		var got, want any
+		if json.Unmarshal(p.Raw, &got) != nil || json.Unmarshal(pages[0].Raw, &want) != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("provider page lost fields: %s", p.Raw)
+		}
+
+		if p.Images["a"] != "url" || p.OutputImages["b"] != "url2" {
+			t.Fatal("image references lost")
+		}
+		var record, original any
+		if json.Unmarshal(p.RawRecord, &record) != nil || json.Unmarshal([]byte(input), &original) != nil || !reflect.DeepEqual(record, original) {
+			t.Fatal("original JSONL record lost fields")
+		}
+	}
+	check(loaded[0])
+	layout, err := loaded[0].Layout()
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout.CharacterVersion = ocr.CharacterGeometryVersion
+	layout.Characters = []ocr.CharacterBox{{BlockID: 7, Offset: 0, Text: "甲", Bounds: [4]float64{10, 10, 20, 20}}}
+	enriched, err := loaded[0].WithLayout(layout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = saveProofreadingOCRStepPageCache(hash, ocr.DefaultModel, ocr.Options{}, enriched, 1); err != nil {
+		t.Fatal(err)
+	}
+	got, hit, err := loadProofreadingOCRCachePage(hash, ocr.DefaultModel, ocr.Options{}, 1, 1)
+	if err != nil || !hit {
+		t.Fatalf("step hit=%v err=%v", hit, err)
+	}
+	var result struct {
+		Pruned struct {
+			ProviderExtra map[string]any               `json:"provider_extra"`
+			Blocks        []map[string]json.RawMessage `json:"parsing_res_list"`
+		} `json:"prunedResult"`
+	}
+	if json.Unmarshal(got.Raw, &result) != nil || result.Pruned.ProviderExtra["nested"] != true || len(result.Pruned.Blocks) != 1 || len(result.Pruned.Blocks[0]["extra"]) == 0 || !json.Valid(got.RawRecord) {
+		t.Fatalf("enrichment lost provider data: %s", got.Raw)
+	}
+	var savedRecord, originalRecord any
+	if json.Unmarshal(got.RawRecord, &savedRecord) != nil || json.Unmarshal([]byte(input), &originalRecord) != nil || !reflect.DeepEqual(savedRecord, originalRecord) {
+		t.Fatal("enrichment changed the original provider record")
+	}
+	actual, err := got.Layout()
+	if err != nil || len(actual.Characters) != 1 {
+		t.Fatalf("geometry lost: %+v %v", actual, err)
+	}
+}

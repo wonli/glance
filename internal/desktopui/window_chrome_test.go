@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"image"
+	"runtime"
 	"testing"
 
 	"gioui.org/app"
@@ -72,5 +73,21 @@ func TestWindowConfigSelectsClientTitlebarOnlyWhenPlatformAllowsIt(t *testing.T)
 	}
 	if a.windowMode != app.Windowed {
 		t.Fatalf("window mode = %v, want windowed", a.windowMode)
+	}
+}
+
+func TestWindowsChromePreviewOverridesOnlyChromePlatform(t *testing.T) {
+	r := newDesktopRuntime()
+	a := newAppWithRuntime(nil, r)
+	if got := a.windowChromePlatform(); got != runtime.GOOS {
+		t.Fatalf("default chrome=%q want %q", got, runtime.GOOS)
+	}
+	r.simulateWindowsChrome = true
+	if got := a.windowChromePlatform(); got != "windows" {
+		t.Fatalf("preview chrome=%q", got)
+	}
+	b := newAppWithRuntime(nil, r)
+	if b.windowChromePlatform() != "windows" {
+		t.Fatal("preview not inherited by another window")
 	}
 }

@@ -10,6 +10,13 @@ import (
 	"glance/internal/diagramrender"
 )
 
+func (a *App) windowChromePlatform() string {
+	if a != nil && a.desktopRuntime != nil && a.desktopRuntime.simulateWindowsChrome {
+		return "windows"
+	}
+	return runtimelib.GOOS
+}
+
 func (a *App) applyWindowConfig(config app.Config) {
 	a.windowMode = config.Mode
 	a.clientTitlebar = !config.Decorated

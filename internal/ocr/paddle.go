@@ -74,11 +74,13 @@ type Job struct {
 // Page preserves service output for later coordinate-aware alignment. Number is
 // the one-based output sequence, not a printed page label in the document.
 type Page struct {
-	Number       int
-	Markdown     string
-	Images       map[string]string
-	OutputImages map[string]string
-	Raw          json.RawMessage
+	Number          int
+	Markdown        string
+	Images          map[string]string
+	OutputImages    map[string]string
+	Raw             json.RawMessage
+	RawRecord       json.RawMessage
+	RecordPageIndex int
 }
 
 func (c *Client) endpoint() string {
@@ -361,7 +363,8 @@ func ParseResults(r io.Reader) ([]Page, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil || len(row.Result.Layout) == 0 {
 			return nil, errors.New("ocr: invalid result JSONL record")
 		}
-		for _, raw := range row.Result.Layout {
+		record := append(json.RawMessage(nil), scanner.Bytes()...)
+		for index, raw := range row.Result.Layout {
 			var entry struct {
 				Markdown *struct {
 					Text   *string           `json:"text"`
@@ -372,7 +375,7 @@ func ParseResults(r io.Reader) ([]Page, error) {
 			if err := json.Unmarshal(raw, &entry); err != nil || entry.Markdown == nil || entry.Markdown.Text == nil {
 				return nil, errors.New("ocr: page missing markdown text")
 			}
-			pages = append(pages, Page{Number: len(pages) + 1, Markdown: *entry.Markdown.Text, Images: entry.Markdown.Images, OutputImages: entry.OutputImages, Raw: append(json.RawMessage(nil), raw...)})
+			pages = append(pages, Page{Number: len(pages) + 1, Markdown: *entry.Markdown.Text, Images: entry.Markdown.Images, OutputImages: entry.OutputImages, Raw: append(json.RawMessage(nil), raw...), RawRecord: record, RecordPageIndex: index})
 		}
 	}
 	if err := scanner.Err(); err != nil {

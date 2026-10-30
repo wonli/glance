@@ -204,3 +204,16 @@ func newResponseRoundTripper(status int, body string) responseRoundTripper {
 func (r responseRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: r.status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(r.body)), Request: request}, nil
 }
+
+func TestParseResultsPreservesCompleteRecordForMultiplePages(t *testing.T) {
+	input := `{"extra":{"future":[1,2]},"result":{"metadata":{"x":true},"layoutParsingResults":[{"markdown":{"text":"A"},"extra":1},{"markdown":{"text":"B"},"extra":2}]}}`
+	pages, err := ParseResults(strings.NewReader(input))
+	if err != nil || len(pages) != 2 {
+		t.Fatalf("pages=%d err=%v", len(pages), err)
+	}
+	for i, page := range pages {
+		if string(page.RawRecord) != input || page.RecordPageIndex != i {
+			t.Fatalf("page %d lost original record or index", i)
+		}
+	}
+}

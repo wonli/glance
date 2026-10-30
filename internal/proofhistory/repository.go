@@ -92,7 +92,7 @@ func (r Repository) command(ctx context.Context, args ...string) (string, error)
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	base := []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false", "-c", "core.autocrlf=false", "-C", r.Directory}
-	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
+	cmd := newProofhistoryCommand(ctx, "git", append(base, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

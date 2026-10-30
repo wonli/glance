@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	proofreadingOCRCacheVersion  = 1
+	proofreadingOCRCacheVersion  = 2
 	proofreadingOCRCacheMaxPages = 2000
 	proofreadingOCRCacheMaxFile  = 64 << 20
 )
@@ -33,27 +33,33 @@ type proofreadingOCRCacheManifest struct {
 }
 
 type proofreadingOCRCachePage struct {
-	Version      int        `json:"version"`
-	PageNumber   int        `json:"page_number"`
-	PageCount    int        `json:"page_count"`
-	SourceAHash  string     `json:"source_a_sha256"`
-	Model        string     `json:"model"`
-	OptionsHash  string     `json:"options_sha256"`
-	JobID        string     `json:"job_id,omitempty"`
-	OriginalText string     `json:"original_text"`
-	Layout       ocr.Layout `json:"layout"`
+	Version         int             `json:"version"`
+	PageNumber      int             `json:"page_number"`
+	PageCount       int             `json:"page_count"`
+	SourceAHash     string          `json:"source_a_sha256"`
+	Model           string          `json:"model"`
+	OptionsHash     string          `json:"options_sha256"`
+	JobID           string          `json:"job_id,omitempty"`
+	OriginalText    string          `json:"original_text"`
+	Layout          ocr.Layout      `json:"layout"`
+	Raw             json.RawMessage `json:"raw_page"`
+	RawRecord       json.RawMessage `json:"raw_record,omitempty"`
+	RecordPageIndex int             `json:"record_page_index"`
 }
 
 type proofreadingOCRStepPageCache struct {
-	Version      int        `json:"version"`
-	PageNumber   int        `json:"page_number"`
-	PageCount    int        `json:"page_count"`
-	RenderDPI    int        `json:"render_dpi"`
-	SourceAHash  string     `json:"source_a_sha256"`
-	Model        string     `json:"model"`
-	OptionsHash  string     `json:"options_sha256"`
-	OriginalText string     `json:"original_text"`
-	Layout       ocr.Layout `json:"layout"`
+	Version         int             `json:"version"`
+	PageNumber      int             `json:"page_number"`
+	PageCount       int             `json:"page_count"`
+	RenderDPI       int             `json:"render_dpi"`
+	SourceAHash     string          `json:"source_a_sha256"`
+	Model           string          `json:"model"`
+	OptionsHash     string          `json:"options_sha256"`
+	OriginalText    string          `json:"original_text"`
+	Layout          ocr.Layout      `json:"layout"`
+	Raw             json.RawMessage `json:"raw_page"`
+	RawRecord       json.RawMessage `json:"raw_record,omitempty"`
+	RecordPageIndex int             `json:"record_page_index"`
 }
 
 const proofreadingOCRStepRenderDPI = 144
@@ -125,7 +131,7 @@ func saveProofreadingOCRPageCache(sourceAHash, model, jobID string, options ocr.
 		record := proofreadingOCRCachePage{
 			Version: proofreadingOCRCacheVersion, PageNumber: pageNumber, PageCount: expectedPages,
 			SourceAHash: sourceAHash, Model: model, OptionsHash: optionsHash, JobID: jobID,
-			OriginalText: page.Markdown, Layout: layout,
+			OriginalText: page.Markdown, Layout: layout, Raw: page.Raw, RawRecord: page.RawRecord, RecordPageIndex: page.RecordPageIndex,
 		}
 		if err = writeProofreadingOCRCacheJSON(filepath.Join(pagesDir, fmt.Sprintf("%06d.json", pageNumber)), record); err != nil {
 			return fmt.Errorf("save OCR cache page %d: %w", pageNumber, err)
@@ -175,14 +181,8 @@ func loadProofreadingOCRPageCache(sourceAHash, model string, options ocr.Options
 		if record.Version != proofreadingOCRCacheVersion || record.PageNumber != pageNumber || record.PageCount != expectedPages || record.SourceAHash != sourceAHash || record.Model != model || record.OptionsHash != optionsHash {
 			return nil, false, fmt.Errorf("OCR cache page %d does not match its manifest", pageNumber)
 		}
-		raw, marshalErr := json.Marshal(struct {
-			PrunedResult ocr.Layout `json:"prunedResult"`
-		}{PrunedResult: record.Layout})
-		if marshalErr != nil {
-			return nil, false, fmt.Errorf("rebuild OCR layout for page %d: %w", pageNumber, marshalErr)
-		}
-		pages[i] = ocr.Page{Number: pageNumber, Markdown: record.OriginalText, Raw: raw}
-		if _, err = pages[i].Layout(); err != nil {
+		pages[i], err = proofreadingOCRPageFromCache(pageNumber, record.OriginalText, record.Raw, record.RawRecord, record.RecordPageIndex)
+		if err != nil {
 			return nil, false, fmt.Errorf("validate OCR cache page %d: %w", pageNumber, err)
 		}
 	}
@@ -218,7 +218,7 @@ func loadProofreadingOCRCachePage(sourceAHash, model string, options ocr.Options
 			record.Version == proofreadingOCRCacheVersion && record.PageNumber == pageNumber &&
 			record.PageCount == expectedPages && record.SourceAHash == sourceAHash &&
 			record.Model == model && record.OptionsHash == optionsHash {
-			page, pageErr := proofreadingOCRPageFromCache(record.PageNumber, record.OriginalText, record.Layout)
+			page, pageErr := proofreadingOCRPageFromCache(record.PageNumber, record.OriginalText, record.Raw, record.RawRecord, record.RecordPageIndex)
 			if pageErr == nil {
 				return page, true, nil
 			}
@@ -237,27 +237,30 @@ func loadProofreadingOCRStepCachePage(root, sourceAHash, model, optionsHash stri
 		}
 		return ocr.Page{}, false, fmt.Errorf("read OCR page cache %d: %w", pageNumber, err)
 	}
-	if record.Version != 1 || record.PageNumber != pageNumber || record.PageCount != expectedPages ||
+	if record.Version != proofreadingOCRCacheVersion || record.PageNumber != pageNumber || record.PageCount != expectedPages ||
 		record.RenderDPI != proofreadingOCRStepRenderDPI || record.SourceAHash != sourceAHash ||
 		record.Model != model || record.OptionsHash != optionsHash {
 		return ocr.Page{}, false, nil
 	}
-	page, err := proofreadingOCRPageFromCache(record.PageNumber, record.OriginalText, record.Layout)
+	page, err := proofreadingOCRPageFromCache(record.PageNumber, record.OriginalText, record.Raw, record.RawRecord, record.RecordPageIndex)
 	if err != nil {
 		return ocr.Page{}, false, fmt.Errorf("validate OCR page cache %d: %w", pageNumber, err)
 	}
 	return page, true, nil
 }
 
-func proofreadingOCRPageFromCache(pageNumber int, markdown string, layout ocr.Layout) (ocr.Page, error) {
-	raw, err := json.Marshal(struct {
-		PrunedResult ocr.Layout `json:"prunedResult"`
-	}{PrunedResult: layout})
-	if err != nil {
+func proofreadingOCRPageFromCache(pageNumber int, markdown string, raw, record json.RawMessage, recordPageIndex int) (ocr.Page, error) {
+	var fields struct {
+		Markdown struct {
+			Images map[string]string `json:"images"`
+		} `json:"markdown"`
+		OutputImages map[string]string `json:"outputImages"`
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
 		return ocr.Page{}, err
 	}
-	page := ocr.Page{Number: pageNumber, Markdown: markdown, Raw: raw}
-	if _, err = page.Layout(); err != nil {
+	page := ocr.Page{Number: pageNumber, Markdown: markdown, Raw: raw, RawRecord: record, RecordPageIndex: recordPageIndex, Images: fields.Markdown.Images, OutputImages: fields.OutputImages}
+	if _, err := page.Layout(); err != nil {
 		return ocr.Page{}, err
 	}
 	return page, nil
@@ -284,9 +287,9 @@ func saveProofreadingOCRStepPageCache(sourceAHash, model string, options ocr.Opt
 		return fmt.Errorf("create page OCR cache: %w", err)
 	}
 	record := proofreadingOCRStepPageCache{
-		Version: 1, PageNumber: page.Number, PageCount: pageCount,
+		Version: proofreadingOCRCacheVersion, PageNumber: page.Number, PageCount: pageCount,
 		RenderDPI: proofreadingOCRStepRenderDPI, SourceAHash: sourceAHash,
-		Model: model, OptionsHash: optionsHash, OriginalText: page.Markdown, Layout: layout,
+		Model: model, OptionsHash: optionsHash, OriginalText: page.Markdown, Layout: layout, Raw: page.Raw, RawRecord: page.RawRecord, RecordPageIndex: page.RecordPageIndex,
 	}
 	if err = writeProofreadingOCRCacheJSON(filepath.Join(dir, fmt.Sprintf("%06d.json", page.Number)), record); err != nil {
 		return fmt.Errorf("save OCR page cache %d: %w", page.Number, err)
@@ -298,6 +301,9 @@ func writeProofreadingOCRCacheJSON(path string, value any) error {
 	encoded, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
+	}
+	if len(encoded) > proofreadingOCRCacheMaxFile {
+		return errors.New("OCR cache record exceeds the size limit")
 	}
 	return fileutil.AtomicWriteBytes(path, encoded,
 		fileutil.WithPerm(0600), fileutil.WithAutoCreateDir(false), fileutil.WithPreserveTargetPerm(false))

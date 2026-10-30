@@ -83,11 +83,24 @@ func (p Page) WithLayout(layout Layout) (Page, error) {
 	if raw == nil {
 		return p, errors.New("ocr: missing page result")
 	}
-	encoded, err := json.Marshal(layout)
+	var original map[string]json.RawMessage
+	if err := json.Unmarshal(raw["prunedResult"], &original); err != nil || original == nil {
+		return p, errors.New("ocr: missing structured layout")
+	}
+	version, err := json.Marshal(layout.CharacterVersion)
 	if err != nil {
 		return p, err
 	}
-	raw["prunedResult"] = encoded
+	characters, err := json.Marshal(layout.Characters)
+	if err != nil {
+		return p, err
+	}
+	original["character_geometry_version"] = version
+	original["character_boxes"] = characters
+	raw["prunedResult"], err = json.Marshal(original)
+	if err != nil {
+		return p, err
+	}
 	p.Raw, err = json.Marshal(raw)
 	return p, err
 }

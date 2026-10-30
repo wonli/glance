@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"gioui.org/f32"
 	"gioui.org/font"
 	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
@@ -32,11 +33,13 @@ func proofreadingOCRStepConnectorABlock(step *proofreadingOCRStepState, comparis
 }
 
 type proofreadingOCRConnection struct {
-	from, to  image.Point
-	kind      proofreadingOCRDiffOpKind
-	active    bool
-	frame     proofreadingOCRDiffFrame
-	allFrames []proofreadingOCRDiffFrame
+	from, to      image.Point
+	toOutside     int  // -1 above, +1 below; to is a viewport edge, not a glyph.
+	fromUnlocated bool // no reliable PDF glyph position; the left endpoint is a page edge.
+	kind          proofreadingOCRDiffOpKind
+	active        bool
+	frame         proofreadingOCRDiffFrame
+	allFrames     []proofreadingOCRDiffFrame
 }
 
 type proofreadingCenterBadge struct {
@@ -216,7 +219,11 @@ func proofreadingOCRStepBadgeVerticalBounds(gtx layout.Context, view *pdfViewSta
 	top := max(aOrigin.Y, bOrigin.Y) + halfBadge
 	bottom := min(aOrigin.Y+aSize.Y, bOrigin.Y+bSize.Y) - halfBadge
 	if bottom < top {
-		return 0, 0, false
+		// Keep the badge on the source paper when the X page is elsewhere.
+		top, bottom = aOrigin.Y+halfBadge, aOrigin.Y+aSize.Y-halfBadge
+		if bottom < top {
+			return 0, 0, false
+		}
 	}
 	return top, bottom, true
 }
@@ -254,22 +261,34 @@ func proofreadingOCRVisiblePages(gtx layout.Context, view *pdfViewState, state *
 	return visible
 }
 
+func proofreadingCenterBadgeStroke(badge proofreadingCenterBadge) color.NRGBA {
+	if badge.resolved {
+		return color.NRGBA{R: 46, G: 160, B: 67, A: 255}
+	}
+	if badge.active {
+		return color.NRGBA{R: 26, G: 115, B: 232, A: 255}
+	}
+	return color.NRGBA{R: 217, G: 48, B: 37, A: 255}
+}
+
+func proofreadingConnectorBadgeColor(badge proofreadingCenterBadge) color.NRGBA {
+	return proofreadingCenterBadgeStroke(badge)
+}
+
 func (a *App) drawProofreadingCenterBadge(gtx layout.Context, badge proofreadingCenterBadge) {
 	bg := color.NRGBA{R: 255, G: 255, B: 255, A: 252}
-	stroke := color.NRGBA{R: 217, G: 48, B: 37, A: 255}
+	stroke := proofreadingCenterBadgeStroke(badge)
 	textInk := stroke
 	statusID := "proofread.ai.step.badge.pending"
 	if badge.resolved {
-		stroke = color.NRGBA{R: 46, G: 160, B: 67, A: 255}
-		textInk = stroke
 		bg = color.NRGBA{R: 240, G: 249, B: 242, A: 252}
 		statusID = "proofread.ai.step.badge.resolved"
 	} else if badge.active {
-		stroke = color.NRGBA{R: 26, G: 115, B: 232, A: 255}
 		bg = stroke
 		textInk = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 		statusID = "proofread.ai.step.badge.processing"
 	}
+
 	semantic.DescriptionOp(a.textArgs(statusID, i18n.Args{"Index": fmt.Sprint(badge.orderNumber)})).Add(gtx.Ops)
 	r := gtx.Dp(3)
 	paint.FillShape(gtx.Ops, bg, clip.UniformRRect(badge.rect, r).Op(gtx.Ops))
@@ -367,7 +386,6 @@ func (a *App) drawProofreadingOCRStepConnector(gtx layout.Context) {
 		return pairs[i].BPage < pairs[j].BPage
 	})
 	visibleAPages := proofreadingOCRVisiblePages(gtx, a.pdfView, state, a.pdfView.canvas.Position, false)
-	visibleBPages := proofreadingOCRVisiblePages(gtx, a.pdfView, state, state.xCanvas.Position, true)
 
 	badgesByPair := make(map[proofreadingOCRStepPair][]proofreadingCenterBadge, len(pairs))
 	connectionsByPair := make(map[proofreadingOCRStepPair][]proofreadingOCRConnection, len(pairs))
@@ -402,7 +420,7 @@ func (a *App) drawProofreadingOCRStepConnector(gtx layout.Context) {
 			}
 			continue
 		}
-		pairVisible := visibleAPages[candidate.APage] && visibleBPages[candidate.BPage]
+		pairVisible := visibleAPages[candidate.APage]
 		if !pairVisible {
 			continue
 		}
@@ -461,9 +479,19 @@ func (a *App) drawProofreadingOCRStepConnector(gtx layout.Context) {
 		step.currentConnections = step.badgeConnections[pair]
 	}
 	step.currentBadges = badgesByPair[pair]
+	// Consume pointer events before deciding which wires to draw in this frame.
+	for _, candidate := range pairs {
+		clicks := step.badgeClicksByPair[candidate]
+		for _, badge := range badgesByPair[candidate] {
+			if badge.index >= 0 && badge.index < len(clicks) && clicks[badge.index].Clicked(gtx) {
+				a.openProofreadingDiffInspectorForPair(candidate, badge.index)
+				gtx.Execute(op.InvalidateCmd{})
+			}
+		}
+	}
 	for _, pair := range pairs {
 		current, ok := step.comparisons[pair]
-		if !ok || !proofreadingOCRStepComparisonValid(state, current) || !visibleAPages[pair.APage] || !visibleBPages[pair.BPage] {
+		if !ok || !proofreadingOCRStepComparisonValid(state, current) || !visibleAPages[pair.APage] {
 			continue
 		}
 		liveConnections := connectionsByPair[pair]
@@ -487,7 +515,8 @@ func (a *App) drawProofreadingOCRStepConnector(gtx layout.Context) {
 						if !proofreadingOCRConnectionContainsFrame(stored, live.frame) {
 							continue
 						}
-						if badge, exists := badgeByConnection[storedIndex]; exists {
+						clicks := step.badgeClicksByPair[pair]
+						if badge, exists := badgeByConnection[storedIndex]; exists && storedIndex < len(clicks) && clicks[storedIndex].Hovered() {
 							lineConnections = append(lineConnections, live)
 							lineBadges = append(lineBadges, badge)
 						}
@@ -512,7 +541,6 @@ func (a *App) drawProofreadingOCRStepConnector(gtx layout.Context) {
 			if badge.index < 0 || badge.index >= len(clicks) {
 				continue
 			}
-			clicked := clicks[badge.index].Clicked(gtx)
 			hitRect := image.Rect(badge.rect.Min.X-gtx.Dp(4), badge.rect.Min.Y-gtx.Dp(4), badge.rect.Max.X+gtx.Dp(4), badge.rect.Max.Y+gtx.Dp(4))
 			trans := op.Offset(hitRect.Min).Push(gtx.Ops)
 			c := gtx
@@ -522,10 +550,6 @@ func (a *App) drawProofreadingOCRStepConnector(gtx layout.Context) {
 				return layout.Dimensions{Size: hitRect.Size()}
 			})
 			trans.Pop()
-			if clicked {
-				a.openProofreadingDiffInspectorForPair(candidate, badge.index)
-				gtx.Execute(op.InvalidateCmd{})
-			}
 		}
 	}
 	if current, ok := step.comparisons[pair]; step.diffRunning && ok && proofreadingOCRStepComparisonValid(state, current) &&
@@ -538,32 +562,8 @@ func (a *App) drawProofreadingOCRStepConnectorLines(gtx layout.Context, step *pr
 	if len(connections) == 0 || len(connections) != len(badges) {
 		return
 	}
-	aOrigin, bOrigin, ok := proofreadingOCRStepConnectorPageOrigins(gtx, a.pdfView, a.proofreading, pair.APage, pair.BPage)
-	if !ok {
-		return
-	}
-	aSize := proofreadingOCRStepSourcePagePixelSize(a.pdfView, pair.APage)
-	bSize := proofreadingXPagePixelSize(gtx, a.pdfView, a.proofreading, pair.BPage)
-	reserveNavigator := a.proofreading != nil && a.proofreading.bDocument != nil && a.pdfDoc != nil
-	divider := proofreadingComparePaneSplit(gtx, reserveNavigator)
-	if aSize.X > 0 && bSize.X > 0 {
-		aRight, bLeft := aOrigin.X+aSize.X, bOrigin.X
-		if bLeft > aRight {
-			divider = (aRight + bLeft) / 2
-		}
-	}
-	gutter := image.Rect(min(divider-gtx.Dp(4), aOrigin.X+aSize.X+gtx.Dp(8)), gtx.Dp(44), max(divider+gtx.Dp(4), bOrigin.X-gtx.Dp(8)), gtx.Constraints.Max.Y)
-	leftConns := make([]proofreadingOCRConnection, len(connections))
-	rightConns := make([]proofreadingOCRConnection, len(connections))
-	for index, connection := range connections {
-		badge := badges[index]
-		leftConns[index] = proofreadingOCRConnection{from: connection.from, to: image.Pt(badge.rect.Min.X, badge.y), kind: connection.kind, active: connection.active, frame: connection.frame}
-		rightConns[index] = proofreadingOCRConnection{from: image.Pt(badge.rect.Max.X, badge.y), to: connection.to, kind: connection.kind, active: connection.active, frame: connection.frame}
-	}
-	leftGutter := image.Rect(gutter.Min.X, gutter.Min.Y, max(gutter.Min.X+gtx.Dp(4), divider-gtx.Dp(14)), gutter.Max.Y)
-	rightGutter := image.Rect(min(gutter.Max.X-gtx.Dp(4), divider+gtx.Dp(14)), gutter.Min.Y, gutter.Max.X, gutter.Max.Y)
-	leftRoutes := proofreadingCircuitRoutes(leftConns, leftGutter, gtx.Dp(6))
-	rightRoutes := proofreadingCircuitRoutes(rightConns, rightGutter, gtx.Dp(6))
+	aOrigin, _, pageLocated := proofreadingOCRStepConnectorPageOrigins(gtx, a.pdfView, a.proofreading, pair.APage, pair.BPage)
+	pageRight := aOrigin.X + proofreadingOCRStepSourcePagePixelSize(a.pdfView, pair.APage).X
 	area := clip.Rect{Min: image.Pt(0, gtx.Dp(44)), Max: gtx.Constraints.Max}.Push(gtx.Ops)
 	defer area.Pop()
 	for _, active := range []bool{false, true} {
@@ -571,25 +571,69 @@ func (a *App) drawProofreadingOCRStepConnectorLines(gtx layout.Context, step *pr
 			if connection.active != active {
 				continue
 			}
-			startInk, endInk := proofreadingOCRStepConnectorColors(connection.kind)
-			if badges[index].resolved {
-				startInk = color.NRGBA{R: 46, G: 160, B: 67, A: 160}
-				endInk = color.NRGBA{R: 46, G: 160, B: 67, A: 160}
+			ink := proofreadingConnectorBadgeColor(badges[index])
+			leftEnd := image.Pt(badges[index].rect.Min.X, badges[index].y)
+			rightStart := image.Pt(badges[index].rect.Max.X, badges[index].y)
+			leftStart := connection.from
+			if connection.fromUnlocated {
+				if pageLocated {
+					leftStart = image.Pt(min(leftEnd.X, max(0, pageRight)), leftEnd.Y)
+				} else {
+					leftStart = leftEnd
+				}
+			}
+			drawProofreadingConnectorCurve(gtx, leftStart, leftEnd, ink, active)
+			if !connection.fromUnlocated {
+				drawProofreadingOCRConnectorEndpoint(gtx, leftStart, ink, active)
+			}
+
+			drawProofreadingConnectorCurve(gtx, rightStart, connection.to, ink, active)
+			if connection.toOutside != 0 {
+				drawProofreadingOCRConnectorEdgeArrow(gtx, connection.to, connection.toOutside, ink)
+			} else {
+				drawProofreadingOCRConnectorEndpoint(gtx, connection.to, ink, active)
 			}
 			if active {
-				startInk, endInk = proofreadScanInk, proofreadScanInk
-			}
-			drawProofreadingCircuitRoute(gtx, leftRoutes[index], startInk, startInk, active)
-			drawProofreadingCircuitRoute(gtx, rightRoutes[index], endInk, endInk, active)
-			drawProofreadingOCRConnectorEndpoint(gtx, connection.from, startInk, active)
-			drawProofreadingOCRConnectorEndpoint(gtx, connection.to, endInk, active)
-			if active {
-				combined := append(leftRoutes[index].points, rightRoutes[index].points...)
 				progress := proofreadingOCRStepConnectorProgress(step, connection.kind, gtx.Now)
-				drawProofreadingOCRConnectorPulse(gtx, proofreadingCircuitPoint(combined, progress), startInk)
+				point := proofreadingConnectorCurvePoint(leftStart, leftEnd, progress*2)
+				if progress >= .5 {
+					point = proofreadingConnectorCurvePoint(rightStart, connection.to, (progress-.5)*2)
+				}
+				drawProofreadingOCRConnectorPulse(gtx, point, ink)
 			}
 		}
 	}
+}
+
+func proofreadingConnectorCurvePoint(from, to image.Point, t float64) image.Point {
+	t = max(0, min(1, t))
+	// A cubic with horizontal tangents at both ends.
+	y := 3*(1-t)*t*t + t*t*t
+	return image.Pt(int(math.Round(float64(from.X)+float64(to.X-from.X)*(1.5*t-1.5*t*t+t*t*t))), int(math.Round(float64(from.Y)+float64(to.Y-from.Y)*y)))
+}
+
+func drawProofreadingConnectorCurve(gtx layout.Context, from, to image.Point, ink color.NRGBA, active bool) {
+	var path clip.Path
+	path.Begin(gtx.Ops)
+	path.MoveTo(f32.Pt(float32(from.X), float32(from.Y)))
+	midX := float32(from.X+to.X) / 2
+	path.CubeTo(f32.Pt(midX, float32(from.Y)), f32.Pt(midX, float32(to.Y)), f32.Pt(float32(to.X), float32(to.Y)))
+	width := float32(max(1, gtx.Dp(1.5)))
+	if active {
+		width = float32(max(2, gtx.Dp(2.5)))
+	}
+	paint.FillShape(gtx.Ops, ink, clip.Stroke{Path: path.End(), Width: width}.Op())
+}
+
+func drawProofreadingOCRConnectorEdgeArrow(gtx layout.Context, point image.Point, direction int, ink color.NRGBA) {
+	width := max(3, gtx.Dp(4))
+	height := max(4, gtx.Dp(6))
+	var path clip.Path
+	path.Begin(gtx.Ops)
+	path.MoveTo(f32.Pt(float32(point.X-width), float32(point.Y+direction*-height)))
+	path.LineTo(f32.Pt(float32(point.X), float32(point.Y)))
+	path.LineTo(f32.Pt(float32(point.X+width), float32(point.Y+direction*-height)))
+	paint.FillShape(gtx.Ops, ink, clip.Stroke{Path: path.End(), Width: float32(max(1, gtx.Dp(2)))}.Op())
 }
 
 func proofreadingOCRStepConnections(gtx layout.Context, view *pdfViewState, state *proofreadingWorkspace, step *proofreadingOCRStepState, comparison proofreadingOCRStepComparison) []proofreadingOCRConnection {
@@ -620,7 +664,11 @@ func proofreadingOCRStepConnections(gtx layout.Context, view *pdfViewState, stat
 			}
 		}
 	}
-	anchors := make(map[[2]int]image.Point)
+	type sourceAnchor struct {
+		point     image.Point
+		unlocated bool
+	}
+	anchors := make(map[[2]int]sourceAnchor)
 	var connections []proofreadingOCRConnection
 	runStart := 0
 	for index, frame := range frames {
@@ -634,34 +682,77 @@ func proofreadingOCRStepConnections(gtx layout.Context, view *pdfViewState, stat
 			continue
 		}
 		anchorKey := [2]int{frame.ABlockID, frame.AOffset}
-		aPoint, found := anchors[anchorKey]
+		anchor, found := anchors[anchorKey]
 		if !found {
 			bounds, located := proofreadingOCRStepConnectorSourceBounds(step, comparison, frame, aSize)
-			ok = located
-			aPoint = image.Pt(bounds.Max.X, (bounds.Min.Y+bounds.Max.Y)/2)
-			if !ok {
-				continue
+			if !located {
+				bounds, ok = proofreadingOCRStepBadgeSourceBounds(step, comparison, frame, aSize)
+				if !ok {
+					continue
+				}
 			}
-			anchors[anchorKey] = aPoint
+			anchor = sourceAnchor{point: image.Pt(bounds.Max.X, (bounds.Min.Y+bounds.Max.Y)/2), unlocated: !located}
+			anchors[anchorKey] = anchor
 		}
-		bPagePoint, ok := proofreadingOCRStepDraftPageAnchor(state, comparison.BPage, frame)
-		if !ok {
-			continue
-		}
+
 		window := state.xEditorWindows[comparison.BPage]
 		geometry := proofreadingXPageTextGeometry(state.xPages[comparison.BPage], bSize, window.Top, state.xPageScrollOffsets[comparison.BPage])
-		bPoint := geometry.pixelPoint(bPagePoint)
-		if !bPoint.In(geometry.Content) {
+		leftPane := image.Rect(0, viewport.Min.Y, proofreadingComparePaneSplit(gtx, state.bDocument != nil), viewport.Max.Y)
+		rightPane := image.Rect(leftPane.Max.X, viewport.Min.Y, viewport.Max.X-gtx.Dp(proofreadingNavigatorWidthDP), viewport.Max.Y)
+		contentBounds := geometry.Content.Add(bOrigin)
+		visibleContent := contentBounds.Intersect(rightPane)
+		pageDirection := 0
+		if visibleContent.Empty() {
+			if contentBounds.Max.Y <= rightPane.Min.Y {
+				pageDirection = -1
+			} else if contentBounds.Min.Y >= rightPane.Max.Y {
+				pageDirection = 1
+			} else {
+				continue
+			}
+			visibleContent = rightPane
+		}
+		bPagePoint, located := proofreadingOCRStepDraftPageAnchor(state, comparison.BPage, frame)
+		bPoint := image.Point{}
+		direction := pageDirection
+		if located {
+			bPoint = bOrigin.Add(geometry.pixelPoint(bPagePoint))
+			if pageDirection != 0 {
+				direction = pageDirection
+			} else if bPoint.Y < visibleContent.Min.Y {
+				direction = -1
+			} else if bPoint.Y >= visibleContent.Max.Y {
+				direction = 1
+			}
+		} else if window.Initialized && pageDirection == 0 {
+			position := frame.BPosition - state.xPages[comparison.BPage].ContentStart
+			if position < window.Start {
+				direction = -1
+			} else if position >= window.End {
+				direction = 1
+			}
+			bPoint.X = visibleContent.Min.X + gtx.Dp(8)
+		}
+		if !located && pageDirection != 0 {
+			bPoint.X = contentBounds.Min.X + gtx.Dp(8)
+		}
+		if !located && direction == 0 {
 			continue
 		}
+		if direction != 0 {
+			bPoint.X = max(visibleContent.Min.X, min(visibleContent.Max.X-1, bPoint.X))
+			if direction < 0 {
+				bPoint.Y = visibleContent.Min.Y + max(1, gtx.Dp(2))
+			} else {
+				bPoint.Y = visibleContent.Max.Y - max(1, gtx.Dp(2))
+			}
+		}
 		connection := proofreadingOCRConnection{
-			from: aOrigin.Add(aPoint), to: bOrigin.Add(bPoint), kind: frame.Kind,
+			from: aOrigin.Add(anchor.point), fromUnlocated: anchor.unlocated, to: bPoint, toOutside: direction, kind: frame.Kind,
 			active:    index == len(frames)-1 && step != nil && (step.diffRunning || step.diffPaused),
 			frame:     frame,
 			allFrames: []proofreadingOCRDiffFrame{frame},
 		}
-		leftPane := image.Rect(0, viewport.Min.Y, proofreadingComparePaneSplit(gtx, state.bDocument != nil), viewport.Max.Y)
-		rightPane := image.Rect(leftPane.Max.X, viewport.Min.Y, viewport.Max.X-gtx.Dp(proofreadingNavigatorWidthDP), viewport.Max.Y)
 		if gtx.Constraints.Max.X > 0 && (!connection.from.In(leftPane) || !connection.to.In(rightPane)) {
 			continue
 		}
@@ -861,10 +952,26 @@ func proofreadingOCRStepCanvasPageTop(gtx layout.Context, view *pdfViewState, st
 		row = proofreadingFilterRowForPage(view.pageMap, page)
 	}
 	first := max(0, position.First)
-	if row < first || row < 0 {
+	if row < 0 {
 		return 0, false
 	}
 	top := -position.Offset
+	if row < first {
+		for currentRow := first - 1; currentRow >= row; currentRow-- {
+			pageIndex, ok := view.pageForCanvasRow(currentRow)
+			if !ok {
+				continue
+			}
+			var size image.Point
+			if xCanvas {
+				size = proofreadingXPagePixelSize(gtx, view, state, pageIndex)
+			} else {
+				size = proofreadingOCRStepSourcePagePixelSize(view, pageIndex)
+			}
+			top -= size.Y + 2*gtx.Dp(12)
+		}
+		return top, true
+	}
 	for currentRow := first; currentRow < row; currentRow++ {
 		pageIndex, ok := view.pageForCanvasRow(currentRow)
 		if !ok {

@@ -29,6 +29,7 @@ import (
 // desktopRuntime is the process-level owner of workspace persistence, shared
 // document sessions, and the set of live windows.
 type desktopRuntime struct {
+	simulateWindowsChrome   bool
 	fontInit                sync.Once
 	fonts                   *fontmanager.Manager
 	applicationRuntime      *application.Runtime

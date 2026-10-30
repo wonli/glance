@@ -102,8 +102,8 @@ func TestProofreadingCircuitActiveGlyphHasItsOwnConnection(t *testing.T) {
 	}
 	step.diffRunning = false
 	completed := proofreadingOCRStepConnections(gtx, a.pdfView, a.proofreading, step, comparison)
-	if len(completed) != 4 {
-		t.Fatalf("completed history must show all four difference runs despite the old playback cursor: %v", completed)
+	if len(completed) != 8 {
+		t.Fatalf("completed history must retain visible and offscreen difference runs despite the old playback cursor: %v", completed)
 	}
 	for _, connection := range completed {
 		if connection.active {

@@ -13,7 +13,7 @@ import (
 )
 
 // RunDesktop starts the desktop runtime and enters Gio's platform event loop.
-func RunDesktop(initialPath string) {
+func RunDesktop(initialPath string, options ...desktopui.DesktopOptions) {
 	desktopui.InitDesktopRuntimeMemory()
 	if err := initializeStartupLog(); err != nil {
 		ReportStartupError(err)
@@ -37,7 +37,7 @@ func RunDesktop(initialPath string) {
 		defer profiling.Close()
 	}
 
-	done := desktopui.RunWithActivation(initialPath, ReportStartupError, lease.ActivationRequests())
+	done := desktopui.RunWithActivation(initialPath, ReportStartupError, lease.ActivationRequests(), options...)
 	go func() {
 		<-done
 		if err := lease.Close(); err != nil {

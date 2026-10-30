@@ -139,3 +139,16 @@ func TestCharacterGeometryRejectsAmbiguousTitleEdge(t *testing.T) {
 		}
 	}
 }
+
+func TestCharacterGeometryMatchesFullWidthParenthesesAcrossLines(t *testing.T) {
+	observed := testDetectedCharacters("甲（乙）丙")
+	observed[4].Bounds = [4]float64{.02, .4, .06, .5}
+	pairs := alignCharacterGeometry("甲(乙)丙", observed)
+	found := map[int]bool{}
+	for _, p := range pairs {
+		found[p.offset] = true
+	}
+	if !found[1] || !found[3] {
+		t.Fatalf("full-width parentheses with measured boxes lost across a line boundary: %v", pairs)
+	}
+}

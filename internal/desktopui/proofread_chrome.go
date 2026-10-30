@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"runtime"
 
 	"gioui.org/font"
 	"gioui.org/layout"
@@ -60,7 +59,11 @@ func (a *App) layoutProofreadingChrome(gtx layout.Context) layout.Dimensions {
 					})
 				}),
 				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(24)}.Layout(gtx, a.layoutProofreadingChromeItems)
+					right := unit.Dp(24)
+					if a.clientTitlebar && a.windowChromePlatform() == "windows" {
+						right = 0
+					}
+					return layout.Inset{Left: unit.Dp(20), Right: right}.Layout(gtx, a.layoutProofreadingChromeItems)
 				}),
 			)
 		},
@@ -69,7 +72,7 @@ func (a *App) layoutProofreadingChrome(gtx layout.Context) layout.Dimensions {
 
 func (a *App) layoutProofreadingChromeItems(gtx layout.Context) layout.Dimensions {
 	children := make([]layout.FlexChild, 0, 10)
-	if a.clientTitlebar && runtime.GOOS == "darwin" {
+	if a.clientTitlebar && a.windowChromePlatform() == "darwin" {
 		children = append(children, layout.Rigid(a.layoutMacWindowControls))
 	}
 	children = append(children,
@@ -115,7 +118,7 @@ func (a *App) layoutProofreadingChromeItems(gtx layout.Context) layout.Dimension
 		}),
 		layout.Rigid(a.layoutProofreadingHistoryAction),
 	)
-	if a.clientTitlebar && runtime.GOOS != "darwin" {
+	if a.clientTitlebar && a.windowChromePlatform() != "darwin" {
 		children = append(children, layout.Rigid(a.layoutStandardWindowControls))
 	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)

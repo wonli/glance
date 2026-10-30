@@ -13,7 +13,7 @@ import (
 	"unicode"
 )
 
-const CharacterGeometryVersion = 3
+const CharacterGeometryVersion = 4
 
 var ErrCharacterLocalizationUnavailable = errors.New("本机文字定位不可用")
 
@@ -128,6 +128,16 @@ type characterGeometryPair struct {
 	equal            bool
 }
 
+// Width variants of parentheses describe the same printed punctuation. This
+// equivalence is only for matching a measured box, not for text comparison.
+func characterGeometryEqual(a, b rune) bool {
+	if a == b {
+		return true
+	}
+	return (a == '(' && b == '（') || (a == '（' && b == '(') ||
+		(a == ')' && b == '）') || (a == '）' && b == ')')
+}
+
 // Align local geometry to the authoritative cloud text. Replacement runs of up
 // to three characters require exact neighbours in a strongly matching block.
 // Repeated word/line-sized boxes are rejected instead of called glyphs.
@@ -166,7 +176,7 @@ func alignCharacterGeometry(target string, observed []detectedCharacter) []chara
 		trace[i*cols] = 1
 		for j := 1; j < cols; j++ {
 			cost := 1
-			if a[i-1] == b[j-1] {
+			if characterGeometryEqual(a[i-1], b[j-1]) {
 				cost = 0
 			}
 			best, dir := prev[j-1]+cost, byte(0)
@@ -186,7 +196,7 @@ func alignCharacterGeometry(target string, observed []detectedCharacter) []chara
 	for i, j := len(a), len(b); i > 0 || j > 0; {
 		switch trace[i*cols+j] {
 		case 0:
-			equal := a[i-1] == b[j-1]
+			equal := characterGeometryEqual(a[i-1], b[j-1])
 			if equal {
 				matches++
 			}

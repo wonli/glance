@@ -267,54 +267,5 @@ func (a *App) drawProofreadingOCRStepEmptyPagePreview(gtx layout.Context, page p
 }
 
 func drawProofreadingOCRStepAOnlyBlockHighlights(gtx layout.Context, size image.Point, page proofreadingOCRPage, step *proofreadingOCRStepState, comparison proofreadingOCRStepComparison) {
-	if size.X <= 0 || size.Y <= 0 || page.layout.Width <= 0 || page.layout.Height <= 0 {
-		return
-	}
-	if len(page.layout.Characters) > 0 {
-		drawProofreadingOCRCharacterBoxes(gtx, size, step, comparison)
-		return
-	}
-	blockIDs := make(map[int]struct{}, len(comparison.AOnlyBlockIDs))
-	ink := color.NRGBA{R: 217, G: 48, B: 37, A: 255}
-	fill := color.NRGBA{R: 217, G: 48, B: 37, A: 38}
-	playing := step != nil && (step.diffRunning || step.diffPaused) && step.diffPair == (proofreadingOCRStepPair{APage: comparison.APage, BPage: comparison.BPage}) && step.diffDraftHash == comparison.DraftHash
-	if playing {
-		blockID, kind, ok := proofreadingOCRStepConnectorABlock(step, comparison)
-		if !ok {
-			return
-		}
-		blockIDs[blockID] = struct{}{}
-		ink = proofreadingOCRDiffFrameAInk(kind)
-		fill = color.NRGBA{R: ink.R, G: ink.G, B: ink.B, A: 68}
-	} else {
-		if len(comparison.AOnlyBlockIDs) == 0 {
-			return
-		}
-		for _, id := range comparison.AOnlyBlockIDs {
-			blockIDs[id] = struct{}{}
-		}
-	}
-	stroke := max(gtx.Dp(2), 2)
-	if !playing {
-		fill.A = 60
-	}
-	area := clip.Rect{Max: size}.Push(gtx.Ops)
-	defer area.Pop()
-	for _, block := range page.layout.Blocks {
-		if _, marked := blockIDs[block.ID]; !marked {
-			continue
-		}
-		bounds := proofreadingOCRBlockPixelBounds(size, page.layout.Width, page.layout.Height, block.Bounds)
-		if bounds.Dx() < 2 || bounds.Dy() < 2 {
-			continue
-		}
-		for _, band := range []image.Rectangle{
-			image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, min(bounds.Max.Y, bounds.Min.Y+stroke)),
-			image.Rect(bounds.Min.X, max(bounds.Min.Y, bounds.Max.Y-stroke), bounds.Max.X, bounds.Max.Y),
-			image.Rect(bounds.Min.X, bounds.Min.Y, min(bounds.Max.X, bounds.Min.X+stroke), bounds.Max.Y),
-			image.Rect(max(bounds.Min.X, bounds.Max.X-stroke), bounds.Min.Y, bounds.Max.X, bounds.Max.Y),
-		} {
-			paint.FillShape(gtx.Ops, ink, clip.Rect(band).Op())
-		}
-	}
+	drawProofreadingOCRCharacterBoxes(gtx, size, step, comparison)
 }

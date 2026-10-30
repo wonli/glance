@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -66,7 +65,7 @@ func (r Repository) push(ctx context.Context, remote string, auth TransportAuth)
 		return "", err
 	}
 	args := []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "credential.helper=", "-C", r.Directory, "push", "--", remote, hash + ":refs/heads/main"}
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := newProofhistoryCommand(ctx, "git", args...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	if auth.Token != "" {
 		dir, err := os.MkdirTemp(r.Directory, ".auth-*")
@@ -119,7 +118,7 @@ func ScanSSHHost(ctx context.Context, raw, tempRoot string) (string, string, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "ssh-keyscan", "-T", "5", "-p", port, "--", host)
+	cmd := newProofhistoryCommand(ctx, "ssh-keyscan", "-T", "5", "-p", port, "--", host)
 	out, err := cmd.Output()
 	if err != nil || len(out) == 0 {
 		return "", "", errors.New("could not obtain SSH host key")
@@ -134,7 +133,7 @@ func ScanSSHHost(ctx context.Context, raw, tempRoot string) (string, string, err
 		return "", "", err
 	}
 	f.Close()
-	fp, err := exec.CommandContext(ctx, "ssh-keygen", "-lf", f.Name()).Output()
+	fp, err := newProofhistoryCommand(ctx, "ssh-keygen", "-lf", f.Name()).Output()
 	if err != nil {
 		return "", "", err
 	}

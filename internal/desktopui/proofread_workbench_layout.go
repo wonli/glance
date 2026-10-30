@@ -13,7 +13,6 @@ import (
 	"glance/internal/workspace"
 	"image"
 	"image/color"
-	"runtime"
 )
 
 var proofreadingDesignBlue = color.NRGBA{R: 55, G: 105, B: 142, A: 255}
@@ -177,7 +176,7 @@ func (a *App) layoutProofreadingWorkbenchHeader(g layout.Context) layout.Dimensi
 				if !a.clientTitlebar || a.proofreading == nil || a.proofreadingTabHost != nil {
 					return layout.Dimensions{}
 				}
-				if runtime.GOOS == "darwin" {
+				if a.windowChromePlatform() == "darwin" {
 					return a.layoutMacWindowControls(g)
 				}
 				return a.layoutStandardWindowControls(g)

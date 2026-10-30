@@ -3,11 +3,9 @@ package desktopui
 import (
 	"image"
 	"image/color"
-	"runtime"
 	"sort"
 	"strings"
 
-	"gioui.org/app"
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
@@ -50,7 +48,7 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: size}
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			if runtime.GOOS == "windows" {
+			if a.windowChromePlatform() == "windows" {
 				tabs := func(gtx layout.Context) layout.Dimensions {
 					return a.layoutWindowsPinnedWorkspaceTabs(gtx, ids)
 				}
@@ -77,7 +75,7 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 					controls := func(gtx layout.Context) layout.Dimensions {
-						if runtime.GOOS == "darwin" {
+						if a.windowChromePlatform() == "darwin" {
 							return a.layoutMacWindowControls(gtx)
 						}
 						return a.layoutStandardWindowControls(gtx)
@@ -98,22 +96,22 @@ func (a *App) layoutWorkspaceTabs(gtx layout.Context) layout.Dimensions {
 // Windows keeps the Glance home tab outside the horizontally scrolling
 // document-tab viewport so it remains visible at the left edge.
 func (a *App) layoutWindowsPinnedWorkspaceTabs(gtx layout.Context, ids []string) layout.Dimensions {
-	return layout.Inset{Top: workspaceTabTopGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		children := []layout.FlexChild{
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(16)}.Layout(gtx, a.layoutRecentTab)
-			}),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+	children := []layout.FlexChild{
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: workspaceTabTopGap, Left: unit.Dp(16)}.Layout(gtx, a.layoutRecentTab)
+		}),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: workspaceTabTopGap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return a.layoutWindowsWorkspaceDocumentTabs(gtx, ids)
-			}),
-		}
-		if a.clientTitlebar {
-			children = append(children, layout.Rigid(a.layoutStandardWindowControls))
-		} else {
-			children = append(children, layout.Rigid(a.layoutJSONSaveIndicator))
-		}
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
-	})
+			})
+		}),
+	}
+	if a.clientTitlebar {
+		children = append(children, layout.Rigid(a.layoutStandardWindowControls))
+	} else {
+		children = append(children, layout.Rigid(a.layoutJSONSaveIndicator))
+	}
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 }
 
 func (a *App) layoutWindowsWorkspaceDocumentTabs(gtx layout.Context, ids []string) layout.Dimensions {
@@ -537,34 +535,6 @@ func (a *App) layoutTrafficLight(gtx layout.Context, click *widget.Clickable, fi
 			paint.FillShape(gtx.Ops, fill, shape.Op(gtx.Ops))
 			return layout.Dimensions{Size: image.Pt(size, size)}
 		})
-	})
-}
-
-func (a *App) layoutStandardWindowControls(gtx layout.Context) layout.Dimensions {
-	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutStandardWindowButton(gtx, &a.windowMinimizeButton, "−")
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			label := "□"
-			if a.windowMode == app.Maximized {
-				label = "❐"
-			}
-			return a.layoutStandardWindowButton(gtx, &a.windowMaximizeButton, label)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutStandardWindowButton(gtx, &a.windowCloseButton, "×")
-		}),
-	)
-}
-
-func (a *App) layoutStandardWindowButton(gtx layout.Context, click *widget.Clickable, label string) layout.Dimensions {
-	gtx.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(38)), gtx.Dp(unit.Dp(38)))
-	gtx.Constraints.Max = gtx.Constraints.Min
-	return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		style := material.Body1(a.theme, label)
-		style.Color = a.tokens().Colors.Text.PureBlack
-		return layout.Center.Layout(gtx, style.Layout)
 	})
 }
 

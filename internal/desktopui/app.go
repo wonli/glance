@@ -456,10 +456,18 @@ func RunWithStartupError(initialPath string, reportStartupError func(error)) <-c
 	return RunWithActivation(initialPath, reportStartupError, nil)
 }
 
+type DesktopOptions struct {
+	// SimulateWindowsChrome previews the Windows titlebar without changing OS behavior.
+	SimulateWindowsChrome bool
+}
+
 // RunWithActivation starts the desktop UI and applies path-free activation
 // requests from the process-level single-instance coordinator.
-func RunWithActivation(initialPath string, reportStartupError func(error), activationRequests <-chan struct{}) <-chan struct{} {
+func RunWithActivation(initialPath string, reportStartupError func(error), activationRequests <-chan struct{}, options ...DesktopOptions) <-chan struct{} {
 	runtime := newDesktopRuntime()
+	if len(options) > 0 {
+		runtime.simulateWindowsChrome = options[0].SimulateWindowsChrome
+	}
 	runtime.completion = make(chan struct{})
 	runtime.startupErrorReporter = reportStartupError
 	w := new(app.Window)

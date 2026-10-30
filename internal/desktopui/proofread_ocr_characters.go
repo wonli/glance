@@ -32,8 +32,8 @@ func proofreadingOCRStepSourceCharacterBounds(step *proofreadingOCRStepState, co
 	return image.Rectangle{}, false
 }
 
-// Connector fallback uses the observed block, without claiming a character box.
-func proofreadingOCRStepConnectorSourceBounds(step *proofreadingOCRStepState, comparison proofreadingOCRStepComparison, frame proofreadingOCRDiffFrame, size image.Point) (image.Rectangle, bool) {
+// Badge placement can use the observed block when character geometry is unavailable.
+func proofreadingOCRStepBadgeSourceBounds(step *proofreadingOCRStepState, comparison proofreadingOCRStepComparison, frame proofreadingOCRDiffFrame, size image.Point) (image.Rectangle, bool) {
 	if bounds, ok := proofreadingOCRStepSourceCharacterBounds(step, comparison, frame, size); ok {
 		return bounds, true
 	}
@@ -41,7 +41,7 @@ func proofreadingOCRStepConnectorSourceBounds(step *proofreadingOCRStepState, co
 		return image.Rectangle{}, false
 	}
 	page, ok := step.pages[comparison.APage]
-	if !ok || page.layout.CharacterVersion == ocr.CharacterGeometryVersion {
+	if !ok {
 		return image.Rectangle{}, false
 	}
 	for _, block := range page.layout.Blocks {
@@ -51,6 +51,10 @@ func proofreadingOCRStepConnectorSourceBounds(step *proofreadingOCRStepState, co
 		}
 	}
 	return image.Rectangle{}, false
+}
+
+func proofreadingOCRStepConnectorSourceBounds(step *proofreadingOCRStepState, comparison proofreadingOCRStepComparison, frame proofreadingOCRDiffFrame, size image.Point) (image.Rectangle, bool) {
+	return proofreadingOCRStepSourceCharacterBounds(step, comparison, frame, size)
 }
 
 func drawProofreadingOCRCharacterBoxes(gtx layout.Context, size image.Point, step *proofreadingOCRStepState, comparison proofreadingOCRStepComparison) {

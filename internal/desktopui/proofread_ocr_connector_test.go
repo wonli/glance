@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/f32"
 	"gioui.org/gpu/headless"
+	"gioui.org/io/input"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
@@ -123,10 +126,22 @@ func TestProofreadingOCRConnectorCrossPanePixels(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	for _, scale := range []float32{1, 2} {
 		a, gtx, _ := proofreadingConnectorFixture(scale)
+		var router input.Router
+		gtx.Source = router.Source()
 		window, err := headless.NewWindow(gtx.Constraints.Max.X, gtx.Constraints.Max.Y)
 		if err != nil {
 			t.Skipf("headless GPU unavailable: %v", err)
 		}
+		a.drawProofreadingOCRStepConnector(gtx)
+		router.Frame(gtx.Ops)
+		badges := a.proofreading.ocrStep.currentBadges
+		if len(badges) == 0 {
+			window.Release()
+			t.Fatal("no badge to hover")
+		}
+		b := badges[0].rect
+		router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, PointerID: 1, Position: f32.Pt(float32((b.Min.X+b.Max.X)/2), float32((b.Min.Y+b.Max.Y)/2))})
+		gtx.Ops.Reset()
 		paint.Fill(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 		a.drawProofreadingOCRStepConnector(gtx)
 		if err := window.Frame(gtx.Ops); err != nil {
@@ -141,7 +156,7 @@ func TestProofreadingOCRConnectorCrossPanePixels(t *testing.T) {
 		}
 		colored := 0
 		for y := int(44 * scale); y < gtx.Constraints.Max.Y; y++ {
-			for x := int(498 * scale); x <= int(502*scale); x++ {
+			for x := int(350 * scale); x < int(470*scale); x++ {
 				pixel := shot.RGBAAt(x, y)
 				if int(pixel.R) > int(pixel.G)+10 || int(pixel.B) > int(pixel.R)+10 {
 					colored++
@@ -149,7 +164,7 @@ func TestProofreadingOCRConnectorCrossPanePixels(t *testing.T) {
 			}
 		}
 		if colored == 0 {
-			t.Fatalf("%gx: completed fourth-page scan drew no difference line across the A/X divider", scale)
+			t.Fatalf("%gx: hovered fourth-page badge drew no difference line", scale)
 		}
 	}
 }
@@ -269,17 +284,29 @@ func TestProofreadingOCRConnectorWithoutCharacterGeometry(t *testing.T) {
 	step.pages[comparison.APage] = page
 	a.drawProofreadingOCRStepConnector(gtx)
 	if len(step.currentBadges) == 0 || len(step.currentConnections) == 0 {
-		t.Fatal("block geometry must provide badges and connections when character localization is unavailable")
+		t.Fatal("block geometry must preserve badges when character localization is unavailable")
 	}
 	live := proofreadingOCRStepConnections(gtx, a.pdfView, a.proofreading, step, comparison)
 	if len(live) == 0 {
-		t.Fatal("missing live connectors with block geometry")
+		t.Fatal("right-side connectors must remain when PDF character positions are unavailable")
 	}
-	anchor, ok := proofreadingOCRStepSourceAnchor(step, comparison, 7, proofreadingOCRStepSourcePagePixelSize(a.pdfView, comparison.APage))
-	origin, _, _ := proofreadingOCRStepConnectorPageOrigins(gtx, a.pdfView, a.proofreading, comparison.APage, comparison.BPage)
-	if !ok || live[0].from != origin.Add(anchor) {
-		t.Fatalf("connector must use the observed block anchor: got %v", live[0].from)
+	for _, connection := range live {
+		if !connection.fromUnlocated {
+			t.Fatal("unlocated PDF character has a source endpoint")
+		}
+		anchor, ok := proofreadingOCRStepDraftPageAnchor(a.proofreading, comparison.BPage, connection.frame)
+		if !ok {
+			t.Fatal("missing draft glyph location")
+		}
+		_, origin, _ := proofreadingOCRStepConnectorPageOrigins(gtx, a.pdfView, a.proofreading, comparison.APage, comparison.BPage)
+		size := proofreadingXPagePixelSize(gtx, a.pdfView, a.proofreading, comparison.BPage)
+		window := a.proofreading.xEditorWindows[comparison.BPage]
+		geometry := proofreadingXPageTextGeometry(a.proofreading.xPages[comparison.BPage], size, window.Top, a.proofreading.xPageScrollOffsets[comparison.BPage])
+		if want := origin.Add(geometry.pixelPoint(anchor)); connection.toOutside == 0 && connection.to != want {
+			t.Fatalf("right endpoint = %v, want %v", connection.to, want)
+		}
 	}
+
 }
 
 func TestProofreadingPaginationCompactHeight(t *testing.T) {
@@ -290,5 +317,81 @@ func TestProofreadingPaginationCompactHeight(t *testing.T) {
 	}
 	if got := a.layoutProofreadingEmptyFilmstrip(gtx).Size.Y; got != 48 {
 		t.Fatalf("empty filmstrip height = %d, want 48", got)
+	}
+}
+
+func TestProofreadingOCRConnectorKeepsDifferencesWithoutIndividualBoxes(t *testing.T) {
+	a, gtx, comparison := proofreadingConnectorFixture(1)
+	step := a.proofreading.ocrStep
+	comparison.Frames = nil
+	for _, i := range []int{1, 6, 11, 16, 21} {
+		comparison.Frames = append(comparison.Frames, proofreadingOCRDiffFrame{Kind: proofreadingOCRDiffReplace, ABlockID: 7, AOffset: i, BPosition: i, AChar: 'b', BChar: 'b'})
+	}
+	page := step.pages[comparison.APage]
+	var boxes []ocr.CharacterBox
+	for _, box := range page.layout.Characters {
+		if box.Offset != 6 && box.Offset != 16 {
+			boxes = append(boxes, box)
+		}
+	}
+	page.layout.Characters = boxes
+	step.pages[comparison.APage] = page
+	pair := proofreadingOCRStepPair{APage: comparison.APage, BPage: comparison.BPage}
+	step.comparisons[pair] = comparison
+	step.diffCursor = len(comparison.Frames)
+	a.drawProofreadingOCRStepConnector(gtx)
+	if len(step.currentBadges) != 5 {
+		t.Fatalf("got %d badges for five separate differences", len(step.currentBadges))
+	}
+	live := proofreadingOCRStepConnections(gtx, a.pdfView, a.proofreading, step, comparison)
+	if len(live) != 5 {
+		t.Fatalf("got %d visible connections for five differences", len(live))
+	}
+	for _, frame := range []proofreadingOCRDiffFrame{comparison.Frames[1], comparison.Frames[3]} {
+		if _, ok := proofreadingOCRStepSourceCharacterBounds(step, comparison, frame, image.Pt(300, 120)); ok {
+			t.Fatal("missing glyph was presented as a character box")
+		}
+	}
+}
+
+func TestProofreadingHoveredConnectionSurvivesDraftScroll(t *testing.T) {
+	for _, scale := range []float32{1, 2} {
+		a, gtx, comparison := proofreadingConnectorFixture(scale)
+		comparison.Frames = []proofreadingOCRDiffFrame{comparison.Frames[9]}
+		comparison.Frames[0].Kind = proofreadingOCRDiffReplace
+		state := a.proofreading
+		state.xPageScrollOffsets[3] = 200
+		connections := proofreadingOCRStepConnections(gtx, a.pdfView, state, state.ocrStep, comparison)
+		if len(connections) != 1 {
+			t.Fatalf("%gx: missing connection after X text scrolled out of view", scale)
+		}
+		if connections[0].toOutside != -1 {
+			t.Fatalf("%gx: scrolled-up text should point above viewport: %+v", scale, connections[0])
+		}
+		state.xPageScrollOffsets[3] = 0
+		comparison.Frames[0] = proofreadingOCRDiffFrame{Kind: proofreadingOCRDiffReplace, ABlockID: 7, AOffset: 46, BPosition: 46, AChar: 'b', BChar: 'b'}
+		connections = proofreadingOCRStepConnections(gtx, a.pdfView, state, state.ocrStep, comparison)
+		if len(connections) != 1 || connections[0].toOutside != 1 {
+			t.Fatalf("%gx: hidden text below viewport must have downward direction: %+v", scale, connections)
+		}
+		state.xEditorWindows[3].Start = 50
+		connections = proofreadingOCRStepConnections(gtx, a.pdfView, state, state.ocrStep, comparison)
+		if len(connections) != 1 || connections[0].toOutside != -1 {
+			t.Fatalf("%gx: virtualized text above window lost direction: %+v", scale, connections)
+		}
+		state.xCanvas.Position.Offset = int(400 * scale)
+		connections = proofreadingOCRStepConnections(gtx, a.pdfView, state, state.ocrStep, comparison)
+		if len(connections) != 1 || connections[0].toOutside != -1 {
+			t.Fatalf("%gx: X page above viewport lost direction: %+v", scale, connections)
+		}
+		a.pdfView.info.Pages = 5
+		a.pdfView.pageMap = nil
+		a.pdfView.canvas.Position.First = 3
+		state.xCanvas.Position.First = 4
+		state.xCanvas.Position.Offset = 0
+		connections = proofreadingOCRStepConnections(gtx, a.pdfView, state, state.ocrStep, comparison)
+		if len(connections) != 1 || connections[0].toOutside != -1 {
+			t.Fatalf("%gx: X page before the first visible row lost direction: %+v", scale, connections)
+		}
 	}
 }
