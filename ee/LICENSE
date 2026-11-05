@@ -1,0 +1,5 @@
+# Glance Enterprise License (Reserved)
+
+The `ee/` directory is reserved for future enterprise modules. No enterprise modules are currently included.
+
+This directory is excluded from the Apache License 2.0 grant in the repository root. Until separate license terms are published here, no permission is granted to use, copy, modify, distribute, or create derivative works from material placed in this directory.
