@@ -234,7 +234,8 @@ GET 不会清空记录；继续操作时旧记录会被覆盖。
 
 ## Windows 原生拖动消息桥接
 
-Windows 默认启用应用层 `internal/windowmove` 桥接，Gio 仍是官方
+Windows 默认使用 Gio 原有消息处理，避免移动时跳过露出区域的重绘。
+可通过环境变量启用实验性的应用层 `internal/windowmove` 桥接做性能对照；Gio 仍是官方
 `gioui.org v0.10.3`，没有本地替换或源码补丁。通过公开的
 `app.Win32ViewEvent` 获取 HWND，再用 `Window.Run` 在该窗口所属线程
 安装 `SetWindowSubclass`。安装失败记录错误并保留 Gio 原有行为。
@@ -251,20 +252,20 @@ CreateBuffer`，因此只拦截位置消息不足以消除停顿后的卡顿。�
 纯移动期间内容可能暂时保持旧画面；后台任务和输入不被暂停。
 回调不调用 Gio，不解析文档，也不读写应用状态；原生销毁时移除桥接。
 
-重启程序后生效。关闭桥接进行对照：
+重启程序后生效。启用桥接进行性能对照（可能在拖动期间显示旧画面）：
 
 ```powershell
-$env:GLANCE_WINDOWS_MOVE_REDRAW = "0"
+$env:GLANCE_WINDOWS_MOVE_REDRAW = "1"
 # 启动程序，采集相同页面、相近时长的拖动快照差值
 ```
 
-恢复默认开启：
+恢复默认关闭：
 
 ```powershell
 Remove-Item Env:GLANCE_WINDOWS_MOVE_REDRAW -ErrorAction SilentlyContinue
 ```
 
-`false`、`off` 同样关闭，值不区分大小写。此开关独立于 pprof 开关。
+`true`、`on` 同样启用，值不区分大小写；其他值均关闭。此开关独立于 pprof 开关。
 检查退出旧进程、重新构建和启动后，再比较 `config`、`frame-submit`
 次数与耗时。仍可能有 hover、动画等正常帧，不能要求完全零帧。
 还须实际检查缩放、贴靠、最大化/还原、最小化/还原、多窗口、关闭窗口、

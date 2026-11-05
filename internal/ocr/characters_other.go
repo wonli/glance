@@ -1,7 +1,9 @@
-//go:build !darwin || !cgo
+//go:build !windows && (!darwin || !cgo)
 
 package ocr
 
-func recognizeCharacterImage(_ []byte) ([]detectedTextLine, error) {
+import "context"
+
+func recognizeCharacterImage(_ context.Context, _ []byte) ([]detectedTextLine, error) {
 	return nil, ErrCharacterLocalizationUnavailable
 }

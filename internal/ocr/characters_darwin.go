@@ -10,12 +10,13 @@ int glance_ocr_characters(const void *data, size_t length, char **output, char *
 import "C"
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"unsafe"
 )
 
-func recognizeCharacterImage(data []byte) ([]detectedTextLine, error) {
+func recognizeCharacterImage(_ context.Context, data []byte) ([]detectedTextLine, error) {
 	if len(data) == 0 {
 		return nil, errors.New("ocr: empty character image")
 	}

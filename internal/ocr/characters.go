@@ -29,7 +29,9 @@ type detectedTextLine struct {
 // LocalizeCharacters supplements recognition with observed image geometry. It
 // never divides a paragraph into assumed equal-width character cells.
 func LocalizeCharacters(ctx context.Context, source image.Image, layout Layout) (Layout, error) {
-	return localizeCharacters(ctx, source, layout, recognizeCharacterImage)
+	return localizeCharacters(ctx, source, layout, func(data []byte) ([]detectedTextLine, error) {
+		return recognizeCharacterImage(ctx, data)
+	})
 }
 
 func localizeCharacters(ctx context.Context, source image.Image, layout Layout, recognize func([]byte) ([]detectedTextLine, error)) (Layout, error) {
